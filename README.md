@@ -52,6 +52,8 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 
 설치 후 브라우저에서 접속: http://127.0.0.1:5002
 
+![Web UI](docs/webui-screenshot.png)
+
 - 포트, 시크릿 키 설정
 - 명령어 테스트 버튼
 
@@ -145,6 +147,8 @@ smartthings-pc-control.exe run         # Console mode (debug)
 ## Web UI
 
 After installation: http://127.0.0.1:5002
+
+![Web UI](docs/webui-screenshot.png)
 
 - Configure port and secret key
 - Test commands from browser
