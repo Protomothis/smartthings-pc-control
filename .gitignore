@@ -1,0 +1,7 @@
+*.exe
+config.json
+*.log
+qwinsta_test.txt
+hex.txt
+out.txt
+err.txt
