@@ -210,18 +210,21 @@ func Status() {
 	}
 }
 
+const firewallRuleName = "SmartThings PC Control"
+
 func addFirewallRule(port int) {
-	ruleName := "Remote Shutdown Service (TCP " + fmt.Sprintf("%d", port) + ")"
+	// Remove existing rule first (in case port changed)
+	removeFirewallRule()
+
 	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+ruleName,
+		"name="+firewallRuleName,
 		"dir=in", "action=allow", "protocol=tcp",
 		"localport="+fmt.Sprintf("%d", port))
 	cmd.Run()
 }
 
 func removeFirewallRule() {
-	// Remove any rules we may have created
 	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name=Remote Shutdown Service (TCP 5001)")
+		"name="+firewallRuleName)
 	cmd.Run()
 }
