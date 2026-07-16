@@ -34,6 +34,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
 			close(s.stop)
+			closeLogger()
 			return false, 0
 		case svc.Interrogate:
 			changes <- c.CurrentStatus

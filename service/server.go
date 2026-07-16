@@ -12,6 +12,7 @@ import (
 )
 
 var logger *log.Logger
+var logFile *os.File
 
 func initLogger() {
 	exePath, err := os.Executable()
@@ -23,7 +24,15 @@ func initLogger() {
 	if err != nil {
 		return
 	}
+	logFile = f
 	logger = log.New(f, "", log.LstdFlags)
+}
+
+func closeLogger() {
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
 }
 
 func logMsg(format string, args ...interface{}) {
