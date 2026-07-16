@@ -13,13 +13,17 @@ import (
 
 var logger *log.Logger
 var logFile *os.File
+var logPath string
+
+const maxLogSize = 1 * 1024 * 1024 // 1MB
+const maxLogBackups = 3
 
 func initLogger() {
 	exePath, err := os.Executable()
 	if err != nil {
 		return
 	}
-	logPath := filepath.Join(filepath.Dir(exePath), "service.log")
+	logPath = filepath.Join(filepath.Dir(exePath), "service.log")
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -35,9 +39,44 @@ func closeLogger() {
 	}
 }
 
+func rotateLog() {
+	if logFile == nil || logPath == "" {
+		return
+	}
+	info, err := logFile.Stat()
+	if err != nil || info.Size() < maxLogSize {
+		return
+	}
+
+	// Close current log
+	logFile.Close()
+
+	// Rotate: .3 삭제, .2→.3, .1→.2, current→.1
+	for i := maxLogBackups; i >= 1; i-- {
+		src := logPath
+		if i > 1 {
+			src = fmt.Sprintf("%s.%d", logPath, i-1)
+		}
+		dst := fmt.Sprintf("%s.%d", logPath, i)
+		os.Remove(dst)
+		os.Rename(src, dst)
+	}
+
+	// Open new log file
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		logFile = nil
+		logger = nil
+		return
+	}
+	logFile = f
+	logger = log.New(f, "", log.LstdFlags)
+}
+
 func logMsg(format string, args ...interface{}) {
 	if logger != nil {
 		logger.Printf(format, args...)
+		rotateLog()
 	}
 }
 
