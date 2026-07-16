@@ -217,7 +217,9 @@ func executeCommand(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executeCommand error [%s %v]: %v - output: %s", name, args, err, string(output))
+		logMsg("exec [%s %v] error: %v - output: %s", name, args, err, string(output))
+	} else {
+		logMsg("exec [%s %v] ok", name, args)
 	}
 }
 
@@ -225,9 +227,9 @@ func executeCommandWithLog(label string, name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executeCommandWithLog [%s] error: %v - output: %s", label, err, string(output))
+		logMsg("exec [%s] error: %v - output: %s", label, err, string(output))
 	} else {
-		logMsg("executeCommandWithLog [%s] success - output: %s", label, string(output))
+		logMsg("exec [%s] ok - output: %s", label, string(output))
 	}
 }
 
@@ -235,7 +237,9 @@ func executePowerShell(script string) {
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executePowerShell error: %v - output: %s", err, string(output))
+		logMsg("powershell error: %v - output: %s", err, string(output))
+	} else {
+		logMsg("powershell ok - output: %s", string(output))
 	}
 }
 
