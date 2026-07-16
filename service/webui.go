@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // StartWebUI starts a local web UI for configuration on a separate port
@@ -77,7 +79,9 @@ func StartWebUI(stop chan struct{}) {
 
 	go func() {
 		<-stop
-		server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
 	}()
 
 	logMsg("WebUI listening on http://127.0.0.1:%d", webPort)

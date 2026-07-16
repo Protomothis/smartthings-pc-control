@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var logger *log.Logger
@@ -200,7 +202,9 @@ func StartHTTPServer(stop chan struct{}) {
 
 	go func() {
 		<-stop
-		server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
 	}()
 
 	log.Printf("Listening on port %d", cfg.Port)
