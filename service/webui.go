@@ -261,15 +261,15 @@ func loginHTML() string {
     <title>Remote Shutdown Service - Login</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 100%; max-width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
         h1 { font-size: 1.4em; margin-bottom: 8px; color: #4fc3f7; }
         .subtitle { font-size: 0.85em; color: #888; margin-bottom: 24px; }
         .field { margin-bottom: 20px; }
         label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 6px; }
-        input { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; }
+        input { width: 100%; padding: 12px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; }
         input:focus { border-color: #4fc3f7; }
-        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; font-weight: 500; background: #4fc3f7; color: #000; }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; font-weight: 500; background: #4fc3f7; color: #000; }
         .btn:hover { background: #81d4fa; }
         .error { margin-top: 12px; padding: 10px; border-radius: 6px; background: #b71c1c; color: #ef9a9a; font-size: 0.85em; display: none; }
     </style>
@@ -320,28 +320,44 @@ func settingsHTML(cfg Config) string {
     <title>Remote Shutdown Service - Settings</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 520px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
+        .container { background: #16213e; border-radius: 12px; padding: 28px; width: 100%; max-width: 600px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
         h1 { font-size: 1.4em; margin-bottom: 24px; color: #4fc3f7; }
         .field { margin-bottom: 20px; }
         label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-        input { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; transition: border-color 0.2s; }
+        input { width: 100%; padding: 12px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; transition: border-color 0.2s; }
         input:focus { border-color: #4fc3f7; }
-        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500; transition: all 0.2s; }
+        .btn { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500; transition: all 0.2s; }
         .btn-primary { background: #4fc3f7; color: #000; }
         .btn-primary:hover { background: #81d4fa; }
         .btn-danger { background: #e53935; color: #fff; }
         .btn-danger:hover { background: #ef5350; }
         .btn-secondary { background: #333; color: #eee; }
         .btn-secondary:hover { background: #444; }
-        .actions { display: flex; gap: 8px; margin-top: 24px; }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
         .status { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 0.85em; display: none; }
         .status.success { display: block; background: #1b5e20; color: #a5d6a7; }
         .status.error { display: block; background: #b71c1c; color: #ef9a9a; }
         .section-title { font-size: 0.9em; color: #888; margin-top: 28px; margin-bottom: 12px; border-top: 1px solid #333; padding-top: 16px; }
-        .test-btns { display: flex; flex-wrap: wrap; gap: 6px; }
-        .test-btns .btn { font-size: 0.8em; padding: 6px 12px; }
+        .test-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+        .test-btns .btn { font-size: 0.85em; padding: 10px 14px; flex: 0 0 auto; }
         .info { font-size: 0.75em; color: #666; margin-top: 4px; }
+        .log-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .log-viewer { background: #0a0a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.75em; line-height: 1.6; max-height: 350px; overflow-y: auto; color: #ccc; white-space: pre-wrap; word-break: break-all; }
+        @media (max-width: 480px) {
+            body { padding: 12px 8px; align-items: flex-start; }
+            .container { padding: 20px 16px; border-radius: 8px; }
+            h1 { font-size: 1.2em; }
+            .btn { padding: 12px 16px; font-size: 0.85em; }
+            .test-btns .btn { flex: 1 1 calc(50% - 4px); text-align: center; }
+            .actions { flex-direction: column; }
+            .actions .btn { width: 100%; }
+            .log-viewer { max-height: 250px; font-size: 0.7em; }
+        }
+        @media (min-width: 481px) and (max-width: 768px) {
+            .container { max-width: 520px; }
+            .test-btns .btn { flex: 1 1 calc(33% - 6px); text-align: center; }
+        }
     </style>
 </head>
 <body>
@@ -375,11 +391,11 @@ func settingsHTML(cfg Config) string {
         </div>
 
         <div class="section-title">Logs</div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
-            <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.8em;padding:6px 12px;">Refresh</button>
+        <div class="log-header">
+            <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.8em;padding:8px 12px;">Refresh</button>
             <label style="display:flex;align-items:center;gap:4px;font-size:0.8em;color:#888;text-transform:none;letter-spacing:0;"><input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto (5s)</label>
         </div>
-        <div id="logViewer" style="background:#0a0a1a;border:1px solid #333;border-radius:6px;padding:12px;font-family:'Consolas','Courier New',monospace;font-size:0.75em;line-height:1.6;max-height:300px;overflow-y:auto;color:#ccc;white-space:pre-wrap;word-break:break-all;">Loading...</div>
+        <div id="logViewer" class="log-viewer">Loading...</div>
     </div>
     <script>
         const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
