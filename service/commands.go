@@ -41,7 +41,7 @@ var Commands = map[string]Command{
 	"turnscreenoff": {
 		Response: "Screen off...",
 		Execute: func() {
-			executePowerShell("(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170,2)")
+			runPowerShellInUserSession("(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170,2)")
 		},
 	},
 }
