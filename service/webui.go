@@ -321,7 +321,7 @@ func settingsHTML(cfg Config) string {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; overflow: hidden; padding: 16px; }
-        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 1100px; margin: 0 auto; height: 100%; }
+        .layout { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; max-width: 1400px; margin: 0 auto; height: 100%; }
         .panel { background: #16213e; border-radius: 12px; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); overflow: hidden; }
         .panel-left { display: flex; flex-direction: column; overflow-y: auto; }
         .panel-right { display: flex; flex-direction: column; }
