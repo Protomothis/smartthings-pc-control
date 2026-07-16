@@ -320,10 +320,10 @@ func settingsHTML(cfg Config) string {
     <title>Remote Shutdown Service</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 24px 16px; }
-        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px; margin: 0 auto; min-height: calc(100vh - 48px); }
-        .panel { background: #16213e; border-radius: 12px; padding: 28px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-        .panel-left { display: flex; flex-direction: column; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; overflow: hidden; padding: 16px; }
+        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 1100px; margin: 0 auto; height: 100%; }
+        .panel { background: #16213e; border-radius: 12px; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); overflow: hidden; }
+        .panel-left { display: flex; flex-direction: column; overflow-y: auto; }
         .panel-right { display: flex; flex-direction: column; }
         h1 { font-size: 1.3em; margin-bottom: 20px; color: #4fc3f7; }
         h2 { font-size: 1em; color: #4fc3f7; margin-bottom: 12px; }
@@ -347,14 +347,15 @@ func settingsHTML(cfg Config) string {
         .test-btns .btn { font-size: 0.8em; padding: 8px 12px; }
         .info { font-size: 0.72em; color: #666; margin-top: 3px; }
         .log-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .log-viewer { background: #0a0a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.73em; line-height: 1.6; flex: 1; overflow-y: auto; color: #ccc; white-space: pre-wrap; word-break: break-all; min-height: 200px; }
+        .log-viewer { background: #0a0a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.73em; line-height: 1.6; flex: 1; overflow-y: auto; color: #ccc; white-space: pre-wrap; word-break: break-all; min-height: 0; }
         @media (max-width: 768px) {
-            .layout { grid-template-columns: 1fr; min-height: auto; }
+            body { height: auto; overflow: auto; padding: 12px; }
+            .layout { grid-template-columns: 1fr; height: auto; }
             .panel-right { max-height: 400px; }
             .log-viewer { max-height: 300px; }
         }
         @media (max-width: 480px) {
-            body { padding: 12px 8px; }
+            body { padding: 8px; }
             .panel { padding: 20px 16px; }
             h1 { font-size: 1.1em; }
             .btn { padding: 10px 14px; }
