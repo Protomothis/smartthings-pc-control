@@ -317,85 +317,94 @@ func settingsHTML(cfg Config) string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Remote Shutdown Service - Settings</title>
+    <title>Remote Shutdown Service</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
-        .container { background: #16213e; border-radius: 12px; padding: 28px; width: 100%; max-width: 600px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-        h1 { font-size: 1.4em; margin-bottom: 24px; color: #4fc3f7; }
-        .field { margin-bottom: 20px; }
-        label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-        input { width: 100%; padding: 12px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; transition: border-color 0.2s; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 24px 16px; }
+        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px; margin: 0 auto; min-height: calc(100vh - 48px); }
+        .panel { background: #16213e; border-radius: 12px; padding: 28px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .panel-left { display: flex; flex-direction: column; }
+        .panel-right { display: flex; flex-direction: column; }
+        h1 { font-size: 1.3em; margin-bottom: 20px; color: #4fc3f7; }
+        h2 { font-size: 1em; color: #4fc3f7; margin-bottom: 12px; }
+        .field { margin-bottom: 16px; }
+        label { display: block; font-size: 0.8em; color: #aaa; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type="number"], input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 0.95em; outline: none; transition: border-color 0.2s; }
         input:focus { border-color: #4fc3f7; }
-        .btn { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500; transition: all 0.2s; }
+        .btn { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: 500; transition: all 0.2s; }
         .btn-primary { background: #4fc3f7; color: #000; }
         .btn-primary:hover { background: #81d4fa; }
         .btn-danger { background: #e53935; color: #fff; }
         .btn-danger:hover { background: #ef5350; }
         .btn-secondary { background: #333; color: #eee; }
         .btn-secondary:hover { background: #444; }
-        .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
-        .status { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 0.85em; display: none; }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+        .status { margin-top: 12px; padding: 8px 10px; border-radius: 6px; font-size: 0.8em; display: none; }
         .status.success { display: block; background: #1b5e20; color: #a5d6a7; }
         .status.error { display: block; background: #b71c1c; color: #ef9a9a; }
-        .section-title { font-size: 0.9em; color: #888; margin-top: 28px; margin-bottom: 12px; border-top: 1px solid #333; padding-top: 16px; }
-        .test-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-        .test-btns .btn { font-size: 0.85em; padding: 10px 14px; flex: 0 0 auto; }
-        .info { font-size: 0.75em; color: #666; margin-top: 4px; }
-        .log-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-        .log-viewer { background: #0a0a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.75em; line-height: 1.6; max-height: 350px; overflow-y: auto; color: #ccc; white-space: pre-wrap; word-break: break-all; }
+        .section-title { font-size: 0.85em; color: #888; margin-top: 20px; margin-bottom: 10px; border-top: 1px solid #333; padding-top: 12px; }
+        .test-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        .test-btns .btn { font-size: 0.8em; padding: 8px 12px; }
+        .info { font-size: 0.72em; color: #666; margin-top: 3px; }
+        .log-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .log-viewer { background: #0a0a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.73em; line-height: 1.6; flex: 1; overflow-y: auto; color: #ccc; white-space: pre-wrap; word-break: break-all; min-height: 200px; }
+        @media (max-width: 768px) {
+            .layout { grid-template-columns: 1fr; min-height: auto; }
+            .panel-right { max-height: 400px; }
+            .log-viewer { max-height: 300px; }
+        }
         @media (max-width: 480px) {
-            body { padding: 12px 8px; align-items: flex-start; }
-            .container { padding: 20px 16px; border-radius: 8px; }
-            h1 { font-size: 1.2em; }
-            .btn { padding: 12px 16px; font-size: 0.85em; }
-            .test-btns .btn { flex: 1 1 calc(50% - 4px); text-align: center; }
+            body { padding: 12px 8px; }
+            .panel { padding: 20px 16px; }
+            h1 { font-size: 1.1em; }
+            .btn { padding: 10px 14px; }
+            .test-btns .btn { flex: 1 1 calc(50% - 3px); text-align: center; }
             .actions { flex-direction: column; }
             .actions .btn { width: 100%; }
-            .log-viewer { max-height: 250px; font-size: 0.7em; }
-        }
-        @media (min-width: 481px) and (max-width: 768px) {
-            .container { max-width: 520px; }
-            .test-btns .btn { flex: 1 1 calc(33% - 6px); text-align: center; }
+            .panel-right { max-height: 350px; }
+            .log-viewer { max-height: 250px; font-size: 0.68em; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>⚡ Remote Shutdown Service</h1>
-        <div class="field">
-            <label>Port</label>
-            <input type="number" id="port" value="` + strconv.Itoa(cfg.Port) + `">
-            <div class="info">SmartThings Edge driver default: 5001</div>
-        </div>
-        <div class="field">
-            <label>Secret Key</label>
-            <input type="text" id="secret" value="` + cfg.Secret + `" placeholder="(none)">
-            <div class="info">Leave empty to disable authentication</div>
-        </div>
-        <div class="actions">
-            <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
-            <button class="btn btn-secondary" onclick="restartService()">Restart Service</button>
-        </div>
-        <div id="status" class="status"></div>
+    <div class="layout">
+        <div class="panel panel-left">
+            <h1>⚡ Remote Shutdown Service</h1>
+            <div class="field">
+                <label>Port</label>
+                <input type="number" id="port" value="` + strconv.Itoa(cfg.Port) + `">
+                <div class="info">SmartThings Edge driver default: 5001</div>
+            </div>
+            <div class="field">
+                <label>Secret Key</label>
+                <input type="text" id="secret" value="` + cfg.Secret + `" placeholder="(none)">
+                <div class="info">Leave empty to disable authentication</div>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+                <button class="btn btn-secondary" onclick="restartService()">Restart Service</button>
+            </div>
+            <div id="status" class="status"></div>
 
-        <div class="section-title">Test Commands</div>
-        <div class="test-btns">
-            <button class="btn btn-secondary" onclick="testCmd('lock')">Lock</button>
-            <button class="btn btn-secondary" onclick="testCmd('turnscreenoff')">Screen Off</button>
-            <button class="btn btn-secondary" onclick="testCmd('suspend')">Suspend</button>
-            <button class="btn btn-secondary" onclick="testCmd('hibernate')">Hibernate</button>
-            <button class="btn btn-secondary" onclick="testCmd('restart')">Restart</button>
-            <button class="btn btn-danger" onclick="testCmd('shutdown')">Shutdown</button>
-            <button class="btn btn-danger" onclick="testCmd('forceshutdown')">Force Shutdown</button>
+            <div class="section-title">Test Commands</div>
+            <div class="test-btns">
+                <button class="btn btn-secondary" onclick="testCmd('lock')">Lock</button>
+                <button class="btn btn-secondary" onclick="testCmd('turnscreenoff')">Screen Off</button>
+                <button class="btn btn-secondary" onclick="testCmd('suspend')">Suspend</button>
+                <button class="btn btn-secondary" onclick="testCmd('hibernate')">Hibernate</button>
+                <button class="btn btn-secondary" onclick="testCmd('restart')">Restart</button>
+                <button class="btn btn-danger" onclick="testCmd('shutdown')">Shutdown</button>
+                <button class="btn btn-danger" onclick="testCmd('forceshutdown')">Force Shutdown</button>
+            </div>
         </div>
-
-        <div class="section-title">Logs</div>
-        <div class="log-header">
-            <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.8em;padding:8px 12px;">Refresh</button>
-            <label style="display:flex;align-items:center;gap:4px;font-size:0.8em;color:#888;text-transform:none;letter-spacing:0;"><input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto (5s)</label>
+        <div class="panel panel-right">
+            <h2>📋 Logs</h2>
+            <div class="log-header">
+                <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.8em;padding:6px 12px;">Refresh</button>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.8em;color:#888;text-transform:none;letter-spacing:0;"><input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto (5s)</label>
+            </div>
+            <div id="logViewer" class="log-viewer">Loading...</div>
         </div>
-        <div id="logViewer" class="log-viewer">Loading...</div>
     </div>
     <script>
         const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
@@ -451,7 +460,6 @@ func settingsHTML(cfg Config) string {
             }
         }
         function convertLogTime(line) {
-            // Go log format: 2026/07/16 13:40:35 message...
             const match = line.match(/^(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}) (.*)$/);
             if (!match) return line;
             const serverTime = match[1].replace(/\//g, '-').replace(' ', 'T');
