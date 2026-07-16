@@ -139,9 +139,11 @@ func settingsHTML(cfg Config) string {
         <div class="test-btns">
             <button class="btn btn-secondary" onclick="testCmd('lock')">Lock</button>
             <button class="btn btn-secondary" onclick="testCmd('turnscreenoff')">Screen Off</button>
+            <button class="btn btn-secondary" onclick="testCmd('suspend')">Suspend</button>
             <button class="btn btn-secondary" onclick="testCmd('hibernate')">Hibernate</button>
             <button class="btn btn-secondary" onclick="testCmd('restart')">Restart</button>
             <button class="btn btn-danger" onclick="testCmd('shutdown')">Shutdown</button>
+            <button class="btn btn-danger" onclick="testCmd('forceshutdown')">Force Shutdown</button>
         </div>
     </div>
     <script>
@@ -161,7 +163,7 @@ func settingsHTML(cfg Config) string {
             }
         }
         async function testCmd(cmd) {
-            if (cmd === 'shutdown' || cmd === 'restart') {
+            if (cmd === 'shutdown' || cmd === 'restart' || cmd === 'forceshutdown') {
                 if (!confirm('Are you sure?')) return;
             }
             try {
