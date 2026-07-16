@@ -28,7 +28,7 @@ SmartThings Edge 드라이버 호환 Windows PC 전원 제어 서비스입니다
 | `lock` | 모든 활성 세션 잠금 |
 | `turnscreenoff` | 모니터 끄기 |
 
-## 설치
+> ℹ️ `turnscreenoff`은 유저가 로그인된 상태에서만 동작합니다. 잠금 화면에서의 모니터 자동 꺼짐은 Windows 전원 설정의 "Console lock display off timeout"을 조정하세요.
 
 1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) 페이지에서 `smartthings-pc-control.exe` 다운로드
 2. **영구적인 위치에 저장** (아래 권장 경로 참고)
@@ -141,6 +141,8 @@ This project:
 | `suspend` | Suspend (sleep) |
 | `lock` | Lock all active sessions |
 | `turnscreenoff` | Turn off monitor |
+
+> ℹ️ `turnscreenoff` only works when a user is logged in. For lock screen display timeout, adjust "Console lock display off timeout" in Windows power settings.
 
 ## Installation
 
