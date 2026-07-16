@@ -2,13 +2,49 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
+
+var (
+	sessionToken string
+	sessionMu    sync.RWMutex
+)
+
+func generateSessionToken() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// checkAuth validates session cookie. Returns true if authenticated.
+func checkAuth(r *http.Request, secret string) bool {
+	if secret == "" {
+		return true // No auth required
+	}
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return false
+	}
+	sessionMu.RLock()
+	defer sessionMu.RUnlock()
+	return cookie.Value == sessionToken && sessionToken != ""
+}
+
+// checkCSRF validates CSRF protection for POST requests.
+func checkCSRF(r *http.Request) bool {
+	if r.Method != "POST" {
+		return true
+	}
+	return r.Header.Get("X-Requested-With") == "XMLHttpRequest"
+}
 
 // StartWebUI starts a local web UI for configuration on a separate port
 func StartWebUI(stop chan struct{}) {
@@ -17,10 +53,73 @@ func StartWebUI(stop chan struct{}) {
 
 	mux := http.NewServeMux()
 
+	// Login page
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Secret == "" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		if r.Method == "GET" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, loginHTML())
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	// Login API
+	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		var body struct {
+			Secret string `json:"secret"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if body.Secret != cfg.Secret {
+			logMsg("WebUI login failed from %s", r.RemoteAddr)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Invalid secret"})
+			return
+		}
+
+		// Generate session token
+		sessionMu.Lock()
+		sessionToken = generateSessionToken()
+		sessionMu.Unlock()
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session",
+			Value:    sessionToken,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+		})
+
+		logMsg("WebUI login successful from %s", r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
 	// Serve the settings page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
+			return
+		}
+		if !checkAuth(r, cfg.Secret) {
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -29,12 +128,20 @@ func StartWebUI(stop chan struct{}) {
 
 	// API: Get config
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, cfg.Secret) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method == "GET" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(cfg)
 			return
 		}
 		if r.Method == "POST" {
+			if !checkCSRF(r) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 			var newCfg Config
 			if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
 				http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -58,6 +165,10 @@ func StartWebUI(stop chan struct{}) {
 
 	// API: Test commands
 	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, cfg.Secret) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		command := r.URL.Path[len("/api/test/"):]
 		w.Header().Set("Content-Type", "application/json")
 
@@ -75,8 +186,16 @@ func StartWebUI(stop chan struct{}) {
 
 	// API: Restart service (exit with code 1 to trigger Recovery Action)
 	mux.HandleFunc("/api/restart-service", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, cfg.Secret) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !checkCSRF(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -102,6 +221,65 @@ func StartWebUI(stop chan struct{}) {
 
 	logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
 	server.ListenAndServe()
+}
+
+func loginHTML() string {
+	return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Shutdown Service - Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        h1 { font-size: 1.4em; margin-bottom: 8px; color: #4fc3f7; }
+        .subtitle { font-size: 0.85em; color: #888; margin-bottom: 24px; }
+        .field { margin-bottom: 20px; }
+        label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 6px; }
+        input { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #fff; font-size: 1em; outline: none; }
+        input:focus { border-color: #4fc3f7; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; font-weight: 500; background: #4fc3f7; color: #000; }
+        .btn:hover { background: #81d4fa; }
+        .error { margin-top: 12px; padding: 10px; border-radius: 6px; background: #b71c1c; color: #ef9a9a; font-size: 0.85em; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Login</h1>
+        <p class="subtitle">Enter your secret key to access the WebUI</p>
+        <div class="field">
+            <label>Secret Key</label>
+            <input type="password" id="secret" placeholder="Enter secret..." autofocus onkeydown="if(event.key==='Enter')login()">
+        </div>
+        <button class="btn" onclick="login()">Login</button>
+        <div id="error" class="error"></div>
+    </div>
+    <script>
+        async function login() {
+            const secret = document.getElementById('secret').value;
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                    body: JSON.stringify({secret})
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json();
+                    document.getElementById('error').textContent = data.message || 'Login failed';
+                    document.getElementById('error').style.display = 'block';
+                }
+            } catch(e) {
+                document.getElementById('error').textContent = 'Connection error';
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>`
 }
 
 func settingsHTML(cfg Config) string {
@@ -168,15 +346,13 @@ func settingsHTML(cfg Config) string {
         </div>
     </div>
     <script>
+        const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
         async function saveConfig() {
             const port = parseInt(document.getElementById('port').value);
             const secret = document.getElementById('secret').value;
             try {
-                const res = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({port, secret})
-                });
+                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret})});
+                if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, 'success');
             } catch(e) {
@@ -188,7 +364,8 @@ func settingsHTML(cfg Config) string {
                 if (!confirm('Are you sure?')) return;
             }
             try {
-                const res = await fetch('/api/test/' + cmd);
+                const res = await fetch('/api/test/' + cmd, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(cmd + ' command sent', 'success');
             } catch(e) {
@@ -204,7 +381,7 @@ func settingsHTML(cfg Config) string {
         async function restartService() {
             if (!confirm('Restart the service? Connection will be lost briefly.')) return;
             try {
-                await fetch('/api/restart-service', {method: 'POST'});
+                await fetch('/api/restart-service', {method: 'POST', headers});
                 showStatus('Service restarting...', 'success');
                 setTimeout(() => location.reload(), 3000);
             } catch(e) {
