@@ -31,13 +31,31 @@ SmartThings Edge 드라이버 호환 Windows PC 전원 제어 서비스입니다
 ## 설치
 
 1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) 페이지에서 `smartthings-pc-control.exe` 다운로드
-2. 관리자 권한으로 실행:
+2. **영구적인 위치에 저장** (아래 권장 경로 참고)
+3. 관리자 권한으로 실행:
 
 ```
 smartthings-pc-control.exe install
 ```
 
 끝! 서비스가 자동으로 등록되고, 방화벽 규칙이 추가되며, 부팅 시 자동 시작됩니다.
+
+### 권장 설치 위치
+
+```
+C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
+```
+
+또는:
+
+```
+C:\Tools\smartthings-pc-control\smartthings-pc-control.exe
+```
+
+> ⚠️ **주의:**
+> - exe 파일과 같은 폴더에 `config.json`(설정)과 `service.log`(로그)가 생성됩니다.
+> - **install 후 exe를 이동하면 서비스가 동작하지 않습니다** (재설치 필요).
+> - 바탕화면이나 Downloads 같은 임시 폴더에 두지 마세요.
 
 ## 사용법
 
@@ -127,13 +145,31 @@ This project:
 ## Installation
 
 1. Download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)
-2. Run as administrator:
+2. **Save to a permanent location** (see recommended paths below)
+3. Run as administrator:
 
 ```
 smartthings-pc-control.exe install
 ```
 
 That's it! Service is registered, firewall rule added, and auto-start on boot is configured.
+
+### Recommended Install Location
+
+```
+C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
+```
+
+Or:
+
+```
+C:\Tools\smartthings-pc-control\smartthings-pc-control.exe
+```
+
+> ⚠️ **Important:**
+> - `config.json` (settings) and `service.log` (log) are created in the same folder as the exe.
+> - **Moving the exe after install will break the service** (reinstall required).
+> - Do not place it in temporary folders like Desktop or Downloads.
 
 ## Usage
 
