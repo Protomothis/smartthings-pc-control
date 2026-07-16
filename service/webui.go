@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -207,6 +208,34 @@ func StartWebUI(stop chan struct{}) {
 		}()
 	})
 
+	// API: Log viewer (tail last 50 lines)
+	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, cfg.Secret) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		if logPath == "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"lines": []string{}, "error": "log path unknown"})
+			return
+		}
+
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"lines": []string{}, "error": err.Error()})
+			return
+		}
+
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		// Return last 100 lines max
+		maxLines := 100
+		if len(lines) > maxLines {
+			lines = lines[len(lines)-maxLines:]
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"lines": lines})
+	})
+
 	server := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", webPort),
 		Handler: mux,
@@ -292,7 +321,7 @@ func settingsHTML(cfg Config) string {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .container { background: #16213e; border-radius: 12px; padding: 32px; width: 520px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
         h1 { font-size: 1.4em; margin-bottom: 24px; color: #4fc3f7; }
         .field { margin-bottom: 20px; }
         label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -344,6 +373,13 @@ func settingsHTML(cfg Config) string {
             <button class="btn btn-danger" onclick="testCmd('shutdown')">Shutdown</button>
             <button class="btn btn-danger" onclick="testCmd('forceshutdown')">Force Shutdown</button>
         </div>
+
+        <div class="section-title">Logs</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.8em;padding:6px 12px;">Refresh</button>
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.8em;color:#888;text-transform:none;letter-spacing:0;"><input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto (5s)</label>
+        </div>
+        <div id="logViewer" style="background:#0a0a1a;border:1px solid #333;border-radius:6px;padding:12px;font-family:'Consolas','Courier New',monospace;font-size:0.75em;line-height:1.6;max-height:300px;overflow-y:auto;color:#ccc;white-space:pre-wrap;word-break:break-all;">Loading...</div>
     </div>
     <script>
         const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
@@ -389,6 +425,42 @@ func settingsHTML(cfg Config) string {
                 setTimeout(() => location.reload(), 3000);
             }
         }
+        let autoRefreshTimer = null;
+        function toggleAutoRefresh() {
+            if (document.getElementById('autoRefresh').checked) {
+                loadLogs();
+                autoRefreshTimer = setInterval(loadLogs, 5000);
+            } else {
+                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+            }
+        }
+        function convertLogTime(line) {
+            // Go log format: 2026/07/16 13:40:35 message...
+            const match = line.match(/^(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}) (.*)$/);
+            if (!match) return line;
+            const serverTime = match[1].replace(/\//g, '-').replace(' ', 'T');
+            const d = new Date(serverTime);
+            if (isNaN(d.getTime())) return line;
+            const local = d.toLocaleString(undefined, {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+            return local + ' ' + match[2];
+        }
+        async function loadLogs() {
+            try {
+                const res = await fetch('/api/logs', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                const data = await res.json();
+                const viewer = document.getElementById('logViewer');
+                if (data.lines && data.lines.length > 0) {
+                    viewer.textContent = data.lines.map(convertLogTime).join('\n');
+                    viewer.scrollTop = viewer.scrollHeight;
+                } else {
+                    viewer.textContent = '(no logs)';
+                }
+            } catch(e) {
+                document.getElementById('logViewer').textContent = 'Failed to load logs';
+            }
+        }
+        loadLogs();
     </script>
 </body>
 </html>`
