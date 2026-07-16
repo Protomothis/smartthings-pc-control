@@ -8,6 +8,8 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service"
 )
 
+var Version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		// No arguments - run as Windows service
@@ -38,17 +40,21 @@ func main() {
 	case "status":
 		service.Status()
 
+	case "version":
+		fmt.Printf("SmartThings PC Control %s\n", Version)
+
 	case "run":
 		// Run in console mode (for debugging)
 		service.RunConsole()
 
 	default:
-		fmt.Println("Remote Shutdown Service - SmartThings Edge Driver Compatible")
+		fmt.Printf("SmartThings PC Control %s\n", Version)
 		fmt.Println("")
 		fmt.Println("Usage:")
 		fmt.Println("  install     Install and start the service")
 		fmt.Println("  uninstall   Stop and remove the service")
 		fmt.Println("  status      Show service status")
+		fmt.Println("  version     Show version")
 		fmt.Println("  run         Run in console mode (debug)")
 		fmt.Println("")
 		fmt.Println("No arguments = run as Windows service")

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,27 +10,86 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var logger *log.Logger
+var logFile *os.File
+var logPath string
+
+const maxLogSize = 1 * 1024 * 1024 // 1MB
+const maxLogBackups = 3
 
 func initLogger() {
 	exePath, err := os.Executable()
 	if err != nil {
 		return
 	}
-	logPath := filepath.Join(filepath.Dir(exePath), "service.log")
+	logPath = filepath.Join(filepath.Dir(exePath), "service.log")
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
+	logFile = f
+	logger = log.New(f, "", log.LstdFlags)
+}
+
+func closeLogger() {
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+}
+
+func rotateLog() {
+	if logFile == nil || logPath == "" {
+		return
+	}
+	info, err := logFile.Stat()
+	if err != nil || info.Size() < maxLogSize {
+		return
+	}
+
+	// Close current log
+	logFile.Close()
+
+	// Rotate: .3 삭제, .2→.3, .1→.2, current→.1
+	for i := maxLogBackups; i >= 1; i-- {
+		src := logPath
+		if i > 1 {
+			src = fmt.Sprintf("%s.%d", logPath, i-1)
+		}
+		dst := fmt.Sprintf("%s.%d", logPath, i)
+		os.Remove(dst)
+		os.Rename(src, dst)
+	}
+
+	// Open new log file
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		logFile = nil
+		logger = nil
+		return
+	}
+	logFile = f
 	logger = log.New(f, "", log.LstdFlags)
 }
 
 func logMsg(format string, args ...interface{}) {
 	if logger != nil {
 		logger.Printf(format, args...)
+		rotateLog()
 	}
+}
+
+func maskSecret(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	if len(s) <= 4 {
+		return "***"
+	}
+	return s[:2] + "***" + s[len(s)-2:]
 }
 
 // Config holds the service configuration
@@ -58,7 +118,11 @@ func loadConfig() Config {
 		return cfg
 	}
 
-	json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		logMsg("WARNING: config.json 파싱 실패 (기본값 사용): %v", err)
+		fmt.Fprintf(os.Stderr, "WARNING: config.json parse error (using defaults): %v\n", err)
+		cfg = defaultConfig
+	}
 	if cfg.Port == 0 {
 		cfg.Port = 5001
 	}
@@ -85,19 +149,23 @@ func StartHTTPServer(stop chan struct{}) {
 	cfg := loadConfig()
 	logMsg("Service starting on port %d", cfg.Port)
 
+	if cfg.Secret == "" {
+		logMsg("WARNING: No secret configured. Anyone on your network can control this PC.")
+	}
+
 	mux := http.NewServeMux()
 
 	// Route handler
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		parts := strings.Split(path, "/")
-		logMsg("Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
 		var command string
 
 		if cfg.Secret != "" {
 			// With secret: /{secret}/{command}
 			if len(parts) < 2 || parts[0] != cfg.Secret {
+				logMsg("Request: %s /***/%s from %s (UNAUTHORIZED)", r.Method, strings.Join(parts[1:], "/"), r.RemoteAddr)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -111,56 +179,19 @@ func StartHTTPServer(stop chan struct{}) {
 			command = parts[0]
 		}
 
-		switch strings.ToLower(command) {
-		case "ping":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "OK")
-			logMsg("Command: ping - OK")
+		logMsg("Request: %s /%s from %s", r.Method, command, r.RemoteAddr)
 
-		case "shutdown":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Shutting down...")
-			logMsg("Command: shutdown")
-			go executeCommand("shutdown", "/s", "/t", "5")
-
-		case "forceshutdown":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Force shutting down...")
-			logMsg("Command: forceshutdown")
-			go executeCommand("shutdown", "/s", "/f", "/t", "0")
-
-		case "restart":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Restarting...")
-			logMsg("Command: restart")
-			go executeCommand("shutdown", "/r", "/t", "5")
-
-		case "hibernate":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Hibernating...")
-			logMsg("Command: hibernate")
-			go executeCommand("shutdown", "/h")
-
-		case "suspend":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Suspending...")
-			logMsg("Command: suspend")
-			go executePowerShell("Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)")
-
-		case "lock":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Locking...")
-			logMsg("Command: lock")
-			go lockAllSessions()
-
-		case "turnscreenoff":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Screen off...")
-			logMsg("Command: turnscreenoff")
-			go executePowerShell("(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170,2)")
-
-		default:
+		cmd, ok := Commands[strings.ToLower(command)]
+		if !ok {
 			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, cmd.Response)
+		logMsg("Command: %s", strings.ToLower(command))
+		if cmd.Execute != nil {
+			go cmd.Execute()
 		}
 	})
 
@@ -171,7 +202,9 @@ func StartHTTPServer(stop chan struct{}) {
 
 	go func() {
 		<-stop
-		server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
 	}()
 
 	log.Printf("Listening on port %d", cfg.Port)
@@ -184,7 +217,9 @@ func executeCommand(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executeCommand error [%s %v]: %v - output: %s", name, args, err, string(output))
+		logMsg("exec [%s %v] error: %v - output: %s", name, args, err, string(output))
+	} else {
+		logMsg("exec [%s %v] ok", name, args)
 	}
 }
 
@@ -192,9 +227,9 @@ func executeCommandWithLog(label string, name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executeCommandWithLog [%s] error: %v - output: %s", label, err, string(output))
+		logMsg("exec [%s] error: %v - output: %s", label, err, string(output))
 	} else {
-		logMsg("executeCommandWithLog [%s] success - output: %s", label, string(output))
+		logMsg("exec [%s] ok - output: %s", label, string(output))
 	}
 }
 
@@ -202,7 +237,9 @@ func executePowerShell(script string) {
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logMsg("executePowerShell error: %v - output: %s", err, string(output))
+		logMsg("powershell error: %v - output: %s", err, string(output))
+	} else {
+		logMsg("powershell ok - output: %s", string(output))
 	}
 }
 

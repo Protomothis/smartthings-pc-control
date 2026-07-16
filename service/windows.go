@@ -34,6 +34,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
 			close(s.stop)
+			closeLogger()
 			return false, 0
 		case svc.Interrogate:
 			changes <- c.CurrentStatus
@@ -86,13 +87,23 @@ func Install() error {
 	// Check if already installed
 	s, err := m.OpenService(serviceName)
 	if err == nil {
-		s.Close()
-		// Already exists, delete and recreate
-		s, _ = m.OpenService(serviceName)
-		s.Control(svc.Stop)
-		time.Sleep(2 * time.Second)
+		// Already exists, stop and delete
+		fmt.Println("  Existing service found, removing...")
+		status, err := s.Query()
+		if err == nil && status.State != svc.Stopped {
+			s.Control(svc.Stop)
+			// Poll until stopped or timeout
+			for i := 0; i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				status, err = s.Query()
+				if err != nil || status.State == svc.Stopped {
+					break
+				}
+			}
+		}
 		s.Delete()
 		s.Close()
+		// Wait for SCM to fully release the service name
 		time.Sleep(1 * time.Second)
 	}
 
@@ -127,6 +138,13 @@ func Install() error {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
 	fmt.Println("  OK - Service started")
+
+	if cfg.Secret == "" {
+		fmt.Println("")
+		fmt.Println("  ⚠ WARNING: No secret configured.")
+		fmt.Println("    Anyone on your network can control this PC.")
+		fmt.Println("    Set a secret via WebUI (http://127.0.0.1:5002) or config.json")
+	}
 
 	return nil
 }
@@ -210,18 +228,21 @@ func Status() {
 	}
 }
 
+const firewallRuleName = "SmartThings PC Control"
+
 func addFirewallRule(port int) {
-	ruleName := "Remote Shutdown Service (TCP " + fmt.Sprintf("%d", port) + ")"
+	// Remove existing rule first (in case port changed)
+	removeFirewallRule()
+
 	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+ruleName,
+		"name="+firewallRuleName,
 		"dir=in", "action=allow", "protocol=tcp",
 		"localport="+fmt.Sprintf("%d", port))
 	cmd.Run()
 }
 
 func removeFirewallRule() {
-	// Remove any rules we may have created
 	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name=Remote Shutdown Service (TCP 5001)")
+		"name="+firewallRuleName)
 	cmd.Run()
 }
