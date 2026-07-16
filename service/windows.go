@@ -129,6 +129,13 @@ func Install() error {
 	}
 	fmt.Println("  OK - Service started")
 
+	if cfg.Secret == "" {
+		fmt.Println("")
+		fmt.Println("  ⚠ WARNING: No secret configured.")
+		fmt.Println("    Anyone on your network can control this PC.")
+		fmt.Println("    Set a secret via WebUI (http://127.0.0.1:5002) or config.json")
+	}
+
 	return nil
 }
 

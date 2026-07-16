@@ -147,6 +147,10 @@ func StartHTTPServer(stop chan struct{}) {
 	cfg := loadConfig()
 	logMsg("Service starting on port %d", cfg.Port)
 
+	if cfg.Secret == "" {
+		logMsg("WARNING: No secret configured. Anyone on your network can control this PC.")
+	}
+
 	mux := http.NewServeMux()
 
 	// Route handler
