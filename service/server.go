@@ -179,56 +179,17 @@ func StartHTTPServer(stop chan struct{}) {
 
 		logMsg("Request: %s /%s from %s", r.Method, command, r.RemoteAddr)
 
-		switch strings.ToLower(command) {
-		case "ping":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "OK")
-			logMsg("Command: ping - OK")
-
-		case "shutdown":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Shutting down...")
-			logMsg("Command: shutdown")
-			go executeCommand("shutdown", "/s", "/t", "5")
-
-		case "forceshutdown":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Force shutting down...")
-			logMsg("Command: forceshutdown")
-			go executeCommand("shutdown", "/s", "/f", "/t", "0")
-
-		case "restart":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Restarting...")
-			logMsg("Command: restart")
-			go executeCommand("shutdown", "/r", "/t", "5")
-
-		case "hibernate":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Hibernating...")
-			logMsg("Command: hibernate")
-			go executeCommand("shutdown", "/h")
-
-		case "suspend":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Suspending...")
-			logMsg("Command: suspend")
-			go executePowerShell("Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)")
-
-		case "lock":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Locking...")
-			logMsg("Command: lock")
-			go lockAllSessions()
-
-		case "turnscreenoff":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "Screen off...")
-			logMsg("Command: turnscreenoff")
-			go executePowerShell("(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170,2)")
-
-		default:
+		cmd, ok := Commands[strings.ToLower(command)]
+		if !ok {
 			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, cmd.Response)
+		logMsg("Command: %s", strings.ToLower(command))
+		if cmd.Execute != nil {
+			go cmd.Execute()
 		}
 	})
 

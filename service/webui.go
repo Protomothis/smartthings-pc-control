@@ -57,19 +57,16 @@ func StartWebUI(stop chan struct{}) {
 	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
 		command := r.URL.Path[len("/api/test/"):]
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "command": command, "message": "Command sent"})
 
-		switch command {
-		case "shutdown":
-			go executeCommand("shutdown", "/s", "/t", "5")
-		case "restart":
-			go executeCommand("shutdown", "/r", "/t", "5")
-		case "lock":
-			go lockAllSessions()
-		case "hibernate":
-			go executeCommand("shutdown", "/h")
-		case "turnscreenoff":
-			go executePowerShell("(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170,2)")
+		cmd, ok := Commands[command]
+		if !ok {
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "command": command, "message": "Unknown command"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "command": command, "message": "Command sent"})
+		if cmd.Execute != nil {
+			go cmd.Execute()
 		}
 	})
 
