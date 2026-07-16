@@ -58,7 +58,11 @@ func loadConfig() Config {
 		return cfg
 	}
 
-	json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		logMsg("WARNING: config.json 파싱 실패 (기본값 사용): %v", err)
+		fmt.Fprintf(os.Stderr, "WARNING: config.json parse error (using defaults): %v\n", err)
+		cfg = defaultConfig
+	}
 	if cfg.Port == 0 {
 		cfg.Port = 5001
 	}
