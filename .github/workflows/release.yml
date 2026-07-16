@@ -16,13 +16,24 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
 
       - name: Build
-        run: go build -ldflags="-s -w" -o smartthings-pc-control.exe .
+        run: go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
+
+      - name: Extract release notes
+        id: notes
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?s)## \[$tag\].*?(?=## \[|$)"
+          $match = [regex]::Match($content, $pattern)
+          $match.Value | Out-File -FilePath release_notes.txt -Encoding utf8
+        shell: pwsh
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: smartthings-pc-control.exe
+          body_path: release_notes.txt
           generate_release_notes: true
