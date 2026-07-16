@@ -87,13 +87,23 @@ func Install() error {
 	// Check if already installed
 	s, err := m.OpenService(serviceName)
 	if err == nil {
-		s.Close()
-		// Already exists, delete and recreate
-		s, _ = m.OpenService(serviceName)
-		s.Control(svc.Stop)
-		time.Sleep(2 * time.Second)
+		// Already exists, stop and delete
+		fmt.Println("  Existing service found, removing...")
+		status, err := s.Query()
+		if err == nil && status.State != svc.Stopped {
+			s.Control(svc.Stop)
+			// Poll until stopped or timeout
+			for i := 0; i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				status, err = s.Query()
+				if err != nil || status.State == svc.Stopped {
+					break
+				}
+			}
+		}
 		s.Delete()
 		s.Close()
+		// Wait for SCM to fully release the service name
 		time.Sleep(1 * time.Second)
 	}
 
