@@ -45,7 +45,7 @@ func StartWebUI(stop chan struct{}) {
 				return
 			}
 			cfg = newCfg
-			logMsg("Config updated via WebUI: port=%d, secret=%s", cfg.Port, cfg.Secret)
+			logMsg("Config updated via WebUI: port=%d, secret=%s", cfg.Port, maskSecret(cfg.Secret))
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Settings saved. Restart service to apply port changes."})
 			return

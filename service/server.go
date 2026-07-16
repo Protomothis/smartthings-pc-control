@@ -80,6 +80,16 @@ func logMsg(format string, args ...interface{}) {
 	}
 }
 
+func maskSecret(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	if len(s) <= 4 {
+		return "***"
+	}
+	return s[:2] + "***" + s[len(s)-2:]
+}
+
 // Config holds the service configuration
 type Config struct {
 	Port   int    `json:"port"`
@@ -143,13 +153,13 @@ func StartHTTPServer(stop chan struct{}) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		parts := strings.Split(path, "/")
-		logMsg("Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
 		var command string
 
 		if cfg.Secret != "" {
 			// With secret: /{secret}/{command}
 			if len(parts) < 2 || parts[0] != cfg.Secret {
+				logMsg("Request: %s /***/%s from %s (UNAUTHORIZED)", r.Method, strings.Join(parts[1:], "/"), r.RemoteAddr)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -162,6 +172,8 @@ func StartHTTPServer(stop chan struct{}) {
 			}
 			command = parts[0]
 		}
+
+		logMsg("Request: %s /%s from %s", r.Method, command, r.RemoteAddr)
 
 		switch strings.ToLower(command) {
 		case "ping":
