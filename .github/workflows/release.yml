@@ -19,7 +19,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build
-        run: go build -ldflags="-s -w" -o smartthings-pc-control.exe .
+        run: go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
