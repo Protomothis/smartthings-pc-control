@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -72,6 +73,21 @@ func StartWebUI(stop chan struct{}) {
 		}
 	})
 
+	// API: Restart service (exit with code 1 to trigger Recovery Action)
+	mux.HandleFunc("/api/restart-service", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Service restarting..."})
+		logMsg("Service restart requested via WebUI")
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			os.Exit(1)
+		}()
+	})
+
 	server := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", webPort),
 		Handler: mux,
@@ -136,6 +152,7 @@ func settingsHTML(cfg Config) string {
         </div>
         <div class="actions">
             <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+            <button class="btn btn-secondary" onclick="restartService()">Restart Service</button>
         </div>
         <div id="status" class="status"></div>
 
@@ -183,6 +200,17 @@ func settingsHTML(cfg Config) string {
             el.textContent = msg;
             el.className = 'status ' + type;
             setTimeout(() => { el.className = 'status'; }, 3000);
+        }
+        async function restartService() {
+            if (!confirm('Restart the service? Connection will be lost briefly.')) return;
+            try {
+                await fetch('/api/restart-service', {method: 'POST'});
+                showStatus('Service restarting...', 'success');
+                setTimeout(() => location.reload(), 3000);
+            } catch(e) {
+                showStatus('Restart triggered (page will reload)', 'success');
+                setTimeout(() => location.reload(), 3000);
+            }
         }
     </script>
 </body>
