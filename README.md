@@ -1,83 +1,97 @@
-# SmartThings PC Control
+<div align="center">
 
-SmartThings Edge 드라이버 호환 Windows PC 전원 제어 서비스입니다.  
-[Remote Shutdown Manager (Karpach)](https://github.com/karpach/remote-shutdown-pc)의 대체품으로, [PCControl Edge 드라이버](https://github.com/toddaustin07/PCControl)와 100% 호환됩니다.
+# ⚡ SmartThings PC Control
 
-## 왜 만들었나요?
+**Windows PC 전원을 SmartThings로 제어하는 경량 서비스**
 
-기존 Remote Shutdown Manager는:
-- 유저 로그인 + 데스크톱 세션이 필수 (시스템 트레이에서 동작)
-- .NET Framework 4.8 런타임 필요
-- 유저가 로그아웃하면 동작 중지
+[![Release](https://img.shields.io/github/v/release/Protomothis/smartthings-pc-control?style=flat-square)](https://github.com/Protomothis/smartthings-pc-control/releases)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go)](https://go.dev)
+[![License](https://img.shields.io/github/license/Protomothis/smartthings-pc-control?style=flat-square)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-8%2B-0078D6?style=flat-square&logo=windows)](https://www.microsoft.com/windows)
 
-이 프로젝트는:
-- **Windows 서비스**로 동작 → 유저 로그인 불필요
-- **단일 exe** → 런타임 설치 없음
-- **한 줄 설치** → `install` 명령 하나로 끝
+[한국어](#한국어) · [English](#english)
 
-## 지원 명령어
+</div>
+
+---
+
+## 한국어
+
+### 소개
+
+[Remote Shutdown Manager (Karpach)](https://github.com/karpach/remote-shutdown-pc)의 완전 대체품으로, [PCControl Edge 드라이버](https://github.com/toddaustin07/PCControl)와 100% 호환됩니다.
+
+| 기존 (Remote Shutdown Manager) | 이 프로젝트 |
+|-------------------------------|------------|
+| 유저 로그인 + 데스크톱 세션 필수 | **Windows 서비스** → 로그인 불필요 |
+| .NET Framework 4.8 런타임 필요 | **단일 exe** → 런타임 없음 |
+| 유저 로그아웃 시 동작 중지 | 항상 실행 |
+| 설정 변경 시 재시작 필요 | **핫 리로드** (secret 즉시 반영) |
+
+### 주요 기능
+
+🎮 **8개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off 등  
+🌐 **Web UI** — 브라우저에서 설정, 테스트, 로그 확인  
+⏱️ **예약 종료** — N분 후 자동 실행 (카운트다운 표시)  
+📡 **WoL 상태** — 어댑터별 Wake-on-LAN 상태, MAC, IP, 외부 IP 표시  
+🌍 **다국어** — 한국어/영어 (브라우저 감지 + 수동 전환)  
+🌓 **다크/라이트 모드** — 시스템 테마 감지 + 수동 전환  
+🔒 **보안** — secret 인증, CSRF 보호, 로그인 rate limiting  
+
+### 지원 명령
 
 | 명령 | 동작 |
 |------|------|
-| `ping` | 상태 확인 (200 OK 응답) |
+| `ping` | 상태 확인 (200 OK) |
 | `shutdown` | 종료 (5초 대기) |
 | `forceshutdown` | 즉시 강제 종료 |
 | `restart` | 재시작 (5초 대기) |
 | `hibernate` | 최대 절전 모드 |
 | `suspend` | 절전 모드 (슬립) |
 | `lock` | 모든 활성 세션 잠금 |
-| `turnscreenoff` | 모니터 끄기 |
+| `turnscreenoff` | 모니터 끄기 * |
 
-> ℹ️ `turnscreenoff`은 유저가 로그인된 상태에서만 동작합니다. 잠금 화면에서의 모니터 자동 꺼짐은 Windows 전원 설정의 "Console lock display off timeout"을 조정하세요.
+> \* `turnscreenoff`은 유저가 로그인된 상태에서만 동작합니다.
 
-1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) 페이지에서 `smartthings-pc-control.exe` 다운로드
-2. **영구적인 위치에 저장** (아래 권장 경로 참고)
-3. 관리자 권한으로 실행:
+### 설치
 
 ```
 smartthings-pc-control.exe install
 ```
 
-끝! 서비스가 자동으로 등록되고, 방화벽 규칙이 추가되며, 부팅 시 자동 시작됩니다.
+끝! 서비스 등록 + 방화벽 규칙 + 자동 시작 모두 자동으로 처리됩니다.
 
-### 권장 설치 위치
+#### 권장 설치 위치
 
 ```
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-또는:
+> ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다.
 
-```
-C:\Tools\smartthings-pc-control\smartthings-pc-control.exe
-```
+### 사용법
 
-> ⚠️ **주의:**
-> - exe 파일과 같은 폴더에 `config.json`(설정)과 `service.log`(로그)가 생성됩니다.
-> - **install 후 exe를 이동하면 서비스가 동작하지 않습니다** (재설치 필요).
-> - 바탕화면이나 Downloads 같은 임시 폴더에 두지 마세요.
-
-## 사용법
-
-```
+```bash
 smartthings-pc-control.exe install     # 서비스 설치 + 시작
 smartthings-pc-control.exe uninstall   # 서비스 제거
 smartthings-pc-control.exe status      # 상태 확인
+smartthings-pc-control.exe version     # 버전 확인
 smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 ```
 
-## Web UI
+### Web UI
 
-설치 후 브라우저에서 접속: http://127.0.0.1:5002
+설치 후: **http://127.0.0.1:5002**
 
-![Web UI](docs/webui-screenshot.png)
+- ⚙️ 포트, 시크릿 키 설정
+- 🎮 명령어 테스트
+- 📡 네트워크/WoL 상태 확인
+- ⏱️ 예약 종료 설정
+- 📋 실시간 로그 뷰어
 
-- 포트, 시크릿 키 설정
-- 명령어 테스트 버튼
+### 설정
 
-## 설정
-
-`config.json`이 exe와 같은 폴더에 생성됩니다:
+`config.json` (exe와 같은 폴더에 자동 생성):
 
 ```json
 {
@@ -86,114 +100,112 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 }
 ```
 
-- `port`: SmartThings Hub가 요청을 보내는 포트 (기본값: 5001)
-- `secret`: 인증 키 (비어있으면 인증 없이 동작)
+| 키 | 설명 | 기본값 |
+|----|------|--------|
+| `port` | SmartThings Hub 요청 수신 포트 | 5001 |
+| `secret` | 인증 키 (비어있으면 인증 없음) | "" |
 
-## SmartThings 설정
+> secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트 변경만 재시작 필요.
+
+### SmartThings 설정
 
 1. SmartThings Hub에 [PCControl Edge 드라이버](https://github.com/toddaustin07/PCControl) 설치
 2. 디바이스 설정에서 PC의 IP 주소 입력
 3. 포트와 시크릿을 이 서비스와 동일하게 설정
 
-기존에 Remote Shutdown Manager를 사용하고 있었다면 **SmartThings 쪽은 아무것도 바꿀 필요 없습니다.**
+> 기존에 Remote Shutdown Manager를 사용하고 있었다면 **SmartThings 쪽은 아무것도 바꿀 필요 없습니다.**
 
-## 빌드
+### 지원 환경
+
+- Windows 8 / Server 2012 이상 (WoL 상태 표시)
+- Windows 7 SP1 이상 (핵심 기능)
+- 단일 exe, 외부 의존성 없음
+
+### 빌드
 
 ```bash
-go build -ldflags="-s -w" -o smartthings-pc-control.exe .
+go build -ldflags="-s -w -X main.Version=v0.3.0" -o smartthings-pc-control.exe .
 ```
-
-## 버전 관리
-
-이 프로젝트는 [Semantic Versioning](https://semver.org/)을 따릅니다.
-
-- `v0.x.x` — 초기 개발 단계
-- `v1.0.0` — 안정 릴리즈 (모든 기능 테스트 완료 시)
 
 ---
 
-# English
+## English
 
-Windows service for SmartThings PC power control.  
+### About
+
 Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/karpach/remote-shutdown-pc), fully compatible with the [PCControl Edge driver](https://github.com/toddaustin07/PCControl).
 
-## Why?
+| Original (Remote Shutdown Manager) | This Project |
+|------------------------------------|-------------|
+| Requires user login + desktop session | **Windows service** → no login needed |
+| Requires .NET Framework 4.8 | **Single exe** → no runtime |
+| Stops when user logs out | Always running |
+| Restart required for config changes | **Hot reload** (secret applies instantly) |
 
-The original Remote Shutdown Manager:
-- Requires user login + desktop session (runs in system tray)
-- Requires .NET Framework 4.8 runtime
-- Stops working when user logs out
+### Features
 
-This project:
-- **Runs as a Windows service** → no user login required
-- **Single executable** → no runtime dependencies
-- **One-command install** → just run `install`
+🎮 **8 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, etc.  
+🌐 **Web UI** — configure, test, and monitor from your browser  
+⏱️ **Scheduled shutdown** — auto-execute after N minutes (countdown display)  
+📡 **WoL status** — per-adapter Wake-on-LAN state, MAC, IP, external IP  
+🌍 **Multilingual** — Korean/English (auto-detect + manual toggle)  
+🌓 **Dark/Light mode** — follows system theme + manual toggle  
+🔒 **Security** — secret auth, CSRF protection, login rate limiting  
 
-## Supported Commands
+### Supported Commands
 
 | Command | Action |
 |---------|--------|
-| `ping` | Health check (returns 200 OK) |
-| `shutdown` | Graceful shutdown (5 sec delay) |
+| `ping` | Health check (200 OK) |
+| `shutdown` | Graceful shutdown (5s delay) |
 | `forceshutdown` | Immediate forced shutdown |
-| `restart` | Restart (5 sec delay) |
+| `restart` | Restart (5s delay) |
 | `hibernate` | Hibernate |
 | `suspend` | Suspend (sleep) |
 | `lock` | Lock all active sessions |
-| `turnscreenoff` | Turn off monitor |
+| `turnscreenoff` | Turn off monitor * |
 
-> ℹ️ `turnscreenoff` only works when a user is logged in. For lock screen display timeout, adjust "Console lock display off timeout" in Windows power settings.
+> \* `turnscreenoff` only works when a user is logged in.
 
-## Installation
-
-1. Download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)
-2. **Save to a permanent location** (see recommended paths below)
-3. Run as administrator:
+### Installation
 
 ```
 smartthings-pc-control.exe install
 ```
 
-That's it! Service is registered, firewall rule added, and auto-start on boot is configured.
+That's it! Service registration, firewall rules, and auto-start are all handled automatically.
 
-### Recommended Install Location
+#### Recommended Location
 
 ```
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-Or:
+> ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service.
 
-```
-C:\Tools\smartthings-pc-control\smartthings-pc-control.exe
-```
+### Usage
 
-> ⚠️ **Important:**
-> - `config.json` (settings) and `service.log` (log) are created in the same folder as the exe.
-> - **Moving the exe after install will break the service** (reinstall required).
-> - Do not place it in temporary folders like Desktop or Downloads.
-
-## Usage
-
-```
+```bash
 smartthings-pc-control.exe install     # Install and start service
 smartthings-pc-control.exe uninstall   # Remove service
 smartthings-pc-control.exe status      # Show status
+smartthings-pc-control.exe version     # Show version
 smartthings-pc-control.exe run         # Console mode (debug)
 ```
 
-## Web UI
+### Web UI
 
-After installation: http://127.0.0.1:5002
+After installation: **http://127.0.0.1:5002**
 
-![Web UI](docs/webui-screenshot.png)
+- ⚙️ Port and secret key configuration
+- 🎮 Command testing
+- 📡 Network/WoL status monitoring
+- ⏱️ Scheduled shutdown setup
+- 📋 Real-time log viewer
 
-- Configure port and secret key
-- Test commands from browser
+### Configuration
 
-## Configuration
-
-`config.json` is created next to the executable:
+`config.json` (auto-created next to exe):
 
 ```json
 {
@@ -202,30 +214,35 @@ After installation: http://127.0.0.1:5002
 }
 ```
 
-- `port`: Port the SmartThings Hub sends requests to (default: 5001)
-- `secret`: Authentication key (empty = no auth)
+| Key | Description | Default |
+|-----|-------------|---------|
+| `port` | Port for SmartThings Hub requests | 5001 |
+| `secret` | Auth key (empty = no auth) | "" |
 
-## SmartThings Setup
+> Secret changes apply instantly without restart. Only port changes require a restart.
+
+### SmartThings Setup
 
 1. Install the [PCControl Edge driver](https://github.com/toddaustin07/PCControl) on your SmartThings Hub
 2. Set your PC's IP address in device settings
 3. Match port and secret with this service
 
-If you were already using Remote Shutdown Manager, **no changes needed on the SmartThings side.**
+> If you were already using Remote Shutdown Manager, **no changes needed on the SmartThings side.**
 
-## Building
+### System Requirements
+
+- Windows 8 / Server 2012+ (WoL status display)
+- Windows 7 SP1+ (core functionality)
+- Single executable, no external dependencies
+
+### Building
 
 ```bash
-go build -ldflags="-s -w" -o smartthings-pc-control.exe .
+go build -ldflags="-s -w -X main.Version=v0.3.0" -o smartthings-pc-control.exe .
 ```
 
-## Versioning
-
-This project follows [Semantic Versioning](https://semver.org/).
-
-- `v0.x.x` — Early development
-- `v1.0.0` — Stable release (after all features are tested)
+---
 
 ## License
 
-MIT
+[MIT](LICENSE)
