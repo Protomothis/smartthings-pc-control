@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartThings PC Control - Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #f5f7fa;
+            --bg-panel: #ffffff;
+            --bg-input: #f0f2f5;
+            --border: #e2e8f0;
+            --border-focus: #6366f1;
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
+            --text-muted: #718096;
+            --accent: #6366f1;
+            --accent-hover: #818cf8;
+            --danger-bg: #fef2f2;
+            --danger: #ef4444;
+            --btn-secondary-bg: #f1f5f9;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg-body: #0f1419;
+                --bg-panel: #1c2530;
+                --bg-input: #151d27;
+                --border: #2d3748;
+                --border-focus: #818cf8;
+                --text-primary: #f1f5f9;
+                --text-secondary: #cbd5e1;
+                --text-muted: #94a3b8;
+                --accent: #818cf8;
+                --accent-hover: #a5b4fc;
+                --danger-bg: #2d1515;
+                --danger: #f87171;
+                --btn-secondary-bg: #1e293b;
+            }
+        }
+        [data-theme="dark"] {
+            --bg-body: #0f1419;
+            --bg-panel: #1c2530;
+            --bg-input: #151d27;
+            --border: #2d3748;
+            --border-focus: #818cf8;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent: #818cf8;
+            --accent-hover: #a5b4fc;
+            --danger-bg: #2d1515;
+            --danger: #f87171;
+            --btn-secondary-bg: #1e293b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            font-size: 14px;
+        }
+        .container {
+            background: var(--bg-panel);
+            border-radius: 14px;
+            padding: 40px 36px;
+            width: 100%;
+            max-width: 380px;
+            border: 1px solid var(--border);
+        }
+        h1 { font-size: 1.5em; margin-bottom: 8px; color: var(--text-primary); font-weight: 600; }
+        h1 span { color: var(--accent); }
+        .subtitle { font-size: 0.9em; color: var(--text-muted); margin-bottom: 28px; line-height: 1.4; }
+        .field { margin-bottom: 22px; }
+        label { display: block; font-size: 0.85em; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; }
+        input {
+            width: 100%;
+            padding: 13px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 1em;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(79,195,247,0.1); }
+        input::placeholder { color: var(--text-muted); }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            background: var(--accent);
+            color: #fff;
+            transition: all 0.15s;
+            letter-spacing: 0.2px;
+        }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        .error {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: var(--danger-bg);
+            color: var(--danger);
+            font-size: 0.85em;
+            font-weight: 500;
+            display: none;
+            border: 1px solid rgba(239,83,80,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <h1><span>🔒</span> <span data-i18n="title">Login</span></h1>
+            <div style="display:flex;gap:6px;">
+                <button class="btn" onclick="toggleTheme()" style="width:auto;padding:6px 10px;font-size:0.75em;background:var(--btn-secondary-bg);color:var(--text-primary);border:1px solid var(--border);" id="btnTheme">🌙</button>
+                <button class="btn" onclick="toggleLang()" style="width:auto;padding:6px 10px;font-size:0.75em;background:var(--btn-secondary-bg);color:var(--text-primary);border:1px solid var(--border);" id="btnLang">EN</button>
+            </div>
+        </div>
+        <p class="subtitle" data-i18n="subtitle">Enter your secret key to access the control panel</p>
+        <div class="field">
+            <label data-i18n="secretLabel">Secret Key</label>
+            <input type="password" id="secret" placeholder="" autofocus onkeydown="if(event.key==='Enter')login()">
+        </div>
+        <button class="btn" onclick="login()" data-i18n="signIn">Sign In</button>
+        <div id="error" class="error"></div>
+    </div>
+    <script>
+        // Theme
+        function getPreferredTheme() {
+            const stored = localStorage.getItem('theme');
+            if (stored) return stored;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.getElementById('btnTheme').textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || getPreferredTheme();
+            const next = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('theme', next);
+            applyTheme(next);
+        }
+        applyTheme(getPreferredTheme());
+
+        const i18n = {
+            en: { title: 'Login', subtitle: 'Enter your secret key to access the control panel', secretLabel: 'Secret Key', signIn: 'Sign In', invalidSecret: 'Invalid secret key', connError: 'Connection error — is the service running?' },
+            ko: { title: '로그인', subtitle: '제어 패널에 접속하려면 시크릿 키를 입력하세요', secretLabel: '시크릿 키', signIn: '로그인', invalidSecret: '시크릿 키가 올바르지 않습니다', connError: '연결 오류 — 서비스가 실행 중인지 확인하세요' }
+        };
+        let currentLang = localStorage.getItem('lang') || (navigator.language.startsWith('ko') ? 'ko' : 'en');
+        function t(key) { return i18n[currentLang][key] || i18n['en'][key] || key; }
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (i18n[currentLang][key]) el.textContent = i18n[currentLang][key];
+            });
+            document.getElementById('secret').placeholder = t('secretLabel') + '...';
+            document.getElementById('btnLang').textContent = currentLang === 'ko' ? 'EN' : '한국어';
+        }
+        function toggleLang() {
+            currentLang = currentLang === 'ko' ? 'en' : 'ko';
+            localStorage.setItem('lang', currentLang);
+            applyLang();
+        }
+        applyLang();
+
+        async function login() {
+            const secret = document.getElementById('secret').value;
+            const errEl = document.getElementById('error');
+            errEl.style.display = 'none';
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                    body: JSON.stringify({secret})
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json();
+                    errEl.textContent = data.message || t('invalidSecret');
+                    errEl.style.display = 'block';
+                }
+            } catch(e) {
+                errEl.textContent = t('connError');
+                errEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

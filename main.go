@@ -11,6 +11,8 @@ import (
 var Version = "dev"
 
 func main() {
+	service.Version = Version
+
 	if len(os.Args) < 2 {
 		// No arguments - run as Windows service
 		service.RunService()
