@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -50,12 +52,202 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 
 // RunService runs as a Windows service
 func RunService() {
-	err := svc.Run(serviceName, &shutdownService{})
+	isService, _ := svc.IsWindowsService()
+	if !isService {
+		// Interactive session (double-click, terminal) — show GUI manager
+		ShowManagerGUI()
+		return
+	}
+	svc.Run(serviceName, &shutdownService{})
+}
+
+// ShowManagerGUI shows a service management GUI using PowerShell WPF.
+func ShowManagerGUI() {
+	exePath, err := os.Executable()
 	if err != nil {
-		// If not running as service, print help
-		fmt.Println("Failed to run as service. Use 'run' for console mode.")
-		fmt.Println("Use 'install' to install as a Windows service.")
-		os.Exit(1)
+		return
+	}
+	exePath, _ = filepath.Abs(exePath)
+
+	script := `
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+
+$exePath = "` + strings.ReplaceAll(exePath, `\`, `\\`) + `"
+$version = "` + Version + `"
+$serviceName = "RemoteShutdownService"
+
+function Get-SvcStatus {
+    $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if (-not $svc) { return "not_installed" }
+    return $svc.Status.ToString().ToLower()
+}
+
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SmartThings PC Control" Width="440" Height="340"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="#0f172a" FontFamily="Segoe UI">
+    <Grid Margin="28,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock FontSize="17" FontWeight="SemiBold" Foreground="#f8fafc">SmartThings PC Control</TextBlock>
+            <TextBlock Name="txtVersion" FontSize="11" Foreground="#475569" Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <!-- Status + Info -->
+        <Border Grid.Row="1" Background="#1e293b" CornerRadius="8" Padding="16" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Name="txtStatus" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="60"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Path" Foreground="#64748b" FontSize="11.5" Margin="0,0,0,4"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Name="txtPath" Foreground="#94a3b8" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Port" Foreground="#64748b" FontSize="11.5" Margin="0,0,0,4"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Name="txtPort" Foreground="#94a3b8" FontSize="11.5" Margin="0,0,0,4"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="WebUI" Foreground="#64748b" FontSize="11.5"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Name="txtWebUI" Foreground="#94a3b8" FontSize="11.5"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Actions: single toggle button + WebUI -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Name="btnAction" Content="Install" Width="120" Height="36" Margin="0,0,8,0" FontSize="13" FontWeight="SemiBold" Foreground="White" Background="#334155" BorderThickness="0" Cursor="Hand">
+                <Button.Template><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" CornerRadius="6"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></ControlTemplate></Button.Template>
+            </Button>
+            <Button Name="btnWebUI" Content="Open WebUI" Width="110" Height="36" FontSize="13" FontWeight="SemiBold" Foreground="White" Background="#475569" BorderThickness="0" Cursor="Hand" Visibility="Collapsed">
+                <Button.Template><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" CornerRadius="6"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></ControlTemplate></Button.Template>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
+
+$reader = [System.Xml.XmlNodeReader]::new($xaml)
+$window = [Windows.Markup.XamlReader]::Load($reader)
+
+$txtVersion = $window.FindName("txtVersion")
+$txtStatus = $window.FindName("txtStatus")
+$txtPath = $window.FindName("txtPath")
+$txtPort = $window.FindName("txtPort")
+$txtWebUI = $window.FindName("txtWebUI")
+$btnAction = $window.FindName("btnAction")
+$btnWebUI = $window.FindName("btnWebUI")
+
+$txtVersion.Text = $version
+$txtPath.Text = $exePath
+
+$configPath = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($exePath), "config.json")
+$port = 5001
+if (Test-Path $configPath) {
+    try { $cfg = Get-Content $configPath | ConvertFrom-Json; $port = $cfg.port } catch {}
+}
+$txtPort.Text = "$port"
+$txtWebUI.Text = "http://127.0.0.1:$($port+1)"
+
+function Update-UI {
+    $status = Get-SvcStatus
+    switch ($status) {
+        "running" {
+            $txtStatus.Text = "● Running"
+            $txtStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#4ade80")
+            $btnAction.Content = "Uninstall"
+            $btnAction.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#334155")
+            $btnWebUI.Visibility = "Visible"
+        }
+        "stopped" {
+            $txtStatus.Text = "○ Stopped"
+            $txtStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#fbbf24")
+            $btnAction.Content = "Start"
+            $btnAction.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#334155")
+            $btnWebUI.Visibility = "Collapsed"
+        }
+        default {
+            $txtStatus.Text = "○ Not installed"
+            $txtStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#64748b")
+            $btnAction.Content = "Install"
+            $btnAction.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#334155")
+            $btnWebUI.Visibility = "Collapsed"
+        }
+    }
+}
+
+Update-UI
+
+$btnAction.Add_Click({
+    $status = Get-SvcStatus
+    $btnAction.IsEnabled = $false
+    switch ($status) {
+        "running" {
+            $result = [System.Windows.MessageBox]::Show("Uninstall the service?", "Confirm", "YesNo", "Question")
+            if ($result -eq "Yes") {
+                $btnAction.Content = "Removing..."
+                $window.Dispatcher.Invoke([action]{}, "Render")
+                Start-Process -FilePath $exePath -ArgumentList "uninstall" -Verb RunAs -Wait
+            }
+        }
+        "stopped" {
+            $btnAction.Content = "Starting..."
+            $window.Dispatcher.Invoke([action]{}, "Render")
+            Start-Process -FilePath "sc.exe" -ArgumentList "start",$serviceName -Verb RunAs -Wait
+        }
+        default {
+            $btnAction.Content = "Installing..."
+            $window.Dispatcher.Invoke([action]{}, "Render")
+            Start-Process -FilePath $exePath -ArgumentList "install" -Verb RunAs -Wait
+        }
+    }
+    Start-Sleep 2
+    $btnAction.IsEnabled = $true
+    Update-UI
+})
+
+$btnWebUI.Add_Click({
+    Start-Process "http://127.0.0.1:$($port+1)"
+})
+
+$window.ShowDialog() | Out-Null
+`
+
+	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+	output, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		logPath := filepath.Join(filepath.Dir(exePath), "gui.log")
+		logContent := fmt.Sprintf("[%s] GUI error: %v\n%s\n", time.Now().Format("2006-01-02 15:04:05"), runErr, string(output))
+		os.WriteFile(logPath, []byte(logContent), 0644)
+	}
+}
+
+// ShowInstallCompleteDialog shows a completion dialog with WebUI button.
+func ShowInstallCompleteDialog() {
+	modUser32 := syscall.NewLazyDLL("user32.dll")
+	procMessageBoxW := modUser32.NewProc("MessageBoxW")
+
+	title, _ := syscall.UTF16PtrFromString("SmartThings PC Control")
+	msg, _ := syscall.UTF16PtrFromString("설치가 완료되었습니다!\nInstallation complete!\n\nWebUI: http://127.0.0.1:5002\n\nWebUI를 여시겠습니까?\nOpen WebUI?")
+
+	// MB_YESNO (4) | MB_ICONINFORMATION (64)
+	ret, _, _ := procMessageBoxW.Call(0, uintptr(unsafe.Pointer(msg)), uintptr(unsafe.Pointer(title)), 0x44)
+
+	if ret == 6 { // IDYES
+		exec.Command("cmd", "/c", "start", "http://127.0.0.1:5002").Run()
 	}
 }
 
