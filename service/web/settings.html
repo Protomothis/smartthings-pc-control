@@ -512,6 +512,9 @@
                 } else {
                     html += '<div class="wol-summary not-ready">' + t('wolNotReady') + '</div>';
                 }
+                if (data.warning) {
+                    html += '<div style="margin-top:6px;font-size:0.82em;color:var(--warning);">⚠️ ' + data.warning + '</div>';
+                }
                 el.innerHTML = html;
             } catch(e) {
                 document.getElementById('wolStatus').textContent = 'Failed to load';

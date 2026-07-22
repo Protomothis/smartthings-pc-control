@@ -343,7 +343,8 @@ type WoLAdapter struct {
 type WoLStatus struct {
 	Adapters   []WoLAdapter `json:"adapters"`
 	ExternalIP string       `json:"externalIP,omitempty"`
-	Ready      bool         `json:"ready"` // true if at least one active adapter has WoL enabled
+	Ready      bool         `json:"ready"`              // true if at least one active adapter has WoL enabled
+	Warning    string       `json:"warning,omitempty"`  // non-fatal warning (e.g., WoL query failed)
 	Error      string       `json:"error,omitempty"`
 }
 
@@ -405,7 +406,11 @@ func getWoLStatus() WoLStatus {
 	// WakeOnMagicPacket: 0=Unsupported, 1=Disabled, 2=Enabled
 	wolScript := "Get-NetAdapterPowerManagement | Select-Object @{N='MAC';E={(Get-NetAdapter $_.Name).MacAddress}}, WakeOnMagicPacket | ConvertTo-Json -Compress"
 	wolCmd := exec.Command("powershell", "-NoProfile", "-Command", wolScript)
-	wolOutput, _ := wolCmd.CombinedOutput()
+	wolOutput, wolErr := wolCmd.CombinedOutput()
+	if wolErr != nil {
+		logMsg("WoL PowerShell query failed: %v", wolErr)
+		result.Warning = "WoL status unavailable (requires admin privileges)"
+	}
 
 	type wolInfo struct {
 		MAC               string `json:"MAC"`
@@ -463,21 +468,40 @@ func formatMAC(mac string) string {
 	return strings.ToUpper(strings.ReplaceAll(mac, ":", "-"))
 }
 
-// getExternalIP queries an external service for the public IP
+// External IP cache
+var (
+	cachedExternalIP   string
+	externalIPCachedAt time.Time
+	externalIPMu       sync.Mutex
+)
+
+const externalIPCacheTTL = 10 * time.Minute
+
+// getExternalIP queries an external service for the public IP (cached 10min)
 func getExternalIP() string {
+	externalIPMu.Lock()
+	defer externalIPMu.Unlock()
+
+	if cachedExternalIP != "" && time.Since(externalIPCachedAt) < externalIPCacheTTL {
+		return cachedExternalIP
+	}
+
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get("https://api.ipify.org")
 	if err != nil {
-		return ""
+		// Return stale cache if available
+		return cachedExternalIP
 	}
 	defer resp.Body.Close()
 	body := make([]byte, 64)
 	n, _ := resp.Body.Read(body)
 	ip := strings.TrimSpace(string(body[:n]))
 	if net.ParseIP(ip) != nil {
+		cachedExternalIP = ip
+		externalIPCachedAt = time.Now()
 		return ip
 	}
-	return ""
+	return cachedExternalIP
 }
 
 

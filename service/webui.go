@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -59,6 +60,79 @@ func checkCSRF(r *http.Request) bool {
 	return r.Header.Get("X-Requested-With") == "XMLHttpRequest"
 }
 
+// Rate limiting for login attempts
+type loginAttempt struct {
+	failures  int
+	lockedUntil time.Time
+}
+
+var (
+	loginAttempts   = make(map[string]*loginAttempt)
+	loginAttemptsMu sync.Mutex
+)
+
+const maxLoginFailures = 5
+const loginLockDuration = 60 * time.Second
+
+// checkRateLimit returns true if the request is allowed, false if rate limited.
+func checkRateLimit(remoteAddr string) bool {
+	// Extract IP without port
+	ip := remoteAddr
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		ip = host
+	}
+
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+
+	attempt, exists := loginAttempts[ip]
+	if !exists {
+		return true
+	}
+	if time.Now().Before(attempt.lockedUntil) {
+		return false
+	}
+	// Lock expired, reset
+	if attempt.failures >= maxLoginFailures {
+		attempt.failures = 0
+	}
+	return true
+}
+
+// recordLoginFailure records a failed login attempt.
+func recordLoginFailure(remoteAddr string) {
+	ip := remoteAddr
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		ip = host
+	}
+
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+
+	attempt, exists := loginAttempts[ip]
+	if !exists {
+		attempt = &loginAttempt{}
+		loginAttempts[ip] = attempt
+	}
+	attempt.failures++
+	if attempt.failures >= maxLoginFailures {
+		attempt.lockedUntil = time.Now().Add(loginLockDuration)
+		logMsg("Login rate limit triggered for %s (locked %v)", ip, loginLockDuration)
+	}
+}
+
+// resetLoginAttempts clears failed attempts for an IP on successful login.
+func resetLoginAttempts(remoteAddr string) {
+	ip := remoteAddr
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		ip = host
+	}
+
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+	delete(loginAttempts, ip)
+}
+
 // StartWebUI starts a local web UI for configuration on a separate port
 func StartWebUI(stop chan struct{}) {
 	cfg := getConfig()
@@ -92,6 +166,14 @@ func StartWebUI(stop chan struct{}) {
 			return
 		}
 
+		// Rate limiting
+		if !checkRateLimit(r.RemoteAddr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Too many attempts. Try again later."})
+			return
+		}
+
 		var body struct {
 			Secret string `json:"secret"`
 		}
@@ -102,6 +184,7 @@ func StartWebUI(stop chan struct{}) {
 
 		liveCfg := getConfig()
 		if body.Secret != liveCfg.Secret {
+			recordLoginFailure(r.RemoteAddr)
 			logMsg("WebUI login failed from %s", r.RemoteAddr)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -110,6 +193,7 @@ func StartWebUI(stop chan struct{}) {
 		}
 
 		// Generate session token
+		resetLoginAttempts(r.RemoteAddr)
 		sessionMu.Lock()
 		sessionToken = generateSessionToken()
 		sessionMu.Unlock()
