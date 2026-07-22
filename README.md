@@ -117,9 +117,11 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 
 ### 지원 환경
 
-- Windows 8 / Server 2012 이상 (WoL 상태 표시)
-- Windows 7 SP1 이상 (핵심 기능)
+- **Windows 8 ~ 11** (WoL 상태 표시 포함)
+- Windows 7 SP1 (핵심 기능만, WoL 미지원)
 - 단일 exe, 외부 의존성 없음
+
+> ℹ️ Windows 11에서 테스트되었습니다. Windows 10 이하는 호환성 테스트가 필요합니다.
 
 ### 빌드
 
@@ -231,9 +233,11 @@ After installation: **http://127.0.0.1:5002**
 
 ### System Requirements
 
-- Windows 8 / Server 2012+ (WoL status display)
-- Windows 7 SP1+ (core functionality)
+- **Windows 8 ~ 11** (including WoL status)
+- Windows 7 SP1 (core features only, no WoL)
 - Single executable, no external dependencies
+
+> ℹ️ Tested on Windows 11. Compatibility testing is needed for Windows 10 and below.
 
 ### Building
 
