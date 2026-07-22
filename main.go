@@ -31,6 +31,10 @@ func main() {
 		fmt.Println("  - Firewall rule added")
 		fmt.Println("  - Service set to auto-start on boot")
 		fmt.Println("  - WebUI: http://127.0.0.1:5002")
+		// Show completion dialog if launched from GUI installer
+		if len(os.Args) > 2 && os.Args[2] == "--gui" {
+			service.ShowInstallCompleteDialog()
+		}
 
 	case "uninstall":
 		if err := service.Uninstall(); err != nil {
