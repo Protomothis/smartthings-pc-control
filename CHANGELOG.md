@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.3.1]
+
+### 새 기능
+- 더블클릭 GUI 서비스 관리 패널 (Install/Uninstall/Start/Open WebUI)
+- 서비스 상태 실시간 표시 (Running/Stopped/Not installed)
+- 상태에 따라 버튼 자동 전환 (Install ↔ Uninstall)
+- 로딩 상태 표시 (Installing.../Starting.../Removing...)
+- GUI 에러 발생 시 gui.log에 기록
+
+### 개선
+- svc.IsWindowsService()로 서비스/인터랙티브 세션 정확 판별
+- CLI 명령어 그대로 유지 (install/uninstall/status/version/run)
+
 ## [v0.3.0]
 
 ### 새 기능

@@ -57,11 +57,18 @@
 
 ### 설치
 
+**방법 1: 더블클릭 (GUI)**
+
+exe 파일을 더블클릭하면 서비스 관리 패널이 열립니다.  
+Install 버튼 클릭 → UAC 승인 → 설치 완료.
+
+**방법 2: CLI**
+
 ```
 smartthings-pc-control.exe install
 ```
 
-끝! 서비스 등록 + 방화벽 규칙 + 자동 시작 모두 자동으로 처리됩니다.
+어느 방법이든 서비스 등록 + 방화벽 규칙 + 자동 시작 모두 자동으로 처리됩니다.
 
 #### 권장 설치 위치
 
@@ -72,6 +79,12 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 > ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다.
 
 ### 사용법
+
+**GUI (더블클릭)**
+
+서비스 상태 확인, Install/Uninstall/Start, WebUI 열기를 GUI에서 할 수 있습니다.
+
+**CLI**
 
 ```bash
 smartthings-pc-control.exe install     # 서비스 설치 + 시작
@@ -173,11 +186,18 @@ Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/k
 
 ### Installation
 
+**Option 1: Double-click (GUI)**
+
+Double-click the exe to open the service manager panel.  
+Click Install → approve UAC → done.
+
+**Option 2: CLI**
+
 ```
 smartthings-pc-control.exe install
 ```
 
-That's it! Service registration, firewall rules, and auto-start are all handled automatically.
+Either way, service registration, firewall rules, and auto-start are all handled automatically.
 
 #### Recommended Location
 
@@ -188,6 +208,12 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 > ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service.
 
 ### Usage
+
+**GUI (double-click)**
+
+Check service status, Install/Uninstall/Start, and open WebUI from the GUI panel.
+
+**CLI**
 
 ```bash
 smartthings-pc-control.exe install     # Install and start service
