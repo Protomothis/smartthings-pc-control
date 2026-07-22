@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
@@ -21,6 +22,11 @@ type shutdownService struct {
 
 func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
 	changes <- svc.Status{State: svc.StartPending}
+
+	// Initialize config before starting servers
+	initLogger()
+	cfg := loadConfig()
+	setConfig(cfg)
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -128,8 +134,12 @@ func Install() error {
 
 	// Add firewall rule
 	fmt.Println("[2/3] Adding firewall rule...")
-	addFirewallRule(cfg.Port)
-	fmt.Println("  OK - Firewall rule added")
+	if err := addFirewallRule(cfg.Port); err != nil {
+		fmt.Printf("  WARNING: %v\n", err)
+		fmt.Println("  Service will still work, but you may need to allow port manually.")
+	} else {
+		fmt.Println("  OK - Firewall rule added")
+	}
 
 	// Start service
 	fmt.Println("[3/3] Starting service...")
@@ -176,8 +186,12 @@ func Uninstall() error {
 	fmt.Println("  OK - Service removed")
 
 	fmt.Println("[3/3] Removing firewall rule...")
-	removeFirewallRule()
-	fmt.Println("  OK - Firewall rule removed")
+	if err := removeFirewallRule(); err != nil {
+		fmt.Printf("  WARNING: %v\n", err)
+		fmt.Println("  You may need to remove the firewall rule manually.")
+	} else {
+		fmt.Println("  OK - Firewall rule removed")
+	}
 
 	return nil
 }
@@ -230,7 +244,7 @@ func Status() {
 
 const firewallRuleName = "SmartThings PC Control"
 
-func addFirewallRule(port int) {
+func addFirewallRule(port int) error {
 	// Remove existing rule first (in case port changed)
 	removeFirewallRule()
 
@@ -238,11 +252,40 @@ func addFirewallRule(port int) {
 		"name="+firewallRuleName,
 		"dir=in", "action=allow", "protocol=tcp",
 		"localport="+fmt.Sprintf("%d", port))
-	cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("netsh add rule failed: %v - output: %s", err, string(output))
+	}
+	return nil
 }
 
-func removeFirewallRule() {
+func removeFirewallRule() error {
 	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
 		"name="+firewallRuleName)
-	cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("netsh delete rule failed: %v - output: %s", err, string(output))
+	}
+	return nil
+}
+
+// restartSelf restarts the service using sc.exe.
+// Falls back to os.Exit(1) if sc.exe fails (e.g., in console mode).
+func restartSelf() {
+	// Try sc.exe stop + start (works when running as a service)
+	stop := exec.Command("sc", "stop", serviceName)
+	if err := stop.Run(); err != nil {
+		logMsg("sc stop failed (console mode?): %v, falling back to os.Exit(1)", err)
+		os.Exit(1)
+	}
+	// The service will be stopped; SCM will not auto-start it.
+	// We need a separate process to start it after stop completes.
+	// Use cmd /c with a delay to start the service after this process exits.
+	start := exec.Command("cmd", "/c", "timeout", "/t", "2", "/nobreak", ">nul", "&&", "sc", "start", serviceName)
+	start.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: 0x00000008, // DETACHED_PROCESS
+	}
+	if err := start.Start(); err != nil {
+		logMsg("sc start scheduling failed: %v", err)
+	}
 }

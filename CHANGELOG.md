@@ -1,5 +1,36 @@
 # Changelog
 
+## [v0.3.0]
+
+### 새 기능
+- WebUI에 WoL 상태 표시 (어댑터별 MAC/IP/WoL 상태 + 외부 IP)
+- WebUI에 예약 종료(스케줄) 기능 (타이머 + 카운트다운 + 취소)
+- 다국어 지원 (한국어/영어, 브라우저 감지 + 수동 전환)
+- 다크/라이트 모드 (시스템 감지 + 수동 전환)
+- 버전 표시 (WebUI 헤더)
+- Config 핫 리로드 (secret 변경 시 서비스 재시작 불필요)
+- 서비스 재시작 메커니즘 개선 (sc.exe 기반, Recovery Action 의존 제거)
+
+### 보안
+- WebUI HTML 인젝션 취약점 수정 (html/template 사용)
+- 로그인 rate limiting (5회 실패 시 60초 잠금)
+- 로거 경쟁 조건 수정 (sync.Mutex)
+
+### 개선
+- 외부 IP 조회 캐싱 (10분 TTL)
+- 포트 유효성 검증 (1-65535)
+- 방화벽 규칙 에러 처리 + 사용자 안내
+- WoL PowerShell 실패 시 graceful 처리 (기본 정보는 표시)
+- Save 버튼 변경감지 (변경 시에만 활성화)
+- 서비스 로그 자동 새로고침 기본 활성화
+
+### 리팩토링
+- HTTP 핸들러를 테스트 가능한 구조로 분리
+- WebUI HTML을 embed 패키지로 분리 (html/template)
+- CSS 변수 기반 디자인 시스템
+- 2x2 그리드 대시보드 레이아웃
+- Inter + Noto Sans KR 폰트 (Google Fonts)
+
 ## [v0.2.0]
 
 ### 보안

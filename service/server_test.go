@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -148,44 +147,14 @@ func TestCommandsMapPingNoExecute(t *testing.T) {
 
 // Integration test for HTTP routing
 func TestHTTPPingNoSecret(t *testing.T) {
-	initLogger() // avoid nil logger
+	initLogger()
+	setConfig(Config{Port: 5001, Secret: ""})
 
-	mux := http.NewServeMux()
-	cfg := Config{Port: 5001, Secret: ""}
+	handler := newCommandHandler()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		parts := strings.Split(path, "/")
-
-		var command string
-		if cfg.Secret != "" {
-			if len(parts) < 2 || parts[0] != cfg.Secret {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			command = parts[1]
-		} else {
-			if len(parts) < 1 {
-				http.Error(w, "Not found", http.StatusNotFound)
-				return
-			}
-			command = parts[0]
-		}
-
-		cmd, ok := Commands[strings.ToLower(command)]
-		if !ok {
-			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(cmd.Response))
-	})
-
-	// Test ping
 	req := httptest.NewRequest("GET", "/ping", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("GET /ping expected 200, got %d", w.Code)
@@ -196,38 +165,14 @@ func TestHTTPPingNoSecret(t *testing.T) {
 }
 
 func TestHTTPPingWithSecret(t *testing.T) {
-	mux := http.NewServeMux()
-	cfg := Config{Port: 5001, Secret: "mysecret"}
+	setConfig(Config{Port: 5001, Secret: "mysecret"})
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		parts := strings.Split(path, "/")
-
-		var command string
-		if cfg.Secret != "" {
-			if len(parts) < 2 || parts[0] != cfg.Secret {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			command = parts[1]
-		} else {
-			command = parts[0]
-		}
-
-		cmd, ok := Commands[strings.ToLower(command)]
-		if !ok {
-			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(cmd.Response))
-	})
+	handler := newCommandHandler()
 
 	// Wrong secret -> 401
 	req := httptest.NewRequest("GET", "/wrong/ping", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("wrong secret expected 401, got %d", w.Code)
 	}
@@ -235,44 +180,20 @@ func TestHTTPPingWithSecret(t *testing.T) {
 	// Correct secret -> 200
 	req = httptest.NewRequest("GET", "/mysecret/ping", nil)
 	w = httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("correct secret expected 200, got %d", w.Code)
 	}
 }
 
 func TestHTTPUnknownCommand(t *testing.T) {
-	mux := http.NewServeMux()
-	cfg := Config{Port: 5001, Secret: ""}
+	setConfig(Config{Port: 5001, Secret: ""})
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		parts := strings.Split(path, "/")
-
-		var command string
-		if cfg.Secret != "" {
-			if len(parts) < 2 || parts[0] != cfg.Secret {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			command = parts[1]
-		} else {
-			command = parts[0]
-		}
-
-		cmd, ok := Commands[strings.ToLower(command)]
-		if !ok {
-			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(cmd.Response))
-	})
+	handler := newCommandHandler()
 
 	req := httptest.NewRequest("GET", "/nonexistent", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("unknown command expected 400, got %d", w.Code)
 	}
