@@ -82,16 +82,16 @@ smartthings-pc-control.exe install
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-> ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다.
+> ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다. 다운로드·바탕 화면·문서·임시 폴더에서 [설치]를 누르면 앱이 경고를 표시합니다 (v0.3.3+).
 
 ### 사용법
 
 **데스크톱 앱 (더블클릭)**
 
-- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그
+- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그 — 예약 프리셋(5/15/30/60분), 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼
 - 서비스 관리: 설치·시작·제거 (상태 자동 감지)
 - 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
-- 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료)
+- 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료). 툴팁과 상태 항목에 연결 상태·예약 남은 시간 표시
 - 언어: OS 언어 자동 감지, 우측 상단에서 한국어/영어 전환 (설정값과 연결 상태는 그대로 유지)
 - **로그인 시 자동 시작** (v0.3.3+): 앱을 한 번 실행하면 이후 로그인 때 창 없이 트레이에만 상주합니다. 유예 알림을 받으려면 켜 두세요. 설정 탭 → 도구에서 끌 수 있습니다
 
@@ -252,16 +252,16 @@ Either way, service registration, firewall rules, and auto-start are all handled
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-> ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service.
+> ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service. Installing from Downloads, Desktop, Documents or a temp folder triggers a warning in the app (v0.3.3+).
 
 ### Usage
 
 **Desktop app (double-click)**
 
-- Five tabs: Settings / Commands / Schedule / Network / Logs
+- Five tabs: Settings / Commands / Schedule / Network / Logs — schedule presets (5/15/30/60 min), log filter with open-file/open-folder, Save enabled only when something changed
 - Built-in service management: install, start, uninstall (auto-detected state)
 - Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
-- Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit)
+- Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit). Tooltip and status entry show connection state and remaining schedule time
 - Language: follows the OS language; switch Korean/English from the top-right (settings and connection state are kept)
 - **Start at login** (v0.3.3+): after the first launch the app starts in the tray (no window) on every login. Keep it on to receive grace-period toasts. Turn it off under Settings → Tools
 
