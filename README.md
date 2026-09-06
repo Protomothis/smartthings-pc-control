@@ -82,17 +82,18 @@ smartthings-pc-control.exe install
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-> ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다.
+> ⚠️ exe와 같은 폴더에 `config.json`과 `service.log`가 생성됩니다. install 후 exe를 이동하면 서비스가 동작하지 않습니다. 다운로드·바탕 화면·문서·임시 폴더에서 [설치]를 누르면 앱이 경고를 표시합니다 (v0.3.3+).
 
 ### 사용법
 
 **데스크톱 앱 (더블클릭)**
 
-- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그
+- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그 — 예약 프리셋(5/15/30/60분), 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼
 - 서비스 관리: 설치·시작·제거 (상태 자동 감지)
 - 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
-- 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료)
+- 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료). 툴팁과 상태 항목에 연결 상태·예약 남은 시간 표시
 - 언어: OS 언어 자동 감지, 우측 상단에서 한국어/영어 전환 (설정값과 연결 상태는 그대로 유지)
+- **로그인 시 자동 시작** (v0.3.3+): 앱을 한 번 실행하면 이후 로그인 때 창 없이 트레이에만 상주합니다. 유예 알림을 받으려면 켜 두세요. 설정 탭 → 도구에서 끌 수 있습니다
 
 <img src="docs/gui-network.png" alt="네트워크/WoL 탭" width="49%"> <img src="docs/gui-commands.png" alt="명령 탭" width="49%">
 
@@ -105,6 +106,7 @@ smartthings-pc-control.exe status      # 상태 확인
 smartthings-pc-control.exe version     # 버전 확인
 smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 smartthings-pc-control.exe gui         # 데스크톱 앱 실행 (더블클릭과 동일)
+smartthings-pc-control.exe gui --minimized  # 창 없이 트레이에만 (로그인 자동 시작이 사용)
 ```
 
 ### 원격 전원 명령 유예 (v0.3.2+)
@@ -114,6 +116,7 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 - **유예는 원격(SmartThings) 명령에만 적용됩니다** — 앱/WebUI에서 버튼으로 직접 실행하는 명령은 항상 즉시 실행
 - 강제 종료(forceshutdown)는 원격이라도 항상 즉시 실행됩니다 (비상용)
 - 원격 명령도 즉시 실행하고 싶으면 설정에서 유예를 끄세요 (`shutdown_grace: false`)
+- 트레이 앱이 꺼져 있어도 원격 유예 명령이 들어오면 서비스가 트레이 앱을 자동으로 실행해 토스트를 표시합니다 (로그인된 사용자 세션이 있어야 함, v0.3.3+)
 - SmartThings 명령 수신(포트 5001)은 WebUI 브라우저 접속 허용 여부와 무관하게 항상 열려 있습니다
 
 <img src="docs/gui-schedule.png" alt="예약 탭 — 카운트다운과 취소" width="49%">
@@ -149,6 +152,16 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 | `shutdown_grace` | 전원 명령 5분 유예 | true |
 
 > secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
+
+### 업데이트 (v0.3.3+)
+
+앱이 시작될 때(및 24시간마다) GitHub Releases에서 새 버전을 확인합니다. 새 버전이 있으면 알림 대화상자에서 **[지금 업데이트]**를 누르세요.
+
+1. 새 exe를 exe 옆 `update\` 폴더(쓰기 불가 시 임시 폴더)에 다운로드하고 버전을 검증합니다
+2. UAC 승인 창이 한 번 표시됩니다. 승인하면 앱이 종료되고 관리자 권한으로 서비스 중지 → 기존 exe를 `.old`로 보관 → 새 exe 복사 → 서비스 재시작이 진행됩니다
+3. 새 버전 앱이 자동으로 다시 실행됩니다. 실패하면 이전 exe로 자동 롤백되며 상세 기록은 exe 옆 `gui.log`에 남습니다
+
+설정 탭 → 도구의 **[업데이트 확인]** 버튼으로 수동 확인도 가능합니다. 이전 방식대로 릴리스 페이지에서 exe를 직접 받아 덮어써도 됩니다.
 
 ### 업그레이드 (v0.3.x → v0.3.2)
 
@@ -249,17 +262,18 @@ Either way, service registration, firewall rules, and auto-start are all handled
 C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 ```
 
-> ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service.
+> ⚠️ `config.json` and `service.log` are created next to the exe. Moving the exe after install will break the service. Installing from Downloads, Desktop, Documents or a temp folder triggers a warning in the app (v0.3.3+).
 
 ### Usage
 
 **Desktop app (double-click)**
 
-- Five tabs: Settings / Commands / Schedule / Network / Logs
+- Five tabs: Settings / Commands / Schedule / Network / Logs — schedule presets (5/15/30/60 min), log filter with open-file/open-folder, Save enabled only when something changed
 - Built-in service management: install, start, uninstall (auto-detected state)
 - Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
-- Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit)
+- Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit). Tooltip and status entry show connection state and remaining schedule time
 - Language: follows the OS language; switch Korean/English from the top-right (settings and connection state are kept)
+- **Start at login** (v0.3.3+): after the first launch the app starts in the tray (no window) on every login. Keep it on to receive grace-period toasts. Turn it off under Settings → Tools
 
 <img src="docs/gui-network.png" alt="Network/WoL tab" width="49%"> <img src="docs/gui-commands.png" alt="Commands tab" width="49%">
 
@@ -272,6 +286,7 @@ smartthings-pc-control.exe status      # Show status
 smartthings-pc-control.exe version     # Show version
 smartthings-pc-control.exe run         # Console mode (debug)
 smartthings-pc-control.exe gui         # Launch the desktop app (same as double-click)
+smartthings-pc-control.exe gui --minimized  # Tray only, no window (used by login autostart)
 ```
 
 ### Remote power command grace period (v0.3.2+)
@@ -281,6 +296,7 @@ Shutdown/restart/suspend/hibernate commands from SmartThings run **after 5 minut
 - **The grace period applies only to remote (SmartThings) commands** — buttons in the app/WebUI always run immediately
 - Force shutdown always runs immediately, even remotely (emergency escape hatch)
 - Prefer immediate remote execution? Turn off the grace toggle in settings (`shutdown_grace: false`)
+- If the tray app is not running when a remote grace command arrives, the service launches it in the logged-in user's session so the toast still appears (v0.3.3+)
 - The SmartThings command listener (port 5001) is always reachable, regardless of the browser WebUI toggle
 
 <img src="docs/gui-schedule.png" alt="Schedule tab — countdown and cancel" width="49%">
@@ -316,6 +332,16 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
 | `shutdown_grace` | 5-min grace for power commands | true |
 
 > Secret changes apply instantly without restart. Port and `webui_remote` changes require a restart.
+
+### Updating (v0.3.3+)
+
+On startup (and every 24 hours) the app checks GitHub Releases. When a newer version exists, click **Update now** in the notification dialog.
+
+1. The new exe is downloaded to an `update\` folder next to the exe (or the temp folder if that is not writable) and its version is verified
+2. A single UAC prompt appears. Once approved the app closes and, with admin rights, the service is stopped, the current exe is kept as `.old`, the new exe is copied into place and the service is restarted
+3. The new version relaunches automatically. On failure the previous exe is restored and details are written to `gui.log` next to the exe
+
+You can also check manually via Settings → Tools → **Check for updates**, or still download the exe from the release page and overwrite it by hand.
 
 ### Upgrading (v0.3.x → v0.3.2)
 

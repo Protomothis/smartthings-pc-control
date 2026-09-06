@@ -47,7 +47,7 @@ func main() {
 		if isSvc, _ := svc.IsWindowsService(); isSvc {
 			service.RunService()
 		} else {
-			gui.Run(Version)
+			gui.Run(Version, false)
 		}
 		return
 	}
@@ -88,13 +88,29 @@ func main() {
 		service.RunConsole()
 
 	case "gui":
-		// Native GUI — talks to the running service via localhost API
-		gui.Run(Version)
+		// Native GUI — talks to the running service via localhost API.
+		// "--minimized" (login autostart) keeps the window hidden, tray only.
+		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
+		gui.Run(Version, minimized)
 
 	case "toast":
 		// Invoked by toast notification action buttons (stpc:// protocol)
 		if len(os.Args) > 2 {
 			gui.HandleToastAction(os.Args[2])
+		}
+
+	case "update-apply":
+		// Hidden: launched elevated by the GUI's self-updater as
+		// `update-apply "<newExe>" <guiPid>`. Swaps the installed exe and
+		// relaunches the GUI; see gui/selfupdate.go.
+		newExe, pid, err := gui.ParseUpdateApplyArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := gui.ApplyUpdate(newExe, pid); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
 		}
 
 	default:
@@ -106,6 +122,7 @@ func main() {
 		fmt.Println("  status      Show service status")
 		fmt.Println("  version     Show version")
 		fmt.Println("  run         Run in console mode (debug)")
+		fmt.Println("  gui [--minimized]  Open the desktop app (tray only with --minimized)")
 		fmt.Println("")
 		fmt.Println("No arguments = run as Windows service")
 	}

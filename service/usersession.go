@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -53,31 +54,72 @@ func getUserToken(sessionID uint32) (syscall.Token, error) {
 	return token, nil
 }
 
-// runInUserSession executes a command in the active user's desktop session.
-// This is needed for commands like turnscreenoff that require access to the
-// interactive desktop (Session 0 isolation prevents services from accessing it).
-func runInUserSession(name string, args ...string) error {
+// userSessionCommand builds an exec.Cmd that runs under the active user's
+// token, i.e. inside their interactive desktop session. The caller must
+// Close the returned token once the process has been started.
+func userSessionCommand(name string, args ...string) (*exec.Cmd, syscall.Token, error) {
 	sessionID, err := getActiveUserSessionID()
 	if err != nil {
-		return fmt.Errorf("get session: %w", err)
+		return nil, 0, fmt.Errorf("get session: %w", err)
 	}
 
 	token, err := getUserToken(sessionID)
 	if err != nil {
-		return fmt.Errorf("get user token (session %d): %w", sessionID, err)
+		return nil, 0, fmt.Errorf("get user token (session %d): %w", sessionID, err)
 	}
-	defer token.Close()
 
 	cmd := exec.Command(name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Token: token,
 	}
+	return cmd, token, nil
+}
+
+// runInUserSession executes a command in the active user's desktop session
+// and waits for it to finish. This is needed for commands like turnscreenoff
+// that require access to the interactive desktop (Session 0 isolation
+// prevents services from accessing it).
+func runInUserSession(name string, args ...string) error {
+	cmd, token, err := userSessionCommand(name, args...)
+	if err != nil {
+		return err
+	}
+	defer token.Close()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("exec error: %v - output: %s", err, string(output))
 	}
 	return nil
+}
+
+// startInUserSession launches a command in the active user's desktop
+// session without waiting for it. Used for long-lived processes such as the
+// tray app, where waiting would pin a goroutine for the app's lifetime.
+func startInUserSession(name string, args ...string) error {
+	cmd, token, err := userSessionCommand(name, args...)
+	if err != nil {
+		return err
+	}
+	defer token.Close()
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start error: %v", err)
+	}
+	// Detach: the child outlives this call and nobody will Wait on it.
+	return cmd.Process.Release()
+}
+
+// launchTrayApp starts this executable as the tray app ("gui --minimized")
+// in the active user's session so the grace-period toast can be shown. The
+// GUI's single-instance guard makes this a silent no-op when the tray app
+// is already running.
+func launchTrayApp() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable: %w", err)
+	}
+	return startInUserSession(exe, "gui", "--minimized")
 }
 
 // runPowerShellInUserSession runs a PowerShell script in the active user's session.

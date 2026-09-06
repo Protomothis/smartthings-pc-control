@@ -5,3 +5,6 @@ qwinsta_test.txt
 hex.txt
 out.txt
 err.txt
+
+# Claude Code agent worktrees
+.claude/worktrees/
