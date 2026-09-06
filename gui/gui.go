@@ -85,8 +85,10 @@ type ui struct {
 	trayMenu      *fyne.Menu
 }
 
-// Run opens the native GUI window. Blocks until the window closes.
-func Run(version string) {
+// Run opens the native GUI window. Blocks until the app quits. With
+// minimized set (login autostart) the window stays hidden and only the
+// tray icon appears.
+func Run(version string, minimized bool) {
 	if !acquireSingleInstance() {
 		focusExistingWindow()
 		return
@@ -109,6 +111,11 @@ func Run(version string) {
 	}
 
 	registerToastProtocol()
+	// Default on: the grace-period toast only appears while the tray app
+	// is running. Rewritten every start so it tracks the current exe path.
+	if a.Preferences().BoolWithFallback("autostart", true) {
+		SetAutostart(true)
+	}
 
 	a.SetIcon(appIcon)
 	u.win = a.NewWindow(windowTitle)
@@ -121,10 +128,17 @@ func Run(version string) {
 	go u.initialLoad()
 	go u.pollLoop()
 	if a.Preferences().BoolWithFallback("check_updates", true) {
-		go u.checkForUpdates(true)
+		// No dialog against a hidden window — tray notification only.
+		go u.checkForUpdates(!minimized)
 	}
 
-	u.win.ShowAndRun()
+	if minimized {
+		// The (unshown) window keeps the Fyne loop alive; the tray menu's
+		// Open entry or a left click on the icon shows it later.
+		a.Run()
+	} else {
+		u.win.ShowAndRun()
+	}
 	close(u.quit)
 }
 
@@ -321,6 +335,14 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	})
 	updateCheck.SetChecked(u.app.Preferences().BoolWithFallback("check_updates", true))
 
+	autostartCheck := widget.NewCheck(u.t("autostart.check"), func(b bool) {
+		u.app.Preferences().SetBool("autostart", b)
+		if err := SetAutostart(b); err != nil {
+			dialog.ShowError(err, u.win)
+		}
+	})
+	autostartCheck.SetChecked(AutostartEnabled())
+
 	// Everything below service management is meaningless until the
 	// service is reachable — hidden via applyConnected.
 	u.settingsExtra = container.NewVBox(
@@ -329,6 +351,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		section(u.t("settings.tools"), container.NewVBox(
 			container.NewHBox(openWebUI, restartBtn, layout.NewSpacer()),
+			autostartCheck,
 			updateCheck,
 		)),
 	)
