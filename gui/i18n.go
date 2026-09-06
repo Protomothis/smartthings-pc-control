@@ -93,6 +93,7 @@ var messages = map[string]map[Lang]string{
 	"update.open":                {LangKo: "다운로드 페이지 열기", LangEn: "Open download page"},
 	"update.later":               {LangKo: "나중에", LangEn: "Later"},
 	"update.check":               {LangKo: "시작 시 업데이트 자동 확인", LangEn: "Check for updates on startup"},
+	"autostart.check":            {LangKo: "로그인 시 트레이에 자동 시작", LangEn: "Start in tray at login"},
 	"tray.open":                  {LangKo: "열기", LangEn: "Open"},
 	"tray.exit":                  {LangKo: "종료", LangEn: "Exit"},
 	"svc.section":                {LangKo: "서비스 관리", LangEn: "Service Management"},

@@ -93,6 +93,7 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 - 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
 - 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료)
 - 언어: OS 언어 자동 감지, 우측 상단에서 한국어/영어 전환 (설정값과 연결 상태는 그대로 유지)
+- **로그인 시 자동 시작** (v0.3.3+): 앱을 한 번 실행하면 이후 로그인 때 창 없이 트레이에만 상주합니다. 유예 알림을 받으려면 켜 두세요. 설정 탭 → 도구에서 끌 수 있습니다
 
 <img src="docs/gui-network.png" alt="네트워크/WoL 탭" width="49%"> <img src="docs/gui-commands.png" alt="명령 탭" width="49%">
 
@@ -105,6 +106,7 @@ smartthings-pc-control.exe status      # 상태 확인
 smartthings-pc-control.exe version     # 버전 확인
 smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 smartthings-pc-control.exe gui         # 데스크톱 앱 실행 (더블클릭과 동일)
+smartthings-pc-control.exe gui --minimized  # 창 없이 트레이에만 (로그인 자동 시작이 사용)
 ```
 
 ### 원격 전원 명령 유예 (v0.3.2+)
@@ -260,6 +262,7 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 - Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
 - Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit)
 - Language: follows the OS language; switch Korean/English from the top-right (settings and connection state are kept)
+- **Start at login** (v0.3.3+): after the first launch the app starts in the tray (no window) on every login. Keep it on to receive grace-period toasts. Turn it off under Settings → Tools
 
 <img src="docs/gui-network.png" alt="Network/WoL tab" width="49%"> <img src="docs/gui-commands.png" alt="Commands tab" width="49%">
 
@@ -272,6 +275,7 @@ smartthings-pc-control.exe status      # Show status
 smartthings-pc-control.exe version     # Show version
 smartthings-pc-control.exe run         # Console mode (debug)
 smartthings-pc-control.exe gui         # Launch the desktop app (same as double-click)
+smartthings-pc-control.exe gui --minimized  # Tray only, no window (used by login autostart)
 ```
 
 ### Remote power command grace period (v0.3.2+)
