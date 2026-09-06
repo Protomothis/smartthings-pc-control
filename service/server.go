@@ -249,7 +249,7 @@ func newCommandHandler() http.HandlerFunc {
 		// from the tray app. The HTTP response stays immediate for Edge
 		// driver compatibility.
 		if liveCfg.ShutdownGrace && graceCommands[name] {
-			if err := setSchedule(name, graceMinutes); err == nil {
+			if err := setSchedule(name, graceMinutes, originRemote); err == nil {
 				logMsg("Command: %s deferred %d min (grace period — cancel from the app or tray)", name, graceMinutes)
 				return
 			}
@@ -559,8 +559,56 @@ func getSchedule() map[string]interface{} {
 	}
 }
 
-// setSchedule creates a new scheduled task
-func setSchedule(command string, delayMinutes int) error {
+// scheduleOrigin records who asked for a schedule. It decides whether the
+// service must wake the tray app: a remote (SmartThings) grace schedule
+// needs a toast the user can see, while schedules from the app or WebUI
+// already come from a UI the user is looking at.
+type scheduleOrigin int
+
+const (
+	// originUI: created from the desktop app or the browser WebUI.
+	originUI scheduleOrigin = iota
+	// originRemote: a SmartThings command deferred by the grace period.
+	originRemote
+)
+
+// wakesTrayApp reports whether a schedule from this origin should launch
+// the tray app so the [Run now]/[Cancel] toast appears.
+func (o scheduleOrigin) wakesTrayApp() bool {
+	return o == originRemote
+}
+
+// trayAppLauncher starts the tray app in the user's session. A package
+// variable so tests can stub it out instead of spawning processes.
+var trayAppLauncher = launchTrayApp
+
+// wakeTrayApp launches the tray app in the background and logs the outcome.
+// It never affects the scheduled command: a failure (no user logged in,
+// token error, ...) only means no toast is shown.
+func wakeTrayApp(command string) {
+	go func() {
+		if err := trayAppLauncher(); err != nil {
+			logMsg("Tray app wake failed for %s (grace toast may not appear): %v", command, err)
+			return
+		}
+		logMsg("Tray app launched in user session for %s grace toast", command)
+	}()
+}
+
+// setSchedule creates a new scheduled task. origin says who requested it;
+// remote grace schedules additionally wake the tray app (see wakeTrayApp).
+func setSchedule(command string, delayMinutes int, origin scheduleOrigin) error {
+	if err := scheduleTask(command, delayMinutes); err != nil {
+		return err
+	}
+	if origin.wakesTrayApp() {
+		wakeTrayApp(command)
+	}
+	return nil
+}
+
+// scheduleTask arms the timer for command; it carries no origin knowledge.
+func scheduleTask(command string, delayMinutes int) error {
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
 

@@ -17,6 +17,26 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          # setup-go's built-in cache keys only on go.sum and, because GitHub
+          # caches are immutable per key, it would save the compiled Fyne/cgo
+          # build cache once and never refresh it as sources change. The explicit
+          # actions/cache step below keys on go.sum + *.go so every CI run stores
+          # a current build cache and tag builds restore it via restore-keys.
+          # Disabling it here also avoids downloading/uploading the module
+          # cache twice.
+          cache: false
+
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          # Must match ci.yml so a tag build reuses the cache CI warmed on develop/main.
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ hashFiles('**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-
 
       - name: Build
         env:

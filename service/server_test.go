@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -299,9 +300,112 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 }
 
+// stubTrayLauncher swaps the tray-app launcher for a recorder so tests
+// never spawn a process. Each launch attempt is reported on the returned
+// channel; launchErr (may be nil) is what the stub returns.
+func stubTrayLauncher(t *testing.T, launchErr error) <-chan struct{} {
+	t.Helper()
+	calls := make(chan struct{}, 8)
+	orig := trayAppLauncher
+	trayAppLauncher = func() error {
+		calls <- struct{}{}
+		return launchErr
+	}
+	t.Cleanup(func() { trayAppLauncher = orig })
+	return calls
+}
+
+// expectTrayLaunch fails unless the stub launcher was invoked shortly.
+func expectTrayLaunch(t *testing.T, calls <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tray app was not launched for a remote grace schedule")
+	}
+}
+
+// expectNoTrayLaunch fails if the stub launcher fires within a short window.
+func expectNoTrayLaunch(t *testing.T, calls <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-calls:
+		t.Fatal("tray app launched although the schedule did not come from a remote command")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestScheduleOriginWakesTrayApp(t *testing.T) {
+	cases := []struct {
+		origin scheduleOrigin
+		want   bool
+	}{
+		{originUI, false},
+		{originRemote, true},
+	}
+	for _, c := range cases {
+		if got := c.origin.wakesTrayApp(); got != c.want {
+			t.Errorf("origin %d wakesTrayApp = %v, want %v", c.origin, got, c.want)
+		}
+	}
+}
+
+func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
+	initLogger()
+	calls := stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	// Same path the app/WebUI /api/schedule endpoint takes.
+	if err := setSchedule("lock", 30, originUI); err != nil {
+		t.Fatal(err)
+	}
+	if s := getSchedule(); s["active"] != true {
+		t.Fatal("expected an active schedule")
+	}
+	expectNoTrayLaunch(t, calls)
+}
+
+func TestSetScheduleRemoteWakesTrayApp(t *testing.T) {
+	initLogger()
+	calls := stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	if err := setSchedule("lock", 30, originRemote); err != nil {
+		t.Fatal(err)
+	}
+	expectTrayLaunch(t, calls)
+}
+
+func TestSetScheduleUnknownCommandDoesNotWakeTrayApp(t *testing.T) {
+	initLogger()
+	calls := stubTrayLauncher(t, nil)
+
+	if err := setSchedule("no-such-command", 5, originRemote); err == nil {
+		cancelSchedule()
+		t.Fatal("expected error for unknown command")
+	}
+	expectNoTrayLaunch(t, calls)
+}
+
+func TestTrayLaunchFailureKeepsSchedule(t *testing.T) {
+	// No user logged in / token error must not cancel or fail the command.
+	initLogger()
+	calls := stubTrayLauncher(t, errors.New("no explorer.exe process found"))
+	defer cancelSchedule()
+
+	if err := setSchedule("lock", 30, originRemote); err != nil {
+		t.Fatalf("setSchedule failed because the tray launch failed: %v", err)
+	}
+	expectTrayLaunch(t, calls)
+	if s := getSchedule(); s["active"] != true {
+		t.Fatal("schedule dropped after tray launch failure")
+	}
+}
+
 func TestGraceDefersShutdown(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true})
+	launches := stubTrayLauncher(t, nil)
 	defer cancelSchedule()
 
 	// Swap in a stub so a scheduling bug can't actually shut the box down.
@@ -339,6 +443,9 @@ func TestGraceDefersShutdown(t *testing.T) {
 	default:
 	}
 
+	// A remote grace schedule wakes the tray app so the toast is visible.
+	expectTrayLaunch(t, launches)
+
 	if !cancelSchedule() {
 		t.Fatal("cancelSchedule reported no active schedule")
 	}
@@ -347,6 +454,7 @@ func TestGraceDefersShutdown(t *testing.T) {
 func TestGraceDisabledExecutesImmediately(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: false})
+	launches := stubTrayLauncher(t, nil)
 
 	orig := Commands["shutdown"]
 	executed := make(chan struct{}, 1)
@@ -367,6 +475,8 @@ func TestGraceDisabledExecutesImmediately(t *testing.T) {
 		cancelSchedule()
 		t.Fatal("unexpected schedule created with grace disabled")
 	}
+	// Nothing was scheduled, so there is no toast to wake the tray app for.
+	expectNoTrayLaunch(t, launches)
 }
 
 func TestGraceDefaultTrueFromConfig(t *testing.T) {

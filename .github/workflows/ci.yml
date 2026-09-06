@@ -1,0 +1,57 @@
+name: CI
+
+# Runs vet/test and the same cgo build as the release workflow on every push
+# to develop/main and on pull requests. Besides catching regressions early,
+# this keeps the Go build/module cache warm so a later v* tag build (release.yml)
+# restores it instead of compiling Fyne + cgo from scratch (~8 min cold).
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          # Disabled in favour of the explicit actions/cache step below; see
+          # release.yml for the reasoning (setup-go keys on go.sum only).
+          cache: false
+
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          # Same key scheme as release.yml so tag builds hit what CI saved.
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ hashFiles('**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-
+
+      - name: Vet
+        env:
+          CGO_ENABLED: 1
+        run: go vet ./...
+
+      - name: Test
+        env:
+          CGO_ENABLED: 1
+        run: go test ./...
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1 # Fyne (GUI) requires cgo; windows-latest ships MinGW gcc
+        # Identical compile flags to release.yml so the build cache is reusable.
+        # Only the -X Version string differs, and that affects linking alone.
+        run: go build -ldflags="-s -w -H=windowsgui -X main.Version=ci-${{ github.sha }}" -o smartthings-pc-control.exe .
