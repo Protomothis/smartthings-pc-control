@@ -114,6 +114,18 @@ var messages = map[string]map[Lang]string{
 	"svc.location.title":         {LangKo: "설치 위치 확인", LangEn: "Check Install Location"},
 	"svc.location.body":          {LangKo: "현재 실행 파일 위치:\n%s\n\n서비스는 이 경로의 실행 파일을 가리키며 config.json과 service.log도 같은 폴더에 생성됩니다. 다운로드·바탕 화면·문서·임시 폴더는 나중에 정리되거나 이동되기 쉬워, 설치 후 파일을 옮기면 서비스가 동작하지 않습니다.\n\n권장: 먼저 실행 파일을 %s 같은 고정된 폴더로 옮긴 뒤 설치하세요.", LangEn: "Current executable location:\n%s\n\nThe service points at the executable in this path, and config.json and service.log are created in the same folder. Downloads, Desktop, Documents and temp folders tend to get cleaned up or moved, and moving the file after installation breaks the service.\n\nRecommended: move the executable to a permanent folder such as %s first, then install."},
 	"svc.location.anyway":        {LangKo: "여기에 설치", LangEn: "Install here anyway"},
+	// Self update (#40 stage 2)
+	"update.now":         {LangKo: "지금 업데이트", LangEn: "Update now"},
+	"update.manual":      {LangKo: "업데이트 확인", LangEn: "Check for updates"},
+	"update.releasepage": {LangKo: "릴리스 페이지 열기", LangEn: "Open release page"},
+	"update.noasset":     {LangKo: "이 릴리스에는 자동 업데이트용 exe가 없습니다. 릴리스 페이지에서 직접 다운로드하세요.", LangEn: "This release has no auto-update exe. Download it from the release page."},
+	"update.uptodate":    {LangKo: "최신 버전입니다 (%s).", LangEn: "You are up to date (%s)."},
+	"update.checkfailed": {LangKo: "업데이트 확인 실패: ", LangEn: "Update check failed: "},
+	"update.downloading": {LangKo: "업데이트 다운로드 중...", LangEn: "Downloading update..."},
+	"update.verifying":   {LangKo: "다운로드한 파일 확인 중...", LangEn: "Verifying download..."},
+	"update.applying":    {LangKo: "UAC 승인 창이 표시됩니다. 앱이 종료된 뒤 서비스를 중지하고 exe를 교체한 후 새 버전으로 다시 실행됩니다.", LangEn: "A UAC prompt will appear. The app closes, the service is stopped, the exe is replaced and the new version relaunches."},
+	"update.cancel":      {LangKo: "취소", LangEn: "Cancel"},
+	"update.failed":      {LangKo: "업데이트 실패: ", LangEn: "Update failed: "},
 }
 
 // T returns the message for key in the given language.

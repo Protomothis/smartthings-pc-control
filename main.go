@@ -99,6 +99,20 @@ func main() {
 			gui.HandleToastAction(os.Args[2])
 		}
 
+	case "update-apply":
+		// Hidden: launched elevated by the GUI's self-updater as
+		// `update-apply "<newExe>" <guiPid>`. Swaps the installed exe and
+		// relaunches the GUI; see gui/selfupdate.go.
+		newExe, pid, err := gui.ParseUpdateApplyArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := gui.ApplyUpdate(newExe, pid); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		fmt.Printf("SmartThings PC Control %s\n", Version)
 		fmt.Println("")
