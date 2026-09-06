@@ -6,6 +6,19 @@ type Command struct {
 	Execute  func()
 }
 
+// graceMinutes is how long grace-eligible commands are deferred when
+// shutdown_grace is enabled, giving the user time to cancel.
+const graceMinutes = 5
+
+// graceCommands are deferred by the grace period. forceshutdown is the
+// escape hatch and always runs immediately; lock/screen-off are harmless.
+var graceCommands = map[string]bool{
+	"shutdown":  true,
+	"restart":   true,
+	"suspend":   true,
+	"hibernate": true,
+}
+
 // Commands is the registry of all supported commands
 var Commands = map[string]Command{
 	"ping": {

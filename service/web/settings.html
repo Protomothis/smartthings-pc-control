@@ -265,6 +265,20 @@
                         <input type="text" id="secret" value="{{.Secret}}" placeholder="(none)" oninput="checkChanges()">
                         <div class="info" data-i18n="secretInfo">Leave empty to disable authentication</div>
                     </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="webuiRemote" {{if .WebUIRemote}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="webuiRemote">Allow browser access to WebUI (local + LAN)</span>
+                        </label>
+                        <div class="info" data-i18n="webuiRemoteInfo">Requires a secret. Applied after service restart. When off, use the desktop app.</div>
+                    </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="shutdownGrace" {{if .ShutdownGrace}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="shutdownGrace">5-minute grace for remote power commands</span>
+                        </label>
+                        <div class="info" data-i18n="shutdownGraceInfo">Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.</div>
+                    </div>
                     <div class="actions">
                         <button class="btn btn-primary" id="btnSave" onclick="saveConfig()" disabled data-i18n="save">💾 Save</button>
                         <button class="btn btn-secondary" onclick="restartService()" data-i18n="restart">🔄 Restart</button>
@@ -342,6 +356,10 @@
             en: {
                 settings: 'Settings', port: 'Port', portInfo: 'SmartThings Edge driver default: 5001',
                 secretKey: 'Secret Key', secretInfo: 'Leave empty to disable authentication',
+                webuiRemote: 'Allow browser access to WebUI (local + LAN)',
+                webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
+                shutdownGrace: '5-minute grace for remote power commands',
+                shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
                 networkWol: 'Network / WoL', loading: 'Loading...',
                 scheduledTask: 'Scheduled Task', min: 'min', schedule: 'Schedule',
@@ -365,6 +383,10 @@
             ko: {
                 settings: '설정', port: '포트', portInfo: 'SmartThings Edge 드라이버 기본값: 5001',
                 secretKey: '시크릿 키', secretInfo: '비워두면 인증 없이 동작합니다',
+                webuiRemote: 'WebUI 브라우저 접속 허용 (로컬+LAN)',
+                webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
+                shutdownGrace: '원격 전원 명령 5분 유예',
+                shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
                 networkWol: '네트워크 / WoL', loading: '로딩 중...',
                 scheduledTask: '예약 작업', min: '분', schedule: '예약',
@@ -406,16 +428,22 @@
         // Track original values for change detection
         const originalPort = document.getElementById('port').value;
         const originalSecret = document.getElementById('secret').value;
+        const originalRemote = document.getElementById('webuiRemote').checked;
+        const originalGrace = document.getElementById('shutdownGrace').checked;
         function checkChanges() {
             const changed = document.getElementById('port').value !== originalPort ||
-                            document.getElementById('secret').value !== originalSecret;
+                            document.getElementById('secret').value !== originalSecret ||
+                            document.getElementById('webuiRemote').checked !== originalRemote ||
+                            document.getElementById('shutdownGrace').checked !== originalGrace;
             document.getElementById('btnSave').disabled = !changed;
         }
         async function saveConfig() {
             const port = parseInt(document.getElementById('port').value);
             const secret = document.getElementById('secret').value;
+            const webui_remote = document.getElementById('webuiRemote').checked;
+            const shutdown_grace = document.getElementById('shutdownGrace').checked;
             try {
-                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret})});
+                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace})});
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, data.status === 'error' ? 'error' : 'success');
