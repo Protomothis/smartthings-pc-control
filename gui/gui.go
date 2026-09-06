@@ -3,10 +3,13 @@ package gui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -39,6 +42,9 @@ var testCommands = []struct {
 	{"shutdown", "cmd.shutdown", true},
 	{"forceshutdown", "cmd.forceshutdown", true},
 }
+
+// Preset delays (minutes) offered as one-click buttons on the schedule tab.
+var schedulePresets = []int{5, 15, 30, 60}
 
 // Commands offered for scheduling.
 var scheduleCommands = []struct {
@@ -83,6 +89,22 @@ type ui struct {
 	trayNeedsConn []*fyne.MenuItem
 	trayStatus    *fyne.MenuItem
 	trayMenu      *fyne.Menu
+	// Text mirrored into the tray status entry and icon tooltip: the
+	// connection state, the active-schedule countdown ("" when none), and
+	// the combined string last pushed to the native menu (dedup).
+	statusText string
+	schedText  string
+	trayShown  string
+
+	// Settings: the config as last loaded/saved. Save is enabled only while
+	// the form differs from it; nil until the first successful load.
+	saveBtn     *widget.Button
+	cfgBaseline *Config
+
+	// Logs: every line from the last fetch; the label shows the subset
+	// matching logsFilter. Both touched on the UI thread only.
+	logLines   []string
+	logsFilter *widget.Entry
 }
 
 // Run opens the native GUI window. Blocks until the app quits. With
@@ -198,7 +220,10 @@ func (u *ui) rebuild() {
 	} else if u.tabs != nil {
 		statusKey = "status.unreachable"
 	}
-	u.status = widget.NewLabel(u.t(statusKey))
+	u.statusText = u.t(statusKey)
+	u.status = widget.NewLabel(u.statusText)
+	// The countdown is re-fetched (in the new language) by initialLoad.
+	u.schedText = ""
 
 	langSelect := widget.NewSelect([]string{"한국어", "English"}, func(sel string) {
 		newLang := LangEn
@@ -240,6 +265,7 @@ func (u *ui) rebuild() {
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
 	u.setupTray()
+	u.refreshTrayStatus()
 	u.applyConnected(u.connected.Load())
 }
 
@@ -277,10 +303,15 @@ func (u *ui) applyConnected(on bool) {
 func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry = widget.NewEntry()
 	u.secretEntry = widget.NewPasswordEntry()
-	u.remoteCheck = widget.NewCheck(u.t("settings.remote"), nil)
-	u.graceCheck = widget.NewCheck(u.t("settings.grace"), nil)
+	// Every edit re-evaluates whether the form differs from the baseline.
+	onEdit := func(string) { u.updateSaveState() }
+	onToggle := func(bool) { u.updateSaveState() }
+	u.portEntry.OnChanged = onEdit
+	u.secretEntry.OnChanged = onEdit
+	u.remoteCheck = widget.NewCheck(u.t("settings.remote"), onToggle)
+	u.graceCheck = widget.NewCheck(u.t("settings.grace"), onToggle)
 
-	saveBtn := widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), func() {
+	u.saveBtn = widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), func() {
 		port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
 		if err != nil {
 			dialog.ShowError(errors.New(u.t("settings.invalidport")+u.portEntry.Text), u.win)
@@ -290,19 +321,27 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
 			return
 		}
-		msg, err := u.client.SaveConfig(Config{
+		cfg := Config{
 			Port:          port,
 			Secret:        u.secretEntry.Text,
 			WebUIRemote:   u.remoteCheck.Checked,
 			ShutdownGrace: u.graceCheck.Checked,
-		})
+		}
+		msg, err := u.client.SaveConfig(cfg)
 		if err != nil {
 			dialog.ShowError(err, u.win)
 			return
 		}
+		// What was just saved is the new "unchanged" state.
+		u.cfgBaseline = &cfg
+		u.updateSaveState()
 		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
 	})
-	saveBtn.Importance = widget.HighImportance
+	u.saveBtn.Importance = widget.HighImportance
+	// Nothing to compare against until initialLoad fills the form (the
+	// fields are empty on a language-change rebuild too).
+	u.cfgBaseline = nil
+	u.saveBtn.Disable()
 
 	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
 		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", webUIPort)).Start()
@@ -330,7 +369,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		form,
 		u.remoteCheck,
 		u.graceCheck,
-		container.NewHBox(layout.NewSpacer(), saveBtn),
+		container.NewHBox(layout.NewSpacer(), u.saveBtn),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -368,6 +407,32 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	)))
 }
 
+// settingsDirty reports whether the form differs from the loaded/saved
+// config. False (nothing to save) until a baseline exists.
+func (u *ui) settingsDirty() bool {
+	b := u.cfgBaseline
+	if b == nil {
+		return false
+	}
+	return strings.TrimSpace(u.portEntry.Text) != strconv.Itoa(b.Port) ||
+		u.secretEntry.Text != b.Secret ||
+		u.remoteCheck.Checked != b.WebUIRemote ||
+		u.graceCheck.Checked != b.ShutdownGrace
+}
+
+// updateSaveState enables Save only while there is something to save.
+// Must be called on the UI thread.
+func (u *ui) updateSaveState() {
+	if u.saveBtn == nil {
+		return
+	}
+	if u.settingsDirty() {
+		u.saveBtn.Enable()
+	} else {
+		u.saveBtn.Disable()
+	}
+}
+
 // refreshSvcBox re-queries the Windows service state and redraws the
 // management section.
 func (u *ui) refreshSvcBox() {
@@ -401,7 +466,27 @@ func (u *ui) fillSvcBox(state svcState) {
 	var buttons []fyne.CanvasObject
 
 	installBtn := widget.NewButtonWithIcon(u.t("svc.install"), theme.DownloadIcon(), func() {
-		elevated(func() error { return runElevatedSelfWait("install --gui") })
+		install := func() {
+			elevated(func() error { return runElevatedSelfWait("install --gui") })
+		}
+		// config.json / service.log land next to the exe and the service
+		// points at this path, so installing from Downloads, Desktop, a
+		// temp folder etc. breaks as soon as the file is tidied away.
+		exeDir, risky := exeInRiskyDir()
+		if !risky {
+			install()
+			return
+		}
+		body := widget.NewLabel(fmt.Sprintf(u.t("svc.location.body"), exeDir, recommendedInstallDir))
+		body.Wrapping = fyne.TextWrapWord
+		d := dialog.NewCustomConfirm(u.t("svc.location.title"), u.t("svc.location.anyway"), u.t("login.cancel"),
+			body, func(ok bool) {
+				if ok {
+					install()
+				}
+			}, u.win)
+		d.Resize(fyne.NewSize(460, 0))
+		d.Show()
 	})
 	installBtn.Importance = widget.HighImportance
 	startBtn := widget.NewButtonWithIcon(u.t("svc.start"), theme.MediaPlayIcon(), func() {
@@ -496,6 +581,19 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	minutesEntry := widget.NewEntry()
 	minutesEntry.SetText("30")
 
+	// One-click presets that just fill the minutes entry.
+	presets := []fyne.CanvasObject{}
+	for _, m := range schedulePresets {
+		m := m
+		b := widget.NewButton(fmt.Sprintf(u.t("schedule.preset"), m), func() {
+			minutesEntry.SetText(strconv.Itoa(m))
+		})
+		b.Importance = widget.LowImportance
+		presets = append(presets, b)
+	}
+	presets = append(presets, layout.NewSpacer())
+	presetRow := container.NewHBox(presets...)
+
 	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
 		minutes, err := strconv.Atoi(strings.TrimSpace(minutesEntry.Text))
 		if err != nil || minutes < 1 || minutes > 1440 {
@@ -527,7 +625,7 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 
 	form := widget.NewForm(
 		widget.NewFormItem(u.t("schedule.command"), cmdSelect),
-		widget.NewFormItem(u.t("schedule.minutes"), minutesEntry),
+		widget.NewFormItem(u.t("schedule.minutes"), container.NewVBox(minutesEntry, presetRow)),
 	)
 
 	u.scheduleLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -557,8 +655,60 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 	u.logsAuto.SetChecked(true)
 	refreshBtn := widget.NewButtonWithIcon(u.t("logs.refresh"), theme.ViewRefreshIcon(), func() { go u.loadLogs() })
 
-	top := container.NewBorder(nil, nil, u.logsAuto, refreshBtn)
+	// Case-insensitive substring filter over the cached lines; re-rendered
+	// on every keystroke, and applied by loadLogs on each refresh.
+	u.logsFilter = widget.NewEntry()
+	u.logsFilter.SetPlaceHolder(u.t("logs.filter"))
+	u.logsFilter.OnChanged = func(string) { u.renderLogs() }
+	u.logLines = nil
+
+	openFileBtn := widget.NewButtonWithIcon(u.t("logs.openfile"), theme.DocumentIcon(), func() {
+		u.openServiceLog(false)
+	})
+	openDirBtn := widget.NewButtonWithIcon(u.t("logs.openfolder"), theme.FolderOpenIcon(), func() {
+		u.openServiceLog(true)
+	})
+
+	top := container.NewBorder(nil, nil, u.logsAuto, container.NewHBox(openFileBtn, openDirBtn, refreshBtn), u.logsFilter)
 	return container.NewBorder(top, nil, nil, nil, u.logsScroll)
+}
+
+// serviceLogPath is service.log next to the exe — the same location the
+// service (and localSecret) use.
+func serviceLogPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), "service.log"), nil
+}
+
+// openServiceLog opens service.log in the default viewer, or reveals it in
+// Explorer when folder is set. Shows an error if the file does not exist.
+func (u *ui) openServiceLog(folder bool) {
+	path, err := serviceLogPath()
+	if err == nil {
+		_, err = os.Stat(path)
+	}
+	if err != nil {
+		dialog.ShowError(fmt.Errorf(u.t("logs.notfound"), path), u.win)
+		return
+	}
+	var cmd *exec.Cmd
+	if folder {
+		// explorer.exe is a GUI app (no console to hide); build the command
+		// line by hand so the "/select," switch and path stay one argument.
+		cmd = exec.Command("explorer.exe")
+		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: fmt.Sprintf(`explorer.exe /select,"%s"`, path)}
+	} else {
+		// `start "" <file>` opens with the file's associated app; hide the
+		// helper console since the GUI is built with -H=windowsgui.
+		cmd = exec.Command("cmd", "/c", "start", "", path)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	if err := cmd.Start(); err != nil {
+		dialog.ShowError(err, u.win)
+	}
 }
 
 // --- Data loading / polling ---
@@ -579,10 +729,14 @@ func (u *ui) initialLoad() {
 		u.connected.Store(true)
 		u.setStatus(u.t("status.connected"))
 		u.applyConnected(true)
+		// Baseline first: SetText/SetChecked fire OnChanged, which compares
+		// against it; once all four match, Save ends up disabled.
+		u.cfgBaseline = &cfg
 		u.portEntry.SetText(strconv.Itoa(cfg.Port))
 		u.secretEntry.SetText(cfg.Secret)
 		u.remoteCheck.SetChecked(cfg.WebUIRemote)
 		u.graceCheck.SetChecked(cfg.ShutdownGrace)
+		u.updateSaveState()
 	})
 	if err == nil {
 		u.loadLogs()
@@ -636,18 +790,39 @@ func (u *ui) loadLogs() {
 		u.markDisconnectedOnNetError(err)
 		return
 	}
-	text := strings.Join(lines, "\n")
 	fyne.Do(func() {
-		if text == "" {
-			u.logsLabel.SetText(u.t("logs.empty"))
-			return
-		}
-		atBottom := u.logsScroll.Offset.Y >= u.logsScroll.Content.Size().Height-u.logsScroll.Size().Height-20
-		u.logsLabel.SetText(text)
-		if atBottom {
-			u.logsScroll.ScrollToBottom()
-		}
+		u.logLines = lines
+		u.renderLogs()
 	})
+}
+
+// renderLogs shows the cached lines that match the filter, keeping the
+// view pinned to the end when it already was. Must be called on the UI
+// thread.
+func (u *ui) renderLogs() {
+	var filter string
+	if u.logsFilter != nil {
+		filter = strings.ToLower(strings.TrimSpace(u.logsFilter.Text))
+	}
+	var shown []string
+	for _, line := range u.logLines {
+		if filter == "" || strings.Contains(strings.ToLower(line), filter) {
+			shown = append(shown, line)
+		}
+	}
+	if len(shown) == 0 {
+		if filter != "" && len(u.logLines) > 0 {
+			u.logsLabel.SetText(u.t("logs.nomatch"))
+		} else {
+			u.logsLabel.SetText(u.t("logs.empty"))
+		}
+		return
+	}
+	atBottom := u.logsScroll.Offset.Y >= u.logsScroll.Content.Size().Height-u.logsScroll.Size().Height-20
+	u.logsLabel.SetText(strings.Join(shown, "\n"))
+	if atBottom {
+		u.logsScroll.ScrollToBottom()
+	}
 }
 
 func (u *ui) loadSchedule() {
@@ -660,6 +835,7 @@ func (u *ui) loadSchedule() {
 		if !s.Active {
 			u.lastSchedCmd = ""
 			u.scheduleLabel.SetText(u.t("schedule.none"))
+			u.setScheduleText("")
 			return
 		}
 		d := time.Duration(s.RemainingSec) * time.Second
@@ -678,7 +854,10 @@ func (u *ui) loadSchedule() {
 				cmdLabel = u.t(sc.LabelKey)
 			}
 		}
-		u.scheduleLabel.SetText(fmt.Sprintf(u.t("schedule.countdown"), cmdLabel, remain))
+		countdown := fmt.Sprintf(u.t("schedule.countdown"), cmdLabel, remain)
+		u.scheduleLabel.SetText(countdown)
+		// Same line in the tray entry and icon tooltip.
+		u.setScheduleText(countdown)
 
 		// A schedule appeared (SmartThings grace period, WebUI, or this
 		// app) — notify with Run now / Cancel buttons so it can be

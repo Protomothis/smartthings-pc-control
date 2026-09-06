@@ -105,6 +105,15 @@ var messages = map[string]map[Lang]string{
 	"svc.start":                  {LangKo: "시작", LangEn: "Start"},
 	"svc.uninstall.confirm":      {LangKo: "서비스를 제거할까요?\nSmartThings에서 더 이상 이 PC를 제어할 수 없게 됩니다.", LangEn: "Uninstall the service?\nSmartThings will no longer be able to control this PC."},
 	"svc.uac.hint":               {LangKo: "UAC 승인 창이 표시됩니다. 완료 후 몇 초 뒤 상태가 갱신됩니다.", LangEn: "A UAC prompt will appear. Status refreshes a few seconds after completion."},
+	"schedule.preset":            {LangKo: "%d분", LangEn: "%d min"},
+	"logs.filter":                {LangKo: "필터…", LangEn: "Filter…"},
+	"logs.nomatch":               {LangKo: "필터와 일치하는 로그가 없습니다", LangEn: "No log lines match the filter"},
+	"logs.openfile":              {LangKo: "로그 파일 열기", LangEn: "Open log file"},
+	"logs.openfolder":            {LangKo: "폴더 열기", LangEn: "Open folder"},
+	"logs.notfound":              {LangKo: "로그 파일이 없습니다: %s", LangEn: "Log file not found: %s"},
+	"svc.location.title":         {LangKo: "설치 위치 확인", LangEn: "Check Install Location"},
+	"svc.location.body":          {LangKo: "현재 실행 파일 위치:\n%s\n\n서비스는 이 경로의 실행 파일을 가리키며 config.json과 service.log도 같은 폴더에 생성됩니다. 다운로드·바탕 화면·문서·임시 폴더는 나중에 정리되거나 이동되기 쉬워, 설치 후 파일을 옮기면 서비스가 동작하지 않습니다.\n\n권장: 먼저 실행 파일을 %s 같은 고정된 폴더로 옮긴 뒤 설치하세요.", LangEn: "Current executable location:\n%s\n\nThe service points at the executable in this path, and config.json and service.log are created in the same folder. Downloads, Desktop, Documents and temp folders tend to get cleaned up or moved, and moving the file after installation breaks the service.\n\nRecommended: move the executable to a permanent folder such as %s first, then install."},
+	"svc.location.anyway":        {LangKo: "여기에 설치", LangEn: "Install here anyway"},
 }
 
 // T returns the message for key in the given language.
