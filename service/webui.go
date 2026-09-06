@@ -451,7 +451,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Minutes must be between 1 and 1440"})
 				return
 			}
-			if err := setSchedule(body.Command, body.Minutes); err != nil {
+			if err := setSchedule(body.Command, body.Minutes, originUI); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 				return

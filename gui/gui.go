@@ -90,7 +90,13 @@ type ui struct {
 // tray icon appears.
 func Run(version string, minimized bool) {
 	if !acquireSingleInstance() {
-		focusExistingWindow()
+		// A minimized launch (login autostart, or the service waking the
+		// tray app for a grace toast) must stay silent: the running
+		// instance already has the tray and will show the toast itself.
+		// A user double-click, however, brings the existing window forward.
+		if !minimized {
+			focusExistingWindow()
+		}
 		return
 	}
 
