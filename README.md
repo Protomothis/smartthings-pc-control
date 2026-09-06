@@ -116,6 +116,7 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 - **유예는 원격(SmartThings) 명령에만 적용됩니다** — 앱/WebUI에서 버튼으로 직접 실행하는 명령은 항상 즉시 실행
 - 강제 종료(forceshutdown)는 원격이라도 항상 즉시 실행됩니다 (비상용)
 - 원격 명령도 즉시 실행하고 싶으면 설정에서 유예를 끄세요 (`shutdown_grace: false`)
+- 트레이 앱이 꺼져 있어도 원격 유예 명령이 들어오면 서비스가 트레이 앱을 자동으로 실행해 토스트를 표시합니다 (로그인된 사용자 세션이 있어야 함, v0.3.3+)
 - SmartThings 명령 수신(포트 5001)은 WebUI 브라우저 접속 허용 여부와 무관하게 항상 열려 있습니다
 
 <img src="docs/gui-schedule.png" alt="예약 탭 — 카운트다운과 취소" width="49%">
@@ -285,6 +286,7 @@ Shutdown/restart/suspend/hibernate commands from SmartThings run **after 5 minut
 - **The grace period applies only to remote (SmartThings) commands** — buttons in the app/WebUI always run immediately
 - Force shutdown always runs immediately, even remotely (emergency escape hatch)
 - Prefer immediate remote execution? Turn off the grace toggle in settings (`shutdown_grace: false`)
+- If the tray app is not running when a remote grace command arrives, the service launches it in the logged-in user's session so the toast still appears (v0.3.3+)
 - The SmartThings command listener (port 5001) is always reachable, regardless of the browser WebUI toggle
 
 <img src="docs/gui-schedule.png" alt="Schedule tab — countdown and cancel" width="49%">
