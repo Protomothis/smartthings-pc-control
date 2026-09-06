@@ -1,8 +1,11 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -109,6 +112,7 @@ func Run(version string) {
 	}
 
 	registerToastProtocol()
+	go cleanupStaleUpdateFiles() // leftovers from a previous self-update
 
 	a.SetIcon(appIcon)
 	u.win = a.NewWindow(windowTitle)
@@ -141,22 +145,129 @@ func (u *ui) checkForUpdates(startup bool) {
 	}
 	u.app.Preferences().SetString("update_notified", rel.TagName)
 
-	url := rel.HTMLURL
-	if url == "" {
-		url = releasesPage
-	}
 	fyne.Do(func() {
 		body := fmt.Sprintf(u.t("update.body"), rel.TagName, u.version)
 		u.app.SendNotification(fyne.NewNotification(u.t("update.title"), body))
 		if startup {
-			dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.open"), u.t("update.later"),
-				widget.NewLabel(body), func(ok bool) {
-					if ok {
-						exec.Command("cmd", "/c", "start", url).Start()
-					}
-				}, u.win)
+			u.showUpdateDialog(rel)
 		}
 	})
+}
+
+// checkForUpdatesManual is the "Check for updates" button: always reports
+// a result — newer release (update dialog), up to date, or the error.
+// Safe to call from the UI goroutine.
+func (u *ui) checkForUpdatesManual() {
+	go func() {
+		rel, err := checkLatestRelease()
+		fyne.Do(func() {
+			switch {
+			case err != nil:
+				dialog.ShowError(errors.New(u.t("update.checkfailed")+err.Error()), u.win)
+			case isNewer(u.version, rel.TagName):
+				u.showUpdateDialog(rel)
+			case !u.canSelfUpdate():
+				// dev build: version comparison is meaningless, but the
+				// user asked — offer the release page.
+				u.showUpdateDialog(rel)
+			default:
+				dialog.ShowInformation(u.t("update.title"), fmt.Sprintf(u.t("update.uptodate"), u.version), u.win)
+			}
+		})
+	}()
+}
+
+// canSelfUpdate is false for "dev"/empty builds — those may check for
+// releases but must never overwrite themselves.
+func (u *ui) canSelfUpdate() bool {
+	_, ok := parseVersion(u.version)
+	return ok
+}
+
+// showUpdateDialog offers "Update now" when the release ships an exe asset
+// and this is a release build; otherwise it falls back to opening the
+// release page. Must run on the UI goroutine.
+func (u *ui) showUpdateDialog(rel *releaseInfo) {
+	page := rel.HTMLURL
+	if page == "" {
+		page = releasesPage
+	}
+	openPage := func() { exec.Command("cmd", "/c", "start", page).Start() }
+
+	body := container.NewVBox(widget.NewLabel(fmt.Sprintf(u.t("update.body"), rel.TagName, u.version)))
+	if pageURL, err := url.Parse(page); err == nil {
+		body.Add(widget.NewHyperlink(u.t("update.releasepage"), pageURL))
+	}
+
+	asset := pickUpdateAsset(rel)
+	if asset == "" || !u.canSelfUpdate() {
+		if asset == "" && u.canSelfUpdate() {
+			body.Add(widget.NewLabel(u.t("update.noasset")))
+		}
+		dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.open"), u.t("update.later"), body,
+			func(ok bool) {
+				if ok {
+					openPage()
+				}
+			}, u.win)
+		return
+	}
+	dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.now"), u.t("update.later"), body,
+		func(ok bool) {
+			if ok {
+				u.startSelfUpdate(rel, asset)
+			}
+		}, u.win)
+}
+
+// startSelfUpdate downloads and verifies the new exe behind a progress
+// dialog, then hands over to the elevated updater (see selfupdate.go) and
+// quits — the updater waits for this process to exit before swapping the
+// binary. Download errors and a declined UAC prompt leave the app running.
+func (u *ui) startSelfUpdate(rel *releaseInfo, assetURL string) {
+	status := widget.NewLabel(u.t("update.downloading"))
+	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
+	bar := widget.NewProgressBar()
+	ctx, cancel := context.WithCancel(context.Background())
+	d := dialog.NewCustom(u.t("update.title"), u.t("update.cancel"), container.NewVBox(status, bar), u.win)
+	d.SetOnClosed(cancel)
+	d.Resize(fyne.NewSize(440, 200))
+	d.Show()
+
+	go func() {
+		path, err := downloadUpdate(ctx, assetURL, stagingDir(), rel.TagName, func(done, total int64) {
+			fyne.Do(func() {
+				if total > 0 {
+					bar.SetValue(float64(done) / float64(total))
+					status.SetText(fmt.Sprintf("%s  %s / %s", u.t("update.downloading"), formatBytes(done), formatBytes(total)))
+				} else {
+					status.SetText(fmt.Sprintf("%s  %s", u.t("update.downloading"), formatBytes(done)))
+				}
+			})
+		})
+		if err == nil {
+			fyne.Do(func() { status.SetText(u.t("update.verifying")) })
+			err = verifyDownloadedExe(path, rel.TagName)
+			if err != nil {
+				os.Remove(path)
+			}
+		}
+		if err == nil {
+			fyne.Do(func() { status.SetText(u.t("update.applying")) })
+			err = runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d`, path, os.Getpid()))
+		}
+		fyne.Do(func() {
+			d.Hide()
+			if err != nil {
+				if ctx.Err() == nil { // user cancel is not an error worth a dialog
+					dialog.ShowError(errors.New(u.t("update.failed")+err.Error()), u.win)
+				}
+				return
+			}
+			// The elevated updater is waiting for this pid to exit.
+			u.app.Quit()
+		})
+	}()
 }
 
 func (u *ui) t(key string) string { return T(u.lang, key) }
@@ -329,7 +440,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		section(u.t("settings.tools"), container.NewVBox(
 			container.NewHBox(openWebUI, restartBtn, layout.NewSpacer()),
-			updateCheck,
+			container.NewHBox(updateCheck, widget.NewButton(u.t("update.manual"), u.checkForUpdatesManual), layout.NewSpacer()),
 		)),
 	)
 
