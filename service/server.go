@@ -22,7 +22,7 @@ var (
 	logMu      sync.Mutex
 )
 
-const maxLogSize = 1 * 1024 * 1024 // 1MB
+const maxLogSize = 512 * 1024 // 512KB
 const maxLogBackups = 3
 
 func initLogger() {
@@ -116,11 +116,20 @@ func maskSecret(s string) string {
 type Config struct {
 	Port   int    `json:"port"`
 	Secret string `json:"secret"`
+	// WebUIRemote exposes the WebUI on all interfaces (LAN) instead of
+	// 127.0.0.1 only. Requires a secret; applied on service restart.
+	WebUIRemote bool `json:"webui_remote"`
+	// ShutdownGrace defers power commands from SmartThings (shutdown,
+	// restart, suspend, hibernate) by 5 minutes so the user can cancel
+	// from the tray app. forceshutdown always runs immediately.
+	ShutdownGrace bool `json:"shutdown_grace"`
 }
 
 var defaultConfig = Config{
-	Port:   5001,
-	Secret: "",
+	Port:          5001,
+	Secret:        "",
+	WebUIRemote:   false,
+	ShutdownGrace: true, // missing key in config.json keeps this default
 }
 
 // Global config with RWMutex for hot-reload support
@@ -226,7 +235,8 @@ func newCommandHandler() http.HandlerFunc {
 
 		logMsg("Request: %s /%s from %s", r.Method, command, r.RemoteAddr)
 
-		cmd, ok := Commands[strings.ToLower(command)]
+		name := strings.ToLower(command)
+		cmd, ok := Commands[name]
 		if !ok {
 			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
 			return
@@ -234,7 +244,19 @@ func newCommandHandler() http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, cmd.Response)
-		logMsg("Command: %s", strings.ToLower(command))
+
+		// Grace period: defer disruptive commands so the user can cancel
+		// from the tray app. The HTTP response stays immediate for Edge
+		// driver compatibility.
+		if liveCfg.ShutdownGrace && graceCommands[name] {
+			if err := setSchedule(name, graceMinutes); err == nil {
+				logMsg("Command: %s deferred %d min (grace period — cancel from the app or tray)", name, graceMinutes)
+				return
+			}
+			logMsg("WARNING: grace scheduling failed for %s, executing immediately", name)
+		}
+
+		logMsg("Command: %s", name)
 		if cmd.Execute != nil {
 			go cmd.Execute()
 		}

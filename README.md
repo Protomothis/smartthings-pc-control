@@ -11,7 +11,7 @@
 
 [한국어](#한국어) · [English](#english)
 
-<img src="docs/webui-screenshot.png" alt="SmartThings PC Control Web UI" width="100%">
+<img src="docs/gui-settings.png" alt="SmartThings PC Control — Settings" width="49%"> <img src="docs/gui-logs.png" alt="SmartThings PC Control — Logs" width="49%">
 
 </div>
 
@@ -32,13 +32,16 @@
 
 ### 주요 기능
 
+🖥️ **네이티브 데스크톱 앱** — 설정/명령/예약/네트워크/로그 탭, 트레이 상주  
 🎮 **8개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off 등  
-🌐 **Web UI** — 브라우저에서 설정, 테스트, 로그 확인  
+🛡️ **전원 명령 5분 유예** — 종료/재시작/절전/최대절전을 5분 뒤 실행, 알림으로 취소 가능 (설정으로 끄기 가능)  
+🌐 **Web UI (선택)** — 설정에서 허용 시 로컬/LAN 브라우저에서 접속  
 ⏱️ **예약 종료** — N분 후 자동 실행 (카운트다운 표시)  
 📡 **WoL 상태** — 어댑터별 Wake-on-LAN 상태, MAC, IP, 외부 IP 표시  
-🌍 **다국어** — 한국어/영어 (브라우저 감지 + 수동 전환)  
-🌓 **다크/라이트 모드** — 시스템 테마 감지 + 수동 전환  
-🔒 **보안** — secret 인증, CSRF 보호, 로그인 rate limiting  
+🔔 **업데이트 확인** — 새 릴리스 자동 확인 및 알림  
+🌍 **다국어** — 한국어/영어 (OS 언어 감지 + 수동 전환)  
+🌓 **다크/라이트 모드** — 시스템 테마 감지  
+🔒 **보안** — secret 인증, CSRF 보호, 로그인 rate limiting, WebUI 기본 비활성  
 
 ### 지원 명령
 
@@ -57,10 +60,13 @@
 
 ### 설치
 
-**방법 1: 더블클릭 (GUI)**
+**방법 1: 더블클릭 (앱)**
 
-exe 파일을 더블클릭하면 서비스 관리 패널이 열립니다.  
-Install 버튼 클릭 → UAC 승인 → 설치 완료.
+exe 파일을 더블클릭하면 데스크톱 앱이 열립니다.  
+설정 탭 → 서비스 관리 → [설치] 클릭 → UAC 승인 → 완료.  
+설치가 끝나면 앱이 서비스를 자동으로 인식합니다 (새로고침 불필요).
+
+<img src="docs/gui-notinstalled.png" alt="서비스 미설치 상태 — 설치 버튼" width="49%">
 
 **방법 2: CLI**
 
@@ -80,9 +86,15 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 ### 사용법
 
-**GUI (더블클릭)**
+**데스크톱 앱 (더블클릭)**
 
-서비스 상태 확인, Install/Uninstall/Start, WebUI 열기를 GUI에서 할 수 있습니다.
+- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그
+- 서비스 관리: 설치·시작·제거 (상태 자동 감지)
+- 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
+- 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료)
+- 언어: OS 언어 자동 감지, 우측 상단에서 한국어/영어 전환 (설정값과 연결 상태는 그대로 유지)
+
+<img src="docs/gui-network.png" alt="네트워크/WoL 탭" width="49%"> <img src="docs/gui-commands.png" alt="명령 탭" width="49%">
 
 **CLI**
 
@@ -92,11 +104,23 @@ smartthings-pc-control.exe uninstall   # 서비스 제거
 smartthings-pc-control.exe status      # 상태 확인
 smartthings-pc-control.exe version     # 버전 확인
 smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
+smartthings-pc-control.exe gui         # 데스크톱 앱 실행 (더블클릭과 동일)
 ```
 
-### Web UI
+### 원격 전원 명령 유예 (v0.3.2+)
 
-설치 후: **http://127.0.0.1:5002**
+SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 뒤에 실행**되며, 그동안 Windows 알림이 표시됩니다. 알림의 **[바로 실행] / [취소]** 버튼으로 즉시 처리하거나, 트레이 메뉴·앱의 예약 탭에서 취소할 수 있습니다.
+
+- **유예는 원격(SmartThings) 명령에만 적용됩니다** — 앱/WebUI에서 버튼으로 직접 실행하는 명령은 항상 즉시 실행
+- 강제 종료(forceshutdown)는 원격이라도 항상 즉시 실행됩니다 (비상용)
+- 원격 명령도 즉시 실행하고 싶으면 설정에서 유예를 끄세요 (`shutdown_grace: false`)
+- SmartThings 명령 수신(포트 5001)은 WebUI 브라우저 접속 허용 여부와 무관하게 항상 열려 있습니다
+
+<img src="docs/gui-schedule.png" alt="예약 탭 — 카운트다운과 취소" width="49%">
+
+### Web UI (선택)
+
+브라우저 WebUI는 **기본 비활성**입니다. 데스크톱 앱 설정에서 "WebUI 브라우저 접속 허용"을 켜고 시크릿을 설정한 뒤 서비스를 재시작하면 로컬/LAN에서 **http://<PC-IP>:5002** 로 접속할 수 있습니다 (5002 방화벽 규칙 자동 관리).
 
 - ⚙️ 포트, 시크릿 키 설정
 - 🎮 명령어 테스트
@@ -111,7 +135,9 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 ```json
 {
   "port": 5001,
-  "secret": ""
+  "secret": "",
+  "webui_remote": false,
+  "shutdown_grace": true
 }
 ```
 
@@ -119,8 +145,16 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 |----|------|--------|
 | `port` | SmartThings Hub 요청 수신 포트 | 5001 |
 | `secret` | 인증 키 (비어있으면 인증 없음) | "" |
+| `webui_remote` | 브라우저 WebUI 허용 (로컬+LAN, 시크릿 필수) | false |
+| `shutdown_grace` | 전원 명령 5분 유예 | true |
 
-> secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트 변경만 재시작 필요.
+> secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
+
+### 업그레이드 (v0.3.x → v0.3.2)
+
+1. 서비스 중지 후 exe 교체 → 서비스 시작 (재설치 불필요)
+2. 기존 config.json 그대로 호환 — 새 키는 기본값으로 동작
+3. 동작 변화: 브라우저 WebUI 기본 꺼짐, 전원 명령 5분 유예 기본 켜짐 (둘 다 설정 가능)
 
 ### SmartThings 설정
 
@@ -132,17 +166,21 @@ smartthings-pc-control.exe run         # 콘솔 모드 (디버그)
 
 ### 지원 환경
 
-- **Windows 8 ~ 11** (WoL 상태 표시 포함)
-- Windows 7 SP1 (핵심 기능만, WoL 미지원)
-- 단일 exe, 외부 의존성 없음
+- **Windows 10 ~ 11** 권장 (데스크톱 앱은 OpenGL 2.0 필요)
+- 서비스 핵심 기능(명령 수신)은 Windows 8에서도 동작하나 미검증
+- 단일 exe, 외부 런타임 없음
 
 > ℹ️ Windows 11에서 테스트되었습니다. Windows 10 이하는 호환성 테스트가 필요합니다.
 
 ### 빌드
 
+Fyne(네이티브 GUI) 때문에 CGO와 MinGW-w64 gcc가 필요합니다.
+
 ```bash
-go build -ldflags="-s -w -X main.Version=v0.3.0" -o smartthings-pc-control.exe .
+CGO_ENABLED=1 go build -ldflags="-s -w -H=windowsgui -X main.Version=v0.3.2" -o smartthings-pc-control.exe .
 ```
+
+> `-H=windowsgui`: GUI 실행 시 콘솔창을 띄우지 않습니다 (CLI 출력은 부모 콘솔에 연결됨).
 
 ---
 
@@ -161,13 +199,16 @@ Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/k
 
 ### Features
 
+🖥️ **Native desktop app** — Settings/Commands/Schedule/Network/Logs tabs, system tray resident  
 🎮 **8 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, etc.  
-🌐 **Web UI** — configure, test, and monitor from your browser  
+🛡️ **5-minute grace period** — shutdown/restart/suspend/hibernate run after 5 min with a cancel notification (configurable)  
+🌐 **Web UI (optional)** — enable in settings for local/LAN browser access  
 ⏱️ **Scheduled shutdown** — auto-execute after N minutes (countdown display)  
 📡 **WoL status** — per-adapter Wake-on-LAN state, MAC, IP, external IP  
+🔔 **Update check** — automatic new-release notifications  
 🌍 **Multilingual** — Korean/English (auto-detect + manual toggle)  
-🌓 **Dark/Light mode** — follows system theme + manual toggle  
-🔒 **Security** — secret auth, CSRF protection, login rate limiting  
+🌓 **Dark/Light mode** — follows system theme  
+🔒 **Security** — secret auth, CSRF protection, login rate limiting, WebUI off by default  
 
 ### Supported Commands
 
@@ -186,10 +227,13 @@ Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/k
 
 ### Installation
 
-**Option 1: Double-click (GUI)**
+**Option 1: Double-click (app)**
 
-Double-click the exe to open the service manager panel.  
-Click Install → approve UAC → done.
+Double-click the exe to open the desktop app.  
+Settings tab → Service Management → Install → approve UAC → done.  
+The app detects the freshly installed service by itself — no refresh needed.
+
+<img src="docs/gui-notinstalled.png" alt="Service not installed — Install button" width="49%">
 
 **Option 2: CLI**
 
@@ -209,9 +253,15 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 ### Usage
 
-**GUI (double-click)**
+**Desktop app (double-click)**
 
-Check service status, Install/Uninstall/Start, and open WebUI from the GUI panel.
+- Five tabs: Settings / Commands / Schedule / Network / Logs
+- Built-in service management: install, start, uninstall (auto-detected state)
+- Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
+- Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit)
+- Language: follows the OS language; switch Korean/English from the top-right (settings and connection state are kept)
+
+<img src="docs/gui-network.png" alt="Network/WoL tab" width="49%"> <img src="docs/gui-commands.png" alt="Commands tab" width="49%">
 
 **CLI**
 
@@ -221,11 +271,23 @@ smartthings-pc-control.exe uninstall   # Remove service
 smartthings-pc-control.exe status      # Show status
 smartthings-pc-control.exe version     # Show version
 smartthings-pc-control.exe run         # Console mode (debug)
+smartthings-pc-control.exe gui         # Launch the desktop app (same as double-click)
 ```
 
-### Web UI
+### Remote power command grace period (v0.3.2+)
 
-After installation: **http://127.0.0.1:5002**
+Shutdown/restart/suspend/hibernate commands from SmartThings run **after 5 minutes**, with a Windows notification during the wait — use its **[Run now] / [Cancel]** buttons, the tray menu, or the app's Schedule tab.
+
+- **The grace period applies only to remote (SmartThings) commands** — buttons in the app/WebUI always run immediately
+- Force shutdown always runs immediately, even remotely (emergency escape hatch)
+- Prefer immediate remote execution? Turn off the grace toggle in settings (`shutdown_grace: false`)
+- The SmartThings command listener (port 5001) is always reachable, regardless of the browser WebUI toggle
+
+<img src="docs/gui-schedule.png" alt="Schedule tab — countdown and cancel" width="49%">
+
+### Web UI (optional)
+
+The browser WebUI is **disabled by default**. Enable "Allow browser access" in the desktop app settings, set a secret, and restart the service — then browse to **http://<pc-ip>:5002** from local or LAN (the 5002 firewall rule is managed automatically).
 
 - ⚙️ Port and secret key configuration
 - 🎮 Command testing
@@ -240,7 +302,9 @@ After installation: **http://127.0.0.1:5002**
 ```json
 {
   "port": 5001,
-  "secret": ""
+  "secret": "",
+  "webui_remote": false,
+  "shutdown_grace": true
 }
 ```
 
@@ -248,8 +312,16 @@ After installation: **http://127.0.0.1:5002**
 |-----|-------------|---------|
 | `port` | Port for SmartThings Hub requests | 5001 |
 | `secret` | Auth key (empty = no auth) | "" |
+| `webui_remote` | Allow browser WebUI (local+LAN, secret required) | false |
+| `shutdown_grace` | 5-min grace for power commands | true |
 
-> Secret changes apply instantly without restart. Only port changes require a restart.
+> Secret changes apply instantly without restart. Port and `webui_remote` changes require a restart.
+
+### Upgrading (v0.3.x → v0.3.2)
+
+1. Stop the service, replace the exe, start the service (no reinstall needed)
+2. Existing config.json stays compatible — new keys use their defaults
+3. Behavior changes: browser WebUI off by default, 5-min power grace on by default (both configurable)
 
 ### SmartThings Setup
 
@@ -261,17 +333,21 @@ After installation: **http://127.0.0.1:5002**
 
 ### System Requirements
 
-- **Windows 8 ~ 11** (including WoL status)
-- Windows 7 SP1 (core features only, no WoL)
-- Single executable, no external dependencies
+- **Windows 10 ~ 11** recommended (the desktop app needs OpenGL 2.0)
+- The core service (command listener) may work on Windows 8, untested
+- Single executable, no external runtime
 
 > ℹ️ Tested on Windows 11. Compatibility testing is needed for Windows 10 and below.
 
 ### Building
 
+CGO and a MinGW-w64 gcc are required (Fyne native GUI).
+
 ```bash
-go build -ldflags="-s -w -X main.Version=v0.3.0" -o smartthings-pc-control.exe .
+CGO_ENABLED=1 go build -ldflags="-s -w -H=windowsgui -X main.Version=v0.3.2" -o smartthings-pc-control.exe .
 ```
+
+> `-H=windowsgui`: no console window for GUI launches (CLI output still reaches the parent console).
 
 ---
 

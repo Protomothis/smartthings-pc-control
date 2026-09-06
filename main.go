@@ -5,17 +5,50 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/svc"
+
+	"github.com/Protomothis/smartthings-pc-control/gui"
 	"github.com/Protomothis/smartthings-pc-control/service"
 )
 
 var Version = "dev"
 
+// attachParentConsole reconnects stdout/stderr to the launching terminal.
+// The binary is built with -H=windowsgui so no console window pops up on
+// double-click or "gui"; without this, CLI commands would print nothing.
+func attachParentConsole() {
+	const attachParentProcess = ^uintptr(0) // (DWORD)-1
+	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("AttachConsole")
+	if ret, _, _ := proc.Call(attachParentProcess); ret == 0 {
+		return // no parent console (double-click, service) — nothing to do
+	}
+	// Only rebind handles that are missing — when the shell pipes or
+	// redirects output, the inherited handles must stay untouched.
+	if os.Stdout.Fd() == 0 || int(os.Stdout.Fd()) == -1 {
+		if f, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stdout = f
+		}
+	}
+	if os.Stderr.Fd() == 0 || int(os.Stderr.Fd()) == -1 {
+		if f, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stderr = f
+		}
+	}
+}
+
 func main() {
+	attachParentConsole()
 	service.Version = Version
 
 	if len(os.Args) < 2 {
-		// No arguments - run as Windows service
-		service.RunService()
+		// No arguments: Windows service context → run the service;
+		// interactive (double-click) → open the native GUI with tray.
+		if isSvc, _ := svc.IsWindowsService(); isSvc {
+			service.RunService()
+		} else {
+			gui.Run(Version)
+		}
 		return
 	}
 
@@ -30,7 +63,8 @@ func main() {
 		fmt.Println("  - Listening on port 5001")
 		fmt.Println("  - Firewall rule added")
 		fmt.Println("  - Service set to auto-start on boot")
-		fmt.Println("  - WebUI: http://127.0.0.1:5002")
+		fmt.Println("  - Manage via the desktop app (double-click the exe)")
+		fmt.Println("  - Browser WebUI is disabled by default; enable it in app settings")
 		// Show completion dialog if launched from GUI installer
 		if len(os.Args) > 2 && os.Args[2] == "--gui" {
 			service.ShowInstallCompleteDialog()
@@ -52,6 +86,16 @@ func main() {
 	case "run":
 		// Run in console mode (for debugging)
 		service.RunConsole()
+
+	case "gui":
+		// Native GUI — talks to the running service via localhost API
+		gui.Run(Version)
+
+	case "toast":
+		// Invoked by toast notification action buttons (stpc:// protocol)
+		if len(os.Args) > 2 {
+			gui.HandleToastAction(os.Args[2])
+		}
 
 	default:
 		fmt.Printf("SmartThings PC Control %s\n", Version)

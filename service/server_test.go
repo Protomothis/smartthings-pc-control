@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -295,5 +296,92 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	json.Unmarshal(data, &raw)
 	if raw["port"].(float64) != 7777 {
 		t.Error("saved JSON port mismatch")
+	}
+}
+
+func TestGraceDefersShutdown(t *testing.T) {
+	initLogger()
+	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true})
+	defer cancelSchedule()
+
+	// Swap in a stub so a scheduling bug can't actually shut the box down.
+	orig := Commands["shutdown"]
+	executed := make(chan struct{}, 1)
+	Commands["shutdown"] = Command{Response: orig.Response, Execute: func() { executed <- struct{}{} }}
+	defer func() { Commands["shutdown"] = orig }()
+
+	handler := newCommandHandler()
+	req := httptest.NewRequest("GET", "/shutdown", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Body.String() != orig.Response {
+		t.Errorf("response body changed: %q", w.Body.String())
+	}
+
+	s := getSchedule()
+	if s["active"] != true {
+		t.Fatal("expected an active schedule (grace period), got none")
+	}
+	if s["command"] != "shutdown" {
+		t.Errorf("scheduled command = %v, want shutdown", s["command"])
+	}
+	if remaining, _ := s["remainingSec"].(int); remaining < graceMinutes*60-5 {
+		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], graceMinutes*60)
+	}
+
+	select {
+	case <-executed:
+		t.Fatal("shutdown executed immediately despite grace period")
+	default:
+	}
+
+	if !cancelSchedule() {
+		t.Fatal("cancelSchedule reported no active schedule")
+	}
+}
+
+func TestGraceDisabledExecutesImmediately(t *testing.T) {
+	initLogger()
+	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: false})
+
+	orig := Commands["shutdown"]
+	executed := make(chan struct{}, 1)
+	Commands["shutdown"] = Command{Response: orig.Response, Execute: func() { executed <- struct{}{} }}
+	defer func() { Commands["shutdown"] = orig }()
+
+	handler := newCommandHandler()
+	req := httptest.NewRequest("GET", "/shutdown", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	select {
+	case <-executed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown did not execute with grace disabled")
+	}
+	if s := getSchedule(); s["active"] == true {
+		cancelSchedule()
+		t.Fatal("unexpected schedule created with grace disabled")
+	}
+}
+
+func TestGraceDefaultTrueFromConfig(t *testing.T) {
+	// Missing key in an old config.json must keep the default (true).
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"port": 5001, "secret": ""}`), 0644)
+	cfg := defaultConfig
+	data, _ := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ShutdownGrace {
+		t.Error("shutdown_grace should default to true when missing from config.json")
+	}
+	if cfg.WebUIRemote {
+		t.Error("webui_remote should default to false when missing from config.json")
 	}
 }
