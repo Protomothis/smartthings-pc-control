@@ -153,6 +153,16 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 
 > secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
 
+### 업데이트 (v0.3.3+)
+
+앱이 시작될 때(및 24시간마다) GitHub Releases에서 새 버전을 확인합니다. 새 버전이 있으면 알림 대화상자에서 **[지금 업데이트]**를 누르세요.
+
+1. 새 exe를 exe 옆 `update\` 폴더(쓰기 불가 시 임시 폴더)에 다운로드하고 버전을 검증합니다
+2. UAC 승인 창이 한 번 표시됩니다. 승인하면 앱이 종료되고 관리자 권한으로 서비스 중지 → 기존 exe를 `.old`로 보관 → 새 exe 복사 → 서비스 재시작이 진행됩니다
+3. 새 버전 앱이 자동으로 다시 실행됩니다. 실패하면 이전 exe로 자동 롤백되며 상세 기록은 exe 옆 `gui.log`에 남습니다
+
+설정 탭 → 도구의 **[업데이트 확인]** 버튼으로 수동 확인도 가능합니다. 이전 방식대로 릴리스 페이지에서 exe를 직접 받아 덮어써도 됩니다.
+
 ### 업그레이드 (v0.3.x → v0.3.2)
 
 1. 서비스 중지 후 exe 교체 → 서비스 시작 (재설치 불필요)
@@ -322,6 +332,16 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
 | `shutdown_grace` | 5-min grace for power commands | true |
 
 > Secret changes apply instantly without restart. Port and `webui_remote` changes require a restart.
+
+### Updating (v0.3.3+)
+
+On startup (and every 24 hours) the app checks GitHub Releases. When a newer version exists, click **Update now** in the notification dialog.
+
+1. The new exe is downloaded to an `update\` folder next to the exe (or the temp folder if that is not writable) and its version is verified
+2. A single UAC prompt appears. Once approved the app closes and, with admin rights, the service is stopped, the current exe is kept as `.old`, the new exe is copied into place and the service is restarted
+3. The new version relaunches automatically. On failure the previous exe is restored and details are written to `gui.log` next to the exe
+
+You can also check manually via Settings → Tools → **Check for updates**, or still download the exe from the release page and overwrite it by hand.
 
 ### Upgrading (v0.3.x → v0.3.2)
 
