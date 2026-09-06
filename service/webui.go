@@ -136,12 +136,56 @@ func resetLoginAttempts(remoteAddr string) {
 // StartWebUI starts a local web UI for configuration on a separate port
 func StartWebUI(stop chan struct{}) {
 	cfg := getConfig()
+	if cfg.Port == 0 {
+		// Console mode starts this concurrently with StartHTTPServer —
+		// don't rely on the other goroutine having loaded the config yet.
+		cfg = loadConfig()
+		setConfig(cfg)
+	}
 	webPort := cfg.Port + 1 // WebUI runs on port+1 (default: 5002)
+
+	// Browser access is opt-in and only honored with a secret set — without
+	// auth, anyone on the LAN could reconfigure and control this PC.
+	// When disabled, the HTML pages are blocked (local browsers included;
+	// the desktop app is the primary UI) but the JSON API stays available
+	// on localhost, since the desktop app talks to the service through it.
+	pagesEnabled := cfg.WebUIRemote && cfg.Secret != ""
+	bindAddr := "127.0.0.1"
+	if pagesEnabled {
+		bindAddr = ""
+		if err := addWebUIFirewallRule(webPort); err != nil {
+			logMsg("WARNING: WebUI firewall rule failed (remote clients may be blocked): %v", err)
+		}
+	} else {
+		if cfg.WebUIRemote && cfg.Secret == "" {
+			logMsg("WARNING: webui_remote is enabled but no secret is set — browser WebUI stays disabled. Set a secret first.")
+		}
+		// Best-effort cleanup when browser access was turned off.
+		removeWebUIFirewallRule()
+	}
 
 	mux := http.NewServeMux()
 
+	// disabledPage is served for the HTML pages while browser access is off.
+	serveDisabledPage := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SmartThings PC Control</title>
+<style>body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#94a3b8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}div{max-width:480px;padding:24px}h2{color:#f8fafc}</style></head>
+<body><div><h2>WebUI is disabled</h2>
+<p>Use the desktop app (double-click the exe) to manage this PC.<br>
+To use the browser WebUI, enable "Allow browser access" in the app settings and set a secret, then restart the service.</p>
+<p>브라우저 WebUI가 비활성화되어 있습니다.<br>
+관리는 데스크톱 앱(exe 더블클릭)을 사용하세요.<br>
+브라우저 접속이 필요하면 앱 설정에서 "브라우저 접속 허용"을 켜고 시크릿을 설정한 뒤 서비스를 재시작하세요.</p></div></body></html>`)
+	}
+
 	// Login page
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if !pagesEnabled {
+			serveDisabledPage(w)
+			return
+		}
 		liveCfg := getConfig()
 		if liveCfg.Secret == "" {
 			http.Redirect(w, r, "/", http.StatusFound)
@@ -217,6 +261,10 @@ func StartWebUI(stop chan struct{}) {
 			http.NotFound(w, r)
 			return
 		}
+		if !pagesEnabled {
+			serveDisabledPage(w)
+			return
+		}
 		liveCfg := getConfig()
 		if !checkAuth(r, liveCfg.Secret) {
 			http.Redirect(w, r, "/login", http.StatusFound)
@@ -224,10 +272,12 @@ func StartWebUI(stop chan struct{}) {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsTmpl.Execute(w, struct {
-			Port    int
-			Secret  string
-			Version string
-		}{liveCfg.Port, liveCfg.Secret, Version})
+			Port          int
+			Secret        string
+			WebUIRemote   bool
+			ShutdownGrace bool
+			Version       string
+		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version})
 	})
 
 	// API: Get config
@@ -258,13 +308,24 @@ func StartWebUI(stop chan struct{}) {
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": msg})
 				return
 			}
+			if newCfg.WebUIRemote && newCfg.Secret == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Remote WebUI access requires a secret. Set a secret first."})
+				return
+			}
+			oldCfg := liveCfg
 			if err := saveConfig(newCfg); err != nil {
 				http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-			logMsg("Config updated via WebUI: port=%d, secret=%s", newCfg.Port, maskSecret(newCfg.Secret))
+			logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v", newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote)
+			msg := "Settings saved."
+			if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
+				msg = "Settings saved. Restart service to apply port/remote-access changes."
+			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Settings saved. Restart service to apply port changes."})
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -414,7 +475,7 @@ func StartWebUI(stop chan struct{}) {
 	})
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", webPort),
+		Addr:    fmt.Sprintf("%s:%d", bindAddr, webPort),
 		Handler: mux,
 	}
 
@@ -425,6 +486,10 @@ func StartWebUI(stop chan struct{}) {
 		server.Shutdown(ctx)
 	}()
 
-	logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
+	if bindAddr == "" {
+		logMsg("WebUI listening on http://0.0.0.0:%d (remote access enabled)", webPort)
+	} else {
+		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
+	}
 	server.ListenAndServe()
 }

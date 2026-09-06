@@ -19,7 +19,9 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build
-        run: go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
+        env:
+          CGO_ENABLED: 1 # Fyne (GUI) requires cgo; windows-latest ships MinGW gcc
+        run: go build -ldflags="-s -w -H=windowsgui -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
 
       - name: Extract release notes
         id: notes
