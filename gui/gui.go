@@ -16,6 +16,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -24,7 +25,7 @@ import (
 )
 
 // cmdButtonSize keeps command buttons compact instead of stretching full-width.
-var cmdButtonSize = fyne.NewSize(160, 38)
+var cmdButtonSize = fyne.NewSize(170, 38)
 
 const webUIPort = 5002
 
@@ -33,20 +34,33 @@ const webUIPort = 5002
 var testCommands = []struct {
 	Name        string
 	LabelKey    string
+	Icon        func() fyne.Resource
 	Destructive bool
 }{
-	{"ping", "cmd.ping", false},
-	{"lock", "cmd.lock", false},
-	{"turnscreenoff", "cmd.screenoff", false},
-	{"suspend", "cmd.suspend", true},
-	{"hibernate", "cmd.hibernate", true},
-	{"restart", "cmd.restart", true},
-	{"shutdown", "cmd.shutdown", true},
-	{"forceshutdown", "cmd.forceshutdown", true},
+	{"ping", "cmd.ping", theme.ConfirmIcon, false},
+	{"lock", "cmd.lock", theme.AccountIcon, false},
+	{"turnscreenoff", "cmd.screenoff", theme.VisibilityOffIcon, false},
+	{"suspend", "cmd.suspend", theme.MediaPauseIcon, true},
+	{"hibernate", "cmd.hibernate", theme.MediaStopIcon, true},
+	{"restart", "cmd.restart", theme.ViewRefreshIcon, true},
+	{"shutdown", "cmd.shutdown", theme.LogoutIcon, true},
+	{"forceshutdown", "cmd.forceshutdown", theme.WarningIcon, true},
 }
 
-// Preset delays (minutes) offered as one-click buttons on the schedule tab.
-var schedulePresets = []int{5, 15, 30, 60}
+// Preset delays (minutes) on the schedule tab. These are the only choices:
+// free-form minute entry was dropped in v0.3.4 (#52).
+var schedulePresets = []int{5, 15, 30, 60, 120}
+
+// defaultSchedulePreset is preselected on the schedule tab.
+const defaultSchedulePreset = 30
+
+// Grace period choices (seconds) for remote power commands (#51). The
+// settings select shows "Off" first, then these.
+var graceOptions = []int{10, 30, 60, 300, 600, 1800}
+
+// fallbackGraceSeconds is used when the service reports grace enabled but
+// no period (an older service) — matches the service default.
+const fallbackGraceSeconds = 300
 
 // Commands offered for scheduling.
 var scheduleCommands = []struct {
@@ -72,20 +86,31 @@ type ui struct {
 	quit      chan struct{}
 
 	// Widgets the background pollers update. Rebuilt on language change.
-	status        *widget.Label
-	portEntry     *widget.Entry
-	secretEntry   *widget.Entry
-	logsLabel     *widget.Label
-	logsScroll    *container.Scroll
-	logsAuto      *widget.Check
-	scheduleLabel *widget.Label
-	networkBox    *fyne.Container
-	svcBox        *fyne.Container
-	remoteCheck   *widget.Check
-	graceCheck    *widget.Check
-	lastSchedCmd  string
-	tabs          *container.AppTabs
-	// Settings sections hidden until the service is reachable.
+	status      *widget.Label
+	statusDot   *canvas.Circle // connection indicator next to the status text
+	portEntry   *widget.Entry
+	secretEntry *widget.Entry
+	logsLabel   *widget.Label
+	logsScroll  *container.Scroll
+	logsAuto    *widget.Check
+	// Schedule tab: big remaining time, the command line under it, and the
+	// cancel button that is only enabled while a schedule is active.
+	schedBig       *widget.RichText
+	scheduleLabel  *widget.Label
+	schedCancelBtn *widget.Button
+	networkBox     *fyne.Container
+	svcBox         *fyne.Container
+	remoteCheck    *widget.Check
+	// Grace select: graceValues[i] is the period (seconds) behind option i;
+	// 0 is the leading "Off" entry. A period not in graceOptions (set via
+	// the API) is appended so it round-trips unchanged.
+	graceSelect  *widget.Select
+	graceValues  []int
+	lastSchedCmd string
+	tabs         *container.AppTabs
+	// Settings tab root (re-laid out when the async service state arrives)
+	// and the sections hidden until the service is reachable.
+	settingsRoot  *fyne.Container
 	settingsExtra *fyne.Container
 	// Tray menu items that only make sense while the service is reachable.
 	trayNeedsConn []*fyne.MenuItem
@@ -151,7 +176,9 @@ func Run(version string, minimized bool) {
 	a.SetIcon(appIcon)
 	u.win = a.NewWindow(windowTitle)
 	u.win.SetIcon(appIcon)
-	u.win.Resize(fyne.NewSize(560, 640))
+	// Tall enough for the Settings tab (the longest one) to show without a
+	// scrollbar in either language; see #53.
+	u.win.Resize(fyne.NewSize(640, 800))
 	// Closing the window hides to the system tray; Exit lives in the tray menu.
 	u.win.SetCloseIntercept(func() { u.win.Hide() })
 
@@ -313,6 +340,15 @@ func (u *ui) startSelfUpdate(rel *releaseInfo, assetURL string) {
 
 func (u *ui) t(key string) string { return T(u.lang, key) }
 
+// formatSeconds renders whole minutes as "5분"/"5 min" and anything
+// shorter (or uneven) as seconds.
+func (u *ui) formatSeconds(sec int) string {
+	if sec >= 60 && sec%60 == 0 {
+		return fmt.Sprintf(u.t("duration.min"), sec/60)
+	}
+	return fmt.Sprintf(u.t("duration.sec"), sec)
+}
+
 // section renders a subtle bold header above content — lighter than
 // widget.Card, which draws a large title and a visible card surface.
 func section(title string, content fyne.CanvasObject) fyne.CanvasObject {
@@ -320,18 +356,58 @@ func section(title string, content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewVBox(head, content)
 }
 
+// hint renders wrapped, de-emphasised helper text under a control.
+func hint(text string) *widget.Label {
+	l := widget.NewLabel(text)
+	l.Wrapping = fyne.TextWrapWord
+	l.Importance = widget.LowImportance
+	return l
+}
+
+// connState drives the colour of the status dot.
+type connState int
+
+const (
+	connPending connState = iota // connecting / restarting
+	connOK
+	connLost
+)
+
+// setConn recolours the status dot. Must be called on the UI thread.
+func (u *ui) setConn(s connState) {
+	if u.statusDot == nil {
+		return
+	}
+	switch s {
+	case connOK:
+		u.statusDot.FillColor = theme.Color(theme.ColorNameSuccess)
+	case connLost:
+		u.statusDot.FillColor = theme.Color(theme.ColorNameError)
+	default:
+		u.statusDot.FillColor = theme.Color(theme.ColorNameDisabled)
+	}
+	u.statusDot.Refresh()
+}
+
 // rebuild recreates the whole window content in the current language.
 func (u *ui) rebuild() {
 	// Only the very first build is "connecting"; on a rebuild (language
 	// change) show the known state so the bar doesn't flash back to it.
 	statusKey := "status.connecting"
+	state := connPending
 	if u.connected.Load() {
 		statusKey = "status.connected"
+		state = connOK
 	} else if u.tabs != nil {
 		statusKey = "status.unreachable"
+		state = connLost
 	}
 	u.statusText = u.t(statusKey)
 	u.status = widget.NewLabel(u.statusText)
+	// Never let a long status line (e.g. "command sent: …") widen the window.
+	u.status.Truncation = fyne.TextTruncateEllipsis
+	u.statusDot = canvas.NewCircle(theme.Color(theme.ColorNameDisabled))
+	u.setConn(state)
 	// The countdown is re-fetched (in the new language) by initialLoad.
 	u.schedText = ""
 
@@ -363,14 +439,19 @@ func (u *ui) rebuild() {
 
 	versionLabel := widget.NewLabel(u.version)
 	versionLabel.Importance = widget.LowImportance
-	topBar := container.NewBorder(nil, nil, u.status, container.NewHBox(versionLabel, langSelect))
+	// GridWrap pins the circle to 10×10 (a bare canvas object has no
+	// minimum size); Center keeps it on the text baseline.
+	dot := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), u.statusDot))
+	// The status label is the Border's centre object so it takes whatever
+	// width is left (and truncates) instead of dictating the window width.
+	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(versionLabel, langSelect), u.status)
 
 	u.tabs = container.NewAppTabs(
-		container.NewTabItem(u.t("tab.settings"), u.buildSettingsTab()),
-		container.NewTabItem(u.t("tab.commands"), u.buildCommandsTab()),
-		container.NewTabItem(u.t("tab.schedule"), u.buildScheduleTab()),
-		container.NewTabItem(u.t("tab.network"), u.buildNetworkTab()),
-		container.NewTabItem(u.t("tab.logs"), u.buildLogsTab()),
+		container.NewTabItemWithIcon(u.t("tab.settings"), theme.SettingsIcon(), u.buildSettingsTab()),
+		container.NewTabItemWithIcon(u.t("tab.commands"), theme.MediaPlayIcon(), u.buildCommandsTab()),
+		container.NewTabItemWithIcon(u.t("tab.schedule"), theme.HistoryIcon(), u.buildScheduleTab()),
+		container.NewTabItemWithIcon(u.t("tab.network"), theme.ComputerIcon(), u.buildNetworkTab()),
+		container.NewTabItemWithIcon(u.t("tab.logs"), theme.ListIcon(), u.buildLogsTab()),
 	)
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
@@ -399,6 +480,9 @@ func (u *ui) applyConnected(on bool) {
 		} else {
 			u.settingsExtra.Hide()
 		}
+		if u.settingsRoot != nil {
+			u.settingsRoot.Refresh()
+		}
 	}
 	for _, item := range u.trayNeedsConn {
 		item.Disabled = !on
@@ -419,7 +503,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry.OnChanged = onEdit
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = widget.NewCheck(u.t("settings.remote"), onToggle)
-	u.graceCheck = widget.NewCheck(u.t("settings.grace"), onToggle)
+	u.graceValues = append([]int{0}, graceOptions...)
+	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
 
 	u.saveBtn = widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), func() {
 		port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
@@ -431,11 +516,13 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
 			return
 		}
+		graceOn, graceSec := u.graceFromSelection()
 		cfg := Config{
 			Port:          port,
 			Secret:        u.secretEntry.Text,
 			WebUIRemote:   u.remoteCheck.Checked,
-			ShutdownGrace: u.graceCheck.Checked,
+			ShutdownGrace: graceOn,
+			GraceSeconds:  graceSec,
 		}
 		msg, err := u.client.SaveConfig(cfg)
 		if err != nil {
@@ -467,18 +554,21 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 				return
 			}
 			u.setStatus(u.t("settings.restarting"))
+			u.setConn(connPending)
 		}, u.win)
 	})
 
 	form := widget.NewForm(
 		widget.NewFormItem(u.t("settings.port"), u.portEntry),
 		widget.NewFormItem(u.t("settings.secret"), u.secretEntry),
+		widget.NewFormItem(u.t("settings.grace"), u.graceSelect),
 	)
 
 	settingsBody := container.NewVBox(
 		form,
+		hint(u.t("settings.grace.hint")),
 		u.remoteCheck,
-		u.graceCheck,
+		hint(u.t("settings.remote.hint")),
 		container.NewHBox(layout.NewSpacer(), u.saveBtn),
 	)
 
@@ -504,17 +594,73 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		section(u.t("settings.service"), settingsBody),
 		widget.NewSeparator(),
-		section(u.t("settings.tools"), container.NewVBox(
-			container.NewHBox(openWebUI, restartBtn, layout.NewSpacer()),
+		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
+		widget.NewSeparator(),
+		section(u.t("settings.app"), container.NewVBox(
 			autostartCheck,
-			container.NewHBox(updateCheck, widget.NewButton(u.t("update.manual"), u.checkForUpdatesManual), layout.NewSpacer()),
+			container.NewHBox(updateCheck, widget.NewButtonWithIcon(u.t("update.manual"), theme.DownloadIcon(), u.checkForUpdatesManual), layout.NewSpacer()),
 		)),
+		// Trailing padding so the last row never sits flush against the
+		// window edge when the tab fits without scrolling.
+		widget.NewLabel(""),
 	)
 
-	return container.NewVScroll(container.NewPadded(container.NewVBox(
+	u.settingsRoot = container.NewVBox(
 		section(u.t("svc.section"), u.svcBox),
 		u.settingsExtra,
-	)))
+	)
+	return container.NewVScroll(container.NewPadded(u.settingsRoot))
+}
+
+// graceLabels renders graceValues for the select: "Off" for 0, then the
+// periods ("30초", "5분", ...).
+func (u *ui) graceLabels() []string {
+	labels := make([]string, len(u.graceValues))
+	for i, sec := range u.graceValues {
+		if sec == 0 {
+			labels[i] = u.t("settings.grace.off")
+		} else {
+			labels[i] = u.formatSeconds(sec)
+		}
+	}
+	return labels
+}
+
+// setGraceSelection points the select at cfg. A period outside the presets
+// (set through the API) is appended as an extra option so saving other
+// settings does not silently change it. Must be called on the UI thread.
+func (u *ui) setGraceSelection(cfg Config) {
+	if !cfg.ShutdownGrace {
+		u.graceSelect.SetSelectedIndex(0)
+		return
+	}
+	sec := cfg.GraceSeconds
+	if sec <= 0 {
+		sec = fallbackGraceSeconds
+	}
+	for i, v := range u.graceValues {
+		if v == sec {
+			u.graceSelect.SetSelectedIndex(i)
+			return
+		}
+	}
+	u.graceValues = append(u.graceValues, sec)
+	u.graceSelect.Options = u.graceLabels()
+	u.graceSelect.SetSelectedIndex(len(u.graceValues) - 1)
+}
+
+// graceFromSelection maps the select back to the config pair. "Off" keeps
+// the last known period, so switching it back on restores the old value.
+func (u *ui) graceFromSelection() (on bool, seconds int) {
+	i := u.graceSelect.SelectedIndex()
+	if i > 0 && i < len(u.graceValues) {
+		return true, u.graceValues[i]
+	}
+	seconds = fallbackGraceSeconds
+	if u.cfgBaseline != nil && u.cfgBaseline.GraceSeconds > 0 {
+		seconds = u.cfgBaseline.GraceSeconds
+	}
+	return false, seconds
 }
 
 // settingsDirty reports whether the form differs from the loaded/saved
@@ -524,10 +670,12 @@ func (u *ui) settingsDirty() bool {
 	if b == nil {
 		return false
 	}
+	graceOn, graceSec := u.graceFromSelection()
 	return strings.TrimSpace(u.portEntry.Text) != strconv.Itoa(b.Port) ||
 		u.secretEntry.Text != b.Secret ||
 		u.remoteCheck.Checked != b.WebUIRemote ||
-		u.graceCheck.Checked != b.ShutdownGrace
+		graceOn != b.ShutdownGrace ||
+		(graceOn && graceSec != b.GraceSeconds)
 }
 
 // updateSaveState enables Save only while there is something to save.
@@ -628,10 +776,17 @@ func (u *ui) fillSvcBox(state svcState) {
 	u.svcBox.Add(widget.NewLabelWithStyle(stateText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	u.svcBox.Add(container.NewHBox(append(buttons, layout.NewSpacer())...))
 	u.svcBox.Refresh()
+	// The box grew after the tab was laid out (the state query is async);
+	// without re-laying out the parent, the sections below stay where they
+	// were and this one paints over them — visible right after a language
+	// change (#53).
+	if u.settingsRoot != nil {
+		u.settingsRoot.Refresh()
+	}
 }
 
 func (u *ui) buildCommandsTab() fyne.CanvasObject {
-	makeButton := func(name, label string, destructive bool) fyne.CanvasObject {
+	makeButton := func(name, label string, icon fyne.Resource, destructive bool) fyne.CanvasObject {
 		run := func() {
 			if _, err := u.client.TestCommand(name); err != nil {
 				dialog.ShowError(err, u.win)
@@ -639,7 +794,7 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 			}
 			u.setStatus(fmt.Sprintf(u.t("cmd.sent"), label))
 		}
-		btn := widget.NewButton(label, func() {
+		btn := widget.NewButtonWithIcon(label, icon, func() {
 			if destructive {
 				dialog.ShowConfirm(u.t("cmd.confirm.title"), fmt.Sprintf(u.t("cmd.confirm.body"), label), func(ok bool) {
 					if ok {
@@ -658,7 +813,7 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 
 	var safe, power []fyne.CanvasObject
 	for _, tc := range testCommands {
-		btn := makeButton(tc.Name, u.t(tc.LabelKey), tc.Destructive)
+		btn := makeButton(tc.Name, u.t(tc.LabelKey), tc.Icon(), tc.Destructive)
 		if tc.Destructive {
 			power = append(power, btn)
 		} else {
@@ -674,12 +829,21 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
 		section(u.t("cmd.group.power"), container.NewGridWrap(cmdButtonSize, power...)),
+		widget.NewSeparator(),
 		note,
 	)))
 }
 
 func (u *ui) buildScheduleTab() fyne.CanvasObject {
+	// Countdown block: the remaining time in large type, the command it
+	// belongs to underneath. Both are filled by loadSchedule.
+	seg := &widget.TextSegment{Text: u.t("schedule.idle"), Style: widget.RichTextStyleHeading}
+	seg.Style.Alignment = fyne.TextAlignCenter
+	seg.Style.SizeName = sizeNameCountdown
+	u.schedBig = widget.NewRichText(seg)
 	u.scheduleLabel = widget.NewLabel(u.t("schedule.none"))
+	u.scheduleLabel.Alignment = fyne.TextAlignCenter
+	u.scheduleLabel.Wrapping = fyne.TextWrapWord
 
 	labels := make([]string, len(scheduleCommands))
 	for i, sc := range scheduleCommands {
@@ -688,27 +852,26 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	cmdSelect := widget.NewSelect(labels, nil)
 	cmdSelect.SetSelectedIndex(0)
 
-	minutesEntry := widget.NewEntry()
-	minutesEntry.SetText("30")
-
-	// One-click presets that just fill the minutes entry.
-	presets := []fyne.CanvasObject{}
-	for _, m := range schedulePresets {
-		m := m
-		b := widget.NewButton(fmt.Sprintf(u.t("schedule.preset"), m), func() {
-			minutesEntry.SetText(strconv.Itoa(m))
-		})
-		b.Importance = widget.LowImportance
-		presets = append(presets, b)
+	// Delay is preset-only (#52): one radio entry per preset.
+	presetLabels := make([]string, len(schedulePresets))
+	defaultLabel := ""
+	for i, m := range schedulePresets {
+		presetLabels[i] = u.formatSeconds(m * 60)
+		if m == defaultSchedulePreset {
+			defaultLabel = presetLabels[i]
+		}
 	}
-	presets = append(presets, layout.NewSpacer())
-	presetRow := container.NewHBox(presets...)
+	delayRadio := widget.NewRadioGroup(presetLabels, nil)
+	delayRadio.Horizontal = true
+	delayRadio.Required = true
+	delayRadio.SetSelected(defaultLabel)
 
 	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
-		minutes, err := strconv.Atoi(strings.TrimSpace(minutesEntry.Text))
-		if err != nil || minutes < 1 || minutes > 1440 {
-			dialog.ShowError(errors.New(u.t("schedule.invalid")), u.win)
-			return
+		minutes := defaultSchedulePreset
+		for i, l := range presetLabels {
+			if l == delayRadio.Selected {
+				minutes = schedulePresets[i]
+			}
 		}
 		name := scheduleCommands[cmdSelect.SelectedIndex()].Name
 		label := u.t(scheduleCommands[cmdSelect.SelectedIndex()].LabelKey)
@@ -725,25 +888,25 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	})
 	startBtn.Importance = widget.HighImportance
 
-	cancelBtn := widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
+	u.schedCancelBtn = widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
 		if err := u.client.CancelSchedule(); err != nil {
 			dialog.ShowError(err, u.win)
 			return
 		}
 		u.refreshNow()
 	})
+	u.schedCancelBtn.Disable() // enabled by loadSchedule while a schedule is active
 
 	form := widget.NewForm(
 		widget.NewFormItem(u.t("schedule.command"), cmdSelect),
-		widget.NewFormItem(u.t("schedule.minutes"), container.NewVBox(minutesEntry, presetRow)),
+		widget.NewFormItem(u.t("schedule.delay"), delayRadio),
 	)
 
-	u.scheduleLabel.TextStyle = fyne.TextStyle{Bold: true}
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
-		u.scheduleLabel,
+		container.NewPadded(container.NewVBox(u.schedBig, u.scheduleLabel)),
 		widget.NewSeparator(),
 		form,
-		container.NewHBox(layout.NewSpacer(), startBtn, cancelBtn),
+		container.NewHBox(layout.NewSpacer(), startBtn, u.schedCancelBtn),
 	)))
 }
 
@@ -779,7 +942,11 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 		u.openServiceLog(true)
 	})
 
-	top := container.NewBorder(nil, nil, u.logsAuto, container.NewHBox(openFileBtn, openDirBtn, refreshBtn), u.logsFilter)
+	// Toolbar on one row, filter on its own row: a single row of five
+	// controls plus the entry would push the window's minimum width past
+	// its default size (and differently per language, see #53).
+	toolbar := container.NewHBox(u.logsAuto, refreshBtn, layout.NewSpacer(), openFileBtn, openDirBtn)
+	top := container.NewVBox(toolbar, u.logsFilter)
 	return container.NewBorder(top, nil, nil, nil, u.logsScroll)
 }
 
@@ -833,19 +1000,27 @@ func (u *ui) initialLoad() {
 		if err != nil {
 			u.connected.Store(false)
 			u.setStatus(u.t("status.unreachable"))
+			u.setConn(connLost)
 			u.applyConnected(false)
 			return
 		}
 		u.connected.Store(true)
 		u.setStatus(u.t("status.connected"))
+		u.setConn(connOK)
 		u.applyConnected(true)
-		// Baseline first: SetText/SetChecked fire OnChanged, which compares
-		// against it; once all four match, Save ends up disabled.
+		// Baseline first: SetText/SetChecked/SetSelectedIndex fire OnChanged,
+		// which compares against it; once everything matches, Save ends up
+		// disabled.
+		if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
+			// Service predating grace_seconds: mirror what the select shows
+			// so the form does not start out dirty.
+			cfg.GraceSeconds = fallbackGraceSeconds
+		}
 		u.cfgBaseline = &cfg
 		u.portEntry.SetText(strconv.Itoa(cfg.Port))
 		u.secretEntry.SetText(cfg.Secret)
 		u.remoteCheck.SetChecked(cfg.WebUIRemote)
-		u.graceCheck.SetChecked(cfg.ShutdownGrace)
+		u.setGraceSelection(cfg)
 		u.updateSaveState()
 	})
 	if err == nil {
@@ -935,6 +1110,18 @@ func (u *ui) renderLogs() {
 	}
 }
 
+// setCountdown replaces the large remaining-time text on the schedule tab.
+// Must be called on the UI thread.
+func (u *ui) setCountdown(text string) {
+	if u.schedBig == nil || len(u.schedBig.Segments) == 0 {
+		return
+	}
+	if seg, ok := u.schedBig.Segments[0].(*widget.TextSegment); ok && seg.Text != text {
+		seg.Text = text
+		u.schedBig.Refresh()
+	}
+}
+
 func (u *ui) loadSchedule() {
 	s, err := u.client.GetSchedule()
 	if err != nil {
@@ -944,7 +1131,9 @@ func (u *ui) loadSchedule() {
 	fyne.Do(func() {
 		if !s.Active {
 			u.lastSchedCmd = ""
+			u.setCountdown(u.t("schedule.idle"))
 			u.scheduleLabel.SetText(u.t("schedule.none"))
+			u.schedCancelBtn.Disable()
 			u.setScheduleText("")
 			return
 		}
@@ -965,8 +1154,10 @@ func (u *ui) loadSchedule() {
 			}
 		}
 		countdown := fmt.Sprintf(u.t("schedule.countdown"), cmdLabel, remain)
-		u.scheduleLabel.SetText(countdown)
-		// Same line in the tray entry and icon tooltip.
+		u.setCountdown(remain)
+		u.scheduleLabel.SetText(fmt.Sprintf(u.t("schedule.for"), cmdLabel))
+		u.schedCancelBtn.Enable()
+		// Tray entry and icon tooltip carry the one-line form.
 		u.setScheduleText(countdown)
 
 		// A schedule appeared (SmartThings grace period, WebUI, or this
@@ -993,9 +1184,17 @@ func (u *ui) loadNetwork() {
 		return
 	}
 	fyne.Do(func() {
+		// Every free-text line wraps: adapter names, warnings and especially
+		// IPv6 address lists would otherwise set the window's minimum width
+		// once they load (a few seconds after start) and make it jump.
+		wrapped := func(text string) *widget.Label {
+			l := widget.NewLabel(text)
+			l.Wrapping = fyne.TextWrapWord
+			return l
+		}
 		u.networkBox.RemoveAll()
 		if s.Error != "" {
-			u.networkBox.Add(widget.NewLabel(s.Error))
+			u.networkBox.Add(wrapped(s.Error))
 			return
 		}
 		if s.Ready {
@@ -1004,10 +1203,10 @@ func (u *ui) loadNetwork() {
 			u.networkBox.Add(widget.NewLabelWithStyle("✗ "+u.t("network.wolnotready"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 		}
 		if s.Warning != "" {
-			u.networkBox.Add(widget.NewLabel(s.Warning))
+			u.networkBox.Add(wrapped(s.Warning))
 		}
 		if s.ExternalIP != "" {
-			u.networkBox.Add(widget.NewLabel(u.t("network.externalip") + ": " + s.ExternalIP))
+			u.networkBox.Add(wrapped(u.t("network.externalip") + ": " + s.ExternalIP))
 		}
 		u.networkBox.Add(widget.NewSeparator())
 		for _, ad := range s.Adapters {
@@ -1024,7 +1223,9 @@ func (u *ui) loadNetwork() {
 			if len(ad.IPs) > 0 {
 				detail += "\nIP: " + strings.Join(ad.IPs, ", ")
 			}
-			u.networkBox.Add(section(title, widget.NewLabel(detail)))
+			head := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+			head.Wrapping = fyne.TextWrapWord
+			u.networkBox.Add(container.NewVBox(head, wrapped(detail)))
 			u.networkBox.Add(widget.NewSeparator())
 		}
 	})
@@ -1038,6 +1239,7 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 	if u.connected.Swap(false) {
 		fyne.Do(func() {
 			u.setStatus(u.t("status.unreachable"))
+			u.setConn(connLost)
 			u.applyConnected(false)
 		})
 	}
