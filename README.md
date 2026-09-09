@@ -34,9 +34,9 @@
 
 🖥️ **네이티브 데스크톱 앱** — 설정/명령/예약/네트워크/로그 탭, 트레이 상주  
 🎮 **8개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off 등  
-🛡️ **전원 명령 5분 유예** — 종료/재시작/절전/최대절전을 5분 뒤 실행, 알림으로 취소 가능 (설정으로 끄기 가능)  
+🛡️ **전원 명령 유예** — 종료/재시작/절전/최대절전을 선택한 시간(10초~30분, 기본 5분) 뒤 실행, 알림으로 취소 가능 (끄기 가능)  
 🌐 **Web UI (선택)** — 설정에서 허용 시 로컬/LAN 브라우저에서 접속  
-⏱️ **예약 종료** — N분 후 자동 실행 (카운트다운 표시)  
+⏱️ **예약 종료** — 5/15/30/60/120분 뒤 자동 실행 (큰 카운트다운 표시)  
 📡 **WoL 상태** — 어댑터별 Wake-on-LAN 상태, MAC, IP, 외부 IP 표시  
 🔔 **업데이트 확인** — 새 릴리스 자동 확인 및 알림  
 🌍 **다국어** — 한국어/영어 (OS 언어 감지 + 수동 전환)  
@@ -88,12 +88,12 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 **데스크톱 앱 (더블클릭)**
 
-- 5개 탭: 설정 / 명령 / 예약 / 네트워크 / 로그 — 예약 프리셋(5/15/30/60분), 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼
+- 5개 탭(아이콘 포함): 설정 / 명령 / 예약 / 네트워크 / 로그 — 예약은 프리셋(5/15/30/60/120분)만 선택, 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼. 상단 상태 표시줄의 색 점이 연결 상태(연결/끊김/연결 중)를 보여줍니다
 - 서비스 관리: 설치·시작·제거 (상태 자동 감지)
 - 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
 - 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료). 툴팁과 상태 항목에 연결 상태·예약 남은 시간 표시
 - 언어: OS 언어 자동 감지, 우측 상단에서 한국어/영어 전환 (설정값과 연결 상태는 그대로 유지)
-- **로그인 시 자동 시작** (v0.3.3+): 앱을 한 번 실행하면 이후 로그인 때 창 없이 트레이에만 상주합니다. 유예 알림을 받으려면 켜 두세요. 설정 탭 → 도구에서 끌 수 있습니다
+- **로그인 시 자동 시작** (v0.3.3+): 앱을 한 번 실행하면 이후 로그인 때 창 없이 트레이에만 상주합니다. 유예 알림을 받으려면 켜 두세요. 설정 탭 → 앱에서 끌 수 있습니다
 
 <img src="docs/gui-network.png" alt="네트워크/WoL 탭" width="49%"> <img src="docs/gui-commands.png" alt="명령 탭" width="49%">
 
@@ -111,11 +111,12 @@ smartthings-pc-control.exe gui --minimized  # 창 없이 트레이에만 (로그
 
 ### 원격 전원 명령 유예 (v0.3.2+)
 
-SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 뒤에 실행**되며, 그동안 Windows 알림이 표시됩니다. 알림의 **[바로 실행] / [취소]** 버튼으로 즉시 처리하거나, 트레이 메뉴·앱의 예약 탭에서 취소할 수 있습니다.
+SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정한 유예 시간 뒤에 실행**되며(기본 5분), 그동안 Windows 알림이 표시됩니다. 알림의 **[바로 실행] / [취소]** 버튼으로 즉시 처리하거나, 트레이 메뉴·앱의 예약 탭에서 취소할 수 있습니다.
 
+- **유예 시간 선택** (v0.3.4+): 설정 탭 → 서비스 설정 → "원격 명령 유예"에서 사용 안 함 / 10초 / 30초 / 1분 / 5분 / 10분 / 30분 중 선택 (`grace_seconds`)
 - **유예는 원격(SmartThings) 명령에만 적용됩니다** — 앱/WebUI에서 버튼으로 직접 실행하는 명령은 항상 즉시 실행
 - 강제 종료(forceshutdown)는 원격이라도 항상 즉시 실행됩니다 (비상용)
-- 원격 명령도 즉시 실행하고 싶으면 설정에서 유예를 끄세요 (`shutdown_grace: false`)
+- 원격 명령도 즉시 실행하고 싶으면 유예를 "사용 안 함"으로 두세요 (`shutdown_grace: false`)
 - 트레이 앱이 꺼져 있어도 원격 유예 명령이 들어오면 서비스가 트레이 앱을 자동으로 실행해 토스트를 표시합니다 (로그인된 사용자 세션이 있어야 함, v0.3.3+)
 - SmartThings 명령 수신(포트 5001)은 WebUI 브라우저 접속 허용 여부와 무관하게 항상 열려 있습니다
 
@@ -140,7 +141,8 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
   "port": 5001,
   "secret": "",
   "webui_remote": false,
-  "shutdown_grace": true
+  "shutdown_grace": true,
+  "grace_seconds": 300
 }
 ```
 
@@ -149,7 +151,8 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 | `port` | SmartThings Hub 요청 수신 포트 | 5001 |
 | `secret` | 인증 키 (비어있으면 인증 없음) | "" |
 | `webui_remote` | 브라우저 WebUI 허용 (로컬+LAN, 시크릿 필수) | false |
-| `shutdown_grace` | 전원 명령 5분 유예 | true |
+| `shutdown_grace` | 원격 전원 명령 유예 켜기/끄기 | true |
+| `grace_seconds` | 유예 시간(초), 5~3600. 앱은 10/30/60/300/600/1800 제공 (v0.3.4+) | 300 |
 
 > secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
 
@@ -167,7 +170,7 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **5분 �
 
 1. 서비스 중지 후 exe 교체 → 서비스 시작 (재설치 불필요)
 2. 기존 config.json 그대로 호환 — 새 키는 기본값으로 동작
-3. 동작 변화: 브라우저 WebUI 기본 꺼짐, 전원 명령 5분 유예 기본 켜짐 (둘 다 설정 가능)
+3. 동작 변화: 브라우저 WebUI 기본 꺼짐, 전원 명령 유예(기본 5분) 기본 켜짐 (둘 다 설정 가능)
 
 ### SmartThings 설정
 
@@ -214,9 +217,9 @@ Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/k
 
 🖥️ **Native desktop app** — Settings/Commands/Schedule/Network/Logs tabs, system tray resident  
 🎮 **8 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, etc.  
-🛡️ **5-minute grace period** — shutdown/restart/suspend/hibernate run after 5 min with a cancel notification (configurable)  
+🛡️ **Power command grace period** — shutdown/restart/suspend/hibernate run after a chosen delay (10 s – 30 min, default 5 min) with a cancel notification (can be turned off)  
 🌐 **Web UI (optional)** — enable in settings for local/LAN browser access  
-⏱️ **Scheduled shutdown** — auto-execute after N minutes (countdown display)  
+⏱️ **Scheduled shutdown** — auto-execute after 5/15/30/60/120 minutes (large countdown display)  
 📡 **WoL status** — per-adapter Wake-on-LAN state, MAC, IP, external IP  
 🔔 **Update check** — automatic new-release notifications  
 🌍 **Multilingual** — Korean/English (auto-detect + manual toggle)  
@@ -268,12 +271,12 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 **Desktop app (double-click)**
 
-- Five tabs: Settings / Commands / Schedule / Network / Logs — schedule presets (5/15/30/60 min), log filter with open-file/open-folder, Save enabled only when something changed
+- Five tabs (with icons): Settings / Commands / Schedule / Network / Logs — schedule delay is preset-only (5/15/30/60/120 min), log filter with open-file/open-folder, Save enabled only when something changed. A coloured dot in the status bar shows the connection state (connected / lost / connecting)
 - Built-in service management: install, start, uninstall (auto-detected state)
 - Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
 - Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit). Tooltip and status entry show connection state and remaining schedule time
 - Language: follows the OS language; switch Korean/English from the top-right (settings and connection state are kept)
-- **Start at login** (v0.3.3+): after the first launch the app starts in the tray (no window) on every login. Keep it on to receive grace-period toasts. Turn it off under Settings → Tools
+- **Start at login** (v0.3.3+): after the first launch the app starts in the tray (no window) on every login. Keep it on to receive grace-period toasts. Turn it off under Settings → App
 
 <img src="docs/gui-network.png" alt="Network/WoL tab" width="49%"> <img src="docs/gui-commands.png" alt="Commands tab" width="49%">
 
@@ -291,11 +294,12 @@ smartthings-pc-control.exe gui --minimized  # Tray only, no window (used by logi
 
 ### Remote power command grace period (v0.3.2+)
 
-Shutdown/restart/suspend/hibernate commands from SmartThings run **after 5 minutes**, with a Windows notification during the wait — use its **[Run now] / [Cancel]** buttons, the tray menu, or the app's Schedule tab.
+Shutdown/restart/suspend/hibernate commands from SmartThings run **after the configured grace period** (default 5 minutes), with a Windows notification during the wait — use its **[Run now] / [Cancel]** buttons, the tray menu, or the app's Schedule tab.
 
+- **Choose the length** (v0.3.4+): Settings tab → Service Settings → "Remote grace": Off / 10 s / 30 s / 1 min / 5 min / 10 min / 30 min (`grace_seconds`)
 - **The grace period applies only to remote (SmartThings) commands** — buttons in the app/WebUI always run immediately
 - Force shutdown always runs immediately, even remotely (emergency escape hatch)
-- Prefer immediate remote execution? Turn off the grace toggle in settings (`shutdown_grace: false`)
+- Prefer immediate remote execution? Set the grace period to "Off" (`shutdown_grace: false`)
 - If the tray app is not running when a remote grace command arrives, the service launches it in the logged-in user's session so the toast still appears (v0.3.3+)
 - The SmartThings command listener (port 5001) is always reachable, regardless of the browser WebUI toggle
 
@@ -320,7 +324,8 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
   "port": 5001,
   "secret": "",
   "webui_remote": false,
-  "shutdown_grace": true
+  "shutdown_grace": true,
+  "grace_seconds": 300
 }
 ```
 
@@ -329,7 +334,8 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
 | `port` | Port for SmartThings Hub requests | 5001 |
 | `secret` | Auth key (empty = no auth) | "" |
 | `webui_remote` | Allow browser WebUI (local+LAN, secret required) | false |
-| `shutdown_grace` | 5-min grace for power commands | true |
+| `shutdown_grace` | Grace period for remote power commands on/off | true |
+| `grace_seconds` | Grace length in seconds, 5–3600; the app offers 10/30/60/300/600/1800 (v0.3.4+) | 300 |
 
 > Secret changes apply instantly without restart. Port and `webui_remote` changes require a restart.
 
@@ -347,7 +353,7 @@ You can also check manually via Settings → Tools → **Check for updates**, or
 
 1. Stop the service, replace the exe, start the service (no reinstall needed)
 2. Existing config.json stays compatible — new keys use their defaults
-3. Behavior changes: browser WebUI off by default, 5-min power grace on by default (both configurable)
+3. Behavior changes: browser WebUI off by default, power grace (default 5 min) on by default (both configurable)
 
 ### SmartThings Setup
 
