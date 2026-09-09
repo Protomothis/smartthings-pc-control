@@ -232,12 +232,18 @@ func copyFile(src, dst string) error {
 }
 
 // launchGUIUnelevated starts exe as a normal (non-admin) GUI. We are running
-// elevated, and a child inherits our token — so hand the launch to
+// elevated, and a child inherits our token — so start it with the desktop
+// user's own token (relaunch.go, #50). If that fails, hand the launch to
 // explorer.exe, which runs at the desktop's medium integrity level and
-// starts the target with its own token (the same path a double-click takes).
-// If that fails we fall back to a direct launch: an elevated GUI is still
-// better than no GUI at all.
+// starts the target with its own token; and if even that fails, launch
+// directly: an elevated GUI is still better than no GUI at all.
 func launchGUIUnelevated(exe string) {
+	if err := launchGUIAsUser(exe); err == nil {
+		updateLog("relaunched GUI with the desktop user's token")
+		return
+	} else {
+		updateLog("user-token launch failed: %v — trying explorer.exe", err)
+	}
 	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "explorer.exe"), exe)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if err := cmd.Start(); err == nil {

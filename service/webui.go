@@ -314,12 +314,20 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Remote WebUI access requires a secret. Set a secret first."})
 				return
 			}
+			newCfg = normalizeConfig(newCfg, liveCfg)
+			if msg := validateGraceSeconds(newCfg.GraceSeconds); msg != "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": msg})
+				return
+			}
 			oldCfg := liveCfg
 			if err := saveConfig(newCfg); err != nil {
 				http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-			logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v", newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote)
+			logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d",
+				newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds)
 			msg := "Settings saved."
 			if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
 				msg = "Settings saved. Restart service to apply port/remote-access changes."
@@ -451,12 +459,16 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Minutes must be between 1 and 1440"})
 				return
 			}
-			if err := setSchedule(body.Command, body.Minutes, originUI); err != nil {
+			if err := setSchedule(body.Command, time.Duration(body.Minutes)*time.Minute, originUI); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)})
+			msg := fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)
+			if rep, ok := getSchedule()["replaced"].(*replacedSchedule); ok && rep != nil {
+				msg += fmt.Sprintf(" (replaced %s schedule: %s)", rep.Origin, rep.Command)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
 			return
 		}
 		if r.Method == "DELETE" {

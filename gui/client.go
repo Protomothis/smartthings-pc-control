@@ -15,6 +15,7 @@ type Config struct {
 	Secret        string `json:"secret"`
 	WebUIRemote   bool   `json:"webui_remote"`
 	ShutdownGrace bool   `json:"shutdown_grace"`
+	GraceSeconds  int    `json:"grace_seconds"`
 }
 
 // Client talks to the service's WebUI API on localhost.
@@ -172,7 +173,21 @@ type Schedule struct {
 	Active       bool   `json:"active"`
 	Command      string `json:"command"`
 	RemainingSec int    `json:"remainingSec"`
+	// Origin is "remote" for a SmartThings grace deferral, "ui" for a
+	// schedule made from this app or the WebUI.
+	Origin string `json:"origin"`
+	// Replaced is the schedule this one displaced, when there was one.
+	Replaced *ReplacedSchedule `json:"replaced"`
 }
+
+// ReplacedSchedule mirrors the "replaced" object of /api/schedule.
+type ReplacedSchedule struct {
+	Command string `json:"command"`
+	Origin  string `json:"origin"`
+}
+
+// IsRemote reports whether the schedule came from a SmartThings command.
+func (s Schedule) IsRemote() bool { return s.Origin == "remote" }
 
 // GetSchedule returns the currently active scheduled command, if any.
 func (c *Client) GetSchedule() (Schedule, error) {

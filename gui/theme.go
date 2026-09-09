@@ -29,6 +29,17 @@ func newKoreanTheme() fyne.Theme {
 	return t
 }
 
+// sizeNameCountdown is the custom text size used by the schedule tab's
+// remaining-time display (RichText can only pick sizes by theme name).
+const sizeNameCountdown fyne.ThemeSizeName = "countdown"
+
+func (t *koreanTheme) Size(name fyne.ThemeSizeName) float32 {
+	if name == sizeNameCountdown {
+		return 40
+	}
+	return t.Theme.Size(name)
+}
+
 func (t *koreanTheme) Font(style fyne.TextStyle) fyne.Resource {
 	// Keep the default monospace font; logs are ASCII.
 	if style.Monospace {

@@ -120,9 +120,12 @@ type Config struct {
 	// 127.0.0.1 only. Requires a secret; applied on service restart.
 	WebUIRemote bool `json:"webui_remote"`
 	// ShutdownGrace defers power commands from SmartThings (shutdown,
-	// restart, suspend, hibernate) by 5 minutes so the user can cancel
+	// restart, suspend, hibernate) by GraceSeconds so the user can cancel
 	// from the tray app. forceshutdown always runs immediately.
 	ShutdownGrace bool `json:"shutdown_grace"`
+	// GraceSeconds is the length of that grace period. 0 (key missing in
+	// an older config.json, or omitted by a client) means the default.
+	GraceSeconds int `json:"grace_seconds"`
 }
 
 var defaultConfig = Config{
@@ -130,6 +133,16 @@ var defaultConfig = Config{
 	Secret:        "",
 	WebUIRemote:   false,
 	ShutdownGrace: true, // missing key in config.json keeps this default
+	GraceSeconds:  defaultGraceSeconds,
+}
+
+// graceDuration returns the configured grace period, falling back to the
+// default when the value is missing or out of range.
+func (c Config) graceDuration() time.Duration {
+	if validateGraceSeconds(c.GraceSeconds) != "" {
+		return time.Duration(defaultGraceSeconds) * time.Second
+	}
+	return time.Duration(c.GraceSeconds) * time.Second
 }
 
 // Global config with RWMutex for hot-reload support
@@ -186,6 +199,29 @@ func validatePort(port int) string {
 		return fmt.Sprintf("port must be between 1 and 65535 (got %d)", port)
 	}
 	return ""
+}
+
+// validateGraceSeconds returns a message when the grace period is outside
+// the accepted range. 0 is rejected here — callers that mean "default"
+// normalise first (see normalizeConfig).
+func validateGraceSeconds(sec int) string {
+	if sec < minGraceSeconds || sec > maxGraceSeconds {
+		return fmt.Sprintf("grace_seconds must be between %d and %d (got %d)", minGraceSeconds, maxGraceSeconds, sec)
+	}
+	return ""
+}
+
+// normalizeConfig fills in values a client may legitimately omit: a
+// missing/zero grace_seconds keeps the current (or default) period so an
+// older WebUI page or config.json does not silently reset it.
+func normalizeConfig(cfg Config, current Config) Config {
+	if cfg.GraceSeconds == 0 {
+		cfg.GraceSeconds = current.GraceSeconds
+		if cfg.GraceSeconds == 0 {
+			cfg.GraceSeconds = defaultGraceSeconds
+		}
+	}
+	return cfg
 }
 
 func saveConfig(cfg Config) error {
@@ -249,8 +285,9 @@ func newCommandHandler() http.HandlerFunc {
 		// from the tray app. The HTTP response stays immediate for Edge
 		// driver compatibility.
 		if liveCfg.ShutdownGrace && graceCommands[name] {
-			if err := setSchedule(name, graceMinutes, originRemote); err == nil {
-				logMsg("Command: %s deferred %d min (grace period — cancel from the app or tray)", name, graceMinutes)
+			grace := liveCfg.graceDuration()
+			if err := setSchedule(name, grace, originRemote); err == nil {
+				logMsg("Command: %s deferred %s (grace period — cancel from the app or tray)", name, formatDelay(grace))
 				return
 			}
 			logMsg("WARNING: grace scheduling failed for %s, executing immediately", name)
@@ -531,7 +568,19 @@ func getExternalIP() string {
 type ScheduledTask struct {
 	Command   string    `json:"command"`
 	ExecuteAt time.Time `json:"executeAt"`
-	timer     *time.Timer
+	// Origin says who created the schedule (app/WebUI vs. a remote grace
+	// deferral); the GUI labels the countdown with it (#54).
+	Origin scheduleOrigin
+	// Replaced describes the schedule this one displaced, if any, so the
+	// UI can tell the user their own timer was overridden.
+	Replaced *replacedSchedule
+	timer    *time.Timer
+}
+
+// replacedSchedule is the summary of a schedule that a newer one cancelled.
+type replacedSchedule struct {
+	Command string `json:"command"`
+	Origin  string `json:"origin"`
 }
 
 var (
@@ -551,12 +600,17 @@ func getSchedule() map[string]interface{} {
 	if remaining < 0 {
 		remaining = 0
 	}
-	return map[string]interface{}{
-		"active":     true,
-		"command":    scheduledTask.Command,
-		"executeAt":  scheduledTask.ExecuteAt.Format(time.RFC3339),
+	info := map[string]interface{}{
+		"active":       true,
+		"command":      scheduledTask.Command,
+		"origin":       scheduledTask.Origin.String(),
+		"executeAt":    scheduledTask.ExecuteAt.Format(time.RFC3339),
 		"remainingSec": int(remaining),
 	}
+	if scheduledTask.Replaced != nil {
+		info["replaced"] = scheduledTask.Replaced
+	}
+	return info
 }
 
 // scheduleOrigin records who asked for a schedule. It decides whether the
@@ -578,6 +632,14 @@ func (o scheduleOrigin) wakesTrayApp() bool {
 	return o == originRemote
 }
 
+// String is the wire form used by /api/schedule ("ui" or "remote").
+func (o scheduleOrigin) String() string {
+	if o == originRemote {
+		return "remote"
+	}
+	return "ui"
+}
+
 // trayAppLauncher starts the tray app in the user's session. A package
 // variable so tests can stub it out instead of spawning processes.
 var trayAppLauncher = launchTrayApp
@@ -597,8 +659,8 @@ func wakeTrayApp(command string) {
 
 // setSchedule creates a new scheduled task. origin says who requested it;
 // remote grace schedules additionally wake the tray app (see wakeTrayApp).
-func setSchedule(command string, delayMinutes int, origin scheduleOrigin) error {
-	if err := scheduleTask(command, delayMinutes); err != nil {
+func setSchedule(command string, delay time.Duration, origin scheduleOrigin) error {
+	if err := scheduleTask(command, delay, origin); err != nil {
 		return err
 	}
 	if origin.wakesTrayApp() {
@@ -607,23 +669,30 @@ func setSchedule(command string, delayMinutes int, origin scheduleOrigin) error 
 	return nil
 }
 
-// scheduleTask arms the timer for command; it carries no origin knowledge.
-func scheduleTask(command string, delayMinutes int) error {
+// scheduleTask arms the timer for command. There is a single schedule slot:
+// an existing schedule is cancelled and remembered as Replaced on the new
+// one, so the UI can say what was overridden (#54).
+func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) error {
+	if delay <= 0 {
+		return fmt.Errorf("invalid delay: %s", delay)
+	}
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
-
-	// Cancel existing schedule
-	if scheduledTask != nil && scheduledTask.timer != nil {
-		scheduledTask.timer.Stop()
-		scheduledTask = nil
-	}
 
 	cmd, ok := Commands[command]
 	if !ok {
 		return fmt.Errorf("unknown command: %s", command)
 	}
 
-	delay := time.Duration(delayMinutes) * time.Minute
+	// Cancel existing schedule
+	var replaced *replacedSchedule
+	if scheduledTask != nil && scheduledTask.timer != nil {
+		scheduledTask.timer.Stop()
+		replaced = &replacedSchedule{Command: scheduledTask.Command, Origin: scheduledTask.Origin.String()}
+		logMsg("Schedule replaced: %s (%s) -> %s (%s)", scheduledTask.Command, scheduledTask.Origin, command, origin)
+		scheduledTask = nil
+	}
+
 	executeAt := time.Now().Add(delay)
 
 	timer := time.AfterFunc(delay, func() {
@@ -639,11 +708,22 @@ func scheduleTask(command string, delayMinutes int) error {
 	scheduledTask = &ScheduledTask{
 		Command:   command,
 		ExecuteAt: executeAt,
+		Origin:    origin,
+		Replaced:  replaced,
 		timer:     timer,
 	}
 
-	logMsg("Scheduled: %s in %d minutes (at %s)", command, delayMinutes, executeAt.Format("15:04:05"))
+	logMsg("Scheduled: %s in %s (at %s, origin %s)", command, formatDelay(delay), executeAt.Format("15:04:05"), origin)
 	return nil
+}
+
+// formatDelay renders a delay for log lines: whole minutes as "5 min",
+// anything shorter (or not a whole minute) as seconds ("30 sec").
+func formatDelay(d time.Duration) string {
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%d min", int(d/time.Minute))
+	}
+	return fmt.Sprintf("%d sec", int(d/time.Second))
 }
 
 // cancelSchedule cancels the current scheduled task

@@ -39,13 +39,14 @@ func registerToastProtocol() {
 }
 
 // showGraceToast pops a Windows toast with Run now / Cancel buttons for the
-// scheduled command. Returns an error so the caller can fall back to a
+// scheduled command. title and message are already localised (they differ
+// by origin, see #54). Returns an error so the caller can fall back to a
 // plain Fyne notification.
-func showGraceToast(lang Lang, cmdLabel, remain string) error {
+func showGraceToast(lang Lang, title, message string) error {
 	n := toast.Notification{
 		AppID:   windowTitle,
-		Title:   T(lang, "notify.grace.title"),
-		Message: fmt.Sprintf(T(lang, "schedule.countdown"), cmdLabel, remain),
+		Title:   title,
+		Message: message,
 		Actions: []toast.Action{
 			{Type: "protocol", Label: T(lang, "toast.runnow"), Arguments: protocolScheme + "://runnow"},
 			{Type: "protocol", Label: T(lang, "toast.cancel"), Arguments: protocolScheme + "://cancel"},
