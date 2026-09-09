@@ -568,7 +568,19 @@ func getExternalIP() string {
 type ScheduledTask struct {
 	Command   string    `json:"command"`
 	ExecuteAt time.Time `json:"executeAt"`
-	timer     *time.Timer
+	// Origin says who created the schedule (app/WebUI vs. a remote grace
+	// deferral); the GUI labels the countdown with it (#54).
+	Origin scheduleOrigin
+	// Replaced describes the schedule this one displaced, if any, so the
+	// UI can tell the user their own timer was overridden.
+	Replaced *replacedSchedule
+	timer    *time.Timer
+}
+
+// replacedSchedule is the summary of a schedule that a newer one cancelled.
+type replacedSchedule struct {
+	Command string `json:"command"`
+	Origin  string `json:"origin"`
 }
 
 var (
@@ -588,12 +600,17 @@ func getSchedule() map[string]interface{} {
 	if remaining < 0 {
 		remaining = 0
 	}
-	return map[string]interface{}{
-		"active":     true,
-		"command":    scheduledTask.Command,
-		"executeAt":  scheduledTask.ExecuteAt.Format(time.RFC3339),
+	info := map[string]interface{}{
+		"active":       true,
+		"command":      scheduledTask.Command,
+		"origin":       scheduledTask.Origin.String(),
+		"executeAt":    scheduledTask.ExecuteAt.Format(time.RFC3339),
 		"remainingSec": int(remaining),
 	}
+	if scheduledTask.Replaced != nil {
+		info["replaced"] = scheduledTask.Replaced
+	}
+	return info
 }
 
 // scheduleOrigin records who asked for a schedule. It decides whether the
@@ -613,6 +630,14 @@ const (
 // the tray app so the [Run now]/[Cancel] toast appears.
 func (o scheduleOrigin) wakesTrayApp() bool {
 	return o == originRemote
+}
+
+// String is the wire form used by /api/schedule ("ui" or "remote").
+func (o scheduleOrigin) String() string {
+	if o == originRemote {
+		return "remote"
+	}
+	return "ui"
 }
 
 // trayAppLauncher starts the tray app in the user's session. A package
@@ -635,7 +660,7 @@ func wakeTrayApp(command string) {
 // setSchedule creates a new scheduled task. origin says who requested it;
 // remote grace schedules additionally wake the tray app (see wakeTrayApp).
 func setSchedule(command string, delay time.Duration, origin scheduleOrigin) error {
-	if err := scheduleTask(command, delay); err != nil {
+	if err := scheduleTask(command, delay, origin); err != nil {
 		return err
 	}
 	if origin.wakesTrayApp() {
@@ -644,23 +669,28 @@ func setSchedule(command string, delay time.Duration, origin scheduleOrigin) err
 	return nil
 }
 
-// scheduleTask arms the timer for command; it carries no origin knowledge.
-func scheduleTask(command string, delay time.Duration) error {
+// scheduleTask arms the timer for command. There is a single schedule slot:
+// an existing schedule is cancelled and remembered as Replaced on the new
+// one, so the UI can say what was overridden (#54).
+func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) error {
 	if delay <= 0 {
 		return fmt.Errorf("invalid delay: %s", delay)
 	}
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
 
-	// Cancel existing schedule
-	if scheduledTask != nil && scheduledTask.timer != nil {
-		scheduledTask.timer.Stop()
-		scheduledTask = nil
-	}
-
 	cmd, ok := Commands[command]
 	if !ok {
 		return fmt.Errorf("unknown command: %s", command)
+	}
+
+	// Cancel existing schedule
+	var replaced *replacedSchedule
+	if scheduledTask != nil && scheduledTask.timer != nil {
+		scheduledTask.timer.Stop()
+		replaced = &replacedSchedule{Command: scheduledTask.Command, Origin: scheduledTask.Origin.String()}
+		logMsg("Schedule replaced: %s (%s) -> %s (%s)", scheduledTask.Command, scheduledTask.Origin, command, origin)
+		scheduledTask = nil
 	}
 
 	executeAt := time.Now().Add(delay)
@@ -678,10 +708,12 @@ func scheduleTask(command string, delay time.Duration) error {
 	scheduledTask = &ScheduledTask{
 		Command:   command,
 		ExecuteAt: executeAt,
+		Origin:    origin,
+		Replaced:  replaced,
 		timer:     timer,
 	}
 
-	logMsg("Scheduled: %s in %s (at %s)", command, formatDelay(delay), executeAt.Format("15:04:05"))
+	logMsg("Scheduled: %s in %s (at %s, origin %s)", command, formatDelay(delay), executeAt.Format("15:04:05"), origin)
 	return nil
 }
 

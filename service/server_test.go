@@ -558,11 +558,11 @@ func TestNormalizeConfigKeepsGraceWhenOmitted(t *testing.T) {
 
 func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
 	initLogger()
-	if err := scheduleTask("lock", 0); err == nil {
+	if err := scheduleTask("lock", 0, originUI); err == nil {
 		cancelSchedule()
 		t.Fatal("zero delay accepted")
 	}
-	if err := scheduleTask("lock", -time.Second); err == nil {
+	if err := scheduleTask("lock", -time.Second, originUI); err == nil {
 		cancelSchedule()
 		t.Fatal("negative delay accepted")
 	}
@@ -580,5 +580,38 @@ func TestFormatDelay(t *testing.T) {
 		if got := formatDelay(d); got != want {
 			t.Errorf("formatDelay(%s) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+func TestScheduleExposesOriginAndReplacement(t *testing.T) {
+	initLogger()
+	stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
+		t.Fatal(err)
+	}
+	s := getSchedule()
+	if s["origin"] != "ui" {
+		t.Errorf("origin = %v, want ui", s["origin"])
+	}
+	if _, has := s["replaced"]; has {
+		t.Error("first schedule must not report a replacement")
+	}
+
+	// A remote grace deferral takes over the single slot and says so.
+	if err := setSchedule("restart", 5*time.Minute, originRemote); err != nil {
+		t.Fatal(err)
+	}
+	s = getSchedule()
+	if s["origin"] != "remote" {
+		t.Errorf("origin = %v, want remote", s["origin"])
+	}
+	rep, ok := s["replaced"].(*replacedSchedule)
+	if !ok || rep == nil {
+		t.Fatalf("replaced = %#v, want the displaced ui schedule", s["replaced"])
+	}
+	if rep.Command != "lock" || rep.Origin != "ui" {
+		t.Errorf("replaced = %+v, want {lock ui}", *rep)
 	}
 }

@@ -464,7 +464,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)})
+			msg := fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)
+			if rep, ok := getSchedule()["replaced"].(*replacedSchedule); ok && rep != nil {
+				msg += fmt.Sprintf(" (replaced %s schedule: %s)", rep.Origin, rep.Command)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
 			return
 		}
 		if r.Method == "DELETE" {

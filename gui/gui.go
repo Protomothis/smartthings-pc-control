@@ -1133,6 +1133,7 @@ func (u *ui) loadSchedule() {
 			u.lastSchedCmd = ""
 			u.setCountdown(u.t("schedule.idle"))
 			u.scheduleLabel.SetText(u.t("schedule.none"))
+			u.setOriginStyle(false)
 			u.schedCancelBtn.Disable()
 			u.setScheduleText("")
 			return
@@ -1147,34 +1148,74 @@ func (u *ui) loadSchedule() {
 		} else {
 			remain = fmt.Sprintf("%02d:%02d", mm, ss)
 		}
-		cmdLabel := s.Command
-		for _, sc := range scheduleCommands {
-			if sc.Name == s.Command {
-				cmdLabel = u.t(sc.LabelKey)
-			}
+		cmdLabel := u.commandLabel(s.Command)
+		// Origin decides the wording everywhere (#54): a remote grace
+		// deferral is "SmartThings … grace period", a timer set here is
+		// "scheduled from this app".
+		countdownKey, titleKey, originKey := "schedule.countdown", "notify.schedule.title", "schedule.origin.ui"
+		if s.IsRemote() {
+			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
 		}
-		countdown := fmt.Sprintf(u.t("schedule.countdown"), cmdLabel, remain)
+		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
 		u.setCountdown(remain)
-		u.scheduleLabel.SetText(fmt.Sprintf(u.t("schedule.for"), cmdLabel))
+		detail := u.t(originKey) + "\n" + fmt.Sprintf(u.t("schedule.for"), cmdLabel)
+		if s.Replaced != nil {
+			detail += "\n" + fmt.Sprintf(u.t("schedule.replaced"), u.commandLabel(s.Replaced.Command), u.t(u.originShortKey(s.Replaced.Origin)))
+		}
+		u.scheduleLabel.SetText(detail)
+		u.setOriginStyle(s.IsRemote())
 		u.schedCancelBtn.Enable()
 		// Tray entry and icon tooltip carry the one-line form.
 		u.setScheduleText(countdown)
 
-		// A schedule appeared (SmartThings grace period, WebUI, or this
-		// app) — notify with Run now / Cancel buttons so it can be
-		// handled straight from the toast.
-		if s.Command != u.lastSchedCmd {
-			u.lastSchedCmd = s.Command
+		// A schedule appeared or changed hands (a remote grace deferral
+		// replacing a local timer, or vice versa) — notify with Run now /
+		// Cancel buttons so it can be handled straight from the toast.
+		key := s.Origin + ":" + s.Command
+		if key != u.lastSchedCmd {
+			u.lastSchedCmd = key
 			lang := u.lang
+			title := u.t(titleKey)
 			go func() {
-				if err := showGraceToast(lang, cmdLabel, remain); err != nil {
+				if err := showGraceToast(lang, title, countdown); err != nil {
 					// Toast failed (e.g. PowerShell unavailable) — plain notification.
-					u.app.SendNotification(fyne.NewNotification(T(lang, "notify.grace.title"),
+					u.app.SendNotification(fyne.NewNotification(title,
 						fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)))
 				}
 			}()
 		}
 	})
+}
+
+// commandLabel returns the localised name of a scheduleable command,
+// falling back to the raw name.
+func (u *ui) commandLabel(name string) string {
+	for _, sc := range scheduleCommands {
+		if sc.Name == name {
+			return u.t(sc.LabelKey)
+		}
+	}
+	return name
+}
+
+// originShortKey maps a wire origin to the i18n key of its short label.
+func (u *ui) originShortKey(origin string) string {
+	if origin == "remote" {
+		return "origin.remote.short"
+	}
+	return "origin.ui.short"
+}
+
+// setOriginStyle tints the schedule detail line: remote deferrals get the
+// warning colour so a countdown the user did not start stands out. Must be
+// called on the UI thread.
+func (u *ui) setOriginStyle(remote bool) {
+	if remote {
+		u.scheduleLabel.Importance = widget.WarningImportance
+	} else {
+		u.scheduleLabel.Importance = widget.MediumImportance
+	}
+	u.scheduleLabel.Refresh()
 }
 
 func (u *ui) loadNetwork() {
