@@ -356,7 +356,7 @@ func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
 	defer cancelSchedule()
 
 	// Same path the app/WebUI /api/schedule endpoint takes.
-	if err := setSchedule("lock", 30, originUI); err != nil {
+	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)
 	}
 	if s := getSchedule(); s["active"] != true {
@@ -370,7 +370,7 @@ func TestSetScheduleRemoteWakesTrayApp(t *testing.T) {
 	calls := stubTrayLauncher(t, nil)
 	defer cancelSchedule()
 
-	if err := setSchedule("lock", 30, originRemote); err != nil {
+	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatal(err)
 	}
 	expectTrayLaunch(t, calls)
@@ -380,7 +380,7 @@ func TestSetScheduleUnknownCommandDoesNotWakeTrayApp(t *testing.T) {
 	initLogger()
 	calls := stubTrayLauncher(t, nil)
 
-	if err := setSchedule("no-such-command", 5, originRemote); err == nil {
+	if err := setSchedule("no-such-command", 5*time.Minute, originRemote); err == nil {
 		cancelSchedule()
 		t.Fatal("expected error for unknown command")
 	}
@@ -393,7 +393,7 @@ func TestTrayLaunchFailureKeepsSchedule(t *testing.T) {
 	calls := stubTrayLauncher(t, errors.New("no explorer.exe process found"))
 	defer cancelSchedule()
 
-	if err := setSchedule("lock", 30, originRemote); err != nil {
+	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatalf("setSchedule failed because the tray launch failed: %v", err)
 	}
 	expectTrayLaunch(t, calls)
@@ -433,8 +433,8 @@ func TestGraceDefersShutdown(t *testing.T) {
 	if s["command"] != "shutdown" {
 		t.Errorf("scheduled command = %v, want shutdown", s["command"])
 	}
-	if remaining, _ := s["remainingSec"].(int); remaining < graceMinutes*60-5 {
-		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], graceMinutes*60)
+	if remaining, _ := s["remainingSec"].(int); remaining < defaultGraceSeconds-5 {
+		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], defaultGraceSeconds)
 	}
 
 	select {
@@ -493,5 +493,125 @@ func TestGraceDefaultTrueFromConfig(t *testing.T) {
 	}
 	if cfg.WebUIRemote {
 		t.Error("webui_remote should default to false when missing from config.json")
+	}
+	if cfg.GraceSeconds != defaultGraceSeconds {
+		t.Errorf("grace_seconds = %d, want default %d when missing from config.json", cfg.GraceSeconds, defaultGraceSeconds)
+	}
+}
+
+func TestGraceUsesConfiguredSeconds(t *testing.T) {
+	initLogger()
+	setConfig(Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 30})
+	stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	orig := Commands["restart"]
+	Commands["restart"] = Command{Response: orig.Response, Execute: func() {}}
+	defer func() { Commands["restart"] = orig }()
+
+	w := httptest.NewRecorder()
+	newCommandHandler().ServeHTTP(w, httptest.NewRequest("GET", "/restart", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	s := getSchedule()
+	if s["active"] != true {
+		t.Fatal("expected an active schedule")
+	}
+	remaining, _ := s["remainingSec"].(int)
+	if remaining < 25 || remaining > 30 {
+		t.Errorf("remainingSec = %d, want ~30 (configured grace_seconds)", remaining)
+	}
+}
+
+func TestGraceDurationFallsBackWhenInvalid(t *testing.T) {
+	def := time.Duration(defaultGraceSeconds) * time.Second
+	cases := map[int]time.Duration{
+		0:                   def, // key missing from config.json
+		minGraceSeconds:     time.Duration(minGraceSeconds) * time.Second,
+		maxGraceSeconds:     time.Duration(maxGraceSeconds) * time.Second,
+		maxGraceSeconds + 1: def,
+		-5:                  def,
+	}
+	for sec, want := range cases {
+		if got := (Config{GraceSeconds: sec}).graceDuration(); got != want {
+			t.Errorf("graceDuration(%d) = %s, want %s", sec, got, want)
+		}
+	}
+}
+
+func TestNormalizeConfigKeepsGraceWhenOmitted(t *testing.T) {
+	current := Config{GraceSeconds: 60}
+	// A client that predates grace_seconds sends 0 → keep the live value.
+	if got := normalizeConfig(Config{ShutdownGrace: true}, current).GraceSeconds; got != 60 {
+		t.Errorf("omitted grace_seconds → %d, want 60 (current)", got)
+	}
+	// Explicit values pass through untouched (validation happens later).
+	if got := normalizeConfig(Config{GraceSeconds: 10}, current).GraceSeconds; got != 10 {
+		t.Errorf("explicit grace_seconds → %d, want 10", got)
+	}
+	// Nothing to inherit → default.
+	if got := normalizeConfig(Config{}, Config{}).GraceSeconds; got != defaultGraceSeconds {
+		t.Errorf("no current value → %d, want default %d", got, defaultGraceSeconds)
+	}
+}
+
+func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
+	initLogger()
+	if err := scheduleTask("lock", 0, originUI); err == nil {
+		cancelSchedule()
+		t.Fatal("zero delay accepted")
+	}
+	if err := scheduleTask("lock", -time.Second, originUI); err == nil {
+		cancelSchedule()
+		t.Fatal("negative delay accepted")
+	}
+}
+
+func TestFormatDelay(t *testing.T) {
+	cases := map[time.Duration]string{
+		10 * time.Second: "10 sec",
+		90 * time.Second: "90 sec",
+		time.Minute:      "1 min",
+		5 * time.Minute:  "5 min",
+		30 * time.Minute: "30 min",
+	}
+	for d, want := range cases {
+		if got := formatDelay(d); got != want {
+			t.Errorf("formatDelay(%s) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+func TestScheduleExposesOriginAndReplacement(t *testing.T) {
+	initLogger()
+	stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
+		t.Fatal(err)
+	}
+	s := getSchedule()
+	if s["origin"] != "ui" {
+		t.Errorf("origin = %v, want ui", s["origin"])
+	}
+	if _, has := s["replaced"]; has {
+		t.Error("first schedule must not report a replacement")
+	}
+
+	// A remote grace deferral takes over the single slot and says so.
+	if err := setSchedule("restart", 5*time.Minute, originRemote); err != nil {
+		t.Fatal(err)
+	}
+	s = getSchedule()
+	if s["origin"] != "remote" {
+		t.Errorf("origin = %v, want remote", s["origin"])
+	}
+	rep, ok := s["replaced"].(*replacedSchedule)
+	if !ok || rep == nil {
+		t.Fatalf("replaced = %#v, want the displaced ui schedule", s["replaced"])
+	}
+	if rep.Command != "lock" || rep.Origin != "ui" {
+		t.Errorf("replaced = %+v, want {lock ui}", *rep)
 	}
 }
