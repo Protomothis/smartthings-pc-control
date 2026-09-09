@@ -114,6 +114,7 @@ smartthings-pc-control.exe gui --minimized  # 창 없이 트레이에만 (로그
 SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정한 유예 시간 뒤에 실행**되며(기본 5분), 그동안 Windows 알림이 표시됩니다. 알림의 **[바로 실행] / [취소]** 버튼으로 즉시 처리하거나, 트레이 메뉴·앱의 예약 탭에서 취소할 수 있습니다.
 
 - **유예 시간 선택** (v0.3.4+): 설정 탭 → 서비스 설정 → "원격 명령 유예"에서 사용 안 함 / 10초 / 30초 / 1분 / 5분 / 10분 / 30분 중 선택 (`grace_seconds`)
+- **출처 표시** (v0.3.4+): 예약 탭·트레이·토스트가 "SmartThings 원격 명령 · 유예 중"과 "이 앱 / WebUI에서 예약"을 구분합니다. 예약 슬롯은 하나라 새 예약이 기존 예약을 대체하며, 대체되면 그 사실이 표시됩니다
 - **유예는 원격(SmartThings) 명령에만 적용됩니다** — 앱/WebUI에서 버튼으로 직접 실행하는 명령은 항상 즉시 실행
 - 강제 종료(forceshutdown)는 원격이라도 항상 즉시 실행됩니다 (비상용)
 - 원격 명령도 즉시 실행하고 싶으면 유예를 "사용 안 함"으로 두세요 (`shutdown_grace: false`)
@@ -297,6 +298,7 @@ smartthings-pc-control.exe gui --minimized  # Tray only, no window (used by logi
 Shutdown/restart/suspend/hibernate commands from SmartThings run **after the configured grace period** (default 5 minutes), with a Windows notification during the wait — use its **[Run now] / [Cancel]** buttons, the tray menu, or the app's Schedule tab.
 
 - **Choose the length** (v0.3.4+): Settings tab → Service Settings → "Remote grace": Off / 10 s / 30 s / 1 min / 5 min / 10 min / 30 min (`grace_seconds`)
+- **Origin shown** (v0.3.4+): the Schedule tab, tray and toast distinguish "SmartThings remote command · grace period" from "Scheduled from this app / WebUI". There is a single schedule slot, so a new schedule replaces the current one and says so
 - **The grace period applies only to remote (SmartThings) commands** — buttons in the app/WebUI always run immediately
 - Force shutdown always runs immediately, even remotely (emergency escape hatch)
 - Prefer immediate remote execution? Set the grace period to "Off" (`shutdown_grace: false`)
