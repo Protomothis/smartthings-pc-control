@@ -275,7 +275,7 @@
                     <div class="field">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                             <input type="checkbox" id="shutdownGrace" {{if .ShutdownGrace}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="shutdownGrace">5-minute grace for remote power commands</span>
+                            <span data-i18n="shutdownGrace">Grace period for remote power commands (length is set in the desktop app)</span>
                         </label>
                         <div class="info" data-i18n="shutdownGraceInfo">Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.</div>
                     </div>
@@ -358,7 +358,7 @@
                 secretKey: 'Secret Key', secretInfo: 'Leave empty to disable authentication',
                 webuiRemote: 'Allow browser access to WebUI (local + LAN)',
                 webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
-                shutdownGrace: '5-minute grace for remote power commands',
+                shutdownGrace: 'Grace period for remote power commands (length is set in the desktop app)',
                 shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
                 networkWol: 'Network / WoL', loading: 'Loading...',
@@ -385,7 +385,7 @@
                 secretKey: '시크릿 키', secretInfo: '비워두면 인증 없이 동작합니다',
                 webuiRemote: 'WebUI 브라우저 접속 허용 (로컬+LAN)',
                 webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
-                shutdownGrace: '원격 전원 명령 5분 유예',
+                shutdownGrace: '원격 전원 명령 유예 (시간은 데스크톱 앱에서 설정)',
                 shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
                 networkWol: '네트워크 / WoL', loading: '로딩 중...',

@@ -15,6 +15,7 @@ type Config struct {
 	Secret        string `json:"secret"`
 	WebUIRemote   bool   `json:"webui_remote"`
 	ShutdownGrace bool   `json:"shutdown_grace"`
+	GraceSeconds  int    `json:"grace_seconds"`
 }
 
 // Client talks to the service's WebUI API on localhost.
