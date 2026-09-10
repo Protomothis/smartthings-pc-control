@@ -6,14 +6,21 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/secret"
+	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
 //go:embed web/login.html
@@ -281,70 +288,13 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version})
 	})
 
-	// API: Get config
-	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if r.Method == "GET" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(liveCfg)
-			return
-		}
-		if r.Method == "POST" {
-			if !checkCSRF(r) {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-			// Decode over the live config: keys the client omits (an older
-			// GUI sends no telegram/notify at all) keep their current values.
-			newCfg := liveCfg.forUpdate()
-			if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-				http.Error(w, "Invalid JSON", http.StatusBadRequest)
-				return
-			}
-			if msg := validatePort(newCfg.Port); msg != "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": msg})
-				return
-			}
-			if newCfg.WebUIRemote && newCfg.Secret == "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Remote WebUI access requires a secret. Set a secret first."})
-				return
-			}
-			newCfg = normalizeConfig(newCfg, liveCfg)
-			if msg := validateGraceSeconds(newCfg.GraceSeconds); msg != "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": msg})
-				return
-			}
-			oldCfg := liveCfg
-			if err := saveConfig(newCfg); err != nil {
-				http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d",
-				newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds)
-			if keys := configChangedKeys(oldCfg, newCfg); len(keys) > 0 {
-				// The app and the browser share this endpoint; neither can be told apart.
-				emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
-			}
-			msg := "Settings saved."
-			if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
-				msg = "Settings saved. Restart service to apply port/remote-access changes."
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
-			return
-		}
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	})
+	// API: Get/update config (token masking rules: design doc §10)
+	mux.HandleFunc("/api/config", handleConfigAPI)
+
+	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
+	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
+	mux.HandleFunc("/api/telegram/me", handleTelegramMe)
+	mux.HandleFunc("/api/telegram/chats", handleTelegramChats)
 
 	// API: Test commands
 	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
@@ -511,4 +461,344 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
 	}
 	server.ListenAndServe()
+}
+
+// writeJSON encodes v with the JSON content type and the given status.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// writeAPIError is the {status:"error", message} shape the GUI expects.
+func writeAPIError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"status": "error", "message": msg})
+}
+
+// configView is what GET /api/config returns: the live Config with the
+// bot token replaced by its masked form plus bot_token_set. The outer
+// Telegram field shadows the embedded one for encoding/json.
+type configView struct {
+	Config
+	Telegram telegramConfigView `json:"telegram"`
+}
+
+type telegramConfigView struct {
+	TelegramConfig
+	// BotTokenSet tells the GUI a token exists even though bot_token only
+	// carries "****1234".
+	BotTokenSet bool `json:"bot_token_set"`
+}
+
+// maskedConfig builds the GET view on a copy; the live config is untouched.
+func maskedConfig(cfg Config) configView {
+	tg := telegramConfigView{TelegramConfig: cfg.Telegram, BotTokenSet: cfg.Telegram.BotToken != ""}
+	tg.BotToken = ""
+	if cfg.Telegram.BotToken != "" {
+		// Mask the decrypted value so the GUI sees a stable "****" + last 4
+		// no matter how the token is stored. A token this machine cannot
+		// decrypt (loadConfig blanks those, so this is defensive) masks fully.
+		plain, err := liveBotToken(cfg.Telegram)
+		if err != nil || plain == "" {
+			tg.BotToken = maskedTokenPrefix
+		} else {
+			tg.BotToken = secret.Mask(plain)
+		}
+	}
+	return configView{Config: cfg, Telegram: tg}
+}
+
+// handleConfigAPI serves GET/POST /api/config.
+func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
+	liveCfg := getConfig()
+	if !checkAuth(r, liveCfg.Secret) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == "GET" {
+		writeJSON(w, http.StatusOK, maskedConfig(liveCfg))
+		return
+	}
+	if r.Method == "POST" {
+		if !checkCSRF(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		// Decode over the live config: keys the client omits (an older
+		// GUI sends no telegram/notify at all) keep their current values.
+		newCfg := liveCfg.forUpdate()
+		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if msg := validatePort(newCfg.Port); msg != "" {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if newCfg.WebUIRemote && newCfg.Secret == "" {
+			writeAPIError(w, http.StatusBadRequest, "Remote WebUI access requires a secret. Set a secret first.")
+			return
+		}
+		// normalizeConfig applies the token rules: ""/masked keep, "-" clears.
+		newCfg = normalizeConfig(newCfg, liveCfg)
+		if msg := validateGraceSeconds(newCfg.GraceSeconds); msg != "" {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		oldCfg := liveCfg
+		if err := saveConfig(newCfg); err != nil {
+			http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d, telegram=%v",
+			newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds, newCfg.Telegram.Enabled)
+		// newCfg still holds a replaced token in plaintext while oldCfg holds
+		// the stored (protected) one, so a real change always differs and a
+		// kept token compares equal — configChangedKeys never sees values.
+		if keys := configChangedKeys(oldCfg, newCfg); len(keys) > 0 {
+			// The app and the browser share this endpoint; neither can be told apart.
+			emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
+		}
+		msg := "Settings saved."
+		if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
+			msg = "Settings saved. Restart service to apply port/remote-access changes."
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+// ---- Telegram helper endpoints (#63) ---------------------------------------
+
+// telegramOverride is the optional POST body that lets the GUI try values
+// it has not saved yet. bot_token may be plaintext here (it travels in the
+// body over localhost / the authenticated session, never in a URL).
+type telegramOverride struct {
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
+}
+
+// decodeTelegramOverride reads an optional JSON body; an empty body or a
+// non-POST request yields the zero value.
+func decodeTelegramOverride(r *http.Request) (telegramOverride, error) {
+	var o telegramOverride
+	if r.Method != "POST" || r.Body == nil {
+		return o, nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	if err != nil {
+		return o, err
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return o, nil
+	}
+	err = json.Unmarshal(raw, &o)
+	return o, err
+}
+
+// telegramTarget resolves the plaintext token and chat id to use for one
+// helper call: the override when it carries a value, else the live config
+// (decrypted). A masked placeholder in the override means "use the live
+// token" so the GUI can send its form as-is.
+func telegramTarget(tg TelegramConfig, o telegramOverride) (token, chatID string, err error) {
+	token = o.BotToken
+	if token == "" || strings.HasPrefix(token, maskedTokenPrefix) || token == clearTokenSentinel {
+		token, err = liveBotToken(tg)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	chatID = o.ChatID
+	if chatID == "" {
+		chatID = tg.ChatID
+	}
+	return token, chatID, nil
+}
+
+// telegramCallStatus maps a Bot API failure to an HTTP status for the GUI:
+// 429 when Telegram rate-limited us, 502 for anything else it (or the
+// network) reported.
+func telegramCallStatus(err error) int {
+	if _, ok := telegram.RetryAfterOf(err); ok {
+		return http.StatusTooManyRequests
+	}
+	return http.StatusBadGateway
+}
+
+// telegramErrorMessage extracts the Bot API description when there is one
+// so the GUI shows "Unauthorized" / "chat not found" rather than the whole
+// wrapped chain.
+func telegramErrorMessage(err error) string {
+	var api *telegram.APIError
+	if errors.As(err, &api) {
+		return fmt.Sprintf("Telegram API error %d: %s", api.Code, api.Description)
+	}
+	var rl *telegram.RateLimitError
+	if errors.As(err, &rl) {
+		return fmt.Sprintf("Telegram rate limited, retry after %s", rl.RetryAfter)
+	}
+	return err.Error()
+}
+
+// authTelegramRequest runs the shared checks; it reports false after
+// writing the response when the request must not proceed.
+func authTelegramRequest(w http.ResponseWriter, r *http.Request, methods ...string) bool {
+	liveCfg := getConfig()
+	if !checkAuth(r, liveCfg.Secret) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	if !slices.Contains(methods, r.Method) {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	if !checkCSRF(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// handleTelegramTest serves POST /api/telegram/test: one system.test event
+// straight through a telegram.Sink (bypassing the bus so quiet hours or a
+// mute cannot swallow it). Body {bot_token, chat_id} is optional and lets
+// the GUI test unsaved values; otherwise the live config is used. The
+// telegram.enabled flag is deliberately ignored here — testing is how the
+// user decides whether to enable it.
+func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "POST") {
+		return
+	}
+	o, err := decodeTelegramOverride(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	tg := getConfig().Telegram
+	token, chatID, err := telegramTarget(tg, o)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Bot token cannot be decrypted on this machine; enter it again.")
+		return
+	}
+	if token == "" {
+		writeAPIError(w, http.StatusBadRequest, "Telegram is not configured: bot token is missing.")
+		return
+	}
+	if chatID == "" {
+		writeAPIError(w, http.StatusBadRequest, "Telegram is not configured: chat id is missing.")
+		return
+	}
+	rd, err := telegram.NewRenderer(tg.Lang, tg.Detail)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sink := telegram.NewSink(newTelegramClient(token), chatID, rd, telegramPCName(tg))
+	ctx, cancel := context.WithTimeout(r.Context(), telegramAPITimeout)
+	defer cancel()
+	ev := notify.Event{Category: "system", Kind: "test", At: time.Now(), Fields: map[string]string{}}
+	if err := sink.Send(ctx, ev); err != nil {
+		logMsg("Telegram test message failed: %v", err)
+		writeAPIError(w, telegramCallStatus(err), telegramErrorMessage(err))
+		return
+	}
+	logMsg("Telegram test message sent to chat %s", chatID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "sent"})
+}
+
+// handleTelegramMe serves GET /api/telegram/me with the live token:
+// {status:"ok", username, name}. The token never comes from the URL.
+func handleTelegramMe(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "GET") {
+		return
+	}
+	token, err := liveBotToken(getConfig().Telegram)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Bot token cannot be decrypted on this machine; enter it again.")
+		return
+	}
+	if token == "" {
+		writeAPIError(w, http.StatusBadRequest, "Telegram is not configured: bot token is missing.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), telegramAPITimeout)
+	defer cancel()
+	u, err := newTelegramClient(token).GetMe(ctx)
+	if err != nil {
+		writeAPIError(w, telegramCallStatus(err), telegramErrorMessage(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":   "ok",
+		"username": u.Username,
+		"name":     strings.TrimSpace(u.FirstName + " " + u.LastName),
+	})
+}
+
+// telegramChat is one entry of /api/telegram/chats.
+type telegramChat struct {
+	ChatID   string `json:"chat_id"`
+	Title    string `json:"title"`
+	Username string `json:"username"`
+	Type     string `json:"type"`
+}
+
+// handleTelegramChats serves GET (live token) and POST (optional body
+// {bot_token}) /api/telegram/chats: getUpdates(offset 0, timeout 0) reduced
+// to the distinct chats that wrote to the bot, in first-seen order:
+// {status:"ok", chats:[{chat_id, title, username, type}]}.
+func handleTelegramChats(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "GET", "POST") {
+		return
+	}
+	o, err := decodeTelegramOverride(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	token, _, err := telegramTarget(getConfig().Telegram, o)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Bot token cannot be decrypted on this machine; enter it again.")
+		return
+	}
+	if token == "" {
+		writeAPIError(w, http.StatusBadRequest, "Telegram is not configured: bot token is missing.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), telegramAPITimeout)
+	defer cancel()
+	updates, err := newTelegramClient(token).GetUpdates(ctx, 0, 0)
+	if err != nil {
+		writeAPIError(w, telegramCallStatus(err), telegramErrorMessage(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "chats": distinctChats(updates)})
+}
+
+// distinctChats collects each chat once (message and callback_query
+// updates alike), keeping first-seen order. Never nil, so the JSON is [].
+func distinctChats(updates []telegram.Update) []telegramChat {
+	out := []telegramChat{}
+	seen := map[int64]bool{}
+	add := func(c telegram.Chat) {
+		if c.ID == 0 || seen[c.ID] {
+			return
+		}
+		seen[c.ID] = true
+		title := c.Title
+		if title == "" {
+			title = strings.TrimSpace(c.FirstName + " " + c.LastName)
+		}
+		out = append(out, telegramChat{ChatID: c.IDString(), Title: title, Username: c.Username, Type: c.Type})
+	}
+	for _, u := range updates {
+		if u.Message != nil {
+			add(u.Message.Chat)
+		}
+		if u.CallbackQuery != nil && u.CallbackQuery.Message != nil {
+			add(u.CallbackQuery.Message.Chat)
+		}
+	}
+	return out
 }
