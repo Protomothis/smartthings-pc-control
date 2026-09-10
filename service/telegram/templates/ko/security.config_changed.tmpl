@@ -1,0 +1,6 @@
+{{define "title"}}설정 변경{{end}}
+{{define "summary"}}{{.Fields.by}}에서 설정을 변경했습니다: <b>{{.Fields.keys}}</b>{{end}}
+{{define "fields"}}
+항목: <code>{{.Fields.keys}}</code>
+변경 경로: <code>{{.Fields.by}}</code>
+{{end}}

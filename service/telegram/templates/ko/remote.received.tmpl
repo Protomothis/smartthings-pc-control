@@ -1,0 +1,6 @@
+{{define "title"}}원격 명령 실행{{end}}
+{{define "summary"}}{{.Fields.from}}에서 받은 <b>{{.Fields.command}}</b> 명령을 즉시 실행했습니다{{end}}
+{{define "fields"}}
+명령: <code>{{.Fields.command}}</code>
+출처: <code>{{.Fields.from}}</code>
+{{end}}

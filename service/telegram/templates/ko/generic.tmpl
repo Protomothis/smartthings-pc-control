@@ -1,0 +1,6 @@
+{{define "title"}}{{.Key}}{{end}}
+{{define "summary"}}{{range $i, $k := .Keys}}{{if $i}} · {{end}}{{$k}}: {{index $.Fields $k}}{{end}}{{end}}
+{{define "fields"}}
+{{range .Keys}}{{.}}: <code>{{index $.Fields .}}</code>
+{{end}}
+{{end}}

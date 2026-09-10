@@ -1,0 +1,5 @@
+{{define "title"}}절전 해제{{end}}
+{{define "summary"}}절전 상태에서 깨어났습니다 (<b>{{.Fields.since}}</b> 동안 절전){{end}}
+{{define "fields"}}
+절전 시간: <code>{{.Fields.since}}</code>
+{{end}}

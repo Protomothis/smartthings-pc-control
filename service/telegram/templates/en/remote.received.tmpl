@@ -1,0 +1,6 @@
+{{define "title"}}Remote command executed{{end}}
+{{define "summary"}}Ran <b>{{.Fields.command}}</b> from {{.Fields.from}} immediately{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+From: <code>{{.Fields.from}}</code>
+{{end}}

@@ -1,0 +1,6 @@
+{{define "title"}}Grace period cancelled{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> was cancelled via {{.Fields.by}}{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Cancelled by: <code>{{.Fields.by}}</code>
+{{end}}

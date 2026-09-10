@@ -1,0 +1,8 @@
+{{define "title"}}Schedule replaced{{end}}
+{{define "summary"}}{{.Fields.old_command}} ({{.Fields.old_origin}}) was replaced by <b>{{.Fields.command}}</b> ({{.Fields.origin}}){{end}}
+{{define "fields"}}
+New command: <code>{{.Fields.command}}</code>
+New origin: <code>{{.Fields.origin}}</code>
+Old command: <code>{{.Fields.old_command}}</code>
+Old origin: <code>{{.Fields.old_origin}}</code>
+{{end}}

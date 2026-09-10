@@ -1,0 +1,8 @@
+{{define "title"}}Remote command pending{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> in {{.Fields.delay}} — you can still cancel below{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+From: <code>{{.Fields.from}}</code>
+Grace: <code>{{.Fields.delay}}</code>
+Executes at: <code>{{.Fields.execute_at}}</code>
+{{end}}

@@ -1,0 +1,7 @@
+{{define "title"}}Service started{{end}}
+{{define "summary"}}PC is up and service <b>{{.Fields.version}}</b> has started{{end}}
+{{define "fields"}}
+Version: <code>{{.Fields.version}}</code>
+Boot time: <code>{{.Fields.boot_time}}</code>
+External IP: <code>{{.Fields.external_ip}}</code>
+{{end}}

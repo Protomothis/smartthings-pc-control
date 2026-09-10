@@ -1,0 +1,7 @@
+{{define "title"}}Unknown Telegram chat{{end}}
+{{define "summary"}}Ignored a command from chat <b>{{.Fields.chat_id}}</b> (@{{.Fields.username}}) that is not on the allow list{{end}}
+{{define "fields"}}
+Chat ID: <code>{{.Fields.chat_id}}</code>
+User: <code>{{.Fields.username}}</code>
+Text: <code>{{.Fields.text}}</code>
+{{end}}

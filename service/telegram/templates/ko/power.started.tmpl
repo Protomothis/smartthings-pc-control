@@ -1,0 +1,7 @@
+{{define "title"}}서비스 시작{{end}}
+{{define "summary"}}PC가 켜졌고 서비스 <b>{{.Fields.version}}</b>이(가) 시작되었습니다{{end}}
+{{define "fields"}}
+버전: <code>{{.Fields.version}}</code>
+부팅 시각: <code>{{.Fields.boot_time}}</code>
+외부 IP: <code>{{.Fields.external_ip}}</code>
+{{end}}

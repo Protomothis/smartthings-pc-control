@@ -1,0 +1,6 @@
+{{define "title"}}유예 취소{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> 유예가 {{.Fields.by}}에서 취소되었습니다{{end}}
+{{define "fields"}}
+명령: <code>{{.Fields.command}}</code>
+취소 경로: <code>{{.Fields.by}}</code>
+{{end}}
