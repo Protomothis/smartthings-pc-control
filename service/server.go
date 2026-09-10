@@ -17,6 +17,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/secret"
+)
+
+const (
+	// maskedTokenPrefix is what secret.Mask produces; a POSTed token that
+	// starts with it is the GET placeholder echoed back, not a new token.
+	maskedTokenPrefix = "****"
+	// clearTokenSentinel in a POSTed bot_token removes the stored token.
+	clearTokenSentinel = "-"
 )
 
 var (
@@ -140,9 +149,11 @@ type Config struct {
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
 type TelegramConfig struct {
 	Enabled bool `json:"enabled"`
-	// BotToken is stored as "dpapi:BASE64" once issue #65 lands; plaintext
-	// is accepted and re-encrypted on the next save. /api/config never
-	// clears it: an empty or omitted token in a POST keeps the current one.
+	// BotToken is stored as "dpapi:BASE64" (issue #65); plaintext is
+	// accepted and re-encrypted on the next save. Consumers must call
+	// secret.Unprotect (see liveBotToken) — never use this value directly.
+	// /api/config POST: empty, omitted or the masked form keeps the current
+	// token; "-" clears it (see normalizeConfig).
 	BotToken       string            `json:"bot_token"`
 	ChatID         string            `json:"chat_id"`
 	ControlEnabled bool              `json:"control_enabled"`
@@ -269,6 +280,15 @@ func loadConfig() Config {
 		logMsg("WARNING: invalid port %d, using default 5001", cfg.Port)
 		cfg.Port = 5001
 	}
+	// A DPAPI-protected token that this machine cannot decrypt (config.json
+	// copied from another PC) is unusable: blank it so the GUI shows "not
+	// set" and the user re-enters it. The load itself still succeeds.
+	if secret.IsProtected(cfg.Telegram.BotToken) {
+		if _, err := secret.Unprotect(cfg.Telegram.BotToken); err != nil {
+			logMsg("WARNING: telegram.bot_token cannot be decrypted on this machine (config copied from another PC?); token cleared, enter it again: %v", err)
+			cfg.Telegram.BotToken = ""
+		}
+	}
 	return cfg.withDefaults()
 }
 
@@ -301,11 +321,16 @@ func normalizeConfig(cfg Config, current Config) Config {
 			cfg.GraceSeconds = defaultGraceSeconds
 		}
 	}
-	// The bot token is only replaced when the client sends a new one. The
-	// GUI will send a masked placeholder (issue #63); until then, empty or
-	// omitted means "keep". There is deliberately no way to clear it here.
-	if cfg.Telegram.BotToken == "" {
+	// Bot token rules (design doc §10, issue #63): the GET side hands the
+	// GUI a masked form ("****1234"), so an empty/omitted token or the
+	// masked placeholder sent back means "keep the stored one". The literal
+	// "-" clears it; anything else is a new (plaintext) token, which
+	// saveConfig encrypts.
+	switch tok := cfg.Telegram.BotToken; {
+	case tok == "" || strings.HasPrefix(tok, maskedTokenPrefix):
 		cfg.Telegram.BotToken = current.Telegram.BotToken
+	case tok == clearTokenSentinel:
+		cfg.Telegram.BotToken = ""
 	}
 	// nil here means the key was absent from the body (forUpdate cleared
 	// it before decoding, and "[]"/"{}" decode to non-nil): keep current.
@@ -347,6 +372,16 @@ func saveConfig(cfg Config) error {
 	// Always persist the full catalogue and defaults so config.json
 	// documents every key.
 	cfg = cfg.withDefaults()
+	// Issue #65: never write the bot token in plaintext. A protection
+	// failure is logged and the save proceeds with plaintext rather than
+	// losing the user's other changes; the next save retries.
+	if tok := cfg.Telegram.BotToken; tok != "" && !secret.IsProtected(tok) {
+		if enc, err := secret.Protect(tok); err != nil {
+			logMsg("WARNING: telegram.bot_token could not be DPAPI-protected, saving as plaintext: %v", err)
+		} else {
+			cfg.Telegram.BotToken = enc
+		}
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return err

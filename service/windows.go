@@ -30,10 +30,10 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	cfg := loadConfig()
 	setConfig(cfg)
 
-	// Notification bus (#55) must exist before the servers emit. Issue
-	// #56 replaces nil with the Telegram sink; until then events are only
-	// logged when STPC_NOTIFY_DEBUG is set (see notify_wiring.go).
-	startNotifier(nil)
+	// Notification bus (#55) must exist before the servers emit. The live
+	// Telegram sink (#63) follows getConfig().Telegram on every event, so
+	// enabling Telegram later needs no restart.
+	startNotifier(newLiveSink())
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -90,7 +90,7 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
-	startNotifier(nil) // #56: Telegram sink; see Execute
+	startNotifier(newLiveSink()) // live Telegram sink; see Execute
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)
