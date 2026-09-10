@@ -32,24 +32,24 @@ var Commands = map[string]Command{
 	},
 	"shutdown": {
 		Response: "Shutting down...",
-		Execute:  func() { executeCommand("shutdown", "/s", "/t", "5") },
+		Execute:  func() { executeCommand("shutdown", "shutdown", "/s", "/t", "5") },
 	},
 	"forceshutdown": {
 		Response: "Force shutting down...",
-		Execute:  func() { executeCommand("shutdown", "/s", "/f", "/t", "0") },
+		Execute:  func() { executeCommand("forceshutdown", "shutdown", "/s", "/f", "/t", "0") },
 	},
 	"restart": {
 		Response: "Restarting...",
-		Execute:  func() { executeCommand("shutdown", "/r", "/t", "5") },
+		Execute:  func() { executeCommand("restart", "shutdown", "/r", "/t", "5") },
 	},
 	"hibernate": {
 		Response: "Hibernating...",
-		Execute:  func() { executeCommand("shutdown", "/h") },
+		Execute:  func() { executeCommand("hibernate", "shutdown", "/h") },
 	},
 	"suspend": {
 		Response: "Suspending...",
 		Execute: func() {
-			executePowerShell("Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)")
+			executePowerShell("suspend", "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)")
 		},
 	},
 	"lock": {
