@@ -15,11 +15,14 @@ type CommandHandler interface {
 	// @botname suffix. The returned html is sent as the reply; kb, when
 	// non-nil, is attached as an inline keyboard (confirmation prompts).
 	HandleCommand(ctx context.Context, chatID string, cmd string, args []string) (html string, kb *InlineKeyboard, err error)
-	// HandleCallback acts on an inline-button press. editHTML, when
-	// non-empty, replaces the message the button belonged to (and removes
-	// its keyboard unless the handler also implements EditKeyboarder);
-	// toast is shown to the user through answerCallbackQuery.
-	HandleCallback(ctx context.Context, chatID string, msgID int, data string) (editHTML string, toast string, err error)
+	// HandleCallback acts on an inline-button press. msgText is the plain
+	// text (entities stripped) of the message the button was on, so a
+	// handler that no longer knows what it sent can still keep the
+	// content when it edits; it may be empty. editHTML, when non-empty,
+	// replaces that message (and removes its keyboard unless the handler
+	// also implements EditKeyboarder); toast is shown to the user through
+	// answerCallbackQuery.
+	HandleCallback(ctx context.Context, chatID string, msgID int, msgText string, data string) (editHTML string, toast string, err error)
 	// Unauthorized is told about traffic from chats that are not allowed
 	// so the service can raise security.unknown_chat.
 	Unauthorized(chatID, username, text string)
@@ -167,16 +170,17 @@ func (p *Poller) handleMessage(ctx context.Context, m *Message) {
 // handleCallback answers a button press and, when the handler asks for it,
 // edits the message the button was on.
 func (p *Poller) handleCallback(ctx context.Context, cq *CallbackQuery) {
-	chatID, msgID := "", 0
+	chatID, msgID, msgText := "", 0, ""
 	if cq.Message != nil {
 		chatID = cq.Message.Chat.IDString()
 		msgID = cq.Message.MessageID
+		msgText = cq.Message.Text
 	}
 	if !p.allowed(chatID) {
 		p.opts.Handler.Unauthorized(chatID, userName(&cq.From), cq.Data)
 		return
 	}
-	editHTML, toast, err := p.opts.Handler.HandleCallback(ctx, chatID, msgID, cq.Data)
+	editHTML, toast, err := p.opts.Handler.HandleCallback(ctx, chatID, msgID, msgText, cq.Data)
 	if err != nil {
 		p.logf("poller: callback %q from %s: %v", cq.Data, chatID, err)
 	}

@@ -40,8 +40,9 @@ type fakeCall struct {
 func useFakeTelegram(t *testing.T) *fakeTelegram {
 	t.Helper()
 	f := &fakeTelegram{replies: map[string]string{
-		"sendMessage": `{"ok":true,"result":{"message_id":7,"chat":{"id":42,"type":"private"}}}`,
-		"getMe":       `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"PC","last_name":"Bot","username":"pcbot"}}`,
+		"sendMessage":     `{"ok":true,"result":{"message_id":7,"chat":{"id":42,"type":"private"}}}`,
+		"getMe":           `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"PC","last_name":"Bot","username":"pcbot"}}`,
+		"editMessageText": `{"ok":true,"result":true}`,
 		"getUpdates": `{"ok":true,"result":[
 			{"update_id":1,"message":{"message_id":1,"chat":{"id":42,"type":"private","first_name":"Kim","last_name":"Lump","username":"lump"},"text":"/start"}},
 			{"update_id":2,"message":{"message_id":2,"chat":{"id":42,"type":"private","first_name":"Kim","last_name":"Lump","username":"lump"},"text":"hi"}},
@@ -595,7 +596,7 @@ func TestLiveSinkDropsWhenDisabledAndSendsWhenEnabled(t *testing.T) {
 	}
 
 	var gotID int
-	s.SetOnSent(func(_ notify.Event, id int) { gotID = id })
+	s.SetOnSent(func(_ notify.Event, id int, _ string) { gotID = id })
 	enc, _ := secret.Protect(testBotToken)
 	withLiveConfig(t, telegramCfg(true, enc))
 	if err := s.Send(context.Background(), ev); err != nil {
@@ -635,7 +636,7 @@ func TestLiveSinkRebuildsOnConfigChange(t *testing.T) {
 	cfg.Telegram.ChatID = "99"
 	withLiveConfig(t, cfg)
 	var gotEv notify.Event
-	s.SetOnSent(func(e notify.Event, _ int) { gotEv = e })
+	s.SetOnSent(func(e notify.Event, _ int, _ string) { gotEv = e })
 	if err := s.Send(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}

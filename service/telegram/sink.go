@@ -17,12 +17,13 @@ type Sink struct {
 	pcName string
 
 	// OnSent, when set, is invoked synchronously after every successful
-	// sendMessage with the event and the id Telegram assigned to the
-	// message. Issue #62 uses it to remember the grace-period message so
-	// the inline keyboard can later be edited away (EditMessageText). It
-	// runs on the notify.Bus worker goroutine, so keep it quick and
-	// non-blocking; errors from Send are not reported through the hook.
-	OnSent func(ev notify.Event, msgID int)
+	// sendMessage with the event, the id Telegram assigned to the message
+	// and the rendered HTML that was sent. Issue #62 uses it to remember
+	// the grace-period message so it can later be edited (original HTML
+	// plus a result line, keyboard removed). It runs on the notify.Bus
+	// worker goroutine, so keep it quick and non-blocking; errors from
+	// Send are not reported through the hook.
+	OnSent func(ev notify.Event, msgID int, html string)
 }
 
 // NewSink wires a client, target chat, renderer and PC name together.
@@ -52,7 +53,7 @@ func (s *Sink) Send(ctx context.Context, ev notify.Event) error {
 		return err
 	}
 	if s.OnSent != nil {
-		s.OnSent(ev, msgID)
+		s.OnSent(ev, msgID, html)
 	}
 	return nil
 }

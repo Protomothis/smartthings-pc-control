@@ -1,7 +1,8 @@
 {{define "title"}}허용되지 않은 채팅{{end}}
-{{define "summary"}}허용 목록에 없는 채팅 <b>{{.Fields.chat_id}}</b>(@{{.Fields.username}})에서 명령을 받아 무시했습니다{{end}}
+{{define "summary"}}허용 목록에 없는 채팅 <b>{{.Fields.chat_id}}</b>(@{{.Fields.username}})에서 {{if and .Fields.count (ne .Fields.count "1")}}<b>{{.Fields.count}}회</b> 명령을 받아 무시했습니다 ({{secs .Fields.window_sec}}){{else}}명령을 받아 무시했습니다{{end}}{{end}}
 {{define "fields"}}
 채팅 ID: <code>{{.Fields.chat_id}}</code>
 사용자: <code>{{.Fields.username}}</code>
 내용: <code>{{.Fields.text}}</code>
+{{if and .Fields.count (ne .Fields.count "1")}}횟수: <code>{{.Fields.count}}</code> / {{secs .Fields.window_sec}}{{end}}
 {{end}}

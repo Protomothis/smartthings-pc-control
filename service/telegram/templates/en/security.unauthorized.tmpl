@@ -1,8 +1,8 @@
 {{define "title"}}Unauthorized request{{end}}
-{{define "summary"}}<b>{{.Fields.count}}</b> request(s) with a bad secret from {{.Fields.from}} ({{.Fields.window}}){{end}}
+{{define "summary"}}{{if and .Fields.count (ne .Fields.count "1")}}<b>{{.Fields.count}}</b> requests with a bad secret from {{.Fields.from}} ({{secs .Fields.window_sec}}){{else}}A request with a bad secret from {{.Fields.from}}{{end}}{{end}}
 {{define "fields"}}
 From: <code>{{.Fields.from}}</code>
 Path: <code>{{.Fields.path}}</code>
-Count: <code>{{.Fields.count}}</code>
-Window: <code>{{.Fields.window}}</code>
+{{if and .Fields.count (ne .Fields.count "1")}}Count: <code>{{.Fields.count}}</code>
+Window: <code>{{secs .Fields.window_sec}}</code>{{end}}
 {{end}}

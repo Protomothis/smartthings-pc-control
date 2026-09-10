@@ -34,11 +34,13 @@ var catalogue = []notify.Event{
 	{Category: "power", Kind: "resumed", Fields: map[string]string{"since": "2시간 10분"}},
 	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "shutdown"}},
 
-	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5, 10.0.0.9 외 1곳", "path": "/shutdown", "count": "12", "window": "5분"}},
+	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5, 10.0.0.9 외 1곳", "path": "/shutdown", "count": "12", "window": "5m", "window_sec": "300"}},
+	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5", "path": "/lock", "count": "1", "window": "5m", "window_sec": "300"}},
 	{Category: "security", Kind: "login_limited", Fields: map[string]string{"from": "10.0.0.5"}},
 	{Category: "security", Kind: "unknown_command", Fields: map[string]string{"from": "10.0.0.5", "command": "explode"}},
 	{Category: "security", Kind: "config_changed", Fields: map[string]string{"keys": "secret, port", "by": "webui"}},
-	{Category: "security", Kind: "unknown_chat", Fields: map[string]string{"chat_id": "987654321", "username": "stranger", "text": "/shutdown"}},
+	{Category: "security", Kind: "unknown_chat", Fields: map[string]string{"chat_id": "987654321", "username": "stranger", "text": "/shutdown", "count": "1", "window": "5m", "window_sec": "300"}},
+	{Category: "security", Kind: "unknown_chat", Fields: map[string]string{"chat_id": "987654321", "username": "stranger", "text": "/shutdown", "count": "4", "window": "5m", "window_sec": "300"}},
 
 	{Category: "system", Kind: "update_available", Fields: map[string]string{"version": "v1.1.0", "current": "v1.0.0", "url": "https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0"}},
 	{Category: "system", Kind: "updated", Fields: map[string]string{"version": "v1.0.0", "previous": "v0.3.4"}},

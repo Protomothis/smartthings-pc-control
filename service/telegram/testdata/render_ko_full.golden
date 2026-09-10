@@ -95,6 +95,13 @@
 기간: <code>5분</code>
 <i>DESKTOP-TEST · 14:35:00</i>
 
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5에서 잘못된 시크릿으로 요청했습니다</blockquote>
+출처: <code>10.0.0.5</code>
+경로: <code>/lock</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
 === security.login_limited ===
 🛡 <b>로그인 제한 발동</b>
 <blockquote><b>10.0.0.5</b>의 WebUI 로그인 실패가 반복되어 잠시 차단했습니다</blockquote>
@@ -121,6 +128,15 @@
 채팅 ID: <code>987654321</code>
 사용자: <code>stranger</code>
 내용: <code>/shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 <b>4회</b> 명령을 받아 무시했습니다 (5분)</blockquote>
+채팅 ID: <code>987654321</code>
+사용자: <code>stranger</code>
+내용: <code>/shutdown</code>
+횟수: <code>4</code> / 5분
 <i>DESKTOP-TEST · 14:35:00</i>
 
 === system.update_available ===

@@ -111,7 +111,7 @@ func TestTelegramHelpMenuAndUnknown(t *testing.T) {
 		t.Errorf("unknown = %q", unknown)
 	}
 	_, kb, _ := h.HandleCommand(context.Background(), "42", "menu", nil)
-	want := []string{"cmd:lock", "cmd:turnscreenoff", "confirm:suspend", "confirm:restart", "confirm:shutdown", "cancel:"}
+	want := []string{"cmd:lock", "cmd:turnscreenoff", "confirm:suspend", "confirm:restart", "confirm:shutdown", "cancel:menu"}
 	if got := keyboardData(kb); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("menu buttons = %v, want %v", got, want)
 	}
@@ -290,7 +290,7 @@ func TestTelegramCallbackExecAndDismiss(t *testing.T) {
 	shutdown := stubCommand(t, "shutdown")
 	var h telegramControl
 
-	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "exec:shutdown")
+	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "exec:shutdown")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,21 +302,21 @@ func TestTelegramCallbackExecAndDismiss(t *testing.T) {
 		t.Error("exec edit must drop the keyboard")
 	}
 
-	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "dismiss:")
+	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "", "dismiss:")
 	if err != nil || !strings.Contains(edit, "취소됨") || toast != "" {
 		t.Errorf("dismiss edit=%q toast=%q err=%v", edit, toast, err)
 	}
 
 	// Only registry commands the bot may run are accepted.
-	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "exec:forceshutdown"); err == nil {
+	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "", "exec:forceshutdown"); err == nil {
 		t.Error("exec:forceshutdown accepted")
 	}
-	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "bogus:"); err == nil {
+	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "", "bogus:"); err == nil {
 		t.Error("unknown verb accepted")
 	}
 
 	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "exec:shutdown")
+	edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "", "exec:shutdown")
 	expectExecuted(t, shutdown, "shutdown")
 	if !strings.HasPrefix(edit, "Shut down\n✅ Executed · ") || !strings.HasSuffix(edit, " · Telegram") {
 		t.Errorf("en exec edit = %q", edit)
@@ -331,25 +331,25 @@ func TestTelegramCallbackMenuButtons(t *testing.T) {
 	var h telegramControl
 
 	// cmd: runs safe commands only.
-	if edit, _, err := h.HandleCallback(context.Background(), "42", 7, "cmd:lock"); err != nil || !strings.Contains(edit, "실행됨") {
+	if edit, _, err := h.HandleCallback(context.Background(), "42", 7, "", "cmd:lock"); err != nil || !strings.Contains(edit, "실행됨") {
 		t.Errorf("cmd:lock edit=%q err=%v", edit, err)
 	}
 	expectExecuted(t, lock, "lock")
-	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "cmd:shutdown")
+	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "cmd:shutdown")
 	if err != nil || edit != "" || toast != "확인이 필요한 명령입니다" {
 		t.Errorf("cmd:shutdown edit=%q toast=%q err=%v", edit, toast, err)
 	}
 	expectNotExecuted(t, shutdown, "shutdown")
 
 	// confirm: turns the menu into a prompt that keeps [확인][취소].
-	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "confirm:shutdown")
+	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "", "confirm:shutdown")
 	if err != nil || !strings.Contains(edit, "종료") || toast != "" {
 		t.Errorf("confirm edit=%q toast=%q err=%v", edit, toast, err)
 	}
 	if got := keyboardData(h.EditKeyboard("confirm:shutdown")); fmt.Sprint(got) != "[exec:shutdown dismiss:]" {
 		t.Errorf("confirm keyboard = %v", got)
 	}
-	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "confirm:lock"); err == nil {
+	if _, _, err := h.HandleCallback(context.Background(), "42", 7, "", "confirm:lock"); err == nil {
 		t.Error("confirm:lock accepted (lock needs no confirmation)")
 	}
 	if h.EditKeyboard("confirm:lock") != nil || h.EditKeyboard("cancel:") != nil {
@@ -366,11 +366,11 @@ func TestTelegramCallbackCancelAndRunnowOnGrace(t *testing.T) {
 	defer cancelSchedule()
 	var h telegramControl
 
-	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "cancel:")
+	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "cancel:")
 	if err != nil || edit != "" || toast != "활성 예약 없음" {
 		t.Errorf("cancel without schedule: edit=%q toast=%q err=%v", edit, toast, err)
 	}
-	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "runnow:")
+	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "", "runnow:")
 	if err != nil || edit != "" || toast != "활성 예약 없음" {
 		t.Errorf("runnow without schedule: edit=%q toast=%q err=%v", edit, toast, err)
 	}
@@ -382,7 +382,7 @@ func TestTelegramCallbackCancelAndRunnowOnGrace(t *testing.T) {
 	newCommandHandler().ServeHTTP(httptest.NewRecorder(), req)
 	expectNotification(t, events, "remote.grace_scheduled")
 
-	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "cancel:")
+	edit, toast, err = h.HandleCallback(context.Background(), "42", 7, "", "cancel:")
 	if err != nil || !strings.Contains(edit, "✅ 취소됨 · ") || toast != "취소됨" {
 		t.Errorf("cancel: edit=%q toast=%q err=%v", edit, toast, err)
 	}
@@ -394,8 +394,8 @@ func TestTelegramCallbackCancelAndRunnowOnGrace(t *testing.T) {
 
 	newCommandHandler().ServeHTTP(httptest.NewRecorder(), req)
 	expectNotification(t, events, "remote.grace_scheduled")
-	edit, toast, err = h.HandleCallback(context.Background(), "42", 8, "runnow:")
-	if err != nil || !strings.Contains(edit, "✅ 실행됨 · ") || toast != "실행됨" {
+	edit, toast, err = h.HandleCallback(context.Background(), "42", 8, "", "runnow:")
+	if err != nil || !strings.Contains(edit, "▶️ 실행됨 · ") || toast != "실행됨" {
 		t.Errorf("runnow: edit=%q toast=%q err=%v", edit, toast, err)
 	}
 	expectNotification(t, events, "remote.grace_cancelled")

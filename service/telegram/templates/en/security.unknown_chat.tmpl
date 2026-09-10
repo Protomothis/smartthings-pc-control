@@ -1,7 +1,8 @@
 {{define "title"}}Unknown Telegram chat{{end}}
-{{define "summary"}}Ignored a command from chat <b>{{.Fields.chat_id}}</b> (@{{.Fields.username}}) that is not on the allow list{{end}}
+{{define "summary"}}Ignored {{if and .Fields.count (ne .Fields.count "1")}}<b>{{.Fields.count}}</b> commands{{else}}a command{{end}} from chat <b>{{.Fields.chat_id}}</b> (@{{.Fields.username}}) that is not on the allow list{{if and .Fields.count (ne .Fields.count "1")}} ({{secs .Fields.window_sec}}){{end}}{{end}}
 {{define "fields"}}
 Chat ID: <code>{{.Fields.chat_id}}</code>
 User: <code>{{.Fields.username}}</code>
 Text: <code>{{.Fields.text}}</code>
+{{if and .Fields.count (ne .Fields.count "1")}}Count: <code>{{.Fields.count}}</code> / {{secs .Fields.window_sec}}{{end}}
 {{end}}

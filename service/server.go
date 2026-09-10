@@ -793,7 +793,14 @@ type ScheduledTask struct {
 	// UI can tell the user their own timer was overridden.
 	Replaced *replacedSchedule
 	timer    *time.Timer
+	// seq identifies this schedule for the lifetime of the process, so the
+	// Telegram grace message remembered for it (#62) is never edited on
+	// behalf of a later schedule.
+	seq uint64
 }
+
+// scheduleSeq is the last seq handed out; guarded by scheduleMu.
+var scheduleSeq uint64
 
 // replacedSchedule is the summary of a schedule that a newer one cancelled.
 type replacedSchedule struct {
@@ -920,10 +927,13 @@ func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) er
 			"command": command, "origin": origin.String(),
 			"old_command": replaced.Command, "old_origin": replaced.Origin,
 		})
+		finishGraceMessage(scheduledTask.seq, graceReplaced, "")
 		scheduledTask = nil
 	}
 
 	executeAt := time.Now().Add(delay)
+	scheduleSeq++
+	seq := scheduleSeq
 
 	timer := time.AfterFunc(delay, func() {
 		logMsg("Scheduled command executing: %s", command)
@@ -932,11 +942,14 @@ func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) er
 		} else {
 			emit("schedule", "executed", map[string]string{"command": command, "origin": origin.String()})
 		}
+		finishGraceMessage(seq, graceExecuted, "timer")
 		if cmd.Execute != nil {
 			cmd.Execute()
 		}
 		scheduleMu.Lock()
-		scheduledTask = nil
+		if scheduledTask != nil && scheduledTask.seq == seq {
+			scheduledTask = nil
+		}
 		scheduleMu.Unlock()
 	})
 
@@ -946,6 +959,7 @@ func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) er
 		Origin:    origin,
 		Replaced:  replaced,
 		timer:     timer,
+		seq:       seq,
 	}
 
 	logMsg("Scheduled: %s in %s (at %s, origin %s)", command, formatDelay(delay), executeAt.Format("15:04:05"), origin)
@@ -984,9 +998,24 @@ func cancelScheduleBy(by string) bool {
 }
 
 // takeSchedule cancels the current scheduled task on behalf of by and
-// returns its command, so "run now" callers (/now, the runnow: button) can
-// execute it without racing a concurrent cancel or replacement.
+// returns its command.
 func takeSchedule(by string) (string, bool) {
+	return endSchedule(by, false)
+}
+
+// takeScheduleForRun ends the current scheduled task because by is about
+// to execute its command right away (/now, the runnow: button). The
+// notifications are the same as a cancel; only the Telegram grace message
+// is stamped "executed" instead of "cancelled". Taking the schedule under
+// the lock means the caller never races a concurrent cancel or replacement.
+func takeScheduleForRun(by string) (string, bool) {
+	return endSchedule(by, true)
+}
+
+// endSchedule stops the timer, reports remote.grace_cancelled or
+// schedule.cancelled, updates the Telegram grace message and clears the
+// slot. runNow says whether the caller executes the command itself.
+func endSchedule(by string, runNow bool) (string, bool) {
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
 
@@ -1003,6 +1032,23 @@ func takeSchedule(by string) (string, bool) {
 			"command": command, "origin": scheduledTask.Origin.String(), "by": by,
 		})
 	}
+	result := graceCancelled
+	if runNow {
+		result = graceExecuted
+	}
+	finishGraceMessage(scheduledTask.seq, result, by)
 	scheduledTask = nil
 	return command, true
+}
+
+// activeScheduleSeq returns the seq of the current schedule when it runs
+// command on behalf of origin; the grace-message hook uses it to tie a
+// sent Telegram message to the schedule it announced (#62).
+func activeScheduleSeq(command string, origin scheduleOrigin) (uint64, bool) {
+	scheduleMu.Lock()
+	defer scheduleMu.Unlock()
+	if scheduledTask == nil || scheduledTask.Command != command || scheduledTask.Origin != origin {
+		return 0, false
+	}
+	return scheduledTask.seq, true
 }
