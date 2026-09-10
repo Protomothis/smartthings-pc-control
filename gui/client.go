@@ -10,12 +10,50 @@ import (
 )
 
 // Config mirrors the service config exposed by /api/config.
+//
+// POST sends the whole struct back and the service keeps the live value of
+// any key that is omitted — so callers must start from the last GET (see
+// ui.cfgBaseline) rather than a zero Config, or telegram/notify would be
+// reset to zero values.
 type Config struct {
 	Port          int    `json:"port"`
 	Secret        string `json:"secret"`
 	WebUIRemote   bool   `json:"webui_remote"`
 	ShutdownGrace bool   `json:"shutdown_grace"`
 	GraceSeconds  int    `json:"grace_seconds"`
+	// Telegram is the "telegram" object (design doc §10); Notify is the
+	// "notify" catalogue: Category → Kind → enabled.
+	Telegram TelegramConfig             `json:"telegram"`
+	Notify   map[string]map[string]bool `json:"notify"`
+}
+
+// TelegramConfig mirrors service.TelegramConfig plus the GET-only
+// bot_token_set flag.
+type TelegramConfig struct {
+	Enabled bool `json:"enabled"`
+	// BotToken arrives MASKED from GET ("****6789", or "" when unset). On
+	// POST: "" or a "****"-prefixed value keeps the stored token, "-" clears
+	// it, anything else replaces it (plaintext; the service encrypts).
+	BotToken string `json:"bot_token"`
+	// BotTokenSet reports whether a token is stored (GET only; the service
+	// ignores it on POST).
+	BotTokenSet    bool       `json:"bot_token_set"`
+	ChatID         string     `json:"chat_id"`
+	ControlEnabled bool       `json:"control_enabled"`
+	AllowedChatIDs []string   `json:"allowed_chat_ids"`
+	Detail         string     `json:"detail"` // "simple" | "full"
+	Lang           string     `json:"lang"`   // "ko" | "en"
+	PCName         string     `json:"pc_name"`
+	QuietHours     QuietHours `json:"quiet_hours"`
+}
+
+// QuietHours mirrors notify.QuietHours (design doc §5).
+type QuietHours struct {
+	Enabled        bool   `json:"enabled"`
+	Start          string `json:"start"` // "22:00", local time
+	End            string `json:"end"`   // "07:00"; may cross midnight
+	SecurityBypass bool   `json:"security_bypass"`
+	Digest         bool   `json:"digest"`
 }
 
 // Client talks to the service's WebUI API on localhost.
@@ -268,4 +306,90 @@ func (c *Client) TestCommand(name string) (string, error) {
 		return "", fmt.Errorf("%s", r.Message)
 	}
 	return r.Message, nil
+}
+
+// --- Telegram helper endpoints (#63) ---
+
+// apiStatus is the {status, message} envelope every telegram endpoint
+// returns; the ok replies carry extra fields decoded by the callers.
+type apiStatus struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// err turns a non-ok envelope into the error the GUI shows: the service's
+// message when there is one, else the HTTP status.
+func (a apiStatus) err(resp *http.Response, fallback string) error {
+	if resp.StatusCode == http.StatusOK && a.Status == "ok" {
+		return nil
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+	if a.Message != "" {
+		return fmt.Errorf("%s", a.Message)
+	}
+	return fmt.Errorf("%s (HTTP %d)", fallback, resp.StatusCode)
+}
+
+// TestTelegram asks the service to send one test message. token and chatID
+// are the form's unsaved values; "" or a masked token means "use the stored
+// one" (the service resolves that, the GUI never sees the plaintext).
+func (c *Client) TestTelegram(token, chatID string) error {
+	resp, err := c.do("POST", "/api/telegram/test", map[string]string{"bot_token": token, "chat_id": chatID})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var r apiStatus
+	json.NewDecoder(resp.Body).Decode(&r)
+	return r.err(resp, "test failed")
+}
+
+// TelegramMe returns the bot behind the STORED token (username without the
+// "@", display name) via getMe — the connection-status line of the tab.
+func (c *Client) TelegramMe() (username, name string, err error) {
+	resp, err := c.do("GET", "/api/telegram/me", nil)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	var r struct {
+		apiStatus
+		Username string `json:"username"`
+		Name     string `json:"name"`
+	}
+	json.NewDecoder(resp.Body).Decode(&r)
+	if err := r.err(resp, "getMe failed"); err != nil {
+		return "", "", err
+	}
+	return r.Username, r.Name, nil
+}
+
+// TelegramChat is one recent chat of the bot, from /api/telegram/chats.
+type TelegramChat struct {
+	ChatID   string `json:"chat_id"`
+	Title    string `json:"title"`
+	Username string `json:"username"`
+	Type     string `json:"type"`
+}
+
+// TelegramChats lists the chats that recently wrote to the bot, so the user
+// can pick a Chat ID instead of typing it. token is the form's unsaved
+// value ("" or masked → stored token).
+func (c *Client) TelegramChats(token string) ([]TelegramChat, error) {
+	resp, err := c.do("POST", "/api/telegram/chats", map[string]string{"bot_token": token})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var r struct {
+		apiStatus
+		Chats []TelegramChat `json:"chats"`
+	}
+	json.NewDecoder(resp.Body).Decode(&r)
+	if err := r.err(resp, "chat lookup failed"); err != nil {
+		return nil, err
+	}
+	return r.Chats, nil
 }

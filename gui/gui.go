@@ -126,9 +126,12 @@ type ui struct {
 	trayShown  string
 
 	// Settings: the config as last loaded/saved. Save is enabled only while
-	// the form differs from it; nil until the first successful load.
+	// the form differs from it; nil until the first successful load. The
+	// notify tab (notify_tab.go) shares the baseline: each tab's Save starts
+	// from it and overwrites only its own fields.
 	saveBtn     *widget.Button
 	cfgBaseline *Config
+	notify      *notifyTab
 
 	// Logs: every line from the last fetch; the label shows the subset
 	// matching logsFilter. Both touched on the UI thread only.
@@ -452,6 +455,7 @@ func (u *ui) rebuild() {
 		container.NewTabItemWithIcon(u.t("tab.settings"), theme.SettingsIcon(), u.buildSettingsTab()),
 		container.NewTabItemWithIcon(u.t("tab.commands"), theme.MediaPlayIcon(), u.buildCommandsTab()),
 		container.NewTabItemWithIcon(u.t("tab.schedule"), theme.HistoryIcon(), u.buildScheduleTab()),
+		container.NewTabItemWithIcon(u.t("tab.notify"), theme.MailSendIcon(), u.buildNotifyTab()),
 		container.NewTabItemWithIcon(u.t("tab.network"), theme.ComputerIcon(), u.buildNetworkTab()),
 		container.NewTabItemWithIcon(u.t("tab.logs"), theme.ListIcon(), u.buildLogsTab()),
 	)
@@ -519,13 +523,19 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			return
 		}
 		graceOn, graceSec := u.graceFromSelection()
-		cfg := Config{
-			Port:          port,
-			Secret:        u.secretEntry.Text,
-			WebUIRemote:   u.remoteCheck.Checked,
-			ShutdownGrace: graceOn,
-			GraceSeconds:  graceSec,
+		if u.cfgBaseline == nil {
+			return // Save is only enabled once a baseline exists
 		}
+		// Start from the baseline so the telegram/notify values (owned by
+		// the notify tab) round-trip unchanged: the masked token means
+		// "keep" to the service, and any unsaved notify-tab edits stay
+		// dirty against the new baseline instead of being lost.
+		cfg := *u.cfgBaseline
+		cfg.Port = port
+		cfg.Secret = u.secretEntry.Text
+		cfg.WebUIRemote = u.remoteCheck.Checked
+		cfg.ShutdownGrace = graceOn
+		cfg.GraceSeconds = graceSec
 		msg, err := u.client.SaveConfig(cfg)
 		if err != nil {
 			dialog.ShowError(err, u.win)
@@ -534,6 +544,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		// What was just saved is the new "unchanged" state.
 		u.cfgBaseline = &cfg
 		u.updateSaveState()
+		u.updateNotifySaveState()
 		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
 	})
 	u.saveBtn.Importance = widget.HighImportance
@@ -1013,22 +1024,29 @@ func (u *ui) initialLoad() {
 		// Baseline first: SetText/SetChecked/SetSelectedIndex fire OnChanged,
 		// which compares against it; once everything matches, Save ends up
 		// disabled.
-		if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
-			// Service predating grace_seconds: mirror what the select shows
-			// so the form does not start out dirty.
-			cfg.GraceSeconds = fallbackGraceSeconds
-		}
+		cfg = withGraceFallback(cfg)
 		u.cfgBaseline = &cfg
 		u.portEntry.SetText(strconv.Itoa(cfg.Port))
 		u.secretEntry.SetText(cfg.Secret)
 		u.remoteCheck.SetChecked(cfg.WebUIRemote)
 		u.setGraceSelection(cfg)
 		u.updateSaveState()
+		u.fillNotifyTab(cfg)
 	})
 	if err == nil {
 		u.loadLogs()
 		u.loadSchedule()
 	}
+}
+
+// withGraceFallback mirrors what the grace select shows for a service
+// predating grace_seconds (enabled, no period), so a config adopted as the
+// baseline does not leave the settings form dirty.
+func withGraceFallback(cfg Config) Config {
+	if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
+		cfg.GraceSeconds = fallbackGraceSeconds
+	}
+	return cfg
 }
 
 // pollLoop drives periodic refreshes until the window closes.
