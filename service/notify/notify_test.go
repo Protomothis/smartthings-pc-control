@@ -57,12 +57,19 @@ func (s *fakeSink) calls() int {
 	return len(s.sent)
 }
 
-// fakeClock is an injectable Now/Sleep pair: Sleep advances Now instantly
-// and records what was requested.
+// fakeClock is an injectable Now/Sleep/After set: Sleep advances Now
+// instantly and records what was requested, After registers a timer that
+// fires as soon as the clock (via sleep or advance) reaches its deadline.
 type fakeClock struct {
 	mu     sync.Mutex
 	t      time.Time
 	sleeps []time.Duration
+	timers []fakeTimer
+}
+
+type fakeTimer struct {
+	at time.Time
+	ch chan time.Time
 }
 
 func newFakeClock(t time.Time) *fakeClock { return &fakeClock{t: t} }
@@ -78,6 +85,37 @@ func (c *fakeClock) sleep(d time.Duration) {
 	defer c.mu.Unlock()
 	c.sleeps = append(c.sleeps, d)
 	c.t = c.t.Add(d)
+	c.fire()
+}
+
+// advance moves the clock forward as the test's "time passes".
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+	c.fire()
+}
+
+func (c *fakeClock) after(d time.Duration) <-chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ch := make(chan time.Time, 1)
+	c.timers = append(c.timers, fakeTimer{at: c.t.Add(d), ch: ch})
+	c.fire()
+	return ch
+}
+
+// fire delivers every timer whose deadline has passed. Caller holds mu.
+func (c *fakeClock) fire() {
+	kept := c.timers[:0]
+	for _, tm := range c.timers {
+		if tm.at.After(c.t) {
+			kept = append(kept, tm)
+			continue
+		}
+		tm.ch <- c.t
+	}
+	c.timers = kept
 }
 
 func (c *fakeClock) slept() []time.Duration {
@@ -93,6 +131,7 @@ func newTestBus(t *testing.T, sink *fakeSink, clock *fakeClock, cfg Config, quie
 		Sink:   sink,
 		Now:    clock.now,
 		Sleep:  clock.sleep,
+		After:  clock.after,
 		Config: func() Config { return cfg },
 		Log:    t.Logf,
 	}
