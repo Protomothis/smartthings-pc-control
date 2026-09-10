@@ -72,7 +72,7 @@ type liveSink struct {
 	mu       sync.Mutex
 	key      liveSinkKey
 	inner    *telegram.Sink
-	onSent   func(ev notify.Event, msgID int)
+	onSent   func(ev notify.Event, msgID int, html string)
 	disabled bool // last observed state, for the one-time log line
 	started  bool
 }
@@ -85,10 +85,11 @@ func newLiveSink() *liveSink {
 }
 
 // SetOnSent forwards to telegram.Sink.OnSent (issue #62 records the message
-// id of remote.grace_scheduled with it). The callback survives inner-sink
-// rebuilds caused by config changes. It runs on the notify.Bus worker
-// goroutine, so it must be quick and non-blocking.
-func (s *liveSink) SetOnSent(fn func(ev notify.Event, msgID int)) {
+// id and rendered HTML of remote.grace_scheduled with it, see
+// rememberGraceMessage). The callback survives inner-sink rebuilds caused
+// by config changes. It runs on the notify.Bus worker goroutine, so it must
+// be quick and non-blocking.
+func (s *liveSink) SetOnSent(fn func(ev notify.Event, msgID int, html string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.onSent = fn

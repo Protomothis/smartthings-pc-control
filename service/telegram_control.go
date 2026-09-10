@@ -19,8 +19,8 @@ import (
 // This file is the service side of inbound Telegram control (design doc §9):
 // telegramControl implements telegram.CommandHandler, and the lifecycle
 // functions at the bottom run the telegram.Poller while control is enabled.
-// Issue #62 extends the keyboards and message edits; keep the helpers here
-// small and named so it can.
+// Message edits after a button press keep the original text and append a
+// result line (#62); the grace-message lifecycle lives in telegram_grace.go.
 
 // serviceStartedAt approximates process start for the /status uptime line.
 var serviceStartedAt = time.Now()
@@ -130,15 +130,25 @@ var tgTexts = map[string][2]string{
 	"stamp_executed":  {"✅ 실행됨", "✅ Executed"},
 	"stamp_cancelled": {"✅ 취소됨", "✅ Cancelled"},
 	"stamp_dismissed": {"❎ 취소됨", "❎ Dismissed"},
-	"via_telegram":    {"텔레그램", "Telegram"},
-	"btn_confirm":     {"확인", "Confirm"},
-	"btn_cancel":      {"취소", "Cancel"},
-	"btn_lock":        {"🔒 잠금", "🔒 Lock"},
-	"btn_screenoff":   {"🖥 화면 끄기", "🖥 Screen off"},
-	"btn_sleep":       {"🌙 절전", "🌙 Sleep"},
-	"btn_restart":     {"🔄 재시작", "🔄 Restart"},
-	"btn_shutdown":    {"⏻ 종료", "⏻ Shut down"},
-	"btn_cancel_sch":  {"⏱ 예약 취소", "⏱ Cancel schedule"},
+	"stamp_ran":       {"▶️ 실행됨", "▶️ Executed"},
+	"stamp_replaced":  {"🔁 대체됨", "🔁 Replaced"},
+	"stamp_stale":     {"⏹ 이미 처리됨", "⏹ Already handled"},
+	// who cancelled / ran the schedule (the by field of takeSchedule)
+	"by_toast":       {"토스트", "toast"},
+	"by_tray":        {"트레이", "tray"},
+	"by_app":         {"앱", "app"},
+	"by_webui":       {"WebUI", "WebUI"},
+	"by_api":         {"API", "API"},
+	"by_telegram":    {"텔레그램", "Telegram"},
+	"by_timer":       {"타이머", "timer"},
+	"btn_confirm":    {"확인", "Confirm"},
+	"btn_cancel":     {"취소", "Cancel"},
+	"btn_lock":       {"🔒 잠금", "🔒 Lock"},
+	"btn_screenoff":  {"🖥 화면 끄기", "🖥 Screen off"},
+	"btn_sleep":      {"🌙 절전", "🌙 Sleep"},
+	"btn_restart":    {"🔄 재시작", "🔄 Restart"},
+	"btn_shutdown":   {"⏻ 종료", "⏻ Shut down"},
+	"btn_cancel_sch": {"⏱ 예약 취소", "⏱ Cancel schedule"},
 	// /status
 	"st_uptime":    {"가동", "Uptime"},
 	"st_schedule":  {"예약", "Schedule"},
@@ -192,10 +202,74 @@ func tgOriginLabel(origin string) string {
 	return html.EscapeString(origin)
 }
 
-// tgStamp is the result line an edited message ends with:
-// "✅ 실행됨 · 14:32 · 텔레그램".
+// tgStamp is the result line an edited message ends with when a Telegram
+// button or command did the work: "✅ 실행됨 · 14:32 · 텔레그램".
 func tgStamp(key string) string {
-	return tgText(key) + " · " + time.Now().Format("15:04") + " · " + tgText("via_telegram")
+	return tgStampBy(key, "telegram")
+}
+
+// tgStampBy is tgStamp for any origin: "✅ 취소됨 · 14:32 · 트레이". An empty
+// by (a replaced schedule) leaves the origin off.
+func tgStampBy(key, by string) string {
+	line := tgText(key) + " · " + time.Now().Format("15:04")
+	if by != "" {
+		line += " · " + tgByLabel(by)
+	}
+	return line
+}
+
+// tgByLabel names a cancel/run origin (toast, tray, app, webui, api,
+// telegram, timer); unknown values are escaped verbatim.
+func tgByLabel(by string) string {
+	if _, ok := tgTexts["by_"+by]; ok {
+		return tgText("by_" + by)
+	}
+	return html.EscapeString(by)
+}
+
+// tgPlain is what Telegram hands back as message.text for the HTML h: tags
+// stripped, entities decoded. Used to recognise the bot's own messages.
+func tgPlain(h string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range h {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>' && inTag:
+			inTag = false
+		case !inTag:
+			b.WriteRune(r)
+		}
+	}
+	return html.UnescapeString(b.String())
+}
+
+// tgKeep returns the HTML to keep when editing a message whose plain text
+// is msgText: the matching candidate when the text is one of the bot's own
+// (formatting preserved), otherwise msgText escaped. "" stays "".
+func tgKeep(msgText string, candidates ...string) string {
+	if msgText == "" {
+		return ""
+	}
+	for _, c := range candidates {
+		if tgPlain(c) == msgText {
+			return c
+		}
+	}
+	return html.EscapeString(msgText)
+}
+
+// tgPromptCandidates are every confirmation prompt the bot can have sent,
+// on its own (/shutdown) or appended to the /menu (confirm:<cmd>).
+func tgPromptCandidates() []string {
+	menu := tgText("menu_title", html.EscapeString(tgPCName()))
+	var out []string
+	for name := range graceCommands {
+		q := tgText("confirm_q", tgCommandLabel(name))
+		out = append(out, q, menu+"\n\n"+q)
+	}
+	return out
 }
 
 func tgPCName() string {
@@ -224,11 +298,13 @@ func tgConfirmKeyboard(name string) *telegram.InlineKeyboard {
 
 // tgMenuKeyboard is the /menu layout: safe commands run at once (cmd:),
 // power commands go through confirm:, and the last row cancels a schedule.
+// cancel:menu (rather than the grace message's bare cancel:) tells
+// HandleCallback the press came from the menu, which stays usable.
 func tgMenuKeyboard() *telegram.InlineKeyboard {
 	return &telegram.InlineKeyboard{InlineKeyboard: [][]telegram.InlineButton{
 		{tgButton("btn_lock", "cmd:lock"), tgButton("btn_screenoff", "cmd:turnscreenoff")},
 		{tgButton("btn_sleep", "confirm:suspend"), tgButton("btn_restart", "confirm:restart")},
-		{tgButton("btn_shutdown", "confirm:shutdown"), tgButton("btn_cancel_sch", "cancel:")},
+		{tgButton("btn_shutdown", "confirm:shutdown"), tgButton("btn_cancel_sch", "cancel:menu")},
 	}}
 }
 
@@ -248,10 +324,10 @@ func runTelegramCommand(name string) bool {
 	return true
 }
 
-// runScheduledNow cancels the active schedule (by=telegram) and executes
-// its command immediately; ok is false when nothing was scheduled.
+// runScheduledNow ends the active schedule (by=telegram) and executes its
+// command immediately; ok is false when nothing was scheduled.
 func runScheduledNow() (string, bool) {
-	name, ok := takeSchedule("telegram")
+	name, ok := takeScheduleForRun("telegram")
 	if !ok {
 		return "", false
 	}
@@ -365,11 +441,16 @@ func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, er
 //
 //	exec:<cmd>     run now (after a confirmation prompt)
 //	cmd:<cmd>      run a safe command from /menu
-//	confirm:<cmd>  turn the message into a confirmation prompt (EditKeyboard adds the buttons)
+//	confirm:<cmd>  append a confirmation prompt to the menu (EditKeyboard adds the buttons)
 //	dismiss:       close a confirmation prompt
-//	cancel:        cancel the active schedule / grace period (also on remote.grace_scheduled)
-//	runnow:        cancel it and run the command now (remote.grace_scheduled)
-func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID int, data string) (string, string, error) {
+//	cancel:        cancel the grace period (remote.grace_scheduled)
+//	cancel:menu    cancel the active schedule from /menu; the menu stays
+//	runnow:        end the grace period and run the command now (remote.grace_scheduled)
+//
+// Edits keep the message's text (msgText, or the HTML we sent when it is
+// known) and append a result line. A cancel:/runnow: press on a message
+// whose schedule is gone marks it "already handled" and drops the buttons.
+func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
 	case "exec":
@@ -378,7 +459,7 @@ func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID in
 			return "", tgText("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
 		}
 		runTelegramCommand(name)
-		return tgCommandLabel(name) + "\n" + tgStamp("stamp_executed"), tgText("toast_executed"), nil
+		return tgAppend(tgKeep(msgText, tgPromptCandidates()...), tgCommandLabel(name), tgStamp("stamp_executed")), tgText("toast_executed"), nil
 	case "cmd":
 		name, ok := telegramCommandName(arg)
 		if !ok {
@@ -388,40 +469,92 @@ func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID in
 			return "", tgText("confirm_needed"), nil
 		}
 		runTelegramCommand(name)
-		return tgCommandLabel(name) + "\n" + tgStamp("stamp_executed"), tgText("toast_executed"), nil
+		return tgAppend(tgKeep(msgText, tgMenuTitle()), tgCommandLabel(name), tgStamp("stamp_executed")), tgText("toast_executed"), nil
 	case "confirm":
 		name, ok := telegramCommandName(arg)
 		if !ok || !graceCommands[name] {
 			return "", tgText("unknown_button"), fmt.Errorf("callback %q: not a power command", data)
 		}
-		return tgText("confirm_q", tgCommandLabel(name)), "", nil
+		q := tgText("confirm_q", tgCommandLabel(name))
+		if kept := tgKeep(msgText, tgMenuTitle()); kept != "" {
+			return kept + "\n\n" + q, "", nil
+		}
+		return q, "", nil
 	case "dismiss":
-		return tgStamp("stamp_dismissed"), "", nil
+		return tgAppend(tgKeep(msgText, tgPromptCandidates()...), "", tgStamp("stamp_dismissed")), "", nil
 	case "cancel":
+		if arg == "menu" {
+			name, ok := takeSchedule("telegram")
+			if !ok {
+				return "", tgText("no_schedule"), nil
+			}
+			return tgMenuTitle() + "\n" + tgText("cancelled", tgCommandLabel(name)), tgText("toast_cancelled"), nil
+		}
+		grace, mine := takeGraceMessage(chatID, msgID)
 		name, ok := takeSchedule("telegram")
 		if !ok {
-			return "", tgText("no_schedule"), nil
+			return tgStale(msgText), tgText("no_schedule"), nil
 		}
-		return tgCommandLabel(name) + "\n" + tgStamp("stamp_cancelled"), tgText("toast_cancelled"), nil
+		if mine {
+			return grace.html + "\n" + tgStamp("stamp_cancelled"), tgText("toast_cancelled"), nil
+		}
+		return tgAppend(tgKeep(msgText), tgCommandLabel(name), tgStamp("stamp_cancelled")), tgText("toast_cancelled"), nil
 	case "runnow":
+		grace, mine := takeGraceMessage(chatID, msgID)
 		name, ok := runScheduledNow()
 		if !ok {
-			return "", tgText("no_schedule"), nil
+			return tgStale(msgText), tgText("no_schedule"), nil
 		}
-		return tgCommandLabel(name) + "\n" + tgStamp("stamp_executed"), tgText("toast_executed"), nil
+		if mine {
+			return grace.html + "\n" + tgStamp("stamp_ran"), tgText("toast_executed"), nil
+		}
+		return tgAppend(tgKeep(msgText), tgCommandLabel(name), tgStamp("stamp_ran")), tgText("toast_executed"), nil
 	}
 	return "", tgText("unknown_button"), fmt.Errorf("unknown callback %q", data)
 }
 
+// tgMenuTitle is the /menu text for the current PC name.
+func tgMenuTitle() string {
+	return tgText("menu_title", html.EscapeString(tgPCName()))
+}
+
+// tgAppend builds an edit: the kept text (when any) followed by the result
+// line. Without kept text the command label heads the message so the
+// result is still readable on its own.
+func tgAppend(kept, label, stamp string) string {
+	if kept != "" {
+		return kept + "\n" + stamp
+	}
+	if label != "" {
+		return label + "\n" + stamp
+	}
+	return stamp
+}
+
+// tgStale is the edit for a cancel:/runnow: press whose schedule no longer
+// exists: the text stays, the buttons go, "⏹ 이미 처리됨" is appended. When
+// the poller had no text (no message), nothing is edited.
+func tgStale(msgText string) string {
+	if msgText == "" {
+		return ""
+	}
+	return tgKeep(msgText) + "\n" + tgText("stamp_stale")
+}
+
 // EditKeyboard implements telegram.EditKeyboarder: a confirm:<cmd> edit
-// keeps [확인][취소] buttons, every other edit drops the keyboard.
+// keeps [확인][취소] buttons, cancel:menu keeps the menu, every other edit
+// drops the keyboard.
 func (telegramControl) EditKeyboard(data string) *telegram.InlineKeyboard {
 	verb, arg, _ := strings.Cut(data, ":")
-	if verb != "confirm" {
-		return nil
-	}
-	if name, ok := telegramCommandName(arg); ok && graceCommands[name] {
-		return tgConfirmKeyboard(name)
+	switch verb {
+	case "confirm":
+		if name, ok := telegramCommandName(arg); ok && graceCommands[name] {
+			return tgConfirmKeyboard(name)
+		}
+	case "cancel":
+		if arg == "menu" {
+			return tgMenuKeyboard()
+		}
 	}
 	return nil
 }
@@ -489,7 +622,6 @@ func formatUptime(d time.Duration) string {
 }
 
 // ---- lifecycle -------------------------------------------------------------------
-
 
 // telegramRunner owns the running poller. managed is set between
 // startTelegramControl and stopTelegramControl so that saveConfig in the

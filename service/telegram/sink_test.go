@@ -36,8 +36,8 @@ func TestSinkSendRendersAndAttachesKeyboard(t *testing.T) {
 	}
 	s := NewSink(cli, "42", r, "DESKTOP-TEST")
 	var gotEv notify.Event
-	gotID := 0
-	s.OnSent = func(ev notify.Event, msgID int) { gotEv, gotID = ev, msgID }
+	gotID, gotHTML := 0, ""
+	s.OnSent = func(ev notify.Event, msgID int, html string) { gotEv, gotID, gotHTML = ev, msgID, html }
 
 	if err := s.Send(context.Background(), testEvent()); err != nil {
 		t.Fatalf("Send: %v", err)
@@ -72,6 +72,9 @@ func TestSinkSendRendersAndAttachesKeyboard(t *testing.T) {
 	if gotID != 321 || gotEv.Key() != "remote.grace_scheduled" {
 		t.Errorf("OnSent got (%s, %d)", gotEv.Key(), gotID)
 	}
+	if gotHTML != text {
+		t.Errorf("OnSent html = %q, want the sent text %q", gotHTML, text)
+	}
 }
 
 func TestSinkSendWithoutActionsOmitsKeyboard(t *testing.T) {
@@ -81,7 +84,7 @@ func TestSinkSendWithoutActionsOmitsKeyboard(t *testing.T) {
 	ev := testEvent()
 	ev.Actions = nil
 	called := false
-	s.OnSent = func(notify.Event, int) { called = true }
+	s.OnSent = func(notify.Event, int, string) { called = true }
 	if err := s.Send(context.Background(), ev); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -97,7 +100,7 @@ func TestSinkPassesRateLimitThrough(t *testing.T) {
 	cli, _ := newFakeAPI(t, 429, `{"ok":false,"error_code":429,"description":"slow down","parameters":{"retry_after":3}}`)
 	r, _ := NewRenderer("ko", "simple")
 	s := NewSink(cli, "42", r, "PC")
-	s.OnSent = func(notify.Event, int) { t.Errorf("OnSent must not fire on failure") }
+	s.OnSent = func(notify.Event, int, string) { t.Errorf("OnSent must not fire on failure") }
 	err := s.Send(context.Background(), testEvent())
 	var rl *RateLimitError
 	if !errors.As(err, &rl) || rl.RetryAfter != 3*time.Second {

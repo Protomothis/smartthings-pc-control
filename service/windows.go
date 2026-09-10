@@ -32,8 +32,9 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 
 	// Notification bus (#55) must exist before the servers emit. The live
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
-	// enabling Telegram later needs no restart.
-	startNotifier(newLiveSink())
+	// enabling Telegram later needs no restart; the grace-message hook
+	// (#62) rides along so the message can be edited when the schedule ends.
+	startLiveNotifier()
 	// Inbound Telegram commands (#61): polls only while telegram.enabled
 	// and control_enabled are both set; config saves reconcile it.
 	startTelegramControl()
@@ -94,7 +95,7 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
-	startNotifier(newLiveSink()) // live Telegram sink; see Execute
+	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
 	stop := make(chan struct{})

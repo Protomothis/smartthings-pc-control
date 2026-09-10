@@ -116,7 +116,7 @@ func (fb *fakeBot) expectNoCall(t *testing.T) {
 type fakeHandler struct {
 	mu        sync.Mutex
 	commands  []string // "chat cmd args..."
-	callbacks []string // "chat msgID data"
+	callbacks []string // "chat msgID data|msgText"
 	unauth    []string // "chat user text"
 	withKB    bool     // implement EditKeyboarder behaviour for confirm:
 }
@@ -132,10 +132,10 @@ func (h *fakeHandler) HandleCommand(_ context.Context, chatID, cmd string, args 
 	return "reply:" + cmd, kb, nil
 }
 
-func (h *fakeHandler) HandleCallback(_ context.Context, chatID string, msgID int, data string) (string, string, error) {
+func (h *fakeHandler) HandleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.callbacks = append(h.callbacks, fmt.Sprintf("%s %d %s", chatID, msgID, data))
+	h.callbacks = append(h.callbacks, fmt.Sprintf("%s %d %s|%s", chatID, msgID, data, msgText))
 	if strings.HasPrefix(data, "toastonly:") {
 		return "", "toast:" + data, nil
 	}
@@ -198,7 +198,7 @@ func msgUpdate(id int, chat int64, user, text string) string {
 }
 
 func cbUpdate(id int, cbID string, chat int64, msgID int, data string) string {
-	return fmt.Sprintf(`{"update_id":%d,"callback_query":{"id":%q,"from":{"id":7,"username":"me"},"message":{"message_id":%d,"chat":{"id":%d,"type":"private"}},"data":%q}}`, id, cbID, msgID, chat, data)
+	return fmt.Sprintf(`{"update_id":%d,"callback_query":{"id":%q,"from":{"id":7,"username":"me"},"message":{"message_id":%d,"chat":{"id":%d,"type":"private"},"text":"msg %d"},"data":%q}}`, id, cbID, msgID, chat, msgID, data)
 }
 
 func TestPollerDrainsThenRoutesCommands(t *testing.T) {
@@ -315,7 +315,8 @@ func TestPollerCallbackAnswersAndEdits(t *testing.T) {
 	fb.expectNoCall(t)
 
 	_, callbacks, unauth := h.snapshot()
-	wantCB := []string{"42 55 cancel:", "42 56 confirm:shutdown", "42 57 toastonly:"}
+	// The message text rides along so handlers can keep it when editing (#62).
+	wantCB := []string{"42 55 cancel:|msg 55", "42 56 confirm:shutdown|msg 56", "42 57 toastonly:|msg 57"}
 	if !reflect.DeepEqual(callbacks, wantCB) {
 		t.Errorf("callbacks = %q, want %q", callbacks, wantCB)
 	}
