@@ -397,6 +397,9 @@ func saveConfig(cfg Config) error {
 	}
 	// Update in-memory config
 	setConfig(cfg)
+	// Telegram control follows the saved settings without a restart
+	// (no-op unless the service has started it, see telegram_control.go).
+	reconcileTelegramControl()
 	return nil
 }
 
@@ -441,6 +444,9 @@ func newCommandHandler() http.HandlerFunc {
 			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
 			emit("security", "unknown_command", map[string]string{"from": from, "command": truncate(command, 64)})
 			return
+		}
+		if name != "ping" {
+			noteRemoteCommand(name, from) // shown by the Telegram /status command
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -836,6 +842,9 @@ const (
 	originUI scheduleOrigin = iota
 	// originRemote: a SmartThings command deferred by the grace period.
 	originRemote
+	// originTelegram: "/shutdown 30" and friends from the Telegram bot (#61).
+	// The user asked from their phone, so no tray toast is needed.
+	originTelegram
 )
 
 // wakesTrayApp reports whether a schedule from this origin should launch
@@ -844,10 +853,14 @@ func (o scheduleOrigin) wakesTrayApp() bool {
 	return o == originRemote
 }
 
-// String is the wire form used by /api/schedule ("ui" or "remote").
+// String is the wire form used by /api/schedule ("ui", "remote" or
+// "telegram").
 func (o scheduleOrigin) String() string {
-	if o == originRemote {
+	switch o {
+	case originRemote:
 		return "remote"
+	case originTelegram:
+		return "telegram"
 	}
 	return "ui"
 }
@@ -966,21 +979,30 @@ func cancelSchedule() bool {
 // (api/webui/app/toast/tray/telegram) and is reported in the notification:
 // remote.grace_cancelled for a grace deferral, schedule.cancelled otherwise.
 func cancelScheduleBy(by string) bool {
+	_, ok := takeSchedule(by)
+	return ok
+}
+
+// takeSchedule cancels the current scheduled task on behalf of by and
+// returns its command, so "run now" callers (/now, the runnow: button) can
+// execute it without racing a concurrent cancel or replacement.
+func takeSchedule(by string) (string, bool) {
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
 
 	if scheduledTask == nil {
-		return false
+		return "", false
 	}
 	scheduledTask.timer.Stop()
-	logMsg("Schedule cancelled: %s", scheduledTask.Command)
+	command := scheduledTask.Command
+	logMsg("Schedule cancelled: %s", command)
 	if scheduledTask.Origin == originRemote {
-		emit("remote", "grace_cancelled", map[string]string{"command": scheduledTask.Command, "by": by})
+		emit("remote", "grace_cancelled", map[string]string{"command": command, "by": by})
 	} else {
 		emit("schedule", "cancelled", map[string]string{
-			"command": scheduledTask.Command, "origin": scheduledTask.Origin.String(), "by": by,
+			"command": command, "origin": scheduledTask.Origin.String(), "by": by,
 		})
 	}
 	scheduledTask = nil
-	return true
+	return command, true
 }

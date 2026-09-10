@@ -34,6 +34,9 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
 	// enabling Telegram later needs no restart.
 	startNotifier(newLiveSink())
+	// Inbound Telegram commands (#61): polls only while telegram.enabled
+	// and control_enabled are both set; config saves reconcile it.
+	startTelegramControl()
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -56,6 +59,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			logMsg("Service stopping (%s)", reason)
 			emit("power", "stopping", map[string]string{"reason": reason})
 			close(s.stop)
+			stopTelegramControl()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
@@ -91,6 +95,8 @@ func ShowInstallCompleteDialog() {
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
 	startNotifier(newLiveSink()) // live Telegram sink; see Execute
+	startTelegramControl()
+	defer stopTelegramControl()
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)

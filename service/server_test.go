@@ -347,6 +347,7 @@ func TestScheduleOriginWakesTrayApp(t *testing.T) {
 	}{
 		{originUI, false},
 		{originRemote, true},
+		{originTelegram, false},
 	}
 	for _, c := range cases {
 		if got := c.origin.wakesTrayApp(); got != c.want {
