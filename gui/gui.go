@@ -22,6 +22,8 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/release"
 )
 
 // cmdButtonSize keeps command buttons compact instead of stretching full-width.
@@ -204,7 +206,7 @@ func Run(version string, minimized bool) {
 // the user (dialog on startup, tray notification on periodic checks).
 func (u *ui) checkForUpdates(startup bool) {
 	rel, err := checkLatestRelease()
-	if err != nil || !isNewer(u.version, rel.TagName) {
+	if err != nil || !release.IsNewer(u.version, rel.TagName) {
 		return
 	}
 	// Notify once per discovered version on periodic checks.
@@ -232,7 +234,7 @@ func (u *ui) checkForUpdatesManual() {
 			switch {
 			case err != nil:
 				dialog.ShowError(errors.New(u.t("update.checkfailed")+err.Error()), u.win)
-			case isNewer(u.version, rel.TagName):
+			case release.IsNewer(u.version, rel.TagName):
 				u.showUpdateDialog(rel)
 			case !u.canSelfUpdate():
 				// dev build: version comparison is meaningless, but the
@@ -248,17 +250,17 @@ func (u *ui) checkForUpdatesManual() {
 // canSelfUpdate is false for "dev"/empty builds — those may check for
 // releases but must never overwrite themselves.
 func (u *ui) canSelfUpdate() bool {
-	_, ok := parseVersion(u.version)
+	_, ok := release.ParseVersion(u.version)
 	return ok
 }
 
 // showUpdateDialog offers "Update now" when the release ships an exe asset
 // and this is a release build; otherwise it falls back to opening the
 // release page. Must run on the UI goroutine.
-func (u *ui) showUpdateDialog(rel *releaseInfo) {
+func (u *ui) showUpdateDialog(rel *release.Info) {
 	page := rel.HTMLURL
 	if page == "" {
-		page = releasesPage
+		page = release.Page
 	}
 	openPage := func() { exec.Command("cmd", "/c", "start", page).Start() }
 
@@ -267,7 +269,7 @@ func (u *ui) showUpdateDialog(rel *releaseInfo) {
 		body.Add(widget.NewHyperlink(u.t("update.releasepage"), pageURL))
 	}
 
-	asset := pickUpdateAsset(rel)
+	asset := release.ExeAsset(rel)
 	if asset == "" || !u.canSelfUpdate() {
 		if asset == "" && u.canSelfUpdate() {
 			body.Add(widget.NewLabel(u.t("update.noasset")))
@@ -292,7 +294,7 @@ func (u *ui) showUpdateDialog(rel *releaseInfo) {
 // dialog, then hands over to the elevated updater (see selfupdate.go) and
 // quits — the updater waits for this process to exit before swapping the
 // binary. Download errors and a declined UAC prompt leave the app running.
-func (u *ui) startSelfUpdate(rel *releaseInfo, assetURL string) {
+func (u *ui) startSelfUpdate(rel *release.Info, assetURL string) {
 	status := widget.NewLabel(u.t("update.downloading"))
 	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
 	bar := widget.NewProgressBar()
