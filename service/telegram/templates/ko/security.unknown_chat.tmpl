@@ -1,0 +1,7 @@
+{{define "title"}}허용되지 않은 채팅{{end}}
+{{define "summary"}}허용 목록에 없는 채팅 <b>{{.Fields.chat_id}}</b>(@{{.Fields.username}})에서 명령을 받아 무시했습니다{{end}}
+{{define "fields"}}
+채팅 ID: <code>{{.Fields.chat_id}}</code>
+사용자: <code>{{.Fields.username}}</code>
+내용: <code>{{.Fields.text}}</code>
+{{end}}

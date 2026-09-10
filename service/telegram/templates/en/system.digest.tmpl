@@ -1,0 +1,7 @@
+{{define "title"}}Quiet hours digest{{end}}
+{{define "summary"}}<b>{{.Fields.count}}</b> notification(s) held during {{.Fields.period}}
+{{.Fields.items}}{{end}}
+{{define "fields"}}
+Count: <code>{{.Fields.count}}</code>
+Period: <code>{{.Fields.period}}</code>
+{{end}}

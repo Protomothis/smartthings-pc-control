@@ -1,0 +1,6 @@
+{{define "title"}}Schedule executed{{end}}
+{{define "summary"}}Ran scheduled <b>{{.Fields.command}}</b> ({{.Fields.origin}}){{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Origin: <code>{{.Fields.origin}}</code>
+{{end}}

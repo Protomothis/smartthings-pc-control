@@ -1,0 +1,6 @@
+{{define "title"}}명령 실행 실패{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> 실행에 실패했습니다: {{.Fields.error}}{{end}}
+{{define "fields"}}
+명령: <code>{{.Fields.command}}</code>
+오류: <code>{{.Fields.error}}</code>
+{{end}}

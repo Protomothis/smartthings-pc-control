@@ -1,0 +1,7 @@
+{{define "title"}}새 버전 사용 가능{{end}}
+{{define "summary"}}<b>{{.Fields.version}}</b> 릴리스가 있습니다 (현재 {{.Fields.current}}){{end}}
+{{define "fields"}}
+새 버전: <code>{{.Fields.version}}</code>
+현재 버전: <code>{{.Fields.current}}</code>
+링크: <a href="{{.Fields.url}}">{{.Fields.url}}</a>
+{{end}}

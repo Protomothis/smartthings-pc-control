@@ -1,0 +1,7 @@
+{{define "title"}}Update available{{end}}
+{{define "summary"}}Release <b>{{.Fields.version}}</b> is available (current {{.Fields.current}}){{end}}
+{{define "fields"}}
+New version: <code>{{.Fields.version}}</code>
+Current: <code>{{.Fields.current}}</code>
+Link: <a href="{{.Fields.url}}">{{.Fields.url}}</a>
+{{end}}

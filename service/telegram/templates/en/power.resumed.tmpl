@@ -1,0 +1,5 @@
+{{define "title"}}Resumed from sleep{{end}}
+{{define "summary"}}Woke from sleep (asleep for <b>{{.Fields.since}}</b>){{end}}
+{{define "fields"}}
+Asleep for: <code>{{.Fields.since}}</code>
+{{end}}

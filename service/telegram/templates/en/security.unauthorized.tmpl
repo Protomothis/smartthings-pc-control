@@ -1,0 +1,8 @@
+{{define "title"}}Unauthorized request{{end}}
+{{define "summary"}}<b>{{.Fields.count}}</b> request(s) with a bad secret from {{.Fields.from}} ({{.Fields.window}}){{end}}
+{{define "fields"}}
+From: <code>{{.Fields.from}}</code>
+Path: <code>{{.Fields.path}}</code>
+Count: <code>{{.Fields.count}}</code>
+Window: <code>{{.Fields.window}}</code>
+{{end}}

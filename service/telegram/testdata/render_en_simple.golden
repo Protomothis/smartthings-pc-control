@@ -1,0 +1,95 @@
+=== remote.received ===
+🔌 <b>Remote command executed</b>
+<blockquote>Ran <b>lock</b> from 192.168.1.20 immediately</blockquote>
+
+=== remote.grace_scheduled ===
+🔌 <b>Remote command pending</b>
+<blockquote><b>shutdown</b> in 5분 — you can still cancel below</blockquote>
+
+=== remote.grace_cancelled ===
+🔌 <b>Grace period cancelled</b>
+<blockquote><b>shutdown</b> was cancelled via toast</blockquote>
+
+=== remote.executed ===
+🔌 <b>Grace period expired</b>
+<blockquote>Grace period ended, ran <b>shutdown</b></blockquote>
+
+=== remote.force ===
+🔌 <b>Force shutdown received</b>
+<blockquote><b>forceshutdown</b> from 192.168.1.20 — shutting down with no grace period</blockquote>
+
+=== schedule.created ===
+⏱ <b>Schedule created</b>
+<blockquote><b>sleep</b> scheduled in 30분 (app)</blockquote>
+
+=== schedule.cancelled ===
+⏱ <b>Schedule cancelled</b>
+<blockquote><b>sleep</b> schedule (app) was cancelled via webui</blockquote>
+
+=== schedule.executed ===
+⏱ <b>Schedule executed</b>
+<blockquote>Ran scheduled <b>sleep</b> (app)</blockquote>
+
+=== schedule.replaced ===
+⏱ <b>Schedule replaced</b>
+<blockquote>sleep (app) was replaced by <b>shutdown</b> (telegram)</blockquote>
+
+=== power.started ===
+🟢 <b>Service started</b>
+<blockquote>PC is up and service <b>v1.0.0</b> has started</blockquote>
+
+=== power.resumed ===
+🌙 <b>Resumed from sleep</b>
+<blockquote>Woke from sleep (asleep for <b>2시간 10분</b>)</blockquote>
+
+=== power.stopping ===
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>shutdown</b></blockquote>
+
+=== security.unauthorized ===
+🛡 <b>Unauthorized request</b>
+<blockquote><b>12</b> request(s) with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5분)</blockquote>
+
+=== security.login_limited ===
+🛡 <b>Login rate limit triggered</b>
+<blockquote>Repeated WebUI login failures from <b>10.0.0.5</b> — temporarily blocked</blockquote>
+
+=== security.unknown_command ===
+🛡 <b>Unknown command</b>
+<blockquote>Unknown command <b>explode</b> from 10.0.0.5</blockquote>
+
+=== security.config_changed ===
+🛡 <b>Settings changed</b>
+<blockquote>Settings changed via webui: <b>secret, port</b></blockquote>
+
+=== security.unknown_chat ===
+🛡 <b>Unknown Telegram chat</b>
+<blockquote>Ignored a command from chat <b>987654321</b> (@stranger) that is not on the allow list</blockquote>
+
+=== system.update_available ===
+🆕 <b>Update available</b>
+<blockquote>Release <b>v1.1.0</b> is available (current v1.0.0)</blockquote>
+
+=== system.updated ===
+🆕 <b>Updated</b>
+<blockquote>Now running <b>v1.0.0</b> (was v0.3.4)</blockquote>
+
+=== system.exec_failed ===
+⚠️ <b>Command failed</b>
+<blockquote><b>hibernate</b> failed: exit status 1</blockquote>
+
+=== system.tray_wake_failed ===
+⚠️ <b>Tray wake failed</b>
+<blockquote>Could not wake the tray app while handling <b>screenoff</b>: no active session</blockquote>
+
+=== system.test ===
+✅ <b>Test message</b>
+<blockquote>Connection is working</blockquote>
+
+=== system.digest ===
+📋 <b>Quiet hours digest</b>
+<blockquote><b>3</b> notification(s) held during 22:00–07:00
+🔌 remote.received lock
+⏱ schedule.executed sleep
+🛡 security.unauthorized 10.0.0.5</blockquote>
+

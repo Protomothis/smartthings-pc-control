@@ -1,0 +1,6 @@
+{{define "title"}}예약 실행{{end}}
+{{define "summary"}}예약된 <b>{{.Fields.command}}</b> 명령을 실행했습니다 ({{.Fields.origin}}){{end}}
+{{define "fields"}}
+명령: <code>{{.Fields.command}}</code>
+출처: <code>{{.Fields.origin}}</code>
+{{end}}

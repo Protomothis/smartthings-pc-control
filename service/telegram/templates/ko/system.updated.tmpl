@@ -1,0 +1,6 @@
+{{define "title"}}업데이트 완료{{end}}
+{{define "summary"}}{{.Fields.previous}} → <b>{{.Fields.version}}</b>으로 업데이트되어 실행 중입니다{{end}}
+{{define "fields"}}
+현재 버전: <code>{{.Fields.version}}</code>
+이전 버전: <code>{{.Fields.previous}}</code>
+{{end}}

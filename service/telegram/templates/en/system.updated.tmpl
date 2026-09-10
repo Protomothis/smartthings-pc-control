@@ -1,0 +1,6 @@
+{{define "title"}}Updated{{end}}
+{{define "summary"}}Now running <b>{{.Fields.version}}</b> (was {{.Fields.previous}}){{end}}
+{{define "fields"}}
+Version: <code>{{.Fields.version}}</code>
+Previous: <code>{{.Fields.previous}}</code>
+{{end}}

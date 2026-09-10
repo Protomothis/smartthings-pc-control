@@ -1,0 +1,8 @@
+{{define "title"}}Schedule created{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> scheduled in {{.Fields.delay}} ({{.Fields.origin}}){{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Origin: <code>{{.Fields.origin}}</code>
+Delay: <code>{{.Fields.delay}}</code>
+Executes at: <code>{{.Fields.execute_at}}</code>
+{{end}}

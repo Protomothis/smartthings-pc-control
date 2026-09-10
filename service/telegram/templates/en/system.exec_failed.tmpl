@@ -1,0 +1,6 @@
+{{define "title"}}Command failed{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> failed: {{.Fields.error}}{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Error: <code>{{.Fields.error}}</code>
+{{end}}
