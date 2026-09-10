@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,108 +9,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/release"
 )
-
-const releasesAPI = "https://api.github.com/repos/Protomothis/smartthings-pc-control/releases/latest"
-const releasesPage = "https://github.com/Protomothis/smartthings-pc-control/releases/latest"
-
-// updateAssetName is the single binary attached to every release by
-// .github/workflows/release.yml.
-const updateAssetName = "smartthings-pc-control.exe"
 
 // downloadTimeout bounds the whole asset download (GitHub CDN is usually
 // fast, but a stalled connection must not hang the progress dialog forever).
 const downloadTimeout = 10 * time.Minute
 
-type releaseAsset struct {
-	Name        string `json:"name"`
-	DownloadURL string `json:"browser_download_url"`
-	Size        int64  `json:"size"`
-}
-
-type releaseInfo struct {
-	TagName string         `json:"tag_name"`
-	HTMLURL string         `json:"html_url"`
-	Assets  []releaseAsset `json:"assets"`
-}
-
-// checkLatestRelease asks GitHub for the newest published release.
-func checkLatestRelease() (*releaseInfo, error) {
-	client := &http.Client{Timeout: 8 * time.Second}
-	req, err := http.NewRequest("GET", releasesAPI, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API: HTTP %d", resp.StatusCode)
-	}
-	var rel releaseInfo
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, err
-	}
-	return &rel, nil
-}
-
-// pickUpdateAsset returns the download URL of the release's exe asset, or
-// "" when the release carries no asset we know how to install.
-func pickUpdateAsset(rel *releaseInfo) string {
-	if rel == nil {
-		return ""
-	}
-	for _, a := range rel.Assets {
-		if strings.EqualFold(a.Name, updateAssetName) && a.DownloadURL != "" {
-			return a.DownloadURL
-		}
-	}
-	return ""
-}
-
-// parseVersion turns "v1.2.3" into comparable parts. ok is false for
-// non-release builds ("dev") so they never trigger update prompts.
-func parseVersion(v string) (parts [3]int, ok bool) {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	fields := strings.SplitN(v, ".", 3)
-	if len(fields) != 3 {
-		return parts, false
-	}
-	for i, f := range fields {
-		// Tolerate suffixes like "3-rc1" on the last field.
-		f = strings.SplitN(f, "-", 2)[0]
-		n, err := strconv.Atoi(f)
-		if err != nil {
-			return parts, false
-		}
-		parts[i] = n
-	}
-	return parts, true
-}
-
-// isNewer reports whether latest is a higher release version than current.
-func isNewer(current, latest string) bool {
-	c, ok := parseVersion(current)
-	if !ok {
-		return false
-	}
-	l, ok := parseVersion(latest)
-	if !ok {
-		return false
-	}
-	for i := 0; i < 3; i++ {
-		if l[i] != c[i] {
-			return l[i] > c[i]
-		}
-	}
-	return false
+// checkLatestRelease asks GitHub for the newest published release. The
+// request, asset lookup and version comparison live in internal/release so
+// the service can share them for system.update_available.
+func checkLatestRelease() (*release.Info, error) {
+	return release.Latest(context.Background(), &http.Client{Timeout: 8 * time.Second})
 }
 
 // chooseStagingDir picks where the downloaded exe is staged: an "update"
