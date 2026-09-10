@@ -158,7 +158,7 @@ func TestAggregateCloseFlushesOpenWindows(t *testing.T) {
 func TestAggregateSummaryRespectsQuietHours(t *testing.T) {
 	clock := newFakeClock(at("12:00"))
 	sink := newFakeSink(clock)
-	quiet := &QuietHours{Enabled: true, Start: "12:03", End: "13:00", SecurityBypass: false}
+	quiet := &quietBox{q: QuietHours{Enabled: true, Start: "12:03", End: "13:00", SecurityBypass: false}}
 	b := newTestBus(t, sink, clock, nil, quiet)
 
 	b.Emit(unauthorized("10.0.0.5"))

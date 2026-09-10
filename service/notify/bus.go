@@ -18,7 +18,8 @@ const (
 	minSendGap = time.Second
 	// maxRetries after a failed Send, with backoff below.
 	maxRetries = 3
-	// heldCapacity bounds the quiet-hours/mute backlog until #59 drains it.
+	// heldCapacity bounds the quiet-hours/mute backlog (oldest dropped); the
+	// digest still reports the true count.
 	heldCapacity = 100
 	// closeGrace is how long Close waits for queued events to be delivered
 	// before cancelling in-flight sends.
@@ -30,10 +31,12 @@ const (
 var backoff = [maxRetries]time.Duration{time.Second, 4 * time.Second, 16 * time.Second}
 
 // alwaysPass events skip quiet hours and mute: they are the user's chance
-// to cancel something.
+// to cancel something. The digest is on the list so the summary of one
+// quiet window can never be swallowed by the next.
 var alwaysPass = map[string]bool{
 	"remote.grace_scheduled": true,
 	"remote.force":           true,
+	"system.digest":          true,
 }
 
 // retryAfterer is implemented by rate-limit errors (telegram's 429) that
@@ -75,7 +78,8 @@ type Options struct {
 // Bus is the single in-process event pipeline: Emit → filter → aggregate
 // → quiet/mute → throttle → Sink.Send (with retries). One worker goroutine
 // drains the queue, so events reach the sink in emit order. The same
-// goroutine owns the deadline timer that closes aggregation windows.
+// goroutine owns the deadline timer that closes aggregation windows and
+// releases the quiet-hours/mute backlog as a digest.
 type Bus struct {
 	opts    Options
 	queue   chan Event
@@ -88,7 +92,12 @@ type Bus struct {
 
 	mu         sync.Mutex
 	mutedUntil time.Time
-	held       []Event // set aside by quiet hours/mute; #59 turns these into system.digest
+	muteFrom   time.Time
+	held       []Event // set aside by quiet hours/mute, oldest first (≤ heldCapacity)
+	heldTotal  int     // everything held since the last flush, dropped ones included
+	heldSince  time.Time
+	heldQuiet  QuietHours // the quiet window that was active while holding ...
+	heldByQ    bool       // ... when set; otherwise only a mute was holding
 
 	// worker-only state
 	lastSend time.Time
@@ -137,20 +146,43 @@ func (b *Bus) Emit(ev Event) {
 }
 
 // Mute holds every non-always-pass event for d (the /mute command). It
-// shares the quiet-hours backlog; Unmute releases it.
+// shares the quiet-hours backlog: when the mute ends — by timeout or
+// Unmute — the backlog goes out as one system.digest (or is dropped when
+// QuietHours.Digest is off). Calling Mute again replaces the current
+// mute; d <= 0 is an Unmute.
 func (b *Bus) Mute(d time.Duration) {
-	until := b.now().Add(d)
+	if b == nil {
+		return
+	}
+	if d <= 0 {
+		b.Unmute()
+		return
+	}
+	now := b.now()
+	until := now.Add(d)
 	b.mu.Lock()
 	b.mutedUntil = until
+	b.muteFrom = now
 	b.mu.Unlock()
 	b.logf("notify: muted until %s", until.Format("15:04:05"))
+	b.poke()
 }
 
-// Unmute ends a Mute early. Issue #59: also flush held as system.digest.
+// Unmute ends a Mute early and releases the backlog as a digest. It does
+// not end configured quiet hours: while those are still active the
+// backlog stays held until they end.
 func (b *Bus) Unmute() {
+	if b == nil {
+		return
+	}
 	b.mu.Lock()
+	wasMuted := !b.mutedUntil.IsZero()
 	b.mutedUntil = time.Time{}
 	b.mu.Unlock()
+	if wasMuted {
+		b.logf("notify: unmuted")
+	}
+	b.poke()
 }
 
 // MutedUntil returns when the current mute ends, or the zero time when the
@@ -176,8 +208,9 @@ func (b *Bus) Held() []Event {
 
 // Close stops the bus. Already-queued events are still delivered and open
 // aggregation windows are closed early for up to closeGrace; after that
-// in-flight sends are cancelled. Emit after Close drops. Safe to call more
-// than once and on a nil bus.
+// in-flight sends are cancelled. Events still held for a digest are
+// dropped. Emit after Close drops. Safe to call more than once and on a
+// nil bus.
 func (b *Bus) Close() {
 	if b == nil {
 		return
@@ -258,7 +291,7 @@ func (b *Bus) drain(pending []Event) []Event {
 // process runs one event through the pipeline stages in design-doc order.
 func (b *Bus) process(ev Event) {
 	// Deadlines that passed while waiting go first, so a closed window's
-	// summary precedes newer events.
+	// summary or a finished quiet window's digest precedes newer events.
 	b.tick()
 	// 1. category filter (hot-reloaded config)
 	if !b.config().Enabled(ev.Category, ev.Kind) {
@@ -281,9 +314,16 @@ func (b *Bus) pass(ev Event) {
 }
 
 // tick handles every deadline that has passed: it closes expired
-// aggregation windows.
+// aggregation windows and, once neither quiet hours nor a mute is in force
+// any more, releases the held backlog as a digest.
 func (b *Bus) tick() {
-	b.closeWindows(b.now(), false)
+	now := b.now()
+	b.closeWindows(now, false)
+	if b.heldCount() > 0 {
+		if blocked, _ := b.blocked(now); !blocked {
+			b.flushHeld(now)
+		}
+	}
 }
 
 // arm returns the timer channel for the nearest deadline, re-arming only
@@ -306,6 +346,9 @@ func (b *Bus) nextDeadline() time.Time {
 	for _, w := range b.windows {
 		at = earliest(at, w.until)
 	}
+	if d := b.heldDeadline(b.now()); !d.IsZero() {
+		at = earliest(at, d)
+	}
 	return at
 }
 
@@ -318,14 +361,18 @@ func earliest(a, c time.Time) time.Time {
 }
 
 // shutdown runs when Close has drained the queue: open aggregation
-// windows are summarised now rather than lost.
+// windows are summarised now rather than lost; held events are dropped
+// (a digest at shutdown would report a window that has not ended).
 func (b *Bus) shutdown() {
 	b.closeWindows(b.now(), true)
+	if n := b.dropHeld(); n > 0 {
+		b.logf("notify: bus closed with %d held event(s) dropped", n)
+	}
 }
 
 // quiet reports whether ev may go out now. Always-pass events do; during
 // quiet hours or a mute, security.* passes when SecurityBypass is set and
-// everything else is set aside in held for the digest (#59).
+// everything else is set aside in held for the digest.
 func (b *Bus) quiet(ev Event) bool {
 	if alwaysPass[ev.Key()] {
 		return true
@@ -338,7 +385,7 @@ func (b *Bus) quiet(ev Event) bool {
 	if ev.Category == "security" && q.SecurityBypass {
 		return true
 	}
-	b.hold(ev)
+	b.hold(ev, q, now)
 	return false
 }
 
@@ -356,15 +403,6 @@ func (b *Bus) muted(now time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return !b.mutedUntil.IsZero() && now.Before(b.mutedUntil)
-}
-
-func (b *Bus) hold(ev Event) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.held) >= heldCapacity {
-		b.held = append(b.held[:0], b.held[1:]...)
-	}
-	b.held = append(b.held, ev)
 }
 
 // deliver sends ev, spacing sends at least minSendGap apart and retrying

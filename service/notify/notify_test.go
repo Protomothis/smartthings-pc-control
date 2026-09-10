@@ -124,8 +124,27 @@ func (c *fakeClock) slept() []time.Duration {
 	return append([]time.Duration(nil), c.sleeps...)
 }
 
+// quietBox is a hot-reloadable QuietHours the test can change while the
+// worker reads it (the worker also reads it from its timer ticks).
+type quietBox struct {
+	mu sync.Mutex
+	q  QuietHours
+}
+
+func (qb *quietBox) get() QuietHours {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
+	return qb.q
+}
+
+func (qb *quietBox) set(fn func(*QuietHours)) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
+	fn(&qb.q)
+}
+
 // newTestBus wires a fake sink and clock; cfg/quiet may be nil.
-func newTestBus(t *testing.T, sink *fakeSink, clock *fakeClock, cfg Config, quiet *QuietHours) *Bus {
+func newTestBus(t *testing.T, sink *fakeSink, clock *fakeClock, cfg Config, quiet *quietBox) *Bus {
 	t.Helper()
 	opts := Options{
 		Sink:   sink,
@@ -136,7 +155,7 @@ func newTestBus(t *testing.T, sink *fakeSink, clock *fakeClock, cfg Config, quie
 		Log:    t.Logf,
 	}
 	if quiet != nil {
-		opts.Quiet = func() QuietHours { return *quiet }
+		opts.Quiet = quiet.get
 	}
 	b := New(opts)
 	t.Cleanup(b.Close)
@@ -305,7 +324,7 @@ func TestBusEmitSetsAtWhenZero(t *testing.T) {
 func TestBusQuietHoursAndMute(t *testing.T) {
 	clock := newFakeClock(at("23:30")) // inside 22:00–07:00
 	sink := newFakeSink(clock)
-	quiet := &QuietHours{Enabled: true, Start: "22:00", End: "07:00", SecurityBypass: true}
+	quiet := &quietBox{q: QuietHours{Enabled: true, Start: "22:00", End: "07:00", SecurityBypass: true, Digest: true}}
 	b := newTestBus(t, sink, clock, nil, quiet)
 
 	b.Emit(ev("remote", "received"))        // held
@@ -325,17 +344,23 @@ func TestBusQuietHoursAndMute(t *testing.T) {
 	}
 
 	// Without the security bypass, security events are held too.
-	quiet.SecurityBypass = false
+	quiet.set(func(q *QuietHours) { q.SecurityBypass = false })
 	b.Emit(ev("security", "login_limited"))
 	expectNothing(t, sink)
 	if held := b.Held(); len(held) != 2 {
 		t.Errorf("held %d events, want 2", len(held))
 	}
 
-	// Outside quiet hours everything flows again ...
-	quiet.Enabled = false
+	// Outside quiet hours the backlog goes out as a digest, then everything
+	// flows again ...
+	quiet.set(func(q *QuietHours) { q.Enabled = false })
 	b.Emit(ev("remote", "received"))
-	waitFor(t, sink)
+	if got := waitFor(t, sink); got.Key() != "system.digest" || got.Fields["count"] != "2" {
+		t.Errorf("delivered %s %v, want system.digest count=2", got.Key(), got.Fields)
+	}
+	if got := waitFor(t, sink); got.Key() != "remote.received" {
+		t.Errorf("delivered %s, want remote.received", got.Key())
+	}
 
 	// ... until a mute, which honours the same rules.
 	b.Mute(2 * time.Hour)
@@ -351,6 +376,9 @@ func TestBusQuietHoursAndMute(t *testing.T) {
 	b.Unmute()
 	if !b.MutedUntil().IsZero() {
 		t.Error("MutedUntil should be zero after Unmute")
+	}
+	if got := waitFor(t, sink); got.Key() != "system.digest" || got.Fields["count"] != "1" {
+		t.Errorf("delivered %s %v after unmute, want system.digest count=1", got.Key(), got.Fields)
 	}
 	b.Emit(ev("schedule", "executed"))
 	if got := waitFor(t, sink); got.Key() != "schedule.executed" {
