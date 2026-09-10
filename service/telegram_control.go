@@ -490,7 +490,6 @@ func formatUptime(d time.Duration) string {
 
 // ---- lifecycle -------------------------------------------------------------------
 
-
 // telegramRunner owns the running poller. managed is set between
 // startTelegramControl and stopTelegramControl so that saveConfig in the
 // installer or in tests never spins up a poller.
