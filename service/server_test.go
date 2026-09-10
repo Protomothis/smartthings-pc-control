@@ -733,6 +733,12 @@ func TestLoadConfigFillsTelegramAndNotifyDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded := loadConfig()
+	// saveConfig stores the token DPAPI-protected (#65); compare the
+	// decrypted value and the rest of the struct separately.
+	if plain, err := liveBotToken(loaded.Telegram); err != nil || plain != "123:abc" {
+		t.Errorf("bot_token round trip: got %q (%v), want 123:abc", plain, err)
+	}
+	loaded.Telegram.BotToken = cfg.Telegram.BotToken
 	if !reflect.DeepEqual(loaded.Telegram, cfg.Telegram) {
 		t.Errorf("telegram round trip:\n got %+v\nwant %+v", loaded.Telegram, cfg.Telegram)
 	}
