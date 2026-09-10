@@ -88,11 +88,18 @@ Reason: <code>shutdown</code>
 
 === security.unauthorized ===
 🛡 <b>Unauthorized request</b>
-<blockquote><b>12</b> request(s) with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5분)</blockquote>
+<blockquote><b>12</b> requests with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5 min)</blockquote>
 From: <code>10.0.0.5, 10.0.0.9 외 1곳</code>
 Path: <code>/shutdown</code>
 Count: <code>12</code>
-Window: <code>5분</code>
+Window: <code>5 min</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unauthorized ===
+🛡 <b>Unauthorized request</b>
+<blockquote>A request with a bad secret from 10.0.0.5</blockquote>
+From: <code>10.0.0.5</code>
+Path: <code>/lock</code>
 <i>DESKTOP-TEST · 14:35:00</i>
 
 === security.login_limited ===
@@ -121,6 +128,15 @@ Changed by: <code>webui</code>
 Chat ID: <code>987654321</code>
 User: <code>stranger</code>
 Text: <code>/shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>Unknown Telegram chat</b>
+<blockquote>Ignored <b>4</b> commands from chat <b>987654321</b> (@stranger) that is not on the allow list (5 min)</blockquote>
+Chat ID: <code>987654321</code>
+User: <code>stranger</code>
+Text: <code>/shutdown</code>
+Count: <code>4</code> / 5 min
 <i>DESKTOP-TEST · 14:35:00</i>
 
 === system.update_available ===

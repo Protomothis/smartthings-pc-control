@@ -48,7 +48,11 @@
 
 === security.unauthorized ===
 🛡 <b>Unauthorized request</b>
-<blockquote><b>12</b> request(s) with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5분)</blockquote>
+<blockquote><b>12</b> requests with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5 min)</blockquote>
+
+=== security.unauthorized ===
+🛡 <b>Unauthorized request</b>
+<blockquote>A request with a bad secret from 10.0.0.5</blockquote>
 
 === security.login_limited ===
 🛡 <b>Login rate limit triggered</b>
@@ -65,6 +69,10 @@
 === security.unknown_chat ===
 🛡 <b>Unknown Telegram chat</b>
 <blockquote>Ignored a command from chat <b>987654321</b> (@stranger) that is not on the allow list</blockquote>
+
+=== security.unknown_chat ===
+🛡 <b>Unknown Telegram chat</b>
+<blockquote>Ignored <b>4</b> commands from chat <b>987654321</b> (@stranger) that is not on the allow list (5 min)</blockquote>
 
 === system.update_available ===
 🆕 <b>Update available</b>

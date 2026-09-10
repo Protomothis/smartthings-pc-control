@@ -50,6 +50,10 @@
 🛡 <b>인증 실패 요청</b>
 <blockquote>10.0.0.5, 10.0.0.9 외 1곳에서 잘못된 시크릿으로 <b>12회</b> 요청 (5분)</blockquote>
 
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5에서 잘못된 시크릿으로 요청했습니다</blockquote>
+
 === security.login_limited ===
 🛡 <b>로그인 제한 발동</b>
 <blockquote><b>10.0.0.5</b>의 WebUI 로그인 실패가 반복되어 잠시 차단했습니다</blockquote>
@@ -65,6 +69,10 @@
 === security.unknown_chat ===
 🛡 <b>허용되지 않은 채팅</b>
 <blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 명령을 받아 무시했습니다</blockquote>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 <b>4회</b> 명령을 받아 무시했습니다 (5분)</blockquote>
 
 === system.update_available ===
 🆕 <b>새 버전 사용 가능</b>

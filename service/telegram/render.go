@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -91,7 +92,7 @@ func NewRenderer(lang string, detail string) (*Renderer, error) {
 		}
 		// Tolerate CRLF checkouts (core.autocrlf) so messages never carry \r.
 		text := strings.ReplaceAll(string(src), "\r\n", "\n")
-		t, err := template.New(e.Name()).Funcs(funcMap()).Option("missingkey=zero").Parse(text)
+		t, err := template.New(e.Name()).Funcs(funcMap(lang)).Option("missingkey=zero").Parse(text)
 		if err != nil {
 			return nil, fmt.Errorf("telegram renderer: parse %s/%s: %w", lang, e.Name(), err)
 		}
@@ -116,11 +117,40 @@ func (r *Renderer) HasTemplate(key string) bool {
 	return ok
 }
 
-func funcMap() template.FuncMap {
+// funcMap is what templates may call. secs localises a duration given in
+// seconds (the aggregation window's window_sec field) as "5분" / "5 min".
+func funcMap(lang string) template.FuncMap {
 	return template.FuncMap{
 		"esc":  html.EscapeString,
 		"join": strings.Join,
+		"secs": func(s string) string { return secondsText(lang, s) },
 	}
+}
+
+// secondsText renders a decimal number of seconds as a short localised
+// duration: ko "1시간 30분" / "5분" / "90초", en "1 h 30 min" / "5 min" /
+// "90 sec". Anything that is not a positive integer is returned unchanged.
+func secondsText(lang, s string) string {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n <= 0 {
+		return s
+	}
+	h, m, sec := n/3600, n%3600/60, n%60
+	units := [3]string{"시간", "분", "초"}
+	if lang == LangEn {
+		units = [3]string{" h", " min", " sec"}
+	}
+	var parts []string
+	if h > 0 {
+		parts = append(parts, strconv.Itoa(h)+units[0])
+	}
+	if m > 0 {
+		parts = append(parts, strconv.Itoa(m)+units[1])
+	}
+	if sec > 0 {
+		parts = append(parts, strconv.Itoa(sec)+units[2])
+	}
+	return strings.Join(parts, " ")
 }
 
 // Render produces the HTML message for ev:
