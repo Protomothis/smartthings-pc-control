@@ -62,7 +62,7 @@ func checkCSRF(r *http.Request) bool {
 
 // Rate limiting for login attempts
 type loginAttempt struct {
-	failures  int
+	failures    int
 	lockedUntil time.Time
 }
 
@@ -118,6 +118,7 @@ func recordLoginFailure(remoteAddr string) {
 	if attempt.failures >= maxLoginFailures {
 		attempt.lockedUntil = time.Now().Add(loginLockDuration)
 		logMsg("Login rate limit triggered for %s (locked %v)", ip, loginLockDuration)
+		emit("security", "login_limited", map[string]string{"from": ip})
 	}
 }
 
@@ -297,7 +298,9 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-			var newCfg Config
+			// Decode over the live config: keys the client omits (an older
+			// GUI sends no telegram/notify at all) keep their current values.
+			newCfg := liveCfg.forUpdate()
 			if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
 				http.Error(w, "Invalid JSON", http.StatusBadRequest)
 				return
@@ -328,6 +331,10 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			}
 			logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d",
 				newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds)
+			if keys := configChangedKeys(oldCfg, newCfg); len(keys) > 0 {
+				// The app and the browser share this endpoint; neither can be told apart.
+				emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
+			}
 			msg := "Settings saved."
 			if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
 				msg = "Settings saved. Restart service to apply port/remote-access changes."
@@ -476,7 +483,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-			if cancelSchedule() {
+			if cancelScheduleBy("api") {
 				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Schedule cancelled"})
 			} else {
 				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "No active schedule"})

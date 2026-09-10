@@ -29,6 +29,11 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	cfg := loadConfig()
 	setConfig(cfg)
 
+	// Notification bus (#55) must exist before the servers emit. Issue
+	// #56 replaces nil with the Telegram sink; until then events are only
+	// logged when STPC_NOTIFY_DEBUG is set (see notify_wiring.go).
+	startNotifier(nil)
+
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
 	go StartWebUI(s.stop)
@@ -41,6 +46,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
 			close(s.stop)
+			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
 		case svc.Interrogate:
@@ -70,6 +76,7 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
+	startNotifier(nil) // #56: Telegram sink; see Execute
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	StartHTTPServer(stop)
