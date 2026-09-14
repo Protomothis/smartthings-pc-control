@@ -32,8 +32,10 @@
 
 ### 주요 기능
 
-🖥️ **네이티브 데스크톱 앱** — 설정/명령/예약/네트워크/로그 탭, 트레이 상주  
+🖥️ **네이티브 데스크톱 앱** — 설정/명령/예약/알림/네트워크/로그 탭, 트레이 상주  
 🎮 **8개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off 등  
+📨 **텔레그램 알림** (v1.0.0+) — 원격 명령·예약·전원·보안·시스템 이벤트를 카테고리별로 골라 받기, 조용한 시간대와 요약, HTML 템플릿 메시지  
+🤖 **텔레그램에서 제어** (v1.0.0+) — `/status` `/menu` `/shutdown 30` 같은 명령과 인라인 버튼으로 PC 제어, 유예 알림의 [바로 실행]/[취소] 버튼  
 🛡️ **전원 명령 유예** — 종료/재시작/절전/최대절전을 선택한 시간(10초~30분, 기본 5분) 뒤 실행, 알림으로 취소 가능 (끄기 가능)  
 🌐 **Web UI (선택)** — 설정에서 허용 시 로컬/LAN 브라우저에서 접속  
 ⏱️ **예약 종료** — 5/15/30/60/120분 뒤 자동 실행 (큰 카운트다운 표시)  
@@ -88,7 +90,7 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 **데스크톱 앱 (더블클릭)**
 
-- 5개 탭(아이콘 포함): 설정 / 명령 / 예약 / 네트워크 / 로그 — 예약은 프리셋(5/15/30/60/120분)만 선택, 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼. 상단 상태 표시줄의 색 점이 연결 상태(연결/끊김/연결 중)를 보여줍니다
+- 6개 탭(아이콘 포함): 설정 / 명령 / 예약 / 알림 / 네트워크 / 로그 — 예약은 프리셋(5/15/30/60/120분)만 선택, 알림 탭에서 텔레그램 연결과 받을 알림 선택, 로그 필터와 로그 파일·폴더 열기, 변경 시에만 활성화되는 저장 버튼. 상단 상태 표시줄의 색 점이 연결 상태(연결/끊김/연결 중)를 보여줍니다
 - 서비스 관리: 설치·시작·제거 (상태 자동 감지)
 - 창을 닫으면 **시스템 트레이로 최소화**됩니다. 완전 종료는 트레이 우클릭 → 종료
 - 트레이 아이콘 **왼쪽 클릭 = 창 열기**, **오른쪽 클릭 = 메뉴** (열기, 상태, 빠른 명령(잠금/화면 끄기), 예약 취소, WebUI 열기, 종료). 툴팁과 상태 항목에 연결 상태·예약 남은 시간 표시
@@ -123,6 +125,48 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정
 
 <img src="docs/gui-schedule.png" alt="예약 탭 — 카운트다운과 취소" width="49%">
 
+### 텔레그램 알림과 제어 (v1.0.0+)
+
+서비스가 텔레그램 봇으로 이벤트를 보내고, 원하면 텔레그램에서 PC를 제어할 수도 있습니다. 봇 API 아웃바운드와 롱 폴링만 사용하므로 **포트 개방이나 웹훅이 필요 없습니다.** Windows 토스트 알림은 이 설정과 무관하게 그대로 동작합니다.
+
+**연결**
+
+1. 텔레그램에서 [@BotFather](https://t.me/BotFather)에게 `/newbot`을 보내 봇을 만들고 토큰을 받습니다
+2. 새 봇에게 아무 메시지나 보냅니다 (봇이 채팅을 알 수 있어야 합니다)
+3. 앱 → 알림 탭 → 봇 토큰을 붙여 넣고 **[Chat ID 찾기]** → 채팅을 선택 → **[테스트 발송]**으로 확인 → "텔레그램 알림 사용" 체크 → 저장
+
+토큰은 config.json에 Windows DPAPI(머신 범위)로 암호화되어 저장되고(`dpapi:` 접두사), 앱과 API에는 마스킹된 값(`****1234`)만 보입니다.
+
+<img src="docs/gui-notify.png" alt="알림 탭 — 텔레그램 연결" width="49%"> <img src="docs/gui-notify-events.png" alt="알림 탭 — 받을 알림 선택" width="49%">
+
+**받을 알림** — 카테고리별로 켜고 끕니다. 기본값은 예약 생성·취소와 서비스 중지만 꺼져 있습니다.
+
+| 카테고리 | 이벤트 |
+|---|---|
+| SmartThings 원격 명령 | 명령 즉시 실행, 유예 시작(버튼 포함), 유예 취소, 유예 후 실행, 강제 종료 수신 |
+| 예약 | 예약 생성, 취소, 실행, 대체 |
+| 전원·서비스 | 서비스 시작(부팅·WoL 복귀), 절전 해제, 서비스 중지 |
+| 보안 | 잘못된 시크릿 요청(5분 창 집계), 로그인 실패 제한, 알 수 없는 명령, 설정 변경, 미허용 채팅의 명령 |
+| 시스템 | 새 버전 있음, 업데이트 완료, 명령 실행 실패, 트레이 앱 깨우기 실패 |
+
+`ping`은 절대 알리지 않습니다. 유예 시작 알림과 강제 종료는 취소 기회이므로 조용한 시간대에도 항상 전송됩니다.
+
+**조용한 시간대** — 예: 22:00~07:00. 그 동안 걸러진 알림은 버리지 않고 모아 해제 시각에 요약 한 통으로 보냅니다. 보안 알림은 예외로 둘 수 있습니다. `/mute 2h`로 임시 뮤트도 됩니다.
+
+**텔레그램에서 제어** — 알림 탭 → "텔레그램 명령으로 이 PC 제어 허용"을 켜면 허용된 Chat ID에서만 다음 명령을 받습니다 (기본 꺼짐). 미허용 채팅의 명령은 무시하고 보안 알림으로 보고합니다.
+
+| 명령 | 동작 |
+|---|---|
+| `/status` | 버전, 가동 시간, 활성 예약, 마지막 원격 명령 |
+| `/menu` | 잠금 / 화면 끄기 / 절전 / 재시작 / 종료 / 예약 취소 버튼 |
+| `/lock` `/screenoff` | 즉시 실행 |
+| `/sleep` `/hibernate` `/restart` `/shutdown [분]` | 분 없음: [확인] 버튼 후 즉시 실행. 분 있음: 예약 |
+| `/cancel` `/now` | 활성 예약·유예 취소 / 즉시 실행 |
+| `/mute 30m` `/mute 2h` `/unmute` | 알림 임시 중지 / 재개 |
+| `/help` | 명령 목록 |
+
+유예 알림 메시지의 **[바로 실행] / [취소]** 버튼은 Windows 토스트와 같은 동작을 하며, 처리되면 메시지가 "✅ 취소됨 · 14:32 · 텔레그램"처럼 결과 줄로 편집됩니다. 서비스 시작 전에 쌓인 명령은 버립니다.
+
 ### Web UI (선택)
 
 브라우저 WebUI는 **기본 비활성**입니다. 데스크톱 앱 설정에서 "WebUI 브라우저 접속 허용"을 켜고 시크릿을 설정한 뒤 서비스를 재시작하면 로컬/LAN에서 **http://<PC-IP>:5002** 로 접속할 수 있습니다 (5002 방화벽 규칙 자동 관리).
@@ -143,7 +187,19 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정
   "secret": "",
   "webui_remote": false,
   "shutdown_grace": true,
-  "grace_seconds": 300
+  "grace_seconds": 300,
+  "telegram": {
+    "enabled": false,
+    "bot_token": "dpapi:...",
+    "chat_id": "",
+    "control_enabled": false,
+    "allowed_chat_ids": [],
+    "detail": "full",
+    "lang": "ko",
+    "pc_name": "",
+    "quiet_hours": { "enabled": false, "start": "22:00", "end": "07:00", "security_bypass": true, "digest": true }
+  },
+  "notify": { "remote": { "received": true, "grace_scheduled": true, "...": true }, "schedule": {}, "power": {}, "security": {}, "system": {} }
 }
 ```
 
@@ -154,8 +210,18 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정
 | `webui_remote` | 브라우저 WebUI 허용 (로컬+LAN, 시크릿 필수) | false |
 | `shutdown_grace` | 원격 전원 명령 유예 켜기/끄기 | true |
 | `grace_seconds` | 유예 시간(초), 5~3600. 앱은 10/30/60/300/600/1800 제공 (v0.3.4+) | 300 |
+| `telegram.enabled` | 텔레그램 알림 발송 (v1.0.0+) | false |
+| `telegram.bot_token` | 봇 토큰. 저장 시 DPAPI 암호화(`dpapi:`), 평문을 넣어도 다음 저장 때 암호화 | "" |
+| `telegram.chat_id` | 알림을 받을 채팅 | "" |
+| `telegram.control_enabled` | 텔레그램 명령으로 PC 제어 허용 | false |
+| `telegram.allowed_chat_ids` | 명령을 낼 수 있는 채팅 목록 (비어 있으면 `chat_id`만) | [] |
+| `telegram.detail` | 메시지 상세 수준 `simple` / `full` | full |
+| `telegram.lang` | 메시지 언어 `ko` / `en` (앱 언어를 따라 저장됨) | ko |
+| `telegram.pc_name` | 메시지 꼬리말의 PC 이름 (비어 있으면 호스트 이름) | "" |
+| `telegram.quiet_hours` | 조용한 시간대 `{enabled, start, end, security_bypass, digest}` | 22:00~07:00, 꺼짐 |
+| `notify.<카테고리>.<이벤트>` | 이벤트별 알림 on/off. 없는 키는 기본값 | 대부분 true |
 
-> secret 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
+> secret·텔레그램·알림 설정 변경은 서비스 재시작 없이 즉시 반영됩니다. 포트/`webui_remote` 변경은 재시작 필요.
 
 ### 업데이트 (v0.3.3+)
 
@@ -167,11 +233,12 @@ SmartThings에서 종료/재시작/절전/최대절전 명령이 오면 **설정
 
 설정 탭 → 도구의 **[업데이트 확인]** 버튼으로 수동 확인도 가능합니다. 이전 방식대로 릴리스 페이지에서 exe를 직접 받아 덮어써도 됩니다.
 
-### 업그레이드 (v0.3.x → v0.3.2)
+### 업그레이드 (v0.3.x → v1.0.0)
 
-1. 서비스 중지 후 exe 교체 → 서비스 시작 (재설치 불필요)
-2. 기존 config.json 그대로 호환 — 새 키는 기본값으로 동작
-3. 동작 변화: 브라우저 WebUI 기본 꺼짐, 전원 명령 유예(기본 5분) 기본 켜짐 (둘 다 설정 가능)
+1. v0.3.3 이상이면 앱의 **[지금 업데이트]**로, 그 이전이면 서비스 중지 → exe 교체 → 서비스 시작 (재설치 불필요)
+2. 기존 config.json 그대로 호환 — `telegram`/`notify` 키는 기본값으로 추가되며, 텔레그램은 설정하기 전까지 아무 것도 보내지 않습니다
+3. 새로 생기는 파일: exe 옆 `state.json` (마지막 실행 버전, 마지막으로 알린 릴리스). 삭제해도 동작에 영향 없음
+4. v0.3.2 이전에서 올라오는 경우의 동작 변화: 브라우저 WebUI 기본 꺼짐, 전원 명령 유예(기본 5분) 기본 켜짐 (둘 다 설정 가능)
 
 ### SmartThings 설정
 
@@ -216,8 +283,10 @@ Drop-in replacement for [Remote Shutdown Manager (Karpach)](https://github.com/k
 
 ### Features
 
-🖥️ **Native desktop app** — Settings/Commands/Schedule/Network/Logs tabs, system tray resident  
+🖥️ **Native desktop app** — Settings/Commands/Schedule/Notifications/Network/Logs tabs, system tray resident  
 🎮 **8 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, etc.  
+📨 **Telegram notifications** (v1.0.0+) — pick remote-command, schedule, power, security and system events by category; quiet hours with a digest; HTML-templated messages  
+🤖 **Control from Telegram** (v1.0.0+) — `/status`, `/menu`, `/shutdown 30` and inline buttons, including [Run now]/[Cancel] on grace notifications  
 🛡️ **Power command grace period** — shutdown/restart/suspend/hibernate run after a chosen delay (10 s – 30 min, default 5 min) with a cancel notification (can be turned off)  
 🌐 **Web UI (optional)** — enable in settings for local/LAN browser access  
 ⏱️ **Scheduled shutdown** — auto-execute after 5/15/30/60/120 minutes (large countdown display)  
@@ -272,7 +341,7 @@ C:\Program Files\SmartThings PC Control\smartthings-pc-control.exe
 
 **Desktop app (double-click)**
 
-- Five tabs (with icons): Settings / Commands / Schedule / Network / Logs — schedule delay is preset-only (5/15/30/60/120 min), log filter with open-file/open-folder, Save enabled only when something changed. A coloured dot in the status bar shows the connection state (connected / lost / connecting)
+- Six tabs (with icons): Settings / Commands / Schedule / Notifications / Network / Logs — schedule delay is preset-only (5/15/30/60/120 min), the Notifications tab holds the Telegram connection and event selection, log filter with open-file/open-folder, Save enabled only when something changed. A coloured dot in the status bar shows the connection state (connected / lost / connecting)
 - Built-in service management: install, start, uninstall (auto-detected state)
 - Closing the window **minimizes to the system tray**. Exit via tray right-click → Exit
 - Tray icon: **left click = open window**, **right click = menu** (Open, status, quick commands (lock/screen off), cancel schedule, open WebUI, Exit). Tooltip and status entry show connection state and remaining schedule time
@@ -307,6 +376,48 @@ Shutdown/restart/suspend/hibernate commands from SmartThings run **after the con
 
 <img src="docs/gui-schedule.png" alt="Schedule tab — countdown and cancel" width="49%">
 
+### Telegram notifications and control (v1.0.0+)
+
+The service sends events to a Telegram bot and, if you enable it, accepts commands from Telegram. Only outbound Bot API calls and long polling are used — **no open ports, no webhook.** Windows toast notifications keep working independently of these settings.
+
+**Connect**
+
+1. In Telegram, send `/newbot` to [@BotFather](https://t.me/BotFather) and copy the token
+2. Send any message to your new bot (so it can see the chat)
+3. App → Notifications tab → paste the token → **[Find Chat ID]** → pick the chat → **[Send test]** → tick "Enable Telegram notifications" → Save
+
+The token is stored in config.json encrypted with Windows DPAPI (machine scope, `dpapi:` prefix); the app and API only ever show a masked value (`****1234`).
+
+<img src="docs/gui-notify.png" alt="Notifications tab — Telegram connection" width="49%"> <img src="docs/gui-notify-events.png" alt="Notifications tab — event selection" width="49%">
+
+**Notifications to receive** — toggled per category. By default only schedule created/cancelled and service stopping are off.
+
+| Category | Events |
+|---|---|
+| SmartThings remote commands | command run immediately, grace period started (with buttons), grace cancelled, run after grace, force shutdown received |
+| Schedules | created, cancelled, run, replaced |
+| Power & service | service started (boot / WoL wake), resumed from sleep, service stopping |
+| Security | bad secret request (aggregated in 5-minute windows), login rate-limited, unknown command, settings changed, command from an unknown chat |
+| System | update available, updated, command failed, tray wake failed |
+
+`ping` is never reported. Grace-started and force-shutdown alerts are your chance to cancel, so they are always delivered even during quiet hours.
+
+**Quiet hours** — e.g. 22:00–07:00. Alerts held during that window are not dropped; one digest is sent when it ends. Security alerts can bypass it. `/mute 2h` gives a temporary mute.
+
+**Control from Telegram** — turn on "Allow Telegram commands to control this PC" in the Notifications tab; only the allowed chat IDs are accepted (off by default). Commands from any other chat are ignored and reported as a security event.
+
+| Command | Action |
+|---|---|
+| `/status` | version, uptime, active schedule, last remote command |
+| `/menu` | buttons: lock / screen off / sleep / restart / shutdown / cancel schedule |
+| `/lock` `/screenoff` | run immediately |
+| `/sleep` `/hibernate` `/restart` `/shutdown [min]` | no minutes: [Confirm] button, then immediate; with minutes: scheduled |
+| `/cancel` `/now` | cancel the active schedule/grace / run it now |
+| `/mute 30m` `/mute 2h` `/unmute` | pause / resume alerts |
+| `/help` | command list |
+
+The **[Run now] / [Cancel]** buttons on a grace notification do the same as the Windows toast; once handled, the message is edited with a result line such as "✅ Cancelled · 14:32 · Telegram". Commands queued while the service was down are discarded.
+
 ### Web UI (optional)
 
 The browser WebUI is **disabled by default**. Enable "Allow browser access" in the desktop app settings, set a secret, and restart the service — then browse to **http://<pc-ip>:5002** from local or LAN (the 5002 firewall rule is managed automatically).
@@ -327,7 +438,19 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
   "secret": "",
   "webui_remote": false,
   "shutdown_grace": true,
-  "grace_seconds": 300
+  "grace_seconds": 300,
+  "telegram": {
+    "enabled": false,
+    "bot_token": "dpapi:...",
+    "chat_id": "",
+    "control_enabled": false,
+    "allowed_chat_ids": [],
+    "detail": "full",
+    "lang": "en",
+    "pc_name": "",
+    "quiet_hours": { "enabled": false, "start": "22:00", "end": "07:00", "security_bypass": true, "digest": true }
+  },
+  "notify": { "remote": { "received": true, "grace_scheduled": true, "...": true }, "schedule": {}, "power": {}, "security": {}, "system": {} }
 }
 ```
 
@@ -338,8 +461,18 @@ The browser WebUI is **disabled by default**. Enable "Allow browser access" in t
 | `webui_remote` | Allow browser WebUI (local+LAN, secret required) | false |
 | `shutdown_grace` | Grace period for remote power commands on/off | true |
 | `grace_seconds` | Grace length in seconds, 5–3600; the app offers 10/30/60/300/600/1800 (v0.3.4+) | 300 |
+| `telegram.enabled` | Send Telegram notifications (v1.0.0+) | false |
+| `telegram.bot_token` | Bot token; DPAPI-encrypted on save (`dpapi:`), plaintext is re-encrypted on the next save | "" |
+| `telegram.chat_id` | Chat that receives notifications | "" |
+| `telegram.control_enabled` | Accept PC control commands from Telegram | false |
+| `telegram.allowed_chat_ids` | Chats allowed to send commands (empty = `chat_id` only) | [] |
+| `telegram.detail` | Message detail `simple` / `full` | full |
+| `telegram.lang` | Message language `ko` / `en` (saved from the app language) | ko |
+| `telegram.pc_name` | PC name in the message footer (empty = hostname) | "" |
+| `telegram.quiet_hours` | `{enabled, start, end, security_bypass, digest}` | 22:00–07:00, off |
+| `notify.<category>.<event>` | Per-event on/off; missing keys use the default | mostly true |
 
-> Secret changes apply instantly without restart. Port and `webui_remote` changes require a restart.
+> Secret, Telegram and notification changes apply instantly without restart. Port and `webui_remote` changes require a restart.
 
 ### Updating (v0.3.3+)
 
@@ -351,11 +484,12 @@ On startup (and every 24 hours) the app checks GitHub Releases. When a newer ver
 
 You can also check manually via Settings → Tools → **Check for updates**, or still download the exe from the release page and overwrite it by hand.
 
-### Upgrading (v0.3.x → v0.3.2)
+### Upgrading (v0.3.x → v1.0.0)
 
-1. Stop the service, replace the exe, start the service (no reinstall needed)
-2. Existing config.json stays compatible — new keys use their defaults
-3. Behavior changes: browser WebUI off by default, power grace (default 5 min) on by default (both configurable)
+1. From v0.3.3 or later use **Update now** in the app; from older versions stop the service, replace the exe, start the service (no reinstall needed)
+2. Existing config.json stays compatible — `telegram`/`notify` keys are added with defaults, and nothing is sent to Telegram until you configure it
+3. New file next to the exe: `state.json` (last run version, last release notified). Safe to delete
+4. Coming from before v0.3.2: browser WebUI is off by default and the power grace period (default 5 min) is on by default (both configurable)
 
 ### SmartThings Setup
 
