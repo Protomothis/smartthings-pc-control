@@ -591,7 +591,7 @@
         async function cancelSchedule() {
             if (!confirm(t('confirmCancel'))) return;
             try {
-                const res = await fetch('/api/schedule', {method: 'DELETE', headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                const res = await fetch('/api/schedule?by=webui', {method: 'DELETE', headers: {'X-Requested-With': 'XMLHttpRequest'}});
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, 'success');

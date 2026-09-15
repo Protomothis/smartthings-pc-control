@@ -1,0 +1,185 @@
+=== remote.received ===
+🔌 <b>Remote command executed</b>
+<blockquote>Ran <b>lock</b> from 192.168.1.20 immediately</blockquote>
+Command: <code>lock</code>
+From: <code>192.168.1.20</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.grace_scheduled ===
+🔌 <b>Remote command pending</b>
+<blockquote><b>shutdown</b> in 5분 — you can still cancel below</blockquote>
+Command: <code>shutdown</code>
+From: <code>192.168.1.20</code>
+Grace: <code>5분</code>
+Executes at: <code>14:40:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.grace_cancelled ===
+🔌 <b>Grace period cancelled</b>
+<blockquote><b>shutdown</b> was cancelled via toast</blockquote>
+Command: <code>shutdown</code>
+Cancelled by: <code>toast</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.executed ===
+🔌 <b>Grace period expired</b>
+<blockquote>Grace period ended, ran <b>shutdown</b></blockquote>
+Command: <code>shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.force ===
+🔌 <b>Force shutdown received</b>
+<blockquote><b>forceshutdown</b> from 192.168.1.20 — shutting down with no grace period</blockquote>
+From: <code>192.168.1.20</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.created ===
+⏱ <b>Schedule created</b>
+<blockquote><b>sleep</b> scheduled in 30분 (app)</blockquote>
+Command: <code>sleep</code>
+Origin: <code>app</code>
+Delay: <code>30분</code>
+Executes at: <code>15:05:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.cancelled ===
+⏱ <b>Schedule cancelled</b>
+<blockquote><b>sleep</b> schedule (app) was cancelled via webui</blockquote>
+Command: <code>sleep</code>
+Origin: <code>app</code>
+Cancelled by: <code>webui</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.executed ===
+⏱ <b>Schedule executed</b>
+<blockquote>Ran scheduled <b>sleep</b> (app)</blockquote>
+Command: <code>sleep</code>
+Origin: <code>app</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.replaced ===
+⏱ <b>Schedule replaced</b>
+<blockquote>sleep (app) was replaced by <b>shutdown</b> (telegram)</blockquote>
+New command: <code>shutdown</code>
+New origin: <code>telegram</code>
+Old command: <code>sleep</code>
+Old origin: <code>app</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.started ===
+🟢 <b>Service started</b>
+<blockquote>PC is up and service <b>v1.0.0</b> has started</blockquote>
+Version: <code>v1.0.0</code>
+Boot time: <code>2026-09-10 14:34:12</code>
+External IP: <code>203.0.113.7</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.resumed ===
+🌙 <b>Resumed from sleep</b>
+<blockquote>Woke from sleep (asleep for <b>2시간 10분</b>)</blockquote>
+Asleep for: <code>2시간 10분</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>shutdown</b></blockquote>
+Reason: <code>shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unauthorized ===
+🛡 <b>Unauthorized request</b>
+<blockquote><b>12</b> requests with a bad secret from 10.0.0.5, 10.0.0.9 외 1곳 (5 min)</blockquote>
+From: <code>10.0.0.5, 10.0.0.9 외 1곳</code>
+Path: <code>/shutdown</code>
+Count: <code>12</code>
+Window: <code>5 min</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unauthorized ===
+🛡 <b>Unauthorized request</b>
+<blockquote>A request with a bad secret from 10.0.0.5</blockquote>
+From: <code>10.0.0.5</code>
+Path: <code>/lock</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.login_limited ===
+🛡 <b>Login rate limit triggered</b>
+<blockquote>Repeated WebUI login failures from <b>10.0.0.5</b> — temporarily blocked</blockquote>
+From: <code>10.0.0.5</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_command ===
+🛡 <b>Unknown command</b>
+<blockquote>Unknown command <b>explode</b> from 10.0.0.5</blockquote>
+From: <code>10.0.0.5</code>
+Command: <code>explode</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.config_changed ===
+🛡 <b>Settings changed</b>
+<blockquote>Settings changed via webui: <b>secret, port</b></blockquote>
+Keys: <code>secret, port</code>
+Changed by: <code>webui</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>Unknown Telegram chat</b>
+<blockquote>Ignored a command from chat <b>987654321</b> (@stranger) that is not on the allow list</blockquote>
+Chat ID: <code>987654321</code>
+User: <code>stranger</code>
+Text: <code>/shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>Unknown Telegram chat</b>
+<blockquote>Ignored <b>4</b> commands from chat <b>987654321</b> (@stranger) that is not on the allow list (5 min)</blockquote>
+Chat ID: <code>987654321</code>
+User: <code>stranger</code>
+Text: <code>/shutdown</code>
+Count: <code>4</code> / 5 min
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.update_available ===
+🆕 <b>Update available</b>
+<blockquote>Release <b>v1.1.0</b> is available (current v1.0.0)</blockquote>
+New version: <code>v1.1.0</code>
+Current: <code>v1.0.0</code>
+Link: <a href="https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0">https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0</a>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.updated ===
+🆕 <b>Updated</b>
+<blockquote>Now running <b>v1.0.0</b> (was v0.3.4)</blockquote>
+Version: <code>v1.0.0</code>
+Previous: <code>v0.3.4</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.exec_failed ===
+⚠️ <b>Command failed</b>
+<blockquote><b>hibernate</b> failed: exit status 1</blockquote>
+Command: <code>hibernate</code>
+Error: <code>exit status 1</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.tray_wake_failed ===
+⚠️ <b>Tray wake failed</b>
+<blockquote>Could not wake the tray app while handling <b>screenoff</b>: no active session</blockquote>
+Command: <code>screenoff</code>
+Error: <code>no active session</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.test ===
+✅ <b>Test message</b>
+<blockquote>Connection is working</blockquote>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.digest ===
+📋 <b>Quiet hours digest</b>
+<blockquote><b>3</b> notification(s) held during 22:00–07:00
+🔌 remote.received lock
+⏱ schedule.executed sleep
+🛡 security.unauthorized 10.0.0.5</blockquote>
+Count: <code>3</code>
+Period: <code>22:00–07:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+

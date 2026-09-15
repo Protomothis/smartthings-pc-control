@@ -1,0 +1,7 @@
+{{define "title"}}조용한 시간 요약{{end}}
+{{define "summary"}}{{.Fields.period}} 동안 <b>{{.Fields.count}}건</b>의 알림을 보류했습니다
+{{.Fields.items}}{{end}}
+{{define "fields"}}
+건수: <code>{{.Fields.count}}</code>
+기간: <code>{{.Fields.period}}</code>
+{{end}}

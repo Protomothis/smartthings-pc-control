@@ -2,6 +2,9 @@ package gui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,47 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/release"
 )
 
-func TestIsNewer(t *testing.T) {
-	cases := []struct {
-		current, latest string
-		want            bool
-	}{
-		{"v0.3.1", "v0.3.2", true},
-		{"v0.3.2", "v0.3.2", false},
-		{"v0.3.2", "v0.3.1", false},
-		{"v0.3.2", "v0.4.0", true},
-		{"v0.3.2", "v1.0.0", true},
-		{"dev", "v9.9.9", false}, // dev builds never prompt
-		{"v0.3.2", "garbage", false},
-		{"v0.9.9", "v0.10.0", true}, // numeric, not lexicographic
-	}
-	for _, c := range cases {
-		if got := isNewer(c.current, c.latest); got != c.want {
-			t.Errorf("isNewer(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
-		}
-	}
-}
-
-func TestPickUpdateAsset(t *testing.T) {
-	rel := &releaseInfo{TagName: "v0.3.3", Assets: []releaseAsset{
-		{Name: "checksums.txt", DownloadURL: "https://x/checksums.txt"},
-		{Name: "SmartThings-PC-Control.EXE", DownloadURL: "https://x/asset.exe"},
-	}}
-	if got := pickUpdateAsset(rel); got != "https://x/asset.exe" {
-		t.Errorf("pickUpdateAsset = %q, want the exe asset (case-insensitive)", got)
-	}
-	if got := pickUpdateAsset(&releaseInfo{Assets: []releaseAsset{{Name: "other.exe", DownloadURL: "u"}}}); got != "" {
-		t.Errorf("pickUpdateAsset picked unrelated asset %q", got)
-	}
-	if got := pickUpdateAsset(&releaseInfo{Assets: []releaseAsset{{Name: updateAssetName}}}); got != "" {
-		t.Errorf("pickUpdateAsset returned asset without URL: %q", got)
-	}
-	if got := pickUpdateAsset(nil); got != "" {
-		t.Errorf("pickUpdateAsset(nil) = %q", got)
-	}
-}
+// Version comparison and asset selection moved to internal/release (see
+// its tests); the GUI only keeps the download/staging logic.
 
 func TestStagingPath(t *testing.T) {
 	dir := `C:\PC Control\update`
@@ -189,6 +157,53 @@ func TestParseUpdateApplyArgs(t *testing.T) {
 		if _, _, err := ParseUpdateApplyArgs(args); err == nil {
 			t.Errorf("ParseUpdateApplyArgs(%q) accepted, want error", args)
 		}
+	}
+}
+
+func TestVerifyDownloadedHash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "staged.exe")
+	payload := []byte("MZ-not-really-an-exe")
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	hexSum := hex.EncodeToString(sum[:])
+
+	ok := &release.ManifestAsset{Name: "staged.exe", SHA256: strings.ToUpper(hexSum), Size: int64(len(payload))}
+	if err := verifyDownloadedHash(path, ok); err != nil {
+		t.Fatalf("matching hash rejected: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("matching file was removed: %v", err)
+	}
+
+	// Wrong hash → errHashMismatch and the file is gone.
+	bad := &release.ManifestAsset{Name: "staged.exe", SHA256: strings.Repeat("00", 32), Size: int64(len(payload))}
+	err := verifyDownloadedHash(path, bad)
+	if !errors.Is(err, errHashMismatch) {
+		t.Errorf("wrong hash: err = %v, want errHashMismatch", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("mismatching file left behind (stat err=%v)", err)
+	}
+
+	// Wrong size with the right hash is a mismatch too.
+	os.WriteFile(path, payload, 0o644)
+	short := &release.ManifestAsset{Name: "staged.exe", SHA256: hexSum, Size: 1}
+	if err := verifyDownloadedHash(path, short); !errors.Is(err, errHashMismatch) {
+		t.Errorf("wrong size: err = %v, want errHashMismatch", err)
+	}
+
+	// Missing file is an ordinary error, not a mismatch.
+	if err := verifyDownloadedHash(filepath.Join(dir, "nope.exe"), ok); err == nil || errors.Is(err, errHashMismatch) {
+		t.Errorf("missing file: err = %v", err)
+	}
+
+	// fileSHA256 reports lowercase hex and the byte count.
+	os.WriteFile(path, payload, 0o644)
+	if got, n, err := fileSHA256(path); err != nil || got != hexSum || n != int64(len(payload)) {
+		t.Errorf("fileSHA256 = %q, %d, %v; want %q, %d", got, n, err, hexSum, len(payload))
 	}
 }
 

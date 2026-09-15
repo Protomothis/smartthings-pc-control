@@ -18,7 +18,8 @@ const serviceDisplayName = "Remote Shutdown Service"
 const serviceDescription = "HTTP server for SmartThings PC shutdown control. Compatible with PCControl Edge driver."
 
 type shutdownService struct {
-	stop chan struct{}
+	stop  chan struct{}
+	power powerTracker // suspend/resume broadcasts → power.resumed (#60)
 }
 
 func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
@@ -29,20 +30,44 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	cfg := loadConfig()
 	setConfig(cfg)
 
+	// Notification bus (#55) must exist before the servers emit. The live
+	// Telegram sink (#63) follows getConfig().Telegram on every event, so
+	// enabling Telegram later needs no restart; the grace-message hook
+	// (#62) rides along so the message can be edited when the schedule ends.
+	startLiveNotifier()
+	// Inbound Telegram commands (#61): polls only while telegram.enabled
+	// and control_enabled are both set; config saves reconcile it.
+	startTelegramControl()
+
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
 	go StartWebUI(s.stop)
+	startupHooks(s.stop) // system.updated, power.started, release checker (#60)
 
-	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	// AcceptPowerEvent subscribes to SERVICE_CONTROL_POWEREVENT so sleep and
+	// resume broadcasts reach us (power.resumed).
+	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPowerEvent}
 
 	for {
 		c := <-r
 		switch c.Cmd {
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
+			reason := "stop"
+			if c.Cmd == svc.Shutdown {
+				reason = "shutdown"
+			}
+			logMsg("Service stopping (%s)", reason)
+			emit("power", "stopping", map[string]string{"reason": reason})
 			close(s.stop)
+			stopTelegramControl()
+			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
+		case svc.PowerEvent:
+			// EventType carries the PBT_* broadcast; only suspend and
+			// automatic resume matter, everything else is ignored.
+			s.power.handle(c.EventType)
 		case svc.Interrogate:
 			changes <- c.CurrentStatus
 		}
@@ -70,8 +95,12 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
+	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
+	startTelegramControl()
+	defer stopTelegramControl()
 	stop := make(chan struct{})
 	go StartWebUI(stop)
+	startupHooks(stop)
 	StartHTTPServer(stop)
 }
 

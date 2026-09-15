@@ -1,0 +1,6 @@
+{{define "title"}}Settings changed{{end}}
+{{define "summary"}}Settings changed via {{.Fields.by}}: <b>{{.Fields.keys}}</b>{{end}}
+{{define "fields"}}
+Keys: <code>{{.Fields.keys}}</code>
+Changed by: <code>{{.Fields.by}}</code>
+{{end}}

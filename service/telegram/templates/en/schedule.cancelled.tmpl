@@ -1,0 +1,7 @@
+{{define "title"}}Schedule cancelled{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> schedule ({{.Fields.origin}}) was cancelled via {{.Fields.by}}{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Origin: <code>{{.Fields.origin}}</code>
+Cancelled by: <code>{{.Fields.by}}</code>
+{{end}}

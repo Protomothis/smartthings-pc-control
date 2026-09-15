@@ -1,0 +1,5 @@
+{{define "title"}}Login rate limit triggered{{end}}
+{{define "summary"}}Repeated WebUI login failures from <b>{{.Fields.from}}</b> — temporarily blocked{{end}}
+{{define "fields"}}
+From: <code>{{.Fields.from}}</code>
+{{end}}

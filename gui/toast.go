@@ -68,34 +68,53 @@ func HandleToastAction(rawURL string) {
 
 	switch {
 	case strings.Contains(rawURL, "cancel"):
-		c.CancelSchedule()
+		c.CancelSchedule("toast")
 	case strings.Contains(rawURL, "runnow"):
 		s, err := c.GetSchedule()
 		if err != nil || !s.Active {
 			return
 		}
-		if err := c.CancelSchedule(); err != nil {
+		if err := c.CancelSchedule("toast"); err != nil {
 			return
 		}
 		c.TestCommand(s.Command)
 	}
 }
 
-// localSecret reads the secret from config.json next to the exe.
-func localSecret() string {
+// localConfig is the subset of config.json (next to the exe) the GUI needs
+// before it can talk to the service: the secret for the API session and
+// the SmartThings port, because the WebUI/API listens on port+1.
+type localConfig struct {
+	Port   int    `json:"port"`
+	Secret string `json:"secret"`
+}
+
+// readLocalConfig parses config.json next to the exe; zero values when
+// the file is missing or unreadable.
+func readLocalConfig() localConfig {
+	var cfg localConfig
 	exe, err := os.Executable()
 	if err != nil {
-		return ""
+		return cfg
 	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "config.json"))
 	if err != nil {
-		return ""
+		return cfg
 	}
-	var cfg struct {
-		Secret string `json:"secret"`
+	json.Unmarshal(data, &cfg)
+	return cfg
+}
+
+// localSecret reads the secret from config.json next to the exe.
+func localSecret() string { return readLocalConfig().Secret }
+
+// localWebUIPort returns the service's WebUI/API port (SmartThings port +
+// 1, matching service/webui.go), defaulting to 5002 when config.json has
+// no usable port. Read once at startup: a port change needs a service
+// restart anyway.
+func localWebUIPort() int {
+	if p := readLocalConfig().Port; p >= 1 && p < 65535 {
+		return p + 1
 	}
-	if json.Unmarshal(data, &cfg) != nil {
-		return ""
-	}
-	return cfg.Secret
+	return defaultWebUIPort
 }

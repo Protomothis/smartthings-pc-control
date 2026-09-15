@@ -1,0 +1,6 @@
+{{define "title"}}알 수 없는 명령{{end}}
+{{define "summary"}}{{.Fields.from}}에서 알 수 없는 명령 <b>{{.Fields.command}}</b>을(를) 받았습니다{{end}}
+{{define "fields"}}
+출처: <code>{{.Fields.from}}</code>
+명령: <code>{{.Fields.command}}</code>
+{{end}}

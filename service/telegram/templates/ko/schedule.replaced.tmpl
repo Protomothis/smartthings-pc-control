@@ -1,0 +1,8 @@
+{{define "title"}}예약 대체{{end}}
+{{define "summary"}}{{.Fields.old_command}} ({{.Fields.old_origin}}) 예약이 <b>{{.Fields.command}}</b> ({{.Fields.origin}}) 예약으로 대체되었습니다{{end}}
+{{define "fields"}}
+새 명령: <code>{{.Fields.command}}</code>
+새 출처: <code>{{.Fields.origin}}</code>
+이전 명령: <code>{{.Fields.old_command}}</code>
+이전 출처: <code>{{.Fields.old_origin}}</code>
+{{end}}

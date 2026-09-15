@@ -1,0 +1,6 @@
+{{define "title"}}Tray wake failed{{end}}
+{{define "summary"}}Could not wake the tray app while handling <b>{{.Fields.command}}</b>: {{.Fields.error}}{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Error: <code>{{.Fields.error}}</code>
+{{end}}

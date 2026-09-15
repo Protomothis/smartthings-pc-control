@@ -1,0 +1,8 @@
+{{define "title"}}인증 실패 요청{{end}}
+{{define "summary"}}{{if and .Fields.count (ne .Fields.count "1")}}{{.Fields.from}}에서 잘못된 시크릿으로 <b>{{.Fields.count}}회</b> 요청 ({{secs .Fields.window_sec}}){{else}}{{.Fields.from}}에서 잘못된 시크릿으로 요청했습니다{{end}}{{end}}
+{{define "fields"}}
+출처: <code>{{.Fields.from}}</code>
+경로: <code>{{.Fields.path}}</code>
+{{if and .Fields.count (ne .Fields.count "1")}}횟수: <code>{{.Fields.count}}</code>
+기간: <code>{{secs .Fields.window_sec}}</code>{{end}}
+{{end}}

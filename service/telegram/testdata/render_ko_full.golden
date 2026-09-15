@@ -1,0 +1,185 @@
+=== remote.received ===
+🔌 <b>원격 명령 실행</b>
+<blockquote>192.168.1.20에서 받은 <b>lock</b> 명령을 즉시 실행했습니다</blockquote>
+명령: <code>lock</code>
+출처: <code>192.168.1.20</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.grace_scheduled ===
+🔌 <b>원격 명령 유예 예약</b>
+<blockquote>5분 후 <b>shutdown</b> 실행 예정 — 아래 버튼으로 취소할 수 있습니다</blockquote>
+명령: <code>shutdown</code>
+출처: <code>192.168.1.20</code>
+유예: <code>5분</code>
+실행 시각: <code>14:40:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.grace_cancelled ===
+🔌 <b>유예 취소</b>
+<blockquote><b>shutdown</b> 유예가 toast에서 취소되었습니다</blockquote>
+명령: <code>shutdown</code>
+취소 경로: <code>toast</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.executed ===
+🔌 <b>유예 만료 실행</b>
+<blockquote>유예 시간이 끝나 <b>shutdown</b> 명령을 실행했습니다</blockquote>
+명령: <code>shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.force ===
+🔌 <b>강제 종료 수신</b>
+<blockquote>192.168.1.20에서 <b>forceshutdown</b> 명령을 받아 유예 없이 종료합니다</blockquote>
+출처: <code>192.168.1.20</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.created ===
+⏱ <b>예약 생성</b>
+<blockquote>30분 후 <b>sleep</b> 실행 예약 (app)</blockquote>
+명령: <code>sleep</code>
+출처: <code>app</code>
+대기: <code>30분</code>
+실행 시각: <code>15:05:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.cancelled ===
+⏱ <b>예약 취소</b>
+<blockquote><b>sleep</b> 예약(app)이 webui에서 취소되었습니다</blockquote>
+명령: <code>sleep</code>
+출처: <code>app</code>
+취소 경로: <code>webui</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.executed ===
+⏱ <b>예약 실행</b>
+<blockquote>예약된 <b>sleep</b> 명령을 실행했습니다 (app)</blockquote>
+명령: <code>sleep</code>
+출처: <code>app</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== schedule.replaced ===
+⏱ <b>예약 대체</b>
+<blockquote>sleep (app) 예약이 <b>shutdown</b> (telegram) 예약으로 대체되었습니다</blockquote>
+새 명령: <code>shutdown</code>
+새 출처: <code>telegram</code>
+이전 명령: <code>sleep</code>
+이전 출처: <code>app</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.started ===
+🟢 <b>서비스 시작</b>
+<blockquote>PC가 켜졌고 서비스 <b>v1.0.0</b>이(가) 시작되었습니다</blockquote>
+버전: <code>v1.0.0</code>
+부팅 시각: <code>2026-09-10 14:34:12</code>
+외부 IP: <code>203.0.113.7</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.resumed ===
+🌙 <b>절전 해제</b>
+<blockquote>절전 상태에서 깨어났습니다 (<b>2시간 10분</b> 동안 절전)</blockquote>
+절전 시간: <code>2시간 10분</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🔴 <b>서비스 중지</b>
+<blockquote>서비스가 중지됩니다: <b>shutdown</b></blockquote>
+사유: <code>shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5, 10.0.0.9 외 1곳에서 잘못된 시크릿으로 <b>12회</b> 요청 (5분)</blockquote>
+출처: <code>10.0.0.5, 10.0.0.9 외 1곳</code>
+경로: <code>/shutdown</code>
+횟수: <code>12</code>
+기간: <code>5분</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5에서 잘못된 시크릿으로 요청했습니다</blockquote>
+출처: <code>10.0.0.5</code>
+경로: <code>/lock</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.login_limited ===
+🛡 <b>로그인 제한 발동</b>
+<blockquote><b>10.0.0.5</b>의 WebUI 로그인 실패가 반복되어 잠시 차단했습니다</blockquote>
+출처: <code>10.0.0.5</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_command ===
+🛡 <b>알 수 없는 명령</b>
+<blockquote>10.0.0.5에서 알 수 없는 명령 <b>explode</b>을(를) 받았습니다</blockquote>
+출처: <code>10.0.0.5</code>
+명령: <code>explode</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.config_changed ===
+🛡 <b>설정 변경</b>
+<blockquote>webui에서 설정을 변경했습니다: <b>secret, port</b></blockquote>
+항목: <code>secret, port</code>
+변경 경로: <code>webui</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 명령을 받아 무시했습니다</blockquote>
+채팅 ID: <code>987654321</code>
+사용자: <code>stranger</code>
+내용: <code>/shutdown</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 <b>4회</b> 명령을 받아 무시했습니다 (5분)</blockquote>
+채팅 ID: <code>987654321</code>
+사용자: <code>stranger</code>
+내용: <code>/shutdown</code>
+횟수: <code>4</code> / 5분
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.update_available ===
+🆕 <b>새 버전 사용 가능</b>
+<blockquote><b>v1.1.0</b> 릴리스가 있습니다 (현재 v1.0.0)</blockquote>
+새 버전: <code>v1.1.0</code>
+현재 버전: <code>v1.0.0</code>
+링크: <a href="https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0">https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0</a>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.updated ===
+🆕 <b>업데이트 완료</b>
+<blockquote>v0.3.4 → <b>v1.0.0</b>으로 업데이트되어 실행 중입니다</blockquote>
+현재 버전: <code>v1.0.0</code>
+이전 버전: <code>v0.3.4</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.exec_failed ===
+⚠️ <b>명령 실행 실패</b>
+<blockquote><b>hibernate</b> 실행에 실패했습니다: exit status 1</blockquote>
+명령: <code>hibernate</code>
+오류: <code>exit status 1</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.tray_wake_failed ===
+⚠️ <b>트레이 앱 깨우기 실패</b>
+<blockquote><b>screenoff</b> 처리 중 트레이 앱을 깨우지 못했습니다: no active session</blockquote>
+명령: <code>screenoff</code>
+오류: <code>no active session</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.test ===
+✅ <b>테스트 메시지</b>
+<blockquote>연결이 정상입니다</blockquote>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== system.digest ===
+📋 <b>조용한 시간 요약</b>
+<blockquote>22:00–07:00 동안 <b>3건</b>의 알림을 보류했습니다
+🔌 remote.received lock
+⏱ schedule.executed sleep
+🛡 security.unauthorized 10.0.0.5</blockquote>
+건수: <code>3</code>
+기간: <code>22:00–07:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+

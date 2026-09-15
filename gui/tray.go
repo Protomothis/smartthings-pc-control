@@ -49,7 +49,7 @@ func (u *ui) setupTray() {
 
 	cancelScheduleItem := fyne.NewMenuItem(u.t("schedule.cancel"), func() {
 		go func() {
-			u.client.CancelSchedule()
+			u.client.CancelSchedule("tray")
 			u.loadSchedule()
 		}()
 	})

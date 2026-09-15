@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 
@@ -32,6 +33,22 @@ func newKoreanTheme() fyne.Theme {
 // sizeNameCountdown is the custom text size used by the schedule tab's
 // remaining-time display (RichText can only pick sizes by theme name).
 const sizeNameCountdown fyne.ThemeSizeName = "countdown"
+
+// Color lifts the dark-variant "disabled" and placeholder greys. Fyne's
+// defaults (~28% white) make hint text and disabled controls close to
+// invisible on the dark background; ~55% keeps them clearly secondary but
+// readable. Light mode is left as is.
+func (t *koreanTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if variant == theme.VariantDark {
+		switch name {
+		case theme.ColorNameDisabled:
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x8c}
+		case theme.ColorNamePlaceHolder:
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x99}
+		}
+	}
+	return t.Theme.Color(name, variant)
+}
 
 func (t *koreanTheme) Size(name fyne.ThemeSizeName) float32 {
 	if name == sizeNameCountdown {

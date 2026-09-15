@@ -1,0 +1,103 @@
+=== remote.received ===
+🔌 <b>원격 명령 실행</b>
+<blockquote>192.168.1.20에서 받은 <b>lock</b> 명령을 즉시 실행했습니다</blockquote>
+
+=== remote.grace_scheduled ===
+🔌 <b>원격 명령 유예 예약</b>
+<blockquote>5분 후 <b>shutdown</b> 실행 예정 — 아래 버튼으로 취소할 수 있습니다</blockquote>
+
+=== remote.grace_cancelled ===
+🔌 <b>유예 취소</b>
+<blockquote><b>shutdown</b> 유예가 toast에서 취소되었습니다</blockquote>
+
+=== remote.executed ===
+🔌 <b>유예 만료 실행</b>
+<blockquote>유예 시간이 끝나 <b>shutdown</b> 명령을 실행했습니다</blockquote>
+
+=== remote.force ===
+🔌 <b>강제 종료 수신</b>
+<blockquote>192.168.1.20에서 <b>forceshutdown</b> 명령을 받아 유예 없이 종료합니다</blockquote>
+
+=== schedule.created ===
+⏱ <b>예약 생성</b>
+<blockquote>30분 후 <b>sleep</b> 실행 예약 (app)</blockquote>
+
+=== schedule.cancelled ===
+⏱ <b>예약 취소</b>
+<blockquote><b>sleep</b> 예약(app)이 webui에서 취소되었습니다</blockquote>
+
+=== schedule.executed ===
+⏱ <b>예약 실행</b>
+<blockquote>예약된 <b>sleep</b> 명령을 실행했습니다 (app)</blockquote>
+
+=== schedule.replaced ===
+⏱ <b>예약 대체</b>
+<blockquote>sleep (app) 예약이 <b>shutdown</b> (telegram) 예약으로 대체되었습니다</blockquote>
+
+=== power.started ===
+🟢 <b>서비스 시작</b>
+<blockquote>PC가 켜졌고 서비스 <b>v1.0.0</b>이(가) 시작되었습니다</blockquote>
+
+=== power.resumed ===
+🌙 <b>절전 해제</b>
+<blockquote>절전 상태에서 깨어났습니다 (<b>2시간 10분</b> 동안 절전)</blockquote>
+
+=== power.stopping ===
+🔴 <b>서비스 중지</b>
+<blockquote>서비스가 중지됩니다: <b>shutdown</b></blockquote>
+
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5, 10.0.0.9 외 1곳에서 잘못된 시크릿으로 <b>12회</b> 요청 (5분)</blockquote>
+
+=== security.unauthorized ===
+🛡 <b>인증 실패 요청</b>
+<blockquote>10.0.0.5에서 잘못된 시크릿으로 요청했습니다</blockquote>
+
+=== security.login_limited ===
+🛡 <b>로그인 제한 발동</b>
+<blockquote><b>10.0.0.5</b>의 WebUI 로그인 실패가 반복되어 잠시 차단했습니다</blockquote>
+
+=== security.unknown_command ===
+🛡 <b>알 수 없는 명령</b>
+<blockquote>10.0.0.5에서 알 수 없는 명령 <b>explode</b>을(를) 받았습니다</blockquote>
+
+=== security.config_changed ===
+🛡 <b>설정 변경</b>
+<blockquote>webui에서 설정을 변경했습니다: <b>secret, port</b></blockquote>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 명령을 받아 무시했습니다</blockquote>
+
+=== security.unknown_chat ===
+🛡 <b>허용되지 않은 채팅</b>
+<blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 <b>4회</b> 명령을 받아 무시했습니다 (5분)</blockquote>
+
+=== system.update_available ===
+🆕 <b>새 버전 사용 가능</b>
+<blockquote><b>v1.1.0</b> 릴리스가 있습니다 (현재 v1.0.0)</blockquote>
+
+=== system.updated ===
+🆕 <b>업데이트 완료</b>
+<blockquote>v0.3.4 → <b>v1.0.0</b>으로 업데이트되어 실행 중입니다</blockquote>
+
+=== system.exec_failed ===
+⚠️ <b>명령 실행 실패</b>
+<blockquote><b>hibernate</b> 실행에 실패했습니다: exit status 1</blockquote>
+
+=== system.tray_wake_failed ===
+⚠️ <b>트레이 앱 깨우기 실패</b>
+<blockquote><b>screenoff</b> 처리 중 트레이 앱을 깨우지 못했습니다: no active session</blockquote>
+
+=== system.test ===
+✅ <b>테스트 메시지</b>
+<blockquote>연결이 정상입니다</blockquote>
+
+=== system.digest ===
+📋 <b>조용한 시간 요약</b>
+<blockquote>22:00–07:00 동안 <b>3건</b>의 알림을 보류했습니다
+🔌 remote.received lock
+⏱ schedule.executed sleep
+🛡 security.unauthorized 10.0.0.5</blockquote>
+
