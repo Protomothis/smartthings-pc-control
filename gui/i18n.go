@@ -145,6 +145,12 @@ var messages = map[string]map[Lang]string{
 	"update.applying":    {LangKo: "UAC 승인 창이 표시됩니다. 앱이 종료된 뒤 서비스를 중지하고 exe를 교체한 후 새 버전으로 다시 실행됩니다.", LangEn: "A UAC prompt will appear. The app closes, the service is stopped, the exe is replaced and the new version relaunches."},
 	"update.cancel":      {LangKo: "취소", LangEn: "Cancel"},
 	"update.failed":      {LangKo: "업데이트 실패: ", LangEn: "Update failed: "},
+	// Signed update manifest (#66)
+	"update.unsigned":     {LangKo: "이 릴리스에는 서명된 업데이트 정보가 없어 자동 업데이트를 할 수 없습니다. 릴리스 페이지에서 직접 받으세요.", LangEn: "This release has no signed update manifest, so it cannot be installed automatically. Download it from the release page."},
+	"update.badsig":       {LangKo: "업데이트 정보의 서명이 올바르지 않습니다. 자동 업데이트를 중단합니다.", LangEn: "The update manifest's signature is invalid. Automatic update has been stopped."},
+	"update.minversion":   {LangKo: "현재 버전에서는 바로 업데이트할 수 없습니다. 먼저 %s 이상으로 올려 주세요.", LangEn: "This version cannot update directly. Please update to %s or later first."},
+	"update.hashmismatch": {LangKo: "다운로드한 파일의 해시가 매니페스트와 다릅니다. 업데이트를 중단합니다.", LangEn: "The downloaded file's hash does not match the manifest. Automatic update has been stopped."},
+	"update.checking":     {LangKo: "무결성 확인 중...", LangEn: "Checking integrity..."},
 	// Notifications tab (#64)
 	"tab.notify":                           {LangKo: "알림", LangEn: "Notifications"},
 	"notify.telegram":                      {LangKo: "텔레그램 연결", LangEn: "Telegram connection"},
