@@ -420,3 +420,43 @@ func TestUserName(t *testing.T) {
 		t.Errorf("name = %q", got)
 	}
 }
+
+// datedMsgUpdate is msgUpdate with an explicit Telegram "date" (unix seconds).
+func datedMsgUpdate(id int, chat int64, text string, date int64) string {
+	return fmt.Sprintf(`{"update_id":%d,"message":{"message_id":%d,"date":%d,"from":{"id":7,"username":"me"},"chat":{"id":%d,"type":"private"},"text":%q}}`, id, id, date, chat, text)
+}
+
+func TestPollerRoutesOldMessagesAsStale(t *testing.T) {
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	cli, fb := newFakeBot(t,
+		okUpdates(""),
+		okUpdates(strings.Join([]string{
+			// 2 hours old: sent while the PC was asleep → stale, not executed.
+			datedMsgUpdate(20, 42, "/lock", now.Add(-2*time.Hour).Unix()),
+			// 30 seconds old: fresh → executed.
+			datedMsgUpdate(21, 42, "/lock", now.Add(-30*time.Second).Unix()),
+			// No date at all (older API shapes): treated as fresh.
+			msgUpdate(22, 42, "me", "/status"),
+		}, ",")),
+	)
+	h := &fakeHandler{}
+	p := NewPoller(cli, PollerOptions{AllowedChatIDs: allow("42"), Handler: h, Log: t.Logf})
+	p.now = func() time.Time { return now }
+	stop := runPoller(t, p)
+
+	fb.nextPoll(t)
+	fb.nextPoll(t)
+	for i := 0; i < 3; i++ {
+		fb.nextCall(t, "sendMessage")
+	}
+	fb.nextPoll(t)
+
+	commands, _, _ := h.snapshot()
+	want := []string{"42 " + StaleCommand + " /lock 2h0m0s", "42 lock", "42 status"}
+	if !reflect.DeepEqual(commands, want) {
+		t.Errorf("commands = %q, want %q", commands, want)
+	}
+	if err := stop(); !errors.Is(err, context.Canceled) {
+		t.Errorf("Run returned %v, want context.Canceled", err)
+	}
+}

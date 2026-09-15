@@ -129,9 +129,15 @@ type ui struct {
 	// the form differs from it; nil until the first successful load. The
 	// notify tab (notify_tab.go) shares the baseline: each tab's Save starts
 	// from it and overwrites only its own fields.
-	saveBtn     *widget.Button
+	settingsBar *saveBar
 	cfgBaseline *Config
 	notify      *notifyTab
+	// Tab titles without the "•" unsaved marker, the tab shown before the
+	// current selection, and a guard for programmatic SelectIndex calls
+	// (see savebar.go).
+	tabTitles []string
+	curTab    int
+	switching bool
 
 	// Logs: every line from the last fetch; the label shows the subset
 	// matching logsFilter. Both touched on the UI thread only.
@@ -184,8 +190,9 @@ func Run(version string, minimized bool) {
 	// Tall enough for the Settings tab (the longest one) to show without a
 	// scrollbar in either language; see #53.
 	u.win.Resize(fyne.NewSize(640, 800))
-	// Closing the window hides to the system tray; Exit lives in the tray menu.
-	u.win.SetCloseIntercept(func() { u.win.Hide() })
+	// Closing the window hides to the system tray (after an unsaved-changes
+	// prompt when needed); Exit lives in the tray menu.
+	u.win.SetCloseIntercept(u.onCloseRequest)
 
 	u.rebuild()
 	go u.initialLoad()
@@ -451,14 +458,18 @@ func (u *ui) rebuild() {
 	// width is left (and truncates) instead of dictating the window width.
 	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(versionLabel, langSelect), u.status)
 
+	// Order matters: tabSettings / tabNotify in savebar.go index into this.
+	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.logs")}
 	u.tabs = container.NewAppTabs(
-		container.NewTabItemWithIcon(u.t("tab.settings"), theme.SettingsIcon(), u.buildSettingsTab()),
-		container.NewTabItemWithIcon(u.t("tab.commands"), theme.MediaPlayIcon(), u.buildCommandsTab()),
-		container.NewTabItemWithIcon(u.t("tab.schedule"), theme.HistoryIcon(), u.buildScheduleTab()),
-		container.NewTabItemWithIcon(u.t("tab.notify"), theme.MailSendIcon(), u.buildNotifyTab()),
-		container.NewTabItemWithIcon(u.t("tab.network"), theme.ComputerIcon(), u.buildNetworkTab()),
-		container.NewTabItemWithIcon(u.t("tab.logs"), theme.ListIcon(), u.buildLogsTab()),
+		container.NewTabItemWithIcon(u.tabTitles[0], theme.SettingsIcon(), u.buildSettingsTab()),
+		container.NewTabItemWithIcon(u.tabTitles[1], theme.MediaPlayIcon(), u.buildCommandsTab()),
+		container.NewTabItemWithIcon(u.tabTitles[2], theme.HistoryIcon(), u.buildScheduleTab()),
+		container.NewTabItemWithIcon(u.tabTitles[3], theme.MailSendIcon(), u.buildNotifyTab()),
+		container.NewTabItemWithIcon(u.tabTitles[4], theme.ComputerIcon(), u.buildNetworkTab()),
+		container.NewTabItemWithIcon(u.tabTitles[5], theme.ListIcon(), u.buildLogsTab()),
 	)
+	u.curTab = 0
+	u.tabs.OnSelected = u.onTabSelected
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
 	u.setupTray()
@@ -478,7 +489,11 @@ func (u *ui) applyConnected(on bool) {
 		}
 	}
 	if !on {
+		// Forced switch: no unsaved-changes prompt (the service is gone).
+		u.switching = true
 		u.tabs.SelectIndex(0)
+		u.switching = false
+		u.curTab = 0
 	}
 	if u.settingsExtra != nil {
 		if on {
@@ -512,46 +527,10 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
 
-	u.saveBtn = widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), func() {
-		port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
-		if err != nil {
-			dialog.ShowError(errors.New(u.t("settings.invalidport")+u.portEntry.Text), u.win)
-			return
-		}
-		if u.remoteCheck.Checked && u.secretEntry.Text == "" {
-			dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
-			return
-		}
-		graceOn, graceSec := u.graceFromSelection()
-		if u.cfgBaseline == nil {
-			return // Save is only enabled once a baseline exists
-		}
-		// Start from the baseline so the telegram/notify values (owned by
-		// the notify tab) round-trip unchanged: the masked token means
-		// "keep" to the service, and any unsaved notify-tab edits stay
-		// dirty against the new baseline instead of being lost.
-		cfg := *u.cfgBaseline
-		cfg.Port = port
-		cfg.Secret = u.secretEntry.Text
-		cfg.WebUIRemote = u.remoteCheck.Checked
-		cfg.ShutdownGrace = graceOn
-		cfg.GraceSeconds = graceSec
-		msg, err := u.client.SaveConfig(cfg)
-		if err != nil {
-			dialog.ShowError(err, u.win)
-			return
-		}
-		// What was just saved is the new "unchanged" state.
-		u.cfgBaseline = &cfg
-		u.updateSaveState()
-		u.updateNotifySaveState()
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	})
-	u.saveBtn.Importance = widget.HighImportance
+	u.settingsBar = newSaveBar(u, func() { u.saveSettings(false) })
 	// Nothing to compare against until initialLoad fills the form (the
 	// fields are empty on a language-change rebuild too).
 	u.cfgBaseline = nil
-	u.saveBtn.Disable()
 
 	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
 		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", webUIPort)).Start()
@@ -582,7 +561,6 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		hint(u.t("settings.grace.hint")),
 		u.remoteCheck,
 		hint(u.t("settings.remote.hint")),
-		container.NewHBox(layout.NewSpacer(), u.saveBtn),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -622,7 +600,60 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		section(u.t("svc.section"), u.svcBox),
 		u.settingsExtra,
 	)
-	return container.NewVScroll(container.NewPadded(u.settingsRoot))
+	return withSaveBar(u.settingsRoot, u.settingsBar)
+}
+
+// saveSettings validates and posts the settings-tab fields over the
+// baseline. quiet skips the "Saved" dialog (used by the unsaved-changes
+// prompt). Returns false when nothing was saved. UI thread only.
+func (u *ui) saveSettings(quiet bool) bool {
+	if u.cfgBaseline == nil {
+		return false // Save is only enabled once a baseline exists
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
+	if err != nil {
+		dialog.ShowError(errors.New(u.t("settings.invalidport")+u.portEntry.Text), u.win)
+		return false
+	}
+	if u.remoteCheck.Checked && u.secretEntry.Text == "" {
+		dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
+		return false
+	}
+	graceOn, graceSec := u.graceFromSelection()
+	// Start from the baseline so the telegram/notify values (owned by the
+	// notify tab) round-trip unchanged: the masked token means "keep" to
+	// the service, and any unsaved notify-tab edits stay dirty against the
+	// new baseline instead of being lost.
+	cfg := *u.cfgBaseline
+	cfg.Port = port
+	cfg.Secret = u.secretEntry.Text
+	cfg.WebUIRemote = u.remoteCheck.Checked
+	cfg.ShutdownGrace = graceOn
+	cfg.GraceSeconds = graceSec
+	msg, err := u.client.SaveConfig(cfg)
+	if err != nil {
+		dialog.ShowError(err, u.win)
+		return false
+	}
+	// What was just saved is the new "unchanged" state.
+	u.cfgBaseline = &cfg
+	u.updateSaveState()
+	u.updateNotifySaveState()
+	if !quiet {
+		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+	}
+	return true
+}
+
+// fillSettingsTab writes cfg into the settings-tab fields (used on load and
+// when discarding edits). Must be called on the UI thread with cfgBaseline
+// already set.
+func (u *ui) fillSettingsTab(cfg Config) {
+	u.portEntry.SetText(strconv.Itoa(cfg.Port))
+	u.secretEntry.SetText(cfg.Secret)
+	u.remoteCheck.SetChecked(cfg.WebUIRemote)
+	u.setGraceSelection(cfg)
+	u.updateSaveState()
 }
 
 // graceLabels renders graceValues for the select: "Off" for 0, then the
@@ -691,17 +722,15 @@ func (u *ui) settingsDirty() bool {
 		(graceOn && graceSec != b.GraceSeconds)
 }
 
-// updateSaveState enables Save only while there is something to save.
-// Must be called on the UI thread.
+// updateSaveState enables Save, the pulsing indicator and the tab marker
+// only while there is something to save. Must be called on the UI thread.
 func (u *ui) updateSaveState() {
-	if u.saveBtn == nil {
+	if u.settingsBar == nil {
 		return
 	}
-	if u.settingsDirty() {
-		u.saveBtn.Enable()
-	} else {
-		u.saveBtn.Disable()
-	}
+	dirty := u.settingsDirty()
+	u.settingsBar.setDirty(dirty)
+	u.markTab(tabSettings, dirty)
 }
 
 // refreshSvcBox re-queries the Windows service state and redraws the

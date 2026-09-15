@@ -339,7 +339,7 @@ type notifyTab struct {
 	detailSelect *widget.Select
 	pcNameEntry  *widget.Entry
 
-	saveBtn *widget.Button
+	bar *saveBar
 	// filling suppresses the OnChanged cascade while fillNotifyTab writes
 	// the widgets; the dirty state is evaluated once at the end.
 	filling bool
@@ -579,11 +579,9 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 		hint(u.t("notify.display.hint")),
 	)
 
-	// Save: same pattern as the settings tab — enabled only while the form
-	// differs from cfgBaseline (nil until initialLoad fills the tab).
-	t.saveBtn = widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), func() { u.saveNotifyTab() })
-	t.saveBtn.Importance = widget.HighImportance
-	t.saveBtn.Disable()
+	// Save lives in the fixed footer (savebar.go), enabled only while the
+	// form differs from cfgBaseline (nil until initialLoad fills the tab).
+	t.bar = newSaveBar(u, func() { u.saveNotifyTab(false) })
 
 	t.root = container.NewVBox(
 		section(u.t("notify.telegram"), telegramBody),
@@ -595,12 +593,11 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 		section(u.t("notify.quiet"), quietBody),
 		widget.NewSeparator(),
 		section(u.t("notify.display"), displayBody),
-		container.NewHBox(layout.NewSpacer(), t.saveBtn),
-		// Trailing padding so the button never sits flush against the
-		// window edge (same as the settings tab).
+		// Trailing padding so the last row never sits flush against the
+		// footer (same as the settings tab).
 		widget.NewLabel(""),
 	)
-	return container.NewVScroll(container.NewPadded(t.root))
+	return withSaveBar(t.root, t.bar)
 }
 
 // anyChecked reports whether any of the checks is on.
@@ -677,34 +674,44 @@ func (u *ui) fillNotifyTab(cfg Config) {
 	}()
 }
 
-// updateNotifySaveState enables the tab's Save only while the form differs
-// from cfgBaseline. Safe to call before the tab exists. UI thread only.
+// notifyDirty reports whether the notify tab differs from cfgBaseline.
+// False while the tab is being filled or before a baseline exists.
+func (u *ui) notifyDirty() bool {
+	t := u.notify
+	if t == nil || t.bar == nil || t.filling || u.cfgBaseline == nil {
+		return false
+	}
+	return t.state().dirty(*u.cfgBaseline)
+}
+
+// updateNotifySaveState enables the tab's Save, the pulsing indicator and
+// the tab marker only while the form differs from cfgBaseline. Safe to call
+// before the tab exists. UI thread only.
 func (u *ui) updateNotifySaveState() {
 	t := u.notify
-	if t == nil || t.saveBtn == nil || t.filling {
+	if t == nil || t.bar == nil || t.filling {
 		return
 	}
-	if u.cfgBaseline != nil && t.state().dirty(*u.cfgBaseline) {
-		t.saveBtn.Enable()
-	} else {
-		t.saveBtn.Disable()
-	}
+	dirty := u.notifyDirty()
+	t.bar.setDirty(dirty)
+	u.markTab(tabNotify, dirty)
 }
 
 // saveNotifyTab posts the baseline with this tab's fields written over it,
 // then re-reads the config so the baseline (and the masked token) reflect
-// what the service stored. UI thread only.
-func (u *ui) saveNotifyTab() {
+// what the service stored. quiet skips the "Saved" dialog. Returns false
+// when the save failed. UI thread only.
+func (u *ui) saveNotifyTab(quiet bool) bool {
 	t := u.notify
 	if t == nil || u.cfgBaseline == nil {
-		return
+		return false
 	}
 	s := t.state()
 	cfg := s.applyTo(*u.cfgBaseline, u.lang)
 	msg, err := u.client.SaveConfig(cfg)
 	if err != nil {
 		dialog.ShowError(err, u.win)
-		return
+		return false
 	}
 	fresh, err := u.client.GetConfig()
 	if err != nil {
@@ -719,7 +726,10 @@ func (u *ui) saveNotifyTab() {
 	u.fillNotifyTab(fresh)
 	// The settings tab compares against the same baseline.
 	u.updateSaveState()
-	dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+	if !quiet {
+		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+	}
+	return true
 }
 
 // sendTelegramTest asks the service to send one test message with the

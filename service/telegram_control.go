@@ -124,6 +124,7 @@ var tgTexts = map[string][2]string{
 	"unmuted":         {"🔔 알림 재개", "🔔 Notifications resumed"},
 	"notify_off":      {"알림 파이프라인이 꺼져 있습니다", "The notification pipeline is not running"},
 	"unknown_button":  {"알 수 없는 버튼", "Unknown button"},
+	"stale":           {"⏹ <code>%s</code> — PC가 꺼져 있거나 절전 중일 때 보낸 오래된 명령이라 실행하지 않았습니다. 필요하면 다시 보내 주세요.", "⏹ <code>%s</code> — sent while this PC was off or asleep, so it was not run. Send it again if you still want it."},
 	"confirm_needed":  {"확인이 필요한 명령입니다", "This command needs confirmation"},
 	"toast_executed":  {"실행됨", "Done"},
 	"toast_cancelled": {"취소됨", "Cancelled"},
@@ -368,6 +369,13 @@ func (c telegramControl) HandleCommand(_ context.Context, chatID string, cmd str
 	switch cmd {
 	case "help", "start":
 		return tgText("help"), nil, nil
+	case telegram.StaleCommand:
+		// Sent while the PC was asleep / offline; the poller already logged it.
+		text := ""
+		if len(args) > 0 {
+			text = args[0]
+		}
+		return tgText("stale", html.EscapeString(text)), nil, nil
 	case "status":
 		return tgStatusText(), nil, nil
 	case "menu":

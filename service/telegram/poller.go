@@ -49,7 +49,17 @@ const (
 	defaultPollTimeout = 30 // seconds, getUpdates long poll
 	minBackoff         = time.Second
 	maxBackoff         = 60 * time.Second
+	// defaultMaxAge: a command message older than this when it reaches us
+	// is not executed. Start-up discards everything queued before the
+	// service came up, but messages sent while the PC was asleep arrive
+	// after resume through the normal poll and would otherwise run late.
+	defaultMaxAge = 10 * time.Minute
 )
+
+// StaleCommand is the pseudo-command HandleCommand receives (instead of the
+// real one) for a message that exceeded MaxAge, so the handler can reply in
+// the user's language. args = [original text, age as a Go duration string].
+const StaleCommand = "_stale"
 
 // Poller long-polls getUpdates and routes messages and button presses to
 // a CommandHandler.
@@ -59,13 +69,18 @@ type Poller struct {
 
 	// PollTimeout is the getUpdates long-poll timeout in seconds.
 	PollTimeout int
+	// MaxAge: messages older than this are routed as StaleCommand instead
+	// of being executed. 0 disables the check.
+	MaxAge time.Duration
 	// sleep waits out a back-off; tests replace it to avoid real delays.
 	sleep func(ctx context.Context, d time.Duration) error
+	// now is the clock used for the age check; tests replace it.
+	now func() time.Time
 }
 
 // NewPoller returns a poller for cli. Run must be called to start it.
 func NewPoller(cli *Client, opts PollerOptions) *Poller {
-	return &Poller{cli: cli, opts: opts, PollTimeout: defaultPollTimeout, sleep: sleepCtx}
+	return &Poller{cli: cli, opts: opts, PollTimeout: defaultPollTimeout, MaxAge: defaultMaxAge, sleep: sleepCtx, now: time.Now}
 }
 
 // Run polls until ctx is done and returns ctx.Err(). On start it asks for
@@ -154,6 +169,15 @@ func (p *Poller) handleMessage(ctx context.Context, m *Message) {
 	cmd, args := ParseCommand(text)
 	if cmd == "" {
 		cmd, args = "help", nil
+	}
+	// A message that sat in Telegram's queue while this PC was asleep (or
+	// the network was down) must not run now: it may be minutes or hours
+	// old and the user has long moved on. Tell them instead of executing.
+	if p.MaxAge > 0 && m.Date > 0 {
+		if age := p.now().Sub(time.Unix(m.Date, 0)); age > p.MaxAge {
+			p.logf("poller: ignoring /%s from %s sent %s ago (older than %s)", cmd, chatID, age.Round(time.Second), p.MaxAge)
+			cmd, args = StaleCommand, []string{text, age.Round(time.Minute).String()}
+		}
 	}
 	html, kb, err := p.opts.Handler.HandleCommand(ctx, chatID, cmd, args)
 	if err != nil {
