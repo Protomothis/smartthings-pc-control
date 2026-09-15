@@ -43,6 +43,20 @@ jobs:
           CGO_ENABLED: 1 # Fyne (GUI) requires cgo; windows-latest ships MinGW gcc
         run: go build -ldflags="-s -w -H=windowsgui -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
 
+      # Signed update manifest (#66): the app only auto-updates from a
+      # release whose update.json verifies against the ed25519 public key
+      # embedded in internal/release. The seed lives solely in the
+      # UPDATE_SIGNING_KEY secret; env: keeps it off the command line.
+      - name: Sign update manifest
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: go run ./internal/tools/signmanifest sign -key env:UPDATE_SIGNING_KEY -version ${{ github.ref_name }} -arch amd64 -out update.json smartthings-pc-control.exe
+
+      # Fails the build when the secret does not match the embedded public
+      # key (e.g. after a key rotation that touched only one side).
+      - name: Verify update manifest against embedded key
+        run: go run ./internal/tools/signmanifest verify update.json update.json.sig
+
       - name: Extract release notes
         id: notes
         run: |
@@ -56,6 +70,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: smartthings-pc-control.exe
+          files: |
+            smartthings-pc-control.exe
+            update.json
+            update.json.sig
           body_path: release_notes.txt
           generate_release_notes: true

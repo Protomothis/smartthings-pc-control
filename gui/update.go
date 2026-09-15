@@ -2,6 +2,8 @@ package gui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +27,51 @@ const downloadTimeout = 10 * time.Minute
 // the service can share them for system.update_available.
 func checkLatestRelease() (*release.Info, error) {
 	return release.Latest(context.Background(), &http.Client{Timeout: 8 * time.Second})
+}
+
+// fetchManifest downloads and verifies rel's signed update manifest (#66).
+// Errors: release.ErrNoManifest (unsigned release), release.ErrBadSignature
+// (tampered / wrong key / other release's manifest), or a network error.
+func fetchManifest(rel *release.Info) (*release.Manifest, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return release.FetchManifest(ctx, &http.Client{Timeout: 20 * time.Second}, rel)
+}
+
+// verifyDownloadedHash compares the staged file's SHA-256 and size with what
+// the signed manifest promised. This runs before the file is ever executed
+// (verifyDownloadedExe is the second, weaker check). On mismatch the file
+// is removed and the error wraps errHashMismatch.
+func verifyDownloadedHash(path string, asset *release.ManifestAsset) error {
+	sum, size, err := fileSHA256(path)
+	if err != nil {
+		os.Remove(path)
+		return err
+	}
+	if err := asset.Verify(sum, size); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("%w: %v", errHashMismatch, err)
+	}
+	return nil
+}
+
+// errHashMismatch marks a download whose hash/size differ from the manifest;
+// the GUI shows update.hashmismatch for it.
+var errHashMismatch = errors.New("downloaded file does not match the update manifest")
+
+// fileSHA256 returns the lowercase hex SHA-256 and the size of path.
+func fileSHA256(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
 // chooseStagingDir picks where the downloaded exe is staged: an "update"

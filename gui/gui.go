@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -264,10 +265,27 @@ func (u *ui) canSelfUpdate() bool {
 	return ok
 }
 
-// showUpdateDialog offers "Update now" when the release ships an exe asset
-// and this is a release build; otherwise it falls back to opening the
-// release page. Must run on the UI goroutine.
+// showUpdateDialog fetches and verifies the release's signed update
+// manifest (#66) off the UI goroutine, then offers "Update now" when this
+// is a release build and the manifest names an asset for this arch that the
+// installed version may update to. Anything else — dev build, unsigned
+// release, bad signature, min_version gate — falls back to opening the
+// release page. Must be called on the UI goroutine.
 func (u *ui) showUpdateDialog(rel *release.Info) {
+	if !u.canSelfUpdate() {
+		u.showUpdateChoice(rel, nil, nil)
+		return
+	}
+	go func() {
+		m, err := fetchManifest(rel)
+		fyne.Do(func() { u.showUpdateChoice(rel, m, err) })
+	}()
+}
+
+// showUpdateChoice renders the update dialog for rel given the manifest
+// fetch result (m/err both nil for dev builds, which only get the release
+// page). Must run on the UI goroutine.
+func (u *ui) showUpdateChoice(rel *release.Info, m *release.Manifest, err error) {
 	page := rel.HTMLURL
 	if page == "" {
 		page = release.Page
@@ -278,33 +296,63 @@ func (u *ui) showUpdateDialog(rel *release.Info) {
 	if pageURL, err := url.Parse(page); err == nil {
 		body.Add(widget.NewHyperlink(u.t("update.releasepage"), pageURL))
 	}
-
-	asset := release.ExeAsset(rel)
-	if asset == "" || !u.canSelfUpdate() {
-		if asset == "" && u.canSelfUpdate() {
-			body.Add(widget.NewLabel(u.t("update.noasset")))
-		}
+	note := func(text string) {
+		l := widget.NewLabel(text)
+		l.Wrapping = fyne.TextWrapWord
+		body.Add(l)
+	}
+	pageOnly := func() {
 		dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.open"), u.t("update.later"), body,
 			func(ok bool) {
 				if ok {
 					openPage()
 				}
 			}, u.win)
+	}
+
+	var asset *release.ManifestAsset
+	var assetURL string
+	switch {
+	case !u.canSelfUpdate():
+		// dev build: version comparison is meaningless, never overwrite.
+	case errors.Is(err, release.ErrNoManifest):
+		note(u.t("update.unsigned"))
+	case errors.Is(err, release.ErrBadSignature):
+		note(u.t("update.badsig"))
+	case err != nil:
+		note(u.t("update.checkfailed") + err.Error())
+	case !m.Allows(u.version):
+		note(fmt.Sprintf(u.t("update.minversion"), m.MinVersion))
+	default:
+		var ok bool
+		asset, ok = m.AssetFor(runtime.GOARCH)
+		if ok {
+			assetURL = release.AssetURL(rel, asset.Name)
+		}
+		if !ok || assetURL == "" {
+			asset = nil
+			note(u.t("update.noasset"))
+		}
+	}
+	if asset == nil {
+		pageOnly()
 		return
 	}
 	dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.now"), u.t("update.later"), body,
 		func(ok bool) {
 			if ok {
-				u.startSelfUpdate(rel, asset)
+				u.startSelfUpdate(rel, asset, assetURL)
 			}
 		}, u.win)
 }
 
-// startSelfUpdate downloads and verifies the new exe behind a progress
-// dialog, then hands over to the elevated updater (see selfupdate.go) and
-// quits — the updater waits for this process to exit before swapping the
-// binary. Download errors and a declined UAC prompt leave the app running.
-func (u *ui) startSelfUpdate(rel *release.Info, assetURL string) {
+// startSelfUpdate downloads the manifest's asset behind a progress dialog,
+// checks its SHA-256/size against the signed manifest, runs the exe's own
+// version check, then hands over to the elevated updater (see
+// selfupdate.go) and quits — the updater waits for this process to exit
+// before swapping the binary. Download errors, a hash mismatch and a
+// declined UAC prompt leave the app running.
+func (u *ui) startSelfUpdate(rel *release.Info, asset *release.ManifestAsset, assetURL string) {
 	status := widget.NewLabel(u.t("update.downloading"))
 	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
 	bar := widget.NewProgressBar()
@@ -326,6 +374,12 @@ func (u *ui) startSelfUpdate(rel *release.Info, assetURL string) {
 			})
 		})
 		if err == nil {
+			// First gate: the bytes must be exactly what the signed
+			// manifest promised. Nothing has executed yet.
+			fyne.Do(func() { status.SetText(u.t("update.checking")) })
+			err = verifyDownloadedHash(path, asset)
+		}
+		if err == nil {
 			fyne.Do(func() { status.SetText(u.t("update.verifying")) })
 			err = verifyDownloadedExe(path, rel.TagName)
 			if err != nil {
@@ -340,7 +394,11 @@ func (u *ui) startSelfUpdate(rel *release.Info, assetURL string) {
 			d.Hide()
 			if err != nil {
 				if ctx.Err() == nil { // user cancel is not an error worth a dialog
-					dialog.ShowError(errors.New(u.t("update.failed")+err.Error()), u.win)
+					msg := u.t("update.failed") + err.Error()
+					if errors.Is(err, errHashMismatch) {
+						msg = u.t("update.hashmismatch")
+					}
+					dialog.ShowError(errors.New(msg), u.win)
 				}
 				return
 			}
