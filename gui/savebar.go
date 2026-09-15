@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -158,18 +157,19 @@ func (u *ui) promptUnsaved(bodyKey string, dirtyTabs []int, onDone func()) {
 		onDone()
 	})
 	saveBtn.Importance = widget.HighImportance
-	discardBtn := widget.NewButtonWithIcon(u.t("unsaved.discard"), theme.DeleteIcon(), func() {
+	discardBtn := widget.NewButtonWithIcon(u.t("unsaved.discard"), theme.CancelIcon(), func() {
 		for _, i := range dirtyTabs {
 			u.discardTab(i)
 		}
 		d.Hide()
 		onDone()
 	})
-	discardBtn.Importance = widget.DangerImportance
 	keepBtn := widget.NewButton(u.t("unsaved.keep"), d.Hide)
 
-	d.SetButtons([]fyne.CanvasObject{keepBtn, layout.NewSpacer(), discardBtn, saveBtn})
-	d.Resize(fyne.NewSize(420, 0))
+	// One centred row, like Fyne's own confirm dialogs: the safe choice on
+	// the left, the primary action on the right.
+	d.SetButtons([]fyne.CanvasObject{keepBtn, discardBtn, saveBtn})
+	d.Resize(fyne.NewSize(440, 0))
 	d.Show()
 }
 

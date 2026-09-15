@@ -42,7 +42,7 @@ var messages = map[string]map[Lang]string{
 	"unsaved.body.tab":           {LangKo: "이 탭에 저장하지 않은 변경 사항이 있습니다. 저장할까요?", LangEn: "This tab has unsaved changes. Save them?"},
 	"unsaved.body.close":         {LangKo: "저장하지 않은 변경 사항이 있습니다. 창을 닫기 전에 저장할까요?", LangEn: "There are unsaved changes. Save before closing the window?"},
 	"unsaved.save":               {LangKo: "저장", LangEn: "Save"},
-	"unsaved.discard":            {LangKo: "버리기", LangEn: "Discard"},
+	"unsaved.discard":            {LangKo: "저장 안 함", LangEn: "Don't save"},
 	"unsaved.keep":               {LangKo: "계속 편집", LangEn: "Keep editing"},
 	"settings.invalidport":       {LangKo: "잘못된 포트: ", LangEn: "Invalid port: "},
 	"settings.openwebui":         {LangKo: "WebUI 열기 (브라우저)", LangEn: "Open WebUI (browser)"},

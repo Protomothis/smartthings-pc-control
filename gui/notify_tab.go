@@ -317,20 +317,20 @@ type notifyTab struct {
 
 	tokenEntry   *widget.Entry
 	chatEntry    *widget.Entry
-	enabledCheck *widget.Check
+	enabledCheck *toggle
 	botStatus    *widget.Label // "@bot" from getMe, or why not
 	testStatus   *widget.Label // last [Send test] result
 	testBtn      *widget.Button
 	findBtn      *widget.Button
 
-	controlCheck *widget.Check
+	controlCheck *toggle
 	allowedEntry *widget.Entry
 	controlWarn  *widget.Label
 
 	masters map[string]*widget.Check
 	kinds   map[string]map[string]*widget.Check
 
-	quietCheck    *widget.Check
+	quietCheck    *toggle
 	quietStart    *widget.Select
 	quietEnd      *widget.Select
 	quietSecurity *widget.Check
@@ -436,7 +436,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	t.tokenEntry.OnChanged = onEdit
 	t.chatEntry = widget.NewEntry()
 	t.chatEntry.OnChanged = onEdit
-	t.enabledCheck = widget.NewCheck(u.t("notify.enabled"), onToggle)
+	t.enabledCheck = newToggle(u.t("notify.enabled"), onToggle)
 	t.botStatus = hint(u.t("notify.bot.none"))
 	t.testStatus = widget.NewLabel("")
 	t.testStatus.Wrapping = fyne.TextWrapWord
@@ -466,7 +466,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	t.controlWarn.Wrapping = fyne.TextWrapWord
 	t.controlWarn.Importance = widget.WarningImportance
 	t.controlWarn.Hide()
-	t.controlCheck = widget.NewCheck(u.t("notify.control.enabled"), func(on bool) {
+	t.controlCheck = newToggle(u.t("notify.control.enabled"), func(on bool) {
 		t.setControlWarn(on)
 		u.updateNotifySaveState()
 	})
@@ -554,7 +554,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	t.quietEnd = widget.NewSelect(quietHourOptions(), onEdit)
 	t.quietSecurity = widget.NewCheck(u.t("notify.quiet.security"), onToggle)
 	t.quietDigest = widget.NewCheck(u.t("notify.quiet.digest"), onToggle)
-	t.quietCheck = widget.NewCheck(u.t("notify.quiet.enabled"), func(on bool) {
+	t.quietCheck = newToggle(u.t("notify.quiet.enabled"), func(on bool) {
 		t.setQuietEnabled(on)
 		u.updateNotifySaveState()
 	})

@@ -102,7 +102,7 @@ type ui struct {
 	schedCancelBtn *widget.Button
 	networkBox     *fyne.Container
 	svcBox         *fyne.Container
-	remoteCheck    *widget.Check
+	remoteCheck    *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -523,7 +523,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	onToggle := func(bool) { u.updateSaveState() }
 	u.portEntry.OnChanged = onEdit
 	u.secretEntry.OnChanged = onEdit
-	u.remoteCheck = widget.NewCheck(u.t("settings.remote"), onToggle)
+	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
 
@@ -566,12 +566,12 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.svcBox = container.NewVBox()
 	u.refreshSvcBox()
 
-	updateCheck := widget.NewCheck(u.t("update.check"), func(b bool) {
+	updateCheck := newToggle(u.t("update.check"), func(b bool) {
 		u.app.Preferences().SetBool("check_updates", b)
 	})
 	updateCheck.SetChecked(u.app.Preferences().BoolWithFallback("check_updates", true))
 
-	autostartCheck := widget.NewCheck(u.t("autostart.check"), func(b bool) {
+	autostartCheck := newToggle(u.t("autostart.check"), func(b bool) {
 		u.app.Preferences().SetBool("autostart", b)
 		if err := SetAutostart(b); err != nil {
 			dialog.ShowError(err, u.win)
