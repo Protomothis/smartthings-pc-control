@@ -262,9 +262,11 @@ func (c *Client) SetSchedule(command string, minutes int) error {
 	return nil
 }
 
-// CancelSchedule cancels the active schedule.
-func (c *Client) CancelSchedule() error {
-	resp, err := c.do("DELETE", "/api/schedule", nil)
+// CancelSchedule cancels the active schedule. by names the UI the user
+// used ("app", "tray", "toast") so notifications can say where the cancel
+// came from; the service falls back to "api" for anything else.
+func (c *Client) CancelSchedule(by string) error {
+	resp, err := c.do("DELETE", "/api/schedule?by="+by, nil)
 	if err != nil {
 		return err
 	}

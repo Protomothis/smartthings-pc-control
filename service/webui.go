@@ -433,7 +433,14 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-			if cancelScheduleBy("api") {
+			// ?by=app|tray|toast|webui says which UI the user cancelled from;
+			// it only affects the notification wording (default "api").
+			by := "api"
+			switch v := r.URL.Query().Get("by"); v {
+			case "app", "tray", "toast", "webui":
+				by = v
+			}
+			if cancelScheduleBy(by) {
 				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Schedule cancelled"})
 			} else {
 				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "No active schedule"})

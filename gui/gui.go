@@ -30,7 +30,12 @@ import (
 // cmdButtonSize keeps command buttons compact instead of stretching full-width.
 var cmdButtonSize = fyne.NewSize(170, 38)
 
-const webUIPort = 5002
+// defaultWebUIPort is the API port when config.json is absent (SmartThings
+// port 5001 + 1). The live value comes from localWebUIPort().
+const defaultWebUIPort = 5002
+
+// webUIPort is resolved once at start from config.json next to the exe.
+var webUIPort = defaultWebUIPort
 
 // Commands shown on the test panel. Destructive ones ask for confirmation
 // before firing, since a test click acts on this very PC.
@@ -164,6 +169,7 @@ func Run(version string, minimized bool) {
 	a := app.NewWithID("com.protomothis.smartthings-pc-control")
 	a.Settings().SetTheme(newKoreanTheme())
 
+	webUIPort = localWebUIPort()
 	u := &ui{
 		app:     a,
 		client:  NewClient(webUIPort),
@@ -473,6 +479,9 @@ func (u *ui) rebuild() {
 		state = connLost
 	}
 	u.statusText = u.t(statusKey)
+	if statusKey == "status.unreachable" {
+		u.statusText = fmt.Sprintf(u.statusText, webUIPort)
+	}
 	u.status = widget.NewLabel(u.statusText)
 	// Never let a long status line (e.g. "command sent: …") widen the window.
 	u.status.Truncation = fyne.TextTruncateEllipsis
@@ -989,7 +998,7 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	startBtn.Importance = widget.HighImportance
 
 	u.schedCancelBtn = widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
-		if err := u.client.CancelSchedule(); err != nil {
+		if err := u.client.CancelSchedule("app"); err != nil {
 			dialog.ShowError(err, u.win)
 			return
 		}
@@ -1099,7 +1108,7 @@ func (u *ui) initialLoad() {
 		}
 		if err != nil {
 			u.connected.Store(false)
-			u.setStatus(u.t("status.unreachable"))
+			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), webUIPort))
 			u.setConn(connLost)
 			u.applyConnected(false)
 			return
@@ -1260,8 +1269,11 @@ func (u *ui) loadSchedule() {
 		// deferral is "SmartThings … grace period", a timer set here is
 		// "scheduled from this app".
 		countdownKey, titleKey, originKey := "schedule.countdown", "notify.schedule.title", "schedule.origin.ui"
-		if s.IsRemote() {
+		switch s.Origin {
+		case "remote":
 			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
+		case "telegram":
+			originKey = "schedule.origin.telegram"
 		}
 		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
 		u.setCountdown(remain)
@@ -1307,8 +1319,11 @@ func (u *ui) commandLabel(name string) string {
 
 // originShortKey maps a wire origin to the i18n key of its short label.
 func (u *ui) originShortKey(origin string) string {
-	if origin == "remote" {
+	switch origin {
+	case "remote":
 		return "origin.remote.short"
+	case "telegram":
+		return "origin.telegram.short"
 	}
 	return "origin.ui.short"
 }
@@ -1386,7 +1401,7 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 	}
 	if u.connected.Swap(false) {
 		fyne.Do(func() {
-			u.setStatus(u.t("status.unreachable"))
+			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), webUIPort))
 			u.setConn(connLost)
 			u.applyConnected(false)
 		})
