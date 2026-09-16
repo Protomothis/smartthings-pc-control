@@ -2,7 +2,8 @@
 
 # ⚡ SmartThings PC Control
 
-**Windows PC 전원을 SmartThings로 제어하는 경량 서비스**
+**Windows PC 전원을 SmartThings와 텔레그램으로 제어하는 경량 서비스 + 트레이 앱**  
+<sub>Control Windows PC power from SmartThings & Telegram — a Remote Shutdown Manager alternative for the PCControl Edge driver</sub>
 
 [![Release](https://img.shields.io/github/v/release/Protomothis/smartthings-pc-control?style=flat-square)](https://github.com/Protomothis/smartthings-pc-control/releases)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go)](https://go.dev)
