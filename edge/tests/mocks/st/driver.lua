@@ -46,6 +46,12 @@ function Driver:try_create_device(spec)
   return true
 end
 
+function Driver:try_delete_device(id)
+  self.deleted = self.deleted or {}
+  self.deleted[#self.deleted + 1] = id
+  return true
+end
+
 --- Run the callback of the first timer named `name`.
 function Driver:fire(name)
   for _, timer in ipairs(self.timers) do

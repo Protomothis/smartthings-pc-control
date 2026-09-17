@@ -10,13 +10,16 @@ the document is fixed first.
 ```
 config.yml          driver metadata (name, packageKey, permissions: lan)
 profiles/pc.yml     main profile: capabilities + preferences (§5.1, §5.4)
+profiles/pc-display.yml  display child profile: one switch (§5.2)
 capabilities/       custom capability definitions + presentations (§5.1, §5.3)
 src/
   init.lua          entry point: lifecycle and capability handlers only
   caps.lua          custom capability ids, one NAMESPACE constant
   client.lua        /st/v1 HTTP client, error classification (§4, §6.1)
-  discovery.lua     manual add today, SSDP hook for #73 (§4.6)
-  poll.lua          poll timer, health, event emission (§6.1)
+  discovery.lua     SSDP search, manual add, multi-PC identity (§4.6, §13)
+  display.lua       the display child device (§5.2)
+  poll.lua          poll timer, health, event emission, stagger (§6.1, §13.3)
+  push.lua          push listener and subscriptions (§4.5, §6.4)
   state.lua         pure: status JSON -> events, power state machine (§6.2)
   wol.lua           magic packet, wake sequence (§6.3)
   i18n.lua          ko/en strings for user-visible attribute values (§6.5)
@@ -109,9 +112,62 @@ ignored: `caps.load` skips ones it cannot find, `poll.emit` drops events for
 missing capabilities with a debug log, and `switch` / `refresh` / `healthCheck`
 keep working.
 
+## Push, discovery and several PCs
+
+The driver opens **one TCP listener per driver** on an ephemeral port
+(`src/push.lua`) and subscribes each device to it with
+`POST /st/v1/subscribe` after every successful poll, renewing at 80% of the
+600 s TTL. Every event body carries `machine_id` at the top level, which is
+how one hub routes several PCs to the right device (§13.3); an unknown
+`machine_id` is logged and dropped. A push carries the whole §4.2 status, so it
+goes through the very same `state.apply_status` path a poll uses. If the
+subscription fails — wrong secret, callback refused, PC unreachable — it is
+dropped and polling alone keeps the tiles correct.
+
+Discovery multicasts `M-SEARCH` for `urn:smartthings-pc-control:device:pc:1`
+and fetches `GET LOCATION` (`/st/v1/description`) from every responder. The
+identity is the `machine_id` (§13.1): a hit whose machine_id is already known
+updates that device's address instead of creating a second one, including for a
+manually added device, which stores its machine_id from the first successful
+status. `followDiscovery` (default on) lets the device follow the PC around the
+LAN; a filled-in `ipAddress` preference always wins over what SSDP reports. A
+device that goes unreachable does one targeted search before its next poll, at
+most once every five minutes. Two responders sharing a machine_id but reporting
+different hostnames are a cloned Windows image, and the driver says so in
+`pcStatus.message` — the fix is to regenerate the MachineGuid on one of them.
+
+Polls are staggered by a hash of the device network id (§13.3), so N PCs are
+not all asked in the same second.
+
+The display child (`src/display.lua`, `profiles/pc-display.yml`) appears once
+the parent knows its machine_id and `createDisplayDevice` is on. Its switch
+runs `turnscreenon` / `turnscreenoff` on the parent and follows `status.display`
+(`unknown` leaves it alone). Turning the preference off, or removing the PC,
+removes the child.
+
+### Assumptions to confirm on a real hub
+
+These are the parts no local test can check, because they are hub runtime
+behaviour rather than logic:
+
+- `cosock.socket.tcp()` bound to `0.0.0.0:0` plus `getsockname()` gives a port
+  the LAN can reach, and `accept()` inside a `cosock.spawn` task does not
+  starve the driver's other tasks.
+- the hub IP: `driver:get_ip()` is used when the firmware has it, otherwise a
+  UDP socket `setpeername`'d at the PC and read back with `getsockname()`.
+  The service requires the callback host to equal the request source IP, so
+  a wrong answer here shows up as a `400` on subscribe and nothing else.
+- `EDGE_CHILD` device creation: `profile`, `parent_device_id` and
+  `parent_assigned_child_key`, and whether `try_delete_device` exists on the
+  device, on the driver, or both.
+- `Switch` as the `categories` entry of `pc-display.yml`.
+- `device:set_field(..., { persist = true })` keeps the discovered address and
+  machine_id across a driver restart.
+- multicast: whether the hub lets an Edge driver send to 239.255.255.250:1900
+  and receive the unicast answers on the same socket.
+
 ## Not here yet
 
-- Push listener, subscription renewal, SSDP search, display child device — #73
 - CI workflow, CLI packaging and channel deployment, namespace script — #74
 
 The `edge-vX.Y.Z` release tag must match `src/version.lua`; CI enforces it (#74).
@@ -138,12 +194,18 @@ service works identically either way.
 
 ## Adding a device by hand
 
-Until SSDP lands, "Scan nearby devices" creates one device labelled
+When no PC answers the SSDP search — discovery turned off in the service, or a
+network that drops multicast — "Scan nearby devices" creates one device labelled
 *PC Control (set IP in settings)*. Open its settings and fill in the PC's IP
 address, the secret from the PC Control settings tab, and — only if the service
 cannot report a Wake-on-LAN capable adapter — the MAC address. Tapping Scan
 again does not pile up blank devices: `discovery.has_unconfigured` refuses while
-one is still missing an IP.
+one is still missing an IP. A device added this way adopts its `machine_id` from
+its first successful status, so a later SSDP hit updates it instead of adding a
+duplicate (§13.1).
+
+A device SSDP found arrives with its IP and port already filled in, so only the
+secret (and, if needed, the MAC) is left to type.
 
 Note that Edge has no password preference type, so the secret is a plain text
 field and is visible while it is typed.

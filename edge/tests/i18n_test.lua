@@ -42,6 +42,8 @@ function T.test_all_required_keys_exist()
     "incompatible_service", "incompatible_driver", "no_secret", "no_ip",
     "badrequest", "update_available", "update_available_plain",
     "schedule_replaced", "schedule_cancelled", "schedule_none",
+    -- #73: discovery, the multi-PC warning and the display child label.
+    "discovery_found", "ip_updated", "hostname_mismatch", "display_label",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
@@ -62,6 +64,18 @@ function T.test_every_service_command_has_a_display_name()
         string.format("command %s has no %s display name", command, lang))
     end
   end
+end
+
+function T.test_the_discovery_strings_carry_their_arguments()
+  h.assert_equal(i18n.t("en", "discovery_found", 2), "Found 2 PC(s)")
+  h.assert_equal(i18n.t("ko", "discovery_found", 2), "PC 2대를 찾았습니다")
+  h.assert_contains(i18n.t("en", "ip_updated", "192.168.1.25"), "192.168.1.25")
+  h.assert_contains(i18n.t("ko", "ip_updated", "192.168.1.25"), "192.168.1.25")
+  -- §13.1: the warning has to name the other hostname and what to fix.
+  h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "LAPTOP-XYZ")
+  h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
+  h.assert_contains(i18n.t("ko", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
+  h.assert_equal(i18n.t("en", "display_label", "DESKTOP-ABC"), "DESKTOP-ABC Display")
 end
 
 function T.test_forbidden_and_unauthorized_say_different_things()

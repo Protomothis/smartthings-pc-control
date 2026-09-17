@@ -1,0 +1,15 @@
+# Display child device profile (design doc §5.2).
+#
+# One plain `switch`: on runs `turnscreenon` on the parent PC, off runs
+# `turnscreenoff`, and the state follows `status.display`. No custom
+# capabilities and no preferences - everything about the connection belongs to
+# the parent, and the child is created and removed by its `createDisplayDevice`
+# preference.
+name: pc-display.v1
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+    categories:
+      - name: Switch
