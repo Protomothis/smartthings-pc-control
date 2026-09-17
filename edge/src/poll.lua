@@ -47,9 +47,11 @@ local function capability_for(id)
   return nil
 end
 
---- ISO-8601 UTC timestamp for `pcStatus.lastSeen`.
+--- `pcStatus.lastSeen`: the hub's local clock time of the last good poll.
+--- A tile the user glances at wants "14:05:12", not an ISO timestamp, and the
+--- date is never interesting for a value that is at most a few minutes old.
 function poll.now()
-  return os.date("!%Y-%m-%dT%H:%M:%SZ")
+  return os.date("%H:%M:%S")
 end
 
 function poll.lang(device)
@@ -109,30 +111,54 @@ function poll.emit_connection(device, connection, message)
   })
 end
 
---- err_kind (client.lua) -> `pcStatus.connection` enum value (§5.1).
+--- err_kind (client.lua) -> `pcStatus.connection` enum value (§5.1), or nil
+--- when the failure says nothing about the connection and the last state
+--- should stand.
 function poll.connection_for(kind)
   if kind == "unauthorized" or kind == "unreachable" or kind == "incompatible" then
     return kind
+  end
+  -- 403: the secret was accepted, the hub is not on the allow-list. The enum
+  -- has no separate value for it (§4.1), so it shares `unauthorized` and the
+  -- message tells the two apart.
+  if kind == "forbidden" then
+    return "unauthorized"
   end
   -- "badrequest" means the service answered but refused; from the app's point
   -- of view that is a protocol problem, not a connection problem.
   if kind == "badrequest" then
     return "incompatible"
   end
+  if kind == "ratelimited" then
+    -- §8: nothing has changed about the PC, so do not repaint anything.
+    return nil
+  end
   return "ok"
 end
 
 --- Human-readable text for an err_kind (§6.1). `body` is the decoded response
---- when there was one: a higher `protocol` means our driver is the old side.
+--- when there was one: a higher `protocol` means our driver is the old side,
+--- and a missing or lower one means the service is.
 function poll.message_for(kind, body, lang)
+  body = body or {}
   if kind == "incompatible" then
-    local protocol = tonumber((body or {}).protocol)
+    local protocol = tonumber(body.protocol)
     if protocol and protocol > client.PROTOCOL then
       return i18n.t(lang, "incompatible_driver")
     end
     return i18n.t(lang, "incompatible_service", poll.MIN_SERVICE_VERSION)
   end
-  if kind == "unauthorized" or kind == "unreachable" or kind == "badrequest" then
+  if kind == "badrequest" then
+    -- The service says which command or argument it refused (§4.3); quoting it
+    -- is more use than "the service rejected the command" on its own.
+    local text = i18n.t(lang, "badrequest")
+    if type(body.error) == "string" and body.error ~= "" then
+      return text .. " · " .. body.error
+    end
+    return text
+  end
+  if kind == "unauthorized" or kind == "forbidden" or kind == "unreachable"
+      or kind == "ratelimited" then
     return i18n.t(lang, kind)
   end
   return ""
@@ -140,7 +166,11 @@ end
 
 --- One poll cycle: GET /st/v1/status, advance the state machine, emit, and set
 --- health online/offline. Also used by `refresh` and after a command.
-function poll.once(driver, device)
+--- `opts.note` is a one-off confirmation to show in `pcStatus.message` when
+--- nothing more important applies (§5.1, state.MESSAGE_ORDER); `opts.deps` is
+--- the injected http/json/ltn12 the tests use instead of a socket.
+function poll.once(driver, device, opts)
+  opts = opts or {}
   local prefs = device.preferences or {}
   local lang = prefs.language
   local current = poll.get_state(device)
@@ -152,10 +182,11 @@ function poll.once(driver, device)
     return false, "no ip"
   end
 
-  local ok, body, kind = client.get_status(device)
+  local ok, body, kind = client.get_status(device, opts.deps)
 
   if ok then
     local nxt = state.transition(current, "status_ok")
+    nxt.schedule_active = ((body or {}).schedule or {}).active == true
     poll.set_state(device, nxt)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"
@@ -167,9 +198,22 @@ function poll.once(driver, device)
     if mac then
       device:set_field(poll.MAC_FIELD, mac)
     end
-    poll.emit(device, state.apply_status(nxt, body, { now = poll.now(), lang = lang }))
+    poll.emit(device, state.apply_status(nxt, body, {
+      now = poll.now(),
+      lang = lang,
+      note = opts.note,
+    }))
     pcall(function() device:online() end)
     return true
+  end
+
+  local connection = poll.connection_for(kind)
+  if not connection then
+    -- §8: rate limited. The PC is fine, we simply asked too often (the poll
+    -- right after a command can land inside the same second), so leave every
+    -- attribute and the health status as they were.
+    logger().warn(string.format("poll skipped: %s", i18n.t("en", kind)))
+    return false, kind
   end
 
   local nxt = current
@@ -179,7 +223,7 @@ function poll.once(driver, device)
   end
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
-  poll.emit_connection(device, poll.connection_for(kind), poll.message_for(kind, body, lang))
+  poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
   return false, kind
 end
 

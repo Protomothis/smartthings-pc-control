@@ -87,6 +87,22 @@ lua.lua_pushcfunction(L, function (S) {
   return 1;
 });
 lua.lua_setfield(L, -2, to_luastring('listdir'));
+// fengari ships no `io.open`, and capabilities_test.lua has to read the
+// capability JSON. Returns the file's contents, or nil plus a message.
+lua.lua_pushcfunction(L, function (S) {
+  const file = to_jsstring(lauxlib.luaL_checkstring(S, 1));
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    lua.lua_pushnil(S);
+    lua.lua_pushstring(S, to_luastring(String((e && e.message) || e)));
+    return 2;
+  }
+  lua.lua_pushstring(S, to_luastring(text));
+  return 1;
+});
+lua.lua_setfield(L, -2, to_luastring('readfile'));
 lua.lua_setglobal(L, to_luastring('host'));
 
 // Push script args as varargs for the chunk.

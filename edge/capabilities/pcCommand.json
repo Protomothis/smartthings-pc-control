@@ -1,0 +1,64 @@
+{
+  "id": "pccontrol00000.pcCommand",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcCommand",
+  "ephemeral": false,
+  "attributes": {
+    "lastCommand": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "execute": {
+      "name": "execute",
+      "arguments": [
+        {
+          "name": "command",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "forceshutdown",
+              "restart",
+              "hibernate",
+              "suspend",
+              "lock",
+              "turnscreenoff",
+              "turnscreenon"
+            ]
+          }
+        },
+        {
+          "name": "mode",
+          "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": ["default", "immediate", "grace"]
+          }
+        },
+        {
+          "name": "minutes",
+          "optional": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          }
+        }
+      ]
+    }
+  }
+}

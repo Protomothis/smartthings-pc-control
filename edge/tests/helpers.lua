@@ -113,6 +113,17 @@ function h.event_value(events, cap, attr)
   return nil
 end
 
+--- What a fake device actually emitted, as the same `{ cap, attr, value }`
+--- records `state.apply_status` produces, so `event_value` works on both. The
+--- st.capabilities mock builds `{ capability, attribute, value }`.
+function h.emitted(device)
+  local out = {}
+  for i, e in ipairs((device or {}).emitted or {}) do
+    out[i] = { cap = e.capability, attr = e.attribute, value = e.value }
+  end
+  return out
+end
+
 --- True when the event list contains any record for `cap`.
 function h.has_capability(events, cap)
   for _, e in ipairs(events or {}) do

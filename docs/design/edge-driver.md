@@ -219,9 +219,9 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 | `healthCheck` | 폴링/푸시 기반 online/offline |
 | `{NS}.pcPowerState` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
 | `{NS}.pcCommand` | command `execute(command, mode, minutes)`; attr `lastCommand` string("shutdown · SmartThings · 23:05") |
-| `{NS}.pcSchedule` | attrs `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string, `origin` string; command `cancel()` ; command `schedule(command, minutes)` (프리셋 enum 5/15/30/60/120) |
-| `{NS}.pcStatus` | attrs `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string(사람이 읽는 오류/안내) |
-| `{NS}.pcSession` | attrs `locked` bool, `idleMinutes` integer, `user` string — `session.exposed=false`면 컴포넌트 숨김(프레젠테이션에서 visibleCondition) |
+| `{NS}.pcSchedule` | attrs `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string; command `cancel()` ; command `schedule(command, minutes)` — `minutes`는 capability 상으로는 integer 1..1440(서비스 상한과 동일)이고, 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
+| `{NS}.pcStatus` | attrs `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**) |
+| `{NS}.pcSession` | attrs `locked` bool, `idleMinutes` integer, `user` string — `session.exposed=false`면 드라이버가 이 capability의 이벤트를 아예 내보내지 않아 마지막 값이 유지된다. 프레젠테이션 `visibleCondition`으로 숨기는 것은 장치 프레젠테이션 몫이므로 #74로 미룬다 |
 | `refresh` | 즉시 폴링 |
 
 ### 5.2 자식 장치 `pc-display.yml`
@@ -252,8 +252,13 @@ SSDP로 추가된 장치는 `ipAddress`/`port`가 채워진 상태로 생성되�
 ### 6.1 폴링과 health
 
 - `pollInterval`마다 `GET /st/v1/status`. 성공 → `connection=ok`, health online, 속성 갱신.
-- 실패 분류: `401` → `unauthorized`; 연결 거부/타임아웃 → `unreachable`; `protocol`
-  불일치 → `incompatible`(메시지에 "서비스 vX 이상 필요" 또는 "드라이버 업데이트 필요").
+- 실패 분류: `401` → `unauthorized`; `403` → 같은 `unauthorized`지만 메시지는
+  "허브가 허용 목록에 없습니다"(고칠 곳이 다르다); 연결 거부/타임아웃 → `unreachable`;
+  `protocol` 불일치 → `incompatible`(메시지에 "서비스 vX 이상 필요" 또는 "드라이버 업데이트
+  필요"). `429`(§8)는 서비스가 멀쩡한데 너무 자주 물은 것뿐이므로 **아무 속성도 바꾸지 않고**
+  로그만 남긴다(명령 직후의 즉시 폴링이 같은 초에 걸릴 수 있다).
+- `pcStatus.message`는 한 줄이므로 동시에 해당하는 안내가 여러 개면 우선순위로 하나만 고른다:
+  오류 > `incompatible` > WoL 미준비 > 업데이트 있음 > 시크릿 없음 > 명령 결과 확인 문구.
 - `unreachable`이 2회 연속이면 `powerState`를 `off`로 두되, 직전 푸시가
   `power.stopping(reason=suspend|hibernate)`였다면 `sleeping`/`hibernated`를 유지한다.
 
