@@ -1,0 +1,12 @@
+{
+  "name": "smartthings-pc-control-edge",
+  "private": true,
+  "description": "SmartThings Edge driver for PC Control (Lua 5.3)",
+  "scripts": {
+    "test": "node tools/lua.js tests/run.lua",
+    "syntax": "node tools/lua.js tests/syntax.lua"
+  },
+  "devDependencies": {
+    "fengari": "0.1.5"
+  }
+}
