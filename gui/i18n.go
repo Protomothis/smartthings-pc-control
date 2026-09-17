@@ -223,6 +223,30 @@ var messages = map[string]map[Lang]string{
 	// SmartThings Edge driver (#67); the network tab section is #70.
 	"schedule.origin.smartthings": {LangKo: "SmartThings에서 요청한 예약", LangEn: "Scheduled from SmartThings"},
 	"origin.smartthings.short":    {LangKo: "SmartThings", LangEn: "SmartThings"},
+	// Network tab: SmartThings section (#70, edge-driver doc §7)
+	"network.wol.section":  {LangKo: "네트워크 / WoL", LangEn: "Network / WoL"},
+	"st.section":           {LangKo: "SmartThings", LangEn: "SmartThings"},
+	"st.hub.loading":       {LangKo: "허브 연결 상태 확인 중...", LangEn: "Checking hub connection..."},
+	"st.hub.connected":     {LangKo: "허브 %s · 드라이버 v%s · 마지막 확인 %s", LangEn: "Hub %s · driver v%s · last seen %s"},
+	"st.hub.none":          {LangKo: "연결된 허브 없음 — SmartThings 앱에서 드라이버를 설치해 주세요", LangEn: "No hub connected — install the Edge driver in the SmartThings app"},
+	"st.rel.now":           {LangKo: "방금", LangEn: "just now"},
+	"st.rel.sec":           {LangKo: "%d초 전", LangEn: "%ds ago"},
+	"st.rel.min":           {LangKo: "%d분 전", LangEn: "%dm ago"},
+	"st.rel.hour":          {LangKo: "%d시간 전", LangEn: "%dh ago"},
+	"st.rel.day":           {LangKo: "%d일 전", LangEn: "%dd ago"},
+	"st.rel.unknown":       {LangKo: "시각 알 수 없음", LangEn: "time unknown"},
+	"st.discovery":         {LangKo: "자동 검색(SSDP) 허용", LangEn: "Allow discovery (SSDP)"},
+	"st.discovery.hint":    {LangKo: "SmartThings 앱의 장치 추가에서 이 PC가 자동으로 검색됩니다. 끄면 드라이버에 IP를 직접 입력해 추가해야 합니다.", LangEn: "Lets the SmartThings app find this PC when adding a device. When off, add it by typing this PC's IP in the driver."},
+	"st.session":           {LangKo: "세션 정보 노출(잠금·유휴)", LangEn: "Expose session info (lock, idle)"},
+	"st.session.hint":      {LangKo: "잠금 여부와 유휴 시간을 허브에 보내 자동화 조건으로 쓸 수 있게 합니다. 기본은 꺼짐입니다.", LangEn: "Sends the lock state and idle time to the hub so automations can use them. Off by default."},
+	"st.session.user":      {LangKo: "사용자 이름 포함", LangEn: "Include user name"},
+	"st.session.user.hint": {LangKo: "로그인한 Windows 계정 이름까지 보냅니다. 세션 정보 노출을 켠 경우에만 사용할 수 있습니다.", LangEn: "Also sends the signed-in Windows account name. Available only while session info is exposed."},
+	"st.hubs":              {LangKo: "허용 허브", LangEn: "Allowed hubs"},
+	"st.hubs.add":          {LangKo: "현재 허브를 허용 목록에 추가", LangEn: "Add current hub"},
+	"st.hubs.remove":       {LangKo: "삭제", LangEn: "Remove"},
+	"st.hubs.empty":        {LangKo: "허용 목록이 비어 있습니다", LangEn: "The allow list is empty"},
+	"st.hubs.hint":         {LangKo: "비어 있으면 모든 허브 허용", LangEn: "Empty = any hub allowed"},
+	"st.secret.hint":       {LangKo: "SmartThings 연동에는 시크릿 설정을 권장합니다 (설정 탭)", LangEn: "Setting a secret is recommended for SmartThings (Settings tab)"},
 }
 
 // T returns the message for key in the given language.

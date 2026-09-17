@@ -285,7 +285,12 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			WebUIRemote   bool
 			ShutdownGrace bool
 			Version       string
-		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version})
+			// SmartThings is shown as plain form fields (#70); the desktop
+			// app's network tab is the designed UI for these.
+			SmartThings SmartThingsConfig
+			AllowedHubs string
+		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
+			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", ")})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)
