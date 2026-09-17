@@ -303,6 +303,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
 	mux.HandleFunc("/api/telegram/me", handleTelegramMe)
 	mux.HandleFunc("/api/telegram/chats", handleTelegramChats)
+	mux.HandleFunc("/api/telegram/state", handleTelegramState)
 
 	// API: Test commands
 	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
@@ -786,6 +787,30 @@ func handleTelegramMe(w http.ResponseWriter, r *http.Request) {
 		"username": u.Username,
 		"name":     strings.TrimSpace(u.FirstName + " " + u.LastName),
 	})
+}
+
+// handleTelegramState serves GET /api/telegram/state: the local state of
+// inbound Telegram control, with no Bot API call of its own.
+//
+//	{status:"ok", polling:bool, conflict:bool, since:"RFC3339"}
+//
+// conflict is true while getUpdates keeps answering 409 because another PC
+// shares this bot token (#75); since is when that started and is omitted
+// otherwise. The GUI notify tab shows a warning for it.
+func handleTelegramState(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "GET") {
+		return
+	}
+	conflict, since := telegramConflictState()
+	out := map[string]any{
+		"status":   "ok",
+		"polling":  telegramControlRunning(),
+		"conflict": conflict,
+	}
+	if conflict && !since.IsZero() {
+		out["since"] = since.Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // telegramChat is one entry of /api/telegram/chats.
