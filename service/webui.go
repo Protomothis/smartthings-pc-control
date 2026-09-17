@@ -307,6 +307,9 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	// API: SmartThings hub connection state for the GUI (#67, shown by #70)
 	mux.HandleFunc("/api/st/hub", handleSTHubAPI)
 
+	// API: idle-time heartbeat from the tray app (#77, see st_idle.go)
+	mux.HandleFunc("/api/session/heartbeat", handleSessionHeartbeat)
+
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
 	mux.HandleFunc("/api/telegram/me", handleTelegramMe)

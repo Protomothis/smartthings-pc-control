@@ -1,11 +1,16 @@
 package service
 
 // Opt-in session information for GET /st/v1/status (edge-driver doc §4.2,
-// "smartthings.expose_session"). A service runs in session 0 and cannot call
-// GetLastInputInfo for the interactive desktop, so the lock state, the idle
-// time and the user name all come from one WTSQuerySessionInformation call
-// with WTSSessionInfoEx, which the terminal-services stack fills in on the
+// "smartthings.expose_session"). A service runs in session 0, so the lock
+// state and the user name come from one WTSQuerySessionInformation call with
+// WTSSessionInfoEx, which the terminal-services stack fills in on the
 // service's behalf.
+//
+// The idle time is NOT read here (#77). WTSINFOEXW.LastInputTime stays pinned
+// near logon on Windows 10/11 console sessions, so what it yields is the
+// uptime, not the idle time (measured: 16780s reported against a real 136s).
+// Only a process inside the interactive session can call GetLastInputInfo, so
+// the tray app samples it and posts it to the service (st_idle.go).
 //
 // Everything here is best effort: when the query fails (nobody logged in, an
 // older Windows, a hardened policy) the caller reports null rather than
@@ -13,7 +18,6 @@ package service
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 	"unsafe"
 
@@ -52,30 +56,29 @@ const (
 //	LARGE_INTEGER LogonTime;           // 160
 //	LARGE_INTEGER ConnectTime;         // 168
 //	LARGE_INTEGER DisconnectTime;      // 176
-//	LARGE_INTEGER LastInputTime;       // 184
+//	LARGE_INTEGER LastInputTime;       // 184  (unusable, see the file header)
 //	LARGE_INTEGER CurrentTime;         // 192
 //	DWORD IncomingBytes; ...           // 200
 const (
-	wtsExLevelOffset     = 0
-	wtsExDataOffset      = 8
-	wtsExFlagsOffset     = wtsExDataOffset + 8
-	wtsExUserNameOffset  = wtsExDataOffset + 78
-	wtsExUserNameChars   = 21
-	wtsExLastInputOffset = wtsExDataOffset + 184
-	wtsExCurrentOffset   = wtsExDataOffset + 192
+	wtsExLevelOffset    = 0
+	wtsExDataOffset     = 8
+	wtsExFlagsOffset    = wtsExDataOffset + 8
+	wtsExUserNameOffset = wtsExDataOffset + 78
+	wtsExUserNameChars  = 21
+	wtsExCurrentOffset  = wtsExDataOffset + 192
 	// wtsExMinBytes is everything up to and including CurrentTime; a
-	// shorter reply means this is not the struct we think it is.
+	// shorter reply means this is not the struct we think it is. The
+	// fields read below all sit well before it, so this is a sanity check
+	// on the shape of the reply rather than a bound on the reads.
 	wtsExMinBytes = wtsExCurrentOffset + 8
 )
 
-// sessionInfo is what the status endpoint reports under "session".
+// sessionInfo is what WTS can tell the status endpoint about the session.
+// The idle time is not part of it (#77): it arrives by heartbeat from the
+// tray app and is merged in by stSessionInfo.
 type sessionInfo struct {
 	Locked bool
-	// IdleKnown is false when the session reports no last-input time
-	// (a disconnected or freshly created session).
-	IdleKnown   bool
-	IdleSeconds int64
-	User        string
+	User   string
 }
 
 // querySessionInfo describes the interactive user session, or fails when
@@ -123,23 +126,11 @@ func querySessionInfoID(sessionID uint32) (sessionInfo, error) {
 	default:
 		return sessionInfo{}, fmt.Errorf("unexpected WTSINFOEX session flags")
 	}
-
-	lastInput := readU64(raw, wtsExLastInputOffset)
-	current := readU64(raw, wtsExCurrentOffset)
-	if lastInput != 0 && current >= lastInput {
-		// FILETIME ticks are 100ns.
-		info.IdleKnown = true
-		info.IdleSeconds = int64(time.Duration((current-lastInput)*100) / time.Second)
-	}
 	return info, nil
 }
 
 func readU32(b []byte, off int) uint32 {
 	return *(*uint32)(unsafe.Pointer(&b[off]))
-}
-
-func readU64(b []byte, off int) uint64 {
-	return *(*uint64)(unsafe.Pointer(&b[off]))
 }
 
 // readUTF16 decodes a fixed-length, NUL-padded UTF-16 field.
@@ -210,10 +201,8 @@ func emitSessionLock(info sessionInfo) {
 	if info.Locked {
 		kind = "locked"
 	}
+	// No idle_seconds here: idle is heartbeat state, never an event (#77).
 	fields := map[string]string{}
-	if info.IdleKnown {
-		fields["idle_seconds"] = strconv.FormatInt(info.IdleSeconds, 10)
-	}
 	// The user name follows the same opt-in as the status block (§4.2).
 	if getConfig().SmartThings.ExposeSessionUser && info.User != "" {
 		fields["user"] = info.User

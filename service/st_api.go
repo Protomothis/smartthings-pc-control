@@ -255,8 +255,9 @@ type stWoLAdapter struct {
 }
 
 // stSession is the opt-in session block (§4.2). Everything but Exposed is
-// omitted while smartthings.expose_session is off; Locked and IdleSeconds
-// are null when the service cannot read the session state.
+// omitted while smartthings.expose_session is off; Locked is null when the
+// service cannot read the session state, and IdleSeconds is null unless the
+// tray app posted a heartbeat within idleHeartbeatTTL (#77).
 type stSession struct {
 	Exposed     bool   `json:"exposed"`
 	Locked      *bool  `json:"locked,omitempty"`
@@ -377,25 +378,28 @@ func hostname() string {
 	return "PC"
 }
 
-// stSessionInfo builds the session block for the live config.
+// stSessionInfo builds the session block for the live config. The lock
+// state and the user name come from WTS; the idle time comes from the tray
+// app's heartbeat (#77) and is independent of them, so a machine with no
+// tray app still reports the lock state and one with WTS refusing still
+// reports the idle time.
 func stSessionInfo(cfg SmartThingsConfig) stSession {
 	if !cfg.ExposeSession {
 		return stSession{Exposed: false}
 	}
 	out := stSession{Exposed: true}
+	if idle, ok := lastIdleSeconds(); ok {
+		out.IdleSeconds = &idle
+	}
 	info, err := querySessionInfo()
 	if err != nil {
-		// Nobody is logged in, or WTS refused: locked/idle stay null
-		// rather than guessing.
+		// Nobody is logged in, or WTS refused: locked stays null rather
+		// than guessing.
 		logMsg("ST API: session info unavailable: %v", err)
 		return out
 	}
 	locked := info.Locked
 	out.Locked = &locked
-	if info.IdleKnown {
-		idle := info.IdleSeconds
-		out.IdleSeconds = &idle
-	}
 	if cfg.ExposeSessionUser {
 		out.User = info.User
 	}
