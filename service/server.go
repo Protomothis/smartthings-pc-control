@@ -141,6 +141,8 @@ type Config struct {
 	GraceSeconds int `json:"grace_seconds"`
 	// Telegram is the notification channel (v1.0, design doc §10).
 	Telegram TelegramConfig `json:"telegram"`
+	// SmartThings holds the Edge driver settings (edge-driver doc §4.7).
+	SmartThings SmartThingsConfig `json:"smartthings"`
 	// Notify says which Category.Kind events are sent. Missing entries
 	// mean the catalogue default; loadConfig/saveConfig store the full map.
 	Notify notify.Config `json:"notify"`
@@ -164,6 +166,35 @@ type TelegramConfig struct {
 	QuietHours     notify.QuietHours `json:"quiet_hours"`
 }
 
+// SmartThingsConfig is the "smartthings" object in config.json
+// (edge-driver doc §4.7). Hot-reloaded: every /st/v1 request reads the
+// live value, so a save takes effect without a restart.
+type SmartThingsConfig struct {
+	// Discovery answers SSDP M-SEARCH probes (#69). A missing key in an
+	// older config.json keeps the default true, because loadConfig decodes
+	// over defaultConfig.
+	Discovery bool `json:"discovery"`
+	// AllowedHubs restricts /st/v1/* to these source IPs. Empty (the
+	// default) allows any source that knows the secret.
+	AllowedHubs []string `json:"allowed_hubs"`
+	// ExposeSession opts into the session block of GET /st/v1/status
+	// (lock state and idle time); ExposeSessionUser additionally reveals
+	// the user name. Both default to off.
+	ExposeSession     bool `json:"expose_session"`
+	ExposeSessionUser bool `json:"expose_session_user"`
+}
+
+// withDefaults normalises the slice field; Discovery cannot be defaulted
+// here (false is a legitimate value) and relies on decoding over defaults.
+func (s SmartThingsConfig) withDefaults() SmartThingsConfig {
+	if s.AllowedHubs == nil {
+		s.AllowedHubs = []string{}
+	} else {
+		s.AllowedHubs = slices.Clone(s.AllowedHubs)
+	}
+	return s
+}
+
 var defaultConfig = Config{
 	Port:          5001,
 	Secret:        "",
@@ -178,6 +209,12 @@ var defaultConfig = Config{
 		// over defaultConfig (security_bypass/digest default true).
 		QuietHours: notify.QuietHours{Start: "22:00", End: "07:00", SecurityBypass: true, Digest: true},
 	},
+	SmartThings: SmartThingsConfig{
+		// A missing "smartthings" object (an older config.json) keeps SSDP
+		// discovery on; everything else stays off/empty.
+		Discovery:   true,
+		AllowedHubs: []string{},
+	},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -186,6 +223,7 @@ var defaultConfig = Config{
 // config.json may omit. It never aliases maps or slices of the receiver.
 func (c Config) withDefaults() Config {
 	c.Telegram = c.Telegram.withDefaults()
+	c.SmartThings = c.SmartThings.withDefaults()
 	c.Notify = c.Notify.WithDefaults()
 	return c
 }
@@ -222,6 +260,7 @@ func (t TelegramConfig) withDefaults() TelegramConfig {
 func (c Config) forUpdate() Config {
 	c.Notify = nil
 	c.Telegram.AllowedChatIDs = nil
+	c.SmartThings.AllowedHubs = nil
 	return c
 }
 
@@ -337,6 +376,9 @@ func normalizeConfig(cfg Config, current Config) Config {
 	if cfg.Telegram.AllowedChatIDs == nil {
 		cfg.Telegram.AllowedChatIDs = current.Telegram.AllowedChatIDs
 	}
+	if cfg.SmartThings.AllowedHubs == nil {
+		cfg.SmartThings.AllowedHubs = current.SmartThings.AllowedHubs
+	}
 	if cfg.Notify == nil {
 		cfg.Notify = current.Notify
 	}
@@ -365,6 +407,10 @@ func configChangedKeys(old, new Config) []string {
 	add("telegram.lang", old.Telegram.Lang != new.Telegram.Lang)
 	add("telegram.pc_name", old.Telegram.PCName != new.Telegram.PCName)
 	add("telegram.quiet_hours", old.Telegram.QuietHours != new.Telegram.QuietHours)
+	add("smartthings.discovery", old.SmartThings.Discovery != new.SmartThings.Discovery)
+	add("smartthings.allowed_hubs", !slices.Equal(old.SmartThings.AllowedHubs, new.SmartThings.AllowedHubs))
+	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
+	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
 	return keys
 }
 
@@ -517,6 +563,10 @@ func StartHTTPServer(stop chan struct{}) {
 	}
 
 	mux := http.NewServeMux()
+	// The /st/v1 tree (edge-driver doc §4) shares the command port; a more
+	// specific pattern wins over "/", so the legacy /{secret}/{command}
+	// handler still sees everything else.
+	registerSTRoutes(mux)
 	mux.HandleFunc("/", newCommandHandler())
 
 	server := &http.Server{
@@ -852,6 +902,12 @@ const (
 	// originTelegram: "/shutdown 30" and friends from the Telegram bot (#61).
 	// The user asked from their phone, so no tray toast is needed.
 	originTelegram
+	// originSmartThings: an explicit schedule from the Edge driver
+	// (POST /st/v1/command with minutes > 0, #67). Like Telegram, the user
+	// is acting from their phone, so no tray toast is needed — a grace
+	// deferral of an immediate SmartThings command stays originRemote,
+	// because there the toast is the point.
+	originSmartThings
 )
 
 // wakesTrayApp reports whether a schedule from this origin should launch
@@ -860,14 +916,16 @@ func (o scheduleOrigin) wakesTrayApp() bool {
 	return o == originRemote
 }
 
-// String is the wire form used by /api/schedule ("ui", "remote" or
-// "telegram").
+// String is the wire form used by /api/schedule ("ui", "remote",
+// "telegram" or "smartthings").
 func (o scheduleOrigin) String() string {
 	switch o {
 	case originRemote:
 		return "remote"
 	case originTelegram:
 		return "telegram"
+	case originSmartThings:
+		return "smartthings"
 	}
 	return "ui"
 }
