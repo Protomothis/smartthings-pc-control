@@ -25,6 +25,18 @@ type Config struct {
 	// "notify" catalogue: Category → Kind → enabled.
 	Telegram TelegramConfig             `json:"telegram"`
 	Notify   map[string]map[string]bool `json:"notify"`
+	// SmartThings is the "smartthings" object (edge-driver doc §4.7).
+	SmartThings SmartThingsConfig `json:"smartthings"`
+}
+
+// SmartThingsConfig mirrors service.SmartThingsConfig. The widgets that
+// edit it live in the network tab (#70); this struct only keeps the values
+// alive across a GET/POST round trip.
+type SmartThingsConfig struct {
+	Discovery         bool     `json:"discovery"`
+	AllowedHubs       []string `json:"allowed_hubs"`
+	ExposeSession     bool     `json:"expose_session"`
+	ExposeSessionUser bool     `json:"expose_session_user"`
 }
 
 // TelegramConfig mirrors service.TelegramConfig plus the GET-only

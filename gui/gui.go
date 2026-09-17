@@ -1274,6 +1274,8 @@ func (u *ui) loadSchedule() {
 			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
 		case "telegram":
 			originKey = "schedule.origin.telegram"
+		case "smartthings":
+			originKey = "schedule.origin.smartthings"
 		}
 		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
 		u.setCountdown(remain)
@@ -1324,6 +1326,8 @@ func (u *ui) originShortKey(origin string) string {
 		return "origin.remote.short"
 	case "telegram":
 		return "origin.telegram.short"
+	case "smartthings":
+		return "origin.smartthings.short"
 	}
 	return "origin.ui.short"
 }

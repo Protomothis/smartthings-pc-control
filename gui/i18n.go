@@ -220,6 +220,9 @@ var messages = map[string]map[Lang]string{
 	"notify.pcname":                        {LangKo: "PC 이름", LangEn: "PC name"},
 	"notify.pcname.placeholder":            {LangKo: "비워 두면 이 PC의 호스트 이름", LangEn: "Empty: this PC's hostname"},
 	"notify.display.hint":                  {LangKo: "메시지 언어는 앱 언어 설정을 따릅니다.", LangEn: "Message language follows the app language."},
+	// SmartThings Edge driver (#67); the network tab section is #70.
+	"schedule.origin.smartthings": {LangKo: "SmartThings에서 요청한 예약", LangEn: "Scheduled from SmartThings"},
+	"origin.smartthings.short":    {LangKo: "SmartThings", LangEn: "SmartThings"},
 }
 
 // T returns the message for key in the given language.
