@@ -74,6 +74,10 @@ func startNotifier(sink notify.Sink) {
 		Quiet:  func() notify.QuietHours { return getConfig().Telegram.QuietHours },
 		Log:    logMsg,
 	})
+	// The SmartThings hub push (#68) rides on a raw tap so device state
+	// reaches the Edge driver unfiltered; it is a no-op without
+	// subscriptions, and has to be re-attached to every new bus.
+	b.Tap(stPushTap)
 	busMu.Lock()
 	old := bus
 	bus = b

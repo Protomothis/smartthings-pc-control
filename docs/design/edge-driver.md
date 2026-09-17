@@ -164,19 +164,29 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - 서비스는 이벤트를 `POST callback`으로 보낸다. 본문:
 
 ```json
-{ "protocol": 1, "type": "schedule.created", "at": "2026-09-17T23:05:00+09:00",
+{ "protocol": 1, "machine_id": "9f3c...-machine-guid", "type": "schedule.created",
+  "at": "2026-09-17T23:05:00+09:00",
   "data": { "command": "shutdown", "origin": "smartthings", "remaining_seconds": 300 },
   "status": { ...GET /st/v1/status 와 동일... } }
 ```
 
-  매 이벤트에 전체 `status`를 실어 드라이버가 diff 없이 갱신한다. 2초 타임아웃,
-  실패 1회 재시도, 연속 3회 실패 시 구독 제거.
+  매 이벤트에 전체 `status`를 실어 드라이버가 diff 없이 갱신한다. `machine_id`는
+  허브가 여러 PC의 이벤트를 status 파싱 전에 구분할 수 있도록 최상위에도 싣는다.
+  2초 타임아웃, 실패 1회 재시도, 연속 3회 실패 시 구독 제거.
 - 푸시 대상 이벤트: `power.stopping`(data.reason: shutdown/restart/suspend/hibernate/unknown),
   `power.started`, `power.resumed`, `schedule.*`, `remote.*`, `system.updated`,
   `system.update_available`, `display.changed`, `session.locked`/`session.unlocked`(옵트인).
-- 구현은 `service/notify` 버스의 **새 Sink** (`service/st_push.go`)로 한다. 알림
-  카테고리 필터·조용한 시간대는 적용하지 않는다(장치 상태는 알림이 아니다).
+- 구현은 `service/notify` 버스의 **raw tap**(`Bus.Tap`, `service/st_push.go`)이다.
+  Sink는 파이프라인 끝에 있어 카테고리 필터·조용한 시간대를 지나오므로, 그것들을
+  적용하지 않으려면(장치 상태는 알림이 아니다) 필터 이전 지점이 필요하다.
+  `display.changed`·`session.*`는 알림 카탈로그에 없는 순수 장치 상태라
+  `Bus.TapOnly`로 tap에만 보낸다(텔레그램에 도달하지 않는다).
   `power.stopping`은 종료 직전이므로 동기 전송(최대 1.5초 대기) 후 계속 종료한다.
+  서비스는 절전 시 중지되지 않으므로 `reason=suspend|hibernate`는 SCM 중지가 아니라
+  `PBT_APMSUSPEND` 브로드캐스트에서 낸다(§6.2). 어느 경로든 Windows는 이유를 알려
+  주지 않아, 직전에 실행한 명령을 힌트로 쓴다.
+- 세션 잠금/해제는 세션 0에 이벤트가 오지 않아 5초 폴링으로 감지한다
+  (`smartthings.expose_session`이 켜져 있을 때만).
 
 ### 4.6 SSDP (P3)
 
