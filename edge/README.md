@@ -10,6 +10,7 @@ the document is fixed first.
 ```
 config.yml          driver metadata (name, packageKey, permissions: lan)
 profiles/pc.yml     main profile: capabilities + preferences (§5.1, §5.4)
+capabilities/       custom capability definitions + presentations (§5.1, §5.3)
 src/
   init.lua          entry point: lifecycle and capability handlers only
   caps.lua          custom capability ids, one NAMESPACE constant
@@ -62,12 +63,45 @@ raises in tests so a real HTTP call cannot slip through.
 `{ cap, attr, value }` records instead of emitting, so the status mapping and
 the whole power state machine are testable without a hub.
 
+## Custom capabilities
+
+`capabilities/` holds the five custom capabilities of design doc §5.1, two
+files each:
+
+```
+pcPowerState.json               definition   -> smartthings capabilities:create -i <file>
+pcPowerState.presentation.json  presentation -> smartthings capabilities:presentation:create
+```
+
+`pcPowerState` carries the power state, `pcCommand` runs one of the eight
+service commands, `pcSchedule` shows and edits the pending schedule, `pcStatus`
+is the connection/version/message card and `pcSession` the opt-in lock and idle
+block.
+
+`tests/capabilities_test.lua` keeps them honest against the Lua: same ids, same
+attributes as `state.attributes_used()`, same commands as the handlers in
+`init.lua`, and presentations that reference nothing undefined. What it cannot
+check is whether SmartThings accepts the *shape* of these files — the CLI is the
+only authority on that, and these are the parts to confirm when creating them:
+
+- `id`, `version`, `status` and `ephemeral` are sent in the definition; the
+  CLI may ignore or reject them and assign its own.
+- `enumCommands: []` is spelled out on every attribute, including the
+  non-enum ones.
+- the detail-view and automation-action entries for `pcCommand.execute` and
+  `pcSchedule.schedule` use `displayType: "multiArgCommand"` with a
+  per-argument `displayType`, and the `minutes` preset list (5/15/30/60/120)
+  relies on `alternatives` being allowed on a command argument. If either is
+  refused, fall back to a `numberField` for `minutes`.
+- `state`, `list`, `pushButton` and `numberField` are assumed to be valid
+  `displayType` values for a capability presentation.
+
 ## Placeholder capability namespace
 
-`src/caps.lua` and `profiles/pc.yml` both use the placeholder namespace
-`pccontrol00000`. The real namespace is assigned by SmartThings when the account
-owner creates the five custom capabilities
-(`smartthings capabilities:create`, design doc §11.1) and both files have to be
+`src/caps.lua`, `profiles/pc.yml` and the ids in `capabilities/*.json` all use
+the placeholder namespace `pccontrol00000`. The real namespace is assigned by
+SmartThings when the account owner creates the five custom capabilities
+(`smartthings capabilities:create`, design doc §11.1) and all three have to be
 rewritten with it — #74 ships `tools/apply-namespace.js` for that.
 
 Until then the custom capabilities do not resolve on a hub. That is handled, not
@@ -77,7 +111,6 @@ keep working.
 
 ## Not here yet
 
-- Custom capability JSON and presentations — #72
 - Push listener, subscription renewal, SSDP search, display child device — #73
 - CI workflow, CLI packaging and channel deployment, namespace script — #74
 
