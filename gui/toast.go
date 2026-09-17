@@ -87,6 +87,12 @@ func HandleToastAction(rawURL string) {
 type localConfig struct {
 	Port   int    `json:"port"`
 	Secret string `json:"secret"`
+	// SmartThings carries the one flag the idle heartbeat needs (#77);
+	// reading the file is cheaper than an authenticated /api/config call
+	// every 30s, and the service rewrites it on every save.
+	SmartThings struct {
+		ExposeSession bool `json:"expose_session"`
+	} `json:"smartthings"`
 }
 
 // readLocalConfig parses config.json next to the exe; zero values when
@@ -107,6 +113,11 @@ func readLocalConfig() localConfig {
 
 // localSecret reads the secret from config.json next to the exe.
 func localSecret() string { return readLocalConfig().Secret }
+
+// localExposeSession reports whether the service currently publishes the
+// session block (smartthings.expose_session, edge-driver doc §4.2). A
+// missing key means off, matching the service's default.
+func localExposeSession() bool { return readLocalConfig().SmartThings.ExposeSession }
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
 // 1, matching service/webui.go), defaulting to 5002 when config.json has

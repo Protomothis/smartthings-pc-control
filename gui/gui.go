@@ -1180,10 +1180,12 @@ func (u *ui) pollLoop() {
 	schedTick := time.NewTicker(2 * time.Second)
 	connTick := time.NewTicker(5 * time.Second)
 	updateTick := time.NewTicker(24 * time.Hour)
+	idleTick := time.NewTicker(idleHeartbeatInterval)
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
 	defer updateTick.Stop()
+	defer idleTick.Stop()
 
 	for {
 		select {
@@ -1205,6 +1207,11 @@ func (u *ui) pollLoop() {
 			if !u.connected.Load() {
 				go u.initialLoad()
 			}
+		case <-idleTick.C:
+			// Not gated on u.connected: the heartbeat is the service's
+			// only source of idle time (#77) and must keep flowing while
+			// the window is closed, so it makes its own (silent) attempt.
+			go u.sendIdleHeartbeat()
 		}
 	}
 }
