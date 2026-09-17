@@ -343,3 +343,52 @@ develop → main → `v1.1.0` 태그.
 | #74 | ci/docs | `edge.yml`(테스트·패키징), `edge/README.md`, 네임스페이스 적용 스크립트, Wiki 페이지·README 갱신, CHANGELOG | 전부 |
 
 마일스톤: https://github.com/Protomothis/smartthings-pc-control/milestone/7
+
+## 13. 다중 PC 시나리오
+
+같은 LAN에 서비스를 설치한 PC가 여러 대 있는 경우를 기본 전제로 한다. 한 허브가 여러 PC를,
+여러 허브가 한 PC를 다루는 경우 모두 동작해야 한다.
+
+### 13.1 식별과 중복 방지
+
+- **장치 식별자 = `machine_id`**(HKLM MachineGuid). SSDP `USN`, `description`, `status`, 푸시 본문
+  **최상위**에 모두 `machine_id`를 넣는다. 드라이버는 이 값으로 장치를 찾는다.
+- SSDP 검색 결과의 DNI(device_network_id)는 `machine_id`. 이미 같은 `machine_id`를 가진 장치가 있으면
+  새로 만들지 않고 IP·포트·호스트명만 갱신한다.
+- 수동 추가 장치는 DNI `manual-<random>`으로 만들고, 첫 `status` 성공 시 `machine_id`를 장치 필드에 저장한다.
+  이후 SSDP가 같은 `machine_id`를 찾으면 그 장치의 IP를 갱신하고 중복 생성하지 않는다(DNI는 바꾸지 않는다).
+- 장치 라벨은 `hostname`(예: "DESKTOP-ABC"), 디스플레이 자식은 "`hostname` Display". 사용자가 라벨을 바꾸면 덮어쓰지 않는다.
+- 이미지 복제로 MachineGuid가 같은 PC가 둘이면 SSDP에서 하나로 합쳐진다. `description`에 `hostname`을 함께 실어
+  드라이버가 "같은 machine_id, 다른 hostname"을 만나면 `pcStatus.message`로 경고한다. 해결은 사용자가 GUID를 재생성하는 것으로 문서에 적는다.
+
+### 13.2 IP 변화(DHCP)와 다중 NIC
+
+- 환경설정 `ipAddress`가 비어 있으면 드라이버는 SSDP로 알게 된 IP(장치 필드)를 쓴다. 채워져 있으면 고정 IP로 간주한다.
+- 환경설정 `followDiscovery`(기본 true): SSDP가 같은 `machine_id`를 다른 IP로 알려 오면 필드 IP를 갱신하고 즉시 폴링한다.
+  `unreachable`이 되면 드라이버는 다음 폴링 전에 1회 SSDP 단일 검색(ST 지정)으로 IP 재탐색을 시도한다.
+- 서비스는 M-SEARCH를 받은 인터페이스의 IP로 `LOCATION`을 만든다(유선+무선 PC에서 허브가 도달 가능한 주소가 나온다).
+- 포트가 PC마다 달라도 `LOCATION`과 `description.port`로 전달되므로 문제없다.
+
+### 13.3 폴링·푸시
+
+- 장치가 N개면 폴링 시각을 `pollInterval / N` 간격으로 분산해 동시 요청을 피한다.
+- 허브 리스너는 드라이버당 하나. 푸시 본문 최상위 `machine_id`로 장치를 찾고, 모르는 `machine_id`는 로그만 남긴다.
+- 구독은 장치(PC)별로 하나. 서비스는 콜백 URL별 구독을 여러 개 가질 수 있으므로 허브가 둘이어도 각각 받는다.
+- 시크릿·MAC·브로드캐스트 주소는 장치별 환경설정이다. 서브넷이 다른 PC는 그 서브넷의 브로드캐스트를 넣는다.
+
+### 13.4 텔레그램과 다중 PC (#75)
+
+- 알림·`/status` 메시지 머리말에 **PC 이름**(기본 hostname, 설정에서 변경 가능)을 표시해 어느 PC인지 알 수 있게 한다.
+  PC가 한 대여도 무해하므로 항상 표시한다.
+- 같은 봇 토큰을 여러 PC가 공유하면 **명령 수신(getUpdates 폴링)은 한 PC만** 가능하다(Telegram 409 Conflict).
+  알림 전송은 공유해도 된다. 서비스는 409를 감지하면 로그·GUI 알림 탭에 "다른 PC가 같은 봇으로 명령을 수신 중입니다.
+  이 PC의 텔레그램 제어를 끄거나 별도 봇을 사용하세요"를 표시하고 폴링 백오프를 늘린다.
+- 문서 권고: PC마다 봇을 따로 만들거나, 제어는 한 대에서만 켠다.
+
+### 13.5 이슈 반영
+
+- #69: `description`·SSDP에 `machine_id`·`hostname`, 인터페이스별 `LOCATION`.
+- #68: 푸시 본문 최상위 `machine_id`.
+- #73: DNI/중복 방지/IP 추적/`followDiscovery`/폴링 분산/자식 장치 라벨.
+- #75(신규, service+gui): 텔레그램 PC 이름 머리말, 409 감지 경고.
+- #74: Wiki "여러 PC 설정" 절.
