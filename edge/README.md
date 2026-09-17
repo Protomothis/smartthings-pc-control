@@ -352,8 +352,10 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 
 로그는 `smartthings edge:drivers:logcat <driverId> --hub-address <허브IP>`로 봅니다.
 
-**CI** — [`.github/workflows/edge.yml`](../.github/workflows/edge.yml)이 `edge/**`가
-바뀐 push/PR마다 테스트와 문법 검사를 돌립니다. `edge-vX.Y.Z` 태그를 밀면 태그와
+**CI** — [`.github/workflows/edge.yml`](../.github/workflows/edge.yml)이
+`develop` · `main` · `milestone/**` push와 `edge/**`를 건드린 PR마다 테스트와 문법
+검사를 돌립니다(push에 경로 필터를 걸지 않는 이유는 워크플로 주석 참고 — 경로 필터는
+태그 push에도 적용되어 릴리스가 조용히 건너뛰어질 수 있습니다). `edge-vX.Y.Z` 태그를 밀면 태그와
 `src/version.lua`의 문자열이 같은지 확인한 뒤 패키징 → 채널 배정 → zip을 릴리스에
 첨부합니다. `-rc`가 붙은 태그는 프리릴리스로 올라갑니다. 저장소 시크릿
 `SMARTTHINGS_TOKEN`(PAT)과 `ST_CHANNEL_ID`가 필요합니다.
@@ -479,7 +481,8 @@ node tools/apply-namespace.js <ns>   # writes the assigned namespace everywhere
 `tools/lua.js` runs the suite under [fengari](https://fengari.io/) (Lua 5.3 in
 JavaScript) using only `fs`/`path`, so node and bun both work. No lockfile is
 committed — fengari is pinned exactly — so CI uses `npm install`, not `npm ci`.
-`.github/workflows/edge.yml` tests every `edge/**` push and PR and, on an
+`.github/workflows/edge.yml` tests every push to develop/main/milestone and every
+PR touching `edge/**` and, on an
 `edge-vX.Y.Z` tag, checks the tag against `src/version.lua`, packages the driver,
 assigns it to the channel and attaches the zip to the release. It needs the
 `SMARTTHINGS_TOKEN` and `ST_CHANNEL_ID` repository secrets.

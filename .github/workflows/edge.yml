@@ -8,16 +8,23 @@ name: Edge driver
 # SmartThings channel, the service through GitHub Releases, so a driver-only
 # fix does not need a service release and vice versa.
 on:
+  # Deliberately no `paths:` on push. A `paths:` filter alongside `tags:`
+  # applies to tag pushes as well, and a release tag that happens to sit on a
+  # commit touching nothing under edge/ would then be filtered out and publish
+  # nothing at all - silently. The job is a checkout, one npm package and two
+  # fengari runs, well under a minute, so running it on a push that changed
+  # only Go code costs less than that failure mode.
   push:
     branches:
       - develop
       - main
       - 'milestone/**'
-    paths:
-      - 'edge/**'
-      - '.github/workflows/edge.yml'
     tags:
       - 'edge-v*'
+  # Pull requests have no tags to worry about, so they do get filtered.
+  # Note for branch protection: if `test` is ever made a required check, this
+  # filter means it never reports on a PR that does not touch edge/, which
+  # blocks the merge. Drop the filter before requiring the check.
   pull_request:
     paths:
       - 'edge/**'
