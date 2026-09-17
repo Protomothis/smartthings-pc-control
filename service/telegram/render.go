@@ -41,6 +41,31 @@ const (
 
 const genericTemplate = "generic.tmpl"
 
+// HeaderIcon opens the PC-name header line every Telegram message starts
+// with (#75, edge-driver doc §13.4). Several PCs may share one bot, so the
+// name is always shown — it is harmless with a single PC.
+const HeaderIcon = "🖥"
+
+// Header is that line for pcName: "🖥 <b>DESKTOP-TEST</b>". The name is
+// HTML-escaped; the message body follows on the next line.
+func Header(pcName string) string {
+	return HeaderIcon + " <b>" + html.EscapeString(pcName) + "</b>"
+}
+
+// HasHeader reports whether msg already opens with a PC-name header. The
+// icon alone is the marker, so a message read back from Telegram (tags
+// stripped) is recognised too.
+func HasHeader(msg string) bool { return strings.HasPrefix(msg, HeaderIcon) }
+
+// WithHeader prefixes Header(pcName) to msg unless msg already carries a
+// header. Empty stays empty (the poller sends nothing for it).
+func WithHeader(pcName, msg string) string {
+	if msg == "" || HasHeader(msg) {
+		return msg
+	}
+	return Header(pcName) + "\n" + msg
+}
+
 // Renderer turns a notify.Event into Telegram HTML.
 type Renderer struct {
 	lang   string
@@ -155,6 +180,7 @@ func secondsText(lang, s string) string {
 
 // Render produces the HTML message for ev:
 //
+//	🖥 <b>{pcName}</b>                  (#75, always)
 //	{icon} <b>{title}</b>
 //	<blockquote>{summary}</blockquote>
 //	{label}: <code>{value}</code>      (detail=full only, 2–4 lines)
@@ -199,6 +225,8 @@ func (r *Renderer) Render(ev notify.Event, pcName string) (string, error) {
 	}
 
 	var b strings.Builder
+	b.WriteString(Header(pcName))
+	b.WriteString("\n")
 	b.WriteString(IconFor(ev.Category, ev.Kind))
 	b.WriteString(" <b>")
 	b.WriteString(oneLine(title))

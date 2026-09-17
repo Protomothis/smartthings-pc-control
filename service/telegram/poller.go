@@ -43,12 +43,25 @@ type PollerOptions struct {
 	AllowedChatIDs func() []string
 	Handler        CommandHandler
 	Log            func(string, ...any)
+	// OnConflict, when set, is called with true the first time getUpdates
+	// answers 409 (another PC owns this bot's command channel, #75) and
+	// with false on the next successful call. It also fires with false
+	// when Run returns while a conflict was active, so a status flag never
+	// stays stuck after the poller stops. It runs on the poller goroutine.
+	OnConflict func(active bool)
 }
 
 const (
 	defaultPollTimeout = 30 // seconds, getUpdates long poll
 	minBackoff         = time.Second
 	maxBackoff         = 60 * time.Second
+	// conflictBackoff is the fixed wait between getUpdates calls while
+	// another PC holds the bot's command channel (409, #75). It does not
+	// grow and it does not reset the ordinary back-off: a conflict is a
+	// steady state, not a transient error.
+	conflictBackoff = 60 * time.Second
+	// conflictLogEvery rate-limits the "another PC is polling" log line.
+	conflictLogEvery = time.Minute
 	// defaultMaxAge: a command message older than this when it reaches us
 	// is not executed. Start-up discards everything queued before the
 	// service came up, but messages sent while the PC was asleep arrive
@@ -87,7 +100,10 @@ func NewPoller(cli *Client, opts PollerOptions) *Poller {
 // only the newest queued update (offset -1, which makes Telegram forget the
 // rest) and discards it, so commands typed while the service was down are
 // never executed. Errors back off 1s→2s→…→60s (or Telegram's retry_after
-// when larger) and the delay resets after any successful call.
+// when larger) and the delay resets after any successful call. A 409
+// (another PC polls this bot, #75) is handled separately: a flat 60s wait,
+// one log line per minute and an OnConflict(true) callback, cleared on the
+// next successful call.
 func (p *Poller) Run(ctx context.Context) error {
 	if p.cli == nil || p.opts.Handler == nil {
 		return errors.New("telegram poller: client and handler are required")
@@ -95,6 +111,14 @@ func (p *Poller) Run(ctx context.Context) error {
 	offset := 0
 	drained := false
 	backoff := minBackoff
+	conflict := false
+	var lastConflictLog time.Time
+	// The service's warning must not outlive the poller.
+	defer func() {
+		if conflict {
+			p.setConflict(false)
+		}
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -112,6 +136,20 @@ func (p *Poller) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if IsConflict(err) {
+				if !conflict {
+					conflict = true
+					p.setConflict(true)
+				}
+				if now := p.clock(); lastConflictLog.IsZero() || now.Sub(lastConflictLog) >= conflictLogEvery {
+					lastConflictLog = now
+					p.logf("poller: another PC is polling this bot (409); retrying every %s — turn Telegram control off here or use a separate bot", conflictBackoff)
+				}
+				if err := p.sleep(ctx, conflictBackoff); err != nil {
+					return err
+				}
+				continue
+			}
 			wait := backoff
 			if ra, ok := RetryAfterOf(err); ok && ra > wait {
 				wait = ra
@@ -126,6 +164,12 @@ func (p *Poller) Run(ctx context.Context) error {
 			continue
 		}
 		backoff = minBackoff
+		if conflict {
+			conflict = false
+			lastConflictLog = time.Time{}
+			p.setConflict(false)
+			p.logf("poller: this PC owns the bot's command channel again")
+		}
 		for _, u := range upds {
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1
@@ -240,6 +284,21 @@ func (p *Poller) logf(format string, args ...any) {
 	if p.opts.Log != nil {
 		p.opts.Log("telegram: "+format, args...)
 	}
+}
+
+// setConflict reports a 409 state change to the service (#75).
+func (p *Poller) setConflict(active bool) {
+	if p.opts.OnConflict != nil {
+		p.opts.OnConflict(active)
+	}
+}
+
+// clock is the poller's time source (tests replace p.now).
+func (p *Poller) clock() time.Time {
+	if p.now == nil {
+		return time.Now()
+	}
+	return p.now()
 }
 
 // ParseCommand splits "/shutdown@my_bot 30" into ("shutdown", ["30"]).
