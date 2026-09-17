@@ -37,6 +37,13 @@ preferences:
       minLength: 0
       maxLength: 45
       default: ""
+  - name: followDiscovery
+    title: Follow discovery
+    description: "Track the PC's address with SSDP. Turn this off to pin the device to the address it has now. The PC IP address setting above always wins when it is filled in."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
   - name: port
     title: Service port
     description: "Main port of the PC Control service (default 5001)."
@@ -105,7 +112,7 @@ preferences:
       default: shutdown
   - name: createDisplayDevice
     title: Create display device
-    description: "Add a child switch that turns the PC screen on and off. Takes effect once the child device support ships."
+    description: "Add a child switch that turns the PC screen on and off. The child appears once the PC has answered at least once; turning this off removes it."
     required: false
     preferenceType: boolean
     definition:

@@ -99,6 +99,28 @@ local STRINGS = {
     en = "There was no schedule to cancel",
   },
 
+  -- discovery / multi-PC (§4.6, §13.1, §13.2)
+  discovery_found = {
+    ko = "PC %d대를 찾았습니다",
+    en = "Found %d PC(s)",
+  },
+  ip_updated = {
+    ko = "IP 주소를 %s(으)로 변경했습니다",
+    en = "IP address updated to %s",
+  },
+  -- §13.1: two PCs cloned from the same image share a MachineGuid, so the
+  -- driver would merge them into one device. Only the user can fix it.
+  hostname_mismatch = {
+    ko = "같은 machine_id를 쓰는 PC가 둘입니다(%s) · MachineGuid를 다시 만드세요",
+    en = "Two PCs share one machine_id (%s) · regenerate the MachineGuid",
+  },
+
+  -- display child device (§5.2, §13.1)
+  display_label = {
+    ko = "%s 디스플레이",
+    en = "%s Display",
+  },
+
   -- schedule origins (§4.2). `remote` is the legacy PCControl HTTP path, which
   -- for this driver always means a SmartThings command.
   origin_ui = { ko = "앱", en = "App" },

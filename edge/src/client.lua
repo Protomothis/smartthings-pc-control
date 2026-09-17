@@ -20,18 +20,54 @@ client.PROTOCOL = 1
 client.TIMEOUT = 5
 client.DEFAULT_PORT = 5001
 client.BASE_PATH = "/st/v1"
+-- §4.5: the default subscription lifetime, and what the service falls back to
+-- when `ttl_seconds` is absent. Valid range is 60..3600.
+client.DEFAULT_TTL = 600
 -- The service records this as `hubLastSeen` and shows it in the GUI (§4.2).
 client.USER_AGENT = "smartthings-pc-control-edge/" .. VERSION
 
---- `http://<ip>:<port>/st/v1`, or nil when no IP is configured yet.
-function client.base_url(prefs)
+-- §13.2: what SSDP last told us about this PC. The `ipAddress` preference wins
+-- when it is set (the user declared a fixed address); an empty one means the
+-- driver follows discovery, and these fields are where it remembers the answer.
+client.IP_FIELD = "discovered_ip"
+client.PORT_FIELD = "discovered_port"
+
+--- `http://<ip>:<port>/st/v1`, or nil when no IP is known yet.
+-- @param discovered optional `{ ip = ..., port = ... }` fallback used only when
+--   the `ipAddress` preference is empty (§13.2).
+function client.base_url(prefs, discovered)
   prefs = prefs or {}
+  discovered = discovered or {}
   local ip = prefs.ipAddress
+  local port = tonumber(prefs.port)
+  if type(ip) ~= "string" or ip == "" then
+    ip = discovered.ip
+    -- The discovered port belongs to the discovered address, so it only
+    -- applies together with it.
+    port = tonumber(discovered.port) or port
+  end
   if type(ip) ~= "string" or ip == "" then
     return nil
   end
-  local port = math.floor(tonumber(prefs.port) or client.DEFAULT_PORT)
-  return string.format("http://%s:%d%s", ip, port, client.BASE_PATH)
+  return string.format("http://%s:%d%s", ip, math.floor(port or client.DEFAULT_PORT), client.BASE_PATH)
+end
+
+--- The SSDP-learned address stored on `device`, as `{ ip = ..., port = ... }`.
+function client.discovered(device)
+  if type(device) ~= "table" or type(device.get_field) ~= "function" then
+    return {}
+  end
+  local ok, ip = pcall(function() return device:get_field(client.IP_FIELD) end)
+  local _, port = pcall(function() return device:get_field(client.PORT_FIELD) end)
+  if not ok then
+    return {}
+  end
+  return { ip = ip, port = port }
+end
+
+--- `client.base_url` for a device: preference first, discovery second (§13.2).
+function client.device_base_url(device)
+  return client.base_url((device or {}).preferences, client.discovered(device))
 end
 
 --- Request headers. §4.1/§8: the secret travels in `X-PC-Secret`, never in the
@@ -110,7 +146,7 @@ function client.request(device, opts, deps)
   opts = opts or {}
   local prefs = (device and device.preferences) or {}
 
-  local base = client.base_url(prefs)
+  local base = client.device_base_url(device)
   if not base then
     return false, nil, "unreachable"
   end
@@ -203,6 +239,61 @@ end
 --- `DELETE /st/v1/schedule` (§4.4).
 function client.cancel(device, deps)
   return client.request(device, { method = "DELETE", path = "/schedule" }, deps)
+end
+
+--- `POST /st/v1/subscribe` (§4.5). Field names are the ones `stSubscribeRequest`
+--- in service/st_push.go decodes; the answer is `{ id, expires_at }`.
+-- The service requires the callback host to equal the request source IP, so
+-- `callback` has to be built from the hub address the PC sees (push.lua).
+function client.subscribe(device, callback, ttl, deps)
+  return client.request(device, {
+    method = "POST",
+    path = "/subscribe",
+    body = {
+      callback = callback,
+      ttl_seconds = math.floor(tonumber(ttl) or client.DEFAULT_TTL),
+      driver_version = VERSION,
+    },
+  }, deps)
+end
+
+--- `DELETE /st/v1/subscribe/{id}` (§4.5).
+function client.unsubscribe(device, id, deps)
+  if type(id) ~= "string" or id == "" then
+    return false, nil, "badrequest"
+  end
+  return client.request(device, { method = "DELETE", path = "/subscribe/" .. id }, deps)
+end
+
+--- GET an absolute URL and decode the JSON body (the SSDP `LOCATION`, §4.6).
+--- Unlike `client.request` this has no device, no secret and no protocol check
+--- beyond what the caller does with the returned table.
+function client.fetch(url, deps)
+  deps = deps or {}
+  if type(url) ~= "string" or url == "" then
+    return nil, "no url"
+  end
+  local json = deps.json or require "st.json"
+  local ltn12 = deps.ltn12 or require "ltn12"
+
+  local chunks = {}
+  local called, result, code = pcall(request_fn(deps), {
+    url = url,
+    method = "GET",
+    headers = { ["User-Agent"] = client.USER_AGENT, ["Accept"] = "application/json" },
+    sink = ltn12.sink.table(chunks),
+  })
+  if not called or not result then
+    return nil, "unreachable"
+  end
+  if client.classify(code) then
+    return nil, client.classify(code)
+  end
+  local decoded_ok, decoded = pcall(json.decode, table.concat(chunks))
+  if not decoded_ok or type(decoded) ~= "table" then
+    return nil, "incompatible"
+  end
+  return decoded, nil
 end
 
 return client
