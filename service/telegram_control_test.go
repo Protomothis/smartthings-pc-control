@@ -131,6 +131,13 @@ func TestTelegramLockAndScreenOffRunImmediately(t *testing.T) {
 		t.Error(err)
 	}
 	expectExecuted(t, screen, "turnscreenoff")
+
+	// /screenon mirrors /screenoff (#67).
+	screenOn := stubCommand(t, "turnscreenon")
+	if html, _, err := h.HandleCommand(context.Background(), "42", "screenon", nil); err != nil || !strings.Contains(html, "화면 켜기") {
+		t.Errorf("screenon reply = %q err=%v", html, err)
+	}
+	expectExecuted(t, screenOn, "turnscreenon")
 }
 
 func TestTelegramShutdownWithoutMinutesAsksConfirmation(t *testing.T) {
@@ -437,7 +444,7 @@ func TestTelegramAllowedChatIDsFallsBackToChatID(t *testing.T) {
 func TestTelegramBotCommandsFollowLang(t *testing.T) {
 	ko := telegramBotCommands("ko")
 	en := telegramBotCommands("en")
-	if len(ko) != 13 || len(en) != len(ko) {
+	if len(ko) != 14 || len(en) != len(ko) {
 		t.Fatalf("command count ko=%d en=%d", len(ko), len(en))
 	}
 	if ko[0].Command != "status" || ko[0].Description != "상태" || en[0].Description != "Status" {

@@ -58,6 +58,9 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 				reason = "shutdown"
 			}
 			logMsg("Service stopping (%s)", reason)
+			// The next start reads this back as last_shutdown_clean; a
+			// power cut never reaches here, so the flag stays false.
+			markCleanShutdown(statePath())
 			emit("power", "stopping", map[string]string{"reason": reason})
 			close(s.stop)
 			stopTelegramControl()

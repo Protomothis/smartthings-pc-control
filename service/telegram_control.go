@@ -29,7 +29,10 @@ var serviceStartedAt = time.Now()
 type remoteRecord struct {
 	Command string
 	From    string
-	At      time.Time
+	// Origin is the path it arrived on: "remote" for the legacy
+	// /{secret}/{command} URL, "smartthings" for /st/v1/command (#67).
+	Origin string
+	At     time.Time
 }
 
 var (
@@ -37,11 +40,17 @@ var (
 	lastRemoteMu sync.Mutex
 )
 
-// noteRemoteCommand is called by the command handler for every accepted
-// non-ping command.
+// noteRemoteCommand is called by the legacy command handler for every
+// accepted non-ping command.
 func noteRemoteCommand(command, from string) {
+	noteRemoteCommandBy(command, from, "remote")
+}
+
+// noteRemoteCommandBy is noteRemoteCommand for a caller that knows which
+// protocol the command arrived on.
+func noteRemoteCommandBy(command, from, origin string) {
 	lastRemoteMu.Lock()
-	lastRemote = remoteRecord{Command: command, From: from, At: time.Now()}
+	lastRemote = remoteRecord{Command: command, From: from, Origin: origin, At: time.Now()}
 	lastRemoteMu.Unlock()
 }
 
@@ -55,6 +64,7 @@ func getLastRemote() remoteRecord {
 var telegramAliases = map[string]string{
 	"lock":      "lock",
 	"screenoff": "turnscreenoff",
+	"screenon":  "turnscreenon",
 	"sleep":     "suspend",
 	"hibernate": "hibernate",
 	"restart":   "restart",
@@ -62,7 +72,7 @@ var telegramAliases = map[string]string{
 }
 
 // telegramSafeCommands run from a button without confirmation.
-var telegramSafeCommands = map[string]bool{"lock": true, "turnscreenoff": true}
+var telegramSafeCommands = map[string]bool{"lock": true, "turnscreenoff": true, "turnscreenon": true}
 
 // telegramCommandNames are the Commands keys the bot may run at all; the
 // power commands need a confirmation (or a delay), see graceCommands.
@@ -91,6 +101,7 @@ var tgTexts = map[string][2]string{
 			"/menu – 버튼 메뉴\n" +
 			"/lock – 잠금\n" +
 			"/screenoff – 화면 끄기\n" +
+			"/screenon – 화면 켜기\n" +
 			"/sleep /hibernate /restart /shutdown [분] – 확인 후 즉시 실행, 분을 주면 예약\n" +
 			"/cancel – 예약·유예 취소\n" +
 			"/now – 예약·유예 즉시 실행\n" +
@@ -102,6 +113,7 @@ var tgTexts = map[string][2]string{
 			"/menu – button menu\n" +
 			"/lock – lock\n" +
 			"/screenoff – screen off\n" +
+			"/screenon – screen on\n" +
 			"/sleep /hibernate /restart /shutdown [minutes] – confirm then run now, or schedule with minutes\n" +
 			"/cancel – cancel the schedule/grace period\n" +
 			"/now – run the schedule/grace command now\n" +
@@ -141,6 +153,7 @@ var tgTexts = map[string][2]string{
 	"by_webui":       {"WebUI", "WebUI"},
 	"by_api":         {"API", "API"},
 	"by_telegram":    {"텔레그램", "Telegram"},
+	"by_smartthings": {"SmartThings", "SmartThings"},
 	"by_timer":       {"타이머", "timer"},
 	"btn_confirm":    {"확인", "Confirm"},
 	"btn_cancel":     {"취소", "Cancel"},
@@ -159,15 +172,17 @@ var tgTexts = map[string][2]string{
 	"st_muted":     {"알림 일시 중지", "Notifications paused"},
 	"st_until":     {"%s까지", "until %s"},
 	// command and origin labels
-	"cmd_shutdown":      {"종료", "Shut down"},
-	"cmd_restart":       {"재시작", "Restart"},
-	"cmd_suspend":       {"절전", "Sleep"},
-	"cmd_hibernate":     {"최대 절전", "Hibernate"},
-	"cmd_lock":          {"잠금", "Lock"},
-	"cmd_turnscreenoff": {"화면 끄기", "Screen off"},
-	"origin_ui":         {"앱", "app"},
-	"origin_remote":     {"원격", "remote"},
-	"origin_telegram":   {"텔레그램", "Telegram"},
+	"cmd_shutdown":       {"종료", "Shut down"},
+	"cmd_restart":        {"재시작", "Restart"},
+	"cmd_suspend":        {"절전", "Sleep"},
+	"cmd_hibernate":      {"최대 절전", "Hibernate"},
+	"cmd_lock":           {"잠금", "Lock"},
+	"cmd_turnscreenoff":  {"화면 끄기", "Screen off"},
+	"cmd_turnscreenon":   {"화면 켜기", "Screen on"},
+	"origin_ui":          {"앱", "app"},
+	"origin_remote":      {"원격", "remote"},
+	"origin_telegram":    {"텔레그램", "Telegram"},
+	"origin_smartthings": {"SmartThings", "SmartThings"},
 }
 
 // tgText returns the ko/en string for key (telegram.lang), formatted with
@@ -380,7 +395,7 @@ func (c telegramControl) HandleCommand(_ context.Context, chatID string, cmd str
 		return tgStatusText(), nil, nil
 	case "menu":
 		return tgText("menu_title", html.EscapeString(tgPCName())), tgMenuKeyboard(), nil
-	case "lock", "screenoff":
+	case "lock", "screenoff", "screenon":
 		name := telegramAliases[cmd]
 		runTelegramCommand(name)
 		return tgText("executed", tgCommandLabel(name)), nil, nil
@@ -729,6 +744,7 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "menu", Description: pick("버튼 메뉴", "Button menu")},
 		{Command: "lock", Description: pick("잠금", "Lock")},
 		{Command: "screenoff", Description: pick("화면 끄기", "Screen off")},
+		{Command: "screenon", Description: pick("화면 켜기", "Screen on")},
 		{Command: "sleep", Description: pick("절전 [분]", "Sleep [minutes]")},
 		{Command: "hibernate", Description: pick("최대 절전 [분]", "Hibernate [minutes]")},
 		{Command: "restart", Description: pick("재시작 [분]", "Restart [minutes]")},

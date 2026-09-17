@@ -291,6 +291,9 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	// API: Get/update config (token masking rules: design doc §10)
 	mux.HandleFunc("/api/config", handleConfigAPI)
 
+	// API: SmartThings hub connection state for the GUI (#67, shown by #70)
+	mux.HandleFunc("/api/st/hub", handleSTHubAPI)
+
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
 	mux.HandleFunc("/api/telegram/me", handleTelegramMe)
@@ -433,11 +436,12 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-			// ?by=app|tray|toast|webui says which UI the user cancelled from;
-			// it only affects the notification wording (default "api").
+			// ?by=app|tray|toast|webui|smartthings says which UI the user
+			// cancelled from; it only affects the notification wording
+			// (default "api").
 			by := "api"
 			switch v := r.URL.Query().Get("by"); v {
-			case "app", "tray", "toast", "webui":
+			case "app", "tray", "toast", "webui", "smartthings":
 				by = v
 			}
 			if cancelScheduleBy(by) {
@@ -574,6 +578,42 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+// ---- SmartThings hub state (#67) -------------------------------------------
+
+// stHubView is GET /api/st/hub: what the GUI SmartThings section (#70)
+// shows about the Edge driver's last contact. "connected" means the hub
+// polled within stHubStale (2× the longest poll interval the driver offers).
+type stHubView struct {
+	Connected     bool   `json:"connected"`
+	IP            string `json:"ip"`
+	DriverVersion string `json:"driver_version"`
+	LastSeen      string `json:"last_seen"`
+}
+
+// handleSTHubAPI serves GET /api/st/hub.
+func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
+	liveCfg := getConfig()
+	if !checkAuth(r, liveCfg.Secret) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	seen, ok := hubLastSeenInfo()
+	if !ok {
+		writeJSON(w, http.StatusOK, stHubView{})
+		return
+	}
+	writeJSON(w, http.StatusOK, stHubView{
+		Connected:     time.Since(seen.At) <= stHubStale,
+		IP:            seen.IP,
+		DriverVersion: seen.DriverVersion,
+		LastSeen:      seen.At.Format(time.RFC3339),
+	})
 }
 
 // ---- Telegram helper endpoints (#63) ---------------------------------------
