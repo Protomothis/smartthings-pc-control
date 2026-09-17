@@ -1,0 +1,5 @@
+node_modules/
+# bun is the local dev runner only; CI installs from package.json (see #74),
+# so bun's lockfile is not part of the repository.
+bun.lockb
+bun.lock

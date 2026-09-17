@@ -1,0 +1,123 @@
+# Main device profile (design doc §5.1, §5.4).
+#
+# The `pccontrol00000` namespace is a PLACEHOLDER: SmartThings assigns the real
+# one when the account owner runs `smartthings capabilities:create` (§11.1).
+# Keep it in sync with `NAMESPACE` in src/caps.lua - #74 ships
+# tools/apply-namespace.js to rewrite both.
+name: pc.v1
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+      - id: refresh
+        version: 1
+      - id: healthCheck
+        version: 1
+      - id: pccontrol00000.pcPowerState
+        version: 1
+      - id: pccontrol00000.pcCommand
+        version: 1
+      - id: pccontrol00000.pcSchedule
+        version: 1
+      - id: pccontrol00000.pcStatus
+        version: 1
+      - id: pccontrol00000.pcSession
+        version: 1
+    categories:
+      - name: Computer
+preferences:
+  - name: ipAddress
+    title: PC IP address
+    description: "IPv4 address of the PC running the PC Control service, e.g. 192.168.1.20."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: ""
+  - name: port
+    title: Service port
+    description: "Main port of the PC Control service (default 5001)."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 65535
+      default: 5001
+  - name: secret
+    title: Secret
+    description: "Shared secret from the PC Control settings tab. Sent as the X-PC-Secret header. Edge has no password preference type, so this is a plain text field and is visible while typing."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 64
+      default: ""
+  - name: macAddress
+    title: MAC address
+    description: "MAC address used for Wake-on-LAN, e.g. AA:BB:CC:DD:EE:FF. Leave empty to use the Wake-on-LAN capable adapter reported by the service."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 17
+      default: ""
+  - name: wolBroadcast
+    title: WoL broadcast address
+    description: "Where the magic packet is sent. Use the subnet broadcast (e.g. 192.168.1.255) if the router drops 255.255.255.255."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: "255.255.255.255"
+  - name: pollInterval
+    title: Status poll interval
+    description: "How often the driver asks the PC for its status."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        "10": Every 10 seconds
+        "30": Every 30 seconds
+        "60": Every minute
+        "300": Every 5 minutes
+      default: "30"
+  - name: offAction
+    title: Switch off action
+    description: "Command sent when the switch is turned off. Everything except force shutdown follows the grace period configured on the PC."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        shutdown: Shut down
+        suspend: Sleep
+        hibernate: Hibernate
+        lock: Lock
+        turnscreenoff: Screen off
+        restart: Restart
+        forceshutdown: Force shutdown
+      default: shutdown
+  - name: createDisplayDevice
+    title: Create display device
+    description: "Add a child switch that turns the PC screen on and off. Takes effect once the child device support ships."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
+  - name: language
+    title: Message language
+    description: "Language of the status and schedule text. Auto falls back to English because a driver cannot read the hub locale."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        auto: Auto (English)
+        en: English
+        ko: 한국어
+      default: auto
