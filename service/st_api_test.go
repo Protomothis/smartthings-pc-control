@@ -509,10 +509,10 @@ func TestDriverVersionOf(t *testing.T) {
 
 func TestSTUnknownRouteIs404(t *testing.T) {
 	stSetup(t, Config{Port: 5001})
-	// /st/v1/subscribe (#68) is not here yet; unknown routes must not reach
-	// the legacy /{secret}/{command} handler. /st/v1/description now
-	// exists (#69) and has its own tests in st_ssdp_test.go.
-	for _, path := range []string{"/st/v1/subscribe", "/st/v1/"} {
+	// Unknown paths must not reach the legacy /{secret}/{command} handler.
+	// /st/v1/description (#69) and /st/v1/subscribe (#68) have their own
+	// tests in st_ssdp_test.go and st_push_test.go.
+	for _, path := range []string{"/st/v1/nope", "/st/v1/"} {
 		if w := stDo(t, "GET", path, "192.168.1.20", "", ""); w.Code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", path, w.Code)
 		}

@@ -10,7 +10,8 @@ package service
 //
 // Authentication is the X-PC-Secret header (§4.1) — never the URL — plus an
 // optional hub allow-list and a per-source-IP rate limit (§8).
-// /st/v1/subscribe (#68) and /st/v1/description (#69) are not implemented here.
+// /st/v1/subscribe (§4.5) lives in st_push.go; /st/v1/description (#69) is
+// not implemented here.
 
 import (
 	"encoding/json"
@@ -315,14 +316,15 @@ func stScheduleView() map[string]any {
 	}
 }
 
-// stUpdateInfo reports the newest release the update checker has already
-// announced (system.update_available, #60).
-//
-// TODO(#68): the checker only remembers the tag it notified about, so a
-// release seen before this service started is reported and nothing else.
-// Once the push sink exists, cache the full release-check result and serve
-// it here instead.
+// stUpdateInfo reports the newest release this service knows about. The
+// periodic checker caches every lookup (#68), so once it has run "latest"
+// is the real newest tag even when it is not newer than us; before the
+// first check the only thing on record is the tag state.json says was
+// announced with system.update_available (#60).
 func stUpdateInfo() stUpdate {
+	if tag := latestReleaseTag(); tag != "" {
+		return stUpdate{Available: release.IsNewer(Version, tag), Latest: tag}
+	}
 	stateMu.Lock()
 	st := loadState(statePath())
 	stateMu.Unlock()
@@ -406,7 +408,12 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	cfg := getConfig()
+	writeJSON(w, http.StatusOK, buildSTStatus(getConfig()))
+}
+
+// buildSTStatus assembles the §4.2 status document for cfg. Push bodies
+// carry the very same object (§4.5), so the driver never needs a diff.
+func buildSTStatus(cfg Config) stStatusResponse {
 	resp := stStatusResponse{
 		Protocol:       stProtocol,
 		ServiceVersion: Version,
@@ -434,7 +441,7 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 			At:      lr.At.Format(time.RFC3339),
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 // ---- command (§4.3) --------------------------------------------------------
@@ -564,9 +571,9 @@ func stHandler() http.Handler {
 	mux.HandleFunc("/st/v1/command", stAuth(handleSTCommand))
 	mux.HandleFunc("/st/v1/schedule", stAuth(handleSTSchedule))
 	registerSTDescriptionRoute(mux) // #69, unauthenticated (see st_ssdp.go)
-	// Anything else under /st/v1 (including /st/v1/subscribe, #68, and
-	// /st/v1/description, #69) is a 404 rather than falling through to the
-	// legacy /{secret}/{command} handler.
+	registerSTPushRoutes(mux)       // /st/v1/subscribe (§4.5, #68)
+	// Anything else under /st/v1 is a 404 rather than falling through to
+	// the legacy /{secret}/{command} handler.
 	mux.HandleFunc("/st/v1/", func(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusNotFound, "not found")
 	})

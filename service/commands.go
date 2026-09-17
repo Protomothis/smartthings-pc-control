@@ -3,6 +3,7 @@ package service
 import (
 	"strconv"
 	"sync"
+	"time"
 )
 
 // Command represents a PC control command
@@ -20,11 +21,18 @@ var (
 	displayStateMu sync.RWMutex
 )
 
-// setDisplayState records the effect of a screen command.
+// setDisplayState records the effect of a screen command and, when the
+// state actually changed, pushes display.changed to the SmartThings hub
+// (edge-driver doc §4.5). It is device state, not a notification, so it
+// goes to the bus taps only and never to Telegram.
 func setDisplayState(state string) {
 	displayStateMu.Lock()
+	changed := displayState != state
 	displayState = state
 	displayStateMu.Unlock()
+	if changed {
+		emitDevice("display", "changed", map[string]string{"display": state})
+	}
 }
 
 // getDisplayState returns "on", "off" or "unknown".
@@ -32,6 +40,68 @@ func getDisplayState() string {
 	displayStateMu.RLock()
 	defer displayStateMu.RUnlock()
 	return displayState
+}
+
+// Last executed power command (edge-driver doc §4.5, "power.stopping"
+// data.reason). Windows tells the service that it is stopping, and that
+// the machine is suspending, but not why: SERVICE_CONTROL_SHUTDOWN looks
+// the same for `shutdown /s` and `shutdown /r`, and PBT_APMSUSPEND looks
+// the same for sleep and hibernation. The command this service ran just
+// before is the best hint available, so it is remembered here.
+var (
+	lastPowerCommand   string
+	lastPowerCommandAt time.Time
+	lastPowerCommandMu sync.Mutex
+)
+
+// powerCommandReason maps a catalogue command to the reason the Edge
+// driver's power state machine understands (§6.2).
+var powerCommandReason = map[string]string{
+	"shutdown":      "shutdown",
+	"forceshutdown": "shutdown",
+	"restart":       "restart",
+	"suspend":       "suspend",
+	"hibernate":     "hibernate",
+}
+
+// powerCommandHintTTL is how long a command stays a plausible explanation
+// for a stop. The commands wait 5s (`shutdown /t 5`) and Windows then
+// takes a while to tell the services, so this is generous.
+const powerCommandHintTTL = 2 * time.Minute
+
+// notePowerCommand remembers command when it is one that ends the session;
+// anything else (ping, lock, screen) leaves the hint alone.
+func notePowerCommand(command string) {
+	if _, ok := powerCommandReason[command]; !ok {
+		return
+	}
+	lastPowerCommandMu.Lock()
+	lastPowerCommand, lastPowerCommandAt = command, time.Now()
+	lastPowerCommandMu.Unlock()
+}
+
+// stoppingReason explains a stop for power.stopping. A power command run
+// in the last powerCommandHintTTL wins; otherwise fallback is used, which
+// is what the caller could work out on its own ("shutdown" for a system
+// shutdown, "suspend" for a suspend broadcast, "unknown" for a plain
+// service stop).
+func stoppingReason(fallback string) string {
+	lastPowerCommandMu.Lock()
+	cmd, at := lastPowerCommand, lastPowerCommandAt
+	lastPowerCommandMu.Unlock()
+	if cmd != "" && time.Since(at) <= powerCommandHintTTL {
+		if reason, ok := powerCommandReason[cmd]; ok {
+			return reason
+		}
+	}
+	return fallback
+}
+
+// resetPowerCommandHint forgets the hint (tests).
+func resetPowerCommandHint() {
+	lastPowerCommandMu.Lock()
+	lastPowerCommand, lastPowerCommandAt = "", time.Time{}
+	lastPowerCommandMu.Unlock()
 }
 
 // screenPowerScript builds the PowerShell one-liner that broadcasts

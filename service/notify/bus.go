@@ -90,6 +90,10 @@ type Bus struct {
 	cancel  context.CancelFunc
 	once    sync.Once
 
+	// taps receive every event before the pipeline sees it; see Tap.
+	tapMu sync.RWMutex
+	taps  []func(Event)
+
 	mu         sync.Mutex
 	mutedUntil time.Time
 	muteFrom   time.Time
@@ -123,8 +127,49 @@ func New(opts Options) *Bus {
 	return b
 }
 
+// Tap registers fn to receive every emitted event *before* the pipeline —
+// no category filter, no aggregation, no quiet hours, no throttle. It
+// exists for consumers that mirror device state rather than notify a
+// person (the SmartThings push sink, edge-driver doc §4.5).
+//
+// fn runs on the emitting goroutine, so it must return quickly; the one
+// deliberate exception is power.stopping, which the push sink delivers
+// synchronously to hold the stop back for up to 1.5s.
+func (b *Bus) Tap(fn func(Event)) {
+	if b == nil || fn == nil {
+		return
+	}
+	b.tapMu.Lock()
+	b.taps = append(b.taps, fn)
+	b.tapMu.Unlock()
+}
+
+// TapOnly hands ev to the taps without queueing it for the pipeline: pure
+// device state ("the screen is off now") is not a notification and must
+// never reach a notification channel. A zero At is set to now.
+func (b *Bus) TapOnly(ev Event) {
+	if b == nil {
+		return
+	}
+	if ev.At.IsZero() {
+		ev.At = b.now()
+	}
+	b.runTaps(ev)
+}
+
+// runTaps calls every registered tap with ev.
+func (b *Bus) runTaps(ev Event) {
+	b.tapMu.RLock()
+	taps := b.taps
+	b.tapMu.RUnlock()
+	for _, fn := range taps {
+		fn(ev)
+	}
+}
+
 // Emit queues ev without blocking. When the queue is full or the bus is
-// closed the event is dropped and logged. A zero At is set to now.
+// closed the event is dropped and logged. A zero At is set to now. Taps
+// see the event first, and see it even when the pipeline drops it.
 func (b *Bus) Emit(ev Event) {
 	if b == nil {
 		return
@@ -132,6 +177,7 @@ func (b *Bus) Emit(ev Event) {
 	if ev.At.IsZero() {
 		ev.At = b.now()
 	}
+	b.runTaps(ev)
 	select {
 	case <-b.closing:
 		b.logf("notify: bus closed, dropping %s", ev.Key())

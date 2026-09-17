@@ -13,6 +13,7 @@ package service
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 	"unsafe"
 
@@ -150,4 +151,73 @@ func readUTF16(b []byte, off, chars int) string {
 		}
 	}
 	return windows.UTF16ToString(u)
+}
+
+// ---- lock/unlock watcher (§4.5) --------------------------------------------
+
+// sessionPollInterval is how often the lock state is sampled. A service in
+// session 0 gets no WM_WTSSESSION_CHANGE and SERVICE_CONTROL_SESSIONCHANGE
+// reports console connect/disconnect, not the lock screen — so there is no
+// event to subscribe to and the state has to be polled. One
+// WTSQuerySessionInformation call every 5s is cheap enough (§4.5 asks for
+// "immediate", and 5s is the resolution the driver gets), and the poll only
+// runs while smartthings.expose_session is on.
+const sessionPollInterval = 5 * time.Second
+
+// watchSessionLock emits session.locked / session.unlocked whenever the
+// interactive session's lock state changes. The events are device state,
+// not notifications: they go to the bus taps (the SmartThings push sink)
+// and never to Telegram.
+//
+// The first successful sample only establishes the baseline; turning the
+// option off and on again re-establishes it, so enabling the option never
+// invents a transition. Failures (nobody logged in, WTS refusing) reset the
+// baseline too, because what happened while the service could not look is
+// unknown.
+func watchSessionLock(stop <-chan struct{}) {
+	t := time.NewTicker(sessionPollInterval)
+	defer t.Stop()
+	known := false
+	var locked bool
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+		if !getConfig().SmartThings.ExposeSession {
+			known = false
+			continue
+		}
+		info, err := querySessionInfo()
+		if err != nil {
+			known = false
+			continue
+		}
+		if known && info.Locked == locked {
+			continue
+		}
+		if known {
+			emitSessionLock(info)
+		}
+		known, locked = true, info.Locked
+	}
+}
+
+// emitSessionLock reports one lock-state transition.
+func emitSessionLock(info sessionInfo) {
+	kind := "unlocked"
+	if info.Locked {
+		kind = "locked"
+	}
+	fields := map[string]string{}
+	if info.IdleKnown {
+		fields["idle_seconds"] = strconv.FormatInt(info.IdleSeconds, 10)
+	}
+	// The user name follows the same opt-in as the status block (§4.2).
+	if getConfig().SmartThings.ExposeSessionUser && info.User != "" {
+		fields["user"] = info.User
+	}
+	logMsg("Session %s", kind)
+	emitDevice("session", kind, fields)
 }
