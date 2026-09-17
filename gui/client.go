@@ -218,6 +218,34 @@ func (c *Client) GetWoLStatus() (WoLStatus, error) {
 	return s, json.NewDecoder(resp.Body).Decode(&s)
 }
 
+// STHub mirrors GET /api/st/hub (#67): the Edge driver's last contact with
+// this service. Connected is false — and the other fields empty — until a
+// hub has polled recently; LastSeen is RFC3339.
+type STHub struct {
+	Connected     bool   `json:"connected"`
+	IP            string `json:"ip"`
+	DriverVersion string `json:"driver_version"`
+	LastSeen      string `json:"last_seen"`
+}
+
+// GetSTHub fetches the SmartThings hub connection state shown by the
+// network tab's SmartThings section (#70).
+func (c *Client) GetSTHub() (STHub, error) {
+	var h STHub
+	resp, err := c.do("GET", "/api/st/hub", nil)
+	if err != nil {
+		return h, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return h, errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return h, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return h, json.NewDecoder(resp.Body).Decode(&h)
+}
+
 // Schedule mirrors /api/schedule GET.
 type Schedule struct {
 	Active       bool   `json:"active"`
