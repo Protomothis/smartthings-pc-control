@@ -87,7 +87,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - `smartthings.allowed_hubs` (config, 문자열 배열)가 비어 있지 않으면 그 IP 외 출처는
   `403`. 기본 빈 배열(모두 허용). GUI에서 "현재 연결된 허브를 허용 목록에 추가" 제공.
 - 시크릿이 비어 있으면 인증 없음(기존과 동일). 드라이버는 이 경우 `connection=ok`
-  로 두되 `pcStatus.error`에 "no secret" 경고 문자열을 넣는다.
+  로 두되 `pcStatus.message`에 "no secret" 경고 문자열을 넣는다(`connection` enum에 `noSecret`은 두지 않는다).
 - 레거시 `/{secret}/{command}`는 변경 없음.
 
 ### 4.2 `GET /st/v1/status`
@@ -136,7 +136,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - `command`: `shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock`
   `turnscreenoff` `turnscreenon` `ping`.
 - `mode`: `default`(설정된 유예 따름) / `immediate`(유예 없이) / `grace`(설정 유예 강제).
-  `forceshutdown`은 항상 즉시.
+  `forceshutdown`은 항상 즉시. `minutes=0`에서 유예로 미뤄지는 경우 origin은 레거시 경로와 같이 `remote`를 유지한다(트레이 토스트·텔레그램 [지금 실행]/[취소] 메시지가 그 경로에 묶여 있다). `smartthings` origin은 `minutes > 0` 예약에만 쓴다.
 - `minutes > 0` 이면 예약: `setSchedule(command, minutes, originSmartThings)`.
   기존 예약이 있으면 대체하고 `schedule.replaced`를 낸다(기존 정책 그대로).
 - 응답 `200 { "accepted": true, "executed": false, "schedule": {...} }`.
@@ -210,7 +210,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 | `{NS}.pcPowerState` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
 | `{NS}.pcCommand` | command `execute(command, mode, minutes)`; attr `lastCommand` string("shutdown · SmartThings · 23:05") |
 | `{NS}.pcSchedule` | attrs `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string, `origin` string; command `cancel()` ; command `schedule(command, minutes)` (프리셋 enum 5/15/30/60/120) |
-| `{NS}.pcStatus` | attrs `connection` enum(`ok` `unauthorized` `unreachable` `incompatible` `noSecret`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string(사람이 읽는 오류/안내) |
+| `{NS}.pcStatus` | attrs `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string(사람이 읽는 오류/안내) |
 | `{NS}.pcSession` | attrs `locked` bool, `idleMinutes` integer, `user` string — `session.exposed=false`면 컴포넌트 숨김(프레젠테이션에서 visibleCondition) |
 | `refresh` | 즉시 폴링 |
 
@@ -229,13 +229,13 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 
 ### 5.4 환경설정(preferences)
 
-`ipAddress`, `port`(5001), `secret`(password), `macAddress`, `wolBroadcast`(255.255.255.255),
+`ipAddress`, `port`(5001), `secret`(string; Edge에 password 타입이 없어 입력 중 보임을 설명에 명시), `macAddress`, `wolBroadcast`(255.255.255.255),
 `pollInterval` enum(10s/30s/1m/5m, 기본 30s; 푸시 구독 성공 시 5m으로 자동 완화하지 않고 사용자 값 유지),
 `offAction` enum(shutdown/suspend/hibernate/lock/turnscreenoff/restart/forceshutdown),
 `createDisplayDevice` bool, `language` enum(auto/ko/en).
 
 SSDP로 추가된 장치는 `ipAddress`/`port`가 채워진 상태로 생성되고, 사용자는 시크릿과 MAC만 넣는다.
-MAC은 `status.wol.adapters[0].mac`에서 자동 채움(WoL 가능 어댑터 우선).
+드라이버는 자기 환경설정을 쓸 수 없으므로, `macAddress`가 비어 있으면 폴링이 저장한 WoL 가능 어댑터 MAC(장치 필드)을 사용한다.
 
 ## 6. 드라이버 동작
 
@@ -252,7 +252,7 @@ MAC은 `status.wol.adapters[0].mac`에서 자동 채움(WoL 가능 어댑터 우
 ```
 on --(power.stopping reason=suspend)--> sleeping
 on --(power.stopping reason=hibernate)--> hibernated
-on --(power.stopping reason=shutdown|restart)--> shuttingDown --(unreachable)--> off
+on --(power.stopping reason=shutdown|restart)--> shuttingDown --(unreachable ×2)--> off
 on --(schedule.active for shutdown/restart)--> on (pcSchedule 카드가 표시; powerState는 유지)
 off|sleeping|hibernated --(switch on)--> waking --(status ok)--> on
 waking --(90s 초과)--> 이전 상태 + message "깨우기 실패: WoL 응답 없음"
