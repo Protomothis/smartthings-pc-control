@@ -126,6 +126,13 @@ function wol.wake(driver, device, deps)
     return false, "bad mac"
   end
 
+  -- §6.3: a PC whose adapter has WoL turned off is still sent the packet, but
+  -- the last poll already knew it would probably not work, so say so now
+  -- rather than at the next poll.
+  if device:get_field("wol_ready") == false then
+    devices.emit_message(device, i18n.t(lang, "wol_not_ready"))
+  end
+
   local broadcast = prefs.wolBroadcast
   local function fire()
     local ok, err = wol.send(mac, broadcast, deps)
