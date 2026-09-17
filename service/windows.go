@@ -41,6 +41,10 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// SSDP discovery (#69): answers M-SEARCH while smartthings.discovery
 	// is on; config saves reconcile it.
 	startSSDP()
+	// The responder needs inbound UDP 1900; an install made before #69 has
+	// no such rule, so re-check here (#76). Off the startup path: netsh
+	// must never delay the service reaching Running.
+	go ensureSSDPFirewallRuleAtStart()
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -197,6 +201,14 @@ func Install() error {
 	} else {
 		fmt.Println("  OK - Firewall rule added")
 	}
+	// SSDP discovery (#69) answers M-SEARCH on UDP 1900; without this rule
+	// the Edge driver never sees this PC (#76).
+	if err := ensureSSDPFirewallRule(); err != nil {
+		fmt.Printf("  WARNING: %v\n", err)
+		fmt.Println("  SmartThings discovery may not find this PC until UDP 1900 is allowed.")
+	} else {
+		fmt.Println("  OK - Discovery firewall rule added (UDP 1900)")
+	}
 
 	// Start service
 	fmt.Println("[3/3] Starting service...")
@@ -250,6 +262,7 @@ func Uninstall() error {
 		fmt.Println("  OK - Firewall rule removed")
 	}
 	removeWebUIFirewallRule() // best-effort; only exists when webui_remote was enabled
+	removeSSDPFirewallRule()  // best-effort; only exists on installs from #76 on
 
 	return nil
 }
@@ -302,29 +315,17 @@ func Status() {
 
 const firewallRuleName = "SmartThings PC Control"
 
+// addFirewallRule opens the command port. The delete comes first because
+// the port may have changed since the rule was written; ensureFirewallRule
+// only looks at the name (service/firewall.go, #76).
 func addFirewallRule(port int) error {
 	// Remove existing rule first (in case port changed)
 	removeFirewallRule()
-
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+firewallRuleName,
-		"dir=in", "action=allow", "protocol=tcp",
-		"localport="+fmt.Sprintf("%d", port))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh add rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return ensureFirewallRule(firewallRuleName, firewallProtoTCP, port)
 }
 
 func removeFirewallRule() error {
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name="+firewallRuleName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh delete rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return deleteFirewallRule(firewallRuleName)
 }
 
 const webUIFirewallRuleName = "SmartThings PC Control WebUI"
@@ -333,25 +334,11 @@ const webUIFirewallRuleName = "SmartThings PC Control WebUI"
 // service at startup (runs as SYSTEM) when webui_remote is enabled.
 func addWebUIFirewallRule(port int) error {
 	removeWebUIFirewallRule()
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+webUIFirewallRuleName,
-		"dir=in", "action=allow", "protocol=tcp",
-		"localport="+fmt.Sprintf("%d", port))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh add rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return ensureFirewallRule(webUIFirewallRuleName, firewallProtoTCP, port)
 }
 
 func removeWebUIFirewallRule() error {
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name="+webUIFirewallRuleName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh delete rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return deleteFirewallRule(webUIFirewallRuleName)
 }
 
 // restartSelf restarts the service using sc.exe.
