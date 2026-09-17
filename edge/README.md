@@ -83,6 +83,26 @@ keep working.
 
 The `edge-vX.Y.Z` release tag must match `src/version.lua`; CI enforces it (#74).
 
+## 방화벽/네트워크 요구사항 (Firewall and network requirements)
+
+SSDP discovery is multicast, so it only works when the LAN lets it through:
+
+- **UDP 1900 inbound** must be allowed on the PC. `pc-control.exe install`
+  adds the rule *SmartThings PC Control SSDP*, and the service re-checks it at
+  every start while `smartthings.discovery` is on (#76). Disabling discovery
+  later leaves the rule in place; uninstall removes it.
+- The network profile must be **Private**. On a Public profile Windows blocks
+  inbound multicast whatever the rule says.
+- Hub and PC must sit on the **same L2 segment** (same subnet/VLAN, no
+  AP isolation, no client isolation on the Wi-Fi SSID). Routers do not forward
+  239.255.255.250 between segments.
+- Virtual adapters (Hyper-V, WSL, VPN taps) may log
+  `SSDP: <name> did not join 239.255.255.250` at startup. That is normal — the
+  responder skips them and keeps serving the real LAN adapters.
+
+When discovery still finds nothing, add the device by hand as below; the
+service works identically either way.
+
 ## Adding a device by hand
 
 Until SSDP lands, "Scan nearby devices" creates one device labelled
