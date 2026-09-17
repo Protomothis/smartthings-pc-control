@@ -1,0 +1,6 @@
+# Shell scripts must keep LF endings. This is a Windows project, so a checkout
+# with core.autocrlf=true would otherwise hand bash a script whose every line
+# ends in CR, and bash reports that as `$'\r': command not found` on the very
+# first line. edge/tools/create-capabilities.sh is run from Git Bash on the
+# owner's machine, so this is not theoretical.
+*.sh text eol=lf

@@ -1,0 +1,161 @@
+name: Edge driver
+
+# Lua tests for the SmartThings Edge driver in `edge/`, plus CLI packaging and
+# channel deployment on an `edge-vX.Y.Z` tag (design doc §10).
+#
+# The Go service has its own workflows (ci.yml, release.yml) and its own `v*`
+# tags. The two are versioned independently: the driver ships through a
+# SmartThings channel, the service through GitHub Releases, so a driver-only
+# fix does not need a service release and vice versa.
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - 'milestone/**'
+    paths:
+      - 'edge/**'
+      - '.github/workflows/edge.yml'
+    tags:
+      - 'edge-v*'
+  pull_request:
+    paths:
+      - 'edge/**'
+      - '.github/workflows/edge.yml'
+
+permissions:
+  contents: read
+
+# A new push to the same branch supersedes an in-flight run. Tags are never
+# cancelled: `github.ref` is unique per tag, and a half-finished package job
+# would leave a driver uploaded but unassigned.
+concurrency:
+  group: edge-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # No `cache: npm`: it needs a lockfile and none is committed (see
+          # below), so enabling it fails the step outright.
+
+      # `npm ci` requires package-lock.json, which this repo does not commit -
+      # the only dependency is fengari, pinned exactly ("0.1.5", no caret) in
+      # package.json, so `npm install` is already reproducible here.
+      - name: Install dependencies
+        run: npm install
+
+      # tools/lua.js runs the Lua 5.3 suite under fengari. It is plain
+      # CommonJS on top of `fs` and `path` - no bun-only API - so the same
+      # command works under node here and under bun locally.
+      - name: Test
+        run: npm test
+
+      # Compiles every module in src/ without running it. Catches a syntax
+      # error in a file no test happens to require.
+      - name: Syntax check
+        run: node tools/lua.js tests/syntax.lua
+
+  package:
+    # Only ever runs for an `edge-v*` tag. The `paths:` filter above does not
+    # apply to tag pushes, so this guard is what keeps the job off every other
+    # tag (the service's `v*` tags in particular).
+    if: startsWith(github.ref, 'refs/tags/edge-v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # softprops/action-gh-release attaches assets to the tag
+    # Required repository secrets (Settings -> Secrets and variables -> Actions):
+    #
+    #   SMARTTHINGS_TOKEN  A SmartThings Personal Access Token created at
+    #                      https://account.smartthings.com/tokens with the
+    #                      scopes `Devices`, `Drivers` (r/w) and `Channels`
+    #                      (r/w). The CLI reads it from this exact env var, so
+    #                      no `smartthings login` browser flow is needed in CI.
+    #   ST_CHANNEL_ID      UUID of the distribution channel the driver is
+    #                      published to, from `smartthings edge:channels`
+    #                      (create it once with `edge:channels:create`).
+    #
+    # Both are owner-supplied; the driver cannot be published without them.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # config.yml has no standard `version` field, so src/version.lua is the
+      # single source of truth (it also feeds the driver's HTTP User-Agent and
+      # the `driver_version` of /st/v1/subscribe). A tag that disagrees with it
+      # would publish a driver whose self-reported version is wrong, which is
+      # exactly the thing nobody notices until a support question. Fail loudly.
+      - name: Check tag against src/version.lua
+        run: |
+          tag_version="${GITHUB_REF_NAME#edge-v}"
+          file_version=$(sed -n 's/^[[:space:]]*return[[:space:]]*"\(.*\)".*$/\1/p' edge/src/version.lua | tail -n 1)
+          echo "tag=${GITHUB_REF_NAME} -> ${tag_version}, edge/src/version.lua -> ${file_version}"
+          if [ -z "$file_version" ]; then
+            echo "::error file=edge/src/version.lua::could not read the version string"
+            exit 1
+          fi
+          if [ "$tag_version" != "$file_version" ]; then
+            echo "::error file=edge/src/version.lua::tag ${GITHUB_REF_NAME} expects version \"${tag_version}\" but the file says \"${file_version}\""
+            exit 1
+          fi
+
+      - name: Install the SmartThings CLI
+        run: npm i -g @smartthings/cli
+
+      # Builds the driver zip without contacting SmartThings, so the release
+      # asset exists even if the upload below fails, and so a packaging error
+      # (bad profile YAML, unknown capability id) is reported before any
+      # channel is touched.
+      - name: Build the driver package
+        env:
+          # Not strictly needed to build a zip, but the CLI prompts for a login
+          # when it has no credentials and a prompt in CI is a 60-minute hang.
+          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+        run: smartthings edge:drivers:package edge/ --build-only "smartthings-pc-control-${GITHUB_REF_NAME}.zip"
+
+      # Uploads it and prints the assigned driverId/version as JSON.
+      - name: Upload the driver to SmartThings
+        env:
+          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+        run: smartthings edge:drivers:package edge/ --json | tee package-result.json
+
+      - name: Assign the driver to the channel
+        env:
+          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+        run: |
+          driver_id=$(jq -r '.driverId' package-result.json)
+          version=$(jq -r '.version' package-result.json)
+          if [ -z "$driver_id" ] || [ "$driver_id" = "null" ]; then
+            echo "::error::edge:drivers:package returned no driverId"
+            cat package-result.json
+            exit 1
+          fi
+          echo "assigning driver ${driver_id} version ${version}"
+          smartthings edge:channels:assign "$driver_id" "$version" --channel "${{ secrets.ST_CHANNEL_ID }}"
+
+      # The zip is what the owner can side-load with `edge:drivers:install`
+      # when a channel deploy has to be bypassed; package-result.json records
+      # which driverId/version the tag produced.
+      - name: Attach the package to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            smartthings-pc-control-${{ github.ref_name }}.zip
+            package-result.json
+          # `edge-v1.1.0-rc1` and friends are channel test builds, not the
+          # version users are pointed at.
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          generate_release_notes: true
