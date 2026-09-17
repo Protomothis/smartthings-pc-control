@@ -1,5 +1,75 @@
 # Changelog
 
+## [v1.1.0] (unreleased)
+
+SmartThings를 위한 전용 **Edge 드라이버**와, 그 드라이버가 쓰는 서비스 API가 추가되었습니다. 설계 문서: `docs/design/edge-driver.md`.
+
+기존 [PCControl 드라이버](https://github.com/toddaustin07/PCControl) 호환 경로(`/{secret}/{command}`)는 그대로입니다. **옮겨 갈 의무는 없습니다.**
+
+### SmartThings Edge 드라이버 (`edge/`)
+
+- **전용 Edge 드라이버** — 레포의 `edge/` 폴더에 Lua 5.3 드라이버가 들어왔습니다. 허브 안에서 로컬로 돌며 서비스의 `/st/v1` API로 통신합니다. 전원 상태(켜짐·절전·최대절전·꺼짐·깨우는 중·종료 대기), 유예 카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 화면 켜기/끄기 자식 장치, SSDP 자동 검색을 SmartThings 앱에 그대로 드러냅니다. 설치와 사용법은 [`edge/README.md`](edge/README.md) (#71 #72 #73 #74)
+- **커스텀 capability 5종** — `pcPowerState`(전원 상태), `pcCommand`(명령 실행), `pcSchedule`(예약 표시·취소), `pcStatus`(연결·버전·업데이트·WoL·메시지), `pcSession`(잠금·유휴, 옵트인). 정의와 프레젠테이션 JSON은 `edge/capabilities/`에 있습니다 (#72)
+- **CI와 배포 도구** — `.github/workflows/edge.yml`이 `edge/**` 변경마다 Lua 테스트와 문법 검사를 돌리고, `edge-vX.Y.Z` 태그에서 태그와 `edge/src/version.lua`가 일치하는지 확인한 뒤 패키징 → 채널 배정 → 릴리스 자산 첨부까지 수행합니다. 네임스페이스 일괄 적용 `edge/tools/apply-namespace.js`, capability 생성 `edge/tools/create-capabilities.sh` (#74)
+
+### 서비스 `/st/v1` API (#67)
+
+- **새 HTTP API** — 명령 포트(기본 5001)에 `GET /st/v1/status`(전원·유예·예약·마지막 명령·업데이트·WoL 어댑터·디스플레이·세션을 한 번에), `POST /st/v1/command`(명령 + 모드 `default`/`immediate`/`grace` + 분 0~1440), `DELETE /st/v1/schedule`이 추가되었습니다
+- **헤더 인증** — 시크릿을 URL이 아니라 `X-PC-Secret` 헤더로 받습니다. 불일치는 `401`, 허용 목록 밖 출처는 `403`, 초당 10회를 넘으면 `429`
+- **예약 출처 `smartthings`** — SmartThings에서 건 예약이 앱·트레이·텔레그램 어디서나 "SmartThings"로 표시되고, 취소 라벨도 구분됩니다
+
+### 푸시 구독 (#68)
+
+- **이벤트 푸시** — `POST /st/v1/subscribe`로 허브가 콜백 주소를 등록하면 전원·예약·원격 명령·시스템·디스플레이·세션 이벤트를 즉시 보냅니다. 매 이벤트에 전체 status를 실어 드라이버가 폴링을 기다리지 않고 갱신합니다. TTL 60~3600초(기본 600), 콜백 호스트는 요청 출처 IP와 같아야 하고 사설 대역만 허용
+- **종료 직전 이벤트** — `power.stopping`은 종료·재시작·절전·최대절전을 구분해(reason) 동기 전송(최대 1.5초)한 뒤 종료를 계속합니다. 덕분에 SmartThings 타일이 "꺼짐"이 아니라 "절전"을 표시합니다
+- 알림 카테고리 필터와 조용한 시간대는 장치 상태 푸시에 적용되지 않습니다(알림이 아니라 상태이므로). `display.changed`·`session.*`는 텔레그램에 도달하지 않습니다
+
+### SSDP 자동 검색 (#69, #76)
+
+- **SSDP 응답기** — `urn:smartthings-pc-control:device:pc:1`에 대한 M-SEARCH에 응답하고, 인증 없는 `GET /st/v1/description`(프로토콜·machine_id·호스트명·버전·포트·시크릿 설정 여부만)을 제공합니다. M-SEARCH를 받은 인터페이스의 주소로 `LOCATION`을 만들어 유선·무선 어느 쪽에서도 허브가 닿는 주소를 알려 줍니다
+- **방화벽 규칙 자동 추가** (#76) — 설치 시 *SmartThings PC Control SSDP*(인바운드 UDP 1900) 규칙을 추가하고, `smartthings.discovery`가 켜져 있는 한 서비스가 시작할 때마다 규칙을 다시 확인합니다. 제거 시 삭제됩니다
+
+### GUI SmartThings 섹션 (#70)
+
+- **네트워크 탭에 SmartThings 섹션** — 연결된 허브(IP·드라이버 버전·마지막 확인 시각), 토글 *자동 검색(SSDP) 허용* / *세션 정보 노출(잠금·유휴)* / *사용자 이름 포함*, 허브 허용 목록과 [현재 허브 추가]·[삭제]. 시크릿이 비어 있으면 설정을 권하는 안내를 표시합니다
+- **새 API** — `GET /api/st/hub`(연결된 허브 정보), `GET /api/telegram/state`(폴링·409 충돌 상태)
+
+### 세션 유휴 시간 (#77)
+
+- **트레이 앱이 유휴 시간을 알려 줍니다** — 서비스는 세션 0에서 돌기 때문에 사용자가 마지막으로 입력한 시각을 알 수 없습니다(`WTSINFOEXW.LastInputTime`은 Windows 10/11 콘솔 세션에서 로그온 시각에 고정되어 사실상 업타임입니다). 사용자 세션에 있는 트레이 앱이 *세션 정보 노출*이 켜져 있을 때 30초마다 `POST /api/session/heartbeat`로 값을 올리고, 서비스는 마지막 값이 90초 이내일 때만 상태에 싣습니다. 트레이 앱이 꺼져 있으면 유휴 시간은 비고, **잠금 여부와 사용자 이름은 영향을 받지 않습니다**(Windows가 서비스에 직접 알려 줍니다). 유휴 변화는 푸시로 보내지 않습니다
+
+### 드라이버 동작 (#71–#73)
+
+- **골격과 상태 머신** (#71) — 프로필·환경설정·수동 추가·스위치·WoL·ping·healthCheck, fengari 기반 Lua 테스트 하네스
+- **`/st/v1` 클라이언트와 매핑** (#72) — 상태 JSON을 capability 이벤트로 옮기는 순수 함수, 오류 분류(`unauthorized`/`unreachable`/`incompatible`), 한국어·영어 문자열
+- **푸시·검색·자식 장치** (#73) — 허브 내 TCP 리스너와 TTL 80% 갱신, SSDP 검색과 `machine_id` 기반 중복 방지·IP 추적(`followDiscovery`), 디스플레이 자식 장치, WoL 재시도(즉시/2초/5초, 포트 7·9)와 `waking` 상태, 장치 수에 따른 폴링 분산
+
+### 텔레그램 (#75)
+
+- **PC 이름 머리말** — 모든 알림과 봇 답장이 `🖥 <PC 이름>` 줄로 시작합니다. 이름은 `telegram.pc_name`, 비어 있으면 호스트 이름입니다. PC가 한 대여도 무해하고, 여러 대일 때 어느 PC의 알림인지 바로 보입니다
+- **409 Conflict 경고** — 여러 PC가 같은 봇 토큰으로 `getUpdates`를 돌리면 텔레그램이 한 쪽만 허용합니다. 이 상황을 감지해 서비스 로그와 알림 탭에 "다른 PC가 같은 봇으로 명령을 수신 중 — PC마다 봇을 분리하거나 허브 에이전트를 사용"을 표시하고 폴링 백오프를 늘립니다. **방침: 봇 하나 = PC 하나.** 여러 PC를 한 봇으로 묶는 것은 별도 프로젝트인 허브 에이전트(`docs/design/hub-agent.md`)가 맡습니다
+
+### 새 명령
+
+- **`turnscreenon`** — 꺼진 모니터를 다시 켭니다(로그인 세션 필요). `/st/v1/command`와 레거시 `/{secret}/turnscreenon` 양쪽에서 쓸 수 있고, 앱 명령 탭과 Edge 드라이버의 디스플레이 자식 장치도 이 명령을 씁니다
+- **텔레그램 `/screenon`** — 같은 명령의 텔레그램 단축키. `/lock`·`/screenoff`와 함께 확인 없이 바로 실행되는 안전 명령입니다
+
+### 설정
+
+- `smartthings.discovery`(기본 `true`) — SSDP 응답 on/off
+- `smartthings.allowed_hubs`(기본 `[]`) — `/st/v1`을 쓸 수 있는 허브 IP. 비어 있으면 모두 허용
+- `smartthings.expose_session` / `expose_session_user`(기본 `false`) — 잠금·유휴 시간 노출과 사용자 이름 포함
+- `telegram.pc_name`(기본 `""`) — 메시지 머리말의 PC 이름. 비면 호스트 이름
+- `smartthings.*`는 모두 핫 리로드입니다(재시작 불필요)
+
+### 업그레이드 안내
+
+- 기존 설치본은 앱의 [지금 업데이트]로 올리면 됩니다. `config.json`은 그대로 호환되고 `smartthings` 블록은 기본값으로 채워집니다
+- **방화벽 규칙이 하나 늘어납니다** — 자동 검색이 켜져 있으면(기본) 서비스가 시작할 때 인바운드 **UDP 1900** 규칙 *SmartThings PC Control SSDP*를 추가합니다. 이미 설치된 PC도 업데이트 후 첫 시작에서 규칙이 생기므로 `install`을 다시 돌릴 필요는 없습니다. 원하지 않으면 네트워크 탭에서 *자동 검색(SSDP) 허용*을 끄세요(이미 만들어진 규칙은 남으며, `uninstall` 시 삭제됩니다)
+- **기존 PCControl 드라이버 사용자는 아무것도 하지 않아도 됩니다.** 레거시 명령 경로·응답은 바뀌지 않았습니다. 새 Edge 드라이버는 채널에 가입해 설치하는 선택 사항이며, 두 드라이버를 같은 PC에 동시에 붙여도 서로 방해하지 않습니다
+- 새 드라이버를 쓰려면 서비스가 **v1.1.0 이상**이어야 합니다. 그 아래 버전에 연결하면 드라이버가 `incompatible`로 표시합니다
+- 텔레그램을 여러 PC에서 쓰고 있었다면 봇을 PC마다 분리하세요. 같은 토큰을 공유하면 한 PC만 명령을 받습니다
+
 ## [v1.0.0]
 
 첫 정식 버전. 텔레그램 알림과 텔레그램에서의 PC 제어가 추가되었습니다. 설계 문서: `docs/design/v1.0-notifications.md`.
