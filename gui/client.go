@@ -246,6 +246,26 @@ func (c *Client) GetSTHub() (STHub, error) {
 	return h, json.NewDecoder(resp.Body).Decode(&h)
 }
 
+// SessionHeartbeat reports the interactive session's idle time to the
+// service (#77). Only this app can measure it, and the service publishes
+// the newest sample in the /st/v1/status session block for 90s; after that
+// it reports null, so a missed post degrades to "unknown" rather than to a
+// wrong number.
+func (c *Client) SessionHeartbeat(idleSeconds int64) error {
+	resp, err := c.do("POST", "/api/session/heartbeat", map[string]int64{"idle_seconds": idleSeconds})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // Schedule mirrors /api/schedule GET.
 type Schedule struct {
 	Active       bool   `json:"active"`

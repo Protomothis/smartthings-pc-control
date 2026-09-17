@@ -121,6 +121,14 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - `session`이 옵트인(`smartthings.expose_session=true`)이면
   `{ "exposed": true, "locked": false, "idle_seconds": 1200, "user": "kim" }`.
   기본 꺼짐. `user`는 `expose_session_user=true`일 때만 포함.
+- `idle_seconds`는 트레이 앱이 보내는 하트비트에서 온다(#77). 서비스는 세션 0에서
+  돌아 사용자 입력 시각을 알 수 없고(`WTSINFOEXW.LastInputTime`은 Windows 10/11
+  콘솔 세션에서 로그온 시각에 고정되어 사실상 업타임이다), 사용자 세션에 있는
+  트레이 앱만 `GetLastInputInfo`를 부를 수 있다. 트레이 앱은 `expose_session=true`
+  일 때 30초마다 `POST /api/session/heartbeat`(WebUI API, 세션 쿠키 인증)로 값을
+  올리고, 서비스는 마지막 하트비트가 90초 이내일 때만 그 값을 싣는다. 트레이 앱이
+  꺼져 있거나 옵션이 꺼지면 `idle_seconds`는 null이다(`locked`·`user`는 WTS에서
+  오므로 영향 없음). 유휴 변화는 푸시 이벤트로 내보내지 않는다.
 - `display`: `on` / `off` / `unknown`. 마지막으로 서비스가 보낸 명령 기준.
 - `last_shutdown_clean`: state.json에 `clean_shutdown` 플래그를 두고 `power.stopping`
   에서 true, 시작 시 읽은 뒤 false로 초기화. 비정상 종료(정전) 판별용.
