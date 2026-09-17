@@ -106,9 +106,13 @@ type ui struct {
 	schedBig       *widget.RichText
 	scheduleLabel  *widget.Label
 	schedCancelBtn *widget.Button
-	networkBox     *fyne.Container
-	svcBox         *fyne.Container
-	remoteCheck    *toggle
+	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
+	// SmartThings hub list changes) and the SmartThings section (#70).
+	networkBox  *fyne.Container
+	networkRoot *fyne.Container
+	st          *stSection
+	svcBox      *fyne.Container
+	remoteCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -1021,10 +1025,33 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 
 func (u *ui) buildNetworkTab() fyne.CanvasObject {
 	u.networkBox = container.NewVBox(widget.NewLabel(u.t("network.loading")))
-	refreshBtn := widget.NewButtonWithIcon(u.t("network.refresh"), theme.ViewRefreshIcon(), func() { go u.loadNetwork() })
+	// One button for the whole tab: the SmartThings hub state and the WoL
+	// adapter list are both re-read (the tab has no polling loop of its own,
+	// so it also refreshes whenever it is shown — see setCurTab).
+	refreshBtn := widget.NewButtonWithIcon(u.t("network.refresh"), theme.ViewRefreshIcon(), u.refreshNetwork)
+	stBody := u.buildSTSection()
+
+	// Save lives in the fixed footer (savebar.go), enabled only while the
+	// SmartThings section differs from cfgBaseline.
+	u.st.bar = newSaveBar(u, func() { u.saveSTSection(false) })
+
+	u.networkRoot = container.NewVBox(
+		container.NewHBox(layout.NewSpacer(), refreshBtn),
+		section(u.t("st.section"), stBody),
+		widget.NewSeparator(),
+		section(u.t("network.wol.section"), u.networkBox),
+		// Trailing padding so the last row never sits flush against the
+		// footer (same as the settings and notifications tabs).
+		widget.NewLabel(""),
+	)
+	u.refreshNetwork()
+	return withSaveBar(u.networkRoot, u.st.bar)
+}
+
+// refreshNetwork re-reads both halves of the network tab off the UI thread.
+func (u *ui) refreshNetwork() {
 	go u.loadNetwork()
-	top := container.NewHBox(layout.NewSpacer(), refreshBtn)
-	return container.NewBorder(top, nil, nil, nil, container.NewVScroll(u.networkBox))
+	go u.loadSTHub()
 }
 
 func (u *ui) buildLogsTab() fyne.CanvasObject {
@@ -1128,10 +1155,12 @@ func (u *ui) initialLoad() {
 		u.setGraceSelection(cfg)
 		u.updateSaveState()
 		u.fillNotifyTab(cfg)
+		u.fillSTSection(cfg)
 	})
 	if err == nil {
 		u.loadLogs()
 		u.loadSchedule()
+		u.loadSTHub()
 	}
 }
 
@@ -1359,6 +1388,13 @@ func (u *ui) loadNetwork() {
 			l.Wrapping = fyne.TextWrapWord
 			return l
 		}
+		// The adapter list is the last section of the tab root, so it has to
+		// re-lay out the parent once it grows (like fillSvcBox, #53).
+		defer func() {
+			if u.networkRoot != nil {
+				u.networkRoot.Refresh()
+			}
+		}()
 		u.networkBox.RemoveAll()
 		if s.Error != "" {
 			u.networkBox.Add(wrapped(s.Error))

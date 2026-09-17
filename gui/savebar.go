@@ -12,7 +12,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Unsaved-changes handling shared by the Settings and Notifications tabs:
+// Unsaved-changes handling shared by the Settings, Notifications and
+// Network (SmartThings section) tabs:
 // a fixed footer with a pulsing "unsaved changes" indicator and the Save
 // button (so Save is always visible, however long the tab scrolls), a "•"
 // marker on the tab title, and a Save / Discard / Keep editing prompt when
@@ -22,7 +23,12 @@ import (
 const (
 	tabSettings = 0
 	tabNotify   = 3
+	tabNetwork  = 4
 )
+
+// formTabs are the tabs with a save bar, in tab order — the set consulted
+// when the window is closed with edits pending.
+var formTabs = []int{tabSettings, tabNotify, tabNetwork}
 
 // saveBar is the footer under a form tab.
 type saveBar struct {
@@ -110,6 +116,8 @@ func (u *ui) tabDirty(index int) bool {
 		return u.settingsDirty()
 	case tabNotify:
 		return u.notifyDirty()
+	case tabNetwork:
+		return u.stDirty()
 	}
 	return false
 }
@@ -122,6 +130,8 @@ func (u *ui) saveTab(index int) bool {
 		return u.saveSettings(true)
 	case tabNotify:
 		return u.saveNotifyTab(true)
+	case tabNetwork:
+		return u.saveSTSection(true)
 	}
 	return true
 }
@@ -136,6 +146,8 @@ func (u *ui) discardTab(index int) {
 		u.fillSettingsTab(*u.cfgBaseline)
 	case tabNotify:
 		u.fillNotifyTab(*u.cfgBaseline)
+	case tabNetwork:
+		u.fillSTSection(*u.cfgBaseline)
 	}
 }
 
@@ -173,6 +185,16 @@ func (u *ui) promptUnsaved(bodyKey string, dirtyTabs []int, onDone func()) {
 	d.Show()
 }
 
+// setCurTab records the tab now on screen and refreshes the ones that only
+// load when shown. The network tab has no polling loop of its own (#70), so
+// its WoL list and SmartThings hub state are re-read here.
+func (u *ui) setCurTab(index int) {
+	u.curTab = index
+	if index == tabNetwork && u.connected.Load() {
+		u.refreshNetwork()
+	}
+}
+
 // onTabSelected guards tab switches: leaving a dirty form tab asks first.
 // Installed as AppTabs.OnSelected in rebuild.
 func (u *ui) onTabSelected(item *container.TabItem) {
@@ -183,12 +205,12 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 		}
 	}
 	if target < 0 || u.switching {
-		u.curTab = target
+		u.setCurTab(target)
 		return
 	}
 	from := u.curTab
 	if from == target || from < 0 || !u.tabDirty(from) {
-		u.curTab = target
+		u.setCurTab(target)
 		return
 	}
 	// Stay on the dirty tab while asking.
@@ -199,7 +221,7 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 		u.switching = true
 		u.tabs.SelectIndex(target)
 		u.switching = false
-		u.curTab = target
+		u.setCurTab(target)
 	})
 }
 
@@ -207,7 +229,7 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 // has unsaved edits. Installed with SetCloseIntercept in Run.
 func (u *ui) onCloseRequest() {
 	var dirty []int
-	for _, i := range []int{tabSettings, tabNotify} {
+	for _, i := range formTabs {
 		if u.tabDirty(i) {
 			dirty = append(dirty, i)
 		}
