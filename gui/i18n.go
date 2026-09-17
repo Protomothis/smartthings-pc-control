@@ -71,6 +71,7 @@ var messages = map[string]map[Lang]string{
 	"cmd.ping":                   {LangKo: "핑", LangEn: "Ping"},
 	"cmd.lock":                   {LangKo: "잠금", LangEn: "Lock"},
 	"cmd.screenoff":              {LangKo: "화면 끄기", LangEn: "Screen Off"},
+	"cmd.screenon":               {LangKo: "화면 켜기", LangEn: "Screen On"},
 	"cmd.suspend":                {LangKo: "절전", LangEn: "Suspend"},
 	"cmd.hibernate":              {LangKo: "최대 절전", LangEn: "Hibernate"},
 	"cmd.restart":                {LangKo: "재시작", LangEn: "Restart"},

@@ -48,6 +48,7 @@ var testCommands = []struct {
 	{"ping", "cmd.ping", theme.ConfirmIcon, false},
 	{"lock", "cmd.lock", theme.AccountIcon, false},
 	{"turnscreenoff", "cmd.screenoff", theme.VisibilityOffIcon, false},
+	{"turnscreenon", "cmd.screenon", theme.VisibilityIcon, false},
 	{"suspend", "cmd.suspend", theme.MediaPauseIcon, true},
 	{"hibernate", "cmd.hibernate", theme.MediaStopIcon, true},
 	{"restart", "cmd.restart", theme.ViewRefreshIcon, true},
