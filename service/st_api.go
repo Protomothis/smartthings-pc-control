@@ -10,8 +10,8 @@ package service
 //
 // Authentication is the X-PC-Secret header (§4.1) — never the URL — plus an
 // optional hub allow-list and a per-source-IP rate limit (§8).
-// /st/v1/subscribe (§4.5) lives in st_push.go; /st/v1/description (#69) is
-// not implemented here.
+// /st/v1/subscribe (§4.5) lives in st_push.go; /st/v1/description and the
+// SSDP responder (§4.6) live in st_ssdp.go.
 
 import (
 	"encoding/json"
