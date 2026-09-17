@@ -14,7 +14,9 @@ local poll = {}
 
 poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
+poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
+poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
 poll.MIN_SERVICE_VERSION = "1.1.0"
@@ -175,7 +177,7 @@ function poll.once(driver, device, opts)
   local lang = prefs.language
   local current = poll.get_state(device)
 
-  if not client.base_url(prefs) then
+  if not client.device_base_url(device) then
     -- Freshly added device: nothing to poll until the user fills in the IP.
     poll.emit_connection(device, "unreachable", i18n.t(lang, "no_ip"))
     pcall(function() device:offline() end)
@@ -198,12 +200,31 @@ function poll.once(driver, device, opts)
     if mac then
       device:set_field(poll.MAC_FIELD, mac)
     end
+    -- §6.3: remembered so `switch on` can say "WoL is off on the adapter"
+    -- right away instead of at the next poll.
+    device:set_field(poll.WOL_READY_FIELD, ((body or {}).wol or {}).ready == true)
+    -- §13.1: the identity. A manually added device learns its machine_id here,
+    -- so SSDP can later recognise it instead of creating a duplicate.
+    local identified = poll.remember_identity(device, body)
     poll.emit(device, state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
       note = opts.note,
     }))
     pcall(function() device:online() end)
+    -- §6.4: with the PC answering, ask it to push instead of waiting for the
+    -- next poll. A failure here only means the driver keeps polling.
+    pcall(function() require("push").ensure(driver, device, opts.deps) end)
+    -- §5.2: the display child is created on the first status that gives the PC
+    -- an identity (a manually added device has none before that), and follows
+    -- `status.display` from then on.
+    local loaded, display = pcall(require, "display")
+    if loaded then
+      if identified then
+        pcall(function() display.ensure(driver, device) end)
+      end
+      pcall(function() display.sync(driver, device, body) end)
+    end
     return true
   end
 
@@ -220,11 +241,34 @@ function poll.once(driver, device, opts)
   if kind == "unreachable" then
     nxt = state.transition(current, "unreachable")
     pcall(function() device:offline() end)
+    -- §13.2: the PC may just have moved to another address. One targeted SSDP
+    -- search (rate limited to once per 5 minutes per device) before the next
+    -- poll is cheaper than waiting for the user to notice.
+    pcall(function() require("discovery").refresh(driver, device, opts.deps) end)
   end
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
   return false, kind
+end
+
+--- Store what a status body says about the PC's identity (§13.1). Returns true
+--- when something changed, which is when the display child may need creating.
+function poll.remember_identity(device, body)
+  body = body or {}
+  local discovery = require "discovery"
+  local changed = false
+  if type(body.machine_id) == "string" and body.machine_id ~= ""
+      and device:get_field(discovery.MACHINE_FIELD) ~= body.machine_id then
+    device:set_field(discovery.MACHINE_FIELD, body.machine_id, { persist = true })
+    changed = true
+  end
+  if type(body.hostname) == "string" and body.hostname ~= ""
+      and device:get_field(discovery.HOSTNAME_FIELD) ~= body.hostname then
+    device:set_field(discovery.HOSTNAME_FIELD, body.hostname, { persist = true })
+    changed = true
+  end
+  return changed
 end
 
 --- Poll interval in seconds from the `pollInterval` preference (§5.4).
@@ -236,11 +280,33 @@ function poll.interval(prefs)
   return poll.DEFAULT_INTERVAL
 end
 
+--- §13.3: spread the devices' polls over the interval so N PCs are not all
+--- asked in the same second. A hash of the DNI is deterministic (the same
+--- device keeps its slot across restarts) and needs no coordination between
+--- devices, unlike an index that would have to be recomputed on every add and
+--- remove. FNV-1a, 32 bit.
+function poll.offset(dni, interval)
+  interval = math.floor(tonumber(interval) or poll.DEFAULT_INTERVAL)
+  if interval <= 1 or type(dni) ~= "string" or dni == "" then
+    return 0
+  end
+  -- Hex literals so the constants are integers on every Lua 5.3 build
+  -- (offset basis 2166136261, prime 16777619).
+  local hash = 0x811C9DC5
+  for i = 1, #dni do
+    hash = (hash ~ dni:byte(i)) & 0xFFFFFFFF
+    hash = (hash * 0x01000193) & 0xFFFFFFFF
+  end
+  return hash % interval
+end
+
 function poll.stop(driver, device)
-  local timer = device:get_field(poll.TIMER_FIELD)
-  if timer then
-    pcall(function() driver:cancel_timer(timer) end)
-    device:set_field(poll.TIMER_FIELD, nil)
+  for _, field in ipairs({ poll.TIMER_FIELD, poll.START_TIMER_FIELD }) do
+    local timer = device:get_field(field)
+    if timer then
+      pcall(function() driver:cancel_timer(timer) end)
+      device:set_field(field, nil)
+    end
   end
 end
 
@@ -248,15 +314,31 @@ end
 function poll.start(driver, device)
   poll.stop(driver, device)
   local interval = poll.interval(device.preferences)
-  local timer = driver:call_on_schedule(interval, function()
-    poll.once(driver, device)
-  end, "pc-poll")
-  device:set_field(poll.TIMER_FIELD, timer)
+  local offset = poll.offset(device.device_network_id, interval)
+
+  local function begin()
+    device:set_field(poll.START_TIMER_FIELD, nil)
+    local timer = driver:call_on_schedule(interval, function()
+      poll.once(driver, device)
+    end, "pc-poll")
+    device:set_field(poll.TIMER_FIELD, timer)
+    return timer
+  end
+
+  if offset > 0 then
+    -- The schedule itself starts late; the first poll below still happens now,
+    -- so the tiles do not wait for the offset.
+    local starter = driver:call_with_delay(offset, begin, "pc-poll-start")
+    device:set_field(poll.START_TIMER_FIELD, starter)
+  else
+    begin()
+  end
+
   -- Prime the tiles instead of waiting a whole interval for the first tick.
   driver:call_with_delay(1, function()
     poll.once(driver, device)
   end, "pc-poll-initial")
-  return timer
+  return device:get_field(poll.TIMER_FIELD)
 end
 
 return poll
