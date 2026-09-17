@@ -563,6 +563,7 @@ func stHandler() http.Handler {
 	mux.HandleFunc("/st/v1/status", stAuth(handleSTStatus))
 	mux.HandleFunc("/st/v1/command", stAuth(handleSTCommand))
 	mux.HandleFunc("/st/v1/schedule", stAuth(handleSTSchedule))
+	registerSTDescriptionRoute(mux) // #69, unauthenticated (see st_ssdp.go)
 	// Anything else under /st/v1 (including /st/v1/subscribe, #68, and
 	// /st/v1/description, #69) is a 404 rather than falling through to the
 	// legacy /{secret}/{command} handler.

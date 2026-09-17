@@ -38,6 +38,9 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// Inbound Telegram commands (#61): polls only while telegram.enabled
 	// and control_enabled are both set; config saves reconcile it.
 	startTelegramControl()
+	// SSDP discovery (#69): answers M-SEARCH while smartthings.discovery
+	// is on; config saves reconcile it.
+	startSSDP()
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -64,6 +67,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			emit("power", "stopping", map[string]string{"reason": reason})
 			close(s.stop)
 			stopTelegramControl()
+			stopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
@@ -101,6 +105,8 @@ func RunConsole() {
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
+	startSSDP()
+	defer stopSSDP()
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)

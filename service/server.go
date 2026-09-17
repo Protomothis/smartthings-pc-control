@@ -446,6 +446,9 @@ func saveConfig(cfg Config) error {
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see telegram_control.go).
 	reconcileTelegramControl()
+	// SSDP discovery follows smartthings.discovery without a restart
+	// (no-op unless the service has started it, see st_ssdp.go).
+	reconcileSSDP()
 	return nil
 }
 
