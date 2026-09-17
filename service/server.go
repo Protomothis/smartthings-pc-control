@@ -591,6 +591,7 @@ func StartHTTPServer(stop chan struct{}) {
 // (shutdown, restart, ...) and logs the outcome; a failure also raises
 // system.exec_failed naming that command.
 func executeCommand(command string, name string, args ...string) {
+	notePowerCommand(command) // hint for power.stopping's reason (§4.5)
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -625,6 +626,7 @@ func executeCommandWithLog(label string, name string, args ...string) {
 // executePowerShell runs script for the catalogue command `command`; see
 // executeCommand for the failure notification.
 func executePowerShell(command string, script string) {
+	notePowerCommand(command) // hint for power.stopping's reason (§4.5)
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
