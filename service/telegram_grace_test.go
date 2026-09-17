@@ -433,7 +433,7 @@ func TestTgPlainAndStampBy(t *testing.T) {
 		t.Errorf("tgKeep(\"\") = %q", got)
 	}
 	setConfig(Config{})
-	for by, want := range map[string]string{"toast": "토스트", "tray": "트레이", "app": "앱", "webui": "WebUI", "api": "API", "telegram": "텔레그램", "timer": "타이머", "x<y": "x&lt;y"} {
+	for by, want := range map[string]string{"toast": "토스트", "tray": "트레이", "app": "앱", "webui": "WebUI", "api": "API", "telegram": "텔레그램", "smartthings": "SmartThings", "timer": "타이머", "x<y": "x&lt;y"} {
 		if got := tgByLabel(by); got != want {
 			t.Errorf("tgByLabel(%q) = %q, want %q", by, got, want)
 		}
