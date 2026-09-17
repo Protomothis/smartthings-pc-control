@@ -117,6 +117,12 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
+	// Same start-up order as Execute: the logger and the live config must
+	// exist before the subsystems below read getConfig() (SSDP, Telegram)
+	// or log — otherwise the responder silently sees discovery=false and
+	// its messages are dropped.
+	initLogger()
+	setConfig(loadConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
