@@ -1,0 +1,60 @@
+{
+  "id": "pccontrol00000.pcPowerState",
+  "version": 1,
+  "dashboard": {
+    "states": [
+      {
+        "label": "{{powerState.value}}",
+        "alternatives": [
+          { "key": "on", "value": "On", "type": "active" },
+          { "key": "waking", "value": "Waking up", "type": "active" },
+          { "key": "shuttingDown", "value": "Shutting down", "type": "active" },
+          { "key": "sleeping", "value": "Sleeping", "type": "inactive" },
+          { "key": "hibernated", "value": "Hibernated", "type": "inactive" },
+          { "key": "off", "value": "Off", "type": "inactive" },
+          { "key": "unknown", "value": "Unknown", "type": "inactive" }
+        ]
+      }
+    ],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Power state",
+      "displayType": "state",
+      "state": {
+        "label": "{{powerState.value}}",
+        "alternatives": [
+          { "key": "on", "value": "On", "type": "active" },
+          { "key": "waking", "value": "Waking up", "type": "active" },
+          { "key": "shuttingDown", "value": "Shutting down", "type": "active" },
+          { "key": "sleeping", "value": "Sleeping", "type": "inactive" },
+          { "key": "hibernated", "value": "Hibernated", "type": "inactive" },
+          { "key": "off", "value": "Off", "type": "inactive" },
+          { "key": "unknown", "value": "Unknown", "type": "inactive" }
+        ]
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "Power state",
+        "displayType": "list",
+        "list": {
+          "value": "powerState.value",
+          "alternatives": [
+            { "key": "on", "value": "On", "type": "active" },
+            { "key": "sleeping", "value": "Sleeping", "type": "inactive" },
+            { "key": "hibernated", "value": "Hibernated", "type": "inactive" },
+            { "key": "off", "value": "Off", "type": "inactive" },
+            { "key": "waking", "value": "Waking up", "type": "active" },
+            { "key": "shuttingDown", "value": "Shutting down", "type": "active" },
+            { "key": "unknown", "value": "Unknown", "type": "inactive" }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

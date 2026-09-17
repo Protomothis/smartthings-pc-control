@@ -1,0 +1,84 @@
+{
+  "id": "pccontrol00000.pcStatus",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Connection",
+      "displayType": "state",
+      "state": {
+        "label": "{{connection.value}}",
+        "alternatives": [
+          { "key": "ok", "value": "Connected", "type": "active" },
+          { "key": "unauthorized", "value": "Not authorized", "type": "inactive" },
+          { "key": "unreachable", "value": "Unreachable", "type": "inactive" },
+          { "key": "incompatible", "value": "Incompatible version", "type": "inactive" }
+        ]
+      }
+    },
+    {
+      "label": "Service version",
+      "displayType": "state",
+      "state": {
+        "label": "{{serviceVersion.value}}"
+      }
+    },
+    {
+      "label": "Update available",
+      "displayType": "state",
+      "state": {
+        "label": "{{updateAvailable.value}}",
+        "alternatives": [
+          { "key": "true", "value": "Yes", "type": "active" },
+          { "key": "false", "value": "No", "type": "inactive" }
+        ]
+      }
+    },
+    {
+      "label": "Wake-on-LAN ready",
+      "displayType": "state",
+      "state": {
+        "label": "{{wolReady.value}}",
+        "alternatives": [
+          { "key": "true", "value": "Yes", "type": "active" },
+          { "key": "false", "value": "No", "type": "inactive" }
+        ]
+      }
+    },
+    {
+      "label": "Last seen",
+      "displayType": "state",
+      "state": {
+        "label": "{{lastSeen.value}}"
+      }
+    },
+    {
+      "label": "Message",
+      "displayType": "state",
+      "state": {
+        "label": "{{message.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "Connection",
+        "displayType": "list",
+        "list": {
+          "value": "connection.value",
+          "alternatives": [
+            { "key": "ok", "value": "Connected", "type": "active" },
+            { "key": "unauthorized", "value": "Not authorized", "type": "inactive" },
+            { "key": "unreachable", "value": "Unreachable", "type": "inactive" },
+            { "key": "incompatible", "value": "Incompatible version", "type": "inactive" }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

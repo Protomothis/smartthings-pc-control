@@ -1,0 +1,32 @@
+{
+  "id": "pccontrol00000.pcPowerState",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcPowerState",
+  "ephemeral": false,
+  "attributes": {
+    "powerState": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "on",
+              "sleeping",
+              "hibernated",
+              "off",
+              "waking",
+              "shuttingDown",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {}
+}
