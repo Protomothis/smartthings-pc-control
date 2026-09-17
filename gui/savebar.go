@@ -187,11 +187,18 @@ func (u *ui) promptUnsaved(bodyKey string, dirtyTabs []int, onDone func()) {
 
 // setCurTab records the tab now on screen and refreshes the ones that only
 // load when shown. The network tab has no polling loop of its own (#70), so
-// its WoL list and SmartThings hub state are re-read here.
+// its WoL list and SmartThings hub state are re-read here; the notify tab's
+// Telegram conflict warning (#75) is re-read the same way.
 func (u *ui) setCurTab(index int) {
 	u.curTab = index
-	if index == tabNetwork && u.connected.Load() {
+	if !u.connected.Load() {
+		return
+	}
+	switch index {
+	case tabNetwork:
 		u.refreshNetwork()
+	case tabNotify:
+		u.refreshTelegramState()
 	}
 }
 

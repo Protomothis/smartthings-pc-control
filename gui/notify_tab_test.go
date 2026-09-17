@@ -260,6 +260,54 @@ func TestQuietHourOptions(t *testing.T) {
 	}
 }
 
+// #75: the PC-name entry falls back to the translated hint only when the
+// hostname is unknown.
+func TestPCNamePlaceholder(t *testing.T) {
+	const fallback = "Empty: this PC's hostname"
+	cases := []struct{ host, want string }{
+		{"DESKTOP-TEST", "DESKTOP-TEST"},
+		{"  DESKTOP-TEST  ", "DESKTOP-TEST"},
+		{"", fallback},
+		{"   ", fallback},
+	}
+	for _, c := range cases {
+		if got := pcNamePlaceholder(c.host, fallback); got != c.want {
+			t.Errorf("pcNamePlaceholder(%q) = %q, want %q", c.host, got, c.want)
+		}
+	}
+}
+
+// The PC name is part of the form round-trip and of the dirty check.
+func TestNotifyFormPCNameRoundTrip(t *testing.T) {
+	base := Config{Telegram: TelegramConfig{ChatID: "42", Detail: "full", PCName: "OFFICE"}}
+	s := notifyStateFromConfig(base)
+	if s.PCName != "OFFICE" {
+		t.Fatalf("PCName = %q", s.PCName)
+	}
+	if s.dirty(base) {
+		t.Error("an unchanged form must not be dirty")
+	}
+	s.PCName = "  OFFICE  " // only whitespace differs
+	if s.dirty(base) {
+		t.Error("whitespace alone is not a change")
+	}
+	s.PCName = "LIVING ROOM"
+	if !s.dirty(base) {
+		t.Error("a new PC name must be dirty")
+	}
+	if got := s.applyTo(base, LangKo).Telegram.PCName; got != "LIVING ROOM" {
+		t.Errorf("applied PCName = %q", got)
+	}
+	// Cleared: the service falls back to the hostname.
+	s.PCName = "   "
+	if !s.dirty(base) {
+		t.Error("clearing the PC name must be dirty")
+	}
+	if got := s.applyTo(base, LangKo).Telegram.PCName; got != "" {
+		t.Errorf("cleared PCName = %q", got)
+	}
+}
+
 func TestChatLabel(t *testing.T) {
 	cases := []struct {
 		in   TelegramChat

@@ -289,8 +289,16 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			// app's network tab is the designed UI for these.
 			SmartThings SmartThingsConfig
 			AllowedHubs string
+			// telegram.pc_name is the one Telegram setting this page edits
+			// (#75); the token and the chat id belong to the app's
+			// notifications tab, and are deliberately not handed to the
+			// template. Hostname is the entry's placeholder: what an empty
+			// pc_name falls back to.
+			PCName   string
+			Hostname string
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
-			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", ")})
+			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
+			liveCfg.Telegram.PCName, hostname()})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)

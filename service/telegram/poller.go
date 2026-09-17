@@ -143,7 +143,7 @@ func (p *Poller) Run(ctx context.Context) error {
 				}
 				if now := p.clock(); lastConflictLog.IsZero() || now.Sub(lastConflictLog) >= conflictLogEvery {
 					lastConflictLog = now
-					p.logf("poller: another PC is polling this bot (409); retrying every %s — turn Telegram control off here or use a separate bot", conflictBackoff)
+					p.logf("poller: another PC is polling this bot (409); retrying every %s — use a separate bot per PC or the hub agent", conflictBackoff)
 				}
 				if err := p.sleep(ctx, conflictBackoff); err != nil {
 					return err

@@ -702,7 +702,7 @@ func setTelegramConflict(active bool) {
 	telegramConflict = active
 	if active {
 		telegramConflictSince = time.Now()
-		logMsg("Telegram control: another PC is polling this bot; commands are handled there")
+		logMsg("Telegram control: another PC is polling this bot; use a separate bot per PC or the hub agent")
 	} else {
 		telegramConflictSince = time.Time{}
 	}
