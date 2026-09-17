@@ -333,13 +333,13 @@ develop → main → `v1.1.0` 태그.
 
 | 이슈 | 영역 | 내용 | 의존 |
 |---|---|---|---|
-| A | service | `/st/v1` 상태·명령·예약·취소, 헤더 인증, 허용 목록, origin `smartthings`, `turnscreenon`(+Telegram `/screenon`), `last_shutdown_clean`, hubLastSeen, 레이트 리밋 | — |
-| B | service | 푸시 구독 + notify SmartThings Sink, `power.stopping` reason, `display.changed`, 세션 잠금/유휴 옵트인 이벤트 | A |
-| C | service | SSDP 응답기 + `description`, config `smartthings.*` 핫 리로드 | A |
-| D | gui | 네트워크 탭 SmartThings 섹션, i18n, WebUI 필드 | A, C |
-| E | edge | 드라이버 골격: config/profile/prefs, 수동 추가, 스위치·WoL·ping·health, fengari 테스트 하네스, 상태 머신 | — |
-| F | edge | 커스텀 capability JSON/프레젠테이션, `/st/v1` 클라이언트, 상태·명령·예약·취소 매핑, 오류·호환 표시, i18n | E |
-| G | edge | 푸시 리스너·구독 갱신, SSDP 검색, 디스플레이 자식 장치, WoL 재시도/waking | F, B, C |
-| H | ci/docs | `edge.yml`(테스트·패키징), `edge/README.md`, 네임스페이스 적용 스크립트, Wiki 페이지·README 갱신, CHANGELOG | 전부 |
+| #67 | service | `/st/v1` 상태·명령·예약·취소, 헤더 인증, 허용 목록, origin `smartthings`, `turnscreenon`(+Telegram `/screenon`), `last_shutdown_clean`, hubLastSeen, 레이트 리밋 | — |
+| #68 | service | 푸시 구독 + notify SmartThings Sink, `power.stopping` reason, `display.changed`, 세션 잠금/유휴 옵트인 이벤트 | #67 |
+| #69 | service | SSDP 응답기 + `description`, config `smartthings.*` 핫 리로드 | #67 |
+| #70 | gui | 네트워크 탭 SmartThings 섹션, i18n, WebUI 필드 | #67, #69 |
+| #71 | edge | 드라이버 골격: config/profile/prefs, 수동 추가, 스위치·WoL·ping·health, fengari 테스트 하네스, 상태 머신 | — |
+| #72 | edge | 커스텀 capability JSON/프레젠테이션, `/st/v1` 클라이언트, 상태·명령·예약·취소 매핑, 오류·호환 표시, i18n | #71 |
+| #73 | edge | 푸시 리스너·구독 갱신, SSDP 검색, 디스플레이 자식 장치, WoL 재시도/waking | #72, #68, #69 |
+| #74 | ci/docs | `edge.yml`(테스트·패키징), `edge/README.md`, 네임스페이스 적용 스크립트, Wiki 페이지·README 갱신, CHANGELOG | 전부 |
 
-실제 번호는 이슈 생성 후 이 표에 기입한다.
+마일스톤: https://github.com/Protomothis/smartthings-pc-control/milestone/7
