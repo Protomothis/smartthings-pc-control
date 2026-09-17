@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -122,7 +121,9 @@ var tgTexts = map[string][2]string{
 			"/help – this list",
 	},
 	"unknown_command": {"알 수 없는 명령: <code>%s</code>", "Unknown command: <code>%s</code>"},
-	"menu_title":      {"🖥 <b>%s</b>\n무엇을 할까요?", "🖥 <b>%s</b>\nWhat should I do?"},
+	// The PC name is no longer part of this text: every reply gets the
+	// "🖥 <b>name</b>" header from tgWithHeader (#75).
+	"menu_title":      {"무엇을 할까요?", "What should I do?"},
 	"executed":        {"✅ %s 실행", "✅ %s executed"},
 	"confirm_q":       {"⚠️ <b>%s</b> – 지금 바로 실행할까요?", "⚠️ <b>%s</b> – run it right now?"},
 	"bad_minutes":     {"분은 1~1440 사이의 숫자여야 합니다. 예: <code>/shutdown 30</code>", "Minutes must be a number from 1 to 1440, e.g. <code>/shutdown 30</code>"},
@@ -277,13 +278,15 @@ func tgKeep(msgText string, candidates ...string) string {
 }
 
 // tgPromptCandidates are every confirmation prompt the bot can have sent,
-// on its own (/shutdown) or appended to the /menu (confirm:<cmd>).
+// on its own (/shutdown) or appended to the /menu (confirm:<cmd>). Both the
+// headered form (#75) and the bare one are listed so a prompt sent by an
+// older version is still recognised when its button is pressed.
 func tgPromptCandidates() []string {
-	menu := tgText("menu_title", html.EscapeString(tgPCName()))
+	menu := tgMenuTitle()
 	var out []string
 	for name := range graceCommands {
 		q := tgText("confirm_q", tgCommandLabel(name))
-		out = append(out, q, menu+"\n\n"+q)
+		out = append(out, tgWithHeader(q), q, menu+"\n\n"+q)
 	}
 	return out
 }
@@ -292,11 +295,17 @@ func tgPCName() string {
 	if n := getConfig().Telegram.PCName; n != "" {
 		return n
 	}
-	if h, err := os.Hostname(); err == nil {
-		return h
-	}
-	return "PC"
+	return hostname()
 }
+
+// tgHeader is the "🖥 <b>name</b>" line every message from this PC starts
+// with (#75, edge-driver doc §13.4).
+func tgHeader() string { return telegram.Header(tgPCName()) }
+
+// tgWithHeader prefixes tgHeader() to a reply that does not already carry
+// one — including text read back from Telegram, where the tags are gone but
+// the 🖥 icon is not.
+func tgWithHeader(h string) string { return telegram.WithHeader(tgPCName(), h) }
 
 // ---- keyboards --------------------------------------------------------------
 
@@ -379,8 +388,14 @@ func parseMuteDuration(arg string) (time.Duration, bool) {
 // on top of the service's schedule and command registry.
 type telegramControl struct{}
 
-// HandleCommand answers a slash command from an allowed chat.
-func (c telegramControl) HandleCommand(_ context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
+// HandleCommand answers a slash command from an allowed chat. Every reply
+// carries the PC-name header (#75); the work is done by handleCommand.
+func (c telegramControl) HandleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
+	h, kb, err := c.handleCommand(ctx, chatID, cmd, args)
+	return tgWithHeader(h), kb, err
+}
+
+func (c telegramControl) handleCommand(_ context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
 	switch cmd {
 	case "help", "start":
 		return tgText("help"), nil, nil
@@ -394,7 +409,7 @@ func (c telegramControl) HandleCommand(_ context.Context, chatID string, cmd str
 	case "status":
 		return tgStatusText(), nil, nil
 	case "menu":
-		return tgText("menu_title", html.EscapeString(tgPCName())), tgMenuKeyboard(), nil
+		return tgMenuTitle(), tgMenuKeyboard(), nil
 	case "lock", "screenoff", "screenon":
 		name := telegramAliases[cmd]
 		runTelegramCommand(name)
@@ -473,7 +488,13 @@ func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, er
 // Edits keep the message's text (msgText, or the HTML we sent when it is
 // known) and append a result line. A cancel:/runnow: press on a message
 // whose schedule is gone marks it "already handled" and drops the buttons.
-func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
+// The edited text keeps (or gains) the PC-name header (#75).
+func (c telegramControl) HandleCallback(ctx context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
+	h, toast, err := c.handleCallback(ctx, chatID, msgID, msgText, data)
+	return tgWithHeader(h), toast, err
+}
+
+func (telegramControl) handleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
 	case "exec":
@@ -536,9 +557,10 @@ func (telegramControl) HandleCallback(_ context.Context, chatID string, msgID in
 	return "", tgText("unknown_button"), fmt.Errorf("unknown callback %q", data)
 }
 
-// tgMenuTitle is the /menu text for the current PC name.
+// tgMenuTitle is the /menu text, header included, so tgKeep recognises it
+// in the plain text Telegram hands back on a button press.
 func tgMenuTitle() string {
-	return tgText("menu_title", html.EscapeString(tgPCName()))
+	return tgWithHeader(tgText("menu_title"))
 }
 
 // tgAppend builds an edit: the kept text (when any) followed by the result
@@ -595,7 +617,8 @@ func (telegramControl) Unauthorized(chatID, username, text string) {
 // tgStatusText builds the /status reply.
 func tgStatusText() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "🖥 <b>%s</b> · %s\n", html.EscapeString(tgPCName()), html.EscapeString(Version))
+	// The header line doubles as the /status title, with the version on it.
+	fmt.Fprintf(&b, "%s · %s\n", tgHeader(), html.EscapeString(Version))
 	fmt.Fprintf(&b, "%s: %s\n", tgText("st_uptime"), formatUptime(time.Since(serviceStartedAt)))
 
 	s := getSchedule()
@@ -658,6 +681,39 @@ type telegramRunner struct {
 }
 
 var tgRunner telegramRunner
+
+// Telegram hands long polling to one client per bot token, so a second PC
+// sharing the token gets 409 for every getUpdates (#75). The poller reports
+// the state here; /api/telegram/state and the GUI notify tab show it.
+var (
+	tgConflictMu          sync.Mutex
+	telegramConflict      bool
+	telegramConflictSince time.Time
+)
+
+// setTelegramConflict records a 409 state change from the poller. Since is
+// the moment the conflict started and survives repeated true calls.
+func setTelegramConflict(active bool) {
+	tgConflictMu.Lock()
+	defer tgConflictMu.Unlock()
+	if active == telegramConflict {
+		return
+	}
+	telegramConflict = active
+	if active {
+		telegramConflictSince = time.Now()
+		logMsg("Telegram control: another PC is polling this bot; use a separate bot per PC or the hub agent")
+	} else {
+		telegramConflictSince = time.Time{}
+	}
+}
+
+// telegramConflictState is what /api/telegram/state reports.
+func telegramConflictState() (bool, time.Time) {
+	tgConflictMu.Lock()
+	defer tgConflictMu.Unlock()
+	return telegramConflict, telegramConflictSince
+}
 
 // startTelegramControl enables the lifecycle and starts polling when the
 // current config asks for it. Called once at service start.
@@ -769,6 +825,7 @@ func (r *telegramRunner) startLocked(cfg TelegramConfig, key string) {
 		AllowedChatIDs: telegramAllowedChatIDs,
 		Handler:        telegramControl{},
 		Log:            logMsg,
+		OnConflict:     setTelegramConflict,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -799,6 +856,9 @@ func (r *telegramRunner) stopLocked() {
 		logMsg("Telegram control: poller did not stop in time")
 	}
 	r.key, r.cancel, r.done = "", nil, nil
+	// No poller, no conflict — the warning must not outlive it even if the
+	// goroutine was still sleeping out its 409 back-off.
+	setTelegramConflict(false)
 }
 
 // currentBus returns the notification bus or nil (before startNotifier).

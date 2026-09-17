@@ -366,6 +366,108 @@ func TestPollerBacksOffOnErrors(t *testing.T) {
 	}
 }
 
+// #75: a 409 means another PC owns this bot's command channel. The poller
+// waits a flat 60s (it never grows, and it does not disturb the ordinary
+// back-off), logs at most once a minute and reports the state.
+func TestPollerConflictBacksOffFlatAndReportsState(t *testing.T) {
+	conflict := scriptedReply{409, `{"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request"}`}
+	serverErr := scriptedReply{500, `{"ok":false,"error_code":500,"description":"boom"}`}
+	cli, fb := newFakeBot(t,
+		okUpdates(""), // drain
+		conflict,      // → 60s, OnConflict(true)
+		conflict,      // → 60s, still one conflict
+		conflict,      // → 60s
+		okUpdates(""), // resolved → OnConflict(false)
+		serverErr,     // ordinary back-off is untouched by the conflicts: 1s
+	)
+	var (
+		mu     sync.Mutex
+		states []bool
+		logs   []string
+	)
+	p := NewPoller(cli, PollerOptions{
+		AllowedChatIDs: allow("42"),
+		Handler:        &fakeHandler{},
+		Log: func(format string, args ...any) {
+			line := fmt.Sprintf(format, args...)
+			t.Log(line)
+			mu.Lock()
+			defer mu.Unlock()
+			logs = append(logs, line)
+		},
+		OnConflict: func(active bool) {
+			mu.Lock()
+			defer mu.Unlock()
+			states = append(states, active)
+		},
+	})
+	// A frozen clock keeps every conflict inside the same log minute.
+	p.now = func() time.Time { return time.Date(2026, 9, 17, 10, 0, 0, 0, time.Local) }
+	sleeps := make(chan time.Duration, 16)
+	p.sleep = func(ctx context.Context, d time.Duration) error {
+		sleeps <- d
+		return ctx.Err()
+	}
+	runPoller(t, p)
+
+	want := []time.Duration{60 * time.Second, 60 * time.Second, 60 * time.Second, time.Second}
+	for i, w := range want {
+		select {
+		case got := <-sleeps:
+			if got != w {
+				t.Errorf("sleep[%d] = %s, want %s", i, got, w)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("sleep[%d] never happened", i)
+		}
+	}
+	// drain + 5 scripted + the blocking one.
+	for i := 0; i < 7; i++ {
+		fb.nextPoll(t)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []bool{true, false}; !reflect.DeepEqual(states, want) {
+		t.Errorf("OnConflict states = %v, want %v", states, want)
+	}
+	n := 0
+	for _, line := range logs {
+		if strings.Contains(line, "another PC is polling this bot") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("conflict logged %d times within one minute, want 1", n)
+	}
+}
+
+// A conflict still in force when Run returns must not leave the service's
+// warning stuck on.
+func TestPollerClearsConflictOnStop(t *testing.T) {
+	conflict := scriptedReply{409, `{"ok":false,"error_code":409,"description":"Conflict"}`}
+	cli, _ := newFakeBot(t, okUpdates(""), conflict)
+	states := make(chan bool, 4)
+	p := NewPoller(cli, PollerOptions{
+		AllowedChatIDs: allow("42"),
+		Handler:        &fakeHandler{},
+		OnConflict:     func(active bool) { states <- active },
+	})
+	p.sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }
+	stop := runPoller(t, p)
+	if got := <-states; !got {
+		t.Fatal("expected OnConflict(true)")
+	}
+	stop()
+	select {
+	case got := <-states:
+		if got {
+			t.Errorf("expected OnConflict(false) after stop, got true")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("conflict state was never cleared")
+	}
+}
+
 func TestPollerStopsOnCancel(t *testing.T) {
 	cli, fb := newFakeBot(t, okUpdates(""))
 	p := NewPoller(cli, PollerOptions{AllowedChatIDs: allow("42"), Handler: &fakeHandler{}})

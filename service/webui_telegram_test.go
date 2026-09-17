@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -333,6 +334,70 @@ func TestTelegramMeEndpointUnauthorizedToken(t *testing.T) {
 	}
 	if got := decodeBody(t, w); !strings.Contains(got["message"].(string), "401") {
 		t.Errorf("body = %v", got)
+	}
+}
+
+// ---- /api/telegram/state (#75) -------------------------------------------------
+
+func TestTelegramStateEndpointReportsConflict(t *testing.T) {
+	withLiveConfig(t, telegramCfg(true, testBotToken))
+	setTelegramConflict(false)
+	t.Cleanup(func() { setTelegramConflict(false) })
+
+	w := httptest.NewRecorder()
+	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeBody(t, w)
+	if body["status"] != "ok" || body["conflict"] != false || body["polling"] != false {
+		t.Errorf("idle state = %v", body)
+	}
+	if _, has := body["since"]; has {
+		t.Errorf("since must be omitted while there is no conflict: %v", body)
+	}
+
+	before := time.Now()
+	setTelegramConflict(true)
+	// Repeated reports keep the original start time.
+	setTelegramConflict(true)
+	w = httptest.NewRecorder()
+	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	body = decodeBody(t, w)
+	if body["conflict"] != true {
+		t.Errorf("conflict state = %v", body)
+	}
+	since, _ := body["since"].(string)
+	ts, err := time.Parse(time.RFC3339, since)
+	if err != nil {
+		t.Fatalf("since = %q: %v", since, err)
+	}
+	if ts.Before(before.Truncate(time.Second)) || ts.After(time.Now().Add(time.Second)) {
+		t.Errorf("since = %s, want ~now", ts)
+	}
+
+	setTelegramConflict(false)
+	w = httptest.NewRecorder()
+	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	if body = decodeBody(t, w); body["conflict"] != false {
+		t.Errorf("cleared state = %v", body)
+	}
+}
+
+func TestTelegramStateEndpointRejectsPostAndUnauthenticated(t *testing.T) {
+	withLiveConfig(t, telegramCfg(true, testBotToken))
+	w := httptest.NewRecorder()
+	handleTelegramState(w, postJSON("/api/telegram/state", ""))
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST state: status %d", w.Code)
+	}
+	cfg := telegramCfg(true, testBotToken)
+	cfg.Secret = "s3cret"
+	withLiveConfig(t, cfg)
+	w = httptest.NewRecorder()
+	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated state: status %d", w.Code)
 	}
 }
 

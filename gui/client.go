@@ -408,6 +408,34 @@ func (c *Client) TelegramMe() (username, name string, err error) {
 	return r.Username, r.Name, nil
 }
 
+// TelegramState mirrors GET /api/telegram/state: the local state of
+// inbound Telegram control, with no Bot API call behind it.
+type TelegramState struct {
+	// Polling is true while this PC runs the getUpdates loop.
+	Polling bool `json:"polling"`
+	// Conflict is true while getUpdates keeps answering 409 because
+	// another PC shares this bot token (#75). Since is when that started.
+	Conflict bool   `json:"conflict"`
+	Since    string `json:"since"`
+}
+
+// TelegramState fetches that state for the notify tab's warning line.
+func (c *Client) TelegramState() (TelegramState, error) {
+	var s TelegramState
+	resp, err := c.do("GET", "/api/telegram/state", nil)
+	if err != nil {
+		return s, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return s, errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return s, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return s, json.NewDecoder(resp.Body).Decode(&s)
+}
+
 // TelegramChat is one recent chat of the bot, from /api/telegram/chats.
 type TelegramChat struct {
 	ChatID   string `json:"chat_id"`

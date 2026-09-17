@@ -219,6 +219,9 @@ var messages = map[string]map[Lang]string{
 	"notify.detail.full":                   {LangKo: "자세히", LangEn: "Full"},
 	"notify.pcname":                        {LangKo: "PC 이름", LangEn: "PC name"},
 	"notify.pcname.placeholder":            {LangKo: "비워 두면 이 PC의 호스트 이름", LangEn: "Empty: this PC's hostname"},
+	"notify.pcname.hint":                   {LangKo: "알림 머리말에 표시. 비우면 컴퓨터 이름", LangEn: "Shown in the message header; empty uses the computer name"},
+	// #75: only one PC can poll a bot for commands (Telegram 409).
+	"notify.control.conflict": {LangKo: "다른 PC가 같은 봇으로 명령을 수신 중입니다. PC마다 봇을 분리하거나 허브 에이전트를 사용하세요.", LangEn: "Another PC is receiving commands with this bot. Use a separate bot per PC or the hub agent."},
 	"notify.display.hint":                  {LangKo: "메시지 언어는 앱 언어 설정을 따릅니다.", LangEn: "Message language follows the app language."},
 	// SmartThings Edge driver (#67); the network tab section is #70.
 	"schedule.origin.smartthings": {LangKo: "SmartThings에서 요청한 예약", LangEn: "Scheduled from SmartThings"},
