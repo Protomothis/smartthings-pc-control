@@ -2,10 +2,12 @@
 --
 -- Every call returns `(ok, body, err_kind)`:
 --   ok = true   -> body is the decoded JSON table, err_kind is nil
---   ok = false  -> err_kind is one of "unauthorized", "unreachable",
---                  "incompatible", "badrequest"; body may still carry the
---                  decoded response (used to tell "service too old" from
---                  "driver too old" on a protocol mismatch).
+--   ok = false  -> err_kind is one of "unauthorized", "forbidden",
+--                  "unreachable", "incompatible", "badrequest",
+--                  "ratelimited"; body may still carry the decoded response
+--                  (the service answers errors with `{"error": "..."}`, and a
+--                  protocol mismatch needs `body.protocol` to tell "service
+--                  too old" from "driver too old").
 --
 -- No module-level mutable state: everything comes from `device.preferences`, and
 -- `deps` lets tests inject a fake http/json/ltn12 instead of cosock.
@@ -75,10 +77,14 @@ function client.classify(code)
   if code >= 200 and code < 300 then
     return nil
   end
-  if code == 401 or code == 403 then
-    -- 403 = hub not in `smartthings.allowed_hubs` (§4.1); from the user's side
-    -- it is the same problem as a wrong secret: fix it in the settings.
+  if code == 401 then
     return "unauthorized"
+  end
+  if code == 403 then
+    -- The hub is not in `smartthings.allowed_hubs` (§4.1). It shows up as the
+    -- same `connection = unauthorized` as a wrong secret, but the fix is a
+    -- different one, so the kind stays separate for the message.
+    return "forbidden"
   end
   if code == 400 then
     return "badrequest"
@@ -88,9 +94,10 @@ function client.classify(code)
     return "incompatible"
   end
   if code == 429 then
-    -- Rate limited (§8): the service is up and authenticated, so this is a
-    -- rejected request rather than a lost connection.
-    return "badrequest"
+    -- Rate limited (§8): the service is up, authenticated and healthy, it just
+    -- refused this one request. Nothing about the PC changed, so the caller
+    -- keeps the last state instead of painting an error.
+    return "ratelimited"
   end
   return "unreachable"
 end
@@ -140,23 +147,29 @@ function client.request(device, opts, deps)
     return false, nil, "unreachable"
   end
 
-  local kind = client.classify(code)
-  if kind then
-    return false, nil, kind
-  end
-
   local raw = table.concat(chunks)
   local body
   if raw ~= "" then
-    local ok, decoded = pcall(json.decode, raw)
-    if not ok or type(decoded) ~= "table" then
-      -- 2xx that is not the JSON we expect means we are not talking to a
-      -- compatible service (a captive portal, another app on the port, ...).
-      return false, nil, "incompatible"
+    local decoded_ok, decoded = pcall(json.decode, raw)
+    if decoded_ok and type(decoded) == "table" then
+      body = decoded
     end
-    body = decoded
   else
     body = {}
+  end
+
+  local kind = client.classify(code)
+  if kind then
+    -- §4.1: an error body is `{"error": "..."}`. It comes back so the caller
+    -- can put the service's own words in `pcStatus.message` (an unknown
+    -- command says which one), and so a 400 from a newer service is readable.
+    return false, body, kind
+  end
+
+  if body == nil then
+    -- 2xx that is not the JSON we expect means we are not talking to a
+    -- compatible service (a captive portal, another app on the port, ...).
+    return false, nil, "incompatible"
   end
 
   if body.protocol ~= nil and body.protocol ~= client.PROTOCOL then

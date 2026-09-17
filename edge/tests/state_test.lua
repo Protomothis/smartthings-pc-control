@@ -4,7 +4,8 @@ local state = require "state"
 
 local T = {}
 
-local NOW = "2026-09-17T14:05:00Z"
+-- poll.now(): the hub's local clock time of the last good poll (§5.1).
+local NOW = "14:05:00"
 
 -- The example body from design doc §4.2.
 local function sample_status()
@@ -48,6 +49,63 @@ local function events_for(status, power_state, lang)
 end
 
 --------------------------------------------------------------------------------
+-- the whole §4.2 -> §5.1 mapping, field by field
+--------------------------------------------------------------------------------
+
+-- Every event the §4.2 example produces, in the order apply_status emits them.
+-- A golden list rather than a handful of spot checks: it is the one place that
+-- says what the app actually shows, so an accidental extra or missing event
+-- fails here instead of quietly changing a tile.
+local function golden(lang)
+  local en = lang ~= "ko"
+  return {
+    { cap = state.CAP_SWITCH, attr = "switch", value = "on" },
+    { cap = caps.POWER_STATE, attr = "powerState", value = "on" },
+    { cap = caps.COMMAND, attr = "lastCommand",
+      value = en and "Shut down · SmartThings · 23:05" or "종료 · SmartThings · 23:05" },
+    { cap = caps.SCHEDULE, attr = "active", value = true },
+    { cap = caps.SCHEDULE, attr = "command", value = en and "Shut down" or "종료" },
+    { cap = caps.SCHEDULE, attr = "remainingSeconds", value = 240 },
+    { cap = caps.SCHEDULE, attr = "executeAt", value = "23:10" },
+    { cap = caps.SCHEDULE, attr = "origin", value = "SmartThings" },
+    { cap = caps.STATUS, attr = "connection", value = "ok" },
+    { cap = caps.STATUS, attr = "serviceVersion", value = "v1.1.0" },
+    { cap = caps.STATUS, attr = "updateAvailable", value = false },
+    { cap = caps.STATUS, attr = "wolReady", value = true },
+    { cap = caps.STATUS, attr = "lastSeen", value = NOW },
+    { cap = caps.STATUS, attr = "message", value = "" },
+    { cap = caps.SESSION, attr = "locked", value = true },
+    { cap = caps.SESSION, attr = "idleMinutes", value = 20 },
+    { cap = caps.SESSION, attr = "user", value = "kim" },
+  }
+end
+
+local function exposed_status()
+  local status = sample_status()
+  status.session = { exposed = true, locked = true, idle_seconds = 1200, user = "kim" }
+  return status
+end
+
+function T.test_apply_status_maps_every_field_in_english()
+  h.assert_deep_equal(events_for(exposed_status(), state.ON, "en"), golden("en"))
+end
+
+function T.test_apply_status_maps_every_field_in_korean()
+  -- §6.5: only the string attributes follow `language`; enums and numbers do not.
+  h.assert_deep_equal(events_for(exposed_status(), state.ON, "ko"), golden("ko"))
+end
+
+function T.test_attributes_used_covers_every_emitted_event()
+  -- capabilities_test.lua checks this set against the JSON definitions, so it
+  -- is only useful if it really is everything apply_status can emit.
+  local used = state.attributes_used()
+  for _, e in ipairs(events_for(exposed_status())) do
+    h.assert_true((used[e.cap] or {})[e.attr] == true,
+      "state.attributes_used() is missing " .. tostring(e.cap) .. "." .. tostring(e.attr))
+  end
+end
+
+--------------------------------------------------------------------------------
 -- apply_status
 --------------------------------------------------------------------------------
 
@@ -68,7 +126,8 @@ function T.test_apply_status_maps_schedule()
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), true)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "Shut down")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 240)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "2026-09-17T23:10:00+09:00")
+  -- §5.1: the local clock time, not the RFC3339 string the service sends.
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "23:10")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "SmartThings")
 end
 
@@ -144,20 +203,79 @@ function T.test_apply_status_warns_when_wol_is_not_ready()
   h.assert_contains(h.event_value(events, caps.STATUS, "message"), "Wake-on-LAN")
 end
 
-function T.test_apply_status_joins_multiple_warnings()
-  local status = sample_status()
-  status.secret_set = false
-  status.wol = { ready = false }
-  local message = h.event_value(events_for(status), caps.STATUS, "message")
-  h.assert_contains(message, "No secret")
-  h.assert_contains(message, "Wake-on-LAN")
-  h.assert_contains(message, " · ")
-end
-
 function T.test_apply_status_reports_an_available_update()
   local status = sample_status()
   status.update = { available = true, latest = "v1.2.0" }
-  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "updateAvailable"), true)
+  local events = events_for(status)
+  h.assert_equal(h.event_value(events, caps.STATUS, "updateAvailable"), true)
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Service update v1.2.0 available")
+  local ko = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(ko, caps.STATUS, "message"), "서비스 업데이트 v1.2.0 사용 가능")
+end
+
+function T.test_an_update_without_a_version_still_says_so()
+  local status = sample_status()
+  status.update = { available = true }
+  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "message"),
+    "A service update is available")
+end
+
+--------------------------------------------------------------------------------
+-- message priority (§5.1, state.MESSAGE_ORDER)
+--------------------------------------------------------------------------------
+
+function T.test_message_order_is_the_documented_one()
+  h.assert_deep_equal(state.MESSAGE_ORDER, {
+    "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
+  })
+end
+
+function T.test_message_priority_picks_one_notice()
+  -- All four at once: only the most important sentence is shown.
+  local status = sample_status()
+  status.wol = { ready = false }
+  status.update = { available = true, latest = "v1.2.0" }
+  status.secret_set = false
+
+  local message = h.event_value(events_for(status), caps.STATUS, "message")
+  h.assert_contains(message, "Wake-on-LAN")
+  h.assert_equal(message:find("update", 1, true), nil, "the update notice must not be appended")
+
+  -- WoL fixed: the update notice is next.
+  status.wol = { ready = true }
+  h.assert_contains(h.event_value(events_for(status), caps.STATUS, "message"), "v1.2.0")
+
+  -- Nothing left but the missing secret.
+  status.update = { available = false }
+  h.assert_contains(h.event_value(events_for(status), caps.STATUS, "message"), "No secret")
+
+  -- And a healthy service says nothing at all.
+  status.secret_set = true
+  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "message"), "")
+end
+
+function T.test_an_error_outranks_every_status_notice()
+  -- poll.lua maps a failed request to a message and passes it in; nothing a
+  -- successful body could say is more urgent than "we could not talk to it".
+  local status = sample_status()
+  status.wol = { ready = false }
+  status.secret_set = false
+  local events = state.apply_status(state.new(state.OFF), status,
+    { now = NOW, lang = "en", error = "Cannot reach the PC" })
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Cannot reach the PC")
+end
+
+function T.test_a_note_shows_only_when_nothing_is_wrong()
+  local status = sample_status()
+  local events = state.apply_status(state.new(state.ON), status,
+    { now = NOW, lang = "en", note = "Schedule cancelled" })
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Schedule cancelled")
+
+  -- A warning outranks a confirmation.
+  status.wol = { ready = false }
+  events = state.apply_status(state.new(state.ON), status,
+    { now = NOW, lang = "en", note = "Schedule cancelled" })
+  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "Wake-on-LAN")
 end
 
 function T.test_apply_status_uses_the_state_power_not_the_body()

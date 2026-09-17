@@ -37,12 +37,44 @@ end
 
 function T.test_all_required_keys_exist()
   local required = {
-    "wake_failed", "wol_not_ready", "unauthorized", "unreachable",
-    "incompatible_service", "incompatible_driver", "no_secret", "badrequest",
+    "wake_failed", "wol_not_ready", "wol_no_mac", "wol_bad_mac",
+    "unauthorized", "forbidden", "unreachable", "ratelimited",
+    "incompatible_service", "incompatible_driver", "no_secret", "no_ip",
+    "badrequest", "update_available", "update_available_plain",
+    "schedule_replaced", "schedule_cancelled", "schedule_none",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
   end
+end
+
+function T.test_every_service_command_has_a_display_name()
+  -- §4.3: the eight commands the capability offers, plus the ping the driver
+  -- uses as a reachability probe. A missing one would show the raw id.
+  local commands = {
+    "shutdown", "forceshutdown", "restart", "hibernate",
+    "suspend", "lock", "turnscreenoff", "turnscreenon", "ping",
+  }
+  for _, command in ipairs(commands) do
+    for _, lang in ipairs({ "ko", "en" }) do
+      local label = i18n.command(lang, command)
+      h.assert_true(label ~= command and label ~= "",
+        string.format("command %s has no %s display name", command, lang))
+    end
+  end
+end
+
+function T.test_forbidden_and_unauthorized_say_different_things()
+  -- Both end up as `connection = unauthorized` (§4.1), so the message is the
+  -- only thing telling the user which of the two to fix.
+  h.assert_contains(i18n.t("en", "forbidden"), "allow-list")
+  h.assert_contains(i18n.t("en", "unauthorized"), "Secret")
+  h.assert_true(i18n.t("ko", "forbidden") ~= i18n.t("ko", "unauthorized"))
+end
+
+function T.test_update_available_carries_the_version()
+  h.assert_equal(i18n.t("ko", "update_available", "v1.2.0"), "서비스 업데이트 v1.2.0 사용 가능")
+  h.assert_equal(i18n.t("en", "update_available", "v1.2.0"), "Service update v1.2.0 available")
 end
 
 function T.test_origin_labels()

@@ -67,9 +67,16 @@ end
 --------------------------------------------------------------------------------
 
 -- Report a failed command through pcStatus instead of failing silently (§1.3).
+-- A rate-limited request (§8) says nothing about the connection, so it is
+-- logged and the tiles keep what the last poll put there.
 local function report_error(device, kind, body)
+  local connection = poll.connection_for(kind)
+  if not connection then
+    log.warn(string.format("command refused (%s) on %s", tostring(kind), device.id))
+    return
+  end
   local lang = poll.lang(device)
-  poll.emit_connection(device, poll.connection_for(kind), poll.message_for(kind, body, lang))
+  poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
 end
 
 --- switch.on: WoL sequence, device goes to `waking` (§6.2/§6.3).
@@ -95,9 +102,8 @@ local function handle_refresh(driver, device)
   poll.once(driver, device)
 end
 
---- pcCommand.execute(command, mode, minutes) (§5.1). The capability JSON that
---- defines these arguments is #72; the handler is here so the client path is
---- exercised as soon as the capability exists.
+--- pcCommand.execute(command, mode, minutes) — capabilities/pcCommand.json.
+--- `minutes > 0` turns the same endpoint into a schedule (§4.3).
 local function handle_execute(driver, device, cmd)
   local args = (cmd or {}).args or {}
   local ok, body, kind = client.command(device, args.command, args.mode or "default", args.minutes or 0)
@@ -105,32 +111,42 @@ local function handle_execute(driver, device, cmd)
     report_error(device, kind, body)
     return
   end
+  -- The service acted; poll straight away so the tiles show the result instead
+  -- of the state from up to `pollInterval` ago.
   poll.once(driver, device)
 end
 
 --- pcSchedule.schedule(command, minutes): same endpoint, minutes > 0 (§4.3).
+--- An existing schedule is replaced by the service, which is worth saying.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
+  local had_schedule = poll.get_state(device).schedule_active == true
   local ok, body, kind = client.command(device, args.command, "default", args.minutes or 0)
   if not ok then
     report_error(device, kind, body)
     return
   end
-  poll.once(driver, device)
+  poll.once(driver, device, {
+    note = had_schedule and i18n.t(poll.lang(device), "schedule_replaced") or nil,
+  })
 end
 
---- pcSchedule.cancel(): DELETE /st/v1/schedule (§4.4).
+--- pcSchedule.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- `{"cancelled": false}` when there was nothing to cancel.
 local function handle_cancel(driver, device)
   local ok, body, kind = client.cancel(device)
   if not ok then
     report_error(device, kind, body)
     return
   end
+  local cancelled = (body or {}).cancelled == true
   -- §6.2: cancelling the grace period brings the switch back on.
   local nxt = state.transition(poll.get_state(device), "schedule_cancelled")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
-  poll.once(driver, device)
+  poll.once(driver, device, {
+    note = i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"),
+  })
 end
 
 local capability_handlers = {
@@ -143,7 +159,9 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals because the capability definitions live in #72.
+-- Command names are literals: they are what `capabilities/pcCommand.json` and
+-- `capabilities/pcSchedule.json` declare, and the generated capability object
+-- only carries them once the account owner has created the capabilities.
 if custom.command then
   capability_handlers[custom.command.ID] = { execute = handle_execute }
 end

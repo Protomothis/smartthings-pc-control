@@ -1,6 +1,11 @@
 local h = require "helpers"
 local client = require "client"
 local json = require "st.json"
+-- The other half of error classification (err_kind -> connection/message,
+-- §6.1) lives in poll.lua, so the two are asserted together.
+local caps = require "caps"
+local poll = require "poll"
+local state = require "state"
 
 local T = {}
 
@@ -156,15 +161,22 @@ function T.test_401_is_unauthorized()
   local http = fake_http(401, '{"error":"unauthorized"}')
   local ok, body, err = client.get_status(device(), { http = http })
   h.assert_false(ok)
-  h.assert_nil(body)
   h.assert_equal(err, "unauthorized")
+  -- §4.1: the service's error body comes back with the failure.
+  h.assert_equal(body.error, "unauthorized")
 end
 
-function T.test_403_is_unauthorized()
-  -- Hub missing from smartthings.allowed_hubs (§4.1).
-  local http = fake_http(403, '{"error":"forbidden"}')
-  local _, _, err = client.get_status(device(), { http = http })
-  h.assert_equal(err, "unauthorized")
+function T.test_403_is_forbidden()
+  -- Hub missing from smartthings.allowed_hubs (§4.1). It shows up as
+  -- `connection = unauthorized`, but with its own message, so the kind that
+  -- reaches poll.lua has to stay distinguishable from a wrong secret.
+  local http = fake_http(403, '{"error":"hub not allowed"}')
+  local _, body, err = client.get_status(device(), { http = http })
+  h.assert_equal(err, "forbidden")
+  h.assert_equal(body.error, "hub not allowed")
+  h.assert_equal(poll.connection_for("forbidden"), "unauthorized")
+  h.assert_contains(poll.message_for("forbidden", nil, "en"), "allow-list")
+  h.assert_contains(poll.message_for("forbidden", nil, "ko"), "허용 목록")
 end
 
 function T.test_a_connection_failure_is_unreachable()
@@ -197,12 +209,24 @@ function T.test_a_protocol_mismatch_is_incompatible()
   h.assert_equal(err, "incompatible")
   -- The body comes back so the caller can say "driver too old" (§6.1).
   h.assert_equal(body.protocol, 2)
+  h.assert_equal(poll.connection_for(err), "incompatible")
+  h.assert_equal(poll.message_for(err, body, "en"), "Driver update required")
+  h.assert_equal(poll.message_for(err, body, "ko"), "드라이버 업데이트 필요")
 end
 
 function T.test_a_status_without_protocol_is_incompatible()
   local http = fake_http(200, '{"power":"on"}')
-  local _, _, err = client.get_status(device(), { http = http })
+  local _, body, err = client.get_status(device(), { http = http })
   h.assert_equal(err, "incompatible")
+  -- No `protocol` at all means the service predates it: it is the old side.
+  h.assert_contains(poll.message_for(err, body, "en"), "Requires service v1.1.0")
+end
+
+function T.test_an_older_protocol_says_the_service_is_too_old()
+  local http = fake_http(200, status_body({ protocol = 0 }))
+  local _, body, err = client.get_status(device(), { http = http })
+  h.assert_equal(err, "incompatible")
+  h.assert_contains(poll.message_for(err, body, "ko"), "서비스 v1.1.0 이상 필요")
 end
 
 function T.test_404_is_incompatible()
@@ -220,15 +244,45 @@ end
 
 function T.test_400_is_badrequest()
   local http = fake_http(400, '{"error":"unknown command"}')
-  local _, _, err = client.command(device(), "nonsense", "default", 0, { http = http })
+  local _, body, err = client.command(device(), "nonsense", "default", 0, { http = http })
   h.assert_equal(err, "badrequest")
+  h.assert_equal(poll.connection_for(err), "incompatible")
+  -- The service says which command it refused; quote it (§4.3).
+  h.assert_contains(poll.message_for(err, body, "en"), "unknown command")
 end
 
-function T.test_429_is_badrequest()
-  -- Rate limited (§8): reachable and authenticated, just refused.
-  local http = fake_http(429, "slow down")
-  local _, _, err = client.get_status(device(), { http = http })
-  h.assert_equal(err, "badrequest")
+function T.test_429_keeps_the_last_state()
+  -- Rate limited (§8): reachable, authenticated and healthy, just refused this
+  -- one request. Nothing about the PC changed, so no attribute is repainted.
+  local http = fake_http(429, '{"error":"rate limited"}')
+  local ok, _, err = client.get_status(device(), { http = http })
+  h.assert_false(ok)
+  h.assert_equal(err, "ratelimited")
+  h.assert_nil(poll.connection_for(err),
+    "a rate-limited poll must not change `connection`")
+  h.assert_contains(poll.message_for(err, nil, "en"), "Too many requests")
+end
+
+function T.test_a_rate_limited_poll_leaves_the_device_alone()
+  local d = device()
+  poll.set_state(d, state.new(state.ON))
+  local ok, kind = poll.once(nil, d, { deps = { http = fake_http(429, '{"error":"rate limited"}') } })
+  h.assert_false(ok)
+  h.assert_equal(kind, "ratelimited")
+  h.assert_equal(#d.emitted, 0, "a 429 must not repaint any attribute")
+  h.assert_nil(d.health, "a 429 must not touch health")
+  h.assert_equal(poll.get_state(d).power_state, state.ON)
+end
+
+function T.test_an_unreachable_poll_does_report()
+  -- The contrast to the test above: a real failure is shown.
+  local d = device()
+  poll.set_state(d, state.new(state.ON))
+  local ok, kind = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
+  h.assert_false(ok)
+  h.assert_equal(kind, "unreachable")
+  h.assert_equal(d.health, "offline")
+  h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "connection"), "unreachable")
 end
 
 function T.test_5xx_is_unreachable()
@@ -241,10 +295,10 @@ function T.test_classify_table()
   h.assert_nil(client.classify(200))
   h.assert_nil(client.classify(204))
   h.assert_equal(client.classify(401), "unauthorized")
-  h.assert_equal(client.classify(403), "unauthorized")
+  h.assert_equal(client.classify(403), "forbidden")
   h.assert_equal(client.classify(400), "badrequest")
   h.assert_equal(client.classify(404), "incompatible")
-  h.assert_equal(client.classify(429), "badrequest")
+  h.assert_equal(client.classify(429), "ratelimited")
   h.assert_equal(client.classify(502), "unreachable")
   h.assert_equal(client.classify("connection refused"), "unreachable")
   h.assert_equal(client.classify(nil), "unreachable")

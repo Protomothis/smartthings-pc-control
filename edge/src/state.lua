@@ -48,6 +48,9 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
+    -- last polled `schedule.active`, so `pcSchedule.schedule` can say whether
+    -- it replaced an existing schedule (§4.3) without asking the service twice
+    schedule_active = false,
   }
 end
 
@@ -57,6 +60,7 @@ local function copy(s)
     unreachable_count = s.unreachable_count or 0,
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
+    schedule_active = s.schedule_active or false,
   }
 end
 
@@ -129,6 +133,7 @@ function state.transition(s, event, arg)
       nxt.wake_from = nil
     end
   elseif event == "schedule_cancelled" then
+    nxt.schedule_active = false
     -- §6.2: cancelling the grace period on the PC must bring the switch back on.
     if cur == state.SHUTTING_DOWN then
       nxt.power_state = state.ON
@@ -169,12 +174,88 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
+-- `pcStatus.message` shows one sentence, so several applicable notices need an
+-- order. Highest priority first:
+--
+--   error            a failed request (unauthorized / unreachable / bad request)
+--   incompatible     protocol mismatch, service or driver too old
+--   wol_not_ready    WoL is off on the PC's adapter, so `switch on` may not land
+--   update_available a newer service release is out
+--   no_secret        the service accepts unauthenticated calls (§4.1)
+--   note             a one-off confirmation from a command handler
+--
+-- The first two are produced by poll.lua from an err_kind — there is no status
+-- body to map when a request fails — and reach this function as `opts.error`,
+-- which wins over everything a successful status could say.
+state.MESSAGE_ORDER = {
+  "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
+}
+
+--- The single `pcStatus.message` for a status body (§5.1), by MESSAGE_ORDER.
+-- @param opts `lang`, `error` (a ready-made message that outranks the body),
+--   `note` (a confirmation shown only when nothing is wrong)
+function state.status_message(status, opts)
+  opts = opts or {}
+  if type(opts.error) == "string" and opts.error ~= "" then
+    return opts.error
+  end
+
+  status = status or {}
+  local lang = opts.lang
+
+  if (status.wol or {}).ready ~= true then
+    -- §6.3: we still send the magic packet, but say why it may not work.
+    return i18n.t(lang, "wol_not_ready")
+  end
+  if (status.update or {}).available == true then
+    local latest = status.update.latest
+    if type(latest) == "string" and latest ~= "" then
+      return i18n.t(lang, "update_available", latest)
+    end
+    return i18n.t(lang, "update_available_plain")
+  end
+  if status.secret_set == false then
+    -- §4.1: a service with no secret is still a healthy connection, so the
+    -- warning goes here instead of into the `connection` enum.
+    return i18n.t(lang, "no_secret")
+  end
+
+  if type(opts.note) == "string" and opts.note ~= "" then
+    return opts.note
+  end
+  return ""
+end
+
+-- Every attribute `apply_status` can emit, capability id -> attribute names.
+-- capabilities_test.lua checks this against the JSON in `capabilities/`, so a
+-- new attribute that is emitted but never defined fails the suite.
+local ATTRIBUTES = {
+  [state.CAP_SWITCH] = { switch = true },
+  [caps.POWER_STATE] = { powerState = true },
+  [caps.COMMAND] = { lastCommand = true },
+  [caps.SCHEDULE] = {
+    active = true, command = true, remainingSeconds = true,
+    executeAt = true, origin = true,
+  },
+  [caps.STATUS] = {
+    connection = true, serviceVersion = true, updateAvailable = true,
+    wolReady = true, lastSeen = true, message = true,
+  },
+  [caps.SESSION] = { locked = true, idleMinutes = true, user = true },
+}
+
+--- The set above. Read-only: it is a constant, not a copy.
+function state.attributes_used()
+  return ATTRIBUTES
+end
+
 --- Turn a `GET /st/v1/status` body into capability events (§4.2 -> §5.1).
 --
 -- `device_state` supplies powerState (already advanced with `transition`), so
--- this function never decides power on its own. `opts.now` is the ISO string
--- used for `lastSeen` and `opts.lang` selects the ko/en strings; both are passed
--- in to keep the function pure and the tests deterministic.
+-- this function never decides power on its own. `opts.now` is the formatted
+-- clock time used for `lastSeen`, `opts.lang` selects the ko/en strings, and
+-- `opts.error` / `opts.note` feed the `message` ladder (state.MESSAGE_ORDER);
+-- they are all passed in to keep the function pure and the tests deterministic.
 function state.apply_status(device_state, status, opts)
   device_state = device_state or state.new()
   status = status or {}
@@ -195,32 +276,29 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.SCHEDULE, "command", active and i18n.command(lang, schedule.command) or "")
   ev(events, caps.SCHEDULE, "remainingSeconds",
     active and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0)
-  ev(events, caps.SCHEDULE, "executeAt", active and (schedule.execute_at or "") or "")
+  -- `execute_at` is RFC3339 with the PC's offset; the app shows the local time.
+  ev(events, caps.SCHEDULE, "executeAt", active and hhmm(schedule.execute_at) or "")
   ev(events, caps.SCHEDULE, "origin", active and i18n.origin(lang, schedule.origin) or "")
 
   local wol = status.wol or {}
   local update = status.update or {}
-  local wol_ready = wol.ready == true
-  -- §4.1: a service with no secret still counts as a healthy connection; the
-  -- warning goes into `message` so automations on `connection == ok` keep working.
-  local warnings = {}
-  if status.secret_set == false then
-    warnings[#warnings + 1] = i18n.t(lang, "no_secret")
-  end
-  if not wol_ready then
-    -- §6.3: we still try WoL, but say why it may not land.
-    warnings[#warnings + 1] = i18n.t(lang, "wol_not_ready")
-  end
 
   ev(events, caps.STATUS, "connection", "ok")
   ev(events, caps.STATUS, "serviceVersion", status.service_version or "")
   ev(events, caps.STATUS, "updateAvailable", update.available == true)
-  ev(events, caps.STATUS, "wolReady", wol_ready)
+  ev(events, caps.STATUS, "wolReady", wol.ready == true)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
-  ev(events, caps.STATUS, "message", table.concat(warnings, " · "))
+  ev(events, caps.STATUS, "message",
+    state.status_message(status, { lang = lang, error = opts.error, note = opts.note }))
 
+  -- §4.2: the session block is opt-in. When it is off we emit nothing at all,
+  -- so the tiles keep whatever they last showed rather than flipping to a
+  -- made-up "unlocked, 0 minutes, nobody".
   local session = status.session or {}
   if session.exposed == true then
+    -- `locked` and `idle_seconds` are absent when the service cannot read the
+    -- session (nobody logged in, WTS refused); false/0 is the honest default
+    -- for an attribute that has no "unknown".
     ev(events, caps.SESSION, "locked", session.locked == true)
     ev(events, caps.SESSION, "idleMinutes",
       math.floor((tonumber(session.idle_seconds) or 0) / 60))

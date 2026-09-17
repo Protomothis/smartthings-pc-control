@@ -36,6 +36,13 @@ local STRINGS = {
     ko = "시크릿이 일치하지 않습니다 · 설정에서 확인하세요",
     en = "Secret does not match · check the device settings",
   },
+  -- 403: the secret was fine, the hub is simply not in
+  -- `smartthings.allowed_hubs` (§4.1). Same `connection` value as 401, but the
+  -- fix is a different one, so it gets its own sentence.
+  forbidden = {
+    ko = "허브가 허용 목록에 없습니다 · PC의 SmartThings 설정에서 추가하세요",
+    en = "Hub not in allow-list · add it in the PC's SmartThings settings",
+  },
   unreachable = {
     ko = "PC에 연결할 수 없습니다",
     en = "Cannot reach the PC",
@@ -59,6 +66,37 @@ local STRINGS = {
   no_ip = {
     ko = "PC의 IP 주소를 설정하세요",
     en = "Set the PC IP address in settings",
+  },
+  -- 429 (§8). Never shown as a `message`: a rate-limited poll keeps the last
+  -- state, so this only reaches the driver log.
+  ratelimited = {
+    ko = "요청이 너무 잦습니다 · 폴링 주기를 늘리세요",
+    en = "Too many requests · increase the poll interval",
+  },
+
+  -- service state notices (§4.2)
+  update_available = {
+    ko = "서비스 업데이트 %s 사용 가능",
+    en = "Service update %s available",
+  },
+  -- `update.available` without a usable `update.latest`.
+  update_available_plain = {
+    ko = "서비스 업데이트 사용 가능",
+    en = "A service update is available",
+  },
+
+  -- command outcomes (§4.3/§4.4)
+  schedule_replaced = {
+    ko = "기존 예약을 새 예약으로 대체했습니다",
+    en = "Replaced the existing schedule",
+  },
+  schedule_cancelled = {
+    ko = "예약을 취소했습니다",
+    en = "Schedule cancelled",
+  },
+  schedule_none = {
+    ko = "취소할 예약이 없습니다",
+    en = "There was no schedule to cancel",
   },
 
   -- schedule origins (§4.2). `remote` is the legacy PCControl HTTP path, which
