@@ -530,3 +530,11 @@ develop → main → `v1.1.0` 태그.
   `parent_assigned_child_key` 또는 `pc-display`로 시작하는 프로필 이름으로 판별하고,
   `device_init`이 `try_delete_device`를 불러
   `removing legacy display child <id>`를 남긴다(장치당 드라이버 구동 1회).
+
+### 14.4 허브의 capability 정의 캐시 (2026-09-22 실측)
+
+- 허브는 커스텀 capability 정의를 **id 단위로 허브 전체에 캐시**하고, 같은 id·버전의 정의를 클라우드에서 바꿔도(`capabilities:update`) 다시 받지 않는다.
+  드라이버 재설치, 새 드라이버 id 설치, 장치 삭제·재추가, 프로필 이전 모두 무효. 확인된 갱신 경로는 허브 재부팅(전원 재연결)뿐이다.
+- 그래서 정의(속성·명령)를 바꿀 때는 **새 id**로 만든다. v1.1.0 최종 이름: `pcPower` `pcControl` `pcTimer` `pcHealth` `pcUser`(id는 소문자). 이전 이름 5개는 참조가 사라진 뒤 `capabilities:delete`로 계정에서 삭제했다.
+- 프레젠테이션·번역만 바꾸는 경우는 프로필 버전 업(pc.vN)으로 충분하다(§14.3). 정의가 바뀌면 새 capability id + 프로필 버전 업.
+- 배포 후 원칙: 정의 변경은 새 id로, 드라이버는 옛 id 참조를 한 버전 동안 유지하지 않고 바로 새 id로 이전한다(장치는 프로필 이전으로 따라온다).
