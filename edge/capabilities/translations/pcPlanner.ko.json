@@ -33,6 +33,16 @@
     "origin": {
       "label": "요청 출처"
     },
+    "minutesPick": {
+      "label": "예약 시간",
+      "i18n": {
+        "value": {
+          "-1": {
+            "label": "시간 선택"
+          }
+        }
+      }
+    },
     "planCommand": {
       "label": "예약할 명령",
       "i18n": {

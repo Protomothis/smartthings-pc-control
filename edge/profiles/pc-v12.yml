@@ -1,6 +1,6 @@
 # Main device profile (design doc §4, §7).
 #
-# v12 (#85): pcPlan became pcCountdown and pcRun became pcExec (new definitions
+# v12 (#85): pcPlan became pcPlanner and pcRun became pcExec (new definitions
 # -> new capability ids, platform notes "허브의 정의 캐시"). Two things were measured on the phone
 # 2026-09-22: the cloud validates a command's arguments against the definition
 # before the hub sees them, so the schedule list's `취소` entry (minutes = 0)
@@ -33,7 +33,7 @@ components:
         version: 1
       - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pccountdown
+      - id: numbersystem53811.pcplanner
         version: 1
       - id: numbersystem53811.pcuser
         version: 1

@@ -293,14 +293,25 @@ end
 function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   -- The older files are frozen (#79): a device that has not been migrated yet
   -- still renders them, so they must keep the reading order they were packaged
-  -- with - the info card last, which is where the version row was before #86.
+  -- with. That is the info card last for everything up to #85, and the version
+  -- card last from #86 on - which is when the version row got a capability of
+  -- its own. A file is read for which of the two it carries rather than by its
+  -- number, so a rename like #88's (pc.v13 becoming an older profile) does not
+  -- have to be spelled out here.
   local profiles = require "profiles"
+  local version = (caps.VERSION:gsub("^.*%.", ""))
+  local info = (caps.STATUS:gsub("^.*%.", ""))
   for name, text in pairs(profile_files) do
     if profile_name(text) ~= profiles.current() then
       local order = capability_order(text)
       h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
-      h.assert_equal(order[#order], (caps.STATUS:gsub("^.*%.", "")),
-        "profiles/" .. name .. " must keep the info capability last (#85)")
+      local carries_version = false
+      for _, id in ipairs(order) do
+        carries_version = carries_version or id == version
+      end
+      local last = carries_version and version or info
+      h.assert_equal(order[#order], last,
+        "profiles/" .. name .. " must keep the card it shipped with last (#85, #86)")
     end
   end
 end
@@ -494,8 +505,18 @@ function T.test_command_enums_match_the_service()
   -- #85, measured on the phone: the cloud validates command arguments against
   -- the definition and never forwards a rejected one, so the list's `취소`
   -- entry (minutes = 0) failed with "system error" while the minimum was 1.
-  h.assert_equal(minutes.minimum, 0, "minutes = 0 is the list's Cancel entry (#85)")
+  -- #88: and it starts at -1, the no-op a dismissed picker sends. The row rests
+  -- on `minutesPick` = "-1", and a value the row can show has to be a value the
+  -- command accepts (platform notes "상세 화면(detailView) 위젯").
+  h.assert_equal(minutes.minimum, -1, "minutes = -1 is what a dismissed picker sends (#88)")
   h.assert_equal(minutes.maximum, 1440)
+  h.assert_equal(state.MINUTES_NONE, -1, "state.MINUTES_NONE is the no-op argument")
+
+  -- #88: the attribute the 예약 시간 row rests on holds exactly that one value.
+  h.assert_deep_equal(definition("schedule").attributes.minutesPick.schema.properties.value.enum,
+    { state.MINUTES_PICK }, "minutesPick is the one-value enum the row rests on")
+  h.assert_equal(tonumber(state.MINUTES_PICK), state.MINUTES_NONE,
+    "the value the row shows and the argument it sends have to be the same number")
 end
 
 
@@ -779,18 +800,22 @@ function T.test_every_list_key_is_a_valid_command_argument()
         check(key, command_name, nil, commands, where)
         -- #84: and whatever the row can be left showing, because closing the
         -- list without a pick sends that value as the argument. Both the
-        -- declared alternatives and the attribute's own enum count. Only for an
-        -- enum argument: a row whose command takes an integer (the schedule
-        -- presets) shows a status word the app cannot send as a number, and
-        -- the phone leaves that picker alone (platform notes "상세 화면(detailView) 위젯").
-        local argument = ((definition(key).commands[command_name] or {}).arguments or {})[1] or {}
-        if (argument.schema or {}).enum then
-          local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
-          local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
-            .properties or {}).value or {}
-          check(key, command_name, nil, states, where .. " state")
-          check(key, command_name, nil, spec.enum or {}, where .. " " .. tostring(attr))
-        end
+        -- declared alternatives and the bound attribute's own enum count.
+        --
+        -- #88: for EVERY list, not only the ones whose argument is an enum.
+        -- The carve-out used to say that a row bound to an integer argument
+        -- shows a word the app cannot send as a number and that the phone
+        -- therefore leaves such a picker alone. It does not: the 예약 시간 row
+        -- rested on `status` and a dismissed picker sent
+        -- `schedule(minutes: "idle")`, which the cloud rejected with a network
+        -- error before the hub ever saw it. So an integer argument's row has to
+        -- rest on an integer inside [minimum, maximum] just as an enum
+        -- argument's row has to rest on a member of the enum.
+        local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
+        local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
+          .properties or {}).value or {}
+        check(key, command_name, nil, states, where .. " state")
+        check(key, command_name, nil, spec.enum or {}, where .. " " .. tostring(attr))
       end
     end
 
@@ -815,6 +840,66 @@ function T.test_every_list_key_is_a_valid_command_argument()
   end
 
   h.assert_true(checked >= 20, "far too few list keys were checked: " .. checked)
+end
+
+-- #88, measured on the phone (2026-09-22): the same defect as #84, one type
+-- further. The 예약 시간 row's command takes an integer and the row was bound to
+-- `status` ("idle" / "scheduled"), so dismissing the list without a choice sent
+-- `schedule(minutes: "idle")` and the cloud answered "네트워크 오류" without ever
+-- forwarding it. The rule below is what the old shape broke: a list bound to an
+-- integer argument may only rest on integers inside the argument's range, and
+-- the resting value has to be a no-op (-1, by the convention this driver keeps
+-- for the same reason `execute` rests on `none`).
+function T.test_an_integer_argument_list_rests_on_a_number_in_its_range()
+  local checked = 0
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "list" then
+        local command = (definition(key).commands or {})[item.list.command.name] or {}
+        local schema = ((command.arguments or {})[1] or {}).schema or {}
+        if schema.type == "integer" or schema.type == "number" then
+          local where = string.format("%s detailView[%d] (%s)", id, i, item.list.command.name)
+          -- Every value the row can be left showing: the declared alternatives
+          -- and, because the app reads the attribute rather than the
+          -- presentation, the whole enum of the attribute it is bound to.
+          local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
+          local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
+            .properties or {}).value or {}
+          local values = {}
+          for _, alternative in ipairs(((item.list or {}).state or {}).alternatives or {}) do
+            values[#values + 1] = alternative.key
+          end
+          for _, value in ipairs(spec.enum or {}) do
+            values[#values + 1] = value
+          end
+          h.assert_true(#values > 0, where .. " state can hold nothing at all")
+          for _, value in ipairs(values) do
+            local number = tonumber(value)
+            h.assert_true(number ~= nil, string.format(
+              "%s rests on %s, which %s() cannot take as a number - a dismissed "
+              .. "list sends the row's current value (#88)",
+              where, tostring(value), item.list.command.name))
+            h.assert_true(number == math.floor(number),
+              where .. " rests on " .. tostring(value) .. ", which is not an integer")
+            h.assert_true(number >= (schema.minimum or -math.huge), string.format(
+              "%s rests on %s, below the argument's minimum (%s)",
+              where, tostring(value), tostring(schema.minimum)))
+            h.assert_true(number <= (schema.maximum or math.huge), string.format(
+              "%s rests on %s, above the argument's maximum (%s)",
+              where, tostring(value), tostring(schema.maximum)))
+            -- ... and inside the range is not enough: the value the row rests
+            -- on is sent for real, so it has to do nothing. 0 already means
+            -- "cancel the schedule", hence the negative no-op.
+            h.assert_true(number < 0, string.format(
+              "%s rests on %s, which would %s() something the user never asked for "
+              .. "(the no-op is -1)", where, tostring(value), item.list.command.name))
+            checked = checked + 1
+          end
+        end
+      end
+    end
+  end
+  h.assert_true(checked > 0, "the 예약 시간 row is a list of integers; none was checked")
 end
 
 function T.test_the_driver_never_leaves_a_flash_timer_behind()
@@ -852,10 +937,14 @@ function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary
   h.assert_deep_equal(minutes, { "5", "15", "30", "60", "120", "0" })
   h.assert_equal(item.list.command.argumentType, "integer",
     "a list of integer arguments needs argumentType (platform notes '상세 화면(detailView) 위젯')")
-  h.assert_equal(item.list.state.value, "status.value")
+  -- #88: the row rests on `minutesPick`, not on `status`. A dismissed picker
+  -- sends the row's current value as the argument, and "idle"/"scheduled" is
+  -- not a number the cloud will forward - that was the network-error popup.
+  h.assert_equal(item.list.state.value, "minutesPick.value")
   h.assert_deep_equal(states,
-    definition("schedule").attributes.status.schema.properties.value.enum,
-    "the state alternatives must cover the whole status enum")
+    definition("schedule").attributes.minutesPick.schema.properties.value.enum,
+    "the state alternatives must cover the whole minutesPick enum")
+  h.assert_deep_equal(states, { "-1" }, "the row rests on the no-op delay")
 
   h.assert_equal(detail[3].displayType, "state")
   h.assert_contains(detail[3].state.label, "summary.value")

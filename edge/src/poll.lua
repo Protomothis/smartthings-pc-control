@@ -18,16 +18,18 @@ poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
 -- #82: the last `pcExec.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
--- #84: the `pcCountdown.planCommand` the user picked for the schedule row.
+-- #84: the `pcPlanner.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
 -- #85: which generation of capability ids this device's rows were painted for.
--- A renamed capability (pcRun -> pcExec, pcPlan -> pcCountdown) starts with
+-- A renamed capability (pcRun -> pcExec, pcPlan -> pcPlanner) starts with
 -- every attribute unset on the hub, so the persisted "already painted" fields
 -- would otherwise skip a device that has been migrated (platform notes "허브의 정의 캐시").
 poll.ROWS_FIELD = "rows_painted"
 -- #86 bumps it again: `pcVersion` is a new capability, so its row starts unset
 -- on every existing device and has to be painted once.
-poll.ROWS_VERSION = "86"
+-- #88 bumps it once more: `pcCountdown` became `pcPlanner` and gained
+-- `minutesPick`, so every schedule row of a migrated device starts out unset.
+poll.ROWS_VERSION = "88"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -226,9 +228,9 @@ function poll.ensure_action(device)
   return true
 end
 
---- Emit `pcCountdown.planCommand` and remember it (#84, moved in #85).
+--- Emit `pcPlanner.planCommand` and remember it (#84, moved in #85).
 --
--- The command a `pcCountdown.schedule` without an explicit command runs. It is
+-- The command a `pcPlanner.schedule` without an explicit command runs. It is
 -- the user's own choice, made on the detail view, so it is persisted rather
 -- than derived from a status body. An unschedulable value is coerced (§3.3).
 --
@@ -245,6 +247,21 @@ function poll.emit_plan_command(device, command, force)
     { cap = caps.SCHEDULE, attr = "planCommand", value = value, force = force == true },
   })
   return value
+end
+
+--- #88: answer a `schedule` on the row the 예약 시간 list is bound to.
+--
+-- The list rests on `minutesPick`, whose only value is "-1" (the no-op
+-- `minutes`), so the attribute never changes and the platform would drop the
+-- event - leaving the app spinning until it fails, exactly as the command row
+-- did before #86. Forced, the re-emit ends the spinner, and it goes out for
+-- every `schedule` the app sends: a picked delay, the Cancel entry and the
+-- dismissed picker alike.
+function poll.answer_minutes_pick(device)
+  poll.emit(device, {
+    { cap = caps.SCHEDULE, attr = "minutesPick", value = state.MINUTES_PICK, force = true },
+  })
+  return state.MINUTES_PICK
 end
 
 --- The command this device schedules when none is given: the picked one, else
@@ -268,7 +285,7 @@ function poll.ensure_plan_command(device)
   return true
 end
 
---- #85: paint every pcExec and pcCountdown attribute once, so no row of either
+--- #85: paint every pcExec and pcPlanner attribute once, so no row of either
 --- card reads "-" and the app stops saying the device has not reported all of
 --- its state.
 --

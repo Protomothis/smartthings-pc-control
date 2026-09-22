@@ -21,9 +21,21 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcCountdown.status enum (§4, #83): the string twin of `active`.
+-- pcPlanner.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
 state.SCHEDULED = "scheduled"
+
+-- #88: the 예약 시간 row's resting value, and the `minutes` argument that does
+-- nothing. Closing a detailView list without picking anything sends the row's
+-- CURRENT state value as the argument (platform notes "상세 화면(detailView) 위젯"), so the row has to rest
+-- on something `schedule(minutes: integer)` accepts. It rested on `status`
+-- ("idle"/"scheduled"), which the cloud rejected before the hub ever saw it -
+-- the "네트워크 오류" popup of #88. `minutesPick` is a one-value enum holding the
+-- string "-1", and `minimum: -1` makes that a valid, harmless argument.
+state.MINUTES_NONE = -1
+-- The attribute value is a string: the phone sends a list key, and an enum
+-- attribute is a string attribute (a list bound to a number does not render).
+state.MINUTES_PICK = "-1"
 
 -- "switch" is not a custom capability, so it is referenced by its plain id.
 state.CAP_SWITCH = "switch"
@@ -52,7 +64,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcCountdown.schedule` can say whether
+    -- last polled `schedule.active`, so `pcPlanner.schedule` can say whether
     -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
   }
@@ -191,7 +203,7 @@ function state.is_action(value)
 end
 
 --------------------------------------------------------------------------------
--- pcCountdown.planCommand (#84, moved off the command capability in #85)
+-- pcPlanner.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
 -- What the service can schedule (§3.3). `lock` and the screen commands are not
@@ -201,7 +213,7 @@ state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 -- What a device schedules when nothing else says otherwise.
 state.PLAN_DEFAULT = "shutdown"
 
---- True when `value` is a command `pcCountdown.schedule` may carry.
+--- True when `value` is a command `pcPlanner.schedule` may carry.
 function state.is_plan_command(value)
   for _, command in ipairs(state.PLAN_COMMANDS) do
     if command == value then
@@ -337,11 +349,11 @@ function state.versions(service_version, lang, update)
   return text
 end
 
---- `pcCountdown.summary` (#78, reworded in #87): "Shut down · in 4 min", or
+--- `pcPlanner.summary` (#78, reworded in #87): "Shut down · in 4 min", or
 --- "None" when nothing is scheduled.
 --
 -- #87: the origin left the line. Who asked for the shutdown is in
--- `pcCountdown.origin` and in `pcExec.lastCommand`; on the summary row it
+-- `pcPlanner.origin` and in `pcExec.lastCommand`; on the summary row it
 -- pushed the minutes - the one number the row exists for - off the end.
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
@@ -470,6 +482,10 @@ local ATTRIBUTES = {
   [caps.SCHEDULE] = {
     active = true, status = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true, planCommand = true,
+    -- #88: the value the 예약 시간 list rests on. No status body carries it -
+    -- it never changes - but it has to be emitted, or the row reads "-" and
+    -- the list does not open (poll.answer_minutes_pick, state.initial_rows).
+    minutesPick = true,
   },
   [caps.STATUS] = {
     connection = true, serviceVersion = true, updateAvailable = true,
@@ -490,7 +506,7 @@ function state.attributes_used()
   return ATTRIBUTES
 end
 
---- #85: the resting value of every pcExec / pcCountdown attribute that a
+--- #85: the resting value of every pcExec / pcPlanner attribute that a
 --- status body does not carry on its own (plus the `pcInfo.versions` row, which
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.
@@ -515,6 +531,10 @@ function state.initial_rows(lang)
   ev(events, caps.SCHEDULE, "executeAt", "")
   ev(events, caps.SCHEDULE, "origin", "")
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(nil, lang))
+  -- #88: the 예약 시간 row's resting value. A list whose attribute was never
+  -- emitted shows "-" and does not open (platform notes "상세 화면(detailView) 위젯"), and this one never
+  -- moves off "-1", so this is the only place a new device is told it.
+  ev(events, caps.SCHEDULE, "minutesPick", state.MINUTES_PICK)
   -- The service version is not known yet, so the row says "?" for it and the
   -- driver/screen halves - the two that matter for "is my update live?" - are
   -- right from the start. #86: on the row's own capability and, unchanged, on

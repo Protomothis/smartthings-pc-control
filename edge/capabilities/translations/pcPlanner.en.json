@@ -33,6 +33,16 @@
     "origin": {
       "label": "Requested by"
     },
+    "minutesPick": {
+      "label": "Delay",
+      "i18n": {
+        "value": {
+          "-1": {
+            "label": "Pick a delay"
+          }
+        }
+      }
+    },
     "planCommand": {
       "label": "Command to schedule",
       "i18n": {

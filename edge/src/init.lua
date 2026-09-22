@@ -43,7 +43,7 @@ local function device_init(driver, device)
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
-  -- pcExec and pcCountdown unset, which reads as "-" and keeps the app saying
+  -- pcExec and pcPlanner unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   poll.ensure_rows(device)
   -- §6.3: one listener per driver, opened on the first device that needs it.
@@ -66,7 +66,7 @@ local function device_added(driver, device)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
-  -- #85: and the same goes for every other pcExec / pcCountdown attribute,
+  -- #85: and the same goes for every other pcExec / pcPlanner attribute,
   -- including the "command to schedule" row, whose default is the `offAction`
   -- preference.
   poll.ensure_rows(device)
@@ -220,7 +220,7 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
---- pcCountdown.setPlanCommand(command): what a schedule without a command of
+--- pcPlanner.setPlanCommand(command): what a schedule without a command of
 --- its own runs (#84; moved onto the schedule capability in #85).
 --
 -- The detail view's schedule list can only pick the minutes (one argument per
@@ -240,18 +240,18 @@ local function handle_set_plan_command(_driver, device, cmd)
   poll.emit_plan_command(device, args.command, true)
 end
 
---- The command `pcCountdown.schedule` runs when it carries none of its own:
+--- The command `pcPlanner.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
 --- then the `offAction` preference, else shutdown (§3.3).
 local function schedule_command(device, requested)
   return state.plan_command_for(requested, poll.plan_command(device))
 end
 
---- pcCountdown.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
+--- pcPlanner.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcCountdown.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
+--- pcPlanner.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -264,13 +264,28 @@ local handle_cancel
 --- popup (platform notes "상세 화면(detailView) 위젯"). Zero minutes takes the `cancel()` path, which is still in the
 --- definition and still handled for devices on an older profile. The list sends
 --- the key as a string on some firmwares, hence the `tonumber`.
+---
+--- #88: `minutes` starts at -1, which does nothing at all. Closing the list
+--- without picking anything sends the row's current value (platform notes "상세 화면(detailView) 위젯"), and the
+--- row rests on `minutesPick` = "-1", so that is the path a dismissed picker
+--- takes: refresh the tiles and leave the schedule alone. Before it, the row
+--- rested on `status` and the phone sent `schedule(minutes: "idle")`, which the
+--- cloud rejected with a network-error popup. Whatever the argument turns out
+--- to be, the row is answered first with a forced re-emit of "-1" - it never
+--- changes value, so an unforced event is dropped and the app spins (#86).
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
-  if math.floor(tonumber(args.minutes) or 0) <= 0 then
+  poll.answer_minutes_pick(device)
+  -- A `schedule` with no minutes at all is the same "nothing was picked" case.
+  local minutes = math.floor(tonumber(args.minutes) or state.MINUTES_NONE)
+  if minutes < 0 then
+    return poll.once(driver, device)
+  end
+  if minutes == 0 then
     return handle_cancel(driver, device)
   end
   local had_schedule = poll.get_state(device).schedule_active == true
-  local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", args.minutes or 0)
+  local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", minutes)
   if not ok then
     report_error(device, kind, body)
     return
@@ -313,7 +328,7 @@ local capability_handlers = {
 }
 
 -- Command names are literals: they are what `capabilities/pcExec.json` and
--- `capabilities/pcCountdown.json` declare, and the generated capability object
+-- `capabilities/pcPlanner.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
   local handlers = { execute = handle_execute }

@@ -263,7 +263,7 @@ end
 
 function T.test_a_scheduled_execute_still_goes_to_the_service()
   -- `minutes > 0` schedules instead of executing (§3.3); what is pending is
-  -- the pcCountdown row's business.
+  -- the pcPlanner row's business.
   local device = device_with()
   local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
@@ -344,7 +344,7 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
 end
 
 function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
-  -- #85: pcPlan/pcRun became pcCountdown/pcExec, so on the hub every attribute
+  -- #85: pcPlan/pcRun became pcPlanner/pcExec, so on the hub every attribute
   -- of the new ids starts out unset - but the driver's own persisted fields
   -- survive the migration and would otherwise say "already painted".
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
@@ -359,7 +359,7 @@ function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
 end
 
 --------------------------------------------------------------------------------
--- pcCountdown.setPlanCommand: what a schedule runs (#84, moved in #85)
+-- pcPlanner.setPlanCommand: what a schedule runs (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_set_plan_command_persists_and_emits()
@@ -427,7 +427,7 @@ function T.test_an_explicit_schedule_command_still_wins()
 end
 
 --------------------------------------------------------------------------------
--- pcCountdown: the cancel entry of the preset list (#82, valid argument since #85)
+-- pcPlanner: the cancel entry of the preset list (#82, valid argument since #85)
 --------------------------------------------------------------------------------
 
 function T.test_schedule_zero_cancels()
@@ -448,6 +448,100 @@ function T.test_schedule_zero_as_a_string_cancels_too()
       { command = "schedule", args = { minutes = "0" } })
   end)
   h.assert_equal(calls.cancels, 1)
+end
+
+--------------------------------------------------------------------------------
+-- pcPlanner: the 예약 시간 row rests on a no-op delay (#88)
+--------------------------------------------------------------------------------
+
+--- Every `minutesPick` event a device was told, with its options.
+local function minutes_picks(device)
+  local out = {}
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.SCHEDULE and e.attr == "minutesPick" then
+      out[#out + 1] = e
+    end
+  end
+  return out
+end
+
+function T.test_a_dismissed_delay_picker_does_nothing()
+  -- #88, measured on the phone: closing the 예약 시간 list without picking
+  -- anything sends the row's current value as `minutes`. The row rests on
+  -- `minutesPick` = "-1", so the command arrives and has to be a no-op: no
+  -- schedule, no cancel, just a refresh of the tiles.
+  local device = device_with()
+  local calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = -1 } })
+  end)
+  h.assert_equal(#calls.commands, 0, "a dismissed picker may not schedule anything")
+  h.assert_equal(calls.cancels, 0, "... and may not cancel what is scheduled either")
+  h.assert_equal(calls.polls, 1, "the tiles are refreshed, as a dismissed command list is")
+end
+
+function T.test_a_dismissed_delay_picker_as_a_string_does_nothing_too()
+  -- The list sends its alternative key, which is a string on some firmwares.
+  local device = device_with()
+  local calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = state.MINUTES_PICK } })
+  end)
+  h.assert_equal(#calls.commands, 0)
+  h.assert_equal(calls.cancels, 0)
+
+  -- ... and so is a `schedule` that carries no minutes at all.
+  local device2 = device_with()
+  local calls2 = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device2, { command = "schedule", args = {} })
+  end)
+  h.assert_equal(#calls2.commands, 0)
+  h.assert_equal(calls2.cancels, 0)
+end
+
+function T.test_every_schedule_answers_the_delay_row_with_the_resting_value()
+  -- #86's rule on #88's row: `minutesPick` has one value, so the attribute the
+  -- app is waiting on never changes and the platform drops an unforced event -
+  -- the spinner then runs out into an error. Every `schedule`, no-op included,
+  -- answers it with a forced re-emit of "-1".
+  local cases = {
+    ["schedule(-1)"] = -1,
+    ["schedule(0)"] = 0,
+    ["schedule(30)"] = 30,
+  }
+  for name, minutes in pairs(cases) do
+    local device = device_with()
+    with_service({ cancelled = false }, function()
+      handlers_for(caps.SCHEDULE).schedule(driver, device,
+        { command = "schedule", args = { minutes = minutes } })
+    end)
+    local picks = minutes_picks(device)
+    h.assert_equal(#picks, 1, name .. " has to answer the delay row exactly once (#88)")
+    h.assert_equal(picks[1].value, state.MINUTES_PICK,
+      name .. " moved the delay row off its resting value")
+    h.assert_true((picks[1].options or {}).state_change == true,
+      name .. " answered minutesPick without state_change (#86)")
+  end
+end
+
+function T.test_a_refused_schedule_still_answers_the_delay_row()
+  -- The row is answered before the service is asked anything: a command that
+  -- the PC refuses must not leave the app spinning either.
+  local device = device_with()
+  with_service({ fail = "unreachable" }, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = 30 } })
+  end)
+  h.assert_equal(#minutes_picks(device), 1)
+end
+
+function T.test_a_new_device_paints_the_delay_row()
+  -- An attribute that was never emitted reads as "-" and the list does not
+  -- open at all, so the row is painted before the first poll (#88).
+  local device = device_with()
+  driver.lifecycle_handlers.added(driver, device)
+  h.assert_equal(h.event_value(h.emitted(device), caps.SCHEDULE, "minutesPick"),
+    state.MINUTES_PICK)
 end
 
 function T.test_the_cancel_command_is_still_handled()
