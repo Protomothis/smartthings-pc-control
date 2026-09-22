@@ -224,7 +224,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 | capability | 용도 |
 |---|---|
 | `switch` | on → WoL 시퀀스, off → 환경설정의 기본 off 명령(`mode=default`) |
-| `healthCheck` | 폴링/푸시 기반 online/offline |
+| `healthCheck` | 항상 online. PC가 꺼져도 장치는 조작 가능해야 한다(오프라인이면 앱이 스위치를 막아 WoL을 못 보냄). PC 상태는 powerState/switch로 표현 |
 | `{NS}.pcPower` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
 | `{NS}.pcAction` | (#82로 `pcControl`에서 이름·id를 바꿨다 — §14.4) 명령 `execute(command, mode?, minutes?)`(상세 화면의 명령 목록과 자동화가 모두 쓴다. `command` enum은 §4.3의 8개에 `wake`를 더한 9개이고 `wake`는 서비스로 나가지 않는 WoL 시퀀스다. `forceshutdown`은 자동화에만 둔다) + 인자 없는 명령 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(#78의 버튼. 화면에서는 빠졌지만 정의와 핸들러에 남아 옛 프로필의 장치와 씬이 쓴다); attrs `lastAction` enum `none` `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(마지막으로 실행한 명령 — 상세 화면 목록이 보여 주는 값), `lastCommand` string("종료 · SmartThings · 23:05") |
 | `{NS}.pcTimer` | attrs `summary` string("종료 · 4분 남음 · SmartThings", 예약 없으면 `""`), `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string; command `cancel()` ; command `schedule(minutes, command?)` — `minutes`는 capability 상으로는 integer 1..1440(서비스 상한과 동일)이고, 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
@@ -305,7 +305,7 @@ SSDP로 추가된 장치는 `ipAddress`/`port`가 채워진 상태로 생성되�
 
 ### 6.1 폴링과 health
 
-- `pollInterval`마다 `GET /st/v1/status`. 성공 → `connection=ok`, health online, 속성 갱신.
+- `pollInterval`마다 `GET /st/v1/status`. 성공 → `connection=ok`, 속성 갱신. health는 실패해도 online 유지(꺼진 PC를 깨우려면 장치가 조작 가능해야 함).
 - 실패 분류: `401` → `unauthorized`; `403` → 같은 `unauthorized`지만 메시지는
   "허브가 허용 목록에 없습니다"(고칠 곳이 다르다); 연결 거부/타임아웃 → `unreachable`;
   `protocol` 불일치 → `incompatible`(메시지에 "서비스 vX 이상 필요" 또는 "드라이버 업데이트

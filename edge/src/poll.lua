@@ -243,7 +243,10 @@ function poll.once(driver, device, opts)
   if not client.device_base_url(device) then
     -- Freshly added device: nothing to poll until the user fills in the IP.
     poll.emit_connection(device, "unreachable", i18n.t(lang, "no_ip"))
-    pcall(function() device:offline() end)
+    -- Never offline: the driver on the hub is what acts, and SmartThings
+    -- greys out an offline device, which would take Wake-on-LAN away exactly
+    -- when it is needed. "PC off" is powerState/switch, not health.
+    pcall(function() device:online() end)
     return false, "no ip"
   end
 
@@ -298,7 +301,7 @@ function poll.once(driver, device, opts)
   local nxt = current
   if kind == "unreachable" then
     nxt = state.transition(current, "unreachable")
-    pcall(function() device:offline() end)
+    pcall(function() device:online() end) -- see above: health stays online so the switch can wake the PC
     -- §13.2: the PC may just have moved to another address. One targeted SSDP
     -- search (rate limited to once per 5 minutes per device) before the next
     -- poll is cheaper than waiting for the user to notice.

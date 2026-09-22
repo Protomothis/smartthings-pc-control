@@ -281,7 +281,8 @@ function T.test_an_unreachable_poll_does_report()
   local ok, kind = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
   h.assert_false(ok)
   h.assert_equal(kind, "unreachable")
-  h.assert_equal(d.health, "offline")
+  -- health stays online: an offline device cannot be switched on (WoL) in the app
+  h.assert_equal(d.health, "online")
   h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "connection"), "unreachable")
 end
 
