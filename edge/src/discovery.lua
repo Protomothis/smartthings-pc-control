@@ -410,7 +410,7 @@ function discovery.create(driver, found)
     type = "LAN",
     device_network_id = plan.device_network_id,
     label = plan.label,
-    profile_reference = discovery.PROFILE,
+    profile = discovery.PROFILE,
     manufacturer = discovery.MANUFACTURER,
     model = discovery.MODEL,
     vendor_provided_label = discovery.MODEL,
