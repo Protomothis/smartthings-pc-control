@@ -25,7 +25,7 @@ components:
       - id: numbersystem53811.pcsession
         version: 1
     categories:
-      - name: Computer
+      - name: Others
 preferences:
   - name: ipAddress
     title: PC IP address
