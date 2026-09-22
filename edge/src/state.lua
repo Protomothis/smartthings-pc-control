@@ -249,38 +249,60 @@ function state.format_last_command(last, lang)
 end
 
 --- `pcInfo.summary` (#78): the one line that replaced the six raw rows in the
---- detail view. "Connected · v1.1.0" when the PC answers,
---- "Not connected · Secret mismatch" when it does not.
+--- detail view. "Connected" when the PC answers, "Not connected · Secret
+--- mismatch" when it does not.
 --
 -- #82: the power word is gone from this line. The detail view now starts with
 -- the `pcPower.powerState` row, so repeating "On" here only made the status
 -- line longer than the phone shows.
+--
+-- #87: the service version left too - the row below it is nothing but the two
+-- version numbers - and so did the "set a secret" / "an update is out"
+-- notices, which are advice rather than status and stay in `pcInfo.message`.
+-- What is left is the connection, plus the one warning that changes what the
+-- switch will do: WoL off on the adapter means `switch on` cannot work.
 -- @param connection a `pcInfo.connection` value; nil counts as `ok`
--- @param service_version `status.service_version`, appended when known
-function state.status_summary(connection, service_version, lang)
-  local parts = {}
-  if connection == nil or connection == "ok" then
-    parts[#parts + 1] = i18n.t(lang, "conn_ok")
-    if type(service_version) == "string" and service_version ~= "" then
-      parts[#parts + 1] = service_version
-    end
-  else
-    parts[#parts + 1] = i18n.t(lang, "conn_down")
+-- @param lang the resolved `language` preference
+-- @param wol_off true when the PC answers but its adapter has WoL disabled
+function state.status_summary(connection, lang, wol_off)
+  if connection ~= nil and connection ~= "ok" then
+    local parts = { i18n.t(lang, "conn_down") }
     local reason = i18n.connection(lang, connection)
     if reason ~= "" then
       parts[#parts + 1] = reason
     end
+    return table.concat(parts, " · ")
   end
-  return table.concat(parts, " · ")
+  if wol_off == true then
+    return i18n.t(lang, "conn_ok") .. " · " .. i18n.t(lang, "wol_off_short")
+  end
+  return i18n.t(lang, "conn_ok")
 end
 
---- `pcVersion.versions` (#85, its own capability since #86):
---- "Service 1.1.0 · Driver 1.0.0 · Screen pc.v13".
+-- The "v" a release tag and `status.service_version` carry ("v1.1.0"). The row
+-- writes its own, so the one on the value would be doubled.
+local function bare_version(v)
+  return (tostring(v):gsub("^[vV]", ""))
+end
+
+-- "1.0.0" -> "1.0" (#87). The driver's patch digit is noise on a row read at a
+-- glance: what a user compares against the channel is the minor version.
+-- Anything that is not two dotted numbers is left alone.
+local function major_minor(v)
+  local major, minor = tostring(v):match("^(%d+)%.(%d+)")
+  if major then
+    return major .. "." .. minor
+  end
+  return tostring(v)
+end
+
+--- `pcVersion.versions` (#85, its own capability since #86, reworded in #87):
+--- "v1.1.0 · 드라이버 1.0", plus " · 업데이트 v1.2.0" while one is out.
 --
 -- The last row of the last card, and the one every "the app still looks the
--- way it did" report needs: a device's screen is generated from the capability
--- presentations at device-creation time and never regenerated (platform notes "프로필과 화면 생성"), so the
--- profile the device sits on says as much as the two version numbers do.
+-- way it did" report needs. #87 dropped the screen (profile) name from it: it
+-- is an implementation detail no user can act on, and on a narrow row it
+-- pushed the two numbers that matter out of sight.
 --
 -- #86: the same value goes out under `pcVersion.versions` (the row on screen)
 -- and `pcInfo.versions` (the definition, which cannot be dropped without yet
@@ -288,27 +310,39 @@ end
 --
 -- `service_version` is whatever the status body carried; a PC we have not
 -- reached yet has none, and the row still has to say something (an attribute
--- that was never emitted reads as "-", platform notes "상세 화면(detailView) 위젯"), so it becomes "?".
-function state.versions(service_version, lang)
-  local service = service_version
-  if type(service) ~= "string" or service == "" then
+-- that was never emitted reads as "-", platform notes "상세 화면(detailView) 위젯"), so it becomes "v?".
+-- @param update `status.update`; the update half is appended only when
+--   `available` is set, so a current PC's row stays two numbers long
+function state.versions(service_version, lang, update)
+  local service
+  if type(service_version) == "string" and service_version ~= "" then
+    service = bare_version(service_version)
+  else
     service = i18n.t(lang, "version_unknown")
   end
   local driver = "?"
   local ok, value = pcall(require, "driver_version")
   if ok and type(value) == "string" and value ~= "" then
-    driver = value
+    driver = major_minor(value)
   end
-  local screen = "?"
-  local found, profiles = pcall(require, "profiles")
-  if found and type(profiles) == "table" and type(profiles.current) == "function" then
-    screen = profiles.current()
+  local text = i18n.t(lang, "versions", service, driver)
+  update = update or {}
+  if update.available == true then
+    local latest = update.latest
+    if type(latest) == "string" and latest ~= "" then
+      return text .. " · " .. i18n.t(lang, "versions_update", bare_version(latest))
+    end
+    return text .. " · " .. i18n.t(lang, "versions_update_plain")
   end
-  return i18n.t(lang, "versions", service, driver, screen)
+  return text
 end
 
---- `pcCountdown.summary` (#78): "Shut down · 4 min left · SmartThings", or an
---- empty string when nothing is scheduled (the row is hidden then).
+--- `pcCountdown.summary` (#78, reworded in #87): "Shut down · in 4 min", or
+--- "None" when nothing is scheduled.
+--
+-- #87: the origin left the line. Who asked for the shutdown is in
+-- `pcCountdown.origin` and in `pcExec.lastCommand`; on the summary row it
+-- pushed the minutes - the one number the row exists for - off the end.
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
   if schedule.active ~= true then
@@ -323,26 +357,38 @@ function state.schedule_summary(schedule, lang)
   end
   local seconds = math.floor(tonumber(schedule.remaining_seconds) or 0)
   if seconds >= 60 then
-    -- Rounded up: "1 min left" is friendlier than "0 min left" at 40 seconds.
+    -- Rounded up: "in 1 min" is friendlier than "in 0 min" at 40 seconds.
     parts[#parts + 1] = i18n.t(lang, "schedule_remaining", math.ceil(seconds / 60))
   else
     parts[#parts + 1] = i18n.t(lang, "schedule_soon")
   end
-  local origin = i18n.origin(lang, schedule.origin)
-  if origin ~= "" then
-    parts[#parts + 1] = origin
-  end
   return table.concat(parts, " · ")
 end
 
---- `pcUser.summary` (#78): "Locked · idle 20 min · kim". Only composed when
---- the session block is exposed; see apply_status.
+--- `pcUser.summary` (#78, reworded in #87): "In use", "Locked · 20 min", or
+--- "Off" while the session block is not exposed.
+--
+-- #87: the idle minutes ride on "Locked" alone and only from a full minute on.
+-- Someone sitting at the PC is "In use" whatever the idle counter says, and
+-- "Locked · 0 min" reads like a fault rather than like "just now".
+-- The user name is appended only when the service sent one (§3.2: it is a
+-- separate opt-in from `exposed`).
 function state.session_summary(session, lang)
   session = session or {}
-  local parts = {
-    i18n.t(lang, session.locked == true and "session_locked" or "session_unlocked"),
-    i18n.t(lang, "session_idle", math.floor((tonumber(session.idle_seconds) or 0) / 60)),
-  }
+  if session.exposed ~= true then
+    return i18n.t(lang, "session_off")
+  end
+  local parts = {}
+  if session.locked == true then
+    local locked = i18n.t(lang, "session_locked")
+    local minutes = math.floor((tonumber(session.idle_seconds) or 0) / 60)
+    if minutes >= 1 then
+      locked = locked .. " · " .. i18n.t(lang, "session_idle", minutes)
+    end
+    parts[#parts + 1] = locked
+  else
+    parts[#parts + 1] = i18n.t(lang, "session_unlocked")
+  end
   if type(session.user) == "string" and session.user ~= "" then
     parts[#parts + 1] = session.user
   end
@@ -401,39 +447,11 @@ function state.status_message(status, opts)
   return ""
 end
 
---- The same ladder as `status_message`, in the short wording the summary line
---- carries (#82). `message` keeps the full sentence for automations and for the
---- history; the summary row is read at a glance and the phone truncates it, so
---- "No secret · set one" goes there instead of
---- "No secret is set · setting one is recommended".
-function state.status_notice(status, opts)
-  opts = opts or {}
-  if type(opts.error) == "string" and opts.error ~= "" then
-    return opts.error
-  end
-
-  status = status or {}
-  local lang = opts.lang
-
-  if (status.wol or {}).ready ~= true then
-    return i18n.t(lang, "wol_not_ready_short")
-  end
-  if (status.update or {}).available == true then
-    local latest = status.update.latest
-    if type(latest) == "string" and latest ~= "" then
-      return i18n.t(lang, "update_available_short", latest)
-    end
-    return i18n.t(lang, "update_available_plain_short")
-  end
-  if status.secret_set == false then
-    return i18n.t(lang, "no_secret_short")
-  end
-
-  if type(opts.note) == "string" and opts.note ~= "" then
-    return opts.note
-  end
-  return ""
-end
+-- #87 removed `state.status_notice`. The summary row used to repeat the
+-- `message` ladder in short wording, which put "set a secret" and "an update
+-- is out" - neither of them a thing to do right now - on the row the user
+-- glances at. The row carries the connection and the WoL warning only; the
+-- whole ladder is still in `pcInfo.message`.
 
 -- Every attribute the driver can emit, capability id -> attribute names.
 -- capabilities_test.lua checks this against the JSON in `capabilities/`, so a
@@ -556,22 +574,15 @@ function state.apply_status(device_state, status, opts)
   -- service update shows up without touching the driver. #86: the row itself
   -- is `pcVersion.versions`; `pcInfo.versions` keeps being emitted because the
   -- attribute is still defined there (platform notes "허브의 정의 캐시").
-  ev(events, caps.VERSION, "versions", state.versions(status.service_version, lang))
-  ev(events, caps.STATUS, "versions", state.versions(status.service_version, lang))
+  local versions = state.versions(status.service_version, lang, update)
+  ev(events, caps.VERSION, "versions", versions)
+  ev(events, caps.STATUS, "versions", versions)
   local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
   ev(events, caps.STATUS, "message", message)
-  -- #78/#82: "Connected · v1.1.0". A successful status is always `ok` here;
+  -- #78/#82/#87: "Connected", or "Connected · WoL off" when the switch cannot
+  -- do what the row above it offers. A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
-  -- The notice rides on the summary line: the detail view shows one status
-  -- row, and a separate message row read as "-" when there was nothing to say.
-  -- It is the short wording (`status_notice`), because this row sits next to
-  -- three other summaries and the phone cuts a long one off.
-  local summary = state.status_summary("ok", status.service_version, lang)
-  local notice = state.status_notice(status, { lang = lang, error = opts.error, note = opts.note })
-  if notice ~= nil and notice ~= "" then
-    summary = summary .. " · " .. notice
-  end
-  ev(events, caps.STATUS, "summary", summary)
+  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol.ready ~= true))
 
   -- §3.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
@@ -588,10 +599,10 @@ function state.apply_status(device_state, status, opts)
     ev(events, caps.SESSION, "idleMinutes",
       math.floor((tonumber(session.idle_seconds) or 0) / 60))
     ev(events, caps.SESSION, "user", session.user or "")
-    ev(events, caps.SESSION, "summary", state.session_summary(session, lang))
-  else
-    ev(events, caps.SESSION, "summary", i18n.t(lang, "session_hidden"))
   end
+  -- #87: `session_summary` reads `exposed` itself and says "Off" when the
+  -- block is not exposed, so the row always has a word.
+  ev(events, caps.SESSION, "summary", state.session_summary(session, lang))
 
   return events
 end

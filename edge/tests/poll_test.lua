@@ -156,11 +156,13 @@ function T.test_a_failed_poll_rewrites_the_status_summary()
   local emitted = h.emitted(device)
   h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unauthorized")
   h.assert_equal(h.event_value(emitted, caps.STATUS, "summary"), "연결 안 됨 · 시크릿 불일치")
-  -- #85/#86: the version row goes out on a failed poll too - the driver and
-  -- screen halves still answer "did my update land?" - and since #86 it is a
-  -- capability of its own, while pcInfo keeps the attribute it defines.
-  h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), state.versions(nil, "ko"))
-  h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), state.versions(nil, "ko"))
+  -- #85/#86: the version row goes out on a failed poll too - the driver half
+  -- still answers "did my update land?" - and since #86 it is a capability of
+  -- its own, while pcInfo keeps the attribute it defines.
+  -- #87: the service half is "v?" until a PC answers.
+  local unreached = "v? · 드라이버 " .. require("driver_version"):match("^(%d+%.%d+)")
+  h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), unreached)
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), unreached)
 end
 
 function T.test_emit_passes_the_state_change_option_through()
