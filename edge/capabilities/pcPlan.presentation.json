@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pctimer",
+  "id": "numbersystem53811.pcplan",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -47,17 +47,17 @@
           "argumentType": "integer"
         },
         "state": {
-          "value": "active.value",
+          "value": "status.value",
           "alternatives": [
             {
-              "key": "true",
-              "value": "Scheduled",
-              "type": "active"
+              "key": "idle",
+              "value": "예약 없음 (No schedule)",
+              "type": "inactive"
             },
             {
-              "key": "false",
-              "value": "No schedule",
-              "type": "inactive"
+              "key": "scheduled",
+              "value": "예약 중 (Scheduled)",
+              "type": "active"
             }
           ]
         }
@@ -74,6 +74,25 @@
   "automation": {
     "conditions": [
       {
+        "label": "{{i18n.attributes.status.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "status.value",
+          "alternatives": [
+            {
+              "key": "idle",
+              "value": "예약 없음 (No schedule)",
+              "type": "inactive"
+            },
+            {
+              "key": "scheduled",
+              "value": "예약 중 (Scheduled)",
+              "type": "active"
+            }
+          ]
+        }
+      },
+      {
         "label": "{{i18n.attributes.active.label}}",
         "displayType": "list",
         "list": {
@@ -81,12 +100,12 @@
           "alternatives": [
             {
               "key": "true",
-              "value": "Yes",
+              "value": "예 (Yes)",
               "type": "active"
             },
             {
               "key": "false",
-              "value": "No",
+              "value": "아니요 (No)",
               "type": "inactive"
             }
           ]

@@ -65,6 +65,8 @@ local function golden(lang)
     { cap = caps.COMMAND, attr = "lastCommand",
       value = en and "Shut down · SmartThings · 23:05" or "종료 · SmartThings · 23:05" },
     { cap = caps.SCHEDULE, attr = "active", value = true },
+    -- #83: the same fact as an enum, because a list cannot read a boolean.
+    { cap = caps.SCHEDULE, attr = "status", value = "scheduled" },
     { cap = caps.SCHEDULE, attr = "command", value = en and "Shut down" or "종료" },
     { cap = caps.SCHEDULE, attr = "remainingSeconds", value = 240 },
     { cap = caps.SCHEDULE, attr = "executeAt", value = "23:10" },
@@ -134,6 +136,7 @@ end
 function T.test_apply_status_maps_schedule()
   local events = events_for(sample_status())
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), true)
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.SCHEDULED)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "Shut down")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 240)
   -- §5.1: the local clock time, not the RFC3339 string the service sends.
@@ -162,6 +165,7 @@ function T.test_apply_status_clears_an_inactive_schedule()
   status.schedule = { active = false }
   local events = events_for(status)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 0)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "")
@@ -173,6 +177,20 @@ function T.test_apply_status_handles_a_missing_schedule_block()
   status.schedule = nil
   local events = events_for(status)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
+end
+
+function T.test_the_schedule_status_enum_tracks_active()
+  -- #83: `status` is what the detail-view list reads, so it may never drift
+  -- from `active` - the row would then say "No schedule" over a live one.
+  for _, active in ipairs({ true, false }) do
+    local status = sample_status()
+    status.schedule = { active = active, command = "shutdown", remaining_seconds = 240 }
+    local events = events_for(status)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), active)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"),
+      active and state.SCHEDULED or state.IDLE)
+  end
 end
 
 function T.test_apply_status_emits_session_only_when_exposed()
@@ -457,6 +475,7 @@ function T.test_apply_status_survives_an_empty_body()
   local events = state.apply_status(state.new(state.ON), {}, { now = NOW })
   h.assert_equal(h.event_value(events, caps.STATUS, "serviceVersion"), "")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
 end
 
 function T.test_wol_mac_prefers_an_enabled_adapter()

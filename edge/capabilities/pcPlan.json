@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pctimer",
+  "id": "numbersystem53811.pcplan",
   "version": 1,
   "status": "proposed",
-  "name": "pcTimer",
+  "name": "pcPlan",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -27,6 +27,25 @@
         "properties": {
           "value": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "status": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "scheduled"
+            ]
           }
         },
         "additionalProperties": false,

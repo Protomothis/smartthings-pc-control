@@ -8,6 +8,19 @@
     "active": {
       "label": "예약 중"
     },
+    "status": {
+      "label": "예약 상태",
+      "i18n": {
+        "value": {
+          "idle": {
+            "label": "예약 없음"
+          },
+          "scheduled": {
+            "label": "예약 중"
+          }
+        }
+      }
+    },
     "command": {
       "label": "예약된 명령"
     },

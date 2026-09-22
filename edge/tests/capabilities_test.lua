@@ -474,6 +474,9 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   end
   h.assert_true(condition_attributes("power_state").powerState == true)
   h.assert_true(condition_attributes("schedule").active == true)
+  -- #83: `status` says the same thing as an enum, which is what the detail
+  -- view's list needs and what reads better in a routine.
+  h.assert_true(condition_attributes("schedule").status == true)
   h.assert_true(condition_attributes("status").connection == true)
   h.assert_true(condition_attributes("session").locked == true)
 
@@ -534,8 +537,9 @@ function T.test_the_action_detail_view_is_one_list()
 end
 
 function T.test_the_schedule_detail_view_is_one_list_and_the_summary()
-  -- #82: the cancel pushButton became the `0` entry of the preset list, and
-  -- the list shows `active` so the row is never blank.
+  -- #82: the cancel pushButton became the `0` entry of the preset list.
+  -- #83: the list's value is the `status` enum, not the boolean `active` - a
+  -- list bound to a boolean drew "-" with no chevron and never opened.
   local detail = presentation("schedule").detailView
   h.assert_equal(#detail, 2)
   local item = detail[1]
@@ -543,10 +547,86 @@ function T.test_the_schedule_detail_view_is_one_list_and_the_summary()
   h.assert_equal(item.list.command.name, "schedule")
   local minutes, states = list_keys(item)
   h.assert_deep_equal(minutes, { "5", "15", "30", "60", "120", "0" })
-  h.assert_equal(item.list.state.value, "active.value")
-  h.assert_deep_equal(states, { "true", "false" })
+  h.assert_equal(item.list.command.argumentType, "integer",
+    "a list of integer arguments needs argumentType (§14.5)")
+  h.assert_equal(item.list.state.value, "status.value")
+  h.assert_deep_equal(states,
+    definition("schedule").attributes.status.schema.properties.value.enum,
+    "the state alternatives must cover the whole status enum")
   h.assert_equal(detail[2].displayType, "state")
   h.assert_contains(detail[2].state.label, "summary.value")
+end
+
+-- #83, measured on the phone: a detailView `list` whose `state.value` points at
+-- a boolean attribute is not drawn as a picker at all. Only a string/enum
+-- attribute works, so every list state is checked against the definition.
+function T.test_no_detail_list_binds_its_state_to_a_boolean()
+  local checked = 0
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "list" then
+        local value = ((item.list or {}).state or {}).value or ""
+        local attr = value:match("^([%a][%w_]*)%.value$")
+        h.assert_true(attr ~= nil,
+          string.format("%s detailView[%d] state.value is not an attribute reference", id, i))
+        local spec = (definition(key).attributes or {})[attr]
+        h.assert_true(spec ~= nil,
+          string.format("%s detailView[%d] reads %s, which is not defined", id, i, attr))
+        local schema = ((spec.schema or {}).properties or {}).value or {}
+        h.assert_equal(schema.type, "string",
+          string.format("%s detailView[%d] binds its list to %s (%s); a boolean list "
+            .. "does not render (#83)", id, i, attr, tostring(schema.type)))
+        h.assert_true(#(schema.enum or {}) > 0,
+          string.format("%s detailView[%d] binds its list to %s, which is not an enum",
+            id, i, attr))
+        checked = checked + 1
+      end
+    end
+  end
+  h.assert_true(checked >= 2, "the action and schedule rows are both lists")
+end
+
+-- #83, measured on the phone: the translation files are NOT applied to
+-- attribute *values* - the app showed "On" and "None" with a Korean locale.
+-- The only text the user reads is the one in the presentation, so every value
+-- label of the three enum-valued capabilities is written "한국어 (English)",
+-- the convention the command menus already used.
+local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule" }
+
+local function assert_bilingual(alternatives, where)
+  h.assert_true(#(alternatives or {}) > 0, where .. " has no alternatives")
+  for _, alternative in ipairs(alternatives) do
+    local value = alternative.value
+    h.assert_true(type(value) == "string" and value ~= "", where .. " has an empty value")
+    h.assert_true(value:find("(", 1, true) ~= nil,
+      string.format("%s: %s is not bilingual (\"한국어 (English)\", §14.2)",
+        where, tostring(value)))
+  end
+end
+
+function T.test_every_state_value_label_is_bilingual()
+  for _, key in ipairs(BILINGUAL_VALUE_CAPABILITIES) do
+    local id = caps.ids[key]
+    local doc = presentation(key)
+    for i, item in ipairs(doc.dashboard.states or {}) do
+      assert_bilingual(item.alternatives, string.format("%s dashboard.states[%d]", id, i))
+    end
+    for i, item in ipairs(doc.detailView or {}) do
+      local alternatives
+      if item.displayType == "list" then
+        alternatives = ((item.list or {}).state or {}).alternatives
+      elseif item.displayType == "state" then
+        alternatives = (item.state or {}).alternatives
+      end
+      if alternatives then
+        assert_bilingual(alternatives, string.format("%s detailView[%d]", id, i))
+      end
+    end
+    for i, condition in ipairs((doc.automation or {}).conditions or {}) do
+      assert_bilingual((condition.list or {}).alternatives,
+        string.format("%s automation.conditions[%d]", id, i))
+    end
+  end
 end
 
 function T.test_no_detail_row_is_a_push_button()
@@ -597,11 +677,11 @@ end
 
 -- Attributes that are still defined and emitted but no longer have a row of
 -- their own in the detail view (#78): the summaries replaced them.
--- `active` is not in here any more: #82 put it back on screen as the value of
--- the schedule list, so the row says "Scheduled"/"No schedule" instead of
--- standing empty.
+-- #82 put `active` back on screen as the value of the schedule list; #83 moved
+-- that job to the `status` enum (a list cannot read a boolean), so `active` is
+-- a condition-only attribute again.
 local RAW_ROWS_REMOVED = {
-  schedule = { "remainingSeconds", "executeAt", "origin", "command" },
+  schedule = { "remainingSeconds", "executeAt", "origin", "command", "active" },
   status = { "serviceVersion", "updateAvailable", "wolReady", "lastSeen", "connection" },
   session = { "idleMinutes", "locked", "user" },
 }

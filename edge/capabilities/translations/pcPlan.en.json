@@ -8,6 +8,19 @@
     "active": {
       "label": "Scheduled"
     },
+    "status": {
+      "label": "Schedule state",
+      "i18n": {
+        "value": {
+          "idle": {
+            "label": "No schedule"
+          },
+          "scheduled": {
+            "label": "Scheduled"
+          }
+        }
+      }
+    },
     "command": {
       "label": "Scheduled command"
     },
