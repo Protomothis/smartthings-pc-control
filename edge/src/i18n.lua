@@ -148,38 +148,44 @@ local STRINGS = {
   conn_short_unreachable = { ko = "응답 없음", en = "No response" },
   conn_short_incompatible = { ko = "버전 불일치", en = "Version mismatch" },
 
-  -- #82: the short forms the `pcInfo.summary` line carries. The long
-  -- sentences above stay in `pcInfo.message`, which automations and the
-  -- history read; this row is glanced at and the phone truncates it.
-  no_secret_short = { ko = "시크릿 미설정 · 설정 권장", en = "No secret · set one" },
-  wol_not_ready_short = { ko = "어댑터 WoL 꺼짐", en = "Adapter WoL off" },
-  update_available_short = { ko = "업데이트 %s 사용 가능", en = "Update %s available" },
-  update_available_plain_short = { ko = "업데이트 사용 가능", en = "Update available" },
+  -- #87: the only notice `pcInfo.summary` still carries. A PC that answers but
+  -- cannot be woken is the one fact the status row has to warn about, because
+  -- the switch will silently do nothing. The advice notices ("set a secret",
+  -- "an update is out") were dropped from the row in #87: neither is something
+  -- to act on at a glance, and both stay in `pcInfo.message`.
+  wol_off_short = { ko = "WoL 꺼짐", en = "WoL off" },
 
-  -- #85: the `pcInfo.versions` row. Which service, driver and screen template
-  -- a device is actually on is the first question every "it still looks the
-  -- old way" report needs answered - the screen is frozen at device-creation
-  -- time (platform notes "프로필과 화면 생성"), so the profile name is as interesting as the two versions.
+  -- #87: the `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0". The screen
+  -- (profile) name left it: it answered a question only the author asks, and
+  -- it pushed the two numbers that matter off the end of a narrow row.
   -- `?` stands in for a service version we have not been told yet.
   versions = {
-    ko = "서비스 %s · 드라이버 %s · 화면 %s",
-    en = "Service %s · Driver %s · Screen %s",
+    ko = "v%s · 드라이버 %s",
+    en = "v%s · Driver %s",
   },
   version_unknown = { ko = "?", en = "?" },
+  -- Appended to the row only while `update.available` is set (#87).
+  versions_update = { ko = "업데이트 v%s", en = "Update v%s" },
+  versions_update_plain = { ko = "업데이트 있음", en = "Update available" },
 
   -- #86: `pcExec.lastCommand` before the PC has run anything. An empty string
   -- is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault rather than as "nothing has
   -- happened yet", so the row always carries a sentence.
   last_command_none = { ko = "없음 (None)", en = "None" },
 
-  -- schedule / session summaries (#78)
-  schedule_remaining = { ko = "%d분 남음", en = "%d min left" },
-  schedule_idle = { ko = "예약 없음", en = "No schedule" },
-  session_hidden = { ko = "세션 정보 꺼짐 · PC 앱 설정에서 켤 수 있음", en = "Session info off · enable it in the PC app" },
-  schedule_soon = { ko = "곧 실행", en = "any moment now" },
+  -- schedule / session summaries (#78, reworded in #87). Every one of these is
+  -- half of a row that already carries a label, so the label's words are not
+  -- repeated in the value: the schedule row says "없음", not "예약 없음".
+  schedule_remaining = { ko = "%d분 후", en = "in %d min" },
+  schedule_idle = { ko = "없음", en = "None" },
+  schedule_soon = { ko = "곧", en = "soon" },
   session_locked = { ko = "잠김", en = "Locked" },
   session_unlocked = { ko = "사용 중", en = "In use" },
-  session_idle = { ko = "유휴 %d분", en = "idle %d min" },
+  -- #87: only appended to "잠김", and only from a full minute on.
+  session_idle = { ko = "%d분", en = "%d min" },
+  -- #87: the session block is opt-in; when it is off the row says so in the
+  -- same word the power row uses for a PC that is not there.
+  session_off = { ko = "꺼짐", en = "Off" },
 
   -- command names (§3.3). Wording follows the Go side (service/telegram_control.go).
   cmd_shutdown = { ko = "종료", en = "Shut down" },

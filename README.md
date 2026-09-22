@@ -159,7 +159,7 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
   "notify": {
     "remote":   { "received": true, "grace_scheduled": true, "grace_cancelled": true, "executed": true, "force": true },
     "schedule": { "created": false, "cancelled": false, "executed": true, "replaced": true },
-    "power":    { "started": true, "resumed": true, "stopping": false },
+    "power":    { "started": true, "resumed": true, "stopping": true },
     "security": { "unauthorized": true, "login_limited": true, "unknown_command": true, "config_changed": true, "unknown_chat": true },
     "system":   { "update_available": true, "updated": true, "exec_failed": true, "tray_wake_failed": true }
   }
@@ -356,7 +356,7 @@ Installation, preferences, automation examples and troubleshooting are in **[`ed
   "notify": {
     "remote":   { "received": true, "grace_scheduled": true, "grace_cancelled": true, "executed": true, "force": true },
     "schedule": { "created": false, "cancelled": false, "executed": true, "replaced": true },
-    "power":    { "started": true, "resumed": true, "stopping": false },
+    "power":    { "started": true, "resumed": true, "stopping": true },
     "security": { "unauthorized": true, "login_limited": true, "unknown_command": true, "config_changed": true, "unknown_chat": true },
     "system":   { "update_available": true, "updated": true, "exec_failed": true, "tray_wake_failed": true }
   }

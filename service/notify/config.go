@@ -20,7 +20,13 @@ var catalogue = []struct {
 
 	{"power", "started", true},
 	{"power", "resumed", true},
-	{"power", "stopping", false},
+	// #87: on by default. It was off because the message only said
+	// "stopping", which on a restart read like a fault; now it names the
+	// reason (종료/재시작/절전/최대 절전), and "the PC is shutting down" is
+	// the one power event people asked to be told about. A config.json
+	// that already says false keeps saying false - Enabled/Over take the
+	// explicit value and only fall back here when the key is absent.
+	{"power", "stopping", true},
 
 	{"security", "unauthorized", true},
 	{"security", "login_limited", true},
@@ -41,8 +47,7 @@ var catalogue = []struct {
 type Config map[string]map[string]bool
 
 // DefaultConfig returns a fresh map holding the catalogue defaults:
-// everything on except schedule.created, schedule.cancelled and
-// power.stopping.
+// everything on except schedule.created and schedule.cancelled.
 func DefaultConfig() Config {
 	c := make(Config)
 	for _, e := range catalogue {

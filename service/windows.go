@@ -75,11 +75,14 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// shutdown/restart/suspend/hibernate/unknown (§6.2): the SCM
 			// only distinguishes a system shutdown from a plain stop, so
 			// the command this service just ran refines it.
-			fallback := "unknown"
-			if c.Cmd == svc.Shutdown {
-				fallback = "shutdown"
-			}
-			emit("power", "stopping", map[string]string{"reason": stoppingReason(fallback)})
+			//
+			// #87: when nothing this service ran explains the stop - the
+			// user pressed 다시 시작 in the Start menu, or Windows Update
+			// did - the System log's User32/1074 record still knows
+			// whether this is a restart or a power off. That query costs
+			// up to 1.5s, so it runs only on that path, never when a
+			// remote command already answered.
+			emit("power", "stopping", map[string]string{"reason": stopReason(c.Cmd == svc.Shutdown)})
 			close(s.stop)
 			stopTelegramControl()
 			stopSSDP()

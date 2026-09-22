@@ -33,6 +33,10 @@ var catalogue = []notify.Event{
 	{Category: "power", Kind: "started", Fields: map[string]string{"version": "v1.0.0", "boot_time": "2026-09-10 14:34:12", "external_ip": "203.0.113.7"}},
 	{Category: "power", Kind: "resumed", Fields: map[string]string{"since": "2시간 10분"}},
 	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "shutdown"}},
+	// #87: the reason is what this message is for, so the golden covers
+	// more than one of them.
+	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "restart"}},
+	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "hibernate"}},
 
 	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5, 10.0.0.9 외 1곳", "path": "/shutdown", "count": "12", "window": "5m", "window_sec": "300"}},
 	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5", "path": "/lock", "count": "1", "window": "5m", "window_sec": "300"}},
@@ -208,6 +212,43 @@ func TestRenderMissingFieldIsEmptyNotNoValue(t *testing.T) {
 	}
 	if strings.Contains(out, "<no value>") {
 		t.Errorf("missing field rendered as <no value>: %q", out)
+	}
+}
+
+func TestPowerStoppingNamesTheReason(t *testing.T) {
+	// #87: power.stopping is on by default now, so its message has to say
+	// what is happening rather than print the wire value at the reader.
+	for _, tc := range []struct{ reason, ko, en string }{
+		{"shutdown", "종료", "Shut down"},
+		{"restart", "재시작", "Restart"},
+		{"suspend", "절전", "Sleep"},
+		{"hibernate", "최대 절전", "Hibernate"},
+		// A plain service stop: the service cannot tell it apart from the
+		// beginning of a shutdown, and "unknown" says nothing to a reader.
+		{"unknown", "종료", "Shut down"},
+	} {
+		for lang, want := range map[string]string{LangKo: tc.ko, LangEn: tc.en} {
+			r, err := NewRenderer(lang, DetailFull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ev := notify.Event{Category: "power", Kind: "stopping", At: goldenTime,
+				Fields: map[string]string{"reason": tc.reason}}
+			out, err := r.Render(ev, goldenPC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "<b>"+want+"</b>") {
+				t.Errorf("%s/%s: %q does not name the reason %q", lang, tc.reason, out, want)
+			}
+			if strings.Contains(out, tc.reason) {
+				t.Errorf("%s/%s: the raw wire value reached the message: %q", lang, tc.reason, out)
+			}
+		}
+	}
+	// A reason from a newer service is shown as it came rather than dropped.
+	if got := stopReasonText(LangKo, "fastboot"); got != "fastboot" {
+		t.Errorf("unknown reason = %q, want it passed through", got)
 	}
 }
 

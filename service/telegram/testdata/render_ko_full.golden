@@ -94,8 +94,22 @@
 === power.stopping ===
 🖥 <b>DESKTOP-TEST</b>
 🔴 <b>서비스 중지</b>
-<blockquote>서비스가 중지됩니다: <b>shutdown</b></blockquote>
-사유: <code>shutdown</code>
+<blockquote>서비스가 중지됩니다: <b>종료</b></blockquote>
+사유: <code>종료</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>서비스 중지</b>
+<blockquote>서비스가 중지됩니다: <b>재시작</b></blockquote>
+사유: <code>재시작</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>서비스 중지</b>
+<blockquote>서비스가 중지됩니다: <b>최대 절전</b></blockquote>
+사유: <code>최대 절전</code>
 <i>DESKTOP-TEST · 14:35:00</i>
 
 === security.unauthorized ===

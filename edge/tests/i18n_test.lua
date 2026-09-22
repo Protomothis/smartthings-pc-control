@@ -46,10 +46,11 @@ function T.test_all_required_keys_exist()
     "discovery_found", "ip_updated", "hostname_mismatch", "pc_label",
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
-    "session_locked", "session_unlocked", "session_idle",
-    -- #82: the short forms the status summary row carries.
-    "no_secret_short", "wol_not_ready_short",
-    "update_available_short", "update_available_plain_short",
+    "schedule_idle", "session_locked", "session_unlocked", "session_idle",
+    -- #87: the session row when the block is not exposed, the one notice the
+    -- status row still carries, and the two halves of the version row.
+    "session_off", "wol_off_short",
+    "versions", "version_unknown", "versions_update", "versions_update_plain",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
@@ -124,22 +125,47 @@ function T.test_forbidden_and_unauthorized_say_different_things()
   h.assert_true(i18n.t("ko", "forbidden") ~= i18n.t("ko", "unauthorized"))
 end
 
-function T.test_the_short_notices_are_shorter_than_the_long_ones()
-  -- #82: the summary row shares the screen with three other summaries, so its
-  -- notices are clipped versions of the `message` sentences - not duplicates.
-  for _, pair in ipairs({
-    { long = "no_secret", short = "no_secret_short" },
-    { long = "wol_not_ready", short = "wol_not_ready_short" },
-    { long = "update_available_plain", short = "update_available_plain_short" },
-  }) do
-    for _, lang in ipairs({ "ko", "en" }) do
-      local long, short = i18n.t(lang, pair.long), i18n.t(lang, pair.short)
-      h.assert_true(#short < #long,
-        string.format("%s (%s) is not shorter than %s", pair.short, lang, pair.long))
-    end
+function T.test_the_status_row_notice_is_shorter_than_the_message()
+  -- #87: the summary row keeps exactly one notice - WoL off on the adapter,
+  -- the one that changes what `switch on` will do - and it is a clipped
+  -- version of the `message` sentence, not a duplicate of it. The advice
+  -- notices ("set a secret", "an update is out") left the row entirely, so
+  -- their short forms are gone with them.
+  for _, lang in ipairs({ "ko", "en" }) do
+    local long, short = i18n.t(lang, "wol_not_ready"), i18n.t(lang, "wol_off_short")
+    h.assert_true(#short < #long,
+      string.format("wol_off_short (%s) is not shorter than wol_not_ready", lang))
   end
-  h.assert_equal(i18n.t("ko", "update_available_short", "v1.2.0"), "업데이트 v1.2.0 사용 가능")
-  h.assert_equal(i18n.t("en", "update_available_short", "v1.2.0"), "Update v1.2.0 available")
+  h.assert_equal(i18n.t("ko", "wol_off_short"), "WoL 꺼짐")
+  h.assert_equal(i18n.t("en", "wol_off_short"), "WoL off")
+  for _, key in ipairs({ "no_secret_short", "wol_not_ready_short",
+                         "update_available_short", "update_available_plain_short" }) do
+    h.assert_false(i18n.has(key), key .. " left the status row in #87")
+  end
+end
+
+function T.test_the_summary_strings_do_not_repeat_their_row_label()
+  -- #87: every summary sits next to a label the app already draws, and the
+  -- phone truncates the value half, so the value never says the label again.
+  h.assert_equal(i18n.t("ko", "schedule_idle"), "없음")
+  h.assert_equal(i18n.t("en", "schedule_idle"), "None")
+  h.assert_equal(i18n.t("ko", "schedule_remaining", 4), "4분 후")
+  h.assert_equal(i18n.t("en", "schedule_remaining", 4), "in 4 min")
+  h.assert_equal(i18n.t("ko", "schedule_soon"), "곧")
+  h.assert_equal(i18n.t("en", "schedule_soon"), "soon")
+  h.assert_equal(i18n.t("ko", "session_idle", 23), "23분")
+  h.assert_equal(i18n.t("en", "session_idle", 23), "23 min")
+  h.assert_equal(i18n.t("ko", "session_off"), "꺼짐")
+  h.assert_equal(i18n.t("en", "session_off"), "Off")
+end
+
+function T.test_the_version_row_strings_carry_the_v()
+  -- #87: the row writes the "v" itself, so `state.versions` strips the one a
+  -- release tag ("v1.1.0") carries rather than printing "vv1.1.0".
+  h.assert_equal(i18n.t("ko", "versions", "1.1.0", "1.0"), "v1.1.0 · 드라이버 1.0")
+  h.assert_equal(i18n.t("en", "versions", "1.1.0", "1.0"), "v1.1.0 · Driver 1.0")
+  h.assert_equal(i18n.t("ko", "versions_update", "1.2.0"), "업데이트 v1.2.0")
+  h.assert_equal(i18n.t("en", "versions_update", "1.2.0"), "Update v1.2.0")
 end
 
 function T.test_update_available_carries_the_version()

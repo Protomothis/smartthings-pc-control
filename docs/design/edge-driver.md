@@ -152,6 +152,7 @@
 - 보내는 `type`: `power.stopping|started|resumed`, `schedule.*`, `remote.*`, `system.updated|update_available`, `display.changed`, `session.locked|unlocked`(세션 노출을 켠 경우만).
 - 알림 카테고리 필터와 조용한 시간대는 **적용되지 않는다.** 장치 상태는 알림이 아니다.
 - `power.stopping`은 종료가 진행되기 전에 **동기로**(최대 1.5초) 보낸다. `data.reason`이 `suspend`/`hibernate`/`shutdown`/`restart`를 구분해 주므로 타일이 "꺼짐" 대신 "절전"을 보여 준다.
+- `reason`을 정하는 순서(#87): ① 최근 2분 안에 이 서비스가 실행한 전원 명령(절전·최대 절전을 아는 유일한 출처) → ② 시스템 종료면 **System 로그의 User32 이벤트 1074**(최근 120초, `wevtutil qe … /f:xml`의 `param5` = Shutdown Type)로 `restart`/`shutdown` 구분 → ③ 시스템 종료면 `shutdown`, 단순 서비스 중지면 `unknown`. SCM은 시스템 종료인지만 알려 줄 뿐 재시작인지 전원 끄기인지는 말해 주지 않는다. ②는 ①이 없을 때만, 1.5초 제한으로 돈다.
 - 전송은 2초 타임아웃에 재시도 1회, 연속 3회 실패하면 구독을 지운다. 매 이벤트에 전체 status가 실려 드라이버는 차이를 계산하지 않는다.
 
 ### 3.6 SSDP와 `GET /st/v1/description`
@@ -191,7 +192,7 @@
 | `pcCountdown` | `summary` string, `status` enum `idle`\|`scheduled`, `active` bool, `command` string, `remainingSeconds` int, `executeAt` string(`HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate` | `schedule(minutes, command?)`, `cancel()`, `setPlanCommand(command)` |
 | `pcUser` | `exposed` bool, `summary` string, `locked` bool, `idleMinutes` int, `user` string | – |
 | `pcInfo` | `summary` string, `connection` enum `ok` `unauthorized` `unreachable` `incompatible`, `serviceVersion`, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string, `versions` string | – |
-| `pcVersion` | `versions` string("서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v13") | – |
+| `pcVersion` | `versions` string("v1.1.0 · 드라이버 1.0", 업데이트가 있으면 " · 업데이트 v1.2.0") | – |
 
 - `execute`의 `command` enum은 서비스 명령 여덟에 `wake`와 `none`을 더한 열이다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`은 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다.
 - `lastAction`은 언제나 `none`에 머문다. 무엇이 실행됐는지는 `lastCommand`가 말한다.
@@ -222,7 +223,12 @@
 
 - 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 목록 맨 끝이다.
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
-- 모든 상태 줄은 해당 사항이 없을 때도 문구를 갖는다("없음 (None)", "예약 없음", "세션 정보 꺼짐", 버전의 서비스 자리에 `?`). 빈 문자열은 화면에서 "-"로 보인다.
+- 모든 상태 줄은 해당 사항이 없을 때도 문구를 갖는다("없음 (None)", 예약 "없음", 세션 "꺼짐", 버전의 서비스 자리에 `v?`). 빈 문자열은 화면에서 "-"로 보인다.
+- **값 문구는 줄 라벨을 되풀이하지 않는다**(#87). 라벨이 이미 "예약"·"세션"이라고 말하고 있고, 값 칸은 휴대폰이 잘라 낸다. 각 줄이 말하는 것:
+  - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". 시크릿 권장·업데이트 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
+  - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
+  - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다.
+  - `pcCountdown.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
 - 자동화용 조건은 `powerState`, `pcCountdown.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`. 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
 
 ## 6. 드라이버 동작

@@ -162,16 +162,16 @@ end
 --- poll has to rewrite it as well. #82: the power word is not in it any more -
 --- the `pcPower` row right above says that.
 -- #85: the `versions` row goes out here as well. A PC we cannot reach has no
--- service version to report, but the driver and screen halves are still the
--- answer to "did my update land?", and a row that was never emitted reads as
--- "-" (platform notes "상세 화면(detailView) 위젯"). `state.versions` writes "?" for the service half.
+-- service version to report, but the driver half is still the answer to "did
+-- my update land?", and a row that was never emitted reads as
+-- "-" (platform notes "상세 화면(detailView) 위젯"). `state.versions` writes "v?" for the service half.
 function poll.emit_connection(device, connection, message)
   local lang = poll.lang(device)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, nil, lang) },
+      value = state.status_summary(connection, lang) },
     -- #86: the row lives on its own capability now; pcInfo keeps the attribute
     -- (and the emit) because its definition cannot change without a rename.
     { cap = caps.VERSION, attr = "versions", value = state.versions(nil, lang) },

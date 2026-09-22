@@ -143,13 +143,41 @@ func (r *Renderer) HasTemplate(key string) bool {
 }
 
 // funcMap is what templates may call. secs localises a duration given in
-// seconds (the aggregation window's window_sec field) as "5분" / "5 min".
+// seconds (the aggregation window's window_sec field) as "5분" / "5 min";
+// reason localises a power.stopping reason.
 func funcMap(lang string) template.FuncMap {
 	return template.FuncMap{
-		"esc":  html.EscapeString,
-		"join": strings.Join,
-		"secs": func(s string) string { return secondsText(lang, s) },
+		"esc":    html.EscapeString,
+		"join":   strings.Join,
+		"secs":   func(s string) string { return secondsText(lang, s) },
+		"reason": func(s string) string { return stopReasonText(lang, s) },
 	}
+}
+
+// stopReasonNames is the power.stopping reason wire value (edge-driver doc
+// §6.2) in the two languages. "unknown" is a plain service stop, which the
+// service cannot tell apart from the start of a shutdown, so it is worded
+// as one rather than as "unknown" (#87).
+var stopReasonNames = map[string][2]string{
+	// {ko, en}
+	"shutdown":  {"종료", "Shut down"},
+	"restart":   {"재시작", "Restart"},
+	"suspend":   {"절전", "Sleep"},
+	"hibernate": {"최대 절전", "Hibernate"},
+	"unknown":   {"종료", "Shut down"},
+}
+
+// stopReasonText localises one power.stopping reason. A reason from a
+// newer service is shown as it came, so the message still says something.
+func stopReasonText(lang, s string) string {
+	names, ok := stopReasonNames[strings.TrimSpace(s)]
+	if !ok {
+		return s
+	}
+	if lang == LangEn {
+		return names[1]
+	}
+	return names[0]
 }
 
 // secondsText renders a decimal number of seconds as a short localised
