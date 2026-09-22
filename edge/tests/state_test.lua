@@ -68,15 +68,24 @@ local function golden(lang)
     { cap = caps.SCHEDULE, attr = "remainingSeconds", value = 240 },
     { cap = caps.SCHEDULE, attr = "executeAt", value = "23:10" },
     { cap = caps.SCHEDULE, attr = "origin", value = "SmartThings" },
+    -- #78: the one schedule row the detail view still shows.
+    { cap = caps.SCHEDULE, attr = "summary",
+      value = en and "Shut down · 4 min left · SmartThings" or "종료 · 4분 남음 · SmartThings" },
     { cap = caps.STATUS, attr = "connection", value = "ok" },
     { cap = caps.STATUS, attr = "serviceVersion", value = "v1.1.0" },
     { cap = caps.STATUS, attr = "updateAvailable", value = false },
     { cap = caps.STATUS, attr = "wolReady", value = true },
     { cap = caps.STATUS, attr = "lastSeen", value = NOW },
     { cap = caps.STATUS, attr = "message", value = "" },
+    { cap = caps.STATUS, attr = "summary",
+      value = en and "On · Connected · v1.1.0" or "켜짐 · 연결됨 · v1.1.0" },
+    -- #78: emitted either way, so the session row can be hidden again.
+    { cap = caps.SESSION, attr = "exposed", value = true },
     { cap = caps.SESSION, attr = "locked", value = true },
     { cap = caps.SESSION, attr = "idleMinutes", value = 20 },
     { cap = caps.SESSION, attr = "user", value = "kim" },
+    { cap = caps.SESSION, attr = "summary",
+      value = en and "Locked · idle 20 min · kim" or "잠김 · 유휴 20분 · kim" },
   }
 end
 
@@ -167,11 +176,19 @@ end
 
 function T.test_apply_status_emits_session_only_when_exposed()
   local status = sample_status()
-  h.assert_false(h.has_capability(events_for(status), caps.SESSION),
-    "session is opt-in and must stay silent when exposed = false")
+  local events = events_for(status)
+  -- #78: `exposed` is the one session attribute that is always emitted — the
+  -- detail view hangs its visibleCondition on it, so it has to reach false
+  -- again when the user opts out. The values themselves stay untouched.
+  h.assert_equal(h.event_value(events, caps.SESSION, "exposed"), false)
+  for _, attr in ipairs({ "locked", "idleMinutes", "user", "summary" }) do
+    h.assert_nil(h.event_value(events, caps.SESSION, attr),
+      "session is opt-in and must not invent " .. attr)
+  end
 
   status.session = { exposed = true, locked = true, idle_seconds = 1200, user = "kim" }
-  local events = events_for(status)
+  events = events_for(status)
+  h.assert_equal(h.event_value(events, caps.SESSION, "exposed"), true)
   h.assert_equal(h.event_value(events, caps.SESSION, "locked"), true)
   h.assert_equal(h.event_value(events, caps.SESSION, "idleMinutes"), 20)
   h.assert_equal(h.event_value(events, caps.SESSION, "user"), "kim")
@@ -218,6 +235,75 @@ function T.test_an_update_without_a_version_still_says_so()
   status.update = { available = true }
   h.assert_equal(h.event_value(events_for(status), caps.STATUS, "message"),
     "A service update is available")
+end
+
+--------------------------------------------------------------------------------
+-- summaries (#78): the one-line rows that replaced the raw attribute rows
+--------------------------------------------------------------------------------
+
+function T.test_status_summary_reads_like_the_issue()
+  h.assert_equal(state.status_summary(state.ON, "ok", "v1.1.0", "ko"), "켜짐 · 연결됨 · v1.1.0")
+  h.assert_equal(state.status_summary(state.ON, "ok", "v1.1.0", "en"), "On · Connected · v1.1.0")
+  h.assert_equal(state.status_summary(state.OFF, "unauthorized", nil, "ko"),
+    "연결 안 됨 · 시크릿 불일치")
+  h.assert_equal(state.status_summary(state.OFF, "unauthorized", nil, "en"),
+    "Not connected · Secret mismatch")
+end
+
+function T.test_status_summary_covers_every_power_state_and_connection()
+  for _, power in ipairs({ state.ON, state.SLEEPING, state.HIBERNATED, state.OFF,
+                           state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN }) do
+    local summary = state.status_summary(power, "ok", "", "ko")
+    h.assert_contains(summary, "연결됨", power)
+    -- A missing label would leave the raw enum value in the line.
+    h.assert_equal(summary:find(power, 1, true), nil, power .. " has no Korean label")
+  end
+  for _, connection in ipairs({ "unauthorized", "unreachable", "incompatible" }) do
+    local summary = state.status_summary(state.OFF, connection, nil, "ko")
+    h.assert_contains(summary, "연결 안 됨", connection)
+    h.assert_equal(summary:find(connection, 1, true), nil,
+      connection .. " has no short Korean label")
+  end
+end
+
+function T.test_status_summary_omits_an_unknown_version()
+  h.assert_equal(state.status_summary(state.ON, nil, nil, "en"), "On · Connected")
+  h.assert_equal(state.status_summary(state.ON, "ok", "", "en"), "On · Connected")
+end
+
+function T.test_schedule_summary_is_empty_when_nothing_is_scheduled()
+  h.assert_equal(state.schedule_summary({ active = false }, "ko"), "")
+  h.assert_equal(state.schedule_summary(nil, "ko"), "")
+  local events = events_for((function()
+    local status = sample_status()
+    status.schedule = { active = false }
+    return status
+  end)())
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "summary"), "")
+end
+
+function T.test_schedule_summary_rounds_the_countdown_up()
+  local function summary(seconds)
+    return state.schedule_summary({
+      active = true, command = "shutdown", origin = "smartthings",
+      remaining_seconds = seconds,
+    }, "ko")
+  end
+  h.assert_equal(summary(240), "종료 · 4분 남음 · SmartThings")
+  h.assert_equal(summary(241), "종료 · 5분 남음 · SmartThings", "a part minute still counts")
+  h.assert_equal(summary(59), "종료 · 곧 실행 · SmartThings")
+  h.assert_contains(state.schedule_summary({
+    active = true, command = "restart", origin = "ui", remaining_seconds = 600,
+  }, "en"), "Restart · 10 min left · App")
+end
+
+function T.test_session_summary_follows_the_language()
+  h.assert_equal(state.session_summary({ locked = true, idle_seconds = 1200, user = "kim" }, "ko"),
+    "잠김 · 유휴 20분 · kim")
+  h.assert_equal(state.session_summary({ locked = false, idle_seconds = 30 }, "ko"),
+    "사용 중 · 유휴 0분")
+  h.assert_equal(state.session_summary({ locked = false, idle_seconds = 30 }, "en"),
+    "In use · idle 0 min")
 end
 
 --------------------------------------------------------------------------------

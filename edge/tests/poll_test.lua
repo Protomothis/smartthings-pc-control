@@ -144,4 +144,18 @@ function T.test_identity_is_remembered_from_a_status_body()
   h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
 end
 
+function T.test_a_failed_poll_rewrites_the_status_summary()
+  -- #78: the summary is the only pcStatus row left on screen, so the failure
+  -- path has to repaint it too — otherwise it would still read "Connected".
+  local caps = require "caps"
+  local state = require "state"
+  local device = h.fake_device({ language = "ko" })
+  poll.set_state(device, state.new(state.OFF))
+
+  poll.emit_connection(device, "unauthorized", "시크릿이 일치하지 않습니다")
+  local emitted = h.emitted(device)
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unauthorized")
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "summary"), "연결 안 됨 · 시크릿 불일치")
+end
+
 return T

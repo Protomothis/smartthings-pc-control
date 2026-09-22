@@ -226,31 +226,63 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 | `switch` | on → WoL 시퀀스, off → 환경설정의 기본 off 명령(`mode=default`) |
 | `healthCheck` | 폴링/푸시 기반 online/offline |
 | `{NS}.pcPowerState` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
-| `{NS}.pcCommand` | command `execute(command, mode, minutes)`; attr `lastCommand` string("shutdown · SmartThings · 23:05") |
-| `{NS}.pcSchedule` | attrs `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string; command `cancel()` ; command `schedule(command, minutes)` — `minutes`는 capability 상으로는 integer 1..1440(서비스 상한과 동일)이고, 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
-| `{NS}.pcStatus` | attrs `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**) |
-| `{NS}.pcSession` | attrs `locked` bool, `idleMinutes` integer, `user` string — `session.exposed=false`면 드라이버가 이 capability의 이벤트를 아예 내보내지 않아 마지막 값이 유지된다. 프레젠테이션 `visibleCondition`으로 숨기는 것은 장치 프레젠테이션 몫이므로 #74로 미룬다 |
+| `{NS}.pcCommand` | 인자 없는 명령 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(상세 화면의 리모컨 버튼, #78) + `execute(command, mode, minutes)`(자동화용, `forceshutdown`은 여기에만); attr `lastCommand` string("종료 · SmartThings · 23:05") |
+| `{NS}.pcSchedule` | attrs `summary` string("종료 · 4분 남음 · SmartThings", 예약 없으면 `""`), `active` bool, `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string; command `cancel()` ; command `schedule(minutes, command?)` — `minutes`는 capability 상으로는 integer 1..1440(서비스 상한과 동일)이고, 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
+| `{NS}.pcStatus` | attrs `summary` string("켜짐 · 연결됨 · v1.1.0" / "연결 안 됨 · 시크릿 불일치"), `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**) |
+| `{NS}.pcSession` | attrs `exposed` bool, `summary` string("잠김 · 유휴 20분 · kim"), `locked` bool, `idleMinutes` integer, `user` string — `exposed`는 항상 내보내고(상세 화면의 `visibleCondition` 기준), 나머지는 `session.exposed=false`면 내보내지 않아 마지막 값이 유지된다 |
 | `refresh` | 즉시 폴링 |
+
+`summary` 세 개는 #78에서 추가했다. 상세 화면이 원시 속성을 한 줄씩 늘어놓아 읽기
+어려웠기 때문에, 드라이버가 문장으로 합쳐 한 줄만 보여 주고 원시 속성은 자동화 조건
+전용으로 남긴다. 합치는 문구는 `i18n.lua`의 ko/en을 따른다(§6.5).
 
 ### 5.2 자식 장치 `pc-display.yml`
 
 `switch` 하나. on → `turnscreenon`, off → `turnscreenoff`. 상태는 `status.display`.
 환경설정 `createDisplayDevice`(기본 true)로 생성/제거.
 
-### 5.3 프레젠테이션
+### 5.3 프레젠테이션 (#78 리모컨 모델)
 
-- 대시보드: `switch` + `pcPowerState.powerState` 상태 문구.
-- 상세: 스위치, 전원 상태, 명령 실행(enum 선택 + 모드 + 분), 예약 카드(남은 시간, 출처, 취소),
-  상태 카드(연결, 버전, 업데이트, WoL 준비, 마지막 확인, 메시지), 세션(조건부).
+- 대시보드: `switch` + `pcPowerState.powerState` 상태 문구. (변경 없음)
+- 상세: **리모컨**. 위에서부터
+  1. `switch`(스위치)
+  2. `pcPowerState.powerState` 상태 줄
+  3. `pcStatus.summary` 한 줄
+  4. `pcStatus.message` — `visibleCondition: message != ""`
+  5. `pcCommand` 인자 없는 명령의 `pushButton` 8줄, 순서는
+     깨우기 · 절전 · 최대 절전 · 재시작 · 종료 · 잠금 · 화면 끄기 · 화면 켜기.
+     **강제 종료는 화면에 없다**(되돌릴 수 없는 명령은 자동화에서만).
+     SmartThings 상세 화면에 격자 배치가 없으므로 세로 목록이다.
+  6. `pcCommand.lastCommand` 상태 줄
+  7. `pcSchedule.schedule(minutes)` 프리셋 `list`
+  8. `pcSchedule.summary` — `visibleCondition: active == true`
+  9. `pcSchedule.cancel` `pushButton` — 같은 조건
+  10. `pcSession.summary` — `visibleCondition: exposed == true`
+- 원시 속성(`remainingSeconds` `executeAt` `origin` `serviceVersion`
+  `updateAvailable` `wolReady` `lastSeen` `idleMinutes` `locked` `user`)은
+  detailView에서 빠졌지만 정의와 자동화 조건에는 그대로 남는다.
 - 자동화: 조건 `powerState`, `pcSchedule.active`, `connection`, `locked`;
-  액션 `pcCommand.execute`, `pcSchedule.cancel`, `pcSchedule.schedule`, `switch`.
+  액션 `pcCommand.execute`, `pcSchedule.schedule`, `switch`.
+  `pcSchedule.cancel`과 리모컨 버튼은 `pushButton`이라 `automation.actions`에 넣을 수
+  없다(§14). 자동화에서 취소하려면 `execute`/`schedule`로 대체한다.
+- 버튼이 보내는 `mode`는 환경설정 `buttonMode`(§5.4)가 정한다. 버튼에는 인자가 없어
+  화면에서 모드를 고를 수 없기 때문이다.
+- 라벨은 프레젠테이션에 **영어**로 두고, capability translations
+  (`capabilities/translations/<이름>.{ko,en}.json`)가 휴대폰 로케일에 맞춰 덮어쓴다.
+  `smartthings capabilities:translations:upsert <id> --capability-version 1 -i <file>`.
+  환경설정(preferences)은 로케일별 변형이 없으므로 프로필에 한국어 우선으로 병기한다.
 
 ### 5.4 환경설정(preferences)
 
 `ipAddress`, `port`(5001), `secret`(string; Edge에 password 타입이 없어 입력 중 보임을 설명에 명시), `macAddress`, `wolBroadcast`(255.255.255.255),
 `pollInterval` enum(10s/30s/1m/5m, 기본 30s; 푸시 구독 성공 시 5m으로 자동 완화하지 않고 사용자 값 유지),
 `offAction` enum(shutdown/suspend/hibernate/lock/turnscreenoff/restart/forceshutdown),
+`buttonMode` enum(`default` 설정된 유예 따름 / `immediate` 즉시, 기본 `default`) — 상세 화면 리모컨 버튼의 §4.3 `mode`(#78),
 `createDisplayDevice` bool, `language` enum(auto/ko/en).
+
+제목과 설명은 **한국어 우선, 영어 괄호 병기**("PC IP 주소 (IP address)")다(#78).
+Edge 프로필의 preferences에는 로케일별 변형이 없어 한 벌만 쓸 수 있고, 이 프로젝트는
+한국어 우선이다. `title`의 길이 제한(36자)에 걸리지 않도록 영어는 용어만 적는다.
 
 SSDP로 추가된 장치는 `ipAddress`/`port`가 채워진 상태로 생성되고, 사용자는 시크릿과 MAC만 넣는다.
 드라이버는 자기 환경설정을 쓸 수 없으므로, `macAddress`가 비어 있으면 폴링이 저장한 WoL 가능 어댑터 MAC(장치 필드)을 사용한다.
@@ -299,9 +331,18 @@ PC에서 유예를 취소하면 `schedule.cancelled` 푸시 → 스위치 on 복
 
 ### 6.5 i18n
 
-Edge 환경설정/프레젠테이션은 영어가 기본이다. 사용자에게 보이는 **문자열 속성**
-(`lastCommand`, `message`, `origin`)은 `language` 환경설정(auto=허브 로케일 추정 불가하므로 ko, 프로젝트가 한국어 우선)
-에 따라 `i18n.lua`에서 ko/en 선택. 프레젠테이션 라벨은 영어 + 괄호 한국어 병기는 하지 않는다.
+한국어는 두 층으로 나뉜다(#78).
+
+1. **앱 UI 라벨** — capability 라벨·속성 라벨·enum 값·명령과 인자 라벨. 프레젠테이션에는
+   영어로 적고, capability translations가 휴대폰 로케일에 맞춰 덮어쓴다(§5.3). 드라이버는
+   여기에 관여하지 않는다.
+2. **문자열 속성 값** — `pcStatus.summary`/`message`, `pcSchedule.summary`,
+   `pcSession.summary`, `pcCommand.lastCommand`, `pcSchedule.origin`/`command`. 이것들은
+   드라이버가 만들어 내므로 `language` 환경설정(auto=허브 로케일 추정 불가하므로 ko,
+   프로젝트가 한국어 우선)에 따라 `i18n.lua`에서 ko/en을 고른다.
+
+환경설정(preferences)은 어느 쪽도 아니다 — 로케일별 변형이 없어 프로필에 한국어 우선으로
+병기한다(§5.4).
 
 ## 7. GUI (Fyne) 변경
 
@@ -432,3 +473,28 @@ develop → main → `v1.1.0` 태그.
   - 프레젠테이션 본문의 `id`는 경로의 capability id와 같아야 한다.
 - 정의 변경: `pcSchedule.schedule(minutes, command?)` — 인자 순서를 바꾸고 `command`를 선택으로 만들어 한 인자만 보내는 detailView `list`가 동작하도록 했다(드라이버는 비어 있으면 `offAction`→`shutdown`으로 보정). `pcCommand.execute`의 `mode`/`minutes`도 선택.
 - 다섯 정의와 프레젠테이션 모두 계정에 생성 완료(`status: proposed`). 수정은 `capabilities:update` / `capabilities:presentation:update`로만 가능.
+
+### 14.1 #78에서 추가한 것과 아직 확인되지 않은 가정 (2026-09-22)
+
+확정된 규칙(위)에 더해, #78이 새로 기대는 것들이다. 코디네이터가
+`edge/tools/sync-capabilities.sh`를 돌릴 때 실제로 확인된다.
+
+- **`detailView`의 `visibleCondition`** — 장치 프레젠테이션에는 있는 필드인데, capability
+  프레젠테이션의 detailView 항목에서도 받아 주는지는 실측하지 않았다. 쓰는 형식은
+  `{"capability": "<이 capability id>", "version": 1, "component": "main",
+  "value": "<attr>.value", "operator": "EQUALS"|"NOT_EQUALS", "operand": <값>}`.
+  **거부되면** 해당 항목에서 `visibleCondition` 객체만 지운다(다른 것은 그대로).
+  그러면 안내·예약·세션 줄이 늘 보이지만, 해당 없을 때 요약이 빈 문자열이라
+  치명적이지 않다. 진짜 조건부 표시가 필요하면 장치 프레젠테이션(#74 계열)으로 옮겨야 한다.
+- **인자 없는 명령의 `pushButton`** — `pcCommand`의 `wake`/`suspend`/… 8개는
+  `{"command": "<name>", "argument": null}` 형식으로 detailView에 넣었다. 예약 취소
+  버튼이 이미 같은 형식으로 통과했으므로 문제없을 것으로 본다.
+- **`capabilities:translations:upsert` 본문 형식** —
+  `{"tag": "ko", "label": ..., "attributes": {"<attr>": {"label": ..., "i18n": {"value":
+  {"<enum>": {"label": ...}}}}}, "commands": {"<cmd>": {"label": ..., "arguments":
+  {"<arg>": {"label": ..., "i18n": {"value": {...}}}}}}}`. enum이 아닌 속성과 인자는
+  `label`만 넣는다.
+- **preferences `title` 길이** — 한국어 병기 제목이 36자 제한에 걸리는지는
+  `edge:drivers:package`에서만 드러난다. 걸리면 괄호 안 영어를 줄인다.
+- 프레젠테이션의 `id`가 경로의 capability id와 같아야 한다는 규칙은 새 파일에도 그대로
+  적용된다(파일 이름은 camelCase, id는 소문자).
