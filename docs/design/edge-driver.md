@@ -189,15 +189,16 @@
 |---|---|---|
 | `pcPower` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` | – |
 | `pcExec` | `lastAction` enum(= `execute`의 `command` enum), `lastCommand` string("종료 · SmartThings · 23:05") | `execute(command, mode?, minutes?)`, 인자 없는 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn` |
-| `pcCountdown` | `summary` string, `status` enum `idle`\|`scheduled`, `active` bool, `command` string, `remainingSeconds` int, `executeAt` string(`HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate` | `schedule(minutes, command?)`, `cancel()`, `setPlanCommand(command)` |
+| `pcPlanner` | `summary` string, `status` enum `idle`\|`scheduled`, `active` bool, `command` string, `remainingSeconds` int, `executeAt` string(`HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate`, `minutesPick` enum `-1`(한 값) | `schedule(minutes: -1~1440, command?)`, `cancel()`, `setPlanCommand(command)` |
 | `pcUser` | `exposed` bool, `summary` string, `locked` bool, `idleMinutes` int, `user` string | – |
 | `pcInfo` | `summary` string, `connection` enum `ok` `unauthorized` `unreachable` `incompatible`, `serviceVersion`, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string, `versions` string | – |
 | `pcVersion` | `versions` string("v1.1.0 · 드라이버 1.0", 업데이트가 있으면 " · 업데이트 v1.2.0") | – |
 
 - `execute`의 `command` enum은 서비스 명령 여덟에 `wake`와 `none`을 더한 열이다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`은 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다.
 - `lastAction`은 언제나 `none`에 머문다. 무엇이 실행됐는지는 `lastCommand`가 말한다.
-- `schedule`의 `minutes`는 0~1440이고 **`0`은 취소**다. 클라우드가 인자를 정의로 검증하므로 목록의 취소 항목이 보내는 값이 정의 안에 있어야 한다.
-- `pcCountdown.status`는 `active`의 문자열 판이다. 목록의 `state`는 bool을 읽지 못한다.
+- `schedule`의 `minutes`는 -1~1440이다. **`-1`은 무동작**(폴링만), **`0`은 취소**, 양수는 예약이다. 클라우드가 인자를 정의로 검증하므로 목록이 보내는 값 — 고른 값이든 닫을 때 나가는 현재 값이든 — 이 모두 정의 안에 있어야 한다.
+- `minutesPick`은 `-1` 한 값뿐인 enum이고, 예약 시간 목록이 쉬는 자리다. `lastAction`이 `none`에 머무는 것과 같은 이유다 — 목록을 고르지 않고 닫으면 그 줄의 현재 값이 `minutes` 인자로 나간다. 그 전에는 이 줄이 `status`에 묶여 있어 `schedule(minutes: "idle")`이 나갔고, 클라우드가 거부해 "네트워크 오류" 팝업만 떴다.
+- `pcPlanner.status`는 `active`의 문자열 판이고, 이제 자동화 조건 전용이다. 목록의 `state`는 bool을 읽지 못한다.
 - `pcInfo.versions`는 정의에 남아 있고 계속 emit 되지만, 화면에 그려지는 줄은 `pcVersion.versions`다.
 
 ## 5. 화면 구성
@@ -210,7 +211,7 @@
 |---|---|
 | 전원 상태 | `pcPower.powerState` |
 | 마지막 실행 | `pcExec.lastCommand` |
-| 예약 요약 | `pcCountdown.summary` |
+| 예약 요약 | `pcPlanner.summary` |
 | 세션 | `pcUser.summary` |
 | 상태 | `pcInfo.summary` |
 | 버전 | `pcVersion.versions` |
@@ -218,8 +219,8 @@
 | 조작 카드 | 위젯 |
 |---|---|
 | 명령 | `pcExec.execute` 목록(깨우기·절전·최대 절전·재시작·종료·잠금·화면 끄기/켜기) |
-| 예약할 명령 | `pcCountdown.setPlanCommand` 목록 |
-| 예약 시간 | `pcCountdown.schedule` 목록(5·15·30·60·120분, 취소) |
+| 예약할 명령 | `pcPlanner.setPlanCommand` 목록 |
+| 예약 시간 | `pcPlanner.schedule` 목록(5·15·30·60·120분, 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
 
 - 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 목록 맨 끝이다.
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
@@ -228,8 +229,8 @@
   - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". 시크릿 권장·업데이트 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
   - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
   - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다.
-  - `pcCountdown.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
-- 자동화용 조건은 `powerState`, `pcCountdown.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`. 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
+  - `pcPlanner.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
+- 자동화용 조건은 `powerState`, `pcPlanner.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`. 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
 
 ## 6. 드라이버 동작
 
@@ -281,7 +282,7 @@
 
 ### 6.6 프로필 이전
 
-- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v13`**.
+- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v14`**.
 - 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
 - `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다.
 - 이전 직후에는 capability id가 바뀌었을 수 있어 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`)를 보고 전 줄을 한 번 다시 칠한다.
@@ -340,7 +341,7 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 ## 11. 정식 릴리스 전 체크리스트
 
 1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-v2`~`pc-v13` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다.
-2. **capability 이름 확정** — `pcPower` `pcExec` `pcCountdown` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
+2. **capability 이름 확정** — `pcPower` `pcExec` `pcPlanner` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
 3. **버전** — `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치를 검증한다).
 4. **채널** — 개발용 버전을 정리하고 초대 링크를 README/Wiki의 자리표시자에 기입한다.
 5. **서비스** — v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서로 올린다.
