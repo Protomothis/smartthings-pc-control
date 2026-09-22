@@ -198,16 +198,24 @@ end
 function T.test_every_pc_profile_uses_the_same_ids()
   -- #79 keeps one file per version, so the check runs over all of them: an
   -- id that is only in the old file would ship a half-broken new profile.
+  -- #81 removed the child profiles, so every file left here is a PC profile.
   local checked = 0
   for name, text in pairs(profile_files) do
-    if not name:match("display") then
-      checked = checked + 1
-      for _, id in pairs(caps.ids) do
-        h.assert_contains(text, id, "profiles/" .. name .. " is missing ")
-      end
+    checked = checked + 1
+    for _, id in pairs(caps.ids) do
+      h.assert_contains(text, id, "profiles/" .. name .. " is missing ")
     end
   end
   h.assert_true(checked > 0, "no main profile found in " .. profiles_dir)
+end
+
+function T.test_no_display_child_profile_is_shipped()
+  -- #81: the child device is gone; a leftover pc-display*.yml would let the
+  -- hub keep rendering children this driver no longer manages.
+  for name in pairs(profile_files) do
+    h.assert_true(name:match("^pc%-display") == nil,
+      "profiles/" .. name .. " is a display child profile (#81 removed them)")
+  end
 end
 
 function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
@@ -225,12 +233,7 @@ function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
     h.assert_true(declared[known] ~= nil,
       "src/profiles.lua knows " .. known .. ", but no profile file declares it")
   end
-  for _, known in ipairs(profiles.KNOWN_DISPLAY) do
-    h.assert_true(declared[known] ~= nil,
-      "src/profiles.lua knows " .. known .. ", but no profile file declares it")
-  end
   h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
-  h.assert_true(declared[profiles.DISPLAY] ~= nil, "no file declares " .. profiles.DISPLAY)
 end
 
 function T.test_no_two_profile_files_share_a_name()

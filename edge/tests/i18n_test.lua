@@ -42,8 +42,8 @@ function T.test_all_required_keys_exist()
     "incompatible_service", "incompatible_driver", "no_secret", "no_ip",
     "badrequest", "update_available", "update_available_plain",
     "schedule_replaced", "schedule_cancelled", "schedule_none",
-    -- #73: discovery, the multi-PC warning and the display child label.
-    "discovery_found", "ip_updated", "hostname_mismatch", "display_label",
+    -- #73: discovery, the device label and the multi-PC warning.
+    "discovery_found", "ip_updated", "hostname_mismatch", "pc_label",
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
     "session_locked", "session_unlocked", "session_idle",
@@ -109,7 +109,7 @@ function T.test_the_discovery_strings_carry_their_arguments()
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "LAPTOP-XYZ")
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
   h.assert_contains(i18n.t("ko", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
-  h.assert_equal(i18n.t("en", "display_label", "DESKTOP-ABC"), "DESKTOP-ABC Monitor")
+  h.assert_equal(i18n.t("en", "pc_label", "DESKTOP-ABC"), "DESKTOP-ABC PC")
   h.assert_equal(i18n.t("ko", "pc_label", "DESKTOP-ABC"), "DESKTOP-ABC 컴퓨터")
 end
 

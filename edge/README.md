@@ -8,7 +8,7 @@ PC Control 서비스를 위한 **SmartThings Edge 드라이버**(Lua 5.3)입니�
 기존 [PCControl 드라이버](https://github.com/toddaustin07/PCControl)가 스위치 하나와
 ping만 제공하는 것과 달리, 이 드라이버는 서비스가 이미 알고 있는 것을 전부 SmartThings로
 끌어올립니다: 정확한 전원 상태(절전·최대절전·깨우는 중·종료 대기 구분), 유예
-카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 디스플레이 자식 장치, SSDP 자동 검색.
+카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 화면 끄기/켜기, SSDP 자동 검색.
 
 > PCControl 호환 경로(`/{secret}/{command}`)는 그대로 살아 있습니다. **기존 PCControl
 > 드라이버 사용자는 아무것도 바꾸지 않아도 됩니다.** 이 드라이버는 선택지이지 교체
@@ -95,7 +95,6 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 | `상태 확인 주기 (Poll interval)` | 상태 확인 주기 (10초 / 30초 / 1분 / 5분) | `30초마다` |
 | `스위치 끄기 동작 (Off action)` | 스위치를 끌 때 보낼 명령. 강제 종료를 뺀 나머지는 PC에 설정된 유예를 따릅니다 | `종료` |
 | `버튼 실행 방식 (Button mode)` | 상세 화면의 명령 버튼이 PC의 유예를 따를지(`설정된 유예 따름`) 곧바로 실행할지(`즉시 실행`). 자동화의 `명령 실행`은 자기 모드 인자를 따로 가집니다 | `설정된 유예 따름` |
-| `모니터 장치 (Display device)` | 화면을 켜고 끄는 자식 스위치를 만듭니다. PC가 한 번이라도 응답한 뒤에 나타나고, 끄면 삭제됩니다 | 켬 |
 | `문구 언어 (Language)` | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 **한국어**로 동작합니다 | `자동 (한국어)` |
 
 > 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지합니다. 푸시가 즉시 반영을
@@ -226,12 +225,6 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 | `lastSeen` | 마지막으로 성공한 상태 조회 시각 |
 | `message` | 사람이 읽는 안내 **한 줄**. 여러 개가 겹치면 오류 > 호환성 > WoL 미준비 > 업데이트 > 시크릿 없음 순으로 하나만 고릅니다 |
 
-### 디스플레이 자식 장치
-
-`Create display device`가 켜져 있으면 "`호스트이름` 모니터"(영어 설정 시 "Monitor")라는 스위치가 함께
-생깁니다. 켜면 `turnscreenon`, 끄면 `turnscreenoff`를 부모 PC에 보내고, 상태는 서비스가
-보고한 `display` 값을 따릅니다(`unknown`이면 건드리지 않습니다).
-
 ### 세션 정보 (선택)
 
 PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이 요약 한 줄
@@ -264,7 +257,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 ```
 조건(If)  : 구성원 전원이 집을 떠남
 동작(Then): PC 의 pcCommand.execute(command: lock, mode: immediate)
-            PC 모니터 스위치 끄기
+            PC 의 pcCommand.screenOff
 ```
 
 **3. 책상 주변기기 전원 연동** — 모니터·스피커 스마트플러그를 PC에 맞춥니다.
@@ -314,10 +307,8 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 
 ```
 config.yml               드라이버 메타 (name, packageKey, permissions: lan)
-profiles/pc-v2.yml       메인 프로필(현행): capability + 환경설정 (§5.1, §5.4)
-profiles/pc.yml          메인 프로필 v1: 이전 장치용으로 남겨 둠 (#79)
-profiles/pc-display-v2.yml  디스플레이 자식 프로필(현행): 스위치 하나 (§5.2)
-profiles/pc-display.yml  디스플레이 자식 프로필 v1: 이전 장치용
+profiles/pc-v3.yml       메인 프로필(현행): capability + 환경설정 (§5.1, §5.4)
+profiles/pc.yml, pc-v2.yml  메인 프로필 v1·v2: 이전 장치용으로 남겨 둠 (#79)
 capabilities/            커스텀 capability 정의 + 프레젠테이션 (§5.1, §5.3)
   translations/          capability 번역 ko/en (#78)
 src/
@@ -325,7 +316,6 @@ src/
   caps.lua               커스텀 capability id, NAMESPACE 상수 한 곳
   client.lua             /st/v1 HTTP 클라이언트, 오류 분류 (§4, §6.1)
   discovery.lua          SSDP 검색, 수동 추가, 다중 PC 식별 (§4.6, §13)
-  display.lua            디스플레이 자식 장치 (§5.2)
   poll.lua               폴링 타이머, health, 이벤트 발행, 분산 (§6.1, §13.3)
   push.lua               푸시 리스너와 구독 (§4.5, §6.4)
   state.lua              순수 함수: status JSON → 이벤트, 전원 상태 머신 (§6.2)
@@ -358,11 +348,10 @@ tools/
 **프레젠테이션을 바꿀 때는 프로필 버전을 올립니다.** 기존 장치는 드라이버가 자동으로
 옮기므로 삭제·재추가가 필요 없습니다.
 
-1. `profiles/pc-vN.yml`을 새로 만들고 `name: pc.vN`으로 바꿉니다(자식은 `pc-display.vN`).
+1. `profiles/pc-vN.yml`을 새로 만들고 `name: pc.vN`으로 바꿉니다.
    **옛 파일은 지우지 않습니다** — 아직 옮겨지지 않은 장치가 참조합니다.
-2. `src/profiles.lua`의 `PC`/`DISPLAY`를 새 이름으로 올리고 `KNOWN`/`KNOWN_DISPLAY`에
-   추가합니다. 프로필 이름은 여기 한 곳에만 있습니다(`discovery.PROFILE`,
-   `display.PROFILE`이 여기서 읽습니다).
+2. `src/profiles.lua`의 `PC`를 새 이름으로 올리고 `KNOWN`에 추가합니다.
+   프로필 이름은 여기 한 곳에만 있습니다(`discovery.PROFILE`이 여기서 읽습니다).
 3. 패키징해서 올리면, 드라이버가 각 장치의 첫 `init`에서 `try_update_metadata`로
    새 프로필로 옮기고 `migrated <id> to pc.vN`을 남깁니다(장치당 한 번, 실패해도
    드라이버는 계속 돕니다).
@@ -507,10 +496,9 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
       요청 출처 IP가 같기를 요구하므로, 틀리면 subscribe가 `400`으로만 나타납니다.)
 - [ ] 멀티캐스트: 허브가 Edge 드라이버의 239.255.255.250:1900 송신과, 같은 소켓으로
       오는 유니캐스트 응답 수신을 허용하는지.
-- [ ] `EDGE_CHILD` 자식 생성: `profile`, `parent_device_id`,
-      `parent_assigned_child_key`. `try_delete_device`가 device에 있는지 driver에
-      있는지 양쪽 다인지.
-- [ ] `pc-display.yml`의 `categories` 값으로 `Switch`가 유효한지.
+- [ ] (#81) 옛 드라이버가 만든 디스플레이 자식이 첫 `init`에서 지워지는지
+      (로그 `removing legacy display child <id>`). `try_delete_device`가 device에
+      있는지 driver에 있는지 양쪽 다인지.
 - [ ] `device:set_field(..., { persist = true })`가 드라이버 재시작 뒤에도 검색한
       주소와 `machine_id`를 유지하는지.
 
@@ -521,7 +509,7 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 - [ ] 스위치 끄기 → 유예 카운트다운이 SmartThings·토스트·텔레그램에 동시에 뜨는지.
 - [ ] 토스트에서 취소 → SmartThings 예약 카드가 즉시 사라지고 스위치가 켜짐으로 복귀.
 - [ ] 절전 → `sleeping`, 종료 → `shuttingDown` → `off`, WoL → `waking` → `on`.
-- [ ] 디스플레이 자식 스위치가 실제로 화면을 끄고 켜는지(`turnscreenon` 포함).
+- [ ] 상세 화면의 [화면 끄기]·[화면 켜기] 버튼이 실제로 화면을 끄고 켜는지.
 - [ ] PC를 껐다 켜도(서비스 재시작) 구독이 되살아나는지.
 - [ ] PC 두 대를 추가했을 때 서로 섞이지 않는지.
 - [ ] 커스텀 capability가 없는 상태(플레이스홀더 네임스페이스)에서도 스위치·refresh·
@@ -533,7 +521,7 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
       영어로 바꾸면 영어가 되는지.
 - [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 유예 없이 바로 실행되는지.
 - [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v2`로 옮겨지고(로그 `migrated ... to
-      pc.v2`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지. 자식(모니터)도 같은지.
+      pc.v2`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지.
       환경설정 값이 이전 뒤에도 남아 있는지.
 
 ---
@@ -551,7 +539,7 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 | **장치가 두 개로 보임** | 수동 추가 뒤 SSDP가 같은 PC를 다시 찾은 경우입니다. 첫 상태 조회에 성공해야 `machine_id`를 학습하므로, 시크릿을 넣어 `ok`로 만든 뒤 남는 쪽을 지우세요 |
 | **PC 두 대가 한 장치로 합쳐짐** | 이미지 복제로 MachineGuid가 같습니다. 한쪽에서 재생성하세요(위 [여러 PC](#여러-pc)) |
 | **커스텀 타일이 안 보임** | 네임스페이스가 아직 플레이스홀더입니다. `create-capabilities.sh` → `apply-namespace.js` → 재패키징 순서로 처리하세요. 그동안에도 스위치·새로고침은 동작합니다 |
-| **디스플레이 자식이 안 생김** | `Create display device`가 켜져 있어야 하고, PC가 최소 한 번 응답해야 생깁니다 |
+| **모니터 장치가 사라짐** | #81에서 제거했습니다. 본체 상세 화면의 [화면 끄기]·[화면 켜기] 버튼을 쓰세요. 허브에 남아 있던 자식 장치는 드라이버가 처음 뜰 때 지웁니다 |
 | **텔레그램이 다른 PC 것과 섞임** | 봇 토큰 하나를 여러 PC가 공유하고 있습니다(409 Conflict). PC마다 봇을 분리하세요 |
 
 드라이버 로그: `smartthings edge:drivers:logcat <driverId> --hub-address <허브IP>`.
@@ -570,7 +558,7 @@ Where the [PCControl driver](https://github.com/toddaustin07/PCControl) offers a
 switch and a ping, this one surfaces what the service already knows: a real
 power state (`on` / `sleeping` / `hibernated` / `off` / `waking` /
 `shuttingDown`), the grace countdown with its origin, schedule and cancel,
-connection/version/WoL diagnostics, a display child device and SSDP discovery.
+connection/version/WoL diagnostics and SSDP discovery.
 The legacy `/{secret}/{command}` path is untouched, so **existing PCControl
 users need to change nothing**.
 
@@ -591,7 +579,7 @@ first successful poll, so a later SSDP hit updates it rather than duplicating it
 **Preferences** — `ipAddress` (empty = follow SSDP), `followDiscovery`, `port`
 (5001), `secret` (sent as `X-PC-Secret`; Edge has no password field, so it is
 visible while typing), `macAddress`, `wolBroadcast`, `pollInterval`
-(10 s/30 s/1 min/5 min), `offAction`, `buttonMode`, `createDisplayDevice`,
+(10 s/30 s/1 min/5 min), `offAction`, `buttonMode` and
 `language`. Their titles and descriptions are Korean first with the English term
 in parentheses: a profile preference has no per-locale variant, and this project
 is Korean-first.
@@ -607,8 +595,9 @@ Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and 9); switch off sends
 automations and schedules when `minutes > 0`. The raw attributes
 (`remainingSeconds`, `executeAt`, `origin`, `serviceVersion`, `updateAvailable`,
 `wolReady`, `lastSeen`, `idleMinutes`, `locked`, `user`) are still there for
-automations, just not on screen. A display child switch runs `turnscreenon` /
-`turnscreenoff`.
+automations, just not on screen. The separate monitor child device was removed
+in #81: the screen off/on buttons do the same job on the PC itself, and a child
+left over from an older driver is deleted on the driver's first init.
 
 **Korean** — capability labels, enum values and command arguments are translated
 through `capabilities/translations/<name>.{ko,en}.json`, so the app follows the

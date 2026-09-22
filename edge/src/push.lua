@@ -464,11 +464,6 @@ function push.apply_to_device(driver, device, payload, deps)
     poll.emit_power(device, nxt)
   end
 
-  -- §5.2: the display child follows `status.display`.
-  local loaded, display = pcall(require, "display")
-  if loaded then
-    pcall(function() display.sync(driver, device, payload.status) end)
-  end
   return true
 end
 

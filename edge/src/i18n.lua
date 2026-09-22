@@ -115,11 +115,6 @@ local STRINGS = {
     en = "Two PCs share one machine_id (%s) · regenerate the MachineGuid",
   },
 
-  -- display child device (§5.2, §13.1)
-  display_label = {
-    ko = "%s 모니터",
-    en = "%s Monitor",
-  },
   -- main device label at discovery (§13.1); matches how people already name
   -- PCs in a Korean home ("혁 컴퓨터")
   pc_label = {
