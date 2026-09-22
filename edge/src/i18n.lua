@@ -1,7 +1,7 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
 -- (`pcInfo.message`, `pcExec.lastCommand`, `pcCountdown.origin`).
 --
--- Design doc §6.5: profile/presentation labels stay English; only these string
+-- Design doc §6.8: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
 -- a driver cannot read the hub locale.
 --
@@ -31,13 +31,13 @@ local STRINGS = {
     en = "MAC address is not valid: %s",
   },
 
-  -- connection / classification (§6.1)
+  -- connection / classification (§3.1)
   unauthorized = {
     ko = "시크릿이 일치하지 않습니다 · 설정에서 확인하세요",
     en = "Secret does not match · check the device settings",
   },
   -- 403: the secret was fine, the hub is simply not in
-  -- `smartthings.allowed_hubs` (§4.1). Same `connection` value as 401, but the
+  -- `smartthings.allowed_hubs` (§3.1). Same `connection` value as 401, but the
   -- fix is a different one, so it gets its own sentence.
   forbidden = {
     ko = "허브가 허용 목록에 없습니다 · PC의 SmartThings 설정에서 추가하세요",
@@ -67,14 +67,14 @@ local STRINGS = {
     ko = "PC의 IP 주소를 설정하세요",
     en = "Set the PC IP address in settings",
   },
-  -- 429 (§8). Never shown as a `message`: a rate-limited poll keeps the last
+  -- 429 (§3.1). Never shown as a `message`: a rate-limited poll keeps the last
   -- state, so this only reaches the driver log.
   ratelimited = {
     ko = "요청이 너무 잦습니다 · 폴링 주기를 늘리세요",
     en = "Too many requests · increase the poll interval",
   },
 
-  -- service state notices (§4.2)
+  -- service state notices (§3.2)
   update_available = {
     ko = "서비스 업데이트 %s 사용 가능",
     en = "Service update %s available",
@@ -85,7 +85,7 @@ local STRINGS = {
     en = "A service update is available",
   },
 
-  -- command outcomes (§4.3/§4.4)
+  -- command outcomes (§3.3/§3.4)
   schedule_replaced = {
     ko = "기존 예약을 새 예약으로 대체했습니다",
     en = "Replaced the existing schedule",
@@ -99,7 +99,7 @@ local STRINGS = {
     en = "There was no schedule to cancel",
   },
 
-  -- discovery / multi-PC (§4.6, §13.1, §13.2)
+  -- discovery / multi-PC (§3.6, §6.5, §6.5)
   discovery_found = {
     ko = "PC %d대를 찾았습니다",
     en = "Found %d PC(s)",
@@ -108,28 +108,28 @@ local STRINGS = {
     ko = "IP 주소를 %s(으)로 변경했습니다",
     en = "IP address updated to %s",
   },
-  -- §13.1: two PCs cloned from the same image share a MachineGuid, so the
+  -- §6.5: two PCs cloned from the same image share a MachineGuid, so the
   -- driver would merge them into one device. Only the user can fix it.
   hostname_mismatch = {
     ko = "같은 machine_id를 쓰는 PC가 둘입니다(%s) · MachineGuid를 다시 만드세요",
     en = "Two PCs share one machine_id (%s) · regenerate the MachineGuid",
   },
 
-  -- main device label at discovery (§13.1); matches how people already name
+  -- main device label at discovery (§6.5); matches how people already name
   -- PCs in a Korean home ("혁 컴퓨터")
   pc_label = {
     ko = "%s 컴퓨터",
     en = "%s PC",
   },
 
-  -- schedule origins (§4.2). `remote` is the legacy PCControl HTTP path, which
+  -- schedule origins (§3.2). `remote` is the legacy PCControl HTTP path, which
   -- for this driver always means a SmartThings command.
   origin_ui = { ko = "앱", en = "App" },
   origin_remote = { ko = "SmartThings 명령", en = "SmartThings command" },
   origin_telegram = { ko = "텔레그램", en = "Telegram" },
   origin_smartthings = { ko = "SmartThings", en = "SmartThings" },
 
-  -- powerState enum, for the one-line summaries (§5.1, #78). The enum itself is
+  -- powerState enum, for the one-line summaries (§4, #78). The enum itself is
   -- localised by the capability translations; these are for `pcInfo.summary`,
   -- which is a plain string attribute the driver composes.
   power_on = { ko = "켜짐", en = "On" },
@@ -159,7 +159,7 @@ local STRINGS = {
   -- #85: the `pcInfo.versions` row. Which service, driver and screen template
   -- a device is actually on is the first question every "it still looks the
   -- old way" report needs answered - the screen is frozen at device-creation
-  -- time (§14.3), so the profile name is as interesting as the two versions.
+  -- time (platform notes "프로필과 화면 생성"), so the profile name is as interesting as the two versions.
   -- `?` stands in for a service version we have not been told yet.
   versions = {
     ko = "서비스 %s · 드라이버 %s · 화면 %s",
@@ -168,7 +168,7 @@ local STRINGS = {
   version_unknown = { ko = "?", en = "?" },
 
   -- #86: `pcExec.lastCommand` before the PC has run anything. An empty string
-  -- is drawn as "-" (§14.5), which reads as a fault rather than as "nothing has
+  -- is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault rather than as "nothing has
   -- happened yet", so the row always carries a sentence.
   last_command_none = { ko = "없음 (None)", en = "None" },
 
@@ -181,7 +181,7 @@ local STRINGS = {
   session_unlocked = { ko = "사용 중", en = "In use" },
   session_idle = { ko = "유휴 %d분", en = "idle %d min" },
 
-  -- command names (§4.3). Wording follows the Go side (service/telegram_control.go).
+  -- command names (§3.3). Wording follows the Go side (service/telegram_control.go).
   cmd_shutdown = { ko = "종료", en = "Shut down" },
   cmd_forceshutdown = { ko = "강제 종료", en = "Force shut down" },
   cmd_restart = { ko = "재시작", en = "Restart" },
@@ -194,7 +194,7 @@ local STRINGS = {
 }
 
 --- Normalise a `language` preference value to a supported language code.
--- `auto`, nil and anything unknown resolve to `ko` (§6.5): the project is
+-- `auto`, nil and anything unknown resolve to `ko` (§6.8): the project is
 -- Korean-first; set the `language` preference to `en` for English.
 function i18n.resolve(lang)
   if lang == "ko" or lang == "en" then

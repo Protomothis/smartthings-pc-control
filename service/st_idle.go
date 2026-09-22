@@ -12,7 +12,7 @@ package service
 // of the logged-in user is not something an unauthenticated caller on the
 // LAN should be able to write (or read back through /st/v1/status).
 //
-// Idle never produces a push event (§4.5): it changes continuously, and the
+// Idle never produces a push event (§3.5): it changes continuously, and the
 // driver reads it from the status document it polls anyway.
 
 import (

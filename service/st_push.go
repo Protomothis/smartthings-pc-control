@@ -1,9 +1,9 @@
 package service
 
 // Hub push subscriptions, /st/v1/subscribe (docs/design/edge-driver.md
-// §4.5, issue #68). The Edge driver opens a listener on the hub, subscribes
+// §3.5, issue #68). The Edge driver opens a listener on the hub, subscribes
 // to it, and renews at 80% of the TTL; the service posts every device-state
-// event to that callback with the full §4.2 status attached, so the driver
+// event to that callback with the full §3.2 status attached, so the driver
 // updates without polling and without diffing.
 //
 //	POST   /st/v1/subscribe       {callback, ttl_seconds, driver_version}
@@ -14,7 +14,7 @@ package service
 // subscribes again.
 //
 // Events arrive on a raw tap of the notification bus (notify.Bus.Tap), not
-// as an ordinary Sink, because §4.5 is explicit that the notification
+// as an ordinary Sink, because §3.5 is explicit that the notification
 // category filter and quiet hours must not apply — device state is not a
 // notification. Delivery is handed to a worker goroutine so an emitting
 // path never waits on the network; power.stopping is the exception and is
@@ -38,20 +38,20 @@ import (
 )
 
 const (
-	// TTL bounds and default from §4.5.
+	// TTL bounds and default from §3.5.
 	stSubMinTTL     = 60 * time.Second
 	stSubMaxTTL     = 3600 * time.Second
 	stSubDefaultTTL = 600 * time.Second
 	// stSubSweepEvery is the background expiry sweep; every access sweeps
 	// too, so this only matters while nothing happens.
 	stSubSweepEvery = time.Minute
-	// stPushTimeout bounds one callback POST (§4.5).
+	// stPushTimeout bounds one callback POST (§3.5).
 	stPushTimeout = 2 * time.Second
 	// stPushStoppingDeadline bounds the whole synchronous power.stopping
-	// delivery, retry included, before the stop proceeds (§4.5).
+	// delivery, retry included, before the stop proceeds (§3.5).
 	stPushStoppingDeadline = 1500 * time.Millisecond
 	// stPushMaxFailures removes a subscription after this many consecutive
-	// failed deliveries (§4.5).
+	// failed deliveries (§3.5).
 	stPushMaxFailures = 3
 	// stPushQueueCap bounds the asynchronous delivery queue. Events are
 	// dropped (and logged) rather than blocking the emitter when a hub is
@@ -64,7 +64,7 @@ const (
 // ---- subscription store ----------------------------------------------------
 
 // stSubscription is one hub listener. Callback is the key: a driver that
-// subscribes again for the same URL renews rather than piling up (§4.5).
+// subscribes again for the same URL renews rather than piling up (§3.5).
 type stSubscription struct {
 	ID            string
 	Callback      string
@@ -170,7 +170,7 @@ func (s *stSubStore) active() []stSubscription {
 }
 
 // noteResult records one delivery outcome and removes the subscription
-// after stPushMaxFailures consecutive failures (§4.5).
+// after stPushMaxFailures consecutive failures (§3.5).
 func (s *stSubStore) noteResult(id string, err error) {
 	s.mu.Lock()
 	sub, ok := s.byID[id]
@@ -233,7 +233,7 @@ func stCallbackHost(raw string) string {
 	return u.Hostname()
 }
 
-// ---- callback validation (§4.5, §8) ----------------------------------------
+// ---- callback validation (§3.5, §8) ----------------------------------------
 
 // stValidateCallback checks that raw is an http:// URL whose host is the
 // IP the request came from, and that the address is one the LAN can own.
@@ -259,7 +259,7 @@ func stValidateCallback(raw, from string) (string, error) {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		// A name could resolve anywhere, and to something different next
-		// time; §4.5 compares the host against the source IP.
+		// time; §3.5 compares the host against the source IP.
 		return "", fmt.Errorf("callback host must be an IP address")
 	}
 	src := net.ParseIP(from)
@@ -281,7 +281,7 @@ func stCallbackAddrAllowed(ip net.IP) bool {
 }
 
 // stClampTTL turns the requested ttl_seconds into a duration: 0 (absent)
-// means the default, anything outside 60..3600 is rejected (§4.5).
+// means the default, anything outside 60..3600 is rejected (§3.5).
 func stClampTTL(seconds int) (time.Duration, error) {
 	if seconds == 0 {
 		return stSubDefaultTTL, nil
@@ -294,7 +294,7 @@ func stClampTTL(seconds int) (time.Duration, error) {
 	return ttl, nil
 }
 
-// ---- handlers (§4.5) -------------------------------------------------------
+// ---- handlers (§3.5) -------------------------------------------------------
 
 type stSubscribeRequest struct {
 	Callback      string `json:"callback"`
@@ -360,14 +360,14 @@ func handleSTUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"removed": removed})
 }
 
-// registerSTPushRoutes mounts the §4.5 subscription endpoints, wrapped in
+// registerSTPushRoutes mounts the §3.5 subscription endpoints, wrapped in
 // the same auth/rate limit as the rest of /st/v1. stHandler calls it.
 func registerSTPushRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/st/v1/subscribe", stAuth(handleSTSubscribe))
 	mux.HandleFunc("/st/v1/subscribe/", stAuth(handleSTUnsubscribe))
 }
 
-// ---- event → push mapping (§4.5) -------------------------------------------
+// ---- event → push mapping (§3.5) -------------------------------------------
 
 // stPushEventType returns the "<category>.<kind>" the hub should be told
 // about, or ok=false when the event is not one of them. session.* is
@@ -417,7 +417,7 @@ var (
 )
 
 // stPushTap is the notify.Bus raw tap: every event, before the category
-// filter, aggregation, quiet hours and the throttle (§4.5).
+// filter, aggregation, quiet hours and the throttle (§3.5).
 //
 // It runs on the emitting goroutine, so it hands the work to the delivery
 // worker — except power.stopping, which is delivered inline. That event is
@@ -486,7 +486,7 @@ func stPushDispatch(ctx context.Context, job stPushJob) {
 	wg.Wait()
 }
 
-// stPushPayload is the §4.5 callback body. machine_id is repeated at the
+// stPushPayload is the §3.5 callback body. machine_id is repeated at the
 // top level so a hub serving several PCs can route the event without
 // parsing status.
 type stPushPayload struct {
@@ -498,7 +498,7 @@ type stPushPayload struct {
 	Status    stStatusResponse  `json:"status"`
 }
 
-// stPushBody renders one event, with the full §4.2 status attached so the
+// stPushBody renders one event, with the full §3.2 status attached so the
 // driver needs no diff. The secret never appears in it (§8): the status
 // only reports whether one is set, and any event field that happens to
 // carry it is dropped.
@@ -532,7 +532,7 @@ func stPushData(fields map[string]string, secret string) map[string]string {
 }
 
 // stPushPost delivers body to callback: one POST with a 2s timeout and one
-// retry (§4.5). ctx can cut both attempts short (power.stopping).
+// retry (§3.5). ctx can cut both attempts short (power.stopping).
 func stPushPost(ctx context.Context, callback string, body []byte) error {
 	err := stPushPostOnce(ctx, callback, body)
 	if err == nil || ctx.Err() != nil {

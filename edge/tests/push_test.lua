@@ -1,4 +1,4 @@
--- The push listener (§4.5, §6.4, §13.3): HTTP parsing, routing by machine_id,
+-- The push listener (§3.5, §6.3, §6.7): HTTP parsing, routing by machine_id,
 -- the state machine events a push carries, and the subscription/renewal math.
 --
 -- Nothing here opens a socket: `push.start` takes an injected socket module and
@@ -220,7 +220,7 @@ function T.test_a_push_while_waking_completes_the_wake()
   local nxt, events = push.apply(waking, payload({ type = "power.started" }))
   h.assert_equal(nxt.power_state, state.ON)
   h.assert_nil(nxt.wake_from)
-  -- §6.4: a good status clears whatever the wake attempt had written.
+  -- §6.3: a good status clears whatever the wake attempt had written.
   h.assert_equal(h.event_value(events, caps.STATUS, "message"), "")
 end
 
@@ -246,7 +246,7 @@ function T.test_the_status_block_goes_through_the_same_path_as_a_poll()
 end
 
 --------------------------------------------------------------------------------
--- routing (§13.3)
+-- routing (§6.7)
 --------------------------------------------------------------------------------
 
 function T.test_a_push_is_routed_by_machine_id()
@@ -262,7 +262,7 @@ function T.test_a_push_is_routed_by_machine_id()
 end
 
 function T.test_a_manual_device_is_found_by_its_stored_machine_id()
-  -- §13.1: DNI stays `manual-...`, the field carries the identity.
+  -- §6.5: DNI stays `manual-...`, the field carries the identity.
   local manual = h.fake_device(PREFS)
   manual.device_network_id = discovery.DNI_PREFIX .. "manual-abc-1"
   manual:set_field(discovery.MACHINE_FIELD, "9f3c-guid")
@@ -310,7 +310,7 @@ function T.test_deliver_refuses_a_body_that_is_not_json()
 end
 
 --------------------------------------------------------------------------------
--- subscriptions (§4.5)
+-- subscriptions (§3.5)
 --------------------------------------------------------------------------------
 
 function T.test_renew_delay_is_80_percent_of_the_ttl()
@@ -368,7 +368,7 @@ function T.test_subscribe_sends_the_fields_the_service_decodes()
   local sub = device:get_field(push.SUB_FIELD)
   h.assert_equal(sub.id, "sub-7")
   h.assert_equal(sub.renew_at, 1480)
-  -- §4.5: renewal is armed at 80% of the TTL.
+  -- §3.5: renewal is armed at 80% of the TTL.
   local timer
   for _, t in ipairs(driver.timers) do
     if t.name == "pc-push-renew" then
@@ -460,7 +460,7 @@ function T.test_the_poll_subscribes_after_a_good_status()
   h.assert_true(poll.once(driver, device, { deps = { http = http } }))
   h.assert_equal(seen[1], "http://192.168.1.20:5001/st/v1/status")
   h.assert_equal(seen[2], "http://192.168.1.20:5001/st/v1/subscribe")
-  -- §13.1: the identity is remembered from the status body.
+  -- §6.5: the identity is remembered from the status body.
   h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
   h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5001/st/v1")

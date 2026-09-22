@@ -23,14 +23,14 @@ poll.PLAN_FIELD = "plan_command"
 -- #85: which generation of capability ids this device's rows were painted for.
 -- A renamed capability (pcRun -> pcExec, pcPlan -> pcCountdown) starts with
 -- every attribute unset on the hub, so the persisted "already painted" fields
--- would otherwise skip a device that has been migrated (§14.4).
+-- would otherwise skip a device that has been migrated (platform notes "허브의 정의 캐시").
 poll.ROWS_FIELD = "rows_painted"
 -- #86 bumps it again: `pcVersion` is a new capability, so its row starts unset
 -- on every existing device and has to be painted once.
 poll.ROWS_VERSION = "86"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
--- First service release that speaks protocol 1 (§4).
+-- First service release that speaks protocol 1 (§3).
 poll.MIN_SERVICE_VERSION = "1.1.0"
 
 local function logger()
@@ -91,7 +91,7 @@ end
 -- waiting for exactly that attribute to change - keeps its spinner up until it
 -- gives up with an error. Cancelling with nothing scheduled and re-picking the
 -- value a list already shows are both that case (measured on the phone
--- 2026-09-22, §14.5), so every emit that answers an app command is forced.
+-- 2026-09-22, platform notes "상세 화면(detailView) 위젯"), so every emit that answers an app command is forced.
 poll.FORCE = { state_change = true }
 
 -- #86: the rows the schedule list is bound to. `schedule` and `cancel` are
@@ -164,7 +164,7 @@ end
 -- #85: the `versions` row goes out here as well. A PC we cannot reach has no
 -- service version to report, but the driver and screen halves are still the
 -- answer to "did my update land?", and a row that was never emitted reads as
--- "-" (§14.5). `state.versions` writes "?" for the service half.
+-- "-" (platform notes "상세 화면(detailView) 위젯"). `state.versions` writes "?" for the service half.
 function poll.emit_connection(device, connection, message)
   local lang = poll.lang(device)
   poll.emit(device, {
@@ -183,7 +183,7 @@ end
 --
 -- #84: the only value this is ever called with is `none`. Closing the detail
 -- view's command list without picking anything sends the row's CURRENT value
--- as the `execute` argument (measured on the phone 2026-09-22, §14.5), so the
+-- as the `execute` argument (measured on the phone 2026-09-22, platform notes "상세 화면(detailView) 위젯"), so the
 -- row has to rest on a value that is both a valid argument and a no-op -
 -- otherwise the cloud rejects the command with "network or server error"
 -- before it ever reaches the hub. What ran is told by `lastCommand` instead.
@@ -193,7 +193,7 @@ end
 -- @param force #86: true when this emit answers an `execute` from the app. The
 --   row rests on `none` and therefore never changes value, so without
 --   `state_change` the platform drops the event and the app spins until it
---   errors out (§14.5).
+--   errors out (platform notes "상세 화면(detailView) 위젯").
 function poll.emit_action(device, action, force)
   local value = state.is_action(action) and action or state.ACTION_NONE
   pcall(function() device:set_field(poll.ACTION_FIELD, value, { persist = true }) end)
@@ -230,7 +230,7 @@ end
 --
 -- The command a `pcCountdown.schedule` without an explicit command runs. It is
 -- the user's own choice, made on the detail view, so it is persisted rather
--- than derived from a status body. An unschedulable value is coerced (§4.3).
+-- than derived from a status body. An unschedulable value is coerced (§3.3).
 --
 -- #85: emitted under the schedule capability, because the app puts a detail row
 -- in the card of the capability that owns it and this row belongs next to the
@@ -257,7 +257,7 @@ end
 
 --- Paint `planCommand` on a device that has never picked one (#84): an
 --- attribute that was never emitted reads as "-" on the phone, and the row is
---- a list, which does not open at all without a value (§14.5).
+--- a list, which does not open at all without a value (platform notes "상세 화면(detailView) 위젯").
 function poll.ensure_plan_command(device)
   local seen
   pcall(function() seen = device:get_field(poll.PLAN_FIELD) end)
@@ -273,7 +273,7 @@ end
 --- its state.
 --
 -- Called from `added` and from `init`: a device that was migrated onto the new
--- capability ids (§14.4) has never emitted any of them, even though the
+-- capability ids (platform notes "허브의 정의 캐시") has never emitted any of them, even though the
 -- `last_action` / `plan_command` fields from the old ones survived, so the
 -- version stamp forces one repaint per generation instead of trusting them.
 function poll.ensure_rows(device)
@@ -292,7 +292,7 @@ function poll.ensure_rows(device)
   return true
 end
 
---- err_kind (client.lua) -> `pcInfo.connection` enum value (§5.1), or nil
+--- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil
 --- when the failure says nothing about the connection and the last state
 --- should stand.
 function poll.connection_for(kind)
@@ -300,7 +300,7 @@ function poll.connection_for(kind)
     return kind
   end
   -- 403: the secret was accepted, the hub is not on the allow-list. The enum
-  -- has no separate value for it (§4.1), so it shares `unauthorized` and the
+  -- has no separate value for it (§3.1), so it shares `unauthorized` and the
   -- message tells the two apart.
   if kind == "forbidden" then
     return "unauthorized"
@@ -311,13 +311,13 @@ function poll.connection_for(kind)
     return "incompatible"
   end
   if kind == "ratelimited" then
-    -- §8: nothing has changed about the PC, so do not repaint anything.
+    -- §3.1: nothing has changed about the PC, so do not repaint anything.
     return nil
   end
   return "ok"
 end
 
---- Human-readable text for an err_kind (§6.1). `body` is the decoded response
+--- Human-readable text for an err_kind (§3.1). `body` is the decoded response
 --- when there was one: a higher `protocol` means our driver is the old side,
 --- and a missing or lower one means the service is.
 function poll.message_for(kind, body, lang)
@@ -330,7 +330,7 @@ function poll.message_for(kind, body, lang)
     return i18n.t(lang, "incompatible_service", poll.MIN_SERVICE_VERSION)
   end
   if kind == "badrequest" then
-    -- The service says which command or argument it refused (§4.3); quoting it
+    -- The service says which command or argument it refused (§3.3); quoting it
     -- is more use than "the service rejected the command" on its own.
     local text = i18n.t(lang, "badrequest")
     if type(body.error) == "string" and body.error ~= "" then
@@ -348,7 +348,7 @@ end
 --- One poll cycle: GET /st/v1/status, advance the state machine, emit, and set
 --- health online/offline. Also used by `refresh` and after a command.
 --- `opts.note` is a one-off confirmation to show in `pcInfo.message` when
---- nothing more important applies (§5.1, state.MESSAGE_ORDER); `opts.deps` is
+--- nothing more important applies (§4, state.MESSAGE_ORDER); `opts.deps` is
 --- the injected http/json/ltn12 the tests use instead of a socket.
 function poll.once(driver, device, opts)
   opts = opts or {}
@@ -375,7 +375,7 @@ function poll.once(driver, device, opts)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"
     wol.cancel_wake(driver, device)
-    -- §5.4: remember the WoL-capable adapter's MAC. A driver cannot write its
+    -- §6.4: remember the WoL-capable adapter's MAC. A driver cannot write its
     -- own preferences, so this is kept as a field and used when `macAddress`
     -- is left empty.
     local mac = state.wol_mac(body)
@@ -384,10 +384,10 @@ function poll.once(driver, device, opts)
       -- is off, or "wake" has nothing to send to.
       device:set_field(poll.MAC_FIELD, mac, { persist = true })
     end
-    -- §6.3: remembered so `switch on` can say "WoL is off on the adapter"
+    -- §6.4: remembered so `switch on` can say "WoL is off on the adapter"
     -- right away instead of at the next poll.
     device:set_field(poll.WOL_READY_FIELD, ((body or {}).wol or {}).ready == true)
-    -- §13.1: the identity. A manually added device learns its machine_id here,
+    -- §6.5: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
     poll.remember_identity(device, body)
     -- #82/#84/#85: no status body carries `lastAction` or `planCommand`, and a
@@ -407,7 +407,7 @@ function poll.once(driver, device, opts)
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     pcall(function() device:online() end)
-    -- §6.4: with the PC answering, ask it to push instead of waiting for the
+    -- §6.3: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.
     pcall(function() require("push").ensure(driver, device, opts.deps) end)
     return true
@@ -415,7 +415,7 @@ function poll.once(driver, device, opts)
 
   local connection = poll.connection_for(kind)
   if not connection then
-    -- §8: rate limited. The PC is fine, we simply asked too often (the poll
+    -- §3.1: rate limited. The PC is fine, we simply asked too often (the poll
     -- right after a command can land inside the same second), so leave every
     -- attribute and the health status as they were.
     logger().warn(string.format("poll skipped: %s", i18n.t("en", kind)))
@@ -426,7 +426,7 @@ function poll.once(driver, device, opts)
   if kind == "unreachable" then
     nxt = state.transition(current, "unreachable")
     pcall(function() device:online() end) -- see above: health stays online so the switch can wake the PC
-    -- §13.2: the PC may just have moved to another address. One targeted SSDP
+    -- §6.5: the PC may just have moved to another address. One targeted SSDP
     -- search (rate limited to once per 5 minutes per device) before the next
     -- poll is cheaper than waiting for the user to notice.
     pcall(function() require("discovery").refresh(driver, device, opts.deps) end)
@@ -437,7 +437,7 @@ function poll.once(driver, device, opts)
   return false, kind
 end
 
---- Store what a status body says about the PC's identity (§13.1). Returns true
+--- Store what a status body says about the PC's identity (§6.5). Returns true
 --- when something changed.
 function poll.remember_identity(device, body)
   body = body or {}
@@ -456,7 +456,7 @@ function poll.remember_identity(device, body)
   return changed
 end
 
---- Poll interval in seconds from the `pollInterval` preference (§5.4).
+--- Poll interval in seconds from the `pollInterval` preference (§7).
 function poll.interval(prefs)
   local seconds = tonumber((prefs or {}).pollInterval)
   if seconds and seconds >= 5 then
@@ -465,7 +465,7 @@ function poll.interval(prefs)
   return poll.DEFAULT_INTERVAL
 end
 
---- §13.3: spread the devices' polls over the interval so N PCs are not all
+--- §6.7: spread the devices' polls over the interval so N PCs are not all
 --- asked in the same second. A hash of the DNI is deterministic (the same
 --- device keeps its slot across restarts) and needs no coordination between
 --- devices, unlike an index that would have to be recomputed on every add and

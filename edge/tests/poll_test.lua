@@ -1,4 +1,4 @@
--- Poll scheduling: the interval preference and the multi-PC stagger of §13.3.
+-- Poll scheduling: the interval preference and the multi-PC stagger of §6.7.
 --
 -- The err_kind mapping and a whole poll cycle live in client_test.lua, which
 -- has the http fakes; this file is about when the polls happen.
@@ -62,7 +62,7 @@ function T.test_offsets_are_inside_the_interval_and_deterministic()
 end
 
 function T.test_offsets_of_different_devices_differ()
-  -- §13.3: N PCs must not all be polled in the same second.
+  -- §6.7: N PCs must not all be polled in the same second.
   local seen = {}
   for _, dni in ipairs({ "pc-control-9f3c-guid", "pc-control-a1b2-guid",
     "pc-control-c3d4-guid", "pc-control-manual-68c0-1" }) do
@@ -133,7 +133,7 @@ function T.test_restarting_replaces_the_schedule()
 end
 
 function T.test_identity_is_remembered_from_a_status_body()
-  -- §13.1: this is how a manually added device learns its machine_id.
+  -- §6.5: this is how a manually added device learns its machine_id.
   local device = h.fake_device({})
   poll.remember_identity(device, { machine_id = "9f3c-guid", hostname = "DESKTOP-ABC" })
   h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
@@ -167,7 +167,7 @@ function T.test_emit_passes_the_state_change_option_through()
   -- #86: an event whose value equals the current one is dropped by the
   -- platform, and the app - waiting for exactly that attribute - spins until it
   -- errors. A record marked `force` has to reach `emit_event` as
-  -- `{ state_change = true }` (§14.5).
+  -- `{ state_change = true }` (platform notes "상세 화면(detailView) 위젯").
   local caps = require "caps"
   local device = h.fake_device()
   poll.emit(device, {

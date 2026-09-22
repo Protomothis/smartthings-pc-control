@@ -25,7 +25,7 @@ type Config struct {
 	// "notify" catalogue: Category → Kind → enabled.
 	Telegram TelegramConfig             `json:"telegram"`
 	Notify   map[string]map[string]bool `json:"notify"`
-	// SmartThings is the "smartthings" object (edge-driver doc §4.7).
+	// SmartThings is the "smartthings" object (edge-driver doc §3.7).
 	SmartThings SmartThingsConfig `json:"smartthings"`
 }
 

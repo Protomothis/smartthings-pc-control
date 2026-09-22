@@ -5,10 +5,10 @@ local i18n = require "i18n"
 
 local T = {}
 
--- poll.now(): the hub's local clock time of the last good poll (§5.1).
+-- poll.now(): the hub's local clock time of the last good poll (§4).
 local NOW = "14:05:00"
 
--- The example body from design doc §4.2.
+-- The example body from design doc §3.2.
 local function sample_status()
   return {
     protocol = 1,
@@ -50,10 +50,10 @@ local function events_for(status, power_state, lang)
 end
 
 --------------------------------------------------------------------------------
--- the whole §4.2 -> §5.1 mapping, field by field
+-- the whole §3.2 -> §4 mapping, field by field
 --------------------------------------------------------------------------------
 
--- Every event the §4.2 example produces, in the order apply_status emits them.
+-- Every event the §3.2 example produces, in the order apply_status emits them.
 -- A golden list rather than a handful of spot checks: it is the one place that
 -- says what the app actually shows, so an accidental extra or missing event
 -- fails here instead of quietly changing a tile.
@@ -108,7 +108,7 @@ function T.test_apply_status_maps_every_field_in_english()
 end
 
 function T.test_apply_status_maps_every_field_in_korean()
-  -- §6.5: only the string attributes follow `language`; enums and numbers do not.
+  -- §6.8: only the string attributes follow `language`; enums and numbers do not.
   h.assert_deep_equal(events_for(exposed_status(), state.ON, "ko"), golden("ko"))
 end
 
@@ -144,7 +144,7 @@ function T.test_apply_status_maps_schedule()
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.SCHEDULED)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "Shut down")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 240)
-  -- §5.1: the local clock time, not the RFC3339 string the service sends.
+  -- §4: the local clock time, not the RFC3339 string the service sends.
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "23:10")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "SmartThings")
 end
@@ -160,7 +160,7 @@ function T.test_apply_status_formats_last_command()
   local events = events_for(sample_status())
   h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "Shut down · SmartThings · 23:05")
   -- #86: no last command yet -> a sentence, never an empty string. An empty
-  -- `state` row is drawn as "-" (§14.5), which reads as a fault.
+  -- `state` row is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault.
   local status = sample_status()
   status.last_command = nil
   h.assert_equal(h.event_value(events_for(status), caps.COMMAND, "lastCommand"), "None")
@@ -232,7 +232,7 @@ function T.test_apply_status_session_without_user()
 end
 
 function T.test_apply_status_warns_about_a_missing_secret()
-  -- §4.1: no secret is still a healthy connection, but it must be visible.
+  -- §3.1: no secret is still a healthy connection, but it must be visible.
   local status = sample_status()
   status.secret_set = false
   local events = events_for(status)
@@ -271,7 +271,7 @@ end
 
 function T.test_the_versions_row_names_the_service_driver_and_screen()
   -- #85: the bottom row of the bottom card. The screen is generated at
-  -- device-creation time and never regenerated (§14.3), so the profile the
+  -- device-creation time and never regenerated (platform notes "프로필과 화면 생성"), so the profile the
   -- device sits on is as much of an answer as the two version numbers.
   local version = require "driver_version"
   local profiles = require "profiles"
@@ -284,7 +284,7 @@ end
 
 function T.test_the_versions_row_says_question_mark_before_the_first_answer()
   -- A PC we have not reached has no service version, and the row still has to
-  -- read as something: an attribute that was never emitted shows "-" (§14.5).
+  -- read as something: an attribute that was never emitted shows "-" (platform notes "상세 화면(detailView) 위젯").
   for _, missing in ipairs({ "", "\0nil" }) do
     local value = state.versions(missing ~= "\0nil" and missing or nil, "ko")
     h.assert_contains(value, "서비스 ?")
@@ -297,7 +297,7 @@ function T.test_a_status_body_refreshes_the_versions_row()
   local events = state.apply_status(state.new(state.ON), sample_status(),
     { now = NOW, lang = "ko" })
   -- #86: the row on screen is `pcVersion.versions`; `pcInfo.versions` keeps
-  -- being emitted because pcInfo still defines it (§14.4) and an attribute that
+  -- being emitted because pcInfo still defines it (platform notes "허브의 정의 캐시") and an attribute that
   -- is never emitted makes the app report incomplete state.
   h.assert_equal(h.event_value(events, caps.VERSION, "versions"),
     state.versions("v1.1.0", "ko"))
@@ -434,7 +434,7 @@ end
 
 function T.test_only_the_schedulable_commands_are_plan_commands()
   for _, value in ipairs({ "shutdown", "restart", "suspend", "hibernate" }) do
-    h.assert_true(state.is_plan_command(value), value .. " is schedulable (§4.3)")
+    h.assert_true(state.is_plan_command(value), value .. " is schedulable (§3.3)")
   end
   for _, value in ipairs({ "lock", "turnscreenoff", "wake", "forceshutdown", "none", "" }) do
     h.assert_false(state.is_plan_command(value), value .. " must not be schedulable")
@@ -490,7 +490,7 @@ function T.test_session_summary_follows_the_language()
 end
 
 --------------------------------------------------------------------------------
--- message priority (§5.1, state.MESSAGE_ORDER)
+-- message priority (§4, state.MESSAGE_ORDER)
 --------------------------------------------------------------------------------
 
 function T.test_message_order_is_the_documented_one()
@@ -548,7 +548,7 @@ function T.test_a_note_shows_only_when_nothing_is_wrong()
 end
 
 function T.test_apply_status_uses_the_state_power_not_the_body()
-  -- §4.2: `power` in the body is always "on"; powerState comes from the machine.
+  -- §3.2: `power` in the body is always "on"; powerState comes from the machine.
   local events = events_for(sample_status(), state.SHUTTING_DOWN)
   h.assert_equal(h.event_value(events, caps.POWER_STATE, "powerState"), "shuttingDown")
   h.assert_equal(h.event_value(events, state.CAP_SWITCH, "switch"), "on")
@@ -633,7 +633,7 @@ end
 function T.test_shutting_down_becomes_off_once_unreachable()
   local s = state.transition(state.new(state.ON), "stopping", "shutdown")
   s = state.transition(s, "unreachable")
-  h.assert_equal(s.power_state, state.SHUTTING_DOWN, "one miss is not enough (§6.1)")
+  h.assert_equal(s.power_state, state.SHUTTING_DOWN, "one miss is not enough (§6.2)")
   s = state.transition(s, "unreachable")
   h.assert_equal(s.power_state, state.OFF)
 end
@@ -649,7 +649,7 @@ function T.test_two_consecutive_unreachable_polls_turn_the_pc_off()
 end
 
 function T.test_sleeping_is_preserved_while_unreachable()
-  -- §6.1: a PC that told us it was suspending stays "sleeping", not "off".
+  -- §6.2: a PC that told us it was suspending stays "sleeping", not "off".
   local s = state.transition(state.new(state.ON), "stopping", "suspend")
   for _ = 1, 5 do
     s = state.transition(s, "unreachable")

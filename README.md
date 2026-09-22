@@ -35,7 +35,7 @@ SmartThings PC Control은 SmartThings(그리고 원하면 텔레그램)에서 Wi
 
 🖥️ **네이티브 데스크톱 앱** — 설정 / 명령 / 예약 / 알림 / 네트워크 / 로그 6개 탭, 트레이 상주, 한국어·영어, 다크/라이트 테마  
 🎮 **9개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off, **screen on**, force shutdown, ping  
-📲 **전용 SmartThings Edge 드라이버** (v1.1.0 신규) — 전원 상태(절전·최대절전·깨우는 중·종료 대기)·유예 카운트다운과 출처·예약/취소·연결 및 WoL 진단을 SmartThings 앱에 그대로 표시. **SSDP 자동 검색**으로 IP 입력 없이 추가, 화면 켜기/끄기 자식 장치, 푸시로 즉시 반영. 기존 PCControl 드라이버도 계속 동작  
+📲 **전용 SmartThings Edge 드라이버** (v1.1.0 신규) — 전원 상태(절전·최대절전·깨우는 중·종료 대기)·유예 카운트다운과 출처·예약/취소·연결 및 WoL 진단을 SmartThings 앱에 그대로 표시. **SSDP 자동 검색**으로 IP 입력 없이 추가, 화면 켜기/끄기를 포함한 명령 목록, 푸시로 즉시 반영. 기존 PCControl 드라이버도 계속 동작  
 🛡️ **원격 명령 유예** — SmartThings의 종료/재시작/절전/최대절전을 선택한 시간(10초~30분, 기본 5분) 뒤 실행, 토스트·트레이·앱·텔레그램에서 취소  
 📨 **텔레그램 알림** — 원격 명령·예약·전원·보안·시스템 이벤트 21종을 골라 받기, 조용한 시간대와 요약 한 통, HTML 템플릿 메시지, 메시지 머리말에 **PC 이름** 표시  
 🤖 **텔레그램에서 제어** — `/status` `/menu` `/shutdown 30` `/screenon` 같은 명령과 인라인 버튼, 허용 Chat ID만 처리  
@@ -102,8 +102,8 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
 - **정확한 전원 상태** — 켜짐 / 절전 / 최대절전 / 꺼짐 / 깨우는 중 / 종료 대기를 구분합니다. 서비스가 종료·절전 직전에 허브로 푸시를 보내므로 폴링을 기다리지 않습니다.
 - **유예와 예약이 보입니다** — 남은 시간 카운트다운, 출처(SmartThings · 앱 · 텔레그램), [취소] 버튼, 5/15/30/60/120분 프리셋 예약. 어디서 취소하든 모든 곳에서 함께 사라집니다.
 - **SSDP 자동 검색** — [기기 추가 → 주변 기기 검색]으로 PC를 찾습니다. IP·포트·호스트 이름이 채워진 채 추가되므로 **시크릿만** 넣으면 됩니다. DHCP로 IP가 바뀌어도 따라갑니다.
-- **조용한 실패 제거** — 시크릿 불일치·연결 불가·버전 비호환·WoL 비활성 어댑터를 상태 카드에 한 줄로 표시합니다.
-- **화면 켜기/끄기**를 포함한 명령 목록과 자동화용 명령(`pcExec.execute`, `pcCountdown.schedule`).
+- **조용한 실패 제거** — 시크릿 불일치·연결 불가·버전 비호환·WoL 비활성 어댑터를 상태 줄에 한 줄로 표시합니다.
+- **상세 화면 두 카드** — 위에 상태(전원 상태·마지막 실행·예약 요약·세션·상태·버전), 아래에 조작(명령·예약할 명령·예약 시간). 화면 켜기/끄기도 명령 목록에 있고, 자동화는 `pcExec.execute`·`pcCountdown.schedule`을 씁니다.
 - **여러 PC** — MachineGuid로 장치를 구분하므로 허브 하나로 여러 PC를 다뤄도 섞이지 않습니다. 시크릿·MAC은 장치별 설정입니다.
 
 설치·환경설정·자동화 예시·문제 해결은 **[`edge/README.md`](edge/README.md)** 와 Wiki의 [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) 페이지에 있습니다.
@@ -232,7 +232,7 @@ SmartThings PC Control is a **Windows service plus tray app** that lets SmartThi
 
 🖥️ **Native desktop app** — Settings / Commands / Schedule / Notifications / Network / Logs tabs, tray resident, Korean/English, dark/light theme  
 🎮 **9 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, **screen on**, force shutdown, ping  
-📲 **Dedicated SmartThings Edge driver** (new in v1.1.0) — real power state (sleeping / hibernated / waking / shutting down), the grace countdown with its origin, schedule and cancel, connection and WoL diagnostics, **SSDP discovery** so no IP has to be typed, a screen on/off child device and push updates. The existing PCControl driver keeps working  
+📲 **Dedicated SmartThings Edge driver** (new in v1.1.0) — real power state (sleeping / hibernated / waking / shutting down), the grace countdown with its origin, schedule and cancel, connection and WoL diagnostics, **SSDP discovery** so no IP has to be typed, screen on/off in the command list and push updates. The existing PCControl driver keeps working  
 🛡️ **Remote command grace period** — SmartThings shutdown/restart/suspend/hibernate run after a chosen delay (10 s – 30 min, default 5 min); cancel from the toast, tray, app or Telegram  
 📨 **Telegram notifications** — pick from 21 remote-command, schedule, power, security and system events; quiet hours with a single digest; HTML-templated messages headed with the **PC name**  
 🤖 **Control from Telegram** — `/status`, `/menu`, `/shutdown 30`, `/screenon` and inline buttons, accepted only from allowed chat IDs  
@@ -299,8 +299,8 @@ v1.1.0 ships a **purpose-built Edge driver** for this service (the `edge/` folde
 - **A real power state** — on / sleeping / hibernated / off / waking / shutting down. The service pushes an event to the hub just before it shuts down or sleeps, so the tile does not wait for the next poll.
 - **Grace and schedules are visible** — remaining countdown, origin (SmartThings · app · Telegram), a [Cancel] button and 5/15/30/60/120-minute presets. Cancelling anywhere clears it everywhere.
 - **SSDP discovery** — *Add device → Scan nearby* finds the PC and fills in its IP, port and hostname, so only the **secret** is left to type. The device follows the PC if DHCP moves it.
-- **No silent failures** — wrong secret, unreachable PC, incompatible version and Wake-on-LAN-disabled adapters all show up as one line on a status card.
-- **Screen on/off** in the command list, plus automation commands (`pcExec.execute`, `pcCountdown.schedule`).
+- **No silent failures** — wrong secret, unreachable PC, incompatible version and Wake-on-LAN-disabled adapters all show up as one status line.
+- **Two cards in the detail view** — status on top (power state, last action, schedule summary, session, status, versions) and controls below (command, what to schedule, when to schedule). Screen on/off is in the command list, and automations use `pcExec.execute` / `pcCountdown.schedule`.
 - **Several PCs** — devices are keyed by MachineGuid, so one hub can drive many PCs without mixing them up. Secret and MAC are per-device preferences.
 
 Installation, preferences, automation examples and troubleshooting are in **[`edge/README.md`](edge/README.md)** and on the wiki page [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Korean).

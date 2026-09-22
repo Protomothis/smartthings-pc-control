@@ -1,5 +1,5 @@
--- Device discovery: SSDP search (design doc §4.6) plus the identity and
--- duplicate rules of §13.1/§13.2, and manual add for a PC that does not answer.
+-- Device discovery: SSDP search (design doc §3.6) plus the identity and
+-- duplicate rules of §6.5/§6.5, and manual add for a PC that does not answer.
 --
 -- The parsing (`msearch`, `parse_response`) and every decision (`plan`,
 -- `should_search`) are pure; only `ssdp_search` and the `apply*` helpers touch a
@@ -12,13 +12,13 @@ local profiles = require "profiles"
 local discovery = {}
 
 -- The profile new devices are created with; src/profiles.lua is the single
--- source of truth for the version (§14.3).
+-- source of truth for the version (§6.6).
 discovery.PROFILE = profiles.PC
 discovery.PLACEHOLDER_LABEL = "PC Control (set IP in settings)"
 discovery.DNI_PREFIX = "pc-control-"
 discovery.MANUFACTURER = "Protomothis"
 discovery.MODEL = "PC Control"
--- §4.6: the search target the service's responder answers.
+-- §3.6: the search target the service's responder answers.
 discovery.SSDP_ST = "urn:smartthings-pc-control:device:pc:1"
 discovery.SSDP_GROUP = "239.255.255.250"
 discovery.SSDP_PORT = 1900
@@ -26,11 +26,11 @@ discovery.SSDP_PORT = 1900
 -- clamps it to 3s anyway.
 discovery.SSDP_MX = 2
 discovery.SSDP_TIMEOUT = 4
--- §13.2: at most one targeted re-search per device per five minutes, so an
+-- §6.5: at most one targeted re-search per device per five minutes, so an
 -- unreachable PC cannot turn into a multicast storm.
 discovery.SEARCH_COOLDOWN = 300
 
--- Device fields. The machine_id is the identity (§13.1); hostname is kept to
+-- Device fields. The machine_id is the identity (§6.5); hostname is kept to
 -- notice two PCs sharing one MachineGuid, and the last search time enforces
 -- the cooldown above.
 discovery.MACHINE_FIELD = "machine_id"
@@ -50,7 +50,7 @@ end
 -- pure: SSDP text
 --------------------------------------------------------------------------------
 
---- The M-SEARCH datagram (§4.6). `MAN` is quoted, as the spec requires and as
+--- The M-SEARCH datagram (§3.6). `MAN` is quoted, as the spec requires and as
 --- `parseMSearch` in service/st_ssdp.go checks.
 function discovery.msearch(mx)
   return table.concat({
@@ -65,7 +65,7 @@ end
 
 --- Parse one SSDP 200 OK: `{ location, usn, st, machine_id }`, or nil.
 --
--- `USN: uuid:<machine_id>::urn:smartthings-pc-control:device:pc:1` (§4.6) is
+-- `USN: uuid:<machine_id>::urn:smartthings-pc-control:device:pc:1` (§3.6) is
 -- where the machine id comes from before the description is fetched.
 function discovery.parse_response(text)
   if type(text) ~= "string" or text == "" then
@@ -118,14 +118,14 @@ function discovery.location_address(location)
 end
 
 --------------------------------------------------------------------------------
--- pure: identity and duplicate rules (§13.1)
+-- pure: identity and duplicate rules (§6.5)
 --------------------------------------------------------------------------------
 
 -- Bumped per manually created device so two devices added within the same
 -- second cannot share an id (math.random is not seeded on a fresh Lua state).
 local manual_seq = 0
 
---- Device network id. §13.1 identifies a device by its `machine_id`; the
+--- Device network id. §6.5 identifies a device by its `machine_id`; the
 --- prefix keeps the id recognisable in the IDE and is what #71 shipped, so
 --- existing devices keep working.
 function discovery.network_id(machine_id)
@@ -148,7 +148,7 @@ local function get_field(device, name)
 end
 
 --- The machine_id of a device: the stored field first (a manual device adopts
---- one on its first successful status, §13.1), then the DNI for a device that
+--- one on its first successful status, §6.5), then the DNI for a device that
 --- SSDP created.
 function discovery.machine_id_of(device)
   local field = get_field(device, discovery.MACHINE_FIELD)
@@ -167,7 +167,7 @@ function discovery.machine_id_of(device)
   return id
 end
 
---- The device in `devices` that owns `machine_id`, or nil (§13.1: never create
+--- The device in `devices` that owns `machine_id`, or nil (§6.5: never create
 --- a second device for a machine_id that is already here).
 function discovery.find(devices, machine_id)
   if type(devices) ~= "table" or type(machine_id) ~= "string" or machine_id == "" then
@@ -181,7 +181,7 @@ function discovery.find(devices, machine_id)
   return nil
 end
 
---- Merge SSDP hits by machine_id (§13.1). A second response for a machine_id
+--- Merge SSDP hits by machine_id (§6.5). A second response for a machine_id
 --- that reports a different hostname is two cloned PCs, not two interfaces of
 --- one: the survivor carries `hostname_conflict` so the driver can warn.
 function discovery.merge(found)
@@ -223,7 +223,7 @@ function discovery.plan(device, found)
   end
 
   local prefs = device.preferences or {}
-  -- §13.2: default true. Turning it off pins the device to whatever address it
+  -- §6.5: default true. Turning it off pins the device to whatever address it
   -- has now.
   local follow = prefs.followDiscovery ~= false
   local pinned = type(prefs.ipAddress) == "string" and prefs.ipAddress ~= ""
@@ -232,7 +232,7 @@ function discovery.plan(device, found)
   local known_host = get_field(device, discovery.HOSTNAME_FIELD)
   if found.hostname and found.hostname ~= "" then
     if type(known_host) == "string" and known_host ~= "" and known_host ~= found.hostname then
-      -- §13.1: same machine_id, different hostname.
+      -- §6.5: same machine_id, different hostname.
       out.warning = "hostname_mismatch"
       out.conflict = found.hostname
     end
@@ -243,7 +243,7 @@ function discovery.plan(device, found)
     out.conflict = found.hostname_conflict
   end
 
-  -- §13.1: a manual device adopts the machine_id it was matched on.
+  -- §6.5: a manual device adopts the machine_id it was matched on.
   if get_field(device, discovery.MACHINE_FIELD) == nil and found.machine_id then
     out.machine_id = found.machine_id
   end
@@ -261,7 +261,7 @@ function discovery.plan(device, found)
   return out
 end
 
---- §13.2: may this device do a targeted SSDP search now?
+--- §6.5: may this device do a targeted SSDP search now?
 function discovery.should_search(last, now)
   now = tonumber(now) or 0
   last = tonumber(last)
@@ -272,10 +272,10 @@ function discovery.should_search(last, now)
 end
 
 --------------------------------------------------------------------------------
--- the search itself (§4.6)
+-- the search itself (§3.6)
 --------------------------------------------------------------------------------
 
---- `GET LOCATION` -> the description document (§4.6), or nil.
+--- `GET LOCATION` -> the description document (§3.6), or nil.
 function discovery.fetch_description(location, deps)
   local body, err = client.fetch(location, deps)
   if not body then
@@ -317,10 +317,10 @@ function discovery.collect(socket, timeout, deps)
   return responses
 end
 
---- §4.6: M-SEARCH, then `GET LOCATION` for every responder.
+--- §3.6: M-SEARCH, then `GET LOCATION` for every responder.
 --
 -- Returns a list of `{ ip, port, machine_id, hostname, service_version,
--- secret_set, location }`, merged by machine_id (§13.1). Any socket failure
+-- secret_set, location }`, merged by machine_id (§6.5). Any socket failure
 -- yields an empty list: discovery is best effort, manual add is the fallback.
 function discovery.ssdp_search(timeout, deps)
   deps = deps or {}
@@ -348,7 +348,7 @@ function discovery.ssdp_search(timeout, deps)
     local description = discovery.fetch_description(response.location, deps)
     if description then
       found[#found + 1] = {
-        -- §13.2: the LOCATION host is the interface the hub can reach, so it
+        -- §3.6: the LOCATION host is the interface the hub can reach, so it
         -- beats anything the description could say about the address.
         ip = ip or response.source_ip,
         port = tonumber(description.port) or port,
@@ -375,7 +375,7 @@ local function set_field(device, name, value)
   end
 end
 
---- Apply a plan to an existing device: fields, warning, immediate poll (§13.2).
+--- Apply a plan to an existing device: fields, warning, immediate poll (§6.5).
 function discovery.apply(driver, device, found, deps)
   deps = deps or {}
   local plan = discovery.plan(device, found)
@@ -419,7 +419,7 @@ function discovery.create(driver, found)
     vendor_provided_label = discovery.MODEL,
   })
   -- The device object does not exist yet, so the address travels in a pending
-  -- table that `added`/`init` picks up by DNI (§5.4: an SSDP device arrives
+  -- table that `added`/`init` picks up by DNI (§7: an SSDP device arrives
   -- with its IP filled in).
   if plan.ip or plan.machine_id then
     discovery.remember(plan.device_network_id, {
@@ -459,7 +459,7 @@ function discovery.adopt(device)
   return true
 end
 
---- §13.2: one targeted search for a device that went unreachable, rate limited
+--- §6.5: one targeted search for a device that went unreachable, rate limited
 --- to `SEARCH_COOLDOWN` per device.
 function discovery.refresh(driver, device, deps)
   deps = deps or {}
@@ -522,7 +522,7 @@ function discovery.handle(driver, _opts, should_continue, deps)
     end
     local existing = discovery.find(devices, hit.machine_id)
     if existing then
-      -- §13.1: never a second device for a machine_id we already own.
+      -- §6.5: never a second device for a machine_id we already own.
       log.info(string.format("%s is already added, updating its address", tostring(hit.hostname)))
       discovery.apply(driver, existing, hit, deps)
     else

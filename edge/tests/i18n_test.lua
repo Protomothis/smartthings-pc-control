@@ -6,7 +6,7 @@ local T = {}
 function T.test_resolve_defaults_to_korean()
   h.assert_equal(i18n.resolve("ko"), "ko")
   h.assert_equal(i18n.resolve("en"), "en")
-  -- §6.5: a driver cannot read the hub locale; the project is Korean-first.
+  -- §6.8: a driver cannot read the hub locale; the project is Korean-first.
   h.assert_equal(i18n.resolve("auto"), "ko")
   h.assert_equal(i18n.resolve(nil), "ko")
   h.assert_equal(i18n.resolve("fr"), "ko")
@@ -57,7 +57,7 @@ function T.test_all_required_keys_exist()
 end
 
 function T.test_every_service_command_has_a_display_name()
-  -- §4.3: the eight commands the capability offers, plus the ping the driver
+  -- §3.3: the eight commands the capability offers, plus the ping the driver
   -- uses as a reachability probe. A missing one would show the raw id.
   local commands = {
     "shutdown", "forceshutdown", "restart", "hibernate",
@@ -108,7 +108,7 @@ function T.test_the_discovery_strings_carry_their_arguments()
   h.assert_equal(i18n.t("ko", "discovery_found", 2), "PC 2대를 찾았습니다")
   h.assert_contains(i18n.t("en", "ip_updated", "192.168.1.25"), "192.168.1.25")
   h.assert_contains(i18n.t("ko", "ip_updated", "192.168.1.25"), "192.168.1.25")
-  -- §13.1: the warning has to name the other hostname and what to fix.
+  -- §6.5: the warning has to name the other hostname and what to fix.
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "LAPTOP-XYZ")
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
   h.assert_contains(i18n.t("ko", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
@@ -117,7 +117,7 @@ function T.test_the_discovery_strings_carry_their_arguments()
 end
 
 function T.test_forbidden_and_unauthorized_say_different_things()
-  -- Both end up as `connection = unauthorized` (§4.1), so the message is the
+  -- Both end up as `connection = unauthorized` (§3.1), so the message is the
   -- only thing telling the user which of the two to fix.
   h.assert_contains(i18n.t("en", "forbidden"), "allow-list")
   h.assert_contains(i18n.t("en", "unauthorized"), "Secret")

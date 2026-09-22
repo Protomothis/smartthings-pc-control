@@ -6,7 +6,7 @@
 -- here.
 --
 -- What this cannot check is whether SmartThings accepts the *shape* of these
--- files; see edge/README.md for the assumptions the owner has to confirm.
+-- files; see ../docs/design/edge-platform-notes.md for the platform rules they encode.
 
 local h = require "helpers"
 local caps = require "caps"
@@ -209,7 +209,7 @@ function T.test_the_current_profile_lists_every_capability()
   -- A device is created on (and migrated to) this one, so it is the only file
   -- that has to carry the whole set. #86 added `pcversion`; the older files are
   -- left exactly as they shipped - a device still on one of them keeps the
-  -- screen it was created with until the migration moves it (§14.3).
+  -- screen it was created with until the migration moves it (platform notes "프로필과 화면 생성").
   local profiles = require "profiles"
   local name, text = profile_file_for(profiles.current())
   h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
@@ -366,7 +366,7 @@ function T.test_the_enums_match_the_lua_constants()
     state.ON, state.SLEEPING, state.HIBERNATED, state.OFF,
     state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN,
   })
-  -- §4.1: `noSecret` is deliberately not a connection value; the warning goes
+  -- §3.1: `noSecret` is deliberately not a connection value; the warning goes
   -- into pcInfo.message instead.
   local connection = definition("status").attributes.connection.schema.properties.value
   h.assert_deep_equal(connection.enum, { "ok", "unauthorized", "unreachable", "incompatible" })
@@ -376,7 +376,7 @@ end
 -- commands
 --------------------------------------------------------------------------------
 
--- The commands init.lua registers handlers for (§5.1). The eight no-argument
+-- The commands init.lua registers handlers for (§4). The eight no-argument
 -- ones were the detail view's push buttons until #82 replaced them with one
 -- `execute` list; they stay in the definition (older profiles still show them,
 -- and a scene can call them) and `execute` carries the screen and automations.
@@ -386,7 +386,7 @@ local REMOTE_BUTTONS = {
 }
 
 -- #82: what the detail-view list offers, top to bottom. Service command names
--- (§4.3), because that is what `execute(command)` takes; `wake` is the WoL
+-- (§3.3), because that is what `execute(command)` takes; `wake` is the WoL
 -- sequence and `forceshutdown` is deliberately absent — an irreversible
 -- command stays in automations only. #84 keeps the menu as it was: `none` is
 -- in the enum so a dismissed picker is valid, not so it can be picked.
@@ -448,11 +448,11 @@ function T.test_commands_and_their_arguments_are_the_handled_ones()
 end
 
 function T.test_command_enums_match_the_service()
-  -- §4.3: the command names the service accepts. `ping` is the driver's own
+  -- §3.3: the command names the service accepts. `ping` is the driver's own
   -- reachability probe and is not offered in the app. #82 added `wake`, which
   -- is not a service command at all — the driver turns it into the WoL
   -- sequence — so that the detail-view list can offer it like the rest.
-  -- #84 added `none`, the no-op a dismissed picker sends (§14.5).
+  -- #84 added `none`, the no-op a dismissed picker sends (platform notes "상세 화면(detailView) 위젯").
   local execute = definition("command").commands.execute.arguments[1].schema.enum
   local seen = {}
   for _, name in ipairs(execute) do
@@ -487,7 +487,7 @@ function T.test_command_enums_match_the_service()
   local mode = definition("command").commands.execute.arguments[2].schema.enum
   h.assert_deep_equal(mode, { "default", "immediate", "grace" })
 
-  -- §4.3: the service caps a schedule at 1440 minutes.
+  -- §3.3: the service caps a schedule at 1440 minutes.
   -- schedule(minutes, command?): minutes first so a one-argument list works.
   local minutes = definition("schedule").commands.schedule.arguments[1].schema
   h.assert_equal(minutes.type, "integer")
@@ -566,7 +566,7 @@ function T.test_plan_command_belongs_to_the_schedule_capability()
 end
 
 function T.test_the_dashboard_state_is_the_power_state()
-  -- §5.3: powerState is the one thing the dashboard tile shows; the action on
+  -- §5: powerState is the one thing the dashboard tile shows; the action on
   -- it comes from the standard `switch` capability, not from ours.
   local dashboard = presentation("power_state").dashboard
   h.assert_equal(#dashboard.states, 1)
@@ -593,7 +593,7 @@ function T.test_every_presentation_has_a_detail_view()
 end
 
 function T.test_the_documented_automation_conditions_and_actions_exist()
-  -- §5.3: conditions on powerState / active / connection / locked, actions on
+  -- §5: conditions on powerState / active / connection / locked, actions on
   -- execute / cancel / schedule.
   local function condition_attributes(key)
     local attributes = references((presentation(key).automation or {}).conditions or {}, {}, {})
@@ -626,7 +626,7 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
-  -- §14.5: `automation.actions` may not carry a pushButton, so `cancel()` has
+  -- platform notes "상세 화면(detailView) 위젯": `automation.actions` may not carry a pushButton, so `cancel()` has
   -- no action of its own and a routine cancels with `schedule(minutes: 0)`.
   -- #85 made 0 a valid argument, so the picker can offer it.
   local keys = {}
@@ -661,7 +661,7 @@ local function list_keys(item)
 end
 
 function T.test_the_action_detail_view_is_the_list_and_the_last_run()
-  -- §5.3 (#82): a pushButton has no value, so the phone drew "-" beside each
+  -- platform notes "상세 화면(detailView) 위젯" (#82): a pushButton has no value, so the phone drew "-" beside each
   -- of the eight. One list replaces them: the commands are the menu, and
   -- `lastAction` is the value it shows.
   -- #84: the list rests on `none`, so what actually ran is read off the
@@ -688,7 +688,7 @@ function T.test_the_action_detail_view_is_the_list_and_the_last_run()
   end
   for _, alternative in ipairs(item.list.command.alternatives) do
     h.assert_true(type(alternative.value) == "string" and alternative.value ~= "",
-      "a command alternative needs a literal label (§14.2: arguments cannot be translated)")
+      "a command alternative needs a literal label (platform notes '번역': arguments cannot be translated)")
   end
 
   -- #84: the feedback row the 5 s flash was replaced with.
@@ -782,7 +782,7 @@ function T.test_every_list_key_is_a_valid_command_argument()
         -- declared alternatives and the attribute's own enum count. Only for an
         -- enum argument: a row whose command takes an integer (the schedule
         -- presets) shows a status word the app cannot send as a number, and
-        -- the phone leaves that picker alone (§14.5).
+        -- the phone leaves that picker alone (platform notes "상세 화면(detailView) 위젯").
         local argument = ((definition(key).commands[command_name] or {}).arguments or {})[1] or {}
         if (argument.schema or {}).enum then
           local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
@@ -794,7 +794,7 @@ function T.test_every_list_key_is_a_valid_command_argument()
       end
     end
 
-    -- §14: an automation action is a multiArgCommand whose argument widgets
+    -- platform notes "automation 프레젠테이션": an automation action is a multiArgCommand whose argument widgets
     -- carry the argument name, so each list is checked against its own
     -- argument rather than the first one.
     for i, action in ipairs((presentation(key).automation or {}).actions or {}) do
@@ -851,7 +851,7 @@ function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary
   local minutes, states = list_keys(item)
   h.assert_deep_equal(minutes, { "5", "15", "30", "60", "120", "0" })
   h.assert_equal(item.list.command.argumentType, "integer",
-    "a list of integer arguments needs argumentType (§14.5)")
+    "a list of integer arguments needs argumentType (platform notes '상세 화면(detailView) 위젯')")
   h.assert_equal(item.list.state.value, "status.value")
   h.assert_deep_equal(states,
     definition("schedule").attributes.status.schema.properties.value.enum,
@@ -892,7 +892,7 @@ function T.test_the_info_detail_view_is_only_the_summary()
   h.assert_contains(detail[1].state.label, "summary.value")
 
   -- The attribute stays defined and emitted: changing a definition means a new
-  -- capability id (§14.4), and an attribute that is never emitted keeps the app
+  -- capability id (platform notes "허브의 정의 캐시"), and an attribute that is never emitted keeps the app
   -- saying the device has not reported all of its state.
   h.assert_true(definition("status").attributes.versions ~= nil,
     caps.ids.status .. " must keep defining versions (#86)")
@@ -957,7 +957,7 @@ local function assert_bilingual(alternatives, where)
     local value = alternative.value
     h.assert_true(type(value) == "string" and value ~= "", where .. " has an empty value")
     h.assert_true(value:find("(", 1, true) ~= nil,
-      string.format("%s: %s is not bilingual (\"한국어 (English)\", §14.2)",
+      string.format("%s: %s is not bilingual (\"한국어 (English)\", platform notes '번역')",
         where, tostring(value)))
   end
 end
@@ -995,13 +995,13 @@ function T.test_no_detail_row_is_a_push_button()
       h.assert_true(item.displayType ~= "pushButton",
         string.format("%s detailView[%d] is a pushButton, which renders as \"-\"", id, i))
       h.assert_true(item.displayType ~= "multiArgCommand",
-        "multiArgCommand is rejected in a detailView (§14)")
+        "multiArgCommand is rejected in a detailView (platform notes 'automation 프레젠테이션')")
     end
   end
 end
 
 function T.test_every_detail_list_carries_state_alternatives()
-  -- §14: the presentation API requires `state.alternatives` whenever a
+  -- platform notes "상세 화면(detailView) 위젯": the presentation API requires `state.alternatives` whenever a
   -- detailView list has a `state`, and a list without one shows nothing.
   local lists = 0
   for key, id in pairs(caps.ids) do
@@ -1016,7 +1016,7 @@ function T.test_every_detail_list_carries_state_alternatives()
         h.assert_true(type((item.list or {}).command) == "table",
           where .. " list has no command object")
         h.assert_true(type(item.list.command.name) == "string",
-          where .. " command needs a `name` (§14)")
+          where .. " command needs a `name` (platform notes 'automation 프레젠테이션')")
       end
     end
   end
@@ -1024,7 +1024,7 @@ function T.test_every_detail_list_carries_state_alternatives()
 end
 
 function T.test_no_automation_action_uses_a_push_button()
-  -- §14: the presentation API rejects pushButton in automation.actions.
+  -- platform notes "automation 프레젠테이션": the presentation API rejects pushButton in automation.actions.
   for key, id in pairs(caps.ids) do
     for _, action in ipairs((presentation(key).automation or {}).actions or {}) do
       h.assert_true(action.displayType ~= "pushButton",
@@ -1151,7 +1151,7 @@ end
 
 function T.test_no_detail_row_relies_on_a_visible_condition()
   -- The phone ignored visibleCondition on capability presentations (2026-09-22),
-  -- so every row must read sensibly on its own (§14.5).
+  -- so every row must read sensibly on its own (platform notes "상세 화면(detailView) 위젯").
   for key in pairs(caps.ids) do
     for _, item in ipairs(presentation(key).detailView or {}) do
       h.assert_nil(item.visibleCondition, caps.ids[key] .. " detailView still uses visibleCondition")
@@ -1257,7 +1257,7 @@ function T.test_translations_cover_every_command_and_argument()
         for _, argument in ipairs(command.arguments or {}) do
           -- Argument translations are keyed by argument name and carry a
           -- label only: the translations API rejects per-value i18n for
-          -- command arguments in every shape we tried (design §14.1), so
+          -- command arguments in every shape we tried (platform notes "번역"), so
           -- enum values of arguments stay untranslated in the Routine picker.
           local argument_entry = (entry.arguments or {})[argument.name]
           h.assert_true(type(argument_entry) == "table",
@@ -1291,7 +1291,7 @@ end
 
 function T.test_the_versions_row_has_a_label_in_both_languages()
   -- #85: a row label is one of the few things translations really do reach
-  -- (§14.2), so this is where the user's "버전" / "Versions" comes from.
+  -- (platform notes "번역"), so this is where the user's "버전" / "Versions" comes from.
   -- #86: the row is on `pcVersion` now; pcInfo keeps the attribute, and its
   -- label with it, because the definition cannot change without a rename.
   for _, key in ipairs({ "version", "status" }) do

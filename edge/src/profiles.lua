@@ -1,4 +1,4 @@
--- Profile names and the migration between their versions (design doc §14.3).
+-- Profile names and the migration between their versions (design doc §6.6).
 --
 -- Measured on the hub (#79): a device's screen definition is generated from
 -- the capability presentations *at device-creation time* and is never
@@ -163,7 +163,7 @@ local function attempt_key(device)
   return device
 end
 
---- Move `device` onto the current profile if it is due (§14.3).
+--- Move `device` onto the current profile if it is due (§6.6).
 --
 -- Returns the new profile name, or nil when nothing was done. Called from
 -- `init` and `added`; only the first call per device does anything.

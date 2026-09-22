@@ -1,7 +1,7 @@
-# Main device profile (design doc §5.1, §5.4).
+# Main device profile (design doc §4, §7).
 #
 # v12 (#85): pcPlan became pcCountdown and pcRun became pcExec (new definitions
-# -> new capability ids, §14.4). Two things were measured on the phone
+# -> new capability ids, platform notes "허브의 정의 캐시"). Two things were measured on the phone
 # 2026-09-22: the cloud validates a command's arguments against the definition
 # before the hub sees them, so the schedule list's `취소` entry (minutes = 0)
 # only produced a "system error" against `minimum: 1` - the minimum is 0 now;
@@ -15,7 +15,7 @@
 # and the version row belongs at the bottom of the screen.
 #
 # The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (§14). Keep it in sync with `NAMESPACE` in src/caps.lua -
+# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
 # tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in

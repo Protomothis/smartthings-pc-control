@@ -16,7 +16,7 @@ import (
 
 // The SmartThings section of the network tab (issue #70, edge-driver doc
 // §7): the Edge driver's connection state plus the `smartthings` part of
-// the config (§4.7) — SSDP discovery, session exposure and the hub allow
+// the config (§3.7) — SSDP discovery, session exposure and the hub allow
 // list. Saving goes through the shared saveBar flow like the settings and
 // notifications tabs; only the smartthings fields are written over the
 // baseline, so a save here never clobbers another tab's edits.

@@ -84,7 +84,7 @@ push:
 
 ## 6. 동작
 
-- **폴링 + 푸시**: PC별 `pollInterval`(기본 60s, 푸시 구독 성공 시 5m). 구독은 PC별, TTL 80% 갱신. 푸시 최상위 `machine_id`로 라우팅(§13 다중 PC 규칙과 동일).
+- **폴링 + 푸시**: PC별 `pollInterval`(기본 60s, 푸시 구독 성공 시 5m). 구독은 PC별, TTL 80% 갱신. 푸시 최상위 `machine_id`로 라우팅(`edge-driver.md` §6.7의 다중 PC 규칙과 동일).
 - **전원 상태 머신**: Edge 드라이버 `state.lua`와 같은 전이 규칙을 Go로 구현(`pkg/stclient/state.go`로 공유 가능하면 공유).
 - **발견**: 주기 SSDP + `description` 조회. `machine_id` 기준 중복 방지, `follow_ip`면 IP 갱신. 새 PC 발견 시 알림 "새 PC 발견: DESKTOP-ABC (192.168.1.31). 시크릿을 설정에 추가하세요".
 - **WoL**: 매직 패킷 3회, 포트 7·9. 성공 여부는 이후 status 성공으로 판단(90s).

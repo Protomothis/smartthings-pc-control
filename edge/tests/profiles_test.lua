@@ -1,4 +1,4 @@
--- Profile versions and the migration between them (#79, design §14.3).
+-- Profile versions and the migration between them (#79, design §6.6).
 --
 -- The decision is a pure function (`migration_for`), so most of this needs no
 -- device at all; the rest drives the real lifecycle handlers of init.lua with
@@ -25,7 +25,7 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_the_profile_constants_are_the_current_version()
-  -- discovery must not carry a second copy of the version (§14.3).
+  -- discovery must not carry a second copy of the version (§6.6).
   h.assert_equal(discovery.PROFILE, profiles.PC)
   h.assert_equal(profiles.current(), profiles.PC)
 end
@@ -153,7 +153,7 @@ function T.test_the_hub_reported_name_wins()
 end
 
 function T.test_a_profile_table_without_a_name_falls_back_to_the_field()
-  -- What the hub actually gives us (§14.3): id and components, no name.
+  -- What the hub actually gives us (platform notes "프로필과 화면 생성"): id and components, no name.
   local device = device_on("pc.v2")
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   h.assert_equal(profiles.name_of(device), "pc.v2")

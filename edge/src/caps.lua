@@ -1,7 +1,7 @@
 -- Custom capability ids, in one place.
 --
 -- The namespace is the one SmartThings assigned to the owner's account when
--- the capabilities were created (design doc §11.1). Note that SmartThings
+-- the capabilities were created (platform notes "capability id와 네임스페이스"). Note that SmartThings
 -- lower-cases the name part of a capability id ("pcPower" becomes
 -- ".pcpower"), so the ids below are lower-case while the definition
 -- files keep the camelCase `name`. `tools/apply-namespace.js` rewrites the
@@ -16,11 +16,11 @@ caps.NAMESPACE = NAMESPACE
 
 caps.POWER_STATE = NAMESPACE .. ".pcpower"
 -- #82: the definition gained `lastAction`, and the hub caches capability
--- definitions by id for the whole hub (§14.4), so the new definition needed a
+-- definitions by id for the whole hub (platform notes "허브의 정의 캐시"), so the new definition needed a
 -- new id: `pcControl` became `pcAction`. The Lua constant keeps its name -
 -- what it points at is "the command capability", whatever it is called.
 -- #84: same rule once more. `execute` gained a `none` argument (a dismissed
--- list sends the row's current value, §14.5) and the definition gained
+-- list sends the row's current value, platform notes "상세 화면(detailView) 위젯") and the definition gained
 -- `planCommand`, so `pcAction` became `pcRun`.
 -- #85: and again. `planCommand`/`setPlanCommand` moved to the schedule
 -- capability - the app groups detail rows by the capability that owns them, so
@@ -28,7 +28,7 @@ caps.POWER_STATE = NAMESPACE .. ".pcpower"
 -- different definition: `pcRun` became `pcExec`.
 caps.COMMAND = NAMESPACE .. ".pcexec"
 -- #83: same rule again - the definition gained a `status` enum (a detailView
--- list cannot read a boolean, §14.5), so `pcTimer` became `pcPlan`.
+-- list cannot read a boolean, platform notes "상세 화면(detailView) 위젯"), so `pcTimer` became `pcPlan`.
 -- #85: `schedule(minutes)` now accepts 0 (the list's Cancel entry; the cloud
 -- validates arguments against the definition and rejected `minimum: 1`, so the
 -- entry never reached the hub) and the definition gained `planCommand` /
@@ -42,10 +42,10 @@ caps.STATUS = NAMESPACE .. ".pcinfo"
 caps.SESSION = NAMESPACE .. ".pcuser"
 -- #86: the version row is a capability of its own. Two `state` rows of the SAME
 -- capability are drawn side by side in two narrow columns and both are cut off
--- (measured on the phone 2026-09-22, §14.5), so "상태" and "버전" - which sat on
+-- (measured on the phone 2026-09-22, platform notes "화면 배치"), so "상태" and "버전" - which sat on
 -- pcInfo together - had to be split. A capability with one state row renders
 -- full width. `pcInfo.versions` keeps its definition and is still emitted: the
--- definition cannot change without another rename (§14.4), and an attribute
+-- definition cannot change without another rename (platform notes "허브의 정의 캐시"), and an attribute
 -- that is never emitted makes the app say the state was not fully reported.
 caps.VERSION = NAMESPACE .. ".pcversion"
 

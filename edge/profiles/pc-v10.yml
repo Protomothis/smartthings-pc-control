@@ -1,11 +1,11 @@
-# Main device profile (design doc §5.1, §5.4).
+# Main device profile (design doc §4, §7).
 #
-# v10 (#83): pcTimer became pcPlan (new definition -> new capability id, §14.4)
+# v10 (#83): pcTimer became pcPlan (new definition -> new capability id, platform notes "허브의 정의 캐시")
 # and the schedule row now reads the `status` enum instead of the boolean
-# `active`, which the phone refused to render as a picker (§14.5).
+# `active`, which the phone refused to render as a picker (platform notes "상세 화면(detailView) 위젯").
 #
 # The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (§14). Keep it in sync with `NAMESPACE` in src/caps.lua -
+# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
 # tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in

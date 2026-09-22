@@ -2,7 +2,7 @@ local h = require "helpers"
 local client = require "client"
 local json = require "st.json"
 -- The other half of error classification (err_kind -> connection/message,
--- §6.1) lives in poll.lua, so the two are asserted together.
+-- §3.1) lives in poll.lua, so the two are asserted together.
 local caps = require "caps"
 local poll = require "poll"
 local state = require "state"
@@ -87,7 +87,7 @@ end
 
 function T.test_headers_carry_the_secret_and_user_agent()
   local headers = client.headers(PREFS)
-  -- §4.1/§8: header auth, never in the URL.
+  -- §3.1/§8: header auth, never in the URL.
   h.assert_equal(headers["X-PC-Secret"], "s3cret")
   h.assert_contains(headers["User-Agent"], "smartthings-pc-control-edge/")
 end
@@ -146,7 +146,7 @@ function T.test_cancel_uses_delete()
 end
 
 function T.test_a_body_without_protocol_is_fine_outside_status()
-  -- §4.3/§4.4 responses have no `protocol` field, and must not be rejected.
+  -- §3.3/§3.4 responses have no `protocol` field, and must not be rejected.
   local http = fake_http(200, '{"cancelled":false}')
   local ok, _, err = client.cancel(device(), { http = http })
   h.assert_true(ok)
@@ -154,7 +154,7 @@ function T.test_a_body_without_protocol_is_fine_outside_status()
 end
 
 --------------------------------------------------------------------------------
--- error classification (§6.1)
+-- error classification (§3.1)
 --------------------------------------------------------------------------------
 
 function T.test_401_is_unauthorized()
@@ -162,12 +162,12 @@ function T.test_401_is_unauthorized()
   local ok, body, err = client.get_status(device(), { http = http })
   h.assert_false(ok)
   h.assert_equal(err, "unauthorized")
-  -- §4.1: the service's error body comes back with the failure.
+  -- §3.1: the service's error body comes back with the failure.
   h.assert_equal(body.error, "unauthorized")
 end
 
 function T.test_403_is_forbidden()
-  -- Hub missing from smartthings.allowed_hubs (§4.1). It shows up as
+  -- Hub missing from smartthings.allowed_hubs (§3.1). It shows up as
   -- `connection = unauthorized`, but with its own message, so the kind that
   -- reaches poll.lua has to stay distinguishable from a wrong secret.
   local http = fake_http(403, '{"error":"hub not allowed"}')
@@ -207,7 +207,7 @@ function T.test_a_protocol_mismatch_is_incompatible()
   local ok, body, err = client.get_status(device(), { http = http })
   h.assert_false(ok)
   h.assert_equal(err, "incompatible")
-  -- The body comes back so the caller can say "driver too old" (§6.1).
+  -- The body comes back so the caller can say "driver too old" (§3.1).
   h.assert_equal(body.protocol, 2)
   h.assert_equal(poll.connection_for(err), "incompatible")
   h.assert_equal(poll.message_for(err, body, "en"), "Driver update required")
@@ -247,12 +247,12 @@ function T.test_400_is_badrequest()
   local _, body, err = client.command(device(), "nonsense", "default", 0, { http = http })
   h.assert_equal(err, "badrequest")
   h.assert_equal(poll.connection_for(err), "incompatible")
-  -- The service says which command it refused; quote it (§4.3).
+  -- The service says which command it refused; quote it (§3.3).
   h.assert_contains(poll.message_for(err, body, "en"), "unknown command")
 end
 
 function T.test_429_keeps_the_last_state()
-  -- Rate limited (§8): reachable, authenticated and healthy, just refused this
+  -- Rate limited (§3.1): reachable, authenticated and healthy, just refused this
   -- one request. Nothing about the PC changed, so no attribute is repainted.
   local http = fake_http(429, '{"error":"rate limited"}')
   local ok, _, err = client.get_status(device(), { http = http })

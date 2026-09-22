@@ -1,12 +1,12 @@
-# Main device profile, version 1 (design doc §5.1, §5.4).
+# Main device profile, version 1 (design doc §4, §7).
 #
 # Superseded by pc-v2.yml and kept only because devices created before #79
 # still reference it: a device's screen definition is frozen at creation time,
-# so the driver moves those devices to pc.v2 on their first init (§14.3,
+# so the driver moves those devices to pc.v2 on their first init (§6.6,
 # src/profiles.lua). New devices are never created with this profile.
 #
 # The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (§14). Keep it in sync with `NAMESPACE` in src/caps.lua -
+# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
 # tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in

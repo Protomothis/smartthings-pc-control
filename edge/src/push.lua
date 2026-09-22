@@ -1,8 +1,8 @@
--- Push listener and subscription renewal (design doc §4.5, §6.4, §13.3).
+-- Push listener and subscription renewal (design doc §3.5, §6.3, §6.7).
 --
 -- One TCP server per driver, on an ephemeral port, accepting
 -- `POST /pc/evt`. The service posts every device-state event to it with the
--- full §4.2 status attached, so an event needs no follow-up poll and no diff.
+-- full §3.2 status attached, so an event needs no follow-up poll and no diff.
 --
 -- The split is the same as everywhere else in this driver: `parse_request`,
 -- `event_for`, `apply` and `renew_delay` are pure and unit-tested, while the
@@ -17,7 +17,7 @@ local push = {}
 
 push.PATH = "/pc/evt"
 push.PROTOCOL = 1
--- §4.5: renew at 80% of the TTL, well before the service expires us.
+-- §3.5: renew at 80% of the TTL, well before the service expires us.
 push.RENEW_RATIO = 0.8
 push.SUB_FIELD = "push_sub"
 push.RENEW_TIMER_FIELD = "push_renew_timer"
@@ -105,7 +105,7 @@ function push.parse_request(raw)
   return method:upper(), path, body, headers
 end
 
---- A bare HTTP response. The hub answers `200` to anything it parsed (§6.4);
+--- A bare HTTP response. The hub answers `200` to anything it parsed (§6.3);
 --- the body of the answer carries nothing.
 function push.response(code, reason)
   code = tonumber(code) or 200
@@ -121,7 +121,7 @@ end
 -- pure: event -> state
 --------------------------------------------------------------------------------
 
--- §4.5 push `type` -> the §6.2 state machine event. Every other type (
+-- §3.5 push `type` -> the §6.2 state machine event. Every other type (
 -- `power.started`, `power.resumed`, `schedule.created`, `display.changed`,
 -- `system.*`, `remote.*`, `session.*`) means the PC is alive and answering,
 -- which is exactly `status_ok`.
@@ -146,7 +146,7 @@ end
 --
 -- Pure, and deliberately the same second half as a poll: the `type` advances
 -- the state machine, then the attached `status` goes through
--- `state.apply_status` exactly as `poll.once` would (§6.4).
+-- `state.apply_status` exactly as `poll.once` would (§6.3).
 function push.apply(device_state, payload, opts)
   payload = payload or {}
   local event, reason = push.event_for(payload.type, payload.data)
@@ -165,7 +165,7 @@ end
 -- pure: subscription bookkeeping
 --------------------------------------------------------------------------------
 
---- §4.5: renew at 80% of the TTL.
+--- §3.5: renew at 80% of the TTL.
 function push.renew_delay(ttl)
   local seconds = tonumber(ttl) or client.DEFAULT_TTL
   return math.max(1, math.floor(seconds * push.RENEW_RATIO))
@@ -225,7 +225,7 @@ end
 
 --- The hub's LAN address, as the PC will see it.
 --
--- §6.4 says `driver:get_ip()`; hub firmware that does not have it gets the
+-- §6.3 says `driver:get_ip()`; hub firmware that does not have it gets the
 -- documented LAN-driver fallback: connect a UDP socket towards the PC (no
 -- datagram is sent) and read the source address the kernel picked, which is
 -- the interface facing that PC.
@@ -389,7 +389,7 @@ function push.handle_connection(driver, sock, deps)
     pcall(function() sock:send(push.response(404, "Not Found")) end)
     return false
   end
-  -- §4.5: the service waits at most 2s (1.5s for power.stopping) and retries
+  -- §3.5: the service waits at most 2s (1.5s for power.stopping) and retries
   -- once, so the answer goes out before the payload is applied.
   pcall(function() sock:send(push.response(200)) end)
   push.deliver(driver, body, deps)
@@ -413,7 +413,7 @@ function push.deliver(driver, body, deps)
   return push.route(driver, payload, deps)
 end
 
---- Find the device for `payload.machine_id` (§13.3) and apply the event.
+--- Find the device for `payload.machine_id` (§6.7) and apply the event.
 function push.route(driver, payload, deps)
   deps = deps or {}
   local log = logger()
@@ -431,14 +431,14 @@ function push.route(driver, payload, deps)
   end
   local device = discovery.find(devices, machine_id)
   if not device then
-    -- §13.3: another PC on the LAN, or one this hub does not own.
+    -- §6.7: another PC on the LAN, or one this hub does not own.
     log.info("push for an unknown machine_id, ignored")
     return false, "unknown machine id"
   end
   return push.apply_to_device(driver, device, payload, deps)
 end
 
---- Apply a payload to one device through the same glue a poll uses (§6.4).
+--- Apply a payload to one device through the same glue a poll uses (§6.3).
 function push.apply_to_device(driver, device, payload, deps)
   deps = deps or {}
   local poll = deps.poll or require "poll"
@@ -450,7 +450,7 @@ function push.apply_to_device(driver, device, payload, deps)
 
   if event == "status_ok" then
     -- A push proves the PC is up, so a pending wake timeout is done with
-    -- (§6.3) and the message it would have written is not wanted.
+    -- (§6.4) and the message it would have written is not wanted.
     local ok, wol = pcall(require, "wol")
     if ok then
       pcall(function() wol.cancel_wake(driver, device) end)
@@ -468,12 +468,12 @@ function push.apply_to_device(driver, device, payload, deps)
 end
 
 --------------------------------------------------------------------------------
--- subscriptions (§4.5)
+-- subscriptions (§3.5)
 --------------------------------------------------------------------------------
 
 --- Subscribe `device` to this hub's listener, or renew when due.
 --
--- Called after every successful poll (§6.4). Returns `true` when a live
+-- Called after every successful poll (§6.3). Returns `true` when a live
 -- subscription exists afterwards; a failure is not an error — the driver keeps
 -- polling and tries again on the next successful poll.
 function push.ensure(driver, device, deps)
@@ -483,7 +483,7 @@ function push.ensure(driver, device, deps)
     -- The probe at start time had no route to work with (no device had an
     -- address yet). This device has one, so aim at it: the source address the
     -- kernel picks for that PC is exactly the callback host the service will
-    -- compare against (§4.5).
+    -- compare against (§3.5).
     listener.ip = push.hub_ip(driver, ((device or {}).preferences or {}).ipAddress, deps)
   end
   local callback = push.callback_url(listener)
@@ -501,7 +501,7 @@ function push.ensure(driver, device, deps)
   local ok, body, kind = client.subscribe(device, callback, client.DEFAULT_TTL, deps)
   if not ok then
     -- 401 (secret changed), 400 (callback refused) or unreachable: drop what
-    -- we thought we had and rely on polling (§6.4).
+    -- we thought we had and rely on polling (§6.3).
     device:set_field(push.SUB_FIELD, nil)
     push.cancel_renew(driver, device)
     log.debug(string.format("subscribe failed (%s), polling only", tostring(kind)))
@@ -515,7 +515,7 @@ function push.ensure(driver, device, deps)
   return true, "subscribed"
 end
 
---- Arm the renewal timer at 80% of the TTL (§4.5).
+--- Arm the renewal timer at 80% of the TTL (§3.5).
 function push.schedule_renew(driver, device, ttl, deps)
   if not driver then
     return nil
@@ -542,7 +542,7 @@ function push.cancel_renew(driver, device)
   end
 end
 
---- Drop the subscription for a device that is going away (§4.5).
+--- Drop the subscription for a device that is going away (§3.5).
 function push.stop(driver, device, deps)
   push.cancel_renew(driver, device)
   local sub = device:get_field(push.SUB_FIELD)

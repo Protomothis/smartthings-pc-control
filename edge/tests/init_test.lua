@@ -105,7 +105,7 @@ end
 --- #84/#86: every `lastAction` a command emitted is the resting `none`, and
 --- #86 requires at least one of them to be forced: the row never changes value,
 --- so an unforced event is dropped by the platform and the app spins until it
---- fails (§14.5).
+--- fails (platform notes "상세 화면(detailView) 위젯").
 local function assert_answers_with_none(device, context)
   local values = all_actions(device)
   for _, value in ipairs(values) do
@@ -127,7 +127,7 @@ end
 -- the command row rests on `none` (#84)
 --------------------------------------------------------------------------------
 
--- capability command -> the service command it sends (§4.3).
+-- capability command -> the service command it sends (§3.3).
 local BUTTONS = {
   { command = "suspend", sends = "suspend" },
   { command = "hibernate", sends = "hibernate" },
@@ -262,7 +262,7 @@ function T.test_execute_can_wake_from_the_list()
 end
 
 function T.test_a_scheduled_execute_still_goes_to_the_service()
-  -- `minutes > 0` schedules instead of executing (§4.3); what is pending is
+  -- `minutes > 0` schedules instead of executing (§3.3); what is pending is
   -- the pcCountdown row's business.
   local device = device_with()
   local calls = with_service(nil, function()
@@ -375,7 +375,7 @@ function T.test_set_plan_command_answers_even_when_the_value_does_not_change()
   -- #86, measured on the phone: picking the value the row already shows
   -- (restart -> restart) changes no attribute, the platform drops the event and
   -- the app keeps a spinner up until it fails with an error. So the answer goes
-  -- out with `state_change = true` (§14.5).
+  -- out with `state_change = true` (platform notes "상세 화면(detailView) 위젯").
   local device = device_with()
   local pick = function()
     handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
@@ -451,7 +451,7 @@ function T.test_schedule_zero_as_a_string_cancels_too()
 end
 
 function T.test_the_cancel_command_is_still_handled()
-  -- The definition is unchanged (the hub caches definitions by id, §14.4), so
+  -- The definition is unchanged (the hub caches definitions by id, platform notes "허브의 정의 캐시"), so
   -- `cancel()` still arrives from devices on an older profile.
   local device = device_with()
   local calls = with_service(nil, function()
@@ -503,7 +503,7 @@ function T.test_a_preset_still_schedules()
   end)
   h.assert_equal(calls.cancels, 0)
   h.assert_equal(#calls.commands, 1)
-  -- No command in the list, so the switch-off action decides (§4.3).
+  -- No command in the list, so the switch-off action decides (§3.3).
   h.assert_equal(calls.commands[1].command, "suspend")
   h.assert_equal(calls.commands[1].minutes, 30)
 end

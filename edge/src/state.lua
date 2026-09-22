@@ -12,7 +12,7 @@ local i18n = require "i18n"
 
 local state = {}
 
--- powerState enum (§5.1)
+-- powerState enum (§4)
 state.ON = "on"
 state.SLEEPING = "sleeping"
 state.HIBERNATED = "hibernated"
@@ -21,17 +21,17 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcCountdown.status enum (§5.1, #83): the string twin of `active`.
+-- pcCountdown.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
 state.SCHEDULED = "scheduled"
 
 -- "switch" is not a custom capability, so it is referenced by its plain id.
 state.CAP_SWITCH = "switch"
 
--- §6.1: two consecutive unreachable polls before we call the PC off.
+-- §6.2: two consecutive unreachable polls before we call the PC off.
 state.UNREACHABLE_LIMIT = 2
 
--- §6.2 / §4.5: power.stopping reason -> resulting powerState.
+-- §6.2 / §3.5: power.stopping reason -> resulting powerState.
 local STOPPING_STATE = {
   suspend = state.SLEEPING,
   hibernate = state.HIBERNATED,
@@ -53,7 +53,7 @@ function state.new(power_state)
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
     -- last polled `schedule.active`, so `pcCountdown.schedule` can say whether
-    -- it replaced an existing schedule (§4.3) without asking the service twice
+    -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
   }
 end
@@ -104,7 +104,7 @@ function state.transition(s, event, arg)
   elseif event == "unreachable" then
     nxt.unreachable_count = (s.unreachable_count or 0) + 1
     if cur == state.WAKING then
-      -- Still waking: silence is expected until the 90s timeout (§6.3).
+      -- Still waking: silence is expected until the 90s timeout (§6.4).
       nxt.power_state = state.WAKING
     elseif cur == state.SLEEPING or cur == state.HIBERNATED then
       -- A sleeping PC is supposed to be unreachable; keep the finer state.
@@ -167,12 +167,12 @@ end
 
 -- The value the detail-view list rests on. #84: it is also a valid `execute`
 -- argument, and the one the driver does nothing for - closing the list without
--- picking anything sends the row's current value (§14.5), so the value the row
+-- picking anything sends the row's current value (platform notes "상세 화면(detailView) 위젯"), so the value the row
 -- shows has to be harmless.
 state.ACTION_NONE = "none"
 
 -- Every `lastAction` value. #84 made this the same set as the `execute`
--- `command` enum - service command names (§4.3) plus `none` and `wake` - so
+-- `command` enum - service command names (§3.3) plus `none` and `wake` - so
 -- that whatever the row holds is an argument `execute` accepts.
 -- capabilities_test.lua checks this against the enum in pcExec.json.
 state.ACTIONS = {
@@ -194,7 +194,7 @@ end
 -- pcCountdown.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
--- What the service can schedule (§4.3). `lock` and the screen commands are not
+-- What the service can schedule (§3.3). `lock` and the screen commands are not
 -- in here: the service refuses to schedule them.
 state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 
@@ -226,12 +226,12 @@ function state.plan_command_for(...)
   return state.PLAN_DEFAULT
 end
 
---- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§4).
 --- #84: this is the row that says what ran; `lastAction` stays on `none`.
 --
 -- #86: a PC that has run nothing yet gets a sentence, not an empty string. The
 -- phone draws "-" for an empty `state` row exactly as it does for one that was
--- never emitted (§14.5), and a "-" with a label beside it reads like a fault.
+-- never emitted (platform notes "상세 화면(detailView) 위젯"), and a "-" with a label beside it reads like a fault.
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
     return i18n.t(lang, "last_command_none")
@@ -279,7 +279,7 @@ end
 --
 -- The last row of the last card, and the one every "the app still looks the
 -- way it did" report needs: a device's screen is generated from the capability
--- presentations at device-creation time and never regenerated (§14.3), so the
+-- presentations at device-creation time and never regenerated (platform notes "프로필과 화면 생성"), so the
 -- profile the device sits on says as much as the two version numbers do.
 --
 -- #86: the same value goes out under `pcVersion.versions` (the row on screen)
@@ -288,7 +288,7 @@ end
 --
 -- `service_version` is whatever the status body carried; a PC we have not
 -- reached yet has none, and the row still has to say something (an attribute
--- that was never emitted reads as "-", §14.5), so it becomes "?".
+-- that was never emitted reads as "-", platform notes "상세 화면(detailView) 위젯"), so it becomes "?".
 function state.versions(service_version, lang)
   local service = service_version
   if type(service) ~= "string" or service == "" then
@@ -356,7 +356,7 @@ end
 --   incompatible     protocol mismatch, service or driver too old
 --   wol_not_ready    WoL is off on the PC's adapter, so `switch on` may not land
 --   update_available a newer service release is out
---   no_secret        the service accepts unauthenticated calls (§4.1)
+--   no_secret        the service accepts unauthenticated calls (§3.1)
 --   note             a one-off confirmation from a command handler
 --
 -- The first two are produced by poll.lua from an err_kind — there is no status
@@ -366,7 +366,7 @@ state.MESSAGE_ORDER = {
   "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
 }
 
---- The single `pcInfo.message` for a status body (§5.1), by MESSAGE_ORDER.
+--- The single `pcInfo.message` for a status body (§4), by MESSAGE_ORDER.
 -- @param opts `lang`, `error` (a ready-made message that outranks the body),
 --   `note` (a confirmation shown only when nothing is wrong)
 function state.status_message(status, opts)
@@ -379,7 +379,7 @@ function state.status_message(status, opts)
   local lang = opts.lang
 
   if (status.wol or {}).ready ~= true then
-    -- §6.3: we still send the magic packet, but say why it may not work.
+    -- §6.4: we still send the magic packet, but say why it may not work.
     return i18n.t(lang, "wol_not_ready")
   end
   if (status.update or {}).available == true then
@@ -390,7 +390,7 @@ function state.status_message(status, opts)
     return i18n.t(lang, "update_available_plain")
   end
   if status.secret_set == false then
-    -- §4.1: a service with no secret is still a healthy connection, so the
+    -- §3.1: a service with no secret is still a healthy connection, so the
     -- warning goes here instead of into the `connection` enum.
     return i18n.t(lang, "no_secret")
   end
@@ -477,7 +477,7 @@ end
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.
 --
--- An attribute that was never emitted reads as "-" on the phone (§14.5) and
+-- An attribute that was never emitted reads as "-" on the phone (platform notes "상세 화면(detailView) 위젯") and
 -- keeps the app saying not all of the device's state has been reported. A
 -- device that has just been added - or one that was just migrated onto the new
 -- capability ids, where every attribute starts out unset - therefore gets the
@@ -488,7 +488,7 @@ end
 -- `emit_action` / `emit_plan_command`, which also persist the choice.
 function state.initial_rows(lang)
   local events = {}
-  -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (§14.5).
+  -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (platform notes "상세 화면(detailView) 위젯").
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
   ev(events, caps.SCHEDULE, "active", false)
   ev(events, caps.SCHEDULE, "status", state.IDLE)
@@ -506,7 +506,7 @@ function state.initial_rows(lang)
   return events
 end
 
---- Turn a `GET /st/v1/status` body into capability events (§4.2 -> §5.1).
+--- Turn a `GET /st/v1/status` body into capability events (§3.2 -> §4).
 --
 -- `device_state` supplies powerState (already advanced with `transition`), so
 -- this function never decides power on its own. `opts.now` is the formatted
@@ -555,7 +555,7 @@ function state.apply_status(device_state, status, opts)
   -- #85: the bottom row of the bottom card, refreshed on every poll so a
   -- service update shows up without touching the driver. #86: the row itself
   -- is `pcVersion.versions`; `pcInfo.versions` keeps being emitted because the
-  -- attribute is still defined there (§14.4).
+  -- attribute is still defined there (platform notes "허브의 정의 캐시").
   ev(events, caps.VERSION, "versions", state.versions(status.service_version, lang))
   ev(events, caps.STATUS, "versions", state.versions(status.service_version, lang))
   local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
@@ -573,7 +573,7 @@ function state.apply_status(device_state, status, opts)
   end
   ev(events, caps.STATUS, "summary", summary)
 
-  -- §4.2: the session block is opt-in. `exposed` is emitted either way so the
+  -- §3.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
   -- values themselves stay untouched when it is off, so the tiles keep what
   -- they last showed rather than flipping to a made-up "unlocked, 0 minutes,
@@ -596,7 +596,7 @@ function state.apply_status(device_state, status, opts)
   return events
 end
 
---- The first MAC of a WoL-capable adapter in a status body (§5.4: the
+--- The first MAC of a WoL-capable adapter in a status body (§6.4: the
 --- `macAddress` preference is auto-filled from it).
 function state.wol_mac(status)
   local adapters = (status or {}).wol and status.wol.adapters

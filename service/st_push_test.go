@@ -1,7 +1,7 @@
 package service
 
 // Tests for the hub push subscriptions and the SmartThings push sink
-// (edge-driver doc §4.5, #68).
+// (edge-driver doc §3.5, #68).
 
 import (
 	"context"
@@ -101,7 +101,7 @@ func subscribeTo(t *testing.T, cb *callbackServer, ttl int) string {
 	return id
 }
 
-// ---- subscribe validation (§4.5) -------------------------------------------
+// ---- subscribe validation (§3.5) -------------------------------------------
 
 func TestSTSubscribeAcceptsHubCallback(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
@@ -284,7 +284,7 @@ func TestSTSubscribeNeedsAuth(t *testing.T) {
 	}
 }
 
-// ---- delivery (§4.5) -------------------------------------------------------
+// ---- delivery (§3.5) -------------------------------------------------------
 
 func TestSTPushBodyShape(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001, Secret: "s3cr3t", ShutdownGrace: true, GraceSeconds: 300})
@@ -370,7 +370,7 @@ func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	if n := len(stSubs.active()); n != 0 {
 		t.Errorf("%d subscriptions after %d failed deliveries, want 0", n, stPushMaxFailures)
 	}
-	// Every failed delivery is one POST plus one retry (§4.5).
+	// Every failed delivery is one POST plus one retry (§3.5).
 	if hits := cb.hits.Load(); hits != int32(2*stPushMaxFailures) {
 		t.Errorf("callback hit %d times, want %d (one retry each)", hits, 2*stPushMaxFailures)
 	}
@@ -411,7 +411,7 @@ func TestSTPushStoppingIsSynchronousAndBounded(t *testing.T) {
 	})
 	took := time.Since(start)
 	// It blocked (the point of the synchronous path) but not for longer
-	// than the §4.5 budget.
+	// than the §3.5 budget.
 	if took < 500*time.Millisecond {
 		t.Errorf("power.stopping returned after %s — it was not delivered synchronously", took)
 	}
@@ -434,7 +434,7 @@ func TestSTPushDeliversAsynchronously(t *testing.T) {
 	}
 }
 
-// ---- event mapping (§4.5) --------------------------------------------------
+// ---- event mapping (§3.5) --------------------------------------------------
 
 func TestSTPushEventSelection(t *testing.T) {
 	exposed := SmartThingsConfig{ExposeSession: true}
@@ -472,7 +472,7 @@ func TestSTPushEventSelection(t *testing.T) {
 	}
 }
 
-// TestSTPushTapBypassesNotifyFilters is the §4.5 requirement that the hub
+// TestSTPushTapBypassesNotifyFilters is the §3.5 requirement that the hub
 // sees device state even when the user has switched the matching
 // notification off (or is in quiet hours): the Telegram sink gets nothing,
 // the callback gets the event.
@@ -498,7 +498,7 @@ func TestSTPushTapBypassesNotifyFilters(t *testing.T) {
 	expectNoNotification(t, events)
 }
 
-// ---- power.stopping reason (§4.5, §6.2) ------------------------------------
+// ---- power.stopping reason (§3.5, §6.2) ------------------------------------
 
 func TestStoppingReasonFromLastCommand(t *testing.T) {
 	resetPowerCommandHint()
@@ -545,7 +545,7 @@ func TestStoppingReasonFromLastCommand(t *testing.T) {
 	}
 }
 
-// ---- display.changed (§4.5) ------------------------------------------------
+// ---- display.changed (§3.5) ------------------------------------------------
 
 func TestDisplayChangedPushesOnce(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001})
@@ -574,7 +574,7 @@ func TestDisplayChangedPushesOnce(t *testing.T) {
 	}
 }
 
-// ---- update (§4.2) ---------------------------------------------------------
+// ---- update (§3.2) ---------------------------------------------------------
 
 func TestSTStatusUpdateUsesCheckerCache(t *testing.T) {
 	orig := latestRelease.Load()

@@ -1,4 +1,4 @@
--- Wake-on-LAN: magic packet building and the wake sequence of design doc §6.3
+-- Wake-on-LAN: magic packet building and the wake sequence of design doc §6.4
 -- (send immediately, at 2s and at 5s, to ports 7 and 9; give up after 90s).
 --
 -- `magic_packet` and `parse_mac` are pure and unit-tested. `send`/`wake` take
@@ -10,7 +10,7 @@ local i18n = require "i18n"
 local wol = {}
 
 wol.PORTS = { 7, 9 }
--- §6.3: three attempts. A PC that missed the first packet because the switch
+-- §6.4: three attempts. A PC that missed the first packet because the switch
 -- was still learning the port usually catches the second or third.
 wol.RETRY_DELAYS = { 0, 2, 5 }
 wol.WAKE_TIMEOUT = 90
@@ -98,7 +98,7 @@ function wol.cancel_wake(driver, device)
   end
 end
 
---- §6.2/§6.3: run the wake sequence for `device` and arm the 90s timeout.
+--- §6.2/§6.4: run the wake sequence for `device` and arm the 90s timeout.
 --
 -- The caller has already moved the device state to `waking`; on timeout we apply
 -- `wake_timeout` (back to the previous state) and put "wake failed" into
@@ -111,7 +111,7 @@ function wol.wake(driver, device, deps)
   local prefs = device.preferences or {}
   local lang = prefs.language
 
-  -- §5.4: the preference wins; otherwise fall back to the WoL-capable adapter
+  -- §6.4: the preference wins; otherwise fall back to the WoL-capable adapter
   -- MAC that the last successful poll learned from `status.wol.adapters`.
   local mac = prefs.macAddress
   if mac == nil or mac == "" then
@@ -126,7 +126,7 @@ function wol.wake(driver, device, deps)
     return false, "bad mac"
   end
 
-  -- §6.3: a PC whose adapter has WoL turned off is still sent the packet, but
+  -- §6.4: a PC whose adapter has WoL turned off is still sent the packet, but
   -- the last poll already knew it would probably not work, so say so now
   -- rather than at the next poll.
   if device:get_field("wol_ready") == false then

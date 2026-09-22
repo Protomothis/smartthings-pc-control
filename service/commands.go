@@ -12,7 +12,7 @@ type Command struct {
 	Execute  func()
 }
 
-// Display state (design doc §4.2 "display"). The service cannot ask the
+// Display state (edge-driver doc §3.2 "display"). The service cannot ask the
 // monitor what it is doing, so this is simply the last screen command it
 // sent: "on" after turnscreenon, "off" after turnscreenoff, "unknown"
 // until either has run in this process.
@@ -23,7 +23,7 @@ var (
 
 // setDisplayState records the effect of a screen command and, when the
 // state actually changed, pushes display.changed to the SmartThings hub
-// (edge-driver doc §4.5). It is device state, not a notification, so it
+// (edge-driver doc §3.5). It is device state, not a notification, so it
 // goes to the bus taps only and never to Telegram.
 func setDisplayState(state string) {
 	displayStateMu.Lock()
@@ -42,7 +42,7 @@ func getDisplayState() string {
 	return displayState
 }
 
-// Last executed power command (edge-driver doc §4.5, "power.stopping"
+// Last executed power command (edge-driver doc §3.5, "power.stopping"
 // data.reason). Windows tells the service that it is stopping, and that
 // the machine is suspending, but not why: SERVICE_CONTROL_SHUTDOWN looks
 // the same for `shutdown /s` and `shutdown /r`, and PBT_APMSUSPEND looks
@@ -170,7 +170,7 @@ var Commands = map[string]Command{
 			setDisplayState("off")
 		},
 	},
-	// turnscreenon wakes the monitor again (design doc §4.3). SC_MONITORPOWER
+	// turnscreenon wakes the monitor again (edge-driver doc §3.3). SC_MONITORPOWER
 	// with lParam -1 is the documented "power on" value.
 	"turnscreenon": {
 		Response: "Screen on...",

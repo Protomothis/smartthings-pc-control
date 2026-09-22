@@ -299,7 +299,7 @@ func tgPCName() string {
 }
 
 // tgHeader is the "🖥 <b>name</b>" line every message from this PC starts
-// with (#75, edge-driver doc §13.4).
+// with (#75, hub-agent doc §1).
 func tgHeader() string { return telegram.Header(tgPCName()) }
 
 // tgWithHeader prefixes tgHeader() to a reply that does not already carry

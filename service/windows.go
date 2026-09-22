@@ -69,7 +69,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// power cut never reaches here, so the flag stays false.
 			markCleanShutdown(statePath())
 			// The SmartThings push sink taps this event and delivers it
-			// synchronously (up to 1.5s, edge-driver doc §4.5) so the hub
+			// synchronously (up to 1.5s, edge-driver doc §3.5) so the hub
 			// learns the PC is going away before it stops answering; the
 			// stop continues right afterwards either way. reason is
 			// shutdown/restart/suspend/hibernate/unknown (§6.2): the SCM

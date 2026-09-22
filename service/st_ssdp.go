@@ -1,7 +1,7 @@
 package service
 
 // SSDP discovery for the SmartThings Edge driver (docs/design/edge-driver.md
-// §4.6, issue #69).
+// §3.6, issue #69).
 //
 // The driver cannot ask the user for an IP address, so it multicasts an
 // SSDP M-SEARCH on the LAN and this responder answers with a LOCATION
@@ -10,7 +10,7 @@ package service
 // create the device (machine id, hostname, version, port) plus whether a
 // secret is required, and never the secret itself.
 //
-// The responder follows config smartthings.discovery (§4.7) without a
+// The responder follows config smartthings.discovery (§3.7) without a
 // restart: saveConfig calls reconcileSSDP after every save.
 
 import (
@@ -31,7 +31,7 @@ import (
 
 const (
 	// ssdpDeviceST is the search target the Edge driver sends and the one
-	// this PC answers with (§4.6).
+	// this PC answers with (§3.6).
 	ssdpDeviceST = "urn:smartthings-pc-control:device:pc:1"
 	// ssdpSearchAll is the wildcard target every SSDP device answers.
 	ssdpSearchAll = "ssdp:all"
@@ -44,8 +44,8 @@ const (
 	ssdpMaxMX = 3 * time.Second
 	// ssdpMaxPacket is generous for an M-SEARCH; anything longer is junk.
 	ssdpMaxPacket = 2048
-	// ssdpPerSourceInterval rate-limits answers to one searcher (§4.6 does
-	// not ask for it, §8 does for every other inbound path). Hubs repeat
+	// ssdpPerSourceInterval rate-limits answers to one searcher (§3.6 does
+	// not ask for it, §3.1 does for every other inbound path). Hubs repeat
 	// each M-SEARCH two or three times in a burst, so one answer per
 	// second per source is plenty and keeps a flood cheap.
 	ssdpPerSourceInterval = time.Second
@@ -71,7 +71,7 @@ type mSearch struct {
 // parseMSearch reads one datagram. ok is false for anything that is not an
 // M-SEARCH for a target this PC serves — a malformed packet, another
 // device's search, or a NOTIFY from a neighbour — and such packets are
-// silently dropped (§4.6).
+// silently dropped (§3.6).
 func parseMSearch(pkt []byte) (mSearch, bool) {
 	if len(pkt) == 0 || len(pkt) > ssdpMaxPacket {
 		return mSearch{}, false
@@ -140,7 +140,7 @@ func clampMX(mx int) int {
 var ssdpRandFloat = rand.Float64
 
 // ssdpDelay spreads the answer over the window the searcher allowed, so a
-// LAN full of devices does not reply in the same millisecond (§4.6: honour
+// LAN full of devices does not reply in the same millisecond (§3.6: honour
 // MX, capped at ssdpMaxMX).
 func ssdpDelay(mx int) time.Duration {
 	if mx <= 0 {
@@ -344,7 +344,7 @@ func stopSSDP() {
 }
 
 // reconcileSSDP starts or stops the responder so it matches
-// smartthings.discovery (§4.7). saveConfig calls it after every save; it is
+// smartthings.discovery (§3.7). saveConfig calls it after every save; it is
 // a no-op until startSSDP has run, and safe to call repeatedly.
 func reconcileSSDP() {
 	ssdpR.mu.Lock()
@@ -470,7 +470,7 @@ func answerSSDP(ctx context.Context, s *ssdpSocket, dst net.UDPAddr, req mSearch
 	}
 }
 
-// ---- GET /st/v1/description (§4.6) -----------------------------------------
+// ---- GET /st/v1/description (§3.6) -----------------------------------------
 
 // stDescription is the unauthenticated discovery document. It holds only
 // what the driver needs to create the device plus secret_set, which tells
@@ -487,7 +487,7 @@ type stDescription struct {
 
 // handleSTDescription serves GET /st/v1/description. Unlike the rest of
 // /st/v1 it is not wrapped in stAuth — an unconfigured driver has no secret
-// yet — but it keeps the per-source rate limit (§8) and never touches the
+// yet — but it keeps the per-source rate limit (§3.1) and never touches the
 // hub-seen state, so an anonymous probe cannot make the GUI claim a hub is
 // connected.
 func handleSTDescription(w http.ResponseWriter, r *http.Request) {

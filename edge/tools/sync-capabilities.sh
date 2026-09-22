@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Push the local capability definitions, presentations and translations to the
-# SmartThings account (#78).
+# SmartThings account.
 #
 #   cd edge && ./tools/sync-capabilities.sh            # apply
 #   cd edge && ./tools/sync-capabilities.sh --dry-run  # print the commands only
@@ -15,19 +15,17 @@
 # freezes a published capability, and a change then needs a new version.
 #
 # A capability that does not exist on the account yet has to be CREATED first:
-# `capabilities:update` refuses an unknown id. That is what a rename means -
-# #82 turned `pcControl` into `pcAction`, #83 turned `pcTimer` into `pcPlan`,
-# #84 turned `pcAction` into `pcRun` and #85 turned `pcPlan` into `pcCountdown`
-# and `pcRun` into `pcExec`, because the hub caches a definition by id for the
-# whole hub (§14.4) and never re-reads a changed one. #86 adds a brand new one,
-# `pcVersion` (the version row on a card of its own), which has to be CREATED
-# the same way - `capabilities:update` would refuse it:
+# `capabilities:update` refuses an unknown id. That is what changing a
+# DEFINITION means: the hub caches a capability definition by id for the whole
+# hub and never re-reads a changed one, so an attribute or command that is
+# added, removed or re-typed needs a new capability id (see
+# ../docs/design/edge-platform-notes.md):
 #
-#   smartthings capabilities:create -i capabilities/pcExec.json
+#   smartthings capabilities:create -i capabilities/<name>.json
 #   smartthings capabilities:presentation:create <new id> --capability-version 1 \
-#     -i capabilities/pcExec.presentation.json
+#     -i capabilities/<name>.presentation.json
 #   smartthings capabilities:translations:upsert <new id> --capability-version 1 \
-#     -i capabilities/translations/pcExec.ko.json    # and .en.json
+#     -i capabilities/translations/<name>.ko.json    # and .en.json
 #
 # and once every profile that referenced the old id is deployed and no device
 # is on it any more, `smartthings capabilities:delete <old id>`.
@@ -36,7 +34,7 @@
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
 #   - authenticated (CLI 2.x has no `login`; the first command opens a browser),
 #     or SMARTTHINGS_TOKEN exported
-#   - the ids in capabilities/*.json belong to this account (see §14)
+#   - the ids in capabilities/*.json belong to this account
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

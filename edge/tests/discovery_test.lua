@@ -1,5 +1,5 @@
 -- Discovery: manual add (#71), SSDP search and the multi-PC identity rules of
--- §13.1/§13.2. The socket and the description fetch are injected, so this never
+-- §6.5. The socket and the description fetch are injected, so this never
 -- multicasts anything.
 
 local h = require "helpers"
@@ -138,7 +138,7 @@ function T.test_scan_adds_another_device_once_the_first_is_configured()
 end
 
 function T.test_a_device_with_only_a_discovered_ip_counts_as_configured()
-  -- §13.2: no `ipAddress` preference, but SSDP found it, so it is not blank.
+  -- §6.5: no `ipAddress` preference, but SSDP found it, so it is not blank.
   local followed = h.fake_device({ ipAddress = "" })
   followed:set_field(client.IP_FIELD, "192.168.1.21")
   h.assert_false(discovery.has_unconfigured(fake_driver({ followed })))
@@ -151,7 +151,7 @@ function T.test_network_ids_are_unique()
 end
 
 function T.test_network_id_prefers_the_machine_id()
-  -- §13.1: the identity is the machine_id, so the device survives an IP change.
+  -- §6.5: the identity is the machine_id, so the device survives an IP change.
   h.assert_equal(discovery.network_id("9f3c-guid"), "pc-control-9f3c-guid")
 end
 
@@ -177,7 +177,7 @@ function T.test_a_created_device_adopts_the_address_it_was_found_at()
 end
 
 --------------------------------------------------------------------------------
--- SSDP text (§4.6)
+-- SSDP text (§3.6)
 --------------------------------------------------------------------------------
 
 function T.test_msearch_matches_what_the_responder_requires()
@@ -253,7 +253,7 @@ function T.test_two_responses_from_one_pc_are_merged()
 end
 
 function T.test_a_cloned_machine_id_is_flagged()
-  -- §13.1: same MachineGuid, different hostname = an image clone.
+  -- §6.5: same MachineGuid, different hostname = an image clone.
   local found = discovery.ssdp_search(4, search_deps({
     { data = ssdp_response("192.168.1.20", 5001, "guid-a"), from = "192.168.1.20" },
     { data = ssdp_response("192.168.1.31", 5001, "guid-a"), from = "192.168.1.31" },
@@ -266,7 +266,7 @@ function T.test_a_cloned_machine_id_is_flagged()
 end
 
 --------------------------------------------------------------------------------
--- identity and duplicates (§13.1)
+-- identity and duplicates (§6.5)
 --------------------------------------------------------------------------------
 
 function T.test_machine_id_comes_from_the_field_then_the_dni()
@@ -297,7 +297,7 @@ function T.test_an_existing_dni_is_never_duplicated()
 end
 
 function T.test_a_manual_device_is_adopted_by_its_stored_machine_id()
-  -- §13.1: the DNI stays `manual-...`, the device is not duplicated.
+  -- §6.5: the DNI stays `manual-...`, the device is not duplicated.
   local manual = pc_device("pc-control-manual-abc-1", { ipAddress = "" })
   manual:set_field(discovery.MACHINE_FIELD, "9f3c-guid")
   local driver = fake_driver({ manual })
@@ -325,7 +325,7 @@ function T.test_a_new_machine_id_is_created()
 end
 
 --------------------------------------------------------------------------------
--- followDiscovery / ipAddress (§13.2)
+-- followDiscovery / ipAddress (§6.5)
 --------------------------------------------------------------------------------
 
 function T.test_follow_discovery_updates_the_ip_and_repolls()
@@ -357,7 +357,7 @@ function T.test_follow_discovery_off_pins_the_address()
 end
 
 function T.test_the_ip_preference_always_wins()
-  -- §13.2: a filled-in ipAddress means the user declared a fixed address.
+  -- §6.5: a filled-in ipAddress means the user declared a fixed address.
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "192.168.1.20" })
   local plan = discovery.plan(device, { machine_id = "9f3c-guid", ip = "192.168.1.25" })
   h.assert_nil(plan.ip)
@@ -395,7 +395,7 @@ function T.test_a_plan_for_an_unknown_machine_id_creates()
 end
 
 --------------------------------------------------------------------------------
--- the targeted re-search (§13.2)
+-- the targeted re-search (§6.5)
 --------------------------------------------------------------------------------
 
 function T.test_a_re_search_is_rate_limited_to_once_per_five_minutes()
