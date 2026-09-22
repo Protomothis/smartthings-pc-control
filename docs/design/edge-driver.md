@@ -418,3 +418,17 @@ develop → main → `v1.1.0` 태그.
 - #75(service+gui): 텔레그램 PC 이름 머리말, 409 감지 경고(허브 에이전트 안내 문구).
 - #76(service): SSDP용 UDP 1900 방화벽 규칙.
 - #74: Wiki "여러 PC 설정" 절.
+
+## 14. capability 생성 결과와 프레젠테이션 규칙 (2026-09-22 실측)
+
+- 계정에 발급된 네임스페이스: **`numbersystem53811`**(개인). 조직 네임스페이스 `towerdegree51000`은 쓰이지 않았다.
+- SmartThings는 capability id의 이름 부분을 **소문자**로 바꾼다: `numbersystem53811.pcpowerstate` 등. 정의의 `name`은 camelCase 그대로다.
+  `caps.lua`·프로필·JSON의 id는 소문자, 파일 이름은 camelCase를 유지하고 테스트는 대소문자 무시로 매칭한다.
+- CLI 2.x에는 `login` 명령이 없다. 인증이 필요한 첫 명령에서 브라우저가 열린다.
+- 프레젠테이션 API가 거부한 것과 통과한 형식:
+  - `detailView`에 `multiArgCommand` 불가 → `list` 사용. detailView의 `list`는 `{"command": {"name": "...", "alternatives": [...]}}` 객체 형식이어야 하며 `state`를 넣으면 `state.alternatives`도 필수.
+  - `automation.actions`에 `multiArgCommand`는 **허용**(문서에는 없음). 각 인자의 위젯(`list`/`numberField`)에 `name`(인자 이름) 필수.
+  - `automation.actions`에 `pushButton` 불가 → 예약 취소는 detailView pushButton만 제공.
+  - 프레젠테이션 본문의 `id`는 경로의 capability id와 같아야 한다.
+- 정의 변경: `pcSchedule.schedule(minutes, command?)` — 인자 순서를 바꾸고 `command`를 선택으로 만들어 한 인자만 보내는 detailView `list`가 동작하도록 했다(드라이버는 비어 있으면 `offAction`→`shutdown`으로 보정). `pcCommand.execute`의 `mode`/`minutes`도 선택.
+- 다섯 정의와 프레젠테이션 모두 계정에 생성 완료(`status: proposed`). 수정은 `capabilities:update` / `capabilities:presentation:update`로만 가능.

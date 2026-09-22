@@ -1,5 +1,5 @@
 {
-  "id": "pccontrol00000.pcSchedule",
+  "id": "numbersystem53811.pcschedule",
   "version": 1,
   "status": "proposed",
   "name": "pcSchedule",
@@ -14,7 +14,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
@@ -28,7 +30,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
@@ -43,7 +47,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
@@ -57,7 +63,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
@@ -71,7 +79,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     }
@@ -85,20 +95,25 @@
       "name": "schedule",
       "arguments": [
         {
-          "name": "command",
-          "optional": false,
-          "schema": {
-            "type": "string",
-            "enum": ["shutdown", "restart", "suspend", "hibernate"]
-          }
-        },
-        {
           "name": "minutes",
           "optional": false,
           "schema": {
             "type": "integer",
             "minimum": 1,
             "maximum": 1440
+          }
+        },
+        {
+          "name": "command",
+          "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
           }
         }
       ]

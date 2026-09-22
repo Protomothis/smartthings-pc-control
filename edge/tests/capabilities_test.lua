@@ -86,10 +86,18 @@ for _, name in ipairs(list_json()) do
   end
 end
 
--- short key (caps.ids) -> definition file name, e.g. power_state -> pcPowerState.json
+-- short key (caps.ids) -> definition file name, e.g. power_state -> pcPowerState.json.
+-- SmartThings lower-cases the name part of a capability id, so the match
+-- against the camelCase file names is case-insensitive.
 local function file_for(key)
   local id = caps.ids[key]
-  return (id:gsub("^.*%.", "")) .. ".json"
+  local suffix = (id:gsub("^.*%.", "")):lower() .. ".json"
+  for _, name in ipairs(definition_files) do
+    if name:lower() == suffix then
+      return name
+    end
+  end
+  return suffix
 end
 
 local function definition(key)
@@ -133,7 +141,8 @@ function T.test_ids_match_caps_lua()
   for key, id in pairs(caps.ids) do
     h.assert_equal(definition(key).id, id, file_for(key) .. " id")
     h.assert_equal(presentation(key).id, id, file_for(key) .. " presentation id")
-    h.assert_equal(definition(key).name, (id:gsub("^.*%.", "")), file_for(key) .. " name")
+    -- SmartThings lower-cases the id but keeps the camelCase name.
+    h.assert_equal(definition(key).name:lower(), (id:gsub("^.*%.", "")), file_for(key) .. " name")
   end
 end
 
@@ -214,7 +223,7 @@ end
 local EXPECTED_COMMANDS = {
   power_state = {},
   command = { execute = { "command", "mode", "minutes" } },
-  schedule = { cancel = {}, schedule = { "command", "minutes" } },
+  schedule = { cancel = {}, schedule = { "minutes", "command" } },
   status = {},
   session = {},
 }
@@ -265,7 +274,8 @@ function T.test_command_enums_match_the_service()
   h.assert_deep_equal(mode, { "default", "immediate", "grace" })
 
   -- §4.3: the service caps a schedule at 1440 minutes.
-  local minutes = definition("schedule").commands.schedule.arguments[2].schema
+  -- schedule(minutes, command?): minutes first so a one-argument list works.
+  local minutes = definition("schedule").commands.schedule.arguments[1].schema
   h.assert_equal(minutes.type, "integer")
   h.assert_equal(minutes.minimum, 1)
   h.assert_equal(minutes.maximum, 1440)
@@ -357,7 +367,8 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
     return commands
   end
   h.assert_true(action_commands("command").execute == true)
-  h.assert_true(action_commands("schedule").cancel == true)
+  -- cancel is a detail-view pushButton; automation.actions may not carry
+  -- pushButton (SmartThings presentation rules), so it is not expected there.
   h.assert_true(action_commands("schedule").schedule == true)
 end
 

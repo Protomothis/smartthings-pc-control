@@ -1,6 +1,6 @@
 # Main device profile (design doc §5.1, §5.4).
 #
-# The `pccontrol00000` namespace is a PLACEHOLDER: SmartThings assigns the real
+# The `numbersystem53811` namespace is a PLACEHOLDER: SmartThings assigns the real
 # one when the account owner runs `smartthings capabilities:create` (§11.1).
 # Keep it in sync with `NAMESPACE` in src/caps.lua - #74 ships
 # tools/apply-namespace.js to rewrite both.
@@ -14,15 +14,15 @@ components:
         version: 1
       - id: healthCheck
         version: 1
-      - id: pccontrol00000.pcPowerState
+      - id: numbersystem53811.pcpowerstate
         version: 1
-      - id: pccontrol00000.pcCommand
+      - id: numbersystem53811.pccommand
         version: 1
-      - id: pccontrol00000.pcSchedule
+      - id: numbersystem53811.pcschedule
         version: 1
-      - id: pccontrol00000.pcStatus
+      - id: numbersystem53811.pcstatus
         version: 1
-      - id: pccontrol00000.pcSession
+      - id: numbersystem53811.pcsession
         version: 1
     categories:
       - name: Computer

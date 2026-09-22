@@ -314,8 +314,8 @@ pcPowerState.presentation.json  프레젠테이션 -> smartthings capabilities:p
 `pcPowerState`는 전원 상태, `pcCommand`는 명령 실행, `pcSchedule`은 예약 표시·조작,
 `pcStatus`는 연결·버전·메시지 카드, `pcSession`은 선택 항목인 잠금·유휴 블록입니다.
 
-`src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 모두 **플레이스홀더
-네임스페이스 `pccontrol00000`** 을 씁니다. 진짜 네임스페이스는 계정 소유자가 커스텀
+`src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
+네임스페이스 `numbersystem53811`** 을 씁니다(2026-09-22 생성). SmartThings는 id의 이름 부분을 소문자로 바꾸므로 id는 `numbersystem53811.pcpowerstate`처럼 소문자입니다. 다른 계정에서 다시 만들면 네임스페이스가 달라지며, 그때는 `tools/apply-namespace.js`로 다시 반영합니다. 원래 네임스페이스는 소유자가 커스텀
 capability를 만들 때 SmartThings가 발급합니다.
 
 ```sh
@@ -496,6 +496,6 @@ assigns it to the channel and attaches the zip to the release. It needs the
 `SMARTTHINGS_TOKEN` and `ST_CHANNEL_ID` repository secrets.
 
 The ids in `src/caps.lua`, `profiles/pc.yml` and `capabilities/*.json` use the
-placeholder namespace `pccontrol00000` until `apply-namespace.js` replaces it;
+namespace `numbersystem53811` that SmartThings assigned to the owner account (ids are lower-cased by SmartThings, e.g. `numbersystem53811.pcpowerstate`); on another account `apply-namespace.js` rewrites it;
 until then `caps.load` skips capabilities it cannot resolve and `switch`,
 `refresh` and `healthCheck` keep working.

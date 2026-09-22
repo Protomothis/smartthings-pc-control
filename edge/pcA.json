@@ -10,50 +10,51 @@
       "label": "Run command",
       "displayType": "list",
       "list": {
-        "command": {
-          "name": "execute",
-          "alternatives": [
-            {
-              "key": "shutdown",
-              "value": "Shut down",
-              "type": "active"
-            },
-            {
-              "key": "restart",
-              "value": "Restart",
-              "type": "active"
-            },
-            {
-              "key": "suspend",
-              "value": "Sleep",
-              "type": "active"
-            },
-            {
-              "key": "hibernate",
-              "value": "Hibernate",
-              "type": "active"
-            },
-            {
-              "key": "lock",
-              "value": "Lock",
-              "type": "active"
-            },
-            {
-              "key": "turnscreenoff",
-              "value": "Screen off",
-              "type": "active"
-            },
-            {
-              "key": "turnscreenon",
-              "value": "Screen on",
-              "type": "active"
-            },
-            {
-              "key": "forceshutdown",
-              "value": "Force shut down",
-              "type": "active"
-            }
-          ]
+        "command": "execute",
+        "alternatives": [
+          {
+            "key": "shutdown",
+            "value": "Shut down",
+            "type": "active"
+          },
+          {
+            "key": "restart",
+            "value": "Restart",
+            "type": "active"
+          },
+          {
+            "key": "suspend",
+            "value": "Sleep",
+            "type": "active"
+          },
+          {
+            "key": "hibernate",
+            "value": "Hibernate",
+            "type": "active"
+          },
+          {
+            "key": "lock",
+            "value": "Lock",
+            "type": "active"
+          },
+          {
+            "key": "turnscreenoff",
+            "value": "Screen off",
+            "type": "active"
+          },
+          {
+            "key": "turnscreenon",
+            "value": "Screen on",
+            "type": "active"
+          },
+          {
+            "key": "forceshutdown",
+            "value": "Force shut down",
+            "type": "active"
+          }
+        ],
+        "state": {
+          "value": "{{lastCommand.value}}"
         }
       }
     },

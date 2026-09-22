@@ -1,5 +1,5 @@
 {
-  "id": "pccontrol00000.pcSchedule",
+  "id": "numbersystem53811.pcschedule",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -12,8 +12,16 @@
       "state": {
         "label": "{{active.value}}",
         "alternatives": [
-          { "key": "true", "value": "Yes", "type": "active" },
-          { "key": "false", "value": "No", "type": "inactive" }
+          {
+            "key": "true",
+            "value": "Yes",
+            "type": "active"
+          },
+          {
+            "key": "false",
+            "value": "No",
+            "type": "inactive"
+          }
         ]
       }
     },
@@ -46,40 +54,39 @@
       }
     },
     {
-      "label": "Schedule",
-      "displayType": "multiArgCommand",
-      "multiArgCommand": {
-        "command": "schedule",
-        "submitLabel": "Schedule",
-        "arguments": [
-          {
-            "name": "command",
-            "label": "Command",
-            "displayType": "list",
-            "list": {
-              "alternatives": [
-                { "key": "shutdown", "value": "Shut down", "type": "active" },
-                { "key": "restart", "value": "Restart", "type": "active" },
-                { "key": "suspend", "value": "Sleep", "type": "active" },
-                { "key": "hibernate", "value": "Hibernate", "type": "active" }
-              ]
+      "label": "Schedule shutdown in",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "schedule",
+          "alternatives": [
+            {
+              "key": "5",
+              "value": "5 minutes",
+              "type": "active"
+            },
+            {
+              "key": "15",
+              "value": "15 minutes",
+              "type": "active"
+            },
+            {
+              "key": "30",
+              "value": "30 minutes",
+              "type": "active"
+            },
+            {
+              "key": "60",
+              "value": "1 hour",
+              "type": "active"
+            },
+            {
+              "key": "120",
+              "value": "2 hours",
+              "type": "active"
             }
-          },
-          {
-            "name": "minutes",
-            "label": "In",
-            "displayType": "list",
-            "list": {
-              "alternatives": [
-                { "key": "5", "value": "5 minutes", "type": "active" },
-                { "key": "15", "value": "15 minutes", "type": "active" },
-                { "key": "30", "value": "30 minutes", "type": "active" },
-                { "key": "60", "value": "1 hour", "type": "active" },
-                { "key": "120", "value": "2 hours", "type": "active" }
-              ]
-            }
-          }
-        ]
+          ]
+        }
       }
     },
     {
@@ -99,8 +106,16 @@
         "list": {
           "value": "active.value",
           "alternatives": [
-            { "key": "true", "value": "Yes", "type": "active" },
-            { "key": "false", "value": "No", "type": "inactive" }
+            {
+              "key": "true",
+              "value": "Yes",
+              "type": "active"
+            },
+            {
+              "key": "false",
+              "value": "No",
+              "type": "inactive"
+            }
           ]
         }
       }
@@ -114,41 +129,71 @@
           "submitLabel": "Schedule",
           "arguments": [
             {
-              "name": "command",
-              "label": "Command",
-              "displayType": "list",
-              "list": {
-                "alternatives": [
-                  { "key": "shutdown", "value": "Shut down", "type": "active" },
-                  { "key": "restart", "value": "Restart", "type": "active" },
-                  { "key": "suspend", "value": "Sleep", "type": "active" },
-                  { "key": "hibernate", "value": "Hibernate", "type": "active" }
-                ]
-              }
-            },
-            {
               "name": "minutes",
               "label": "In",
               "displayType": "list",
               "list": {
                 "alternatives": [
-                  { "key": "5", "value": "5 minutes", "type": "active" },
-                  { "key": "15", "value": "15 minutes", "type": "active" },
-                  { "key": "30", "value": "30 minutes", "type": "active" },
-                  { "key": "60", "value": "1 hour", "type": "active" },
-                  { "key": "120", "value": "2 hours", "type": "active" }
-                ]
+                  {
+                    "key": "5",
+                    "value": "5 minutes",
+                    "type": "active"
+                  },
+                  {
+                    "key": "15",
+                    "value": "15 minutes",
+                    "type": "active"
+                  },
+                  {
+                    "key": "30",
+                    "value": "30 minutes",
+                    "type": "active"
+                  },
+                  {
+                    "key": "60",
+                    "value": "1 hour",
+                    "type": "active"
+                  },
+                  {
+                    "key": "120",
+                    "value": "2 hours",
+                    "type": "active"
+                  }
+                ],
+                "name": "minutes"
+              }
+            },
+            {
+              "name": "command",
+              "label": "Command",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  }
+                ],
+                "name": "command"
               }
             }
           ]
-        }
-      },
-      {
-        "label": "Cancel schedule",
-        "displayType": "pushButton",
-        "pushButton": {
-          "command": "cancel",
-          "argument": null
         }
       }
     ]

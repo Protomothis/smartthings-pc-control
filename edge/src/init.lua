@@ -166,12 +166,30 @@ local function handle_execute(driver, device, cmd)
   poll.once(driver, device)
 end
 
---- pcSchedule.schedule(command, minutes): same endpoint, minutes > 0 (§4.3).
---- An existing schedule is replaced by the service, which is worth saying.
+-- Commands pcSchedule.schedule may carry; anything else (or nothing, when the
+-- detail-view list only sends minutes) falls back to the switch-off action
+-- when that is schedulable, else shutdown.
+local SCHEDULABLE = { shutdown = true, restart = true, suspend = true, hibernate = true }
+
+local function schedule_command(device, requested)
+  if requested and SCHEDULABLE[requested] then
+    return requested
+  end
+  local off = (device.preferences or {}).offAction
+  if off and SCHEDULABLE[off] then
+    return off
+  end
+  return "shutdown"
+end
+
+--- pcSchedule.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
+--- `command` is optional (SmartThings list presentations send one argument);
+--- see schedule_command for the fallback. An existing schedule is replaced by
+--- the service, which is worth saying.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
   local had_schedule = poll.get_state(device).schedule_active == true
-  local ok, body, kind = client.command(device, args.command, "default", args.minutes or 0)
+  local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", args.minutes or 0)
   if not ok then
     report_error(device, kind, body)
     return

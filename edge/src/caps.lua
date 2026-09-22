@@ -1,22 +1,24 @@
 -- Custom capability ids, in one place.
 --
--- The namespace below is a PLACEHOLDER. SmartThings assigns the real namespace
--- when the account owner runs `smartthings capabilities:create` (design doc
--- §11.1); #74 ships `tools/apply-namespace.js` to rewrite this constant and the
--- profile YAML in one go. Until then the ids do not resolve on a hub, which is
--- why `caps.load` degrades gracefully instead of erroring at driver start.
+-- The namespace is the one SmartThings assigned to the owner's account when
+-- the capabilities were created (design doc §11.1). Note that SmartThings
+-- lower-cases the name part of a capability id ("pcPowerState" becomes
+-- ".pcpowerstate"), so the ids below are lower-case while the definition
+-- files keep the camelCase `name`. `tools/apply-namespace.js` rewrites the
+-- namespace here, in the profile YAML and in capabilities/*.json in one go.
+-- `caps.load` degrades gracefully if an id does not resolve on a hub.
 
-local NAMESPACE = "pccontrol00000"
+local NAMESPACE = "numbersystem53811"
 
 local caps = {}
 
 caps.NAMESPACE = NAMESPACE
 
-caps.POWER_STATE = NAMESPACE .. ".pcPowerState"
-caps.COMMAND = NAMESPACE .. ".pcCommand"
-caps.SCHEDULE = NAMESPACE .. ".pcSchedule"
-caps.STATUS = NAMESPACE .. ".pcStatus"
-caps.SESSION = NAMESPACE .. ".pcSession"
+caps.POWER_STATE = NAMESPACE .. ".pcpowerstate"
+caps.COMMAND = NAMESPACE .. ".pccommand"
+caps.SCHEDULE = NAMESPACE .. ".pcschedule"
+caps.STATUS = NAMESPACE .. ".pcstatus"
+caps.SESSION = NAMESPACE .. ".pcsession"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
