@@ -737,7 +737,22 @@ func getWoLStatus() WoLStatus {
 
 	// Get WoL status via PowerShell (by MAC matching)
 	// WakeOnMagicPacket: 0=Unsupported, 1=Disabled, 2=Enabled
-	wolScript := "Get-NetAdapterPowerManagement | Select-Object @{N='MAC';E={(Get-NetAdapter $_.Name).MacAddress}}, WakeOnMagicPacket | ConvertTo-Json -Compress"
+	//
+	// Per adapter, not one pipeline: Get-NetAdapterPowerManagement throws
+	// "A device attached to the system is not functioning" on some Realtek
+	// drivers, which used to fail the whole query and report WoL as off even
+	// though the adapter's advanced property "*WakeOnMagicPacket" is enabled.
+	// That property is the fallback (registry value 1 = enabled).
+	wolScript := `Get-NetAdapter -Physical | ForEach-Object {
+  $n = $_.Name; $v = 0
+  try { $pm = Get-NetAdapterPowerManagement -Name $n -ErrorAction Stop; $v = [int]$pm.WakeOnMagicPacket } catch { $v = -1 }
+  if ($v -ne 2) {
+    $p = Get-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*WakeOnMagicPacket' -ErrorAction SilentlyContinue
+    if ($p) { if ([int]($p.RegistryValue | Select-Object -First 1) -eq 1) { $v = 2 } elseif ($v -lt 1) { $v = 1 } }
+    elseif ($v -lt 0) { $v = 0 }
+  }
+  [pscustomobject]@{ MAC = $_.MacAddress; WakeOnMagicPacket = $v }
+} | ConvertTo-Json -Compress`
 	wolCmd := exec.Command("powershell", "-NoProfile", "-Command", wolScript)
 	wolOutput, wolErr := wolCmd.CombinedOutput()
 	if wolErr != nil {
