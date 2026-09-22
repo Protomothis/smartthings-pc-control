@@ -204,7 +204,9 @@ function poll.once(driver, device, opts)
     -- is left empty.
     local mac = state.wol_mac(body)
     if mac then
-      device:set_field(poll.MAC_FIELD, mac)
+      -- Persisted: the MAC must survive a hub or driver restart while the PC
+      -- is off, or "wake" has nothing to send to.
+      device:set_field(poll.MAC_FIELD, mac, { persist = true })
     end
     -- §6.3: remembered so `switch on` can say "WoL is off on the adapter"
     -- right away instead of at the next poll.
