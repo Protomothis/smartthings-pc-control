@@ -498,3 +498,10 @@ develop → main → `v1.1.0` 태그.
   `edge:drivers:package`에서만 드러난다. 걸리면 괄호 안 영어를 줄인다.
 - 프레젠테이션의 `id`가 경로의 capability id와 같아야 한다는 규칙은 새 파일에도 그대로
   적용된다(파일 이름은 camelCase, id는 소문자).
+
+### 14.2 번역 API 실측 (2026-09-22)
+
+- `capabilities:translations:upsert` 본문: `{tag, label, attributes{<attr>{label, i18n{value{<enum>{label}}}}}, commands{<cmd>{label, arguments{<arg>{label}}}}}`.
+- **명령 인자의 enum 값 번역은 불가.** `arguments.<arg>.i18n.value{…}`, `arguments.<arg>.i18n{…}`, 배열 형식 모두 422. 서버가 키를 다른 인자의 enum과 대조해 거부한다(인자 하나만 넣어도 동일). 인자 **라벨**만 번역하고, Routine 선택기의 인자 값(shutdown 등)은 영어로 남는다.
+- 프레젠테이션 detailView 항목의 `visibleCondition` `{capability, version, component, value:"<attr>.value", operator: EQUALS|NOT_EQUALS, operand}`는 수용됨.
+- 정의 갱신 직후 번역 upsert가 "속성 없음"으로 거부될 수 있다(전파 지연). 같은 요청을 몇 초 뒤 다시 보내면 통과한다. `sync-capabilities.sh`는 실패 시 재시도 한 번을 넣을 것(후속).
