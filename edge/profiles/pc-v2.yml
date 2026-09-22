@@ -125,11 +125,11 @@ preferences:
       default: default
   - name: createDisplayDevice
     title: 모니터 장치 (Display device)
-    description: "PC 화면을 켜고 끄는 자식 스위치를 만듭니다. PC가 한 번이라도 응답한 뒤 나타나고, 끄면 삭제됩니다. / Add a child switch for the PC screen."
+    description: "PC 화면용 별도 스위치 장치를 추가합니다(기본 꺼짐. 본체의 화면 끄기/켜기 버튼으로 충분하면 필요 없음). 끄면 삭제됩니다. / Optional child switch for the screen (off by default)."
     required: false
     preferenceType: boolean
     definition:
-      default: true
+      default: false
   - name: language
     title: 문구 언어 (Language)
     description: "상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 한국어로 동작합니다. / Language of the status and schedule text; auto means Korean."

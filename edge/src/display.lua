@@ -66,7 +66,9 @@ end
 --- §5.2: the child exists while the preference is on and the parent has an
 --- identity to hang the child's DNI on.
 function display.wanted(prefs, machine_id)
-  if (prefs or {}).createDisplayDevice == false then
+  -- Off by default: the parent has screen on/off buttons, so the separate
+  -- tile is opt-in (nil = unset = off).
+  if (prefs or {}).createDisplayDevice ~= true then
     return false
   end
   return type(machine_id) == "string" and machine_id ~= ""
