@@ -33,7 +33,14 @@ caps.COMMAND = NAMESPACE .. ".pcexec"
 -- validates arguments against the definition and rejected `minimum: 1`, so the
 -- entry never reached the hub) and the definition gained `planCommand` /
 -- `setPlanCommand`, so `pcPlan` became `pcCountdown`.
-caps.SCHEDULE = NAMESPACE .. ".pccountdown"
+-- #88: and once more. A dismissed list sends the row's CURRENT value as the
+-- command argument (platform notes "상세 화면(detailView) 위젯"), and the 예약 시간 row was bound to
+-- `status` - `idle`/`scheduled`, which `schedule(minutes: integer)` cannot
+-- take, so the cloud answered "network error" without reaching the hub. The
+-- fix needs both a resting attribute the row can show (`minutesPick`, always
+-- "-1") and a `minutes` range that accepts it (`minimum: -1`, the no-op), and
+-- both are definition changes: `pcCountdown` became `pcPlanner`.
+caps.SCHEDULE = NAMESPACE .. ".pcplanner"
 -- #85: the definition gained a `versions` attribute (the row that says which
 -- service, driver and screen template a device is actually running), so by the
 -- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant

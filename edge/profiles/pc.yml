@@ -26,7 +26,7 @@ components:
         version: 1
       - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pccountdown
+      - id: numbersystem53811.pcplanner
         version: 1
       - id: numbersystem53811.pcuser
         version: 1

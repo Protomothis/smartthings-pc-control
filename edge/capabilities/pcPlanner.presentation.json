@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pccountdown",
+  "id": "numbersystem53811.pcplanner",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -103,17 +103,12 @@
           "argumentType": "integer"
         },
         "state": {
-          "value": "status.value",
+          "value": "minutesPick.value",
           "alternatives": [
             {
-              "key": "idle",
-              "value": "예약 없음 (No schedule)",
+              "key": "-1",
+              "value": "시간 선택… (Pick a delay)",
               "type": "inactive"
-            },
-            {
-              "key": "scheduled",
-              "value": "예약 중 (Scheduled)",
-              "type": "active"
             }
           ]
         }

@@ -457,7 +457,7 @@ function T.test_is_action_rejects_anything_outside_the_enum()
 end
 
 --------------------------------------------------------------------------------
--- pcCountdown.planCommand (#84, moved in #85)
+-- pcPlanner.planCommand (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_only_the_schedulable_commands_are_plan_commands()
@@ -511,7 +511,7 @@ function T.test_schedule_summary_rounds_the_countdown_up()
 end
 
 function T.test_schedule_summary_drops_the_origin()
-  -- #87: who asked is in `pcCountdown.origin` and `pcExec.lastCommand`; on the
+  -- #87: who asked is in `pcPlanner.origin` and `pcExec.lastCommand`; on the
   -- summary row it pushed the minutes off the end of the line.
   for _, origin in ipairs({ "smartthings", "ui", "telegram", "remote" }) do
     local summary = state.schedule_summary({

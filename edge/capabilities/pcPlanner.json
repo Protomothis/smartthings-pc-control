@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pccountdown",
+  "id": "numbersystem53811.pcplanner",
   "version": 1,
   "status": "proposed",
-  "name": "pcCountdown",
+  "name": "pcPlanner",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -140,6 +140,24 @@
         ]
       },
       "enumCommands": []
+    },
+    "minutesPick": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "-1"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
     }
   },
   "commands": {
@@ -155,7 +173,7 @@
           "optional": false,
           "schema": {
             "type": "integer",
-            "minimum": 0,
+            "minimum": -1,
             "maximum": 1440
           }
         },
