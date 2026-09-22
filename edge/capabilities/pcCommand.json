@@ -21,6 +21,38 @@
     }
   },
   "commands": {
+    "wake": {
+      "name": "wake",
+      "arguments": []
+    },
+    "suspend": {
+      "name": "suspend",
+      "arguments": []
+    },
+    "hibernate": {
+      "name": "hibernate",
+      "arguments": []
+    },
+    "restart": {
+      "name": "restart",
+      "arguments": []
+    },
+    "shutdown": {
+      "name": "shutdown",
+      "arguments": []
+    },
+    "lock": {
+      "name": "lock",
+      "arguments": []
+    },
+    "screenOff": {
+      "name": "screenOff",
+      "arguments": []
+    },
+    "screenOn": {
+      "name": "screenOn",
+      "arguments": []
+    },
     "execute": {
       "name": "execute",
       "arguments": [

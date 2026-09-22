@@ -82,18 +82,21 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 장치 설정(⋮ → 설정)에서 다음을 조정합니다.
 
+설정 항목의 이름과 설명은 **한국어 우선(영어 병기)** 입니다(#78).
+
 | 설정 | 설명 | 기본값 |
 |---|---|---|
-| `PC IP address` | PC의 IPv4 주소. **비워 두면** SSDP로 알아낸 주소를 사용합니다. 채워 넣으면 고정 IP로 간주하고 항상 이 값이 우선합니다 | `""` |
-| `Follow discovery` | SSDP가 같은 PC를 다른 IP로 알려 오면 주소를 따라갑니다. 끄면 지금 주소에 고정됩니다 | 켬 |
-| `Service port` | 서비스의 명령 포트 | `5001` |
-| `Secret` | 설정 탭의 시크릿. `X-PC-Secret` 헤더로 보냅니다. **Edge에는 비밀번호 입력 타입이 없어 입력 중 화면에 그대로 보입니다** | `""` |
-| `MAC address` | Wake-on-LAN용 MAC. 비워 두면 서비스가 보고한 WoL 가능 어댑터의 MAC을 씁니다 | `""` |
-| `WoL broadcast address` | 매직 패킷을 보낼 주소. 공유기가 `255.255.255.255`를 막으면 서브넷 브로드캐스트(예: `192.168.1.255`)를 넣으세요 | `255.255.255.255` |
-| `Status poll interval` | 상태 확인 주기 (10초 / 30초 / 1분 / 5분) | `30초` |
-| `Switch off action` | 스위치를 끌 때 보낼 명령. 강제 종료를 뺀 나머지는 PC에 설정된 유예를 따릅니다 | `Shut down` |
-| `Create display device` | 화면을 켜고 끄는 자식 스위치를 만듭니다. PC가 한 번이라도 응답한 뒤에 나타나고, 끄면 삭제됩니다 | 켬 |
-| `Message language` | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 Auto는 영어로 동작합니다 | `Auto (English)` |
+| `PC IP 주소 (IP address)` | PC의 IPv4 주소. **비워 두면** SSDP로 알아낸 주소를 사용합니다. 채워 넣으면 고정 IP로 간주하고 항상 이 값이 우선합니다 | `""` |
+| `검색 따라가기 (Follow discovery)` | SSDP가 같은 PC를 다른 IP로 알려 오면 주소를 따라갑니다. 끄면 지금 주소에 고정됩니다 | 켬 |
+| `서비스 포트 (Service port)` | 서비스의 명령 포트 | `5001` |
+| `시크릿 (Secret)` | 설정 탭의 시크릿. `X-PC-Secret` 헤더로 보냅니다. **Edge에는 비밀번호 입력 타입이 없어 입력 중 화면에 그대로 보입니다** | `""` |
+| `MAC 주소 (MAC address)` | Wake-on-LAN용 MAC. 비워 두면 서비스가 보고한 WoL 가능 어댑터의 MAC을 씁니다 | `""` |
+| `WoL 브로드캐스트 (Broadcast)` | 매직 패킷을 보낼 주소. 공유기가 `255.255.255.255`를 막으면 서브넷 브로드캐스트(예: `192.168.1.255`)를 넣으세요 | `255.255.255.255` |
+| `상태 확인 주기 (Poll interval)` | 상태 확인 주기 (10초 / 30초 / 1분 / 5분) | `30초마다` |
+| `스위치 끄기 동작 (Off action)` | 스위치를 끌 때 보낼 명령. 강제 종료를 뺀 나머지는 PC에 설정된 유예를 따릅니다 | `종료` |
+| `버튼 실행 방식 (Button mode)` | 상세 화면의 명령 버튼이 PC의 유예를 따를지(`설정된 유예 따름`) 곧바로 실행할지(`즉시 실행`). 자동화의 `명령 실행`은 자기 모드 인자를 따로 가집니다 | `설정된 유예 따름` |
+| `모니터 장치 (Display device)` | 화면을 켜고 끄는 자식 스위치를 만듭니다. PC가 한 번이라도 응답한 뒤에 나타나고, 끄면 삭제됩니다 | 켬 |
+| `문구 언어 (Language)` | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 **한국어**로 동작합니다 | `자동 (한국어)` |
 
 > 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지합니다. 푸시가 즉시 반영을
 > 담당하고 폴링은 안전망입니다.
@@ -101,6 +104,52 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 ---
 
 ## 사용
+
+### 상세 화면 (리모컨)
+
+상세 화면은 **리모컨**입니다(#78). 위에서부터 이렇게 나옵니다.
+
+```
+[ 전원 스위치 ]                     켜기 = WoL, 끄기 = 스위치 끄기 동작
+전원 상태        켜짐
+상태             켜짐 · 연결됨 · v1.1.0
+안내             (문제가 있을 때만)          ← 조건부
+[ 깨우기 ]
+[ 절전 ]
+[ 최대 절전 ]
+[ 재시작 ]
+[ 종료 ]
+[ 잠금 ]
+[ 화면 끄기 ]
+[ 화면 켜기 ]
+마지막 명령      종료 · SmartThings · 23:05
+예약하기         5분 / 15분 / 30분 / 1시간 / 2시간
+예약             종료 · 4분 남음 · SmartThings   ← 조건부
+[ 예약 취소 ]                                    ← 조건부
+세션             잠김 · 유휴 20분 · kim          ← 조건부
+```
+
+- 명령 버튼은 **한 줄에 하나씩** 세로로 놓입니다. SmartThings는 상세 화면에 격자
+  배치를 지원하지 않습니다.
+- **강제 종료는 화면에 없습니다.** 되돌릴 수 없는 명령이라 자동화의
+  `명령 실행(execute)`에만 남겨 두었습니다.
+- 버튼이 PC의 유예를 따를지는 환경설정 `버튼 실행 방식`이 정합니다. 기본값
+  `설정된 유예 따름`이면 트레이 토스트·텔레그램에서 취소할 여지가 남습니다.
+- **조건부 줄**(안내·예약·세션)은 해당하지 않을 때 아예 사라집니다. 원시 속성
+  (남은 초, 실행 시각, 출처, 서비스 버전, 업데이트, WoL 준비, 마지막 확인, 유휴,
+  잠금, 사용자)은 화면에서 빠졌지만 **속성으로는 그대로 있어** 자동화 조건과
+  이력에서 계속 쓸 수 있습니다.
+
+### 한국어 표시
+
+capability 라벨·enum 값·명령 인자는 **capability translations**로 번역돼 있어,
+휴대폰 언어가 한국어면 앱이 한국어로 보여 줍니다
+(`capabilities/translations/<이름>.ko.json`, 영어는 `.en.json`). 프레젠테이션 자체의
+라벨은 영어로 두고 번역이 덮어쓰는 구조입니다.
+
+드라이버가 만들어 내는 문자열 속성(요약 줄, `message`, `lastCommand`)은 환경설정
+`문구 언어`를 따릅니다(`src/i18n.lua`). 두 가지는 별개입니다 — 앱 UI 라벨은 휴대폰
+언어, 값 문구는 장치 설정입니다.
 
 ### 스위치
 
@@ -121,19 +170,38 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ### 명령 실행
 
-`pcCommand.execute(command, mode, minutes)` — 명령 9종
-(`shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff`
-`turnscreenon` `ping`), 모드 3종(`default` 설정된 유예를 따름 / `immediate` 유예 없이 /
-`grace` 유예를 강제), 분 0~1440.
+상세 화면의 버튼은 `pcCommand`의 **인자 없는 명령**입니다.
+
+| 버튼 | capability 명령 | 서비스 명령(§4.3) |
+|---|---|---|
+| 깨우기 | `wake` | (서비스 호출 없음 — WoL 매직 패킷, 스위치 켜기와 같음) |
+| 절전 | `suspend` | `suspend` |
+| 최대 절전 | `hibernate` | `hibernate` |
+| 재시작 | `restart` | `restart` |
+| 종료 | `shutdown` | `shutdown` |
+| 잠금 | `lock` | `lock` |
+| 화면 끄기 | `screenOff` | `turnscreenoff` |
+| 화면 켜기 | `screenOn` | `turnscreenon` |
+
+`깨우기`를 뺀 전부는 `버튼 실행 방식` 환경설정의 모드로 `minutes=0` 호출을 보냅니다.
+
+자동화에서는 인자를 가진 `pcCommand.execute(command, mode, minutes)`를 씁니다 — 명령
+8종(`shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff`
+`turnscreenon`; `ping`은 드라이버 내부 확인용이라 노출하지 않습니다), 모드 3종
+(`default` 설정된 유예를 따름 / `immediate` 유예 없이 / `grace` 유예를 강제),
+분 0~1440. 화면에 없는 **강제 종료는 여기에만** 있습니다.
 
 `minutes`가 0보다 크면 실행 대신 **예약**이 걸립니다. 마지막으로 실행한 명령은
-`lastCommand`에 "shutdown · SmartThings · 23:05"처럼 남습니다.
+`lastCommand`에 "종료 · SmartThings · 23:05"처럼 남습니다.
 
 ### 예약과 취소
 
-`pcSchedule`이 대기 중인 예약을 보여 줍니다: `active`, `command`,
-`remainingSeconds`, `executeAt`(로컬 `HH:MM`), `origin`(앱 · 원격 · 텔레그램 ·
-SmartThings). 예약은 PC당 하나이고, 새 예약은 기존 것을 대체합니다.
+`pcSchedule`이 대기 중인 예약을 보여 줍니다. 화면에는 요약 한 줄
+(`summary`: "종료 · 4분 남음 · SmartThings")과 [예약 취소]만 나오고, 예약이 없으면
+둘 다 사라집니다. 뒤에 있는 속성 `active`, `command`, `remainingSeconds`,
+`executeAt`(로컬 `HH:MM`), `origin`(앱 · SmartThings 명령 · 텔레그램 · SmartThings)은
+그대로 남아 자동화 조건과 이력에서 쓸 수 있습니다. 예약은 PC당 하나이고, 새 예약은
+기존 것을 대체합니다.
 
 - `pcSchedule.schedule(command, minutes)` — 예약합니다. 프리셋 5/15/30/60/120분이
   선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다.
@@ -143,10 +211,14 @@ SmartThings). 예약은 PC당 하나이고, 새 예약은 기존 것을 대체�
 
 ### 상태 카드
 
-`pcStatus`는 조용한 실패를 드러내기 위한 카드입니다.
+`pcStatus`는 조용한 실패를 드러내기 위한 카드입니다. 화면에는 요약 한 줄
+(`summary`)과, 할 말이 있을 때만 나타나는 `안내`(`message`) 두 줄만 보입니다.
+요약은 연결이 살아 있으면 "켜짐 · 연결됨 · v1.1.0", 끊겼으면
+"연결 안 됨 · 시크릿 불일치"처럼 씁니다. 나머지는 속성으로 남아 자동화에서 쓰입니다.
 
 | 속성 | 내용 |
 |---|---|
+| `summary` | 위 한 줄 요약(전원 · 연결 · 버전 / 연결 안 됨 · 이유) |
 | `connection` | `ok` · `unauthorized`(시크릿 불일치 또는 허브가 허용 목록 밖) · `unreachable` · `incompatible` |
 | `serviceVersion` | PC에서 돌고 있는 서비스 버전 |
 | `updateAvailable` | 서비스에 새 릴리스가 있는지 |
@@ -162,9 +234,9 @@ SmartThings). 예약은 PC당 하나이고, 새 예약은 기존 것을 대체�
 
 ### 세션 정보 (선택)
 
-PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이 잠금 여부와 유휴
-시간을 보여 줍니다. 기본은 꺼져 있고, 꺼져 있는 동안 드라이버는 이 capability의
-이벤트를 아예 내보내지 않습니다.
+PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이 요약 한 줄
+("잠김 · 유휴 20분 · kim")을 보여 줍니다. 기본은 꺼져 있고, 꺼져 있으면 드라이버는
+`exposed=false`만 내보내 그 줄을 화면에서 감춥니다(값 자체는 마지막 것이 남습니다).
 
 > **유휴 시간은 트레이 앱이 떠 있어야 나옵니다** (#77). 서비스는 세션 0에서 돌아
 > 사용자 입력 시각을 알 수 없고(`WTSINFOEXW.LastInputTime`은 Windows 10/11 콘솔
@@ -245,6 +317,7 @@ config.yml               드라이버 메타 (name, packageKey, permissions: lan
 profiles/pc.yml          메인 프로필: capability + 환경설정 (§5.1, §5.4)
 profiles/pc-display.yml  디스플레이 자식 프로필: 스위치 하나 (§5.2)
 capabilities/            커스텀 capability 정의 + 프레젠테이션 (§5.1, §5.3)
+  translations/          capability 번역 ko/en (#78)
 src/
   init.lua               진입점: lifecycle 과 capability 핸들러만
   caps.lua               커스텀 capability id, NAMESPACE 상수 한 곳
@@ -266,7 +339,8 @@ tests/
 tools/
   lua.js                 fengari 기반 `lua <file>` 러너
   apply-namespace.js     네임스페이스 일괄 적용
-  create-capabilities.sh 커스텀 capability 5종 생성 (CLI)
+  create-capabilities.sh 커스텀 capability 5종 생성 (CLI, 계정당 한 번)
+  sync-capabilities.sh   정의·프레젠테이션·번역 갱신 (CLI, 바꿀 때마다)
 ```
 
 허브에서는 `src/`가 패키지 루트라, 모듈끼리는 항상 이름만으로 require 합니다
@@ -332,22 +406,49 @@ npm test
 
 `create-capabilities.sh`는 **계정당 한 번만** 실행하세요. `capabilities:create`에는
 "있으면 갱신" 모드가 없어, 다시 돌리면 같은 이름의 capability가 하나 더 생깁니다.
-정의를 고칠 때는 `smartthings capabilities:update <id> <version> -i <file>`을 씁니다.
 
-`tests/capabilities_test.lua`가 JSON과 Lua의 아귀를 맞춰 검사합니다(같은 id, `state`가
+정의·프레젠테이션·번역을 고친 뒤에는 `sync-capabilities.sh`로 한 번에 올립니다.
+capability가 `status: proposed`인 동안에만 됩니다(공개하면 버전을 올려야 합니다).
+
+```sh
+cd edge
+./tools/sync-capabilities.sh --dry-run   # 실행할 CLI 명령만 출력
+./tools/sync-capabilities.sh             # 5종 × (정의 · 프레젠테이션 · ko · en)
+```
+
+### capability 번역
+
+`capabilities/translations/<이름>.<태그>.json`이 capability 라벨, 속성 라벨, enum 값,
+명령·인자 라벨을 로케일별로 담습니다. 프레젠테이션의 라벨은 영어로 두고 이 번역이
+휴대폰 언어에 맞춰 덮어씁니다.
+
+```sh
+smartthings capabilities:translations:upsert <id> --capability-version 1 \
+  -i capabilities/translations/pcCommand.ko.json
+smartthings capabilities:translations <id> --capability-version 1 ko   # 읽어서 확인
+```
+
+`tests/capabilities_test.lua`가 두 태그(ko/en) 모두에 대해 **정의에 있는 모든 속성·
+enum 값·명령·명령 인자**가 번역돼 있는지, 정의에 없는 것을 번역하지 않는지, 한국어
+파일에 실제로 한글이 들어 있는지를 검사합니다.
+
+`tests/capabilities_test.lua`는 JSON과 Lua의 아귀도 맞춰 검사합니다(같은 id, `state`가
 쓰는 것과 같은 속성, `init.lua` 핸들러와 같은 명령, 정의되지 않은 것을 참조하지 않는
-프레젠테이션). 다만 SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다.
-생성할 때 확인할 부분:
+프레젠테이션, 리모컨 버튼 8개의 순서, 조건부 줄의 `visibleCondition`). 다만
+SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다. 올릴 때 확인할 부분:
 
+- 상세 화면의 `visibleCondition`(설계 §14에 없는 가정입니다). 거부되면 그 객체만
+  지우면 됩니다 — 조건부 줄이 늘 보이는 것으로 퇴화할 뿐, 나머지는 그대로입니다.
+  요약 줄은 예약이 없을 때 빈 문자열이라 크게 거슬리지 않습니다.
+- `capabilities:translations:upsert`가 받는 본문 형식
+  (`{"tag","label","attributes":{...,"i18n":{"value":{...}}},"commands":{...}}`).
 - 정의의 `id`, `version`, `status`, `ephemeral` — CLI가 무시하거나 거부하고 자기 값을
   넣을 수 있습니다.
 - 모든 속성에 `enumCommands: []`를 명시했습니다(enum이 아닌 속성 포함).
-- `pcCommand.execute`와 `pcSchedule.schedule`의 상세 화면·자동화 동작 항목이
-  `displayType: "multiArgCommand"`와 인자별 `displayType`을 쓰고, `minutes` 프리셋
-  (5/15/30/60/120)이 명령 인자에 `alternatives`를 허용한다는 가정에 기대고 있습니다.
-  둘 중 하나라도 거부되면 `minutes`를 `numberField`로 낮추세요.
-- `state`, `list`, `pushButton`, `numberField`가 프레젠테이션의 유효한 `displayType`
-  이라고 가정하고 있습니다.
+- `automation.actions`의 `multiArgCommand`와 인자별 `name`은 §14에서 실제로 통과한
+  형식입니다. `pushButton`은 `automation.actions`에 넣을 수 없습니다(상세 화면 전용).
+- 환경설정 `title`의 길이 제한(36자)에 한국어 병기 제목이 걸리지 않는지 —
+  `edge:drivers:package`가 거부하면 영어 괄호를 줄이세요.
 
 ### CLI 패키징
 
@@ -401,6 +502,12 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 - [ ] PC 두 대를 추가했을 때 서로 섞이지 않는지.
 - [ ] 커스텀 capability가 없는 상태(플레이스홀더 네임스페이스)에서도 스위치·refresh·
       health가 살아 있는지.
+- [ ] (#78) 상세 화면에 명령 버튼 8개가 위 순서대로 세로로 나오고, 강제 종료는 없는지.
+- [ ] (#78) `visibleCondition`이 실제로 동작하는지 — 예약을 걸면 요약 줄과 [예약 취소]가
+      나타나고, 취소하면 사라지는지. 안내 줄이 문제가 없을 때 안 보이는지.
+- [ ] (#78) 휴대폰 언어가 한국어일 때 capability 라벨·enum·명령 인자가 한국어인지,
+      영어로 바꾸면 영어가 되는지.
+- [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 유예 없이 바로 실행되는지.
 
 ---
 
@@ -457,15 +564,30 @@ first successful poll, so a later SSDP hit updates it rather than duplicating it
 **Preferences** — `ipAddress` (empty = follow SSDP), `followDiscovery`, `port`
 (5001), `secret` (sent as `X-PC-Secret`; Edge has no password field, so it is
 visible while typing), `macAddress`, `wolBroadcast`, `pollInterval`
-(10 s/30 s/1 min/5 min), `offAction`, `createDisplayDevice`, `language`.
+(10 s/30 s/1 min/5 min), `offAction`, `buttonMode`, `createDisplayDevice`,
+`language`. Their titles and descriptions are Korean first with the English term
+in parentheses: a profile preference has no per-locale variant, and this project
+is Korean-first.
 
-**Use** — switch on sends Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and 9);
-switch off sends `offAction` and honours the PC's grace period.
-`pcCommand.execute(command, mode, minutes)` runs any of the nine commands, or
-schedules it when `minutes > 0`. `pcSchedule` shows the pending schedule with a
-countdown and origin and offers `cancel()` / `schedule()`. `pcStatus` carries
-`connection`, `serviceVersion`, `updateAvailable`, `wolReady`, `lastSeen` and a
-one-line `message`. A display child switch runs `turnscreenon` / `turnscreenoff`.
+**Use** — the detail view is a remote control: the switch, a one-line status
+summary, then one push button per command (wake, sleep, hibernate, restart, shut
+down, lock, screen off, screen on — force shutdown is automation-only), the
+schedule presets, and rows that only appear when they apply (a notice, the
+schedule summary with its cancel button, the session summary). Switch on sends
+Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and 9); switch off sends
+`offAction` and honours the PC's grace period. The buttons follow the
+`buttonMode` preference. `pcCommand.execute(command, mode, minutes)` is kept for
+automations and schedules when `minutes > 0`. The raw attributes
+(`remainingSeconds`, `executeAt`, `origin`, `serviceVersion`, `updateAvailable`,
+`wolReady`, `lastSeen`, `idleMinutes`, `locked`, `user`) are still there for
+automations, just not on screen. A display child switch runs `turnscreenon` /
+`turnscreenoff`.
+
+**Korean** — capability labels, enum values and command arguments are translated
+through `capabilities/translations/<name>.{ko,en}.json`, so the app follows the
+phone's locale; the string attributes the driver composes (the summaries,
+`message`, `lastCommand`) follow the `language` preference instead.
+`tools/sync-capabilities.sh` pushes definitions, presentations and both locales.
 
 **Several PCs** — the identity is `machine_id` (Windows MachineGuid), carried at
 the top level of SSDP, status and push bodies, so one hub routes several PCs

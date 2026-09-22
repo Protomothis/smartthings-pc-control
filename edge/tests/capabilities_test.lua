@@ -219,7 +219,14 @@ end
 -- commands
 --------------------------------------------------------------------------------
 
--- The commands init.lua registers handlers for (§5.1).
+-- The commands init.lua registers handlers for (§5.1). The eight no-argument
+-- ones are the remote-control buttons of the detail view (#78); `execute` stays
+-- for automations, where the mode and the delay are worth asking about.
+local REMOTE_BUTTONS = {
+  "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
+  "screenOff", "screenOn",
+}
+
 local EXPECTED_COMMANDS = {
   power_state = {},
   command = { execute = { "command", "mode", "minutes" } },
@@ -227,6 +234,10 @@ local EXPECTED_COMMANDS = {
   status = {},
   session = {},
 }
+
+for _, name in ipairs(REMOTE_BUTTONS) do
+  EXPECTED_COMMANDS.command[name] = {}
+end
 
 function T.test_commands_and_their_arguments_are_the_handled_ones()
   for key, expected in pairs(EXPECTED_COMMANDS) do
@@ -370,6 +381,249 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   -- cancel is a detail-view pushButton; automation.actions may not carry
   -- pushButton (SmartThings presentation rules), so it is not expected there.
   h.assert_true(action_commands("schedule").schedule == true)
+end
+
+--------------------------------------------------------------------------------
+-- the remote-control detail view (#78)
+--------------------------------------------------------------------------------
+
+function T.test_the_command_detail_view_is_one_button_per_command()
+  -- §5.3: a vertical list of pushButtons, in the order of the issue, with
+  -- forceshutdown deliberately left off the screen (automation only).
+  local detail = presentation("command").detailView
+  local buttons = {}
+  for _, item in ipairs(detail) do
+    if item.displayType == "pushButton" then
+      buttons[#buttons + 1] = item.pushButton.command
+    end
+  end
+  h.assert_deep_equal(buttons, REMOTE_BUTTONS)
+  for _, item in ipairs(detail) do
+    h.assert_true(item.displayType ~= "multiArgCommand",
+      "multiArgCommand is rejected in a detailView (§14)")
+  end
+  local _, commands = references(detail, {}, {})
+  h.assert_true(commands.forceshutdown == nil, "forceshutdown must not be on screen")
+end
+
+function T.test_no_automation_action_uses_a_push_button()
+  -- §14: the presentation API rejects pushButton in automation.actions.
+  for key, id in pairs(caps.ids) do
+    for _, action in ipairs((presentation(key).automation or {}).actions or {}) do
+      h.assert_true(action.displayType ~= "pushButton",
+        id .. " has a pushButton in automation.actions, which the API rejects")
+    end
+  end
+end
+
+-- Attributes that are still defined and emitted but no longer have a row of
+-- their own in the detail view (#78): the summaries replaced them.
+local RAW_ROWS_REMOVED = {
+  schedule = { "remainingSeconds", "executeAt", "origin", "command", "active" },
+  status = { "serviceVersion", "updateAvailable", "wolReady", "lastSeen", "connection" },
+  session = { "idleMinutes", "locked", "user" },
+}
+
+function T.test_the_detail_views_show_summaries_instead_of_raw_attributes()
+  for key, removed in pairs(RAW_ROWS_REMOVED) do
+    local defined = definition(key).attributes
+    for _, attr in ipairs(removed) do
+      h.assert_true(defined[attr] ~= nil,
+        attr .. " must stay defined even though the detail view dropped it")
+    end
+    -- `state` rows are what the user reads; a visibleCondition may still name
+    -- the attribute it keys on, so only the row labels are inspected here.
+    for _, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "state" then
+        local label = (item.state or {}).label or ""
+        for _, attr in ipairs(removed) do
+          h.assert_equal(label:find(attr .. ".value", 1, true), nil,
+            caps.ids[key] .. " detail view still shows the raw " .. attr)
+        end
+      end
+    end
+  end
+  for _, key in ipairs({ "schedule", "status", "session" }) do
+    local seen = false
+    for _, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "state" and ((item.state or {}).label or ""):find("summary.value", 1, true) then
+        seen = true
+      end
+    end
+    h.assert_true(seen, caps.ids[key] .. " has no summary row")
+  end
+end
+
+function T.test_the_conditional_rows_are_guarded_by_a_visible_condition()
+  -- #78. If the API rejects `visibleCondition` the fallback is to drop these
+  -- objects; README and the design doc §14 record that.
+  local function condition_of(key, needle)
+    for _, item in ipairs(presentation(key).detailView or {}) do
+      local label = ((item.state or {}).label) or ((item.pushButton or {}).command) or ""
+      if label:find(needle, 1, true) then
+        return item.visibleCondition
+      end
+    end
+    return nil
+  end
+
+  local function check(condition, capability, value, operator, where)
+    h.assert_true(type(condition) == "table", where .. " has no visibleCondition")
+    h.assert_equal(condition.capability, capability, where .. " capability")
+    h.assert_equal(condition.component, "main", where .. " component")
+    h.assert_equal(condition.version, 1, where .. " version")
+    h.assert_equal(condition.value, value, where .. " value")
+    h.assert_equal(condition.operator, operator, where .. " operator")
+  end
+
+  check(condition_of("status", "message.value"), caps.STATUS,
+    "message.value", "NOT_EQUALS", "pcStatus message row")
+  check(condition_of("schedule", "summary.value"), caps.SCHEDULE,
+    "active.value", "EQUALS", "pcSchedule summary row")
+  check(condition_of("schedule", "cancel"), caps.SCHEDULE,
+    "active.value", "EQUALS", "pcSchedule cancel button")
+  check(condition_of("session", "summary.value"), caps.SESSION,
+    "exposed.value", "EQUALS", "pcSession summary row")
+  h.assert_true(condition_of("schedule", "summary.value").operand == true)
+  h.assert_equal(condition_of("status", "message.value").operand, "")
+end
+
+--------------------------------------------------------------------------------
+-- translations (#78)
+--------------------------------------------------------------------------------
+
+local TAGS = { "ko", "en" }
+local translations_dir = caps_dir .. "/translations"
+
+local function read_in(dir, name)
+  local path = dir .. "/" .. name
+  if host and host.readfile then
+    local text, err = host.readfile(path)
+    if not text then
+      return nil, tostring(err)
+    end
+    return text
+  end
+  local file, err = io.open(path, "r")
+  if not file then
+    return nil, tostring(err)
+  end
+  local text = file:read("a")
+  file:close()
+  return text
+end
+
+-- "<key>.<tag>" -> decoded table or { __error = ... }.
+local translations = {}
+
+for key in pairs(caps.ids) do
+  local base = file_for(key):gsub("%.json$", "")
+  for _, tag in ipairs(TAGS) do
+    local name = base .. "." .. tag .. ".json"
+    local text, err = read_in(translations_dir, name)
+    if not text then
+      translations[key .. "." .. tag] = { __error = "cannot read " .. name .. ": " .. tostring(err) }
+    else
+      local ok, decoded = pcall(json.decode, text)
+      translations[key .. "." .. tag] = ok and decoded or { __error = name .. " is not valid JSON: " .. tostring(decoded) }
+    end
+  end
+end
+
+local function translation(key, tag)
+  return translations[key .. "." .. tag]
+end
+
+function T.test_every_capability_has_a_korean_and_an_english_translation()
+  for key, id in pairs(caps.ids) do
+    for _, tag in ipairs(TAGS) do
+      local doc = translation(key, tag)
+      h.assert_true(doc.__error == nil, tostring(doc.__error))
+      h.assert_equal(doc.tag, tag, id .. " " .. tag .. " tag")
+      h.assert_true(type(doc.label) == "string" and doc.label ~= "",
+        id .. " " .. tag .. " has no capability label")
+    end
+  end
+end
+
+function T.test_translations_cover_every_attribute_and_enum_value()
+  for key, id in pairs(caps.ids) do
+    for _, tag in ipairs(TAGS) do
+      local doc = translation(key, tag)
+      local translated = doc.attributes or {}
+      for attr, spec in pairs(definition(key).attributes or {}) do
+        local where = string.format("%s %s %s", id, tag, attr)
+        local entry = translated[attr]
+        h.assert_true(type(entry) == "table", where .. " is not translated")
+        h.assert_true(type(entry.label) == "string" and entry.label ~= "",
+          where .. " has no label")
+        local enum = ((spec.schema or {}).properties or {}).value or {}
+        for _, value in ipairs(enum.enum or {}) do
+          local localised = (((entry.i18n or {}).value or {})[value] or {}).label
+          h.assert_true(type(localised) == "string" and localised ~= "",
+            where .. "." .. value .. " has no label")
+        end
+      end
+      for attr in pairs(translated) do
+        h.assert_true((definition(key).attributes or {})[attr] ~= nil,
+          string.format("%s %s translates %s, which is not defined", id, tag, attr))
+      end
+    end
+  end
+end
+
+function T.test_translations_cover_every_command_and_argument()
+  for key, id in pairs(caps.ids) do
+    for _, tag in ipairs(TAGS) do
+      local doc = translation(key, tag)
+      local translated = doc.commands or {}
+      for name, command in pairs(definition(key).commands or {}) do
+        local where = string.format("%s %s %s()", id, tag, name)
+        local entry = translated[name]
+        h.assert_true(type(entry) == "table", where .. " is not translated")
+        h.assert_true(type(entry.label) == "string" and entry.label ~= "",
+          where .. " has no label")
+        for _, argument in ipairs(command.arguments or {}) do
+          local argument_entry = (entry.arguments or {})[argument.name]
+          h.assert_true(type(argument_entry) == "table",
+            where .. " argument " .. tostring(argument.name) .. " is not translated")
+          h.assert_true(type(argument_entry.label) == "string" and argument_entry.label ~= "",
+            where .. " argument " .. tostring(argument.name) .. " has no label")
+          for _, value in ipairs((argument.schema or {}).enum or {}) do
+            local localised = (((argument_entry.i18n or {}).value or {})[value] or {}).label
+            h.assert_true(type(localised) == "string" and localised ~= "",
+              where .. " " .. argument.name .. "=" .. value .. " has no label")
+          end
+        end
+      end
+      for name in pairs(translated) do
+        h.assert_true((definition(key).commands or {})[name] ~= nil,
+          string.format("%s %s translates %s(), which is not defined", id, tag, name))
+      end
+    end
+  end
+end
+
+function T.test_the_korean_translation_is_actually_korean()
+  -- A copy-pasted English file would pass every structural check above.
+  for key, id in pairs(caps.ids) do
+    local doc = translation(key, "ko")
+    local hangul = false
+    local function walk(node)
+      if type(node) == "string" then
+        -- Hangul syllables are U+AC00..U+D7A3, i.e. lead bytes 0xEA..0xED.
+        if node:find("[\234-\237][\128-\191][\128-\191]") then
+          hangul = true
+        end
+      elseif type(node) == "table" then
+        for _, value in pairs(node) do
+          walk(value)
+        end
+      end
+    end
+    walk(doc)
+    h.assert_true(hangul, id .. " ko translation has no Hangul in it")
+  end
 end
 
 return T

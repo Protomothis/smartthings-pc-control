@@ -5,6 +5,20 @@
   "name": "pcStatus",
   "ephemeral": false,
   "attributes": {
+    "summary": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    },
     "connection": {
       "schema": {
         "type": "object",

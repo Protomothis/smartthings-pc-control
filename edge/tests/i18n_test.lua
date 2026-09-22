@@ -44,6 +44,9 @@ function T.test_all_required_keys_exist()
     "schedule_replaced", "schedule_cancelled", "schedule_none",
     -- #73: discovery, the multi-PC warning and the display child label.
     "discovery_found", "ip_updated", "hostname_mismatch", "display_label",
+    -- #78: the pieces the one-line summaries are built from.
+    "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
+    "session_locked", "session_unlocked", "session_idle",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
@@ -64,6 +67,37 @@ function T.test_every_service_command_has_a_display_name()
         string.format("command %s has no %s display name", command, lang))
     end
   end
+end
+
+function T.test_every_power_state_has_a_summary_label()
+  -- #78: `pcStatus.summary` is a plain string attribute, so the driver has to
+  -- localise the powerState enum itself.
+  local states = {
+    "on", "sleeping", "hibernated", "off", "waking", "shuttingDown", "unknown",
+  }
+  for _, value in ipairs(states) do
+    for _, lang in ipairs({ "ko", "en" }) do
+      local label = i18n.power(lang, value)
+      h.assert_true(label ~= value and label ~= "",
+        string.format("powerState %s has no %s label", value, lang))
+    end
+  end
+  h.assert_equal(i18n.power("ko", "on"), "켜짐")
+  h.assert_equal(i18n.power("en", "shuttingDown"), "Shutting down")
+  -- A value from a newer capability version still shows something.
+  h.assert_equal(i18n.power("ko", "rebooting"), "rebooting")
+  h.assert_equal(i18n.power("ko", nil), "")
+end
+
+function T.test_connection_has_a_short_label_for_the_summary()
+  h.assert_equal(i18n.connection("ko", "ok"), "연결됨")
+  h.assert_equal(i18n.connection("ko", "unauthorized"), "시크릿 불일치")
+  h.assert_equal(i18n.connection("en", "unreachable"), "No response")
+  h.assert_equal(i18n.connection("en", "incompatible"), "Version mismatch")
+  h.assert_equal(i18n.connection("ko", "weird"), "weird")
+  h.assert_equal(i18n.connection("ko", nil), "")
+  -- The short label is not the long sentence `message` carries.
+  h.assert_true(i18n.connection("ko", "unauthorized") ~= i18n.t("ko", "unauthorized"))
 end
 
 function T.test_the_discovery_strings_carry_their_arguments()
