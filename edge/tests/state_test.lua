@@ -177,9 +177,9 @@ function T.test_apply_status_clears_an_inactive_schedule()
   local events = events_for(status)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "")
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "none")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 0)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "")
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "none")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "")
 end
 

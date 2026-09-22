@@ -23,6 +23,9 @@ state.UNKNOWN = "unknown"
 
 -- pcPlanner.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
+-- Placeholder for automation-only string attributes that have nothing to say
+-- (the app never shows them; "" would be stored as null by the cloud).
+state.NONE = "none"
 state.SCHEDULED = "scheduled"
 
 -- #88: the 예약 시간 row's resting value, and the `minutes` argument that does
@@ -526,10 +529,11 @@ function state.initial_rows(lang)
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
   ev(events, caps.SCHEDULE, "active", false)
   ev(events, caps.SCHEDULE, "status", state.IDLE)
-  ev(events, caps.SCHEDULE, "command", "")
+  -- Never "": the cloud records an empty string as null (platform notes).
+  ev(events, caps.SCHEDULE, "command", state.NONE)
   ev(events, caps.SCHEDULE, "remainingSeconds", 0)
-  ev(events, caps.SCHEDULE, "executeAt", "")
-  ev(events, caps.SCHEDULE, "origin", "")
+  ev(events, caps.SCHEDULE, "executeAt", state.NONE)
+  ev(events, caps.SCHEDULE, "origin", state.NONE)
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(nil, lang))
   -- #88: the 예약 시간 row's resting value. A list whose attribute was never
   -- emitted shows "-" and does not open (platform notes "상세 화면(detailView) 위젯"), and this one never
@@ -573,12 +577,12 @@ function state.apply_status(device_state, status, opts)
   -- with no chevron, measured 2026-09-22), so the schedule list reads
   -- `status` and `active` stays for the automation condition.
   ev(events, caps.SCHEDULE, "status", active and state.SCHEDULED or state.IDLE)
-  ev(events, caps.SCHEDULE, "command", active and i18n.command(lang, schedule.command) or "")
+  ev(events, caps.SCHEDULE, "command", active and i18n.command(lang, schedule.command) or state.NONE)
   ev(events, caps.SCHEDULE, "remainingSeconds",
     active and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0)
   -- `execute_at` is RFC3339 with the PC's offset; the app shows the local time.
-  ev(events, caps.SCHEDULE, "executeAt", active and hhmm(schedule.execute_at) or "")
-  ev(events, caps.SCHEDULE, "origin", active and i18n.origin(lang, schedule.origin) or "")
+  ev(events, caps.SCHEDULE, "executeAt", active and hhmm(schedule.execute_at) or state.NONE)
+  ev(events, caps.SCHEDULE, "origin", active and i18n.origin(lang, schedule.origin) or state.NONE)
   -- #78: the one row the detail view shows, and only while `active` is true.
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(schedule, lang))
 

@@ -29,7 +29,7 @@ poll.ROWS_FIELD = "rows_painted"
 -- on every existing device and has to be painted once.
 -- #88 bumps it once more: `pcCountdown` became `pcPlanner` and gained
 -- `minutesPick`, so every schedule row of a migrated device starts out unset.
-poll.ROWS_VERSION = "88"
+poll.ROWS_VERSION = "88b"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -104,6 +104,16 @@ poll.SCHEDULE_ROWS = {
   [caps.SCHEDULE .. ".active"] = true,
   [caps.SCHEDULE .. ".summary"] = true,
 }
+
+--- Mark every event as forced (a repaint after a profile change: the hub
+--- de-duplicates unchanged values, but the cloud record of the new profile is
+--- empty until it receives them).
+function poll.force_all(events)
+  for _, e in ipairs(events or {}) do
+    e.force = true
+  end
+  return events
+end
 
 --- Mark the events whose `<cap>.<attr>` is in `keys` as forced (#86).
 -- Returns the same list, so it can wrap a call.
@@ -301,12 +311,19 @@ function poll.ensure_rows(device)
   end
   pcall(function() device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION, { persist = true }) end)
 
+  poll.repaint(device)
+  return true
+end
+
+--- Repaint every row with forced events: after a profile change (`infoChanged`)
+--- the cloud starts the new profile with empty states, and the hub would
+--- otherwise drop the re-emit of values it considers unchanged.
+function poll.repaint(device)
   local seen
   pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
-  poll.emit_action(device, seen)
-  poll.emit_plan_command(device, poll.plan_command(device))
-  poll.emit(device, state.initial_rows(poll.lang(device)))
-  return true
+  poll.emit_action(device, seen, true)
+  poll.emit_plan_command(device, poll.plan_command(device), true)
+  poll.emit(device, poll.force_all(state.initial_rows(poll.lang(device))))
 end
 
 --- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil

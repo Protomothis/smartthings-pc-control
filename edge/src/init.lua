@@ -86,6 +86,9 @@ local function device_info_changed(driver, device, _event, _args)
   -- Preferences are already updated on `device` here; restarting the timer
   -- picks up a new pollInterval and a poll picks up a new IP/secret/port.
   log.info("preferences changed for " .. device.id)
+  -- infoChanged also fires when a profile migration has landed: the cloud's
+  -- record of the new profile is empty until every row is sent again.
+  poll.repaint(device)
   poll.start(driver, device)
 end
 
