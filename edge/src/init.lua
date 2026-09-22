@@ -46,10 +46,10 @@ local function device_init(driver, device)
   -- pcExec and pcDelay unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   if poll.ensure_rows(device) then
-    -- First run on this generation of rows: one forced poll so attributes
-    -- that never change (updateAvailable=false) reach the cloud too. Best
-    -- effort: the network may not be up yet at init.
-    pcall(poll.once, driver, device, { force = true })
+    -- First run on this generation of rows: forced rows + forced poll, now
+    -- and again shortly, so attributes that never change (updateAvailable)
+    -- and rows the cloud dropped while applying the profile are filled in.
+    poll.repaint_soon(driver, device)
   end
   -- §6.3: one listener per driver, opened on the first device that needs it.
   push.start(driver)
@@ -93,9 +93,8 @@ local function device_info_changed(driver, device, _event, _args)
   log.info("preferences changed for " .. device.id)
   -- infoChanged also fires when a profile migration has landed: the cloud's
   -- record of the new profile is empty until every row is sent again.
-  poll.repaint(device)
   poll.start(driver, device)
-  poll.once(driver, device, { force = true })
+  poll.repaint_soon(driver, device)
 end
 
 local function device_do_configure(driver, device)

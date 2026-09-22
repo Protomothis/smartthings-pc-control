@@ -32,7 +32,7 @@ poll.ROWS_FIELD = "rows_painted"
 -- #89 bumps it again: `pcPlanner` became `pcDelay` (the preset list now reaches
 -- three days, and a wider `minutes` range is a definition change), so the whole
 -- schedule card is unset once more on every device this driver migrates.
-poll.ROWS_VERSION = "89a"
+poll.ROWS_VERSION = "89b"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -316,6 +316,24 @@ function poll.ensure_rows(device)
 
   poll.repaint(device)
   return true
+end
+
+--- Repaint now and again a little later. The immediate repaint can race the
+--- cloud applying a new profile (events for the new capabilities are then
+--- dropped without a hub warning), so the same forced rows go out once more
+--- after LATE_REPAINT_SECONDS, together with a forced poll.
+poll.LATE_REPAINT_SECONDS = { 15, 90 }
+function poll.repaint_soon(driver, device)
+  poll.repaint(device)
+  pcall(poll.once, driver, device, { force = true })
+  for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
+    pcall(function()
+      driver:call_with_delay(delay, function()
+        poll.repaint(device)
+        pcall(poll.once, driver, device, { force = true })
+      end, "repaint-late-" .. delay)
+    end)
+  end
 end
 
 --- Repaint every row with forced events: after a profile change (`infoChanged`)
