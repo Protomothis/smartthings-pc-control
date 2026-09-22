@@ -29,7 +29,7 @@ poll.ROWS_FIELD = "rows_painted"
 -- on every existing device and has to be painted once.
 -- #88 bumps it once more: `pcCountdown` became `pcPlanner` and gained
 -- `minutesPick`, so every schedule row of a migrated device starts out unset.
-poll.ROWS_VERSION = "88b"
+poll.ROWS_VERSION = "88c"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -433,11 +433,20 @@ function poll.once(driver, device, opts)
     -- (the schedule rows after `schedule` / `cancel`). They go out with
     -- `state_change = true` so the app's spinner ends even when the value is
     -- the one it already had; everything else stays an ordinary update.
-    poll.emit(device, poll.force_rows(state.apply_status(nxt, body, {
+    local events = state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
       note = opts.note,
-    }), opts.force))
+    })
+    -- opts.force == true: a repaint after a profile change. The hub drops
+    -- re-emits of values it considers unchanged, so every row goes out with
+    -- state_change = true or the cloud record of the new profile stays empty.
+    if opts.force == true then
+      poll.force_all(events)
+    else
+      poll.force_rows(events, opts.force)
+    end
+    poll.emit(device, events)
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     pcall(function() device:online() end)

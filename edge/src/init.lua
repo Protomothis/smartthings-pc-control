@@ -45,7 +45,12 @@ local function device_init(driver, device)
   -- #85: a migration onto the new capability ids leaves every attribute of
   -- pcExec and pcPlanner unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
-  poll.ensure_rows(device)
+  if poll.ensure_rows(device) then
+    -- First run on this generation of rows: one forced poll so attributes
+    -- that never change (updateAvailable=false) reach the cloud too. Best
+    -- effort: the network may not be up yet at init.
+    pcall(poll.once, driver, device, { force = true })
+  end
   -- §6.3: one listener per driver, opened on the first device that needs it.
   push.start(driver)
   poll.start(driver, device)
@@ -90,6 +95,7 @@ local function device_info_changed(driver, device, _event, _args)
   -- record of the new profile is empty until every row is sent again.
   poll.repaint(device)
   poll.start(driver, device)
+  poll.once(driver, device, { force = true })
 end
 
 local function device_do_configure(driver, device)
