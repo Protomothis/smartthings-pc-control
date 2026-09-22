@@ -1,12 +1,13 @@
 # Changelog
 
-## [v1.1.0] (unreleased)
+## [v1.1.0] - 2026-09-22
 
 SmartThings를 위한 **전용 Edge 드라이버**와, 그 드라이버가 쓰는 서비스 API `/st/v1`이 추가되었습니다. 설계 문서: `docs/design/edge-driver.md`.
 
 기존 [PCControl 드라이버](https://github.com/toddaustin07/PCControl) 호환 경로(`/{secret}/{command}`)는 그대로입니다. **옮겨 갈 의무는 없습니다.**
 
 ### SmartThings Edge 드라이버 (`edge/`)
+> Edge 드라이버는 이 릴리스의 레포에 포함되어 있지만 **채널 공개는 추가 실기 테스트 뒤에** 별도 태그(`edge-v1.0.0`)로 진행합니다. 그때까지 SmartThings 연동은 기존 PCControl 드라이버로 그대로 쓸 수 있습니다.
 
 - 허브 안에서 로컬로 도는 Lua 5.3 드라이버. 장치 하나가 PC 하나이며 자식 장치는 만들지 않습니다 (#71 #81)
 - 실제 전원 상태 — 켜짐 · 절전 · 최대 절전 · 꺼짐 · 깨우는 중 · 종료 대기. 스위치는 전원 상태에서 파생되므로 실제와 어긋나지 않습니다 (#71 #72)
