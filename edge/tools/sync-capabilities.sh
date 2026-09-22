@@ -19,7 +19,9 @@
 # #82 turned `pcControl` into `pcAction`, #83 turned `pcTimer` into `pcPlan`,
 # #84 turned `pcAction` into `pcRun` and #85 turned `pcPlan` into `pcCountdown`
 # and `pcRun` into `pcExec`, because the hub caches a definition by id for the
-# whole hub (§14.4) and never re-reads a changed one:
+# whole hub (§14.4) and never re-reads a changed one. #86 adds a brand new one,
+# `pcVersion` (the version row on a card of its own), which has to be CREATED
+# the same way - `capabilities:update` would refuse it:
 #
 #   smartthings capabilities:create -i capabilities/pcExec.json
 #   smartthings capabilities:presentation:create <new id> --capability-version 1 \
@@ -39,7 +41,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcExec pcCountdown pcUser pcInfo)
+CAPABILITIES=(pcPower pcExec pcCountdown pcUser pcInfo pcVersion)
 VERSION=1
 TAGS=(ko en)
 

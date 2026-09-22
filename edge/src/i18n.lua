@@ -167,6 +167,11 @@ local STRINGS = {
   },
   version_unknown = { ko = "?", en = "?" },
 
+  -- #86: `pcExec.lastCommand` before the PC has run anything. An empty string
+  -- is drawn as "-" (§14.5), which reads as a fault rather than as "nothing has
+  -- happened yet", so the row always carries a sentence.
+  last_command_none = { ko = "없음 (None)", en = "None" },
+
   -- schedule / session summaries (#78)
   schedule_remaining = { ko = "%d분 남음", en = "%d min left" },
   schedule_idle = { ko = "예약 없음", en = "No schedule" },

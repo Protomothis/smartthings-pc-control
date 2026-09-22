@@ -106,20 +106,25 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ### 상세 화면
 
-상세 화면은 **스위치 하나와 여덟 줄**입니다(#82, #84, #85). 위에서부터 이렇게 나옵니다.
-줄은 카드(capability)별로 묶이고, 카드 순서는 프로필의 capability 목록 순서입니다.
+상세 화면은 **스위치 하나와 아홉 줄**입니다(#82, #84, #85, #86). 앱은 값만 보여
+주는 줄을 한 카드에, 드롭다운을 다른 카드에 모으고, 각 묶음 안에서는 프로필의
+capability 순서를 따릅니다.
 
 ```
 [ 전원 스위치 ]                     켜기 = WoL, 끄기 = 스위치 끄기 동작
+
+— 상태 줄 —
 전원 상태        켜짐 (On)
-명령             명령 선택… (Select a command) ▼  ← 고르면 바로 실행
-마지막 실행      잠금 · SmartThings · 16:16
-예약할 명령      종료 (Shut down)              ▼  ← 예약이 실행할 명령
-예약             예약 중 (Scheduled)           ▼  ← 5분 … 2시간 / 취소
+마지막 실행      잠금 · SmartThings · 16:16        ← 아직 없으면 "없음 (None)"
 예약 요약        종료 · 4분 남음 · SmartThings
 세션             잠김 · 유휴 20분 · kim
 상태             연결됨 · v1.1.0
-버전             서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v12
+버전             서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v13
+
+— 드롭다운 —
+명령             명령 선택… (Select a command) ▼  ← 고르면 바로 실행
+예약할 명령      종료 (Shut down)              ▼  ← 예약이 실행할 명령
+예약             예약 중 (Scheduled)           ▼  ← 5분 … 2시간 / 취소
 ```
 
 - `명령` · `예약할 명령` · `예약`은 **드롭다운**입니다.
@@ -135,11 +140,16 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
   기본값 `설정된 유예 따름`이면 트레이 토스트·텔레그램에서 취소할 여지가 남습니다.
 - 모든 줄이 **값을 가집니다**. 예약이 없으면 "예약 없음", 세션 정보가 꺼져 있으면
   그렇다고 적습니다. 값이 없는 버튼 줄은 앱이 라벨 옆에 "-"만 그려서 전부 없앴습니다.
+  **빈 문자열도 똑같이 "-"로 보이므로**(#86) 아직 실행한 명령이 없으면
+  `마지막 실행`이 "없음 (None)"이라고 적습니다.
+- `버전`은 #86부터 **자기 카드**(`pcVersion`)에 있습니다. 한 capability 가 값 줄을
+  둘 가지면 앱이 두 칸으로 나란히 그려 양쪽 다 잘리는데, `상태`와 `버전`이 그랬기
+  때문입니다.
 - 원시 속성(남은 초, 실행 시각, 출처, 서비스 버전, 업데이트, WoL 준비, 마지막 확인,
   유휴, 잠금, 사용자)은 화면에서 빠졌지만 **속성으로는 그대로 있어** 자동화 조건과
   이력에서 계속 쓸 수 있습니다.
 - 앱 화면은 장치를 **추가한 시점의 정의**로 굳습니다. 드라이버를 올려도 바뀌지
-  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v12`로 자동
+  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v13`로 자동
   이전하지만, 이전이 막힌 허브에서는 재추가가 가장 확실합니다). 지금 어느 화면을
   쓰고 있는지는 맨 아래 **`버전`** 줄의 `화면` 값이 말해 줍니다.
 
@@ -246,10 +256,13 @@ capability의 카드에 그리므로, 예약 카드만 보면 시간만 고르�
 
 ### 상태 카드
 
-`pcInfo`는 조용한 실패를 드러내기 위한 카드이고, **화면의 맨 아래**에 옵니다(카드
-순서는 프로필의 capability 목록 순서라, `pcinfo`를 목록 끝에 두었습니다). 화면에는
-요약 한 줄(`summary`)과 **버전 한 줄**(`versions`: "서비스 v1.1.0 · 드라이버 1.0.0 ·
-화면 pc.v12")이 보입니다. 버전 줄의 `화면`은 이 장치가 쓰고 있는 프로필입니다 —
+`pcInfo`는 조용한 실패를 드러내기 위한 카드이고, 화면에 보이는 줄은 요약 한
+줄(`summary`)입니다. **버전 줄은 #86부터 자기 카드(`pcVersion`)**이고 상태 줄 중
+**맨 아래**에 옵니다(카드 순서는 프로필의 capability 목록 순서라, `pcinfo` 다음
+`pcversion`을 목록 끝에 두었습니다). 한 capability 에 값 줄이 둘이면 앱이 두 칸으로
+나란히 그려 양쪽 다 잘리기 때문에 나눈 것입니다.
+버전 줄(`versions`: "서비스 v1.1.0 · 드라이버 1.0.0 ·
+화면 pc.v13")의 `화면`은 이 장치가 쓰고 있는 프로필입니다 —
 장치의 화면은 **추가한 시점의 정의로 굳기** 때문에, "왜 아직 옛날 화면이지?"에
 답하는 것은 대개 이 값입니다. PC에 아직 연결되지 않았으면 서비스 자리에 `?`가
 들어가고, 줄 자체는 그래도 나옵니다. 요약 줄은
@@ -267,7 +280,13 @@ capability의 카드에 그리므로, 예약 카드만 보면 시간만 고르�
 | `wolReady` | WoL 가능 어댑터가 하나라도 있는지 |
 | `lastSeen` | 마지막으로 성공한 상태 조회 시각 |
 | `message` | 사람이 읽는 안내 **한 줄**. 요약에 붙는 짧은 형태와 달리 문장 그대로이고, 화면이 아니라 자동화·이력에서 읽습니다. 여러 개가 겹치면 오류 > 호환성 > WoL 미준비 > 업데이트 > 시크릿 없음 순으로 하나만 고릅니다 |
-| `versions` | "서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v12". 화면에 보이는 두 번째 줄이고, `화면`은 장치가 쓰는 프로필 이름입니다. 연결 전이면 서비스가 `?` |
+| `versions` | "서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v13". #86부터 **화면의 줄은 `pcVersion.versions`**이고 이 속성은 자동화·이력용으로 남아 같은 값을 계속 내보냅니다(정의를 지우려면 또 새 capability 이름이 필요하고, 한 번도 emit 되지 않은 속성은 앱이 "상태를 모두 보고하지 않았다"고 안내합니다) |
+
+`pcVersion`은 그 버전 줄 하나만 가진 카드입니다.
+
+| 속성 | 내용 |
+|---|---|
+| `versions` | 화면에 보이는 버전 줄. 연결 전이면 서비스 자리가 `?` |
 
 ### 세션 정보 (선택)
 
@@ -352,8 +371,8 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 
 ```
 config.yml               드라이버 메타 (name, packageKey, permissions: lan)
-profiles/pc-v3.yml       메인 프로필(현행): capability + 환경설정 (§5.1, §5.4)
-profiles/pc.yml, pc-v2.yml  메인 프로필 v1·v2: 이전 장치용으로 남겨 둠 (#79)
+profiles/pc-v13.yml      메인 프로필(현행): capability + 환경설정 (§5.1, §5.4)
+profiles/pc.yml … pc-v12.yml  메인 프로필 v1~v12: 이전 장치용으로 남겨 둠 (#79)
 capabilities/            커스텀 capability 정의 + 프레젠테이션 (§5.1, §5.3)
   translations/          capability 번역 ko/en (#78)
 src/
@@ -377,7 +396,7 @@ tests/
 tools/
   lua.js                 fengari 기반 `lua <file>` 러너
   apply-namespace.js     네임스페이스 일괄 적용
-  create-capabilities.sh 커스텀 capability 5종 생성 (CLI, 계정당 한 번)
+  create-capabilities.sh 커스텀 capability 6종 생성 (CLI, 계정당 한 번)
   sync-capabilities.sh   정의·프레젠테이션·번역 갱신 (CLI, 바꿀 때마다)
 ```
 
@@ -435,7 +454,7 @@ CI의 node와 로컬의 bun에서 같은 명령이 그대로 돕니다.
 
 ### 커스텀 capability와 네임스페이스
 
-`capabilities/`에 설계 문서 §5.1의 커스텀 capability 5종이 각각 정의 + 프레젠테이션
+`capabilities/`에 설계 문서 §5.1의 커스텀 capability 6종이 각각 정의 + 프레젠테이션
 두 파일로 들어 있습니다.
 
 ```
@@ -443,8 +462,9 @@ pcPower.json               정의        -> smartthings capabilities:create -i <
 pcPower.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
 ```
 
-`pcPower`는 전원 상태, `pcExec`은 명령 실행·마지막 실행·예약할 명령, `pcCountdown`은 예약 표시·조작,
-`pcInfo`는 연결·버전·메시지 카드(맨 아래), `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
+`pcPower`는 전원 상태, `pcExec`은 명령 실행·마지막 실행, `pcCountdown`은 예약 표시·조작과
+예약할 명령, `pcInfo`는 연결·메시지 카드, `pcVersion`은 버전 줄 하나뿐인 카드(맨 아래),
+`pcUser`은 선택 항목인 잠금·유휴 블록입니다.
 
 `src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
 네임스페이스 `numbersystem53811`** 을 씁니다(2026-09-22 생성). SmartThings는 id의 이름 부분을 소문자로 바꾸므로 id는 `numbersystem53811.pcpower`처럼 소문자입니다. 다른 계정에서 다시 만들면 네임스페이스가 달라지며, 그때는 `tools/apply-namespace.js`로 다시 반영합니다. 원래 네임스페이스는 소유자가 커스텀
@@ -452,7 +472,7 @@ capability를 만들 때 SmartThings가 발급합니다.
 
 ```sh
 cd edge
-./tools/create-capabilities.sh            # 5종 생성 + 프레젠테이션, 네임스페이스 출력
+./tools/create-capabilities.sh            # 6종 생성 + 프레젠테이션, 네임스페이스 출력
 node tools/apply-namespace.js <namespace> # 모든 파일에 일괄 반영 (bun 도 가능)
 npm test
 ```
@@ -471,7 +491,7 @@ capability가 `status: proposed`인 동안에만 됩니다(공개하면 버전�
 ```sh
 cd edge
 ./tools/sync-capabilities.sh --dry-run   # 실행할 CLI 명령만 출력
-./tools/sync-capabilities.sh             # 5종 × (정의 · 프레젠테이션 · ko · en)
+./tools/sync-capabilities.sh             # 6종 × (정의 · 프레젠테이션 · ko · en)
 ```
 
 ### capability 번역
@@ -497,10 +517,14 @@ enum 값·명령·명령 인자**가 번역돼 있는지, 정의에 없는 것�
 다만 SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다. 올릴 때 확인할
 부분:
 
+- `pcVersion`은 **#86에서 새로 만드는 capability**입니다(버전 줄 전용). 개명이 아니라
+  추가이므로 지울 옛 id 는 없고, `capabilities:create` +
+  `capabilities:presentation:create` + 번역 upsert(ko/en) 뒤 프로필 `pc.v13`을
+  배포하면 끝입니다. `pcInfo.versions` 정의는 그대로 둡니다.
 - `pcExec`·`pcCountdown`·`pcInfo`는 **셋 다 새 capability**입니다(#85: `schedule`의
   `minutes` 최소값이 0, `planCommand`·`setPlanCommand`가 예약 쪽으로 이동,
   `versions` 속성 추가). `capabilities:update`가 아니라 `capabilities:create` +
-  `capabilities:presentation:create` + 번역 upsert로 올린 뒤, 프로필 `pc.v12`가
+  `capabilities:presentation:create` + 번역 upsert로 올린 뒤, 프로필 `pc.v13`가
   배포돼 옛 `...pcplan`·`...pcrun`·`...pchealth`를 참조하는 장치가 남지 않은 것을
   보고 `smartthings capabilities:delete <namespace>.pcplan`(그리고 `.pcrun`,
   `.pchealth`) 합니다. 허브가 정의를 id 단위로 캐시하기 때문에 이름을 바꾸는
@@ -571,7 +595,7 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 - [ ] PC 두 대를 추가했을 때 서로 섞이지 않는지.
 - [ ] 커스텀 capability가 없는 상태(플레이스홀더 네임스페이스)에서도 스위치·refresh·
       health가 살아 있는지.
-- [ ] (#82) 상세 화면이 스위치 + 다섯 줄로 나오고, 어느 줄에도 "-"가 없는지.
+- [ ] (#82) 상세 화면이 스위치 + 아홉 줄(상태 줄 여섯 · 드롭다운 셋)로 나오고, 어느 줄에도 "-"가 없는지.
 - [ ] (#82) `명령` 목록에 8개가 위 순서대로 나오고 강제 종료는 없는지. 하나 고르면
       실행되고 그 줄이 고른 명령으로 바뀌는지. 아무것도 실행하지 않은 장치가 `—`인지.
 - [ ] (#82) `예약` 목록의 프리셋이 예약을 걸고, `취소`가 예약을 지우는지
@@ -581,9 +605,15 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
       enum 값은 번역 API가 받지 않습니다 — 설계 §14.2).
 - [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 목록에서 고른 명령이 유예 없이
       바로 실행되는지.
-- [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v6`로 옮겨지고(로그 `migrated ... to
-      pc.v6`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지.
+- [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v13`으로 옮겨지고(로그
+      `migrated ... to pc.v13`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지.
       환경설정 값이 이전 뒤에도 남아 있는지.
+- [ ] (#86) `버전` 줄이 자기 카드에서 **전체 폭**으로 나오고 `상태` 줄과 나란한 두
+      칸이 아닌지. 두 줄 다 잘리지 않는지.
+- [ ] (#86) 어느 줄도 "-"가 아닌지. 특히 아직 아무 명령도 실행하지 않은 장치의
+      `마지막 실행`이 "없음 (None)"인지.
+- [ ] (#86) 예약이 없는 상태에서 `예약` 목록의 `취소`를 고르면 회전 표시가 **오류
+      없이** 끝나는지. `예약할 명령`에서 지금과 같은 값을 다시 골라도 마찬가지인지.
 
 ---
 
@@ -599,6 +629,9 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 | **상태가 늦게 갱신됨** | 푸시 구독이 실패하고 폴링만 도는 상태일 수 있습니다. `lastSeen`을 보고, 폴링 주기를 줄여 보세요. 허브 IP 판단이 틀리면 서비스 로그에 subscribe `400`이 남습니다 |
 | **장치가 두 개로 보임** | 수동 추가 뒤 SSDP가 같은 PC를 다시 찾은 경우입니다. 첫 상태 조회에 성공해야 `machine_id`를 학습하므로, 시크릿을 넣어 `ok`로 만든 뒤 남는 쪽을 지우세요 |
 | **PC 두 대가 한 장치로 합쳐짐** | 이미지 복제로 MachineGuid가 같습니다. 한쪽에서 재생성하세요(위 [여러 PC](#여러-pc)) |
+| **명령을 보내면 회전 표시 뒤에 오류가 뜸** | 값이 바뀌지 않는 명령을 보냈을 때 앱이 그렇게 끝납니다(예약이 없는데 `취소`, `예약할 명령`에서 지금과 같은 값 재선택, `명령` 목록을 그냥 닫기). 드라이버는 이런 응답을 `state_change`로 강제해 회전 표시를 끝내므로(#86), 그래도 오류가 보이면 장치가 아직 옛 프로필(`버전` 줄의 `화면` 값이 `pc.v13`이 아님)이거나 드라이버가 옛 버전입니다. PC에는 아무 영향이 없으니 실행 여부는 `마지막 실행`·`예약 요약` 줄로 확인하세요 |
+| **줄에 "-"만 보임** | 값이 한 번도 보고되지 않았거나 빈 문자열인 줄입니다. 드라이버가 장치를 추가할 때와 첫 폴링에 모든 줄을 한 번 칠하므로(#85, #86), 남아 있다면 폴링이 한 번도 성공하지 못한 것입니다 — `상태` 줄부터 확인하세요 |
+| **`상태`와 `버전`이 두 칸으로 잘려 보임** | #86 이전 화면입니다. 장치가 `pc.v13`으로 옮겨지면 `버전`이 자기 카드에서 전체 폭으로 나옵니다. 이전이 막힌 허브라면 장치를 지우고 다시 추가하세요 |
 | **커스텀 타일이 안 보임** | 네임스페이스가 아직 플레이스홀더입니다. `create-capabilities.sh` → `apply-namespace.js` → 재패키징 순서로 처리하세요. 그동안에도 스위치·새로고침은 동작합니다 |
 | **모니터 장치가 사라짐** | #81에서 제거했습니다. 본체 상세 화면의 [화면 끄기]·[화면 켜기] 버튼을 쓰세요. 허브에 남아 있던 자식 장치는 드라이버가 처음 뜰 때 지웁니다 |
 | **텔레그램이 다른 PC 것과 섞임** | 봇 토큰 하나를 여러 PC가 공유하고 있습니다(409 Conflict). PC마다 봇을 분리하세요 |
@@ -645,7 +678,7 @@ visible while typing), `macAddress`, `wolBroadcast`, `pollInterval`
 in parentheses: a profile preference has no per-locale variant, and this project
 is Korean-first.
 
-**Use** — the detail view is the switch and five rows that all carry a value
+**Use** — the detail view is the switch and nine rows that all carry a value
 (#82): the power state, a **command dropdown** (wake, sleep, hibernate, restart,
 shut down, lock, screen off, screen on — force shutdown is automation-only) that
 runs what you pick and then shows it, a **schedule dropdown** (5/15/30/60/120
@@ -681,11 +714,27 @@ inside its argument's schema. And the app draws a detail row in the card of the
 capability that owns it, so `planCommand` / `setPlanCommand` moved onto the
 schedule capability, where "what to schedule" now sits above "when".
 
+#86 split the version row onto a capability of its own, `pcVersion`, and made
+every row carry a sentence. Two `state` rows of the SAME capability are drawn
+side by side in two narrow, truncated columns — that is what the status card's
+"상태" and "버전" looked like — while one state row per capability renders full
+width. The app also groups all state rows into one card and all dropdowns into
+another, so "last card" means "last capability in the profile"; `pcversion` is
+last in `pc.v13`, right after `pcinfo`, which keeps defining and emitting
+`versions` (dropping it would need another rename, and an attribute that is
+never emitted makes the app report incomplete state). An empty string reads as
+"-" exactly like an unset attribute, so `lastCommand` says "없음 (None)" / "None"
+before anything has run, and a test walks every detail row to keep it that way.
+Finally, a command whose bound attribute does not change — cancelling with
+nothing scheduled, re-picking the value a list already shows, the `none` no-op —
+left the app spinning until it failed, so every emit that answers a command goes
+out with `{ state_change = true }`.
+
 The capabilities were renamed `pcControl` -> `pcAction` -> `pcRun` -> `pcExec`
 (id `<ns>.pcexec`) and `pcTimer` -> `pcPlan` -> `pcCountdown` (id
 `<ns>.pccountdown`) because the hub caches a capability definition by id for the
 whole hub and never re-reads a changed one, so a changed definition needs a new
-id; the profile goes up a version (`pc.v12`) for the same reason on the
+id; the profile goes up a version (`pc.v13`) for the same reason on the
 presentation side. Devices are migrated automatically on the driver's first
 init, and the driver repaints every attribute of both capabilities once after a
 migration — under a new id they all start out unset, which reads as "-".
@@ -711,7 +760,7 @@ cd edge
 npm install                          # or: bun install
 npm test                             # or: bun tools/lua.js tests/run.lua
 npm run syntax
-./tools/create-capabilities.sh       # once per account: creates the 5 capabilities
+./tools/create-capabilities.sh       # once per account: creates the 6 capabilities
 node tools/apply-namespace.js <ns>   # writes the assigned namespace everywhere
 ```
 

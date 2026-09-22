@@ -80,6 +80,9 @@ local function golden(lang)
     { cap = caps.STATUS, attr = "wolReady", value = true },
     { cap = caps.STATUS, attr = "lastSeen", value = NOW },
     -- #85: the bottom row of the bottom card, refreshed on every poll.
+    -- #86: on its own capability (two state rows of one capability are drawn as
+    -- two narrow, truncated columns), and still on pcInfo, which defines it.
+    { cap = caps.VERSION, attr = "versions", value = state.versions("v1.1.0", lang) },
     { cap = caps.STATUS, attr = "versions", value = state.versions("v1.1.0", lang) },
     { cap = caps.STATUS, attr = "message", value = "" },
     { cap = caps.STATUS, attr = "summary",
@@ -156,10 +159,13 @@ end
 function T.test_apply_status_formats_last_command()
   local events = events_for(sample_status())
   h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "Shut down · SmartThings · 23:05")
-  -- No last command yet -> empty string rather than a stale value.
+  -- #86: no last command yet -> a sentence, never an empty string. An empty
+  -- `state` row is drawn as "-" (§14.5), which reads as a fault.
   local status = sample_status()
   status.last_command = nil
-  h.assert_equal(h.event_value(events_for(status), caps.COMMAND, "lastCommand"), "")
+  h.assert_equal(h.event_value(events_for(status), caps.COMMAND, "lastCommand"), "None")
+  h.assert_equal(h.event_value(events_for(status, state.ON, "ko"), caps.COMMAND, "lastCommand"),
+    "없음 (None)")
 end
 
 function T.test_apply_status_clears_an_inactive_schedule()
@@ -290,6 +296,11 @@ end
 function T.test_a_status_body_refreshes_the_versions_row()
   local events = state.apply_status(state.new(state.ON), sample_status(),
     { now = NOW, lang = "ko" })
+  -- #86: the row on screen is `pcVersion.versions`; `pcInfo.versions` keeps
+  -- being emitted because pcInfo still defines it (§14.4) and an attribute that
+  -- is never emitted makes the app report incomplete state.
+  h.assert_equal(h.event_value(events, caps.VERSION, "versions"),
+    state.versions("v1.1.0", "ko"))
   h.assert_equal(h.event_value(events, caps.STATUS, "versions"),
     state.versions("v1.1.0", "ko"))
 end
@@ -304,11 +315,16 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
     { caps.SCHEDULE, "command" }, { caps.SCHEDULE, "remainingSeconds" },
     { caps.SCHEDULE, "executeAt" }, { caps.SCHEDULE, "origin" },
     { caps.SCHEDULE, "summary" }, { caps.STATUS, "versions" },
+    -- #86: the new capability's row, which starts out unset on every device.
+    { caps.VERSION, "versions" },
   }) do
     h.assert_true(h.event_value(events, case[1], case[2]) ~= nil,
       case[1] .. "." .. case[2] .. " is not painted at `added`")
   end
   h.assert_equal(h.event_value(events, caps.STATUS, "versions"), state.versions(nil, "ko"))
+  h.assert_equal(h.event_value(events, caps.VERSION, "versions"), state.versions(nil, "ko"))
+  -- #86: and no painted row is an empty string - that is drawn as "-" too.
+  h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "없음 (None)")
 end
 
 function T.test_status_summary_reads_like_the_issue()

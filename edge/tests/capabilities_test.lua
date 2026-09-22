@@ -195,15 +195,44 @@ local function profile_name(text)
   return (text or ""):match("\nname:%s*([%w%.%-_]+)") or (text or ""):match("^name:%s*([%w%.%-_]+)")
 end
 
-function T.test_every_pc_profile_uses_the_same_ids()
-  -- #79 keeps one file per version, so the check runs over all of them: an
-  -- id that is only in the old file would ship a half-broken new profile.
+--- The file that declares `name`, or nil.
+local function profile_file_for(wanted)
+  for name, text in pairs(profile_files) do
+    if profile_name(text) == wanted then
+      return name, text
+    end
+  end
+  return nil
+end
+
+function T.test_the_current_profile_lists_every_capability()
+  -- A device is created on (and migrated to) this one, so it is the only file
+  -- that has to carry the whole set. #86 added `pcversion`; the older files are
+  -- left exactly as they shipped - a device still on one of them keeps the
+  -- screen it was created with until the migration moves it (§14.3).
+  local profiles = require "profiles"
+  local name, text = profile_file_for(profiles.current())
+  h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
+  for _, id in pairs(caps.ids) do
+    h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
+  end
+end
+
+function T.test_no_profile_references_a_capability_this_driver_dropped()
+  -- The other direction, over every file: an id that is in a profile but not in
+  -- caps.lua is a capability the driver no longer emits anything for, so every
+  -- row of that card would read "-" on a device still sitting there.
   -- #81 removed the child profiles, so every file left here is a PC profile.
+  local known = {}
+  for _, id in pairs(caps.ids) do
+    known[(id:gsub("^.*%.", ""))] = true
+  end
   local checked = 0
   for name, text in pairs(profile_files) do
     checked = checked + 1
-    for _, id in pairs(caps.ids) do
-      h.assert_contains(text, id, "profiles/" .. name .. " is missing ")
+    for id in (text or ""):gmatch("numbersystem53811%.(%a+)") do
+      h.assert_true(known[id] == true,
+        "profiles/" .. name .. " references " .. id .. ", which caps.lua does not know")
     end
   end
   h.assert_true(checked > 0, "no main profile found in " .. profiles_dir)
@@ -236,19 +265,43 @@ function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
   h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
 end
 
-function T.test_the_info_capability_is_last_in_every_profile()
-  -- #85: the app draws one card per capability, in the order the profile lists
-  -- them, so the version row sits at the bottom of the screen only if pcInfo is
-  -- the last entry. Checked in every profile file: a device on an older one
-  -- gets the same reading order.
+--- The custom capability names a profile lists, in order.
+local function capability_order(text)
+  local order = {}
+  for id in (text or ""):gmatch("numbersystem53811%.(%a+)") do
+    order[#order + 1] = id
+  end
+  return order
+end
+
+function T.test_the_version_capability_is_last_in_the_current_profile()
+  -- #85: the app draws the cards in the order the profile lists them, so the
+  -- version row sits at the bottom of the screen only if its capability is the
+  -- last entry. #86 made that capability `pcVersion` (two state rows of one
+  -- capability are drawn as two narrow columns), with `pcInfo` right above it.
+  local profiles = require "profiles"
+  local name, text = profile_file_for(profiles.current())
+  h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
+  local order = capability_order(text)
+  h.assert_true(#order > 1, "profiles/" .. tostring(name) .. " lists no custom capability")
+  h.assert_equal(order[#order], (caps.VERSION:gsub("^.*%.", "")),
+    "profiles/" .. tostring(name) .. " must list the version capability last (#86)")
+  h.assert_equal(order[#order - 1], (caps.STATUS:gsub("^.*%.", "")),
+    "the info card belongs directly above the version card (#86)")
+end
+
+function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
+  -- The older files are frozen (#79): a device that has not been migrated yet
+  -- still renders them, so they must keep the reading order they were packaged
+  -- with - the info card last, which is where the version row was before #86.
+  local profiles = require "profiles"
   for name, text in pairs(profile_files) do
-    local order = {}
-    for id in (text or ""):gmatch("numbersystem53811%.(%a+)") do
-      order[#order + 1] = id
+    if profile_name(text) ~= profiles.current() then
+      local order = capability_order(text)
+      h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
+      h.assert_equal(order[#order], (caps.STATUS:gsub("^.*%.", "")),
+        "profiles/" .. name .. " must keep the info capability last (#85)")
     end
-    h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
-    h.assert_equal(order[#order], (caps.STATUS:gsub("^.*%.", "")),
-      "profiles/" .. name .. " must list the info capability last (#85)")
   end
 end
 
@@ -358,6 +411,8 @@ local EXPECTED_COMMANDS = {
   },
   status = {},
   session = {},
+  -- #86: a read-only card; the version row has nothing to command.
+  version = {},
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -518,7 +573,7 @@ function T.test_the_dashboard_state_is_the_power_state()
   h.assert_contains(dashboard.states[1].label, "powerState.value")
   h.assert_equal(#dashboard.actions, 0, "the switch capability supplies the action")
 
-  for _, key in ipairs({ "command", "schedule", "status", "session" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -826,22 +881,38 @@ function T.test_every_schedule_preset_is_inside_the_definitions_range()
   h.assert_true(zero, "the schedule row has no Cancel entry (minutes = 0)")
 end
 
-function T.test_the_info_detail_view_is_the_summary_and_the_versions()
-  -- #85: "which service, driver and screen am I actually on?" is the first
-  -- question a "the app still looks the old way" report needs answered, and the
-  -- screen is frozen at device-creation time (§14.3), so the profile name earns
-  -- its place next to the two version numbers.
+function T.test_the_info_detail_view_is_only_the_summary()
+  -- #86, measured on the phone: two `state` rows of the SAME capability are
+  -- laid out side by side in two narrow columns and both texts are cut off with
+  -- "…". That is what "상태" and "버전" looked like while they shared pcInfo, so
+  -- the version row moved to `pcVersion` and this card is one row again.
   local detail = presentation("status").detailView
-  h.assert_equal(#detail, 2, "status summary, versions")
+  h.assert_equal(#detail, 1, "the status summary, and nothing else (#86)")
   h.assert_equal(detail[1].displayType, "state")
   h.assert_contains(detail[1].state.label, "summary.value")
 
-  local versions = detail[2]
-  h.assert_equal(versions.displayType, "state")
-  h.assert_equal(versions.label, "{{i18n.attributes.versions.label}}")
-  h.assert_contains(versions.state.label, "versions.value")
+  -- The attribute stays defined and emitted: changing a definition means a new
+  -- capability id (§14.4), and an attribute that is never emitted keeps the app
+  -- saying the device has not reported all of its state.
   h.assert_true(definition("status").attributes.versions ~= nil,
-    caps.ids.status .. " does not define versions")
+    caps.ids.status .. " must keep defining versions (#86)")
+  h.assert_true(state.attributes_used()[caps.ids.status].versions == true,
+    "the driver must keep emitting " .. caps.ids.status .. ".versions (#86)")
+end
+
+function T.test_the_version_detail_view_is_the_one_versions_row()
+  -- #85's row, on its own capability since #86 and therefore full width.
+  local detail = presentation("version").detailView
+  h.assert_equal(#detail, 1, "one state row, so the app draws it full width")
+  h.assert_equal(detail[1].displayType, "state")
+  h.assert_equal(detail[1].label, "{{i18n.attributes.versions.label}}")
+  h.assert_contains(detail[1].state.label, "versions.value")
+  h.assert_true(definition("version").attributes.versions ~= nil,
+    caps.ids.version .. " does not define versions")
+  h.assert_nil(next(definition("version").commands or {}),
+    "the version card is read-only")
+  h.assert_equal(#((presentation("version").automation or {}).conditions or {}), 0,
+    "a version string is not a useful automation condition")
 end
 
 -- #83, measured on the phone: a detailView `list` whose `state.value` points at
@@ -967,9 +1038,15 @@ end
 -- #82 put `active` back on screen as the value of the schedule list; #83 moved
 -- that job to the `status` enum (a list cannot read a boolean), so `active` is
 -- a condition-only attribute again.
+-- #86 added `versions` here: pcInfo still defines and emits it, but the row on
+-- screen belongs to `pcVersion` - two state rows of one capability are drawn as
+-- two narrow, truncated columns.
 local RAW_ROWS_REMOVED = {
   schedule = { "remainingSeconds", "executeAt", "origin", "command", "active" },
-  status = { "serviceVersion", "updateAvailable", "wolReady", "lastSeen", "connection" },
+  status = {
+    "serviceVersion", "updateAvailable", "wolReady", "lastSeen", "connection",
+    "versions",
+  },
   session = { "idleMinutes", "locked", "user" },
 }
 
@@ -1000,6 +1077,75 @@ function T.test_the_detail_views_show_summaries_instead_of_raw_attributes()
       end
     end
     h.assert_true(seen, caps.ids[key] .. " has no summary row")
+  end
+end
+
+--------------------------------------------------------------------------------
+-- #86: no detail row may ever read "-"
+--------------------------------------------------------------------------------
+
+--- The attribute a `state` row shows, from its `{{<attr>.value}}` label.
+local function state_row_attribute(item)
+  return (((item.state or {}).label) or ""):match("{{([%a][%w_]*)%.value}}")
+end
+
+--- Every detailView `state` row of every capability.
+local function detail_state_rows()
+  local rows = {}
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "state" then
+        local attr = state_row_attribute(item)
+        h.assert_true(attr ~= nil, string.format(
+          "%s detailView[%d] is a state row whose label reads no attribute", id, i))
+        rows[#rows + 1] = { key = key, id = id, attr = attr,
+          where = string.format("%s detailView[%d] (%s)", id, i, attr) }
+      end
+    end
+  end
+  return rows
+end
+
+function T.test_no_detail_state_row_is_ever_emitted_empty()
+  -- Measured on the phone 2026-09-22 (#86): a row whose value is the empty
+  -- string is drawn as "-", exactly like one that was never emitted, and the
+  -- topmost such row showed a "-" with no visible label at all. So every row
+  -- the user reads has to carry a sentence in every state the driver can be in:
+  -- freshly added (`initial_rows`), unreachable-but-answered, and a full status
+  -- body. That is what turned `lastCommand`'s "" into "없음 (None)".
+  local full = {
+    service_version = "v1.1.0",
+    secret_set = true,
+    wol = { ready = true },
+    update = { available = false },
+    last_command = { command = "lock", origin = "smartthings", at = "2026-09-22T16:16:00+09:00" },
+    schedule = { active = true, command = "shutdown", remaining_seconds = 240,
+      execute_at = "2026-09-22T23:10:00+09:00", origin = "smartthings" },
+    session = { exposed = true, locked = true, idle_seconds = 1200, user = "kim" },
+  }
+  local samples = {}
+  for _, lang in ipairs({ "ko", "en" }) do
+    samples[#samples + 1] = state.initial_rows(lang)
+    -- An empty body: everything the row says has to come from the driver.
+    samples[#samples + 1] = state.apply_status(state.new(), {}, { lang = lang })
+    samples[#samples + 1] = state.apply_status(state.new("on"), full,
+      { lang = lang, now = "23:05:00" })
+  end
+
+  local rows = detail_state_rows()
+  h.assert_true(#rows >= 5, "far too few state rows were checked: " .. #rows)
+  for _, row in ipairs(rows) do
+    local seen = false
+    for _, events in ipairs(samples) do
+      for _, e in ipairs(events) do
+        if e.cap == row.id and e.attr == row.attr then
+          seen = true
+          h.assert_true(type(e.value) == "string" and e.value ~= "",
+            row.where .. ' would read "-": the driver emits ' .. h.render(e.value))
+        end
+      end
+    end
+    h.assert_true(seen, row.where .. " is a row the driver never emits a value for")
   end
 end
 
@@ -1146,8 +1292,14 @@ end
 function T.test_the_versions_row_has_a_label_in_both_languages()
   -- #85: a row label is one of the few things translations really do reach
   -- (§14.2), so this is where the user's "버전" / "Versions" comes from.
-  h.assert_equal(((translation("status", "ko").attributes or {}).versions or {}).label, "버전")
-  h.assert_equal(((translation("status", "en").attributes or {}).versions or {}).label, "Versions")
+  -- #86: the row is on `pcVersion` now; pcInfo keeps the attribute, and its
+  -- label with it, because the definition cannot change without a rename.
+  for _, key in ipairs({ "version", "status" }) do
+    h.assert_equal(((translation(key, "ko").attributes or {}).versions or {}).label, "버전")
+    h.assert_equal(((translation(key, "en").attributes or {}).versions or {}).label, "Versions")
+  end
+  h.assert_equal(translation("version", "ko").label, "PC 버전")
+  h.assert_equal(translation("version", "en").label, "PC version")
 end
 
 function T.test_the_korean_translation_is_actually_korean()

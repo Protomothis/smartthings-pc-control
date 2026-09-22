@@ -31,8 +31,11 @@ local function make_capability(id)
       if type(key) ~= "string" or RESERVED[key] then
         return nil
       end
-      local constructor = function(value)
-        return { capability = id, attribute = key, value = value }
+      -- #86: the hub's constructors take an options table as a second argument
+      -- (`{ state_change = true }` forces an event whose value did not change),
+      -- so the mock records it and the tests can assert on it.
+      local constructor = function(value, options)
+        return { capability = id, attribute = key, value = value, options = options }
       end
       rawset(t, key, constructor)
       return constructor

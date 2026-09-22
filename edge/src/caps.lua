@@ -40,6 +40,14 @@ caps.SCHEDULE = NAMESPACE .. ".pccountdown"
 -- keeps its name - what it points at is "the status capability".
 caps.STATUS = NAMESPACE .. ".pcinfo"
 caps.SESSION = NAMESPACE .. ".pcuser"
+-- #86: the version row is a capability of its own. Two `state` rows of the SAME
+-- capability are drawn side by side in two narrow columns and both are cut off
+-- (measured on the phone 2026-09-22, §14.5), so "상태" and "버전" - which sat on
+-- pcInfo together - had to be split. A capability with one state row renders
+-- full width. `pcInfo.versions` keeps its definition and is still emitted: the
+-- definition cannot change without another rename (§14.4), and an attribute
+-- that is never emitted makes the app say the state was not fully reported.
+caps.VERSION = NAMESPACE .. ".pcversion"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -48,6 +56,7 @@ caps.ids = {
   schedule = caps.SCHEDULE,
   status = caps.STATUS,
   session = caps.SESSION,
+  version = caps.VERSION,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

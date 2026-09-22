@@ -156,6 +156,42 @@ function T.test_a_failed_poll_rewrites_the_status_summary()
   local emitted = h.emitted(device)
   h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unauthorized")
   h.assert_equal(h.event_value(emitted, caps.STATUS, "summary"), "연결 안 됨 · 시크릿 불일치")
+  -- #85/#86: the version row goes out on a failed poll too - the driver and
+  -- screen halves still answer "did my update land?" - and since #86 it is a
+  -- capability of its own, while pcInfo keeps the attribute it defines.
+  h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), state.versions(nil, "ko"))
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), state.versions(nil, "ko"))
+end
+
+function T.test_emit_passes_the_state_change_option_through()
+  -- #86: an event whose value equals the current one is dropped by the
+  -- platform, and the app - waiting for exactly that attribute - spins until it
+  -- errors. A record marked `force` has to reach `emit_event` as
+  -- `{ state_change = true }` (§14.5).
+  local caps = require "caps"
+  local device = h.fake_device()
+  poll.emit(device, {
+    { cap = caps.COMMAND, attr = "lastAction", value = "none", force = true },
+    { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" },
+  })
+  local emitted = h.emitted(device)
+  h.assert_true(h.event_forced(emitted, caps.COMMAND, "lastAction"),
+    "a forced record must carry state_change")
+  h.assert_false(h.event_forced(emitted, caps.COMMAND, "lastCommand"),
+    "an ordinary poll update must stay unforced")
+end
+
+function T.test_force_rows_marks_only_the_rows_a_command_answers()
+  local caps = require "caps"
+  local events = {
+    { cap = caps.SCHEDULE, attr = "status", value = "idle" },
+    { cap = caps.SCHEDULE, attr = "summary", value = "예약 없음" },
+    { cap = caps.STATUS, attr = "summary", value = "연결됨" },
+  }
+  poll.force_rows(events, poll.SCHEDULE_ROWS)
+  h.assert_true(events[1].force, "the schedule list's own row is answered")
+  h.assert_true(events[2].force)
+  h.assert_nil(events[3].force, "the status summary is an ordinary update")
 end
 
 return T
