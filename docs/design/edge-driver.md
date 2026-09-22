@@ -152,6 +152,7 @@
 - 보내는 `type`: `power.stopping|started|resumed`, `schedule.*`, `remote.*`, `system.updated|update_available`, `display.changed`, `session.locked|unlocked`(세션 노출을 켠 경우만).
 - 알림 카테고리 필터와 조용한 시간대는 **적용되지 않는다.** 장치 상태는 알림이 아니다.
 - `power.stopping`은 종료가 진행되기 전에 **동기로**(최대 1.5초) 보낸다. `data.reason`이 `suspend`/`hibernate`/`shutdown`/`restart`를 구분해 주므로 타일이 "꺼짐" 대신 "절전"을 보여 준다.
+- `reason`을 정하는 순서(#87): ① 최근 2분 안에 이 서비스가 실행한 전원 명령(절전·최대 절전을 아는 유일한 출처) → ② 시스템 종료면 **System 로그의 User32 이벤트 1074**(최근 120초, `wevtutil qe … /f:xml`의 `param5` = Shutdown Type)로 `restart`/`shutdown` 구분 → ③ 시스템 종료면 `shutdown`, 단순 서비스 중지면 `unknown`. SCM은 시스템 종료인지만 알려 줄 뿐 재시작인지 전원 끄기인지는 말해 주지 않는다. ②는 ①이 없을 때만, 1.5초 제한으로 돈다.
 - 전송은 2초 타임아웃에 재시도 1회, 연속 3회 실패하면 구독을 지운다. 매 이벤트에 전체 status가 실려 드라이버는 차이를 계산하지 않는다.
 
 ### 3.6 SSDP와 `GET /st/v1/description`
