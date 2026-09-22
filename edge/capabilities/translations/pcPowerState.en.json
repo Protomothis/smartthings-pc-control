@@ -6,13 +6,27 @@
       "label": "Power state",
       "i18n": {
         "value": {
-          "on": { "label": "On" },
-          "sleeping": { "label": "Sleeping" },
-          "hibernated": { "label": "Hibernated" },
-          "off": { "label": "Off" },
-          "waking": { "label": "Waking up" },
-          "shuttingDown": { "label": "Shutting down" },
-          "unknown": { "label": "Unknown" }
+          "on": {
+            "label": "On"
+          },
+          "sleeping": {
+            "label": "Sleeping"
+          },
+          "hibernated": {
+            "label": "Hibernated"
+          },
+          "off": {
+            "label": "Off"
+          },
+          "waking": {
+            "label": "Waking up"
+          },
+          "shuttingDown": {
+            "label": "Shutting down"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
         }
       }
     }

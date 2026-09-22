@@ -2,23 +2,43 @@
   "tag": "ko",
   "label": "PC 상태",
   "attributes": {
-    "summary": { "label": "상태" },
+    "summary": {
+      "label": "상태"
+    },
     "connection": {
       "label": "연결",
       "i18n": {
         "value": {
-          "ok": { "label": "연결됨" },
-          "unauthorized": { "label": "인증 실패" },
-          "unreachable": { "label": "응답 없음" },
-          "incompatible": { "label": "버전 불일치" }
+          "ok": {
+            "label": "연결됨"
+          },
+          "unauthorized": {
+            "label": "인증 실패"
+          },
+          "unreachable": {
+            "label": "응답 없음"
+          },
+          "incompatible": {
+            "label": "버전 불일치"
+          }
         }
       }
     },
-    "serviceVersion": { "label": "서비스 버전" },
-    "updateAvailable": { "label": "업데이트 있음" },
-    "wolReady": { "label": "Wake-on-LAN 준비" },
-    "lastSeen": { "label": "마지막 확인" },
-    "message": { "label": "안내" }
+    "serviceVersion": {
+      "label": "서비스 버전"
+    },
+    "updateAvailable": {
+      "label": "업데이트 있음"
+    },
+    "wolReady": {
+      "label": "Wake-on-LAN 준비"
+    },
+    "lastSeen": {
+      "label": "마지막 확인"
+    },
+    "message": {
+      "label": "안내"
+    }
   },
   "commands": {}
 }

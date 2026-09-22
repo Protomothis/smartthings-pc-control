@@ -2,29 +2,37 @@
   "tag": "ko",
   "label": "PC 예약",
   "attributes": {
-    "summary": { "label": "예약 요약" },
-    "active": { "label": "예약 중" },
-    "command": { "label": "예약된 명령" },
-    "remainingSeconds": { "label": "남은 시간(초)" },
-    "executeAt": { "label": "실행 시각" },
-    "origin": { "label": "요청 출처" }
+    "summary": {
+      "label": "예약 요약"
+    },
+    "active": {
+      "label": "예약 중"
+    },
+    "command": {
+      "label": "예약된 명령"
+    },
+    "remainingSeconds": {
+      "label": "남은 시간(초)"
+    },
+    "executeAt": {
+      "label": "실행 시각"
+    },
+    "origin": {
+      "label": "요청 출처"
+    }
   },
   "commands": {
-    "cancel": { "label": "예약 취소" },
+    "cancel": {
+      "label": "예약 취소"
+    },
     "schedule": {
       "label": "예약하기",
       "arguments": {
-        "minutes": { "label": "몇 분 뒤" },
+        "minutes": {
+          "label": "몇 분 뒤"
+        },
         "command": {
-          "label": "명령",
-          "i18n": {
-            "value": {
-              "shutdown": { "label": "종료" },
-              "restart": { "label": "재시작" },
-              "suspend": { "label": "절전" },
-              "hibernate": { "label": "최대 절전" }
-            }
-          }
+          "label": "명령"
         }
       }
     }

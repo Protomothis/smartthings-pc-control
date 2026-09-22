@@ -584,16 +584,17 @@ function T.test_translations_cover_every_command_and_argument()
         h.assert_true(type(entry.label) == "string" and entry.label ~= "",
           where .. " has no label")
         for _, argument in ipairs(command.arguments or {}) do
+          -- Argument translations are keyed by argument name and carry a
+          -- label only: the translations API rejects per-value i18n for
+          -- command arguments in every shape we tried (design §14.1), so
+          -- enum values of arguments stay untranslated in the Routine picker.
           local argument_entry = (entry.arguments or {})[argument.name]
           h.assert_true(type(argument_entry) == "table",
             where .. " argument " .. tostring(argument.name) .. " is not translated")
           h.assert_true(type(argument_entry.label) == "string" and argument_entry.label ~= "",
             where .. " argument " .. tostring(argument.name) .. " has no label")
-          for _, value in ipairs((argument.schema or {}).enum or {}) do
-            local localised = (((argument_entry.i18n or {}).value or {})[value] or {}).label
-            h.assert_true(type(localised) == "string" and localised ~= "",
-              where .. " " .. argument.name .. "=" .. value .. " has no label")
-          end
+          h.assert_true(argument_entry.i18n == nil,
+            where .. " argument " .. tostring(argument.name) .. " must not carry i18n (API rejects it)")
         end
       end
       for name in pairs(translated) do

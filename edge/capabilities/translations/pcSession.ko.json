@@ -2,11 +2,21 @@
   "tag": "ko",
   "label": "PC 세션",
   "attributes": {
-    "exposed": { "label": "세션 정보 노출" },
-    "summary": { "label": "세션" },
-    "locked": { "label": "잠금 여부" },
-    "idleMinutes": { "label": "유휴 시간(분)" },
-    "user": { "label": "로그인 사용자" }
+    "exposed": {
+      "label": "세션 정보 노출"
+    },
+    "summary": {
+      "label": "세션"
+    },
+    "locked": {
+      "label": "잠금 여부"
+    },
+    "idleMinutes": {
+      "label": "유휴 시간(분)"
+    },
+    "user": {
+      "label": "로그인 사용자"
+    }
   },
   "commands": {}
 }

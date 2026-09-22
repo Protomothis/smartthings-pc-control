@@ -7,41 +7,38 @@
     }
   },
   "commands": {
-    "wake": { "label": "Wake" },
-    "suspend": { "label": "Sleep" },
-    "hibernate": { "label": "Hibernate" },
-    "restart": { "label": "Restart" },
-    "shutdown": { "label": "Shut down" },
-    "lock": { "label": "Lock" },
-    "screenOff": { "label": "Screen off" },
-    "screenOn": { "label": "Screen on" },
+    "wake": {
+      "label": "Wake"
+    },
+    "suspend": {
+      "label": "Sleep"
+    },
+    "hibernate": {
+      "label": "Hibernate"
+    },
+    "restart": {
+      "label": "Restart"
+    },
+    "shutdown": {
+      "label": "Shut down"
+    },
+    "lock": {
+      "label": "Lock"
+    },
+    "screenOff": {
+      "label": "Screen off"
+    },
+    "screenOn": {
+      "label": "Screen on"
+    },
     "execute": {
       "label": "Run command",
       "arguments": {
         "command": {
-          "label": "Command",
-          "i18n": {
-            "value": {
-              "shutdown": { "label": "Shut down" },
-              "forceshutdown": { "label": "Force shut down" },
-              "restart": { "label": "Restart" },
-              "hibernate": { "label": "Hibernate" },
-              "suspend": { "label": "Sleep" },
-              "lock": { "label": "Lock" },
-              "turnscreenoff": { "label": "Screen off" },
-              "turnscreenon": { "label": "Screen on" }
-            }
-          }
+          "label": "Command"
         },
         "mode": {
-          "label": "Mode",
-          "i18n": {
-            "value": {
-              "default": { "label": "Use the PC's grace period" },
-              "immediate": { "label": "Immediately" },
-              "grace": { "label": "Force the grace period" }
-            }
-          }
+          "label": "Mode"
         },
         "minutes": {
           "label": "Delay (minutes)"

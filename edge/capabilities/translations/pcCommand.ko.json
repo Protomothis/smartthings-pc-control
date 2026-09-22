@@ -7,41 +7,38 @@
     }
   },
   "commands": {
-    "wake": { "label": "깨우기" },
-    "suspend": { "label": "절전" },
-    "hibernate": { "label": "최대 절전" },
-    "restart": { "label": "재시작" },
-    "shutdown": { "label": "종료" },
-    "lock": { "label": "잠금" },
-    "screenOff": { "label": "화면 끄기" },
-    "screenOn": { "label": "화면 켜기" },
+    "wake": {
+      "label": "깨우기"
+    },
+    "suspend": {
+      "label": "절전"
+    },
+    "hibernate": {
+      "label": "최대 절전"
+    },
+    "restart": {
+      "label": "재시작"
+    },
+    "shutdown": {
+      "label": "종료"
+    },
+    "lock": {
+      "label": "잠금"
+    },
+    "screenOff": {
+      "label": "화면 끄기"
+    },
+    "screenOn": {
+      "label": "화면 켜기"
+    },
     "execute": {
       "label": "명령 실행",
       "arguments": {
         "command": {
-          "label": "명령",
-          "i18n": {
-            "value": {
-              "shutdown": { "label": "종료" },
-              "forceshutdown": { "label": "강제 종료" },
-              "restart": { "label": "재시작" },
-              "hibernate": { "label": "최대 절전" },
-              "suspend": { "label": "절전" },
-              "lock": { "label": "잠금" },
-              "turnscreenoff": { "label": "화면 끄기" },
-              "turnscreenon": { "label": "화면 켜기" }
-            }
-          }
+          "label": "명령"
         },
         "mode": {
-          "label": "실행 방식",
-          "i18n": {
-            "value": {
-              "default": { "label": "설정된 유예 따름" },
-              "immediate": { "label": "즉시 실행" },
-              "grace": { "label": "유예 강제" }
-            }
-          }
+          "label": "실행 방식"
         },
         "minutes": {
           "label": "지연 (분)"

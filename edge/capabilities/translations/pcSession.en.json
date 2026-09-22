@@ -2,11 +2,21 @@
   "tag": "en",
   "label": "PC session",
   "attributes": {
-    "exposed": { "label": "Session info exposed" },
-    "summary": { "label": "Session" },
-    "locked": { "label": "Session locked" },
-    "idleMinutes": { "label": "Idle (minutes)" },
-    "user": { "label": "Signed in as" }
+    "exposed": {
+      "label": "Session info exposed"
+    },
+    "summary": {
+      "label": "Session"
+    },
+    "locked": {
+      "label": "Session locked"
+    },
+    "idleMinutes": {
+      "label": "Idle (minutes)"
+    },
+    "user": {
+      "label": "Signed in as"
+    }
   },
   "commands": {}
 }
