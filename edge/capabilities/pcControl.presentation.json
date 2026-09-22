@@ -10,64 +10,56 @@
       "label": "{{i18n.commands.wake.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "wake",
-        "argument": null
+        "command": "wake"
       }
     },
     {
       "label": "{{i18n.commands.suspend.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "suspend",
-        "argument": null
+        "command": "suspend"
       }
     },
     {
       "label": "{{i18n.commands.hibernate.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "hibernate",
-        "argument": null
+        "command": "hibernate"
       }
     },
     {
       "label": "{{i18n.commands.restart.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "restart",
-        "argument": null
+        "command": "restart"
       }
     },
     {
       "label": "{{i18n.commands.shutdown.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "shutdown",
-        "argument": null
+        "command": "shutdown"
       }
     },
     {
       "label": "{{i18n.commands.lock.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "lock",
-        "argument": null
+        "command": "lock"
       }
     },
     {
       "label": "{{i18n.commands.screenOff.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "screenOff",
-        "argument": null
+        "command": "screenOff"
       }
     },
     {
       "label": "{{i18n.commands.screenOn.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "screenOn",
-        "argument": null
+        "command": "screenOn"
       }
     }
   ],

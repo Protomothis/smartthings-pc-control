@@ -150,6 +150,8 @@ local STRINGS = {
 
   -- schedule / session summaries (#78)
   schedule_remaining = { ko = "%d분 남음", en = "%d min left" },
+  schedule_idle = { ko = "예약 없음", en = "No schedule" },
+  session_hidden = { ko = "세션 정보 꺼짐 · PC 앱 설정에서 켤 수 있음", en = "Session info off · enable it in the PC app" },
   schedule_soon = { ko = "곧 실행", en = "any moment now" },
   session_locked = { ko = "잠김", en = "Locked" },
   session_unlocked = { ko = "사용 중", en = "In use" },

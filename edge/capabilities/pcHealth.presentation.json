@@ -12,21 +12,6 @@
       "state": {
         "label": "{{summary.value}}"
       }
-    },
-    {
-      "label": "{{i18n.attributes.message.label}}",
-      "displayType": "state",
-      "state": {
-        "label": "{{message.value}}"
-      },
-      "visibleCondition": {
-        "capability": "numbersystem53811.pchealth",
-        "version": 1,
-        "component": "main",
-        "value": "message.value",
-        "operator": "NOT_EQUALS",
-        "operand": ""
-      }
     }
   ],
   "automation": {

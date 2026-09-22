@@ -1,6 +1,7 @@
 local h = require "helpers"
 local caps = require "caps"
 local state = require "state"
+local i18n = require "i18n"
 
 local T = {}
 
@@ -177,11 +178,12 @@ end
 function T.test_apply_status_emits_session_only_when_exposed()
   local status = sample_status()
   local events = events_for(status)
-  -- #78: `exposed` is the one session attribute that is always emitted — the
-  -- detail view hangs its visibleCondition on it, so it has to reach false
-  -- again when the user opts out. The values themselves stay untouched.
+  -- #78: `exposed` is always emitted so automations can key off it, and the
+  -- summary row (always shown; the phone ignores visibleCondition) says the
+  -- feature is off instead of reading "-". The values themselves stay untouched.
   h.assert_equal(h.event_value(events, caps.SESSION, "exposed"), false)
-  for _, attr in ipairs({ "locked", "idleMinutes", "user", "summary" }) do
+  h.assert_equal(h.event_value(events, caps.SESSION, "summary"), i18n.t("ko", "session_hidden"))
+  for _, attr in ipairs({ "locked", "idleMinutes", "user" }) do
     h.assert_nil(h.event_value(events, caps.SESSION, attr),
       "session is opt-in and must not invent " .. attr)
   end
@@ -271,15 +273,15 @@ function T.test_status_summary_omits_an_unknown_version()
   h.assert_equal(state.status_summary(state.ON, "ok", "", "en"), "On · Connected")
 end
 
-function T.test_schedule_summary_is_empty_when_nothing_is_scheduled()
-  h.assert_equal(state.schedule_summary({ active = false }, "ko"), "")
-  h.assert_equal(state.schedule_summary(nil, "ko"), "")
+function T.test_schedule_summary_says_no_schedule_when_idle()
+  h.assert_equal(state.schedule_summary({ active = false }, "ko"), "예약 없음")
+  h.assert_equal(state.schedule_summary(nil, "en"), "No schedule")
   local events = events_for((function()
     local status = sample_status()
     status.schedule = { active = false }
     return status
   end)())
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "summary"), "")
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "summary"), "예약 없음")
 end
 
 function T.test_schedule_summary_rounds_the_countdown_up()

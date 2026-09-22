@@ -47,30 +47,13 @@
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
-      },
-      "visibleCondition": {
-        "capability": "numbersystem53811.pctimer",
-        "version": 1,
-        "component": "main",
-        "value": "active.value",
-        "operator": "EQUALS",
-        "operand": true
       }
     },
     {
       "label": "{{i18n.commands.cancel.label}}",
       "displayType": "pushButton",
       "pushButton": {
-        "command": "cancel",
-        "argument": null
-      },
-      "visibleCondition": {
-        "capability": "numbersystem53811.pctimer",
-        "version": 1,
-        "component": "main",
-        "value": "active.value",
-        "operator": "EQUALS",
-        "operand": true
+        "command": "cancel"
       }
     }
   ],

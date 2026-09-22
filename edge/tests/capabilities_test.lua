@@ -542,38 +542,14 @@ function T.test_the_detail_views_show_summaries_instead_of_raw_attributes()
   end
 end
 
-function T.test_the_conditional_rows_are_guarded_by_a_visible_condition()
-  -- #78. If the API rejects `visibleCondition` the fallback is to drop these
-  -- objects; README and the design doc §14 record that.
-  local function condition_of(key, needle)
+function T.test_no_detail_row_relies_on_a_visible_condition()
+  -- The phone ignored visibleCondition on capability presentations (2026-09-22),
+  -- so every row must read sensibly on its own (§14.5).
+  for key in pairs(caps.ids) do
     for _, item in ipairs(presentation(key).detailView or {}) do
-      local label = ((item.state or {}).label) or ((item.pushButton or {}).command) or ""
-      if label:find(needle, 1, true) then
-        return item.visibleCondition
-      end
+      h.assert_nil(item.visibleCondition, caps.ids[key] .. " detailView still uses visibleCondition")
     end
-    return nil
   end
-
-  local function check(condition, capability, value, operator, where)
-    h.assert_true(type(condition) == "table", where .. " has no visibleCondition")
-    h.assert_equal(condition.capability, capability, where .. " capability")
-    h.assert_equal(condition.component, "main", where .. " component")
-    h.assert_equal(condition.version, 1, where .. " version")
-    h.assert_equal(condition.value, value, where .. " value")
-    h.assert_equal(condition.operator, operator, where .. " operator")
-  end
-
-  check(condition_of("status", "message.value"), caps.STATUS,
-    "message.value", "NOT_EQUALS", "pcHealth message row")
-  check(condition_of("schedule", "summary.value"), caps.SCHEDULE,
-    "active.value", "EQUALS", "pcTimer summary row")
-  check(condition_of("schedule", "cancel"), caps.SCHEDULE,
-    "active.value", "EQUALS", "pcTimer cancel button")
-  check(condition_of("session", "summary.value"), caps.SESSION,
-    "exposed.value", "EQUALS", "pcUser summary row")
-  h.assert_true(condition_of("schedule", "summary.value").operand == true)
-  h.assert_equal(condition_of("status", "message.value").operand, "")
 end
 
 --------------------------------------------------------------------------------

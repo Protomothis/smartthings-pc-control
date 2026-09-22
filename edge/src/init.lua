@@ -258,8 +258,24 @@ end
 
 --------------------------------------------------------------------------------
 
+--- Driver shutdown (hub restart, driver update): drop every device's push
+--- subscription and close the listener so the service does not keep posting
+--- to a port nobody listens on until the TTL runs out.
+local function driver_lifecycle(driver, event)
+  if event ~= "shutdown" then
+    return
+  end
+  local ok, devices = pcall(function() return driver:get_devices() end)
+  for _, device in ipairs(ok and devices or {}) do
+    pcall(function() push.stop(driver, device) end)
+  end
+  pcall(function() push.shutdown(driver) end)
+  log.info("driver shutting down: push subscriptions released")
+end
+
 local pc_driver = Driver("smartthings-pc-control", {
   discovery = discovery.handle,
+  driver_lifecycle = driver_lifecycle,
   lifecycle_handlers = {
     init = device_init,
     added = device_added,

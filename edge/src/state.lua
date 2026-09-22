@@ -206,7 +206,9 @@ end
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
   if schedule.active ~= true then
-    return ""
+    -- Always a sentence: the row is shown regardless (visibleCondition is not
+    -- honoured for capability presentations on the phone).
+    return i18n.t(lang, "schedule_idle")
   end
   local parts = {}
   local command = i18n.command(lang, schedule.command)
@@ -360,11 +362,17 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.STATUS, "updateAvailable", update.available == true)
   ev(events, caps.STATUS, "wolReady", wol.ready == true)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
-  ev(events, caps.STATUS, "message",
-    state.status_message(status, { lang = lang, error = opts.error, note = opts.note }))
+  local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
+  ev(events, caps.STATUS, "message", message)
   -- #78: "On · Connected · v1.1.0". A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
-  ev(events, caps.STATUS, "summary", state.status_summary(power, "ok", status.service_version, lang))
+  -- The notice rides on the summary line: the detail view shows one status
+  -- row, and a separate message row read as "-" when there was nothing to say.
+  local summary = state.status_summary(power, "ok", status.service_version, lang)
+  if message ~= nil and message ~= "" then
+    summary = summary .. " · " .. message
+  end
+  ev(events, caps.STATUS, "summary", summary)
 
   -- §4.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
@@ -382,6 +390,8 @@ function state.apply_status(device_state, status, opts)
       math.floor((tonumber(session.idle_seconds) or 0) / 60))
     ev(events, caps.SESSION, "user", session.user or "")
     ev(events, caps.SESSION, "summary", state.session_summary(session, lang))
+  else
+    ev(events, caps.SESSION, "summary", i18n.t(lang, "session_hidden"))
   end
 
   return events

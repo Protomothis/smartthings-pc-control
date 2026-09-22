@@ -11,14 +11,6 @@
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
-      },
-      "visibleCondition": {
-        "capability": "numbersystem53811.pcuser",
-        "version": 1,
-        "component": "main",
-        "value": "exposed.value",
-        "operator": "EQUALS",
-        "operand": true
       }
     }
   ],
