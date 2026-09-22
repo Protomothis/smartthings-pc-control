@@ -968,6 +968,17 @@ func wakeTrayApp(command string) {
 	}()
 }
 
+const (
+	// maxScheduleMinutes is the longest delay a schedule may carry, in
+	// minutes: three days (#89). Every front end shares it — the SmartThings
+	// driver's `schedule(minutes)` definition, /api/schedule, the WebUI form,
+	// the Telegram `/shutdown N` argument and the app's schedule tab — so a
+	// delay one of them offers is a delay the others can show and cancel.
+	maxScheduleMinutes = 4320
+	// maxScheduleDelay is the same ceiling as a duration.
+	maxScheduleDelay = maxScheduleMinutes * time.Minute
+)
+
 // setSchedule creates a new scheduled task. origin says who requested it;
 // remote grace schedules additionally wake the tray app (see wakeTrayApp).
 func setSchedule(command string, delay time.Duration, origin scheduleOrigin) error {
@@ -986,6 +997,12 @@ func setSchedule(command string, delay time.Duration, origin scheduleOrigin) err
 func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) error {
 	if delay <= 0 {
 		return fmt.Errorf("invalid delay: %s", delay)
+	}
+	// #89: the ceiling every front end shares. The Edge driver, /api/schedule
+	// and the Telegram bot all check it before they get here; this is the last
+	// guard, so no caller can arm a timer the others could never show.
+	if delay > maxScheduleDelay {
+		return fmt.Errorf("delay too long: %s (at most %d minutes)", delay, maxScheduleMinutes)
 	}
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
@@ -1052,13 +1069,31 @@ func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) er
 	return nil
 }
 
-// formatDelay renders a delay for log lines: whole minutes as "5 min",
-// anything shorter (or not a whole minute) as seconds ("30 sec").
+// formatDelay renders a delay for log lines and notifications: whole minutes
+// as "5 min", anything shorter (or not a whole minute) as seconds ("30 sec").
+// #89: schedules now reach three days, and "4320 min" is not a number anyone
+// reads as three days, so from an hour on it climbs the units — "2 h",
+// "1 h 30 min", "1 d", "1 d 3 h".
 func formatDelay(d time.Duration) string {
-	if d >= time.Minute && d%time.Minute == 0 {
-		return fmt.Sprintf("%d min", int(d/time.Minute))
+	if d < time.Minute || d%time.Minute != 0 {
+		return fmt.Sprintf("%d sec", int(d/time.Second))
 	}
-	return fmt.Sprintf("%d sec", int(d/time.Second))
+	minutes := int(d / time.Minute)
+	switch {
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes < 1440:
+		if rest := minutes % 60; rest != 0 {
+			return fmt.Sprintf("%d h %d min", minutes/60, rest)
+		}
+		return fmt.Sprintf("%d h", minutes/60)
+	default:
+		// The odd minutes are noise at a day's distance.
+		if hours := (minutes % 1440) / 60; hours != 0 {
+			return fmt.Sprintf("%d d %d h", minutes/1440, hours)
+		}
+		return fmt.Sprintf("%d d", minutes/1440)
+	}
 }
 
 // cancelSchedule cancels the current scheduled task on behalf of the local

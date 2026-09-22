@@ -21,7 +21,7 @@ components:
         version: 1
       - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pcplanner
+      - id: numbersystem53811.pcdelay
         version: 1
       - id: numbersystem53811.pcuser
         version: 1

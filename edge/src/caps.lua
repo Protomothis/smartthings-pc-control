@@ -40,7 +40,11 @@ caps.COMMAND = NAMESPACE .. ".pcexec"
 -- fix needs both a resting attribute the row can show (`minutesPick`, always
 -- "-1") and a `minutes` range that accepts it (`minimum: -1`, the no-op), and
 -- both are definition changes: `pcCountdown` became `pcPlanner`.
-caps.SCHEDULE = NAMESPACE .. ".pcplanner"
+-- #89: and once more. The preset list now goes up to three days, so
+-- `schedule(minutes)` accepts up to 4320 and `remainingSeconds` up to 259200 -
+-- a range is part of the definition and the hub caches definitions by id
+-- (platform notes "허브의 정의 캐시"), so `pcPlanner` became `pcDelay`.
+caps.SCHEDULE = NAMESPACE .. ".pcdelay"
 -- #85: the definition gained a `versions` attribute (the row that says which
 -- service, driver and screen template a device is actually running), so by the
 -- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant

@@ -47,6 +47,9 @@ function T.test_all_required_keys_exist()
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
     "schedule_idle", "session_locked", "session_unlocked", "session_idle",
+    -- #89: the longer presets, in the largest unit that fits.
+    "schedule_remaining_h", "schedule_remaining_hm",
+    "schedule_remaining_d", "schedule_remaining_dh",
     -- #87: the session row when the block is not exposed, the one notice the
     -- status row still carries, and the two halves of the version row.
     "session_off", "wol_off_short",
@@ -153,6 +156,15 @@ function T.test_the_summary_strings_do_not_repeat_their_row_label()
   h.assert_equal(i18n.t("en", "schedule_remaining", 4), "in 4 min")
   h.assert_equal(i18n.t("ko", "schedule_soon"), "곧")
   h.assert_equal(i18n.t("en", "schedule_soon"), "soon")
+  -- #89: the same rule for the units the 72-hour presets need.
+  h.assert_equal(i18n.t("ko", "schedule_remaining_h", 2), "2시간 후")
+  h.assert_equal(i18n.t("en", "schedule_remaining_h", 2), "in 2 h")
+  h.assert_equal(i18n.t("ko", "schedule_remaining_hm", 1, 30), "1시간 30분 후")
+  h.assert_equal(i18n.t("en", "schedule_remaining_hm", 1, 30), "in 1 h 30 min")
+  h.assert_equal(i18n.t("ko", "schedule_remaining_d", 3), "3일 후")
+  h.assert_equal(i18n.t("en", "schedule_remaining_d", 3), "in 3 d")
+  h.assert_equal(i18n.t("ko", "schedule_remaining_dh", 1, 3), "1일 3시간 후")
+  h.assert_equal(i18n.t("en", "schedule_remaining_dh", 1, 3), "in 1 d 3 h")
   h.assert_equal(i18n.t("ko", "session_idle", 23), "23분")
   h.assert_equal(i18n.t("en", "session_idle", 23), "23 min")
   h.assert_equal(i18n.t("ko", "session_off"), "꺼짐")

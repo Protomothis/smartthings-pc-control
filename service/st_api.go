@@ -15,6 +15,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -42,8 +43,11 @@ const (
 	stHubStale = 10 * time.Minute
 	// stMaxBody caps a command body; the JSON is a handful of fields.
 	stMaxBody = 8 << 10
-	// stMaxMinutes matches /api/schedule and the Telegram bot.
-	stMaxMinutes = 1440
+	// stMaxMinutes matches /api/schedule, the Telegram bot and the app's
+	// schedule tab: three days (#89, maxScheduleMinutes in server.go). The
+	// driver's `schedule(minutes)` definition carries the same maximum, and
+	// the cloud rejects anything outside it before the hub ever sees it.
+	stMaxMinutes = maxScheduleMinutes
 )
 
 // ---- rate limiting (§3.1) --------------------------------------------------
@@ -492,7 +496,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Minutes < 0 || body.Minutes > stMaxMinutes {
-		stError(w, http.StatusBadRequest, "minutes must be between 0 and 1440")
+		stError(w, http.StatusBadRequest, fmt.Sprintf("minutes must be between 0 and %d", stMaxMinutes))
 		return
 	}
 	if name != "ping" {

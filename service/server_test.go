@@ -575,6 +575,20 @@ func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
 	}
 }
 
+func TestScheduleTaskRejectsADelayPastTheCeiling(t *testing.T) {
+	// #89: three days is the ceiling every front end offers, and this is the
+	// last guard before the timer is armed.
+	initLogger()
+	if err := scheduleTask("lock", maxScheduleDelay+time.Minute, originUI); err == nil {
+		cancelSchedule()
+		t.Fatalf("a delay over %d minutes was accepted", maxScheduleMinutes)
+	}
+	if err := scheduleTask("lock", maxScheduleDelay, originUI); err != nil {
+		t.Fatalf("the ceiling itself must be schedulable: %v", err)
+	}
+	cancelSchedule()
+}
+
 func TestFormatDelay(t *testing.T) {
 	cases := map[time.Duration]string{
 		10 * time.Second: "10 sec",
@@ -582,6 +596,14 @@ func TestFormatDelay(t *testing.T) {
 		time.Minute:      "1 min",
 		5 * time.Minute:  "5 min",
 		30 * time.Minute: "30 min",
+		// #89: from an hour on the units climb, because a schedule can now be
+		// three days out and "4320 min" is not a number anyone reads as that.
+		time.Hour:                    "1 h",
+		90 * time.Minute:             "1 h 30 min",
+		12 * time.Hour:               "12 h",
+		24 * time.Hour:               "1 d",
+		72 * time.Hour:               "3 d",
+		27*time.Hour + 5*time.Minute: "1 d 3 h",
 	}
 	for d, want := range cases {
 		if got := formatDelay(d); got != want {

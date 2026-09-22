@@ -71,7 +71,7 @@
       "label": "Run in",
       "arguments": {
         "minutes": {
-          "label": "In (minutes, 0 cancels)"
+          "label": "In (minutes, 0 cancels, up to 3 days)"
         },
         "command": {
           "label": "Command"

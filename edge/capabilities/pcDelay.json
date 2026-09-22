@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcplanner",
+  "id": "numbersystem53811.pcdelay",
   "version": 1,
   "status": "proposed",
-  "name": "pcPlanner",
+  "name": "pcDelay",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -78,7 +78,7 @@
           "value": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 86400
+            "maximum": 259200
           }
         },
         "additionalProperties": false,
@@ -174,7 +174,7 @@
           "schema": {
             "type": "integer",
             "minimum": -1,
-            "maximum": 1440
+            "maximum": 4320
           }
         },
         {

@@ -21,7 +21,7 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcPlanner.status enum (§4, #83): the string twin of `active`.
+-- pcDelay.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
 -- Placeholder for automation-only string attributes that have nothing to say
 -- (the app never shows them; "" would be stored as null by the cloud).
@@ -67,7 +67,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcPlanner.schedule` can say whether
+    -- last polled `schedule.active`, so `pcDelay.schedule` can say whether
     -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
   }
@@ -206,7 +206,7 @@ function state.is_action(value)
 end
 
 --------------------------------------------------------------------------------
--- pcPlanner.planCommand (#84, moved off the command capability in #85)
+-- pcDelay.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
 -- What the service can schedule (§3.3). `lock` and the screen commands are not
@@ -216,7 +216,7 @@ state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 -- What a device schedules when nothing else says otherwise.
 state.PLAN_DEFAULT = "shutdown"
 
---- True when `value` is a command `pcPlanner.schedule` may carry.
+--- True when `value` is a command `pcDelay.schedule` may carry.
 function state.is_plan_command(value)
   for _, command in ipairs(state.PLAN_COMMANDS) do
     if command == value then
@@ -352,12 +352,42 @@ function state.versions(service_version, lang, update)
   return text
 end
 
---- `pcPlanner.summary` (#78, reworded in #87): "Shut down · in 4 min", or
+--- `pcDelay.summary` (#78, reworded in #87): "Shut down · in 4 min", or
 --- "None" when nothing is scheduled.
 --
 -- #87: the origin left the line. Who asked for the shutdown is in
--- `pcPlanner.origin` and in `pcExec.lastCommand`; on the summary row it
+-- `pcDelay.origin` and in `pcExec.lastCommand`; on the summary row it
 -- pushed the minutes - the one number the row exists for - off the end.
+--- #89: how far away a schedule is, in the largest unit that fits.
+--
+-- The preset list reaches three days, and "4320분 후" is a number nobody reads
+-- as three days. So: under a minute is "곧", under an hour stays in minutes,
+-- under a day is hours (with the odd minutes, because "2시간 5분 후" is what the
+-- user set), and from a day on it is days and hours - the minutes at that
+-- distance are noise on a row the phone already truncates.
+function state.remaining_text(minutes, lang)
+  minutes = math.floor(tonumber(minutes) or 0)
+  if minutes < 1 then
+    return i18n.t(lang, "schedule_soon")
+  end
+  if minutes < 60 then
+    return i18n.t(lang, "schedule_remaining", minutes)
+  end
+  if minutes < 1440 then
+    local hours, rest = math.floor(minutes / 60), minutes % 60
+    if rest == 0 then
+      return i18n.t(lang, "schedule_remaining_h", hours)
+    end
+    return i18n.t(lang, "schedule_remaining_hm", hours, rest)
+  end
+  local days = math.floor(minutes / 1440)
+  local hours = math.floor((minutes % 1440) / 60)
+  if hours == 0 then
+    return i18n.t(lang, "schedule_remaining_d", days)
+  end
+  return i18n.t(lang, "schedule_remaining_dh", days, hours)
+end
+
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
   if schedule.active ~= true then
@@ -372,9 +402,10 @@ function state.schedule_summary(schedule, lang)
   end
   local seconds = math.floor(tonumber(schedule.remaining_seconds) or 0)
   if seconds >= 60 then
-    -- Rounded up: "in 1 min" is friendlier than "in 0 min" at 40 seconds.
-    parts[#parts + 1] = i18n.t(lang, "schedule_remaining", math.ceil(seconds / 60))
+    -- Rounded up: "in 2 min" is friendlier than "in 1 min" at 100 seconds.
+    parts[#parts + 1] = state.remaining_text(math.ceil(seconds / 60), lang)
   else
+    -- Under a minute the row says "곧", never "1분 후".
     parts[#parts + 1] = i18n.t(lang, "schedule_soon")
   end
   return table.concat(parts, " · ")
@@ -509,7 +540,7 @@ function state.attributes_used()
   return ATTRIBUTES
 end
 
---- #85: the resting value of every pcExec / pcPlanner attribute that a
+--- #85: the resting value of every pcExec / pcDelay attribute that a
 --- status body does not carry on its own (plus the `pcInfo.versions` row, which
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.

@@ -313,6 +313,28 @@ func TestSTCommandSchedulesWithSmartThingsOrigin(t *testing.T) {
 	expectNoTrayLaunch(t, launches)
 }
 
+func TestSTCommandAcceptsTheThreeDayCeiling(t *testing.T) {
+	// #89: the driver's preset list ends at 4320 minutes, so the API has to
+	// take that value - the cloud validates the argument against the
+	// definition, but nothing validates the definition against the service.
+	stSetup(t, Config{Port: 5001})
+	stubTrayLauncher(t, nil)
+	defer cancelSchedule()
+
+	w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "",
+		`{"command":"shutdown","minutes":4320}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("4320 minutes: %d (%s)", w.Code, w.Body.String())
+	}
+	s := getSchedule()
+	if s["active"] != true || s["command"] != "shutdown" {
+		t.Fatalf("schedule = %v", s)
+	}
+	if rem, _ := s["remainingSec"].(int); rem < 4320*60-5 || rem > 4320*60 {
+		t.Errorf("remainingSec = %v, want ~%d", rem, 4320*60)
+	}
+}
+
 func TestSTCommandGraceDefersWithToast(t *testing.T) {
 	stSetup(t, Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 300})
 	launches := stubTrayLauncher(t, nil)
@@ -408,7 +430,9 @@ func TestSTCommandRejectsBadInput(t *testing.T) {
 
 	for _, tc := range []struct{ name, body string }{
 		{"unknown mode", `{"command":"lock","mode":"whenever"}`},
-		{"minutes too large", `{"command":"lock","minutes":5000}`},
+		// #89: the ceiling is 4320 (three days), so one minute past it is out.
+		{"minutes too large", `{"command":"lock","minutes":4321}`},
+		{"minutes far too large", `{"command":"lock","minutes":5000}`},
 		{"negative minutes", `{"command":"lock","minutes":-1}`},
 		{"not JSON", `nope`},
 	} {

@@ -263,7 +263,7 @@ end
 
 function T.test_a_scheduled_execute_still_goes_to_the_service()
   -- `minutes > 0` schedules instead of executing (§3.3); what is pending is
-  -- the pcPlanner row's business.
+  -- the pcDelay row's business.
   local device = device_with()
   local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
@@ -344,7 +344,7 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
 end
 
 function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
-  -- #85: pcPlan/pcRun became pcPlanner/pcExec, so on the hub every attribute
+  -- #85: pcPlan/pcRun became pcDelay/pcExec, so on the hub every attribute
   -- of the new ids starts out unset - but the driver's own persisted fields
   -- survive the migration and would otherwise say "already painted".
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
@@ -359,7 +359,7 @@ function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
 end
 
 --------------------------------------------------------------------------------
--- pcPlanner.setPlanCommand: what a schedule runs (#84, moved in #85)
+-- pcDelay.setPlanCommand: what a schedule runs (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_set_plan_command_persists_and_emits()
@@ -427,7 +427,7 @@ function T.test_an_explicit_schedule_command_still_wins()
 end
 
 --------------------------------------------------------------------------------
--- pcPlanner: the cancel entry of the preset list (#82, valid argument since #85)
+-- pcDelay: the cancel entry of the preset list (#82, valid argument since #85)
 --------------------------------------------------------------------------------
 
 function T.test_schedule_zero_cancels()
@@ -451,7 +451,7 @@ function T.test_schedule_zero_as_a_string_cancels_too()
 end
 
 --------------------------------------------------------------------------------
--- pcPlanner: the 예약 시간 row rests on a no-op delay (#88)
+-- pcDelay: the 예약 시간 row rests on a no-op delay (#88)
 --------------------------------------------------------------------------------
 
 --- Every `minutesPick` event a device was told, with its options.
