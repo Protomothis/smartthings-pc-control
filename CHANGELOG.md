@@ -8,7 +8,7 @@ SmartThings를 위한 전용 **Edge 드라이버**와, 그 드라이버가 쓰�
 
 ### SmartThings Edge 드라이버 (`edge/`)
 
-- **전용 Edge 드라이버** — 레포의 `edge/` 폴더에 Lua 5.3 드라이버가 들어왔습니다. 허브 안에서 로컬로 돌며 서비스의 `/st/v1` API로 통신합니다. 전원 상태(켜짐·절전·최대절전·꺼짐·깨우는 중·종료 대기), 유예 카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 화면 켜기/끄기 자식 장치, SSDP 자동 검색을 SmartThings 앱에 그대로 드러냅니다. 설치와 사용법은 [`edge/README.md`](edge/README.md) (#71 #72 #73 #74)
+- **전용 Edge 드라이버** — 레포의 `edge/` 폴더에 Lua 5.3 드라이버가 들어왔습니다. 허브 안에서 로컬로 돌며 서비스의 `/st/v1` API로 통신합니다. 전원 상태(켜짐·절전·최대절전·꺼짐·깨우는 중·종료 대기), 유예 카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 상세 화면의 화면 끄기/켜기 버튼, SSDP 자동 검색을 SmartThings 앱에 그대로 드러냅니다. 기기 하나가 PC 하나이며, 모니터용 자식 장치는 따로 만들지 않습니다 (#81). 설치와 사용법은 [`edge/README.md`](edge/README.md) (#71 #72 #73 #74 #81)
 - **커스텀 capability 5종** — `pcPowerState`(전원 상태), `pcCommand`(명령 실행), `pcSchedule`(예약 표시·취소), `pcStatus`(연결·버전·업데이트·WoL·메시지), `pcSession`(잠금·유휴, 옵트인). 정의와 프레젠테이션 JSON은 `edge/capabilities/`에 있습니다 (#72)
 - **CI와 배포 도구** — `.github/workflows/edge.yml`이 `edge/**` 변경마다 Lua 테스트와 문법 검사를 돌리고, `edge-vX.Y.Z` 태그에서 태그와 `edge/src/version.lua`가 일치하는지 확인한 뒤 패키징 → 채널 배정 → 릴리스 자산 첨부까지 수행합니다. 네임스페이스 일괄 적용 `edge/tools/apply-namespace.js`, capability 생성 `edge/tools/create-capabilities.sh` (#74)
 
@@ -42,7 +42,7 @@ SmartThings를 위한 전용 **Edge 드라이버**와, 그 드라이버가 쓰�
 
 - **골격과 상태 머신** (#71) — 프로필·환경설정·수동 추가·스위치·WoL·ping·healthCheck, fengari 기반 Lua 테스트 하네스
 - **`/st/v1` 클라이언트와 매핑** (#72) — 상태 JSON을 capability 이벤트로 옮기는 순수 함수, 오류 분류(`unauthorized`/`unreachable`/`incompatible`), 한국어·영어 문자열
-- **푸시·검색·자식 장치** (#73) — 허브 내 TCP 리스너와 TTL 80% 갱신, SSDP 검색과 `machine_id` 기반 중복 방지·IP 추적(`followDiscovery`), 디스플레이 자식 장치, WoL 재시도(즉시/2초/5초, 포트 7·9)와 `waking` 상태, 장치 수에 따른 폴링 분산
+- **푸시·검색·WoL** (#73) — 허브 내 TCP 리스너와 TTL 80% 갱신, SSDP 검색과 `machine_id` 기반 중복 방지·IP 추적(`followDiscovery`), WoL 재시도(즉시/2초/5초, 포트 7·9)와 `waking` 상태, 장치 수에 따른 폴링 분산
 
 ### 텔레그램 (#75)
 
@@ -51,7 +51,7 @@ SmartThings를 위한 전용 **Edge 드라이버**와, 그 드라이버가 쓰�
 
 ### 새 명령
 
-- **`turnscreenon`** — 꺼진 모니터를 다시 켭니다(로그인 세션 필요). `/st/v1/command`와 레거시 `/{secret}/turnscreenon` 양쪽에서 쓸 수 있고, 앱 명령 탭과 Edge 드라이버의 디스플레이 자식 장치도 이 명령을 씁니다
+- **`turnscreenon`** — 꺼진 모니터를 다시 켭니다(로그인 세션 필요). `/st/v1/command`와 레거시 `/{secret}/turnscreenon` 양쪽에서 쓸 수 있고, 앱 명령 탭과 Edge 드라이버 상세 화면의 [화면 켜기] 버튼도 이 명령을 씁니다
 - **텔레그램 `/screenon`** — 같은 명령의 텔레그램 단축키. `/lock`·`/screenoff`와 함께 확인 없이 바로 실행되는 안전 명령입니다
 
 ### 설정

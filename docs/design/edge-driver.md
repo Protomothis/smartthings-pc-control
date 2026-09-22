@@ -18,7 +18,7 @@
    앱 속성으로 보여 준다. PC 쪽 GUI에도 허브 연결 상태를 보여 준다.
 4. **자동화 표현력**: 명령에 유예 모드와 분 단위 예약을 인자로 받고, 상태 변화를
    Routine 조건으로 쓸 수 있게 한다.
-5. **새 기능**: 디스플레이 켜기/끄기 자식 장치, 세션 정보(잠금·유휴, 선택 사항).
+5. **새 기능**: 상세 화면의 화면 끄기/켜기 버튼, 세션 정보(잠금·유휴, 선택 사항).
 6. **설치 경험**: SSDP 자동 검색, 한국어·영어, GUI에서 시크릿 생성·연결 확인.
 7. **보안**: 시크릿을 URL 경로가 아닌 헤더로, 허브 IP 허용 목록, 콜백 주소 검증.
 
@@ -31,7 +31,7 @@ PCControl 호환 경로(`/{secret}/{command}`)는 그대로 유지한다. 기존
 |---|---|---|---|
 | **P1 MVP** | `/st/v1/` 프로토콜(상태·명령·예약·취소), origin `smartthings`, `turnscreenon`, 헤더 인증, 허브 허용 목록 | 프로필·환경설정·수동 추가·스위치/WoL/ping·healthCheck, 커스텀 capability(상태·명령·예약), 오류/호환 표시, 테스트 하네스 | PCControl 동등 + 유예/예약/취소/상태 |
 | **P2 푸시** | `/st/v1/subscribe`, notify 버스 SmartThings Sink, 전원·세션·디스플레이 이벤트 | 허브 내 HTTP 리스너, 구독 갱신, 즉시 반영 | 폴링 5분으로 완화, 즉시 상태 |
-| **P3 완성** | SSDP 응답기, GUI SmartThings 섹션, 세션 정보 옵트인 | SSDP 검색, 디스플레이 자식 장치, WoL 재시도/waking, ko/en, CI 패키징, 문서 | 채널 공개 |
+| **P3 완성** | SSDP 응답기, GUI SmartThings 섹션, 세션 정보 옵트인 | SSDP 검색, WoL 재시도/waking, ko/en, CI 패키징, 문서 | 채널 공개 |
 
 모두 v1.1.0 마일스톤에 포함한다. 단계는 병렬 작업의 의존 순서일 뿐이다.
 
@@ -44,9 +44,8 @@ PCControl 호환 경로(`/{secret}/{command}`)는 그대로 유지한다. 기존
 edge/
   config.yml                 # Edge driver 메타 (name, packageKey, permissions: lan)
   profiles/
-    pc-v2.yml                # main 컴포넌트 프로필(현행 pc.v2, §14.3)
-    pc-display-v2.yml        # 디스플레이 자식 장치 프로필(현행)
-    pc.yml, pc-display.yml   # v1: 아직 이전되지 않은 장치가 참조 (#79)
+    pc-v3.yml                # main 컴포넌트 프로필(현행 pc.v3, §14.3)
+    pc.yml, pc-v2.yml        # v1·v2: 아직 이전되지 않은 장치가 참조 (#79)
   capabilities/              # 커스텀 capability 정의/프레젠테이션 JSON (CLI로 생성)
     pcPowerState.json  pcPowerState.presentation.json
     pcCommand.json     pcCommand.presentation.json
@@ -62,7 +61,6 @@ edge/
     push.lua                 # 허브 리스너 + 구독 갱신
     wol.lua                  # 매직 패킷, waking 상태 머신
     state.lua                # status JSON → capability 이벤트 매핑
-    display.lua              # 자식 장치
     i18n.lua                 # ko/en 문자열 (속성 문자열용)
     profiles.lua             # 프로필 이름·버전, 기존 장치 이전 (§14.3)
   tests/
@@ -238,10 +236,9 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 어려웠기 때문에, 드라이버가 문장으로 합쳐 한 줄만 보여 주고 원시 속성은 자동화 조건
 전용으로 남긴다. 합치는 문구는 `i18n.lua`의 ko/en을 따른다(§6.5).
 
-### 5.2 자식 장치 `pc-display-v2.yml` (이름 `pc-display.v2`)
+### 5.2 디스플레이 자식 장치
 
-`switch` 하나. on → `turnscreenon`, off → `turnscreenoff`. 상태는 `status.display`.
-환경설정 `createDisplayDevice`(기본 true)로 생성/제거.
+제거됨(#81): 본체의 화면 끄기/켜기 버튼으로 대체.
 
 ### 5.3 프레젠테이션 (#78 리모컨 모델)
 
@@ -280,7 +277,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 `pollInterval` enum(10s/30s/1m/5m, 기본 30s; 푸시 구독 성공 시 5m으로 자동 완화하지 않고 사용자 값 유지),
 `offAction` enum(shutdown/suspend/hibernate/lock/turnscreenoff/restart/forceshutdown),
 `buttonMode` enum(`default` 설정된 유예 따름 / `immediate` 즉시, 기본 `default`) — 상세 화면 리모컨 버튼의 §4.3 `mode`(#78),
-`createDisplayDevice` bool, `language` enum(auto/ko/en).
+`language` enum(auto/ko/en).
 
 제목과 설명은 **한국어 우선, 영어 괄호 병기**("PC IP 주소 (IP address)")다(#78).
 Edge 프로필의 preferences에는 로케일별 변형이 없어 한 벌만 쓸 수 있고, 이 프로젝트는
@@ -407,6 +404,7 @@ develop → main → `v1.1.0` 태그.
 | #72 | edge | 커스텀 capability JSON/프레젠테이션, `/st/v1` 클라이언트, 상태·명령·예약·취소 매핑, 오류·호환 표시, i18n | #71 |
 | #73 | edge | 푸시 리스너·구독 갱신, SSDP 검색, 디스플레이 자식 장치, WoL 재시도/waking | #72, #68, #69 |
 | #74 | ci/docs | `edge.yml`(테스트·패키징), `edge/README.md`, 네임스페이스 적용 스크립트, Wiki 페이지·README 갱신, CHANGELOG | 전부 |
+| #81 | edge | 디스플레이 자식 장치 제거(#78의 화면 끄기/켜기 버튼으로 대체), 허브에 남은 자식 정리 | #73, #78 |
 
 마일스톤: https://github.com/Protomothis/smartthings-pc-control/milestone/7
 
@@ -423,7 +421,7 @@ develop → main → `v1.1.0` 태그.
   새로 만들지 않고 IP·포트·호스트명만 갱신한다.
 - 수동 추가 장치는 DNI `manual-<random>`으로 만들고, 첫 `status` 성공 시 `machine_id`를 장치 필드에 저장한다.
   이후 SSDP가 같은 `machine_id`를 찾으면 그 장치의 IP를 갱신하고 중복 생성하지 않는다(DNI는 바꾸지 않는다).
-- 장치 라벨은 "`hostname` 컴퓨터"(en: "`hostname` PC"), 디스플레이 자식은 "`hostname` 모니터"(en: "`hostname` Monitor"). 기존 장치 이름 관행("혁 컴퓨터")에 맞춘 것이며, 사용자가 라벨을 바꾸면 덮어쓰지 않는다. EDGE_CHILD는 DNI를 직접 지정할 수 없고 parent_assigned_child_key로 식별한다(허브 경고).
+- 장치 라벨은 "`hostname` 컴퓨터"(en: "`hostname` PC"). 기존 장치 이름 관행("혁 컴퓨터")에 맞춘 것이며, 사용자가 라벨을 바꾸면 덮어쓰지 않는다.
 - 이미지 복제로 MachineGuid가 같은 PC가 둘이면 SSDP에서 하나로 합쳐진다. `description`에 `hostname`을 함께 실어
   드라이버가 "같은 machine_id, 다른 hostname"을 만나면 `pcStatus.message`로 경고한다. 해결은 사용자가 GUID를 재생성하는 것으로 문서에 적는다.
 
@@ -514,17 +512,21 @@ develop → main → `v1.1.0` 태그.
   갱신하고 같은 이름의 프로필(`pc.v1`)을 다시 패키징하면 preference 추가는 반영되지만
   detailView 는 옛 것을 유지한다. 장치를 **새 이름의 프로필**로 옮기면 다시 생성된다.
 - 따라서 프레젠테이션을 바꿀 때마다 프로필 이름의 버전을 올린다: `profiles/pc-vN.yml`
-  (`name: pc.vN`), 자식은 `pc-display.vN`. **옛 프로필 파일은 패키지에 남긴다** — 아직
-  옮겨지지 않은 장치가 참조한다.
-- 이름은 `src/profiles.lua` 한 곳에만 둔다(`PC`, `DISPLAY`, 지금까지 쓴 모든 이름
-  `KNOWN`/`KNOWN_DISPLAY`). `discovery.PROFILE`·`display.PROFILE`이 여기서 읽는다.
-- 이전은 `profiles.migration_for(<현재 이름>, <자식 여부>)` 순수 함수가 정하고
+  (`name: pc.vN`). **옛 프로필 파일은 패키지에 남긴다** — 아직 옮겨지지 않은 장치가
+  참조한다.
+- 이름은 `src/profiles.lua` 한 곳에만 둔다(`PC`, 지금까지 쓴 모든 이름 `KNOWN`).
+  `discovery.PROFILE`이 여기서 읽는다.
+- 이전은 `profiles.migration_for(<현재 이름>)` 순수 함수가 정하고
   (현행이거나 모르는 이름이면 nil), `init`/`added`에서 `profiles.ensure`가
   `device:try_update_metadata({ profile = <새 이름> })`을 pcall 로 호출한 뒤
   `migrated <id> to pc.vN`을 남긴다. 장치당 드라이버 구동 1회만 시도한다.
 - **장치의 프로필 이름을 읽는 법**: `device.profile`은 테이블이지만(`id`, `components`)
   `name`이 항상 있지는 않다. 있으면 그것을 쓰고, 없으면 생성 시점에
   `device:set_field("profile_name", <이름>, {persist=true})`로 저장해 둔 값을 쓴다.
-  둘 다 없으면 #79 이전에 만들어진 장치이므로 `pc.v1`(자식은 `pc-display.v1`)로 본다.
-- 모르는 이름(다른 드라이버의 장치, 이 드라이버보다 새 버전)은 건드리지 않는다. PC
-  프로필과 자식 프로필은 서로 다른 계열이라 교차 이전도 하지 않는다.
+  둘 다 없으면 #79 이전에 만들어진 장치이므로 `pc.v1`로 본다.
+- 모르는 이름(다른 드라이버의 장치, 이 드라이버보다 새 버전)은 건드리지 않는다.
+- #81로 `pc-display.vN` 계열은 패키지에서 빠졌다. 옛 드라이버가 만든 자식이 허브에
+  남아 있으면 이전 대상이 아니라 삭제 대상이다: `profiles.is_legacy_child(device)`가
+  `parent_assigned_child_key` 또는 `pc-display`로 시작하는 프로필 이름으로 판별하고,
+  `device_init`이 `try_delete_device`를 불러
+  `removing legacy display child <id>`를 남긴다(장치당 드라이버 구동 1회).
