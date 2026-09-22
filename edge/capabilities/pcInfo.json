@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pchealth",
+  "id": "numbersystem53811.pcinfo",
   "version": 1,
   "status": "proposed",
-  "name": "pcHealth",
+  "name": "pcInfo",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -88,6 +88,20 @@
       "enumCommands": []
     },
     "message": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    },
+    "versions": {
       "schema": {
         "type": "object",
         "properties": {

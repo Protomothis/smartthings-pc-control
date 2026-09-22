@@ -308,6 +308,13 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
         id .. "." .. attr .. ' was never emitted, so the row reads "-"')
     end
   end
+
+  -- #85: and the version row of the info card, which no status body has filled
+  -- in yet - it names the driver and the screen template regardless.
+  h.assert_true(seen[caps.STATUS .. ".versions"] == true,
+    "the versions row was never emitted")
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "versions"),
+    state.versions(nil, nil))
 end
 
 function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()

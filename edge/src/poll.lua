@@ -59,7 +59,7 @@ local function capability_for(id)
   return nil
 end
 
---- `pcHealth.lastSeen`: the hub's local clock time of the last good poll.
+--- `pcInfo.lastSeen`: the hub's local clock time of the last good poll.
 --- A tile the user glances at wants "14:05:12", not an ISO timestamp, and the
 --- date is never interesting for a value that is at most a few minutes old.
 function poll.now()
@@ -110,21 +110,27 @@ function poll.emit_power(device, s)
   })
 end
 
---- Emit only `pcHealth.message`.
+--- Emit only `pcInfo.message`.
 function poll.emit_message(device, message)
   poll.emit(device, { { cap = caps.STATUS, attr = "message", value = message or "" } })
 end
 
---- Emit `pcHealth.connection` + `pcHealth.message` + `pcHealth.summary` (#78).
+--- Emit `pcInfo.connection` + `pcInfo.message` + `pcInfo.summary` (#78).
 --- The summary is the only status row the detail view still shows, so a failed
 --- poll has to rewrite it as well. #82: the power word is not in it any more -
 --- the `pcPower` row right above says that.
+-- #85: the `versions` row goes out here as well. A PC we cannot reach has no
+-- service version to report, but the driver and screen halves are still the
+-- answer to "did my update land?", and a row that was never emitted reads as
+-- "-" (§14.5). `state.versions` writes "?" for the service half.
 function poll.emit_connection(device, connection, message)
+  local lang = poll.lang(device)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, nil, poll.lang(device)) },
+      value = state.status_summary(connection, nil, lang) },
+    { cap = caps.STATUS, attr = "versions", value = state.versions(nil, lang) },
   })
 end
 
@@ -219,7 +225,7 @@ function poll.ensure_rows(device)
   return true
 end
 
---- err_kind (client.lua) -> `pcHealth.connection` enum value (§5.1), or nil
+--- err_kind (client.lua) -> `pcInfo.connection` enum value (§5.1), or nil
 --- when the failure says nothing about the connection and the last state
 --- should stand.
 function poll.connection_for(kind)
@@ -274,7 +280,7 @@ end
 
 --- One poll cycle: GET /st/v1/status, advance the state machine, emit, and set
 --- health online/offline. Also used by `refresh` and after a command.
---- `opts.note` is a one-off confirmation to show in `pcHealth.message` when
+--- `opts.note` is a one-off confirmation to show in `pcInfo.message` when
 --- nothing more important applies (§5.1, state.MESSAGE_ORDER); `opts.deps` is
 --- the injected http/json/ltn12 the tests use instead of a socket.
 function poll.once(driver, device, opts)

@@ -73,7 +73,7 @@ function T.test_every_service_command_has_a_display_name()
 end
 
 function T.test_every_power_state_has_a_summary_label()
-  -- #78: `pcHealth.summary` is a plain string attribute, so the driver has to
+  -- #78: `pcInfo.summary` is a plain string attribute, so the driver has to
   -- localise the powerState enum itself.
   local states = {
     "on", "sleeping", "hibernated", "off", "waking", "shuttingDown", "unknown",

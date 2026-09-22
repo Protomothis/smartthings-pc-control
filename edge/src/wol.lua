@@ -102,7 +102,7 @@ end
 --
 -- The caller has already moved the device state to `waking`; on timeout we apply
 -- `wake_timeout` (back to the previous state) and put "wake failed" into
--- `pcHealth.message`. `deps` exists for tests: `deps.devices` replaces the
+-- `pcInfo.message`. `deps` exists for tests: `deps.devices` replaces the
 -- device-layer glue and `deps.socket` replaces cosock.
 function wol.wake(driver, device, deps)
   deps = deps or {}

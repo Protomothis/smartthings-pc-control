@@ -9,6 +9,11 @@
 # `planCommand` / `setPlanCommand` moved onto the schedule capability, where the
 # "what to schedule" row belongs next to the "when" row.
 #
+# v12 also renamed pcHealth -> pcInfo for a third new attribute, `versions`
+# ("서비스 1.1.0 · 드라이버 1.0.0 · 화면 pc.v12"), and moved that capability to
+# the END of this list: the app draws the cards in the order they appear here,
+# and the version row belongs at the bottom of the screen.
+#
 # The `numbersystem53811` namespace is the one SmartThings assigned to the owner
 # account (§14). Keep it in sync with `NAMESPACE` in src/caps.lua -
 # tools/apply-namespace.js rewrites both.
@@ -30,9 +35,9 @@ components:
         version: 1
       - id: numbersystem53811.pccountdown
         version: 1
-      - id: numbersystem53811.pchealth
-        version: 1
       - id: numbersystem53811.pcuser
+        version: 1
+      - id: numbersystem53811.pcinfo
         version: 1
     categories:
       - name: Others

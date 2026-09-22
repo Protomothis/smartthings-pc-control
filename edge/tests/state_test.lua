@@ -79,6 +79,8 @@ local function golden(lang)
     { cap = caps.STATUS, attr = "updateAvailable", value = false },
     { cap = caps.STATUS, attr = "wolReady", value = true },
     { cap = caps.STATUS, attr = "lastSeen", value = NOW },
+    -- #85: the bottom row of the bottom card, refreshed on every poll.
+    { cap = caps.STATUS, attr = "versions", value = state.versions("v1.1.0", lang) },
     { cap = caps.STATUS, attr = "message", value = "" },
     { cap = caps.STATUS, attr = "summary",
       value = en and "Connected · v1.1.0" or "연결됨 · v1.1.0" },
@@ -260,6 +262,54 @@ end
 --------------------------------------------------------------------------------
 -- summaries (#78): the one-line rows that replaced the raw attribute rows
 --------------------------------------------------------------------------------
+
+function T.test_the_versions_row_names_the_service_driver_and_screen()
+  -- #85: the bottom row of the bottom card. The screen is generated at
+  -- device-creation time and never regenerated (§14.3), so the profile the
+  -- device sits on is as much of an answer as the two version numbers.
+  local version = require "driver_version"
+  local profiles = require "profiles"
+
+  h.assert_equal(state.versions("v1.1.0", "ko"),
+    "서비스 v1.1.0 · 드라이버 " .. version .. " · 화면 " .. profiles.current())
+  h.assert_equal(state.versions("v1.1.0", "en"),
+    "Service v1.1.0 · Driver " .. version .. " · Screen " .. profiles.current())
+end
+
+function T.test_the_versions_row_says_question_mark_before_the_first_answer()
+  -- A PC we have not reached has no service version, and the row still has to
+  -- read as something: an attribute that was never emitted shows "-" (§14.5).
+  for _, missing in ipairs({ "", "\0nil" }) do
+    local value = state.versions(missing ~= "\0nil" and missing or nil, "ko")
+    h.assert_contains(value, "서비스 ?")
+    h.assert_contains(value, "화면 " .. require("profiles").current())
+  end
+  h.assert_contains(state.versions(nil, "en"), "Service ?")
+end
+
+function T.test_a_status_body_refreshes_the_versions_row()
+  local events = state.apply_status(state.new(state.ON), sample_status(),
+    { now = NOW, lang = "ko" })
+  h.assert_equal(h.event_value(events, caps.STATUS, "versions"),
+    state.versions("v1.1.0", "ko"))
+end
+
+function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
+  -- #85: `added` paints these so no row of the command, schedule or info card
+  -- reads "-" before the first successful poll.
+  local events = state.initial_rows("ko")
+  for _, case in ipairs({
+    { caps.COMMAND, "lastCommand" },
+    { caps.SCHEDULE, "active" }, { caps.SCHEDULE, "status" },
+    { caps.SCHEDULE, "command" }, { caps.SCHEDULE, "remainingSeconds" },
+    { caps.SCHEDULE, "executeAt" }, { caps.SCHEDULE, "origin" },
+    { caps.SCHEDULE, "summary" }, { caps.STATUS, "versions" },
+  }) do
+    h.assert_true(h.event_value(events, case[1], case[2]) ~= nil,
+      case[1] .. "." .. case[2] .. " is not painted at `added`")
+  end
+  h.assert_equal(h.event_value(events, caps.STATUS, "versions"), state.versions(nil, "ko"))
+end
 
 function T.test_status_summary_reads_like_the_issue()
   -- #82: no power word — the pcPower row sits directly above this one.

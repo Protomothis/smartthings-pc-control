@@ -28,9 +28,9 @@ components:
         version: 1
       - id: numbersystem53811.pccountdown
         version: 1
-      - id: numbersystem53811.pchealth
-        version: 1
       - id: numbersystem53811.pcuser
+        version: 1
+      - id: numbersystem53811.pcinfo
         version: 1
     categories:
       - name: Others

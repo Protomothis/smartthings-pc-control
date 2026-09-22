@@ -244,14 +244,14 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcHealth.summary` (#78): the one line that replaced the six raw rows in the
+--- `pcInfo.summary` (#78): the one line that replaced the six raw rows in the
 --- detail view. "Connected · v1.1.0" when the PC answers,
 --- "Not connected · Secret mismatch" when it does not.
 --
 -- #82: the power word is gone from this line. The detail view now starts with
 -- the `pcPower.powerState` row, so repeating "On" here only made the status
 -- line longer than the phone shows.
--- @param connection a `pcHealth.connection` value; nil counts as `ok`
+-- @param connection a `pcInfo.connection` value; nil counts as `ok`
 -- @param service_version `status.service_version`, appended when known
 function state.status_summary(connection, service_version, lang)
   local parts = {}
@@ -268,6 +268,34 @@ function state.status_summary(connection, service_version, lang)
     end
   end
   return table.concat(parts, " · ")
+end
+
+--- `pcInfo.versions` (#85): "Service 1.1.0 · Driver 1.0.0 · Screen pc.v12".
+--
+-- The last row of the last card, and the one every "the app still looks the
+-- way it did" report needs: a device's screen is generated from the capability
+-- presentations at device-creation time and never regenerated (§14.3), so the
+-- profile the device sits on says as much as the two version numbers do.
+--
+-- `service_version` is whatever the status body carried; a PC we have not
+-- reached yet has none, and the row still has to say something (an attribute
+-- that was never emitted reads as "-", §14.5), so it becomes "?".
+function state.versions(service_version, lang)
+  local service = service_version
+  if type(service) ~= "string" or service == "" then
+    service = i18n.t(lang, "version_unknown")
+  end
+  local driver = "?"
+  local ok, value = pcall(require, "driver_version")
+  if ok and type(value) == "string" and value ~= "" then
+    driver = value
+  end
+  local screen = "?"
+  local found, profiles = pcall(require, "profiles")
+  if found and type(profiles) == "table" and type(profiles.current) == "function" then
+    screen = profiles.current()
+  end
+  return i18n.t(lang, "versions", service, driver, screen)
 end
 
 --- `pcCountdown.summary` (#78): "Shut down · 4 min left · SmartThings", or an
@@ -312,7 +340,7 @@ function state.session_summary(session, lang)
   return table.concat(parts, " · ")
 end
 
--- `pcHealth.message` shows one sentence, so several applicable notices need an
+-- `pcInfo.message` shows one sentence, so several applicable notices need an
 -- order. Highest priority first:
 --
 --   error            a failed request (unauthorized / unreachable / bad request)
@@ -329,7 +357,7 @@ state.MESSAGE_ORDER = {
   "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
 }
 
---- The single `pcHealth.message` for a status body (§5.1), by MESSAGE_ORDER.
+--- The single `pcInfo.message` for a status body (§5.1), by MESSAGE_ORDER.
 -- @param opts `lang`, `error` (a ready-made message that outranks the body),
 --   `note` (a confirmation shown only when nothing is wrong)
 function state.status_message(status, opts)
@@ -419,6 +447,7 @@ local ATTRIBUTES = {
   [caps.STATUS] = {
     connection = true, serviceVersion = true, updateAvailable = true,
     wolReady = true, lastSeen = true, message = true, summary = true,
+    versions = true,
   },
   [caps.SESSION] = {
     locked = true, idleMinutes = true, user = true,
@@ -432,8 +461,9 @@ function state.attributes_used()
 end
 
 --- #85: the resting value of every pcExec / pcCountdown attribute that a
---- status body does not carry on its own, for a device that has never been
---- polled successfully.
+--- status body does not carry on its own (plus the `pcInfo.versions` row, which
+--- says something useful even before the first poll), for a device that has
+--- never been polled successfully.
 --
 -- An attribute that was never emitted reads as "-" on the phone (§14.5) and
 -- keeps the app saying not all of the device's state has been reported. A
@@ -454,6 +484,10 @@ function state.initial_rows(lang)
   ev(events, caps.SCHEDULE, "executeAt", "")
   ev(events, caps.SCHEDULE, "origin", "")
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(nil, lang))
+  -- The service version is not known yet, so the row says "?" for it and the
+  -- driver/screen halves - the two that matter for "is my update live?" - are
+  -- right from the start.
+  ev(events, caps.STATUS, "versions", state.versions(nil, lang))
   return events
 end
 
@@ -503,6 +537,9 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.STATUS, "updateAvailable", update.available == true)
   ev(events, caps.STATUS, "wolReady", wol.ready == true)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
+  -- #85: the bottom row of the bottom card, refreshed on every poll so a
+  -- service update shows up without touching the driver.
+  ev(events, caps.STATUS, "versions", state.versions(status.service_version, lang))
   local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
   ev(events, caps.STATUS, "message", message)
   -- #78/#82: "Connected · v1.1.0". A successful status is always `ok` here;

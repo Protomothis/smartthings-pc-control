@@ -34,7 +34,11 @@ caps.COMMAND = NAMESPACE .. ".pcexec"
 -- entry never reached the hub) and the definition gained `planCommand` /
 -- `setPlanCommand`, so `pcPlan` became `pcCountdown`.
 caps.SCHEDULE = NAMESPACE .. ".pccountdown"
-caps.STATUS = NAMESPACE .. ".pchealth"
+-- #85: the definition gained a `versions` attribute (the row that says which
+-- service, driver and screen template a device is actually running), so by the
+-- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant
+-- keeps its name - what it points at is "the status capability".
+caps.STATUS = NAMESPACE .. ".pcinfo"
 caps.SESSION = NAMESPACE .. ".pcuser"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.

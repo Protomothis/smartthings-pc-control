@@ -38,6 +38,9 @@
     },
     "message": {
       "label": "안내"
+    },
+    "versions": {
+      "label": "버전"
     }
   },
   "commands": {}

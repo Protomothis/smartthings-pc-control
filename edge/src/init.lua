@@ -97,7 +97,7 @@ end
 -- capability handlers
 --------------------------------------------------------------------------------
 
--- Report a failed command through pcHealth instead of failing silently (§1.3).
+-- Report a failed command through pcInfo instead of failing silently (§1.3).
 -- A rate-limited request (§8) says nothing about the connection, so it is
 -- logged and the tiles keep what the last poll put there.
 local function report_error(device, kind, body)

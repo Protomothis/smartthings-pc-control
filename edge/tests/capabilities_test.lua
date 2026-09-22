@@ -236,6 +236,22 @@ function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
   h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
 end
 
+function T.test_the_info_capability_is_last_in_every_profile()
+  -- #85: the app draws one card per capability, in the order the profile lists
+  -- them, so the version row sits at the bottom of the screen only if pcInfo is
+  -- the last entry. Checked in every profile file: a device on an older one
+  -- gets the same reading order.
+  for name, text in pairs(profile_files) do
+    local order = {}
+    for id in (text or ""):gmatch("numbersystem53811%.(%a+)") do
+      order[#order + 1] = id
+    end
+    h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
+    h.assert_equal(order[#order], (caps.STATUS:gsub("^.*%.", "")),
+      "profiles/" .. name .. " must list the info capability last (#85)")
+  end
+end
+
 function T.test_no_two_profile_files_share_a_name()
   -- Two files with the same `name:` is what a copied-but-not-renamed version
   -- bump looks like, and the hub would take whichever it read last.
@@ -298,7 +314,7 @@ function T.test_the_enums_match_the_lua_constants()
     state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN,
   })
   -- §4.1: `noSecret` is deliberately not a connection value; the warning goes
-  -- into pcHealth.message instead.
+  -- into pcInfo.message instead.
   local connection = definition("status").attributes.connection.schema.properties.value
   h.assert_deep_equal(connection.enum, { "ok", "unauthorized", "unreachable", "incompatible" })
 end
@@ -810,6 +826,24 @@ function T.test_every_schedule_preset_is_inside_the_definitions_range()
   h.assert_true(zero, "the schedule row has no Cancel entry (minutes = 0)")
 end
 
+function T.test_the_info_detail_view_is_the_summary_and_the_versions()
+  -- #85: "which service, driver and screen am I actually on?" is the first
+  -- question a "the app still looks the old way" report needs answered, and the
+  -- screen is frozen at device-creation time (§14.3), so the profile name earns
+  -- its place next to the two version numbers.
+  local detail = presentation("status").detailView
+  h.assert_equal(#detail, 2, "status summary, versions")
+  h.assert_equal(detail[1].displayType, "state")
+  h.assert_contains(detail[1].state.label, "summary.value")
+
+  local versions = detail[2]
+  h.assert_equal(versions.displayType, "state")
+  h.assert_equal(versions.label, "{{i18n.attributes.versions.label}}")
+  h.assert_contains(versions.state.label, "versions.value")
+  h.assert_true(definition("status").attributes.versions ~= nil,
+    caps.ids.status .. " does not define versions")
+end
+
 -- #83, measured on the phone: a detailView `list` whose `state.value` points at
 -- a boolean attribute is not drawn as a picker at all. Only a string/enum
 -- attribute works, so every list state is checked against the definition.
@@ -1107,6 +1141,13 @@ function T.test_every_last_action_value_is_translated()
         "lastAction." .. value .. " has no " .. tag .. " label")
     end
   end
+end
+
+function T.test_the_versions_row_has_a_label_in_both_languages()
+  -- #85: a row label is one of the few things translations really do reach
+  -- (§14.2), so this is where the user's "버전" / "Versions" comes from.
+  h.assert_equal(((translation("status", "ko").attributes or {}).versions or {}).label, "버전")
+  h.assert_equal(((translation("status", "en").attributes or {}).versions or {}).label, "Versions")
 end
 
 function T.test_the_korean_translation_is_actually_korean()

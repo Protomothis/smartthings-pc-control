@@ -50,7 +50,7 @@ edge/
     pcPower.json  pcPower.presentation.json
     pcExec.json        pcExec.presentation.json
     pcCountdown.json   pcCountdown.presentation.json
-    pcHealth.json      pcHealth.presentation.json
+    pcInfo.json        pcInfo.presentation.json
     pcUser.json     pcUser.presentation.json
   src/
     init.lua                 # 드라이버 진입점, lifecycle
@@ -87,7 +87,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - `smartthings.allowed_hubs` (config, 문자열 배열)가 비어 있지 않으면 그 IP 외 출처는
   `403`. 기본 빈 배열(모두 허용). GUI에서 "현재 연결된 허브를 허용 목록에 추가" 제공.
 - 시크릿이 비어 있으면 인증 없음(기존과 동일). 드라이버는 이 경우 `connection=ok`
-  로 두되 `pcHealth.message`에 "no secret" 경고 문자열을 넣는다(`connection` enum에 `noSecret`은 두지 않는다).
+  로 두되 `pcInfo.message`에 "no secret" 경고 문자열을 넣는다(`connection` enum에 `noSecret`은 두지 않는다).
 - 레거시 `/{secret}/{command}`는 변경 없음.
 
 ### 4.2 `GET /st/v1/status`
@@ -228,7 +228,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 | `{NS}.pcPower` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
 | `{NS}.pcExec` | (#82로 `pcControl`→`pcAction`, #84로 `pcAction`→`pcRun`, #85로 `pcRun`→`pcExec` — 정의가 바뀌면 새 id다, §14.4) 명령 `execute(command, mode?, minutes?)`(상세 화면의 명령 목록과 자동화가 모두 쓴다. `command` enum은 §4.3의 8개에 `wake`와 **`none`**을 더한 10개다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`은 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다(§14.5). `forceshutdown`은 화면에 없고 자동화에만 둔다) + 인자 없는 명령 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(#78의 버튼. 화면에서는 빠졌지만 정의와 핸들러에 남아 옛 프로필의 장치와 씬이 쓴다); attrs `lastAction` enum(**`execute`의 `command` enum과 같은 10개**: `none` `wake` `shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff` `turnscreenon`. #84로 **항상 `none`**이다 — 목록이 쉬는 값이자 유효한 무해 인자여야 한다), `lastCommand` string("종료 · SmartThings · 23:05" — 실제로 무엇이 실행됐는지는 이 줄이 말한다). **#85로 `planCommand`/`setPlanCommand`는 여기서 빠져 `pcCountdown`으로 갔다** — 앱이 상세 줄을 그 줄을 소유한 capability의 카드에 그리기 때문이다 |
 | `{NS}.pcCountdown` | (#83으로 `pcTimer`→`pcPlan`, #85로 `pcPlan`→`pcCountdown` — 정의가 바뀌면 새 id다, §14.4) attrs `summary` string("종료 · 4분 남음 · SmartThings", 예약 없으면 `""`), `status` enum `idle` `scheduled`(상세 화면 목록이 보여 주는 값 — 목록의 `state`는 **문자열 enum이어야** 한다, §14.5), `active` bool(같은 사실의 bool 판. 화면에서는 빠졌고 자동화 조건으로 남는다), `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate`(#84, #85로 이 capability로 이동 — `schedule`이 명령 없이 올 때 쓸 명령); command `cancel()` ; command `setPlanCommand(command)`(#84/#85) ; command `schedule(minutes, command?)` — `minutes`는 integer **0..1440**이고 **`0`은 취소다**(#85: 클라우드가 인자를 정의로 검증하고 거부하면 허브에 닿지 않으므로, 목록의 `취소` 항목이 보내는 0이 정의 안에 있어야 한다, §14.5). 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
-| `{NS}.pcHealth` | attrs `summary` string("연결됨 · v1.1.0" / "연결 안 됨 · 시크릿 불일치" — #82로 전원 낱말이 빠졌다. 바로 위 줄이 `pcPower`다), `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**) |
+| `{NS}.pcInfo` | (#85로 `pcHealth`에서 이름·id를 바꿨다 — `versions` 속성이 늘어서 §14.4 규칙이 걸린다. **프로필 capability 목록의 맨 끝**에 둔다: 앱이 카드를 목록 순서대로 그리므로 버전 줄이 화면 맨 아래에 온다) attrs `summary` string("연결됨 · v1.1.0" / "연결 안 됨 · 시크릿 불일치" — #82로 전원 낱말이 빠졌다. 바로 위 줄이 `pcPower`다), `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**), `versions` string("서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v12" / "Service … · Driver … · Screen …" — #85. 서비스 버전은 status 본문에서, 드라이버 버전은 `driver_version.lua`에서, 화면은 `profiles.PC`에서 온다. 장치의 화면은 생성 시점에 굳으므로(§14.3) 프로필 이름이 버전 두 개만큼 중요하다. 연결 전이면 서비스 자리에 `?`를 넣고 **그래도 내보낸다** — 한 번도 emit 되지 않은 속성은 "-"다) |
 | `{NS}.pcUser` | attrs `exposed` bool, `summary` string("잠김 · 유휴 20분 · kim"), `locked` bool, `idleMinutes` integer, `user` string — `exposed`는 항상 내보내고(상세 화면의 `visibleCondition` 기준), 나머지는 `session.exposed=false`면 내보내지 않아 마지막 값이 유지된다 |
 | `refresh` | 즉시 폴링 |
 
@@ -236,7 +236,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 어려웠기 때문에, 드라이버가 문장으로 합쳐 한 줄만 보여 주고 원시 속성은 자동화 조건
 전용으로 남긴다. 합치는 문구는 `i18n.lua`의 ko/en을 따른다(§6.5).
 
-#82로 `pcHealth.summary`는 짧아졌다. 전원 낱말을 빼고(바로 위가 `pcPower` 줄이다),
+#82로 `pcInfo.summary`는 짧아졌다. 전원 낱말을 빼고(바로 위가 `pcPower` 줄이다),
 안내는 `message`의 긴 문장 대신 짧은 형태(`i18n.lua`의 `*_short`: "시크릿 미설정 ·
 설정 권장", "어댑터 WoL 꺼짐", "업데이트 v1.2.0 사용 가능")를 붙인다. 요약 줄 넷이
 한 화면에 모이므로 휴대폰이 긴 줄을 잘라 버리기 때문이다. `message`는 그대로 긴
@@ -288,12 +288,16 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
      목록은 아예 그려지지 않았다(§14.5, #83). 명령 없이 오는 예약은 4번 줄에서
      고른 `planCommand`를 쓴다(#84).
   6. `pcCountdown.summary` 상태 줄 (예약 없음 / "종료 · 4분 남음 · SmartThings")
-  7. `pcHealth.summary` 상태 줄 (전원 낱말 없이, 안내는 짧은 형태)
-  8. `pcUser.summary` 상태 줄 (꺼져 있으면 그렇다고 적는다)
+  7. `pcUser.summary` 상태 줄 (꺼져 있으면 그렇다고 적는다)
+  8. `pcInfo.summary` 상태 줄 (전원 낱말 없이, 안내는 짧은 형태)
+  9. `pcInfo.versions` 상태 줄 (#85, 맨 아래: "서비스 v1.1.0 · 드라이버 1.0.0 ·
+     화면 pc.v12"). 카드 순서는 **프로필의 capability 목록 순서**이므로
+     `pcinfo`를 목록 맨 끝에 둔다(모든 `profiles/pc*.yml`).
 - **detailView에 `pushButton`은 하나도 없다**(§14.5). 인자 없는 명령 8개와
   `pcCountdown.cancel`은 정의에 그대로 남아 핸들러도 유지된다 — 아직 옛 프로필에
   있는 장치가 그 화면을 쓰고, 씬·허브 로컬 자동화가 부를 수 있는 형태이기 때문이다.
-- **두 capability의 모든 속성은 `added`와 첫 폴링에 한 번 내보낸다**(#85).
+- **두 capability의 모든 속성과 `pcInfo.versions`는 `added`와 첫 폴링에 한 번
+  내보낸다**(#85).
   한 번도 emit 되지 않은 속성은 "-"로 보이고 앱이 "상태를 모두 보고하지
   않았다"고 안내한다. 이름이 바뀐 capability는 허브에서 모든 속성이 비어 있는
   상태로 시작하는데 드라이버의 persist 필드는 살아남으므로,
@@ -346,7 +350,7 @@ SSDP로 추가된 장치는 `ipAddress`/`port`가 채워진 상태로 생성되�
   `protocol` 불일치 → `incompatible`(메시지에 "서비스 vX 이상 필요" 또는 "드라이버 업데이트
   필요"). `429`(§8)는 서비스가 멀쩡한데 너무 자주 물은 것뿐이므로 **아무 속성도 바꾸지 않고**
   로그만 남긴다(명령 직후의 즉시 폴링이 같은 초에 걸릴 수 있다).
-- `pcHealth.message`는 한 줄이므로 동시에 해당하는 안내가 여러 개면 우선순위로 하나만 고른다:
+- `pcInfo.message`는 한 줄이므로 동시에 해당하는 안내가 여러 개면 우선순위로 하나만 고른다:
   오류 > `incompatible` > WoL 미준비 > 업데이트 있음 > 시크릿 없음 > 명령 결과 확인 문구.
 - `unreachable`이 2회 연속이면 `powerState`를 `off`로 두되, 직전 푸시가
   `power.stopping(reason=suspend|hibernate)`였다면 `sleeping`/`hibernated`를 유지한다.
@@ -385,7 +389,7 @@ PC에서 유예를 취소하면 `schedule.cancelled` 푸시 → 스위치 on 복
 1. **앱 UI 라벨** — capability 라벨·속성 라벨·enum 값·명령과 인자 라벨. 프레젠테이션에는
    영어로 적고, capability translations가 휴대폰 로케일에 맞춰 덮어쓴다(§5.3). 드라이버는
    여기에 관여하지 않는다.
-2. **문자열 속성 값** — `pcHealth.summary`/`message`, `pcCountdown.summary`,
+2. **문자열 속성 값** — `pcInfo.summary`/`message`, `pcCountdown.summary`,
    `pcUser.summary`, `pcExec.lastCommand`, `pcCountdown.origin`/`command`. 이것들은
    드라이버가 만들어 내므로 `language` 환경설정(auto=허브 로케일 추정 불가하므로 ko,
    프로젝트가 한국어 우선)에 따라 `i18n.lua`에서 ko/en을 고른다.
@@ -473,7 +477,7 @@ develop → main → `v1.1.0` 태그.
   이후 SSDP가 같은 `machine_id`를 찾으면 그 장치의 IP를 갱신하고 중복 생성하지 않는다(DNI는 바꾸지 않는다).
 - 장치 라벨은 "`hostname` 컴퓨터"(en: "`hostname` PC"). 기존 장치 이름 관행("혁 컴퓨터")에 맞춘 것이며, 사용자가 라벨을 바꾸면 덮어쓰지 않는다.
 - 이미지 복제로 MachineGuid가 같은 PC가 둘이면 SSDP에서 하나로 합쳐진다. `description`에 `hostname`을 함께 실어
-  드라이버가 "같은 machine_id, 다른 hostname"을 만나면 `pcHealth.message`로 경고한다. 해결은 사용자가 GUID를 재생성하는 것으로 문서에 적는다.
+  드라이버가 "같은 machine_id, 다른 hostname"을 만나면 `pcInfo.message`로 경고한다. 해결은 사용자가 GUID를 재생성하는 것으로 문서에 적는다.
 
 ### 13.2 IP 변화(DHCP)와 다중 NIC
 
@@ -597,7 +601,7 @@ develop → main → `v1.1.0` 태그.
 
 - 허브는 커스텀 capability 정의를 **id 단위로 허브 전체에 캐시**하고, 같은 id·버전의 정의를 클라우드에서 바꿔도(`capabilities:update`) 다시 받지 않는다.
   드라이버 재설치, 새 드라이버 id 설치, 장치 삭제·재추가, 프로필 이전 모두 무효. 확인된 갱신 경로는 허브 재부팅(전원 재연결)뿐이다.
-- 그래서 정의(속성·명령)를 바꿀 때는 **새 id**로 만든다. v1.1.0 최종 이름: `pcPower` `pcExec` `pcCountdown` `pcHealth` `pcUser`(id는 소문자). `pcControl`이 `pcAction`이 된 것도(#82: `lastAction` 속성 추가), `pcTimer`가 `pcPlan`이 된 것도(#83: `status` 속성 추가), `pcAction`이 `pcRun`이 된 것도(#84: `execute`에 `none` 추가, `planCommand`/`setPlanCommand` 추가), `pcPlan`이 `pcCountdown`이 되고 `pcRun`이 `pcExec`이 된 것도(#85: `schedule.minutes`의 minimum 0, `planCommand`/`setPlanCommand`가 예약 쪽으로 이동) 이 규칙 때문이다. 쓰이지 않게 된 이름은 참조가 사라진 뒤 `capabilities:delete`로 계정에서 삭제한다(`pcaction`은 #84 배포 후, `pcplan`·`pcrun`은 #85 배포 후 삭제).
+- 그래서 정의(속성·명령)를 바꿀 때는 **새 id**로 만든다. v1.1.0 최종 이름: `pcPower` `pcExec` `pcCountdown` `pcUser` `pcInfo`(id는 소문자). `pcControl`이 `pcAction`이 된 것도(#82: `lastAction` 속성 추가), `pcTimer`가 `pcPlan`이 된 것도(#83: `status` 속성 추가), `pcAction`이 `pcRun`이 된 것도(#84: `execute`에 `none` 추가, `planCommand`/`setPlanCommand` 추가), `pcPlan`이 `pcCountdown`이 되고 `pcRun`이 `pcExec`이 된 것도(#85: `schedule.minutes`의 minimum 0, `planCommand`/`setPlanCommand`가 예약 쪽으로 이동), `pcHealth`가 `pcInfo`가 된 것도(#85: `versions` 속성 추가) 이 규칙 때문이다. 쓰이지 않게 된 이름은 참조가 사라진 뒤 `capabilities:delete`로 계정에서 삭제한다(`pcaction`은 #84 배포 후, `pcplan`·`pcrun`·`pchealth`는 #85 배포 후 삭제).
 - **이름이 바뀐 capability는 허브에서 모든 속성이 값 없이 시작한다.** 옛 id의 값은 따라오지 않으므로(장치는 프로필 이전으로만 따라온다) 드라이버가 두 capability의 모든 속성을 한 번 다시 내보내야 한다 — 그러지 않으면 모든 줄이 "-"이고 앱이 "상태를 모두 보고하지 않았다"고 안내한다. 드라이버가 `set_field(..., {persist=true})`로 기억하는 "이미 칠했다" 표시는 이름 변경을 넘어 살아남으므로, 표시에 세대 번호를 붙인다(`poll.ROWS_VERSION`, #85).
 - 프레젠테이션·번역만 바꾸는 경우는 프로필 버전 업(pc.vN)으로 충분하다(§14.3). 정의가 바뀌면 새 capability id + 프로필 버전 업.
 - 배포 후 원칙: 정의 변경은 새 id로, 드라이버는 옛 id 참조를 한 버전 동안 유지하지 않고 바로 새 id로 이전한다(장치는 프로필 이전으로 따라온다).
@@ -638,7 +642,8 @@ develop → main → `v1.1.0` 태그.
   #85). `예약할 명령` 줄이 `pcRun`에 있어 PC 명령 카드에 그려졌고, 예약 카드만
   보면 시간만 고르는 화면이었다. 줄의 배치는 곧 **어느 capability가 그 속성과
   명령을 정의하는가**이므로, 배치를 바꾸려면 정의를 옮겨야 하고 정의가 바뀌면
-  새 id다(§14.4).
+  새 id다(§14.4). **카드 순서는 프로필의 capability 목록 순서**다 — `pcinfo`를
+  목록 맨 끝에 둔 것이 버전 줄을 화면 맨 아래로 보내는 유일한 수단이다(#85).
 - **한 번도 emit 되지 않은 속성은 "-"이고, 앱은 "상태를 모두 보고하지 않았다"고
   안내한다.** 새 장치(`added`)와 이름이 바뀐 capability로 이전된 장치는 두
   capability의 **모든** 속성을 한 번 내보내야 한다(#85, §14.4).
@@ -672,7 +677,7 @@ develop → main → `v1.1.0` 태그.
 ## 15. 정식 릴리스 전 체크리스트 (edge)
 
 1. **프로필 이름 리셋**: 최신 프로필 파일을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 올라간 `pc.v2`~`pc.vN` 파일과 `profiles.lua`의 KNOWN 목록을 `pc.v1`만 남긴다. 사용자 눈에 보이지 않는 이름표일 뿐이라 정식은 v1에서 시작한다. 개발 허브의 "hk 컴퓨터"는 삭제 후 재추가(우리 장치만 해당).
-2. **capability 이름 확정**: 최종 이름(`pcPower` `pcExec` `pcCountdown` `pcHealth` `pcUser`)이 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities` 목록으로 확인. 배포 후 정의 변경은 새 id로만(§14.4).
+2. **capability 이름 확정**: 최종 이름(`pcPower` `pcExec` `pcCountdown` `pcUser` `pcInfo`)이 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities` 목록으로 확인. 배포 후 정의 변경은 새 id로만(§14.4).
 3. **버전 표기**: `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치 검증). SmartThings 쪽 드라이버 버전은 패키징 시각 문자열이라 통제 대상이 아니다.
 4. **채널 정리**: 개발용 드라이버 버전은 채널에 마지막 것만 남는다. 초대 링크를 README/Wiki 자리표시자에 기입.
 5. **서비스**: v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서, 사용자 검토 후.
