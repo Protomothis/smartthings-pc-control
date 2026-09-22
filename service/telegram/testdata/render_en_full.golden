@@ -94,8 +94,22 @@ Asleep for: <code>2시간 10분</code>
 === power.stopping ===
 🖥 <b>DESKTOP-TEST</b>
 🔴 <b>Service stopping</b>
-<blockquote>The service is stopping: <b>shutdown</b></blockquote>
-Reason: <code>shutdown</code>
+<blockquote>The service is stopping: <b>Shut down</b></blockquote>
+Reason: <code>Shut down</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>Restart</b></blockquote>
+Reason: <code>Restart</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>Hibernate</b></blockquote>
+Reason: <code>Hibernate</code>
 <i>DESKTOP-TEST · 14:35:00</i>
 
 === security.unauthorized ===

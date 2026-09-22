@@ -45,7 +45,12 @@ var notifyCatalogue = []struct {
 }{
 	{"remote", []notifyKind{{"received", true}, {"grace_scheduled", true}, {"grace_cancelled", true}, {"executed", true}, {"force", true}}},
 	{"schedule", []notifyKind{{"created", false}, {"cancelled", false}, {"executed", true}, {"replaced", true}}},
-	{"power", []notifyKind{{"started", true}, {"resumed", true}, {"stopping", false}}},
+	// #87: power.stopping is on by default now that its message names the
+	// reason. This row is only the fallback for a key config.json does not
+	// carry; it must stay in step with the service catalogue
+	// (service/notify/config.go), or the checkbox would open on a value the
+	// service does not use.
+	{"power", []notifyKind{{"started", true}, {"resumed", true}, {"stopping", true}}},
 	{"security", []notifyKind{{"unauthorized", true}, {"login_limited", true}, {"unknown_command", true}, {"config_changed", true}, {"unknown_chat", true}}},
 	{"system", []notifyKind{{"update_available", true}, {"updated", true}, {"exec_failed", true}, {"tray_wake_failed", true}}},
 }

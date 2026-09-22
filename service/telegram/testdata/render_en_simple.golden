@@ -56,7 +56,17 @@
 === power.stopping ===
 🖥 <b>DESKTOP-TEST</b>
 🔴 <b>Service stopping</b>
-<blockquote>The service is stopping: <b>shutdown</b></blockquote>
+<blockquote>The service is stopping: <b>Shut down</b></blockquote>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>Restart</b></blockquote>
+
+=== power.stopping ===
+🖥 <b>DESKTOP-TEST</b>
+🔴 <b>Service stopping</b>
+<blockquote>The service is stopping: <b>Hibernate</b></blockquote>
 
 === security.unauthorized ===
 🖥 <b>DESKTOP-TEST</b>
