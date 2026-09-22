@@ -156,7 +156,7 @@ SmartThings). 예약은 PC당 하나이고, 새 예약은 기존 것을 대체�
 
 ### 디스플레이 자식 장치
 
-`Create display device`가 켜져 있으면 "`호스트이름` Display"라는 스위치가 함께
+`Create display device`가 켜져 있으면 "`호스트이름` 모니터"(영어 설정 시 "Monitor")라는 스위치가 함께
 생깁니다. 켜면 `turnscreenon`, 끄면 `turnscreenoff`를 부모 PC에 보내고, 상태는 서비스가
 보고한 `display` 값을 따릅니다(`unknown`이면 건드리지 않습니다).
 
@@ -192,7 +192,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 ```
 조건(If)  : 구성원 전원이 집을 떠남
 동작(Then): PC 의 pcCommand.execute(command: lock, mode: immediate)
-            PC Display 스위치 끄기
+            PC 모니터 스위치 끄기
 ```
 
 **3. 책상 주변기기 전원 연동** — 모니터·스피커 스마트플러그를 PC에 맞춥니다.

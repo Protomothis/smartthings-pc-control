@@ -3,13 +3,13 @@ local i18n = require "i18n"
 
 local T = {}
 
-function T.test_resolve_defaults_to_english()
+function T.test_resolve_defaults_to_korean()
   h.assert_equal(i18n.resolve("ko"), "ko")
   h.assert_equal(i18n.resolve("en"), "en")
-  -- §6.5: a driver cannot read the hub locale, so auto means English.
-  h.assert_equal(i18n.resolve("auto"), "en")
-  h.assert_equal(i18n.resolve(nil), "en")
-  h.assert_equal(i18n.resolve("fr"), "en")
+  -- §6.5: a driver cannot read the hub locale; the project is Korean-first.
+  h.assert_equal(i18n.resolve("auto"), "ko")
+  h.assert_equal(i18n.resolve(nil), "ko")
+  h.assert_equal(i18n.resolve("fr"), "ko")
 end
 
 function T.test_translates_both_languages()
@@ -19,8 +19,8 @@ function T.test_translates_both_languages()
   h.assert_contains(i18n.t("en", "unreachable"), "Cannot reach")
 end
 
-function T.test_auto_language_falls_back_to_english()
-  h.assert_equal(i18n.t("auto", "no_secret"), i18n.t("en", "no_secret"))
+function T.test_auto_language_falls_back_to_korean()
+  h.assert_equal(i18n.t("auto", "no_secret"), i18n.t("ko", "no_secret"))
 end
 
 function T.test_formats_arguments()
@@ -75,7 +75,8 @@ function T.test_the_discovery_strings_carry_their_arguments()
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "LAPTOP-XYZ")
   h.assert_contains(i18n.t("en", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
   h.assert_contains(i18n.t("ko", "hostname_mismatch", "LAPTOP-XYZ"), "MachineGuid")
-  h.assert_equal(i18n.t("en", "display_label", "DESKTOP-ABC"), "DESKTOP-ABC Display")
+  h.assert_equal(i18n.t("en", "display_label", "DESKTOP-ABC"), "DESKTOP-ABC Monitor")
+  h.assert_equal(i18n.t("ko", "pc_label", "DESKTOP-ABC"), "DESKTOP-ABC 컴퓨터")
 end
 
 function T.test_forbidden_and_unauthorized_say_different_things()

@@ -158,7 +158,7 @@ end
 function T.test_a_discovered_host_is_labelled_with_its_hostname()
   local driver = fake_driver()
   discovery.create(driver, { ip = "192.168.1.20", hostname = "DESKTOP-ABC", machine_id = "guid" })
-  h.assert_equal(driver.created[1].label, "DESKTOP-ABC")
+  h.assert_equal(driver.created[1].label, "DESKTOP-ABC 컴퓨터")
   h.assert_equal(driver.created[1].device_network_id, "pc-control-guid")
 end
 
@@ -321,7 +321,7 @@ function T.test_a_new_machine_id_is_created()
   }))
   h.assert_equal(#driver.created, 1)
   h.assert_equal(driver.created[1].device_network_id, "pc-control-guid-b")
-  h.assert_equal(driver.created[1].label, "DESKTOP-XYZ")
+  h.assert_equal(driver.created[1].label, "DESKTOP-XYZ 컴퓨터")
 end
 
 --------------------------------------------------------------------------------
@@ -391,7 +391,7 @@ function T.test_a_plan_for_an_unknown_machine_id_creates()
     hostname = "DESKTOP-XYZ" })
   h.assert_equal(plan.action, "create")
   h.assert_equal(plan.device_network_id, "pc-control-guid-b")
-  h.assert_equal(plan.label, "DESKTOP-XYZ")
+  h.assert_equal(plan.label, "DESKTOP-XYZ 컴퓨터")
 end
 
 --------------------------------------------------------------------------------

@@ -210,7 +210,7 @@ function discovery.plan(device, found)
     return {
       action = "create",
       device_network_id = discovery.network_id(found.machine_id),
-      label = (found.hostname ~= nil and found.hostname ~= "") and found.hostname
+      label = (found.hostname ~= nil and found.hostname ~= "") and i18n.t(nil, "pc_label", found.hostname)
         or discovery.PLACEHOLDER_LABEL,
       ip = found.ip,
       port = found.port,

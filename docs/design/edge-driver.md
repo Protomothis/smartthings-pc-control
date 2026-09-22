@@ -300,7 +300,7 @@ PC에서 유예를 취소하면 `schedule.cancelled` 푸시 → 스위치 on 복
 ### 6.5 i18n
 
 Edge 환경설정/프레젠테이션은 영어가 기본이다. 사용자에게 보이는 **문자열 속성**
-(`lastCommand`, `message`, `origin`)은 `language` 환경설정(auto=허브 로케일 추정 불가하므로 en)
+(`lastCommand`, `message`, `origin`)은 `language` 환경설정(auto=허브 로케일 추정 불가하므로 ko, 프로젝트가 한국어 우선)
 에 따라 `i18n.lua`에서 ko/en 선택. 프레젠테이션 라벨은 영어 + 괄호 한국어 병기는 하지 않는다.
 
 ## 7. GUI (Fyne) 변경
@@ -380,7 +380,7 @@ develop → main → `v1.1.0` 태그.
   새로 만들지 않고 IP·포트·호스트명만 갱신한다.
 - 수동 추가 장치는 DNI `manual-<random>`으로 만들고, 첫 `status` 성공 시 `machine_id`를 장치 필드에 저장한다.
   이후 SSDP가 같은 `machine_id`를 찾으면 그 장치의 IP를 갱신하고 중복 생성하지 않는다(DNI는 바꾸지 않는다).
-- 장치 라벨은 `hostname`(예: "DESKTOP-ABC"), 디스플레이 자식은 "`hostname` Display". 사용자가 라벨을 바꾸면 덮어쓰지 않는다.
+- 장치 라벨은 "`hostname` 컴퓨터"(en: "`hostname` PC"), 디스플레이 자식은 "`hostname` 모니터"(en: "`hostname` Monitor"). 기존 장치 이름 관행("혁 컴퓨터")에 맞춘 것이며, 사용자가 라벨을 바꾸면 덮어쓰지 않는다. EDGE_CHILD는 DNI를 직접 지정할 수 없고 parent_assigned_child_key로 식별한다(허브 경고).
 - 이미지 복제로 MachineGuid가 같은 PC가 둘이면 SSDP에서 하나로 합쳐진다. `description`에 `hostname`을 함께 실어
   드라이버가 "같은 machine_id, 다른 hostname"을 만나면 `pcStatus.message`로 경고한다. 해결은 사용자가 GUID를 재생성하는 것으로 문서에 적는다.
 

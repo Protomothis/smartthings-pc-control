@@ -59,11 +59,12 @@ function T.test_is_child_recognises_the_suffix()
   h.assert_false(display.is_child({}))
 end
 
-function T.test_the_label_is_the_hostname_plus_display()
-  h.assert_equal(display.label("DESKTOP-ABC", "en"), "DESKTOP-ABC Display")
-  h.assert_equal(display.label("DESKTOP-ABC", "auto"), "DESKTOP-ABC Display")
-  h.assert_equal(display.label("DESKTOP-ABC", "ko"), "DESKTOP-ABC 디스플레이")
-  h.assert_equal(display.label(nil, "en"), "PC Display")
+function T.test_the_label_is_the_hostname_plus_monitor()
+  h.assert_equal(display.label("DESKTOP-ABC", "en"), "DESKTOP-ABC Monitor")
+  -- auto resolves to Korean (§6.5)
+  h.assert_equal(display.label("DESKTOP-ABC", "auto"), "DESKTOP-ABC 모니터")
+  h.assert_equal(display.label("DESKTOP-ABC", "ko"), "DESKTOP-ABC 모니터")
+  h.assert_equal(display.label(nil, "en"), "PC Monitor")
 end
 
 function T.test_the_child_is_wanted_while_the_preference_is_on()
@@ -81,7 +82,7 @@ function T.test_plan_creates_when_wanted_and_absent()
     hostname = "DESKTOP-ABC", lang = "en" })
   h.assert_equal(plan.action, "create")
   h.assert_equal(plan.device_network_id, "pc-control-9f3c-guid-display")
-  h.assert_equal(plan.label, "DESKTOP-ABC Display")
+  h.assert_equal(plan.label, "DESKTOP-ABC Monitor")
 end
 
 function T.test_plan_deletes_when_the_preference_goes_off()
@@ -92,16 +93,16 @@ end
 function T.test_plan_does_nothing_when_it_already_matches()
   h.assert_equal(display.plan({ wanted = false, exists = false }).action, "none")
   h.assert_equal(display.plan({ wanted = true, exists = true, machine_id = "9f3c-guid",
-    hostname = "DESKTOP-ABC", lang = "en", current_label = "DESKTOP-ABC Display" }).action, "none")
+    hostname = "DESKTOP-ABC", lang = "en", current_label = "DESKTOP-ABC Monitor" }).action, "none")
 end
 
 function T.test_plan_renames_only_a_label_the_user_did_not_touch()
   -- §13.1: the PC was renamed, and the child still carries the old name.
   local plan = display.plan({ wanted = true, exists = true, machine_id = "9f3c-guid",
     hostname = "DESKTOP-NEW", previous_hostname = "DESKTOP-ABC", lang = "en",
-    current_label = "DESKTOP-ABC Display" })
+    current_label = "DESKTOP-ABC Monitor" })
   h.assert_equal(plan.action, "relabel")
-  h.assert_equal(plan.label, "DESKTOP-NEW Display")
+  h.assert_equal(plan.label, "DESKTOP-NEW Monitor")
 
   -- A label the user chose is never overwritten.
   local kept = display.plan({ wanted = true, exists = true, machine_id = "9f3c-guid",
@@ -134,8 +135,10 @@ function T.test_ensure_creates_the_child_once_the_pc_has_answered()
   local plan = display.ensure(driver, parent)
   h.assert_equal(plan.action, "create")
   local spec = driver.created[1]
-  h.assert_equal(spec.device_network_id, "pc-control-9f3c-guid-display")
-  h.assert_equal(spec.label, "DESKTOP-ABC Display")
+  -- EDGE_CHILD must not carry a device_network_id (hub warning); the
+  -- parent_assigned_child_key identifies it.
+  h.assert_equal(spec.device_network_id, nil)
+  h.assert_equal(spec.label, "DESKTOP-ABC 모니터")
   h.assert_equal(spec.parent_device_id, "parent-1")
   h.assert_equal(spec.profile, "pc-display.v1")
   h.assert_equal(spec.type, "EDGE_CHILD")
@@ -153,7 +156,7 @@ end
 function T.test_ensure_removes_the_child_when_the_preference_goes_off()
   local prefs = { ipAddress = "192.168.1.20", createDisplayDevice = false }
   local parent = parent_device(prefs, "9f3c-guid", "DESKTOP-ABC")
-  local child = child_device("9f3c-guid", "DESKTOP-ABC Display")
+  local child = child_device("9f3c-guid", "DESKTOP-ABC Monitor")
   local driver = fake_driver({ parent, child })
   h.assert_equal(display.ensure(driver, parent).action, "delete")
   h.assert_true(child.deleted)
@@ -176,8 +179,9 @@ function T.test_the_first_status_creates_the_child_for_a_manual_device()
     return 1, 200, {}, "HTTP/1.1 200 OK"
   end
   h.assert_true(poll.once(driver, parent, { deps = { http = http } }))
-  h.assert_equal(driver.created[1].device_network_id, "pc-control-9f3c-guid-display")
-  h.assert_equal(driver.created[1].label, "DESKTOP-ABC Display")
+  h.assert_equal(driver.created[1].device_network_id, nil)
+  h.assert_equal(driver.created[1].parent_assigned_child_key, display.CHILD_KEY)
+  h.assert_equal(driver.created[1].label, "DESKTOP-ABC 모니터")
 end
 
 function T.test_ensure_does_nothing_for_a_child()

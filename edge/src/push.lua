@@ -284,7 +284,8 @@ function push.start(driver, deps)
 
   local ok, listener = pcall(function()
     local server = assert(socket.tcp())
-    server:setoption("reuseaddr", true)
+    -- cosock only accepts timeout/keepalive/tcp-nodelay; reuseaddr is rejected
+    -- by the hub ("unknown variant") and an ephemeral port needs none.
     assert(server:bind("0.0.0.0", 0))
     assert(server:listen(push.BACKLOG))
     local _, port = server:getsockname()

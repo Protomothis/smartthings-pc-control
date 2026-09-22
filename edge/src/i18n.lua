@@ -2,14 +2,14 @@
 -- (`pcStatus.message`, `pcCommand.lastCommand`, `pcSchedule.origin`).
 --
 -- Design doc §6.5: profile/presentation labels stay English; only these string
--- attributes follow the `language` preference. `auto` resolves to `en` because
+-- attributes follow the `language` preference. `auto` resolves to `ko` because
 -- a driver cannot read the hub locale.
 --
 -- Pure Lua: no st.* / cosock requires, so tests load it directly.
 
 local i18n = {}
 
-i18n.DEFAULT_LANG = "en"
+i18n.DEFAULT_LANG = "ko"
 
 -- key -> { ko = ..., en = ... }. Values may contain string.format verbs.
 local STRINGS = {
@@ -117,8 +117,14 @@ local STRINGS = {
 
   -- display child device (§5.2, §13.1)
   display_label = {
-    ko = "%s 디스플레이",
-    en = "%s Display",
+    ko = "%s 모니터",
+    en = "%s Monitor",
+  },
+  -- main device label at discovery (§13.1); matches how people already name
+  -- PCs in a Korean home ("혁 컴퓨터")
+  pc_label = {
+    ko = "%s 컴퓨터",
+    en = "%s PC",
   },
 
   -- schedule origins (§4.2). `remote` is the legacy PCControl HTTP path, which
@@ -141,7 +147,8 @@ local STRINGS = {
 }
 
 --- Normalise a `language` preference value to a supported language code.
--- `auto`, nil and anything unknown resolve to `en` (§6.5).
+-- `auto`, nil and anything unknown resolve to `ko` (§6.5): the project is
+-- Korean-first; set the `language` preference to `en` for English.
 function i18n.resolve(lang)
   if lang == "ko" or lang == "en" then
     return lang

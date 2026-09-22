@@ -53,7 +53,7 @@ function display.is_child(device)
   return key == display.CHILD_KEY
 end
 
---- §13.1: "<hostname> Display".
+--- §13.1: "<hostname> 모니터" / "<hostname> Monitor".
 function display.label(hostname, lang)
   if type(hostname) ~= "string" or hostname == "" then
     hostname = "PC"
@@ -198,7 +198,8 @@ function display.ensure(driver, parent)
     pcall(function()
       driver:try_create_device({
         type = "EDGE_CHILD",
-        device_network_id = plan.device_network_id,
+        -- EDGE_CHILD may not set device_network_id (hub warning); the
+        -- parent_assigned_child_key identifies the child instead.
         label = plan.label,
         profile = display.PROFILE,
         parent_device_id = parent.id,
