@@ -337,7 +337,7 @@ function T.test_a_quiet_status_has_no_notice_at_all()
 end
 
 --------------------------------------------------------------------------------
--- pcRun.lastAction (#82, #84)
+-- pcExec.lastAction (#82, #84)
 --------------------------------------------------------------------------------
 
 function T.test_the_action_values_are_the_service_command_names()
@@ -363,7 +363,7 @@ function T.test_is_action_rejects_anything_outside_the_enum()
 end
 
 --------------------------------------------------------------------------------
--- pcRun.planCommand (#84)
+-- pcCountdown.planCommand (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_only_the_schedulable_commands_are_plan_commands()
