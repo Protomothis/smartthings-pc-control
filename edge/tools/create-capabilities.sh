@@ -13,7 +13,8 @@
 #
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
-#   - `smartthings login` completed, or SMARTTHINGS_TOKEN exported
+#   - logged in (the CLI opens a browser on the first command that needs auth;
+#     CLI 2.x has no `login` command), or SMARTTHINGS_TOKEN exported
 #
 # The namespace SmartThings assigns is printed at the end; feed it to
 # tools/apply-namespace.js to put it into caps.lua, the profiles and the
@@ -27,7 +28,7 @@ CAPABILITIES=(pcPowerState pcCommand pcSchedule pcStatus pcSession)
 
 if ! command -v smartthings >/dev/null 2>&1; then
   echo "error: the 'smartthings' CLI is not on PATH." >&2
-  echo "       npm i -g @smartthings/cli   (then: smartthings login)" >&2
+  echo "       npm i -g @smartthings/cli   (the first command opens a browser to log in)" >&2
   exit 1
 fi
 

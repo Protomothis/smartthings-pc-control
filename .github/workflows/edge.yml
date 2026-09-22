@@ -87,7 +87,7 @@ jobs:
     #                      https://account.smartthings.com/tokens with the
     #                      scopes `Devices`, `Drivers` (r/w) and `Channels`
     #                      (r/w). The CLI reads it from this exact env var, so
-    #                      no `smartthings login` browser flow is needed in CI.
+    #                      the interactive browser login (triggered by the first command) is not needed in CI.
     #   ST_CHANNEL_ID      UUID of the distribution channel the driver is
     #                      published to, from `smartthings edge:channels`
     #                      (create it once with `edge:channels:create`).

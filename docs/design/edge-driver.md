@@ -341,7 +341,7 @@ WebUI(settings.html)는 필드만 노출하고 꾸미지 않는다.
 
 ## 11. 사용자 준비 사항 (에이전트가 할 수 없는 것)
 
-1. SmartThings CLI 설치 후 `smartthings login`. 커스텀 capability 생성:
+1. SmartThings CLI 설치 후 첫 명령(예: `smartthings locations`)에서 브라우저 로그인(2.x에는 `login` 명령이 없다). 커스텀 capability 생성:
    `smartthings capabilities:create -i edge/capabilities/<name>.json` ×5 →
    발급된 네임스페이스를 `edge/src/caps.lua`의 `NAMESPACE`와 프로필 파일에 반영(스크립트 `edge/tools/apply-namespace.js` 제공).
    프레젠테이션 `smartthings capabilities:presentation:create`.
