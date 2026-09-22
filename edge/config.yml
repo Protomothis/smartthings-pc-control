@@ -8,4 +8,4 @@ permissions:
   # while it has no devices (found on the first on-hub test, 2026-09-22).
   discovery: {}
 # There is no standard `version` field here; the driver version lives in
-# src/version.lua and is checked against the `edge-vX.Y.Z` tag in CI (#74).
+# src/driver_version.lua and is checked against the `edge-vX.Y.Z` tag in CI (#74).

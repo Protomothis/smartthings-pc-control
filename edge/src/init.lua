@@ -16,7 +16,7 @@ local i18n = require "i18n"
 local poll = require "poll"
 local push = require "push"
 local state = require "state"
-local version = require "version"
+local version = require "driver_version"
 local wol = require "wol"
 
 -- Custom capabilities only resolve once the account owner has created them and

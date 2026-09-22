@@ -100,22 +100,22 @@ jobs:
         with:
           node-version: '22'
 
-      # config.yml has no standard `version` field, so src/version.lua is the
+      # config.yml has no standard `version` field, so src/driver_version.lua is the
       # single source of truth (it also feeds the driver's HTTP User-Agent and
       # the `driver_version` of /st/v1/subscribe). A tag that disagrees with it
       # would publish a driver whose self-reported version is wrong, which is
       # exactly the thing nobody notices until a support question. Fail loudly.
-      - name: Check tag against src/version.lua
+      - name: Check tag against src/driver_version.lua
         run: |
           tag_version="${GITHUB_REF_NAME#edge-v}"
-          file_version=$(sed -n 's/^[[:space:]]*return[[:space:]]*"\(.*\)".*$/\1/p' edge/src/version.lua | tail -n 1)
-          echo "tag=${GITHUB_REF_NAME} -> ${tag_version}, edge/src/version.lua -> ${file_version}"
+          file_version=$(sed -n 's/^[[:space:]]*return[[:space:]]*"\(.*\)".*$/\1/p' edge/src/driver_version.lua | tail -n 1)
+          echo "tag=${GITHUB_REF_NAME} -> ${tag_version}, edge/src/driver_version.lua -> ${file_version}"
           if [ -z "$file_version" ]; then
-            echo "::error file=edge/src/version.lua::could not read the version string"
+            echo "::error file=edge/src/driver_version.lua::could not read the version string"
             exit 1
           fi
           if [ "$tag_version" != "$file_version" ]; then
-            echo "::error file=edge/src/version.lua::tag ${GITHUB_REF_NAME} expects version \"${tag_version}\" but the file says \"${file_version}\""
+            echo "::error file=edge/src/driver_version.lua::tag ${GITHUB_REF_NAME} expects version \"${tag_version}\" but the file says \"${file_version}\""
             exit 1
           fi
 

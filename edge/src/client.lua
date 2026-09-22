@@ -12,7 +12,7 @@
 -- No module-level mutable state: everything comes from `device.preferences`, and
 -- `deps` lets tests inject a fake http/json/ltn12 instead of cosock.
 
-local VERSION = require "version"
+local VERSION = require "driver_version"
 
 local client = {}
 

@@ -256,7 +256,7 @@ src/
   state.lua              순수 함수: status JSON → 이벤트, 전원 상태 머신 (§6.2)
   wol.lua                매직 패킷, 깨우기 시퀀스 (§6.3)
   i18n.lua               사용자에게 보이는 속성 문자열의 ko/en (§6.5)
-  version.lua            드라이버 버전 (User-Agent, 릴리스 태그 검증)
+  driver_version.lua     드라이버 버전 (User-Agent, 릴리스 태그 검증)
 tests/
   run.lua                테스트 러너
   syntax.lua             모든 모듈을 실행 없이 컴파일
@@ -364,7 +364,7 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 `develop` · `main` · `milestone/**` push와 `edge/**`를 건드린 PR마다 테스트와 문법
 검사를 돌립니다(push에 경로 필터를 걸지 않는 이유는 워크플로 주석 참고 — 경로 필터는
 태그 push에도 적용되어 릴리스가 조용히 건너뛰어질 수 있습니다). `edge-vX.Y.Z` 태그를 밀면 태그와
-`src/version.lua`의 문자열이 같은지 확인한 뒤 패키징 → 채널 배정 → zip을 릴리스에
+`src/driver_version.lua`의 문자열이 같은지 확인한 뒤 패키징 → 채널 배정 → zip을 릴리스에
 첨부합니다. `-rc`가 붙은 태그는 프리릴리스로 올라갑니다. 저장소 시크릿
 `SMARTTHINGS_TOKEN`(PAT)과 `ST_CHANNEL_ID`가 필요합니다.
 
@@ -491,7 +491,7 @@ JavaScript) using only `fs`/`path`, so node and bun both work. No lockfile is
 committed — fengari is pinned exactly — so CI uses `npm install`, not `npm ci`.
 `.github/workflows/edge.yml` tests every push to develop/main/milestone and every
 PR touching `edge/**` and, on an
-`edge-vX.Y.Z` tag, checks the tag against `src/version.lua`, packages the driver,
+`edge-vX.Y.Z` tag, checks the tag against `src/driver_version.lua`, packages the driver,
 assigns it to the channel and attaches the zip to the release. It needs the
 `SMARTTHINGS_TOKEN` and `ST_CHANNEL_ID` repository secrets.
 

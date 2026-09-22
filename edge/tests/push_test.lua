@@ -360,7 +360,7 @@ function T.test_subscribe_sends_the_fields_the_service_decodes()
   local body = json.decode(captured.body)
   h.assert_equal(body.callback, "http://192.168.1.9:41234/pc/evt")
   h.assert_equal(body.ttl_seconds, 600)
-  h.assert_equal(body.driver_version, require "version")
+  h.assert_equal(body.driver_version, require "driver_version")
 
   local sub = device:get_field(push.SUB_FIELD)
   h.assert_equal(sub.id, "sub-7")
