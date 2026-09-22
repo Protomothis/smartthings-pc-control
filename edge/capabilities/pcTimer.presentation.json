@@ -43,7 +43,8 @@
               "value": "취소 (Cancel)",
               "type": "inactive"
             }
-          ]
+          ],
+          "argumentType": "integer"
         },
         "state": {
           "value": "active.value",
