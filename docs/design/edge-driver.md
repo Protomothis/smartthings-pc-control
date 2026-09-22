@@ -44,8 +44,9 @@ PCControl 호환 경로(`/{secret}/{command}`)는 그대로 유지한다. 기존
 edge/
   config.yml                 # Edge driver 메타 (name, packageKey, permissions: lan)
   profiles/
-    pc.yml                   # main 컴포넌트 프로필
-    pc-display.yml           # 디스플레이 자식 장치 프로필
+    pc-v2.yml                # main 컴포넌트 프로필(현행 pc.v2, §14.3)
+    pc-display-v2.yml        # 디스플레이 자식 장치 프로필(현행)
+    pc.yml, pc-display.yml   # v1: 아직 이전되지 않은 장치가 참조 (#79)
   capabilities/              # 커스텀 capability 정의/프레젠테이션 JSON (CLI로 생성)
     pcPowerState.json  pcPowerState.presentation.json
     pcCommand.json     pcCommand.presentation.json
@@ -63,6 +64,7 @@ edge/
     state.lua                # status JSON → capability 이벤트 매핑
     display.lua              # 자식 장치
     i18n.lua                 # ko/en 문자열 (속성 문자열용)
+    profiles.lua             # 프로필 이름·버전, 기존 장치 이전 (§14.3)
   tests/
     run.lua                  # 테스트 러너 (assert 기반, 의존성 없음)
     mocks/st/...             # st.driver, st.capabilities, cosock 최소 목
@@ -219,7 +221,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 
 ## 5. 드라이버 장치 모델
 
-### 5.1 프로필 `pc.yml` (main)
+### 5.1 프로필 `pc-v2.yml` (main, 이름 `pc.v2`; 버전 규칙은 §14.3)
 
 | capability | 용도 |
 |---|---|
@@ -236,7 +238,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 어려웠기 때문에, 드라이버가 문장으로 합쳐 한 줄만 보여 주고 원시 속성은 자동화 조건
 전용으로 남긴다. 합치는 문구는 `i18n.lua`의 ko/en을 따른다(§6.5).
 
-### 5.2 자식 장치 `pc-display.yml`
+### 5.2 자식 장치 `pc-display-v2.yml` (이름 `pc-display.v2`)
 
 `switch` 하나. on → `turnscreenon`, off → `turnscreenoff`. 상태는 `status.display`.
 환경설정 `createDisplayDevice`(기본 true)로 생성/제거.
@@ -505,3 +507,24 @@ develop → main → `v1.1.0` 태그.
 - **명령 인자의 enum 값 번역은 불가.** `arguments.<arg>.i18n.value{…}`, `arguments.<arg>.i18n{…}`, 배열 형식 모두 422. 서버가 키를 다른 인자의 enum과 대조해 거부한다(인자 하나만 넣어도 동일). 인자 **라벨**만 번역하고, Routine 선택기의 인자 값(shutdown 등)은 영어로 남는다.
 - 프레젠테이션 detailView 항목의 `visibleCondition` `{capability, version, component, value:"<attr>.value", operator: EQUALS|NOT_EQUALS, operand}`는 수용됨.
 - 정의 갱신 직후 번역 upsert가 "속성 없음"으로 거부될 수 있다(전파 지연). 같은 요청을 몇 초 뒤 다시 보내면 통과한다. `sync-capabilities.sh`는 실패 시 재시도 한 번을 넣을 것(후속).
+
+### 14.3 프로필 버전과 기존 장치 이전 (#79, 2026-09-22 실측)
+
+- 장치의 **화면 정의는 생성 시점의 capability 프레젠테이션으로 굳는다.** 프레젠테이션을
+  갱신하고 같은 이름의 프로필(`pc.v1`)을 다시 패키징하면 preference 추가는 반영되지만
+  detailView 는 옛 것을 유지한다. 장치를 **새 이름의 프로필**로 옮기면 다시 생성된다.
+- 따라서 프레젠테이션을 바꿀 때마다 프로필 이름의 버전을 올린다: `profiles/pc-vN.yml`
+  (`name: pc.vN`), 자식은 `pc-display.vN`. **옛 프로필 파일은 패키지에 남긴다** — 아직
+  옮겨지지 않은 장치가 참조한다.
+- 이름은 `src/profiles.lua` 한 곳에만 둔다(`PC`, `DISPLAY`, 지금까지 쓴 모든 이름
+  `KNOWN`/`KNOWN_DISPLAY`). `discovery.PROFILE`·`display.PROFILE`이 여기서 읽는다.
+- 이전은 `profiles.migration_for(<현재 이름>, <자식 여부>)` 순수 함수가 정하고
+  (현행이거나 모르는 이름이면 nil), `init`/`added`에서 `profiles.ensure`가
+  `device:try_update_metadata({ profile = <새 이름> })`을 pcall 로 호출한 뒤
+  `migrated <id> to pc.vN`을 남긴다. 장치당 드라이버 구동 1회만 시도한다.
+- **장치의 프로필 이름을 읽는 법**: `device.profile`은 테이블이지만(`id`, `components`)
+  `name`이 항상 있지는 않다. 있으면 그것을 쓰고, 없으면 생성 시점에
+  `device:set_field("profile_name", <이름>, {persist=true})`로 저장해 둔 값을 쓴다.
+  둘 다 없으면 #79 이전에 만들어진 장치이므로 `pc.v1`(자식은 `pc-display.v1`)로 본다.
+- 모르는 이름(다른 드라이버의 장치, 이 드라이버보다 새 버전)은 건드리지 않는다. PC
+  프로필과 자식 프로필은 서로 다른 계열이라 교차 이전도 하지 않는다.

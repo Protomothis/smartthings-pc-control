@@ -314,8 +314,10 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 
 ```
 config.yml               드라이버 메타 (name, packageKey, permissions: lan)
-profiles/pc.yml          메인 프로필: capability + 환경설정 (§5.1, §5.4)
-profiles/pc-display.yml  디스플레이 자식 프로필: 스위치 하나 (§5.2)
+profiles/pc-v2.yml       메인 프로필(현행): capability + 환경설정 (§5.1, §5.4)
+profiles/pc.yml          메인 프로필 v1: 이전 장치용으로 남겨 둠 (#79)
+profiles/pc-display-v2.yml  디스플레이 자식 프로필(현행): 스위치 하나 (§5.2)
+profiles/pc-display.yml  디스플레이 자식 프로필 v1: 이전 장치용
 capabilities/            커스텀 capability 정의 + 프레젠테이션 (§5.1, §5.3)
   translations/          capability 번역 ko/en (#78)
 src/
@@ -329,6 +331,7 @@ src/
   state.lua              순수 함수: status JSON → 이벤트, 전원 상태 머신 (§6.2)
   wol.lua                매직 패킷, 깨우기 시퀀스 (§6.3)
   i18n.lua               사용자에게 보이는 속성 문자열의 ko/en (§6.5)
+  profiles.lua           프로필 이름·버전과 기존 장치 이전 (§14.3, #79)
   driver_version.lua     드라이버 버전 (User-Agent, 릴리스 태그 검증)
 tests/
   run.lua                테스트 러너
@@ -345,6 +348,27 @@ tools/
 
 허브에서는 `src/`가 패키지 루트라, 모듈끼리는 항상 이름만으로 require 합니다
 (`require "state"`, `require "src.state"`가 아님).
+
+### 프로필 버전 (#79)
+
+장치의 화면 정의는 **생성 시점**의 capability 프레젠테이션으로 굳어집니다. 같은 이름의
+프로필(`pc.v1`)을 고쳐 다시 올리면 환경설정은 바뀌지만 상세 화면은 옛 것 그대로입니다
+(실측, 설계 §14.3).
+
+**프레젠테이션을 바꿀 때는 프로필 버전을 올립니다.** 기존 장치는 드라이버가 자동으로
+옮기므로 삭제·재추가가 필요 없습니다.
+
+1. `profiles/pc-vN.yml`을 새로 만들고 `name: pc.vN`으로 바꿉니다(자식은 `pc-display.vN`).
+   **옛 파일은 지우지 않습니다** — 아직 옮겨지지 않은 장치가 참조합니다.
+2. `src/profiles.lua`의 `PC`/`DISPLAY`를 새 이름으로 올리고 `KNOWN`/`KNOWN_DISPLAY`에
+   추가합니다. 프로필 이름은 여기 한 곳에만 있습니다(`discovery.PROFILE`,
+   `display.PROFILE`이 여기서 읽습니다).
+3. 패키징해서 올리면, 드라이버가 각 장치의 첫 `init`에서 `try_update_metadata`로
+   새 프로필로 옮기고 `migrated <id> to pc.vN`을 남깁니다(장치당 한 번, 실패해도
+   드라이버는 계속 돕니다).
+
+`device.profile`에 이름이 없는 펌웨어가 있어, 생성 시점 프로필 이름을
+`profile_name` 필드에 영구 저장하고 필드가 없으면 `pc.v1`(=#79 이전 장치)로 봅니다.
 
 ### 테스트
 
@@ -508,6 +532,9 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 - [ ] (#78) 휴대폰 언어가 한국어일 때 capability 라벨·enum·명령 인자가 한국어인지,
       영어로 바꾸면 영어가 되는지.
 - [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 유예 없이 바로 실행되는지.
+- [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v2`로 옮겨지고(로그 `migrated ... to
+      pc.v2`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지. 자식(모니터)도 같은지.
+      환경설정 값이 이전 뒤에도 남아 있는지.
 
 ---
 

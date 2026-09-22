@@ -146,6 +146,17 @@ function h.fake_device(preferences)
   function device:emit_event(event)
     self.emitted[#self.emitted + 1] = event
   end
+  -- #79: what the driver asked the hub to change about the device itself
+  -- (currently only `profile`). The hub swaps the profile out, so the mock
+  -- does too - `profiles.name_of` reads it back from there.
+  device.metadata_updates = {}
+  function device:try_update_metadata(update)
+    self.metadata_updates[#self.metadata_updates + 1] = update
+    if type(update) == "table" and type(update.profile) == "string" then
+      self.profile = { id = update.profile, name = update.profile, components = {} }
+    end
+    return true
+  end
   function device:online()
     self.health = "online"
   end

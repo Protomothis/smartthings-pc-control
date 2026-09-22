@@ -146,18 +146,103 @@ function T.test_ids_match_caps_lua()
   end
 end
 
-function T.test_the_profile_uses_the_same_ids()
-  local path = tests_dir .. "/../profiles/pc.yml"
-  local text
+--------------------------------------------------------------------------------
+-- the profiles (#79: there is one file per profile version)
+--------------------------------------------------------------------------------
+
+local profiles_dir = tests_dir .. "/../profiles"
+
+local function list_yml()
+  local names = {}
+  if host and host.listdir then
+    for _, name in ipairs(host.listdir(profiles_dir)) do
+      names[#names + 1] = name
+    end
+  elseif io.popen then
+    local pipe = io.popen('ls "' .. profiles_dir .. '"')
+    if pipe then
+      for name in pipe:lines() do
+        names[#names + 1] = name
+      end
+      pipe:close()
+    end
+  end
+  local out = {}
+  for _, name in ipairs(names) do
+    if name:match("%.yml$") then
+      out[#out + 1] = name
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+-- file name -> text, for every profiles/*.yml.
+local profile_files = {}
+for _, name in ipairs(list_yml()) do
+  local path = profiles_dir .. "/" .. name
   if host and host.readfile then
-    text = host.readfile(path)
+    profile_files[name] = host.readfile(path)
   else
     local file = assert(io.open(path, "r"))
-    text = file:read("a")
+    profile_files[name] = file:read("a")
     file:close()
   end
-  for _, id in pairs(caps.ids) do
-    h.assert_contains(text, id, "profiles/pc.yml is missing ")
+end
+
+--- The `name:` a profile file declares.
+local function profile_name(text)
+  return (text or ""):match("\nname:%s*([%w%.%-_]+)") or (text or ""):match("^name:%s*([%w%.%-_]+)")
+end
+
+function T.test_every_pc_profile_uses_the_same_ids()
+  -- #79 keeps one file per version, so the check runs over all of them: an
+  -- id that is only in the old file would ship a half-broken new profile.
+  local checked = 0
+  for name, text in pairs(profile_files) do
+    if not name:match("display") then
+      checked = checked + 1
+      for _, id in pairs(caps.ids) do
+        h.assert_contains(text, id, "profiles/" .. name .. " is missing ")
+      end
+    end
+  end
+  h.assert_true(checked > 0, "no main profile found in " .. profiles_dir)
+end
+
+function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
+  -- The package has to carry a file for every name the driver may leave a
+  -- device on, or a device on an older profile breaks at install time.
+  local profiles = require "profiles"
+  local declared = {}
+  for name, text in pairs(profile_files) do
+    local declared_name = profile_name(text)
+    h.assert_true(type(declared_name) == "string" and declared_name ~= "",
+      "profiles/" .. name .. " declares no name")
+    declared[declared_name] = name
+  end
+  for _, known in ipairs(profiles.KNOWN) do
+    h.assert_true(declared[known] ~= nil,
+      "src/profiles.lua knows " .. known .. ", but no profile file declares it")
+  end
+  for _, known in ipairs(profiles.KNOWN_DISPLAY) do
+    h.assert_true(declared[known] ~= nil,
+      "src/profiles.lua knows " .. known .. ", but no profile file declares it")
+  end
+  h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
+  h.assert_true(declared[profiles.DISPLAY] ~= nil, "no file declares " .. profiles.DISPLAY)
+end
+
+function T.test_no_two_profile_files_share_a_name()
+  -- Two files with the same `name:` is what a copied-but-not-renamed version
+  -- bump looks like, and the hub would take whichever it read last.
+  local seen = {}
+  for name, text in pairs(profile_files) do
+    local declared_name = profile_name(text)
+    h.assert_nil(seen[declared_name],
+      "profiles/" .. name .. " and profiles/" .. tostring(seen[declared_name])
+      .. " both declare " .. tostring(declared_name))
+    seen[declared_name] = name
   end
 end
 

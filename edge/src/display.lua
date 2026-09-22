@@ -11,11 +11,13 @@
 local client = require "client"
 local discovery = require "discovery"
 local i18n = require "i18n"
+local profiles = require "profiles"
 local state = require "state"
 
 local display = {}
 
-display.PROFILE = "pc-display.v1"
+-- §14.3: the version lives in src/profiles.lua, not here.
+display.PROFILE = profiles.DISPLAY
 -- The child's DNI is the parent's plus this suffix, so it is derivable from
 -- the machine_id alone (§13.1) and survives a driver restart.
 display.SUFFIX = "-display"

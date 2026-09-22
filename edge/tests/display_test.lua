@@ -140,7 +140,7 @@ function T.test_ensure_creates_the_child_once_the_pc_has_answered()
   h.assert_equal(spec.device_network_id, nil)
   h.assert_equal(spec.label, "DESKTOP-ABC 모니터")
   h.assert_equal(spec.parent_device_id, "parent-1")
-  h.assert_equal(spec.profile, "pc-display.v1")
+  h.assert_equal(spec.profile, "pc-display.v2")
   h.assert_equal(spec.type, "EDGE_CHILD")
 end
 
