@@ -94,7 +94,7 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 | `WoL 브로드캐스트 (Broadcast)` | 매직 패킷을 보낼 주소. 공유기가 `255.255.255.255`를 막으면 서브넷 브로드캐스트(예: `192.168.1.255`)를 넣으세요 | `255.255.255.255` |
 | `상태 확인 주기 (Poll interval)` | 상태 확인 주기 (10초 / 30초 / 1분 / 5분) | `30초마다` |
 | `스위치 끄기 동작 (Off action)` | 스위치를 끌 때 보낼 명령. 강제 종료를 뺀 나머지는 PC에 설정된 유예를 따릅니다 | `종료` |
-| `버튼 실행 방식 (Button mode)` | 상세 화면의 명령 버튼이 PC의 유예를 따를지(`설정된 유예 따름`) 곧바로 실행할지(`즉시 실행`). 자동화의 `명령 실행`은 자기 모드 인자를 따로 가집니다 | `설정된 유예 따름` |
+| `버튼 실행 방식 (Button mode)` | 상세 화면 명령 목록에서 고른 명령이 PC의 유예를 따를지(`설정된 유예 따름`) 곧바로 실행할지(`즉시 실행`). 자동화의 `명령 실행`은 자기 모드 인자를 따로 가집니다 | `설정된 유예 따름` |
 | `문구 언어 (Language)` | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 **한국어**로 동작합니다 | `자동 (한국어)` |
 
 > 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지합니다. 푸시가 즉시 반영을
@@ -104,40 +104,37 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ## 사용
 
-### 상세 화면 (리모컨)
+### 상세 화면
 
-상세 화면은 **리모컨**입니다(#78). 위에서부터 이렇게 나옵니다.
+상세 화면은 **스위치 하나와 다섯 줄**입니다(#82). 위에서부터 이렇게 나옵니다.
 
 ```
 [ 전원 스위치 ]                     켜기 = WoL, 끄기 = 스위치 끄기 동작
 전원 상태        켜짐
-상태             켜짐 · 연결됨 · v1.1.0
-안내             (문제가 있을 때만)          ← 조건부
-[ 깨우기 ]
-[ 절전 ]
-[ 최대 절전 ]
-[ 재시작 ]
-[ 종료 ]
-[ 잠금 ]
-[ 화면 끄기 ]
-[ 화면 켜기 ]
-마지막 명령      종료 · SmartThings · 23:05
-예약하기         5분 / 15분 / 30분 / 1시간 / 2시간
-예약             종료 · 4분 남음 · SmartThings   ← 조건부
-[ 예약 취소 ]                                    ← 조건부
-세션             잠김 · 유휴 20분 · kim          ← 조건부
+명령             종료                          ▼  ← 고르면 바로 실행
+예약             예약됨                        ▼  ← 5분 … 2시간 / 취소
+예약 요약        종료 · 4분 남음 · SmartThings
+상태             연결됨 · v1.1.0
+세션             잠김 · 유휴 20분 · kim
 ```
 
-- 명령 버튼은 **한 줄에 하나씩** 세로로 놓입니다. SmartThings는 상세 화면에 격자
-  배치를 지원하지 않습니다.
-- **강제 종료는 화면에 없습니다.** 되돌릴 수 없는 명령이라 자동화의
-  `명령 실행(execute)`에만 남겨 두었습니다.
-- 버튼이 PC의 유예를 따를지는 환경설정 `버튼 실행 방식`이 정합니다. 기본값
-  `설정된 유예 따름`이면 트레이 토스트·텔레그램에서 취소할 여지가 남습니다.
-- **조건부 줄**(안내·예약·세션)은 해당하지 않을 때 아예 사라집니다. 원시 속성
-  (남은 초, 실행 시각, 출처, 서비스 버전, 업데이트, WoL 준비, 마지막 확인, 유휴,
-  잠금, 사용자)은 화면에서 빠졌지만 **속성으로는 그대로 있어** 자동화 조건과
-  이력에서 계속 쓸 수 있습니다.
+- `명령`과 `예약`은 **드롭다운**입니다. 항목을 고르면 그 자리에서 실행되고, 줄에는
+  마지막으로 실행한 명령(`예약`은 예약 여부)이 남습니다.
+- `명령`의 항목은 깨우기 · 절전 · 최대 절전 · 재시작 · 종료 · 잠금 · 화면 끄기 ·
+  화면 켜기 여덟 개입니다. **강제 종료는 화면에 없습니다.** 되돌릴 수 없는 명령이라
+  자동화의 `명령 실행(execute)`에만 남겨 두었습니다.
+- `예약`의 맨 아래 **취소**를 고르면 대기 중인 예약이 취소됩니다. 예전의
+  [예약 취소] 버튼과 같은 동작입니다.
+- 목록에서 고른 명령이 PC의 유예를 따를지는 환경설정 `버튼 실행 방식`이 정합니다.
+  기본값 `설정된 유예 따름`이면 트레이 토스트·텔레그램에서 취소할 여지가 남습니다.
+- 모든 줄이 **값을 가집니다**. 예약이 없으면 "예약 없음", 세션 정보가 꺼져 있으면
+  그렇다고 적습니다. 값이 없는 버튼 줄은 앱이 라벨 옆에 "-"만 그려서 전부 없앴습니다.
+- 원시 속성(남은 초, 실행 시각, 출처, 서비스 버전, 업데이트, WoL 준비, 마지막 확인,
+  유휴, 잠금, 사용자, 마지막 명령 문장)은 화면에서 빠졌지만 **속성으로는 그대로
+  있어** 자동화 조건과 이력에서 계속 쓸 수 있습니다.
+- 앱 화면은 장치를 **추가한 시점의 정의**로 굳습니다. 드라이버를 올려도 바뀌지
+  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v6`로 자동
+  이전하지만, 이전이 막힌 허브에서는 재추가가 가장 확실합니다).
 
 ### 한국어 표시
 
@@ -169,67 +166,80 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 ### 명령 실행
 
-상세 화면의 버튼은 `pcControl`의 **인자 없는 명령**입니다.
+상세 화면의 `명령` 줄은 `pcAction.execute(command)`를 보냅니다. 고른 항목과 실제로
+나가는 서비스 명령(§4.3), 그리고 줄에 남는 값(`lastAction`)은 이렇습니다.
 
-| 버튼 | capability 명령 | 서비스 명령(§4.3) |
+| 항목 | 보내는 서비스 명령 | 줄에 남는 값 |
 |---|---|---|
-| 깨우기 | `wake` | (서비스 호출 없음 — WoL 매직 패킷, 스위치 켜기와 같음) |
+| 깨우기 | (서비스 호출 없음 — WoL 매직 패킷, 스위치 켜기와 같음) | `wake` |
 | 절전 | `suspend` | `suspend` |
 | 최대 절전 | `hibernate` | `hibernate` |
 | 재시작 | `restart` | `restart` |
 | 종료 | `shutdown` | `shutdown` |
 | 잠금 | `lock` | `lock` |
-| 화면 끄기 | `screenOff` | `turnscreenoff` |
-| 화면 켜기 | `screenOn` | `turnscreenon` |
+| 화면 끄기 | `turnscreenoff` | `screenOff` |
+| 화면 켜기 | `turnscreenon` | `screenOn` |
 
 `깨우기`를 뺀 전부는 `버튼 실행 방식` 환경설정의 모드로 `minutes=0` 호출을 보냅니다.
+아직 아무 명령도 실행하지 않은 장치는 `—`(None)로 보입니다.
 
-자동화에서는 인자를 가진 `pcControl.execute(command, mode, minutes)`를 씁니다 — 명령
-8종(`shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff`
-`turnscreenon`; `ping`은 드라이버 내부 확인용이라 노출하지 않습니다), 모드 3종
-(`default` 설정된 유예를 따름 / `immediate` 유예 없이 / `grace` 유예를 강제),
-분 0~1440. 화면에 없는 **강제 종료는 여기에만** 있습니다.
+자동화에서는 인자를 모두 가진 `pcAction.execute(command, mode, minutes)`를 씁니다 —
+명령 9종(`wake` `shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock`
+`turnscreenoff` `turnscreenon`; `ping`은 드라이버 내부 확인용이라 노출하지 않습니다),
+모드 3종(`default` 설정된 유예를 따름 / `immediate` 유예 없이 / `grace` 유예를 강제),
+분 0~1440. 화면에 없는 **강제 종료는 여기에만** 있습니다. 조건으로는
+`pcAction.lastAction`(마지막으로 실행한 명령)을 쓸 수 있습니다.
 
-`minutes`가 0보다 크면 실행 대신 **예약**이 걸립니다. 마지막으로 실행한 명령은
-`lastCommand`에 "종료 · SmartThings · 23:05"처럼 남습니다.
+`minutes`가 0보다 크면 실행 대신 **예약**이 걸립니다(그때는 `명령` 줄이 아니라
+`예약` 줄이 바뀝니다). 서비스가 기록한 마지막 명령은 속성 `lastCommand`에
+"종료 · SmartThings · 23:05"처럼 남습니다 — 화면에는 없고 자동화·이력용입니다.
+
+> 인자 없는 명령 8개(`wake` `suspend` … `screenOn`)도 그대로 남아 있습니다. 화면에서
+> 빠졌을 뿐이고, 씬이나 옛 프로필에 남은 장치가 계속 씁니다.
 
 ### 예약과 취소
 
-`pcTimer`이 대기 중인 예약을 보여 줍니다. 화면에는 요약 한 줄
-(`summary`: "종료 · 4분 남음 · SmartThings")과 [예약 취소]만 나오고, 예약이 없으면
-둘 다 사라집니다. 뒤에 있는 속성 `active`, `command`, `remainingSeconds`,
+`pcTimer`이 대기 중인 예약을 보여 줍니다. 화면에는 드롭다운 한 줄(예약됨 / 예약 없음)
+과 요약 한 줄(`summary`: "종료 · 4분 남음 · SmartThings", 없으면 "예약 없음")이
+나옵니다. 뒤에 있는 속성 `active`, `command`, `remainingSeconds`,
 `executeAt`(로컬 `HH:MM`), `origin`(앱 · SmartThings 명령 · 텔레그램 · SmartThings)은
 그대로 남아 자동화 조건과 이력에서 쓸 수 있습니다. 예약은 PC당 하나이고, 새 예약은
 기존 것을 대체합니다.
 
-- `pcTimer.schedule(command, minutes)` — 예약합니다. 프리셋 5/15/30/60/120분이
-  선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다.
-- `pcTimer.cancel()` — 취소합니다. PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
+- `pcTimer.schedule(minutes, command?)` — 예약합니다. 프리셋 5/15/30/60/120분이
+  선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다. 명령을 비우면 스위치 끄기
+  동작(예약할 수 없는 명령이면 종료)을 씁니다.
+- **`minutes`가 0이면 취소**입니다 — 드롭다운의 `취소` 항목이 이것을 보냅니다.
+  자동화에서도 `schedule(minutes: 0)`으로 취소하세요.
+- `pcTimer.cancel()` — 같은 취소이고, 정의에 그대로 남아 있습니다(자동화 액션에는
+  넣을 수 없습니다). PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
 
 앱·트레이 토스트·텔레그램에서 취소해도 푸시로 즉시 반영됩니다. 반대도 마찬가지입니다.
 
 ### 상태 카드
 
 `pcHealth`는 조용한 실패를 드러내기 위한 카드입니다. 화면에는 요약 한 줄
-(`summary`)과, 할 말이 있을 때만 나타나는 `안내`(`message`) 두 줄만 보입니다.
-요약은 연결이 살아 있으면 "켜짐 · 연결됨 · v1.1.0", 끊겼으면
-"연결 안 됨 · 시크릿 불일치"처럼 씁니다. 나머지는 속성으로 남아 자동화에서 쓰입니다.
+(`summary`)만 보입니다. 연결이 살아 있으면 "연결됨 · v1.1.0", 끊겼으면
+"연결 안 됨 · 시크릿 불일치"처럼 쓰고, 할 말이 있으면 짧은 안내를 뒤에 붙입니다
+("연결됨 · v1.1.0 · 시크릿 미설정 · 설정 권장"). 전원은 바로 위 `전원 상태` 줄이
+말하므로 요약에서 뺐습니다. 나머지는 속성으로 남아 자동화에서 쓰입니다.
 
 | 속성 | 내용 |
 |---|---|
-| `summary` | 위 한 줄 요약(전원 · 연결 · 버전 / 연결 안 됨 · 이유) |
+| `summary` | 위 한 줄 요약(연결 · 버전 · 짧은 안내 / 연결 안 됨 · 이유) |
 | `connection` | `ok` · `unauthorized`(시크릿 불일치 또는 허브가 허용 목록 밖) · `unreachable` · `incompatible` |
 | `serviceVersion` | PC에서 돌고 있는 서비스 버전 |
 | `updateAvailable` | 서비스에 새 릴리스가 있는지 |
 | `wolReady` | WoL 가능 어댑터가 하나라도 있는지 |
 | `lastSeen` | 마지막으로 성공한 상태 조회 시각 |
-| `message` | 사람이 읽는 안내 **한 줄**. 여러 개가 겹치면 오류 > 호환성 > WoL 미준비 > 업데이트 > 시크릿 없음 순으로 하나만 고릅니다 |
+| `message` | 사람이 읽는 안내 **한 줄**. 요약에 붙는 짧은 형태와 달리 문장 그대로이고, 화면이 아니라 자동화·이력에서 읽습니다. 여러 개가 겹치면 오류 > 호환성 > WoL 미준비 > 업데이트 > 시크릿 없음 순으로 하나만 고릅니다 |
 
 ### 세션 정보 (선택)
 
 PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 요약 한 줄
-("잠김 · 유휴 20분 · kim")을 보여 줍니다. 기본은 꺼져 있고, 꺼져 있으면 드라이버는
-`exposed=false`만 내보내 그 줄을 화면에서 감춥니다(값 자체는 마지막 것이 남습니다).
+("잠김 · 유휴 20분 · kim")을 보여 줍니다. 기본은 꺼져 있고, 꺼져 있으면 그 줄이
+"세션 정보 꺼짐 · PC 앱 설정에서 켤 수 있음"이라고 적습니다(속성 `exposed=false`,
+나머지 값은 마지막 것이 남습니다).
 
 > **유휴 시간은 트레이 앱이 떠 있어야 나옵니다** (#77). 서비스는 세션 0에서 돌아
 > 사용자 입력 시각을 알 수 없고(`WTSINFOEXW.LastInputTime`은 Windows 10/11 콘솔
@@ -246,7 +256,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 ```
 조건(If)  : 시각이 00:00이고
             PC의 Power state 가 on
-동작(Then): PC 의 pcTimer.schedule(command: shutdown, minutes: 30)
+동작(Then): PC 의 pcTimer.schedule(minutes: 30, command: shutdown)
 ```
 
 30분 카운트다운이 SmartThings·트레이 토스트·텔레그램에 동시에 뜨고, 어디서든 취소하면
@@ -256,8 +266,8 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 
 ```
 조건(If)  : 구성원 전원이 집을 떠남
-동작(Then): PC 의 pcControl.execute(command: lock, mode: immediate)
-            PC 의 pcControl.screenOff
+동작(Then): PC 의 pcAction.execute(command: lock, mode: immediate)
+            PC 의 pcAction.execute(command: turnscreenoff, mode: immediate)
 ```
 
 **3. 책상 주변기기 전원 연동** — 모니터·스피커 스마트플러그를 PC에 맞춥니다.
@@ -398,7 +408,7 @@ pcPower.json               정의        -> smartthings capabilities:create -i <
 pcPower.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
 ```
 
-`pcPower`는 전원 상태, `pcControl`는 명령 실행, `pcTimer`은 예약 표시·조작,
+`pcPower`는 전원 상태, `pcAction`은 명령 실행과 마지막 명령, `pcTimer`은 예약 표시·조작,
 `pcHealth`는 연결·버전·메시지 카드, `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
 
 `src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
@@ -437,7 +447,7 @@ cd edge
 
 ```sh
 smartthings capabilities:translations:upsert <id> --capability-version 1 \
-  -i capabilities/translations/pcControl.ko.json
+  -i capabilities/translations/pcAction.ko.json
 smartthings capabilities:translations <id> --capability-version 1 ko   # 읽어서 확인
 ```
 
@@ -447,12 +457,18 @@ enum 값·명령·명령 인자**가 번역돼 있는지, 정의에 없는 것�
 
 `tests/capabilities_test.lua`는 JSON과 Lua의 아귀도 맞춰 검사합니다(같은 id, `state`가
 쓰는 것과 같은 속성, `init.lua` 핸들러와 같은 명령, 정의되지 않은 것을 참조하지 않는
-프레젠테이션, 리모컨 버튼 8개의 순서, 조건부 줄의 `visibleCondition`). 다만
-SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다. 올릴 때 확인할 부분:
+프레젠테이션, 명령 목록 8개의 순서, 상세 화면에 `pushButton`이 하나도 없고 모든
+`list`가 `state.alternatives`를 가진다는 것, `visibleCondition`을 쓰지 않는다는 것).
+다만 SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다. 올릴 때 확인할
+부분:
 
-- 상세 화면의 `visibleCondition`(설계 §14에 없는 가정입니다). 거부되면 그 객체만
-  지우면 됩니다 — 조건부 줄이 늘 보이는 것으로 퇴화할 뿐, 나머지는 그대로입니다.
-  요약 줄은 예약이 없을 때 빈 문자열이라 크게 거슬리지 않습니다.
+- `pcAction`은 **새 capability**입니다(#82). `capabilities:update`가 아니라
+  `capabilities:create` + `capabilities:presentation:create` + 번역 upsert로 올린 뒤,
+  옛 `...pccontrol`을 참조하는 장치가 남지 않은 것을 보고 `capabilities:delete`
+  합니다. 허브가 정의를 id 단위로 캐시하기 때문에 이름을 바꾼 것입니다(설계 §14.4).
+- `pcTimer.schedule`의 `minutes`는 정의상 최소 1인데 상세 화면의 `취소` 항목은 0을
+  보냅니다. 허브가 인자 스키마로 이것을 거부하면 취소 항목만 빼고 `cancel()`을 쓰는
+  배치로 되돌려야 합니다(드라이버는 양쪽을 모두 처리합니다).
 - `capabilities:translations:upsert`가 받는 본문 형식
   (`{"tag","label","attributes":{...,"i18n":{"value":{...}}},"commands":{...}}`).
 - 정의의 `id`, `version`, `status`, `ephemeral` — CLI가 무시하거나 거부하고 자기 값을
@@ -509,19 +525,23 @@ smartthings edge:drivers:install <driverId> --hub <hubId>        # 채널 등록
 - [ ] 스위치 끄기 → 유예 카운트다운이 SmartThings·토스트·텔레그램에 동시에 뜨는지.
 - [ ] 토스트에서 취소 → SmartThings 예약 카드가 즉시 사라지고 스위치가 켜짐으로 복귀.
 - [ ] 절전 → `sleeping`, 종료 → `shuttingDown` → `off`, WoL → `waking` → `on`.
-- [ ] 상세 화면의 [화면 끄기]·[화면 켜기] 버튼이 실제로 화면을 끄고 켜는지.
+- [ ] 상세 화면 `명령` 목록의 화면 끄기·켜기가 실제로 화면을 끄고 켜는지.
 - [ ] PC를 껐다 켜도(서비스 재시작) 구독이 되살아나는지.
 - [ ] PC 두 대를 추가했을 때 서로 섞이지 않는지.
 - [ ] 커스텀 capability가 없는 상태(플레이스홀더 네임스페이스)에서도 스위치·refresh·
       health가 살아 있는지.
-- [ ] (#78) 상세 화면에 명령 버튼 8개가 위 순서대로 세로로 나오고, 강제 종료는 없는지.
-- [ ] (#78) `visibleCondition`이 실제로 동작하는지 — 예약을 걸면 요약 줄과 [예약 취소]가
-      나타나고, 취소하면 사라지는지. 안내 줄이 문제가 없을 때 안 보이는지.
-- [ ] (#78) 휴대폰 언어가 한국어일 때 capability 라벨·enum·명령 인자가 한국어인지,
-      영어로 바꾸면 영어가 되는지.
-- [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 유예 없이 바로 실행되는지.
-- [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v2`로 옮겨지고(로그 `migrated ... to
-      pc.v2`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지.
+- [ ] (#82) 상세 화면이 스위치 + 다섯 줄로 나오고, 어느 줄에도 "-"가 없는지.
+- [ ] (#82) `명령` 목록에 8개가 위 순서대로 나오고 강제 종료는 없는지. 하나 고르면
+      실행되고 그 줄이 고른 명령으로 바뀌는지. 아무것도 실행하지 않은 장치가 `—`인지.
+- [ ] (#82) `예약` 목록의 프리셋이 예약을 걸고, `취소`가 예약을 지우는지
+      (허브가 `minutes: 0`을 인자 스키마로 거부하지 않는지).
+- [ ] (#78) 휴대폰 언어가 한국어일 때 capability 라벨·enum 값이 한국어인지,
+      영어로 바꾸면 영어가 되는지. 목록의 **항목 이름은 영어**로 남습니다(명령 인자의
+      enum 값은 번역 API가 받지 않습니다 — 설계 §14.2).
+- [ ] (#78) `버튼 실행 방식`을 `즉시 실행`으로 두면 목록에서 고른 명령이 유예 없이
+      바로 실행되는지.
+- [ ] (#79) 드라이버를 올린 뒤 기존 장치가 `pc.v6`로 옮겨지고(로그 `migrated ... to
+      pc.v6`) 상세 화면이 새 프레젠테이션으로 다시 그려지는지.
       환경설정 값이 이전 뒤에도 남아 있는지.
 
 ---
@@ -584,20 +604,31 @@ visible while typing), `macAddress`, `wolBroadcast`, `pollInterval`
 in parentheses: a profile preference has no per-locale variant, and this project
 is Korean-first.
 
-**Use** — the detail view is a remote control: the switch, a one-line status
-summary, then one push button per command (wake, sleep, hibernate, restart, shut
-down, lock, screen off, screen on — force shutdown is automation-only), the
-schedule presets, and rows that only appear when they apply (a notice, the
-schedule summary with its cancel button, the session summary). Switch on sends
-Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and 9); switch off sends
-`offAction` and honours the PC's grace period. The buttons follow the
-`buttonMode` preference. `pcControl.execute(command, mode, minutes)` is kept for
-automations and schedules when `minutes > 0`. The raw attributes
-(`remainingSeconds`, `executeAt`, `origin`, `serviceVersion`, `updateAvailable`,
-`wolReady`, `lastSeen`, `idleMinutes`, `locked`, `user`) are still there for
-automations, just not on screen. The separate monitor child device was removed
-in #81: the screen off/on buttons do the same job on the PC itself, and a child
-left over from an older driver is deleted on the driver's first init.
+**Use** — the detail view is the switch and five rows that all carry a value
+(#82): the power state, a **command dropdown** (wake, sleep, hibernate, restart,
+shut down, lock, screen off, screen on — force shutdown is automation-only) that
+runs what you pick and then shows it, a **schedule dropdown** (5/15/30/60/120
+minutes, plus *Cancel*, which is `schedule(minutes: 0)`), the schedule summary,
+the status summary and the session summary. There is no push button anywhere:
+a row without a value renders as "-" on the phone, which is what eight buttons
+looked like. Switch on sends Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and
+9); switch off sends `offAction` and honours the PC's grace period. A command
+picked from the list follows the `buttonMode` preference, exactly as the buttons
+did. `pcAction.execute(command, mode, minutes)` is what both the screen and
+automations send, and it schedules when `minutes > 0`; the eight no-argument
+commands stay in the definition for scenes and for devices still on an older
+profile. The raw attributes (`lastCommand`, `remainingSeconds`, `executeAt`,
+`origin`, `serviceVersion`, `updateAvailable`, `wolReady`, `lastSeen`,
+`idleMinutes`, `locked`, `user`) are still there for automations, just not on
+screen. The separate monitor child device was removed in #81: the screen off/on
+entries do the same job on the PC itself, and a child left over from an older
+driver is deleted on the driver's first init.
+
+The capability was renamed `pcControl` -> `pcAction` (id `<ns>.pcaction`) because
+the hub caches a capability definition by id for the whole hub and never
+re-reads a changed one, so the new `lastAction` attribute needed a new id; the
+profile went to `pc.v6` for the same reason on the presentation side. Devices
+are migrated automatically on the driver's first init.
 
 **Korean** — capability labels, enum values and command arguments are translated
 through `capabilities/translations/<name>.{ko,en}.json`, so the app follows the

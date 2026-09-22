@@ -2,6 +2,40 @@
   "tag": "ko",
   "label": "PC 명령",
   "attributes": {
+    "lastAction": {
+      "label": "명령",
+      "i18n": {
+        "value": {
+          "none": {
+            "label": "—"
+          },
+          "wake": {
+            "label": "깨우기"
+          },
+          "suspend": {
+            "label": "절전"
+          },
+          "hibernate": {
+            "label": "최대 절전"
+          },
+          "restart": {
+            "label": "재시작"
+          },
+          "shutdown": {
+            "label": "종료"
+          },
+          "lock": {
+            "label": "잠금"
+          },
+          "screenOff": {
+            "label": "화면 끄기"
+          },
+          "screenOn": {
+            "label": "화면 켜기"
+          }
+        }
+      }
+    },
     "lastCommand": {
       "label": "마지막 명령"
     }

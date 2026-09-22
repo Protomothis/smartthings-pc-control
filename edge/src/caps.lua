@@ -15,7 +15,11 @@ local caps = {}
 caps.NAMESPACE = NAMESPACE
 
 caps.POWER_STATE = NAMESPACE .. ".pcpower"
-caps.COMMAND = NAMESPACE .. ".pccontrol"
+-- #82: the definition gained `lastAction`, and the hub caches capability
+-- definitions by id for the whole hub (§14.4), so the new definition needed a
+-- new id: `pcControl` became `pcAction`. The Lua constant keeps its name -
+-- what it points at is "the command capability", whatever it is called.
+caps.COMMAND = NAMESPACE .. ".pcaction"
 caps.SCHEDULE = NAMESPACE .. ".pctimer"
 caps.STATUS = NAMESPACE .. ".pchealth"
 caps.SESSION = NAMESPACE .. ".pcuser"

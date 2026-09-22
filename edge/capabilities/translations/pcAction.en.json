@@ -2,6 +2,40 @@
   "tag": "en",
   "label": "PC command",
   "attributes": {
+    "lastAction": {
+      "label": "Command",
+      "i18n": {
+        "value": {
+          "none": {
+            "label": "None"
+          },
+          "wake": {
+            "label": "Wake"
+          },
+          "suspend": {
+            "label": "Sleep"
+          },
+          "hibernate": {
+            "label": "Hibernate"
+          },
+          "restart": {
+            "label": "Restart"
+          },
+          "shutdown": {
+            "label": "Shut down"
+          },
+          "lock": {
+            "label": "Lock"
+          },
+          "screenOff": {
+            "label": "Screen off"
+          },
+          "screenOn": {
+            "label": "Screen on"
+          }
+        }
+      }
+    },
     "lastCommand": {
       "label": "Last command"
     }

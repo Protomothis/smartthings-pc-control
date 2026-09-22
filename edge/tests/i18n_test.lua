@@ -47,6 +47,9 @@ function T.test_all_required_keys_exist()
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
     "session_locked", "session_unlocked", "session_idle",
+    -- #82: the short forms the status summary row carries.
+    "no_secret_short", "wol_not_ready_short",
+    "update_available_short", "update_available_plain_short",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
@@ -119,6 +122,24 @@ function T.test_forbidden_and_unauthorized_say_different_things()
   h.assert_contains(i18n.t("en", "forbidden"), "allow-list")
   h.assert_contains(i18n.t("en", "unauthorized"), "Secret")
   h.assert_true(i18n.t("ko", "forbidden") ~= i18n.t("ko", "unauthorized"))
+end
+
+function T.test_the_short_notices_are_shorter_than_the_long_ones()
+  -- #82: the summary row shares the screen with three other summaries, so its
+  -- notices are clipped versions of the `message` sentences - not duplicates.
+  for _, pair in ipairs({
+    { long = "no_secret", short = "no_secret_short" },
+    { long = "wol_not_ready", short = "wol_not_ready_short" },
+    { long = "update_available_plain", short = "update_available_plain_short" },
+  }) do
+    for _, lang in ipairs({ "ko", "en" }) do
+      local long, short = i18n.t(lang, pair.long), i18n.t(lang, pair.short)
+      h.assert_true(#short < #long,
+        string.format("%s (%s) is not shorter than %s", pair.short, lang, pair.long))
+    end
+  end
+  h.assert_equal(i18n.t("ko", "update_available_short", "v1.2.0"), "업데이트 v1.2.0 사용 가능")
+  h.assert_equal(i18n.t("en", "update_available_short", "v1.2.0"), "Update v1.2.0 available")
 end
 
 function T.test_update_available_carries_the_version()

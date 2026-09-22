@@ -16,6 +16,8 @@ poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
 poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
+-- #82: the last `pcAction.lastAction` value emitted for this device.
+poll.ACTION_FIELD = "last_action"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
@@ -107,16 +109,41 @@ end
 
 --- Emit `pcHealth.connection` + `pcHealth.message` + `pcHealth.summary` (#78).
 --- The summary is the only status row the detail view still shows, so a failed
---- poll has to rewrite it as well; the power state comes from the device so the
---- line stays consistent with the tile.
+--- poll has to rewrite it as well. #82: the power word is not in it any more -
+--- the `pcPower` row right above says that.
 function poll.emit_connection(device, connection, message)
-  local s = poll.get_state(device)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary((s or {}).power_state, connection, nil, poll.lang(device)) },
+      value = state.status_summary(connection, nil, poll.lang(device)) },
   })
+end
+
+--- Emit `pcAction.lastAction` and remember it (#82).
+--
+-- The value is what the user last asked the PC to do, so nothing in a status
+-- body can produce it: every command handler calls this after the service
+-- accepted the command. The field is persisted so a hub restart does not make
+-- the row fall back to "none" while the PC is off.
+-- @param action a `lastAction` enum key, or a service command name
+function poll.emit_action(device, action)
+  local value = state.action_for(action)
+  pcall(function() device:set_field(poll.ACTION_FIELD, value, { persist = true }) end)
+  poll.emit(device, { { cap = caps.COMMAND, attr = "lastAction", value = value } })
+  return value
+end
+
+--- Paint `lastAction` as `none` on a device that has never run a command, so
+--- the detail-view list reads "-" nowhere (#82). Does nothing afterwards.
+function poll.ensure_action(device)
+  local seen
+  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
+  if type(seen) == "string" and seen ~= "" then
+    return false
+  end
+  poll.emit_action(device, state.ACTION_NONE)
+  return true
 end
 
 --- err_kind (client.lua) -> `pcHealth.connection` enum value (§5.1), or nil
@@ -219,6 +246,9 @@ function poll.once(driver, device, opts)
       lang = lang,
       note = opts.note,
     }))
+    -- #82: no status body carries `lastAction`, so a device that has never run
+    -- a command through the app would leave that row empty until it does.
+    poll.ensure_action(device)
     pcall(function() device:online() end)
     -- §6.4: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.

@@ -7,7 +7,7 @@
 # Preference titles and descriptions are Korean first with the English term in
 # parentheses (#78): the SmartThings app shows profile preferences in whatever
 # the driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v4
+name: pc.v6
 components:
   - id: main
     capabilities:
@@ -115,7 +115,7 @@ preferences:
       default: shutdown
   - name: buttonMode
     title: 버튼 실행 방식 (Button mode)
-    description: "상세 화면의 명령 버튼을 누를 때 유예를 따를지 여부. 유예를 따르면 트레이 토스트에서 취소할 수 있습니다. 자동화의 명령 실행은 자기 모드를 따로 가집니다. / Grace handling for the detail-view buttons."
+    description: "상세 화면 명령 목록에서 명령을 고를 때 유예를 따를지 여부. 유예를 따르면 트레이 토스트에서 취소할 수 있습니다. 자동화의 명령 실행은 자기 모드를 따로 가집니다. / Grace handling for the detail-view command list."
     required: true
     preferenceType: enumeration
     definition:
