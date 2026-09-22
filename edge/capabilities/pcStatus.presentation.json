@@ -7,14 +7,14 @@
   },
   "detailView": [
     {
-      "label": "Status",
+      "label": "{{i18n.attributes.summary.label}}",
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
       }
     },
     {
-      "label": "Notice",
+      "label": "{{i18n.attributes.message.label}}",
       "displayType": "state",
       "state": {
         "label": "{{message.value}}"
@@ -32,15 +32,31 @@
   "automation": {
     "conditions": [
       {
-        "label": "Connection",
+        "label": "{{i18n.attributes.connection.label}}",
         "displayType": "list",
         "list": {
           "value": "connection.value",
           "alternatives": [
-            { "key": "ok", "value": "Connected", "type": "active" },
-            { "key": "unauthorized", "value": "Not authorized", "type": "inactive" },
-            { "key": "unreachable", "value": "Unreachable", "type": "inactive" },
-            { "key": "incompatible", "value": "Incompatible version", "type": "inactive" }
+            {
+              "key": "ok",
+              "value": "Connected",
+              "type": "active"
+            },
+            {
+              "key": "unauthorized",
+              "value": "Not authorized",
+              "type": "inactive"
+            },
+            {
+              "key": "unreachable",
+              "value": "Unreachable",
+              "type": "inactive"
+            },
+            {
+              "key": "incompatible",
+              "value": "Incompatible version",
+              "type": "inactive"
+            }
           ]
         }
       }

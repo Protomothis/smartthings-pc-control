@@ -7,7 +7,7 @@
   },
   "detailView": [
     {
-      "label": "Session",
+      "label": "{{i18n.attributes.summary.label}}",
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
@@ -25,13 +25,21 @@
   "automation": {
     "conditions": [
       {
-        "label": "Session locked",
+        "label": "{{i18n.attributes.locked.label}}",
         "displayType": "list",
         "list": {
           "value": "locked.value",
           "alternatives": [
-            { "key": "true", "value": "Locked", "type": "active" },
-            { "key": "false", "value": "Unlocked", "type": "inactive" }
+            {
+              "key": "true",
+              "value": "Locked",
+              "type": "active"
+            },
+            {
+              "key": "false",
+              "value": "Unlocked",
+              "type": "inactive"
+            }
           ]
         }
       }

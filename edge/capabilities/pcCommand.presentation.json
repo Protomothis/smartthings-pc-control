@@ -7,7 +7,7 @@
   },
   "detailView": [
     {
-      "label": "Wake",
+      "label": "{{i18n.commands.wake.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "wake",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "label": "Sleep",
+      "label": "{{i18n.commands.suspend.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "suspend",
@@ -23,7 +23,7 @@
       }
     },
     {
-      "label": "Hibernate",
+      "label": "{{i18n.commands.hibernate.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "hibernate",
@@ -31,7 +31,7 @@
       }
     },
     {
-      "label": "Restart",
+      "label": "{{i18n.commands.restart.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "restart",
@@ -39,7 +39,7 @@
       }
     },
     {
-      "label": "Shut down",
+      "label": "{{i18n.commands.shutdown.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "shutdown",
@@ -47,7 +47,7 @@
       }
     },
     {
-      "label": "Lock",
+      "label": "{{i18n.commands.lock.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "lock",
@@ -55,7 +55,7 @@
       }
     },
     {
-      "label": "Screen off",
+      "label": "{{i18n.commands.screenOff.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "screenOff",
@@ -63,18 +63,11 @@
       }
     },
     {
-      "label": "Screen on",
+      "label": "{{i18n.commands.screenOn.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "screenOn",
         "argument": null
-      }
-    },
-    {
-      "label": "Last command",
-      "displayType": "state",
-      "state": {
-        "label": "{{lastCommand.value}}"
       }
     }
   ],
@@ -82,7 +75,7 @@
     "conditions": [],
     "actions": [
       {
-        "label": "Run command",
+        "label": "{{i18n.commands.execute.label}}",
         "displayType": "multiArgCommand",
         "multiArgCommand": {
           "command": "execute",
@@ -90,7 +83,7 @@
           "arguments": [
             {
               "name": "command",
-              "label": "Command",
+              "label": "{{i18n.commands.execute.arguments.command.label}}",
               "displayType": "list",
               "list": {
                 "alternatives": [
@@ -140,7 +133,7 @@
             },
             {
               "name": "mode",
-              "label": "Mode",
+              "label": "{{i18n.commands.execute.arguments.mode.label}}",
               "displayType": "list",
               "list": {
                 "alternatives": [
@@ -165,7 +158,7 @@
             },
             {
               "name": "minutes",
-              "label": "Delay (minutes)",
+              "label": "{{i18n.commands.execute.arguments.minutes.label}}",
               "displayType": "numberField",
               "numberField": {
                 "range": [

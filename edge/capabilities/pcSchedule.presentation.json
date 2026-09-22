@@ -7,7 +7,7 @@
   },
   "detailView": [
     {
-      "label": "Schedule shutdown in",
+      "label": "{{i18n.commands.schedule.label}}",
       "displayType": "list",
       "list": {
         "command": {
@@ -43,7 +43,7 @@
       }
     },
     {
-      "label": "Scheduled",
+      "label": "{{i18n.attributes.summary.label}}",
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
@@ -58,7 +58,7 @@
       }
     },
     {
-      "label": "Cancel schedule",
+      "label": "{{i18n.commands.cancel.label}}",
       "displayType": "pushButton",
       "pushButton": {
         "command": "cancel",
@@ -77,7 +77,7 @@
   "automation": {
     "conditions": [
       {
-        "label": "Schedule active",
+        "label": "{{i18n.attributes.active.label}}",
         "displayType": "list",
         "list": {
           "value": "active.value",
@@ -98,7 +98,7 @@
     ],
     "actions": [
       {
-        "label": "Schedule",
+        "label": "{{i18n.commands.schedule.label}}",
         "displayType": "multiArgCommand",
         "multiArgCommand": {
           "command": "schedule",
@@ -106,7 +106,7 @@
           "arguments": [
             {
               "name": "minutes",
-              "label": "In",
+              "label": "{{i18n.commands.schedule.arguments.minutes.label}}",
               "displayType": "list",
               "list": {
                 "alternatives": [
@@ -141,7 +141,7 @@
             },
             {
               "name": "command",
-              "label": "Command",
+              "label": "{{i18n.commands.schedule.arguments.command.label}}",
               "displayType": "list",
               "list": {
                 "alternatives": [
