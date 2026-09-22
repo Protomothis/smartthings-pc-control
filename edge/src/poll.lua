@@ -213,7 +213,7 @@ function poll.once(driver, device, opts)
     device:set_field(poll.WOL_READY_FIELD, ((body or {}).wol or {}).ready == true)
     -- §13.1: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
-    local identified = poll.remember_identity(device, body)
+    poll.remember_identity(device, body)
     poll.emit(device, state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
@@ -223,16 +223,6 @@ function poll.once(driver, device, opts)
     -- §6.4: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.
     pcall(function() require("push").ensure(driver, device, opts.deps) end)
-    -- §5.2: the display child is created on the first status that gives the PC
-    -- an identity (a manually added device has none before that), and follows
-    -- `status.display` from then on.
-    local loaded, display = pcall(require, "display")
-    if loaded then
-      if identified then
-        pcall(function() display.ensure(driver, device) end)
-      end
-      pcall(function() display.sync(driver, device, body) end)
-    end
     return true
   end
 
@@ -261,7 +251,7 @@ function poll.once(driver, device, opts)
 end
 
 --- Store what a status body says about the PC's identity (§13.1). Returns true
---- when something changed, which is when the display child may need creating.
+--- when something changed.
 function poll.remember_identity(device, body)
   body = body or {}
   local discovery = require "discovery"

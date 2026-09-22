@@ -7,7 +7,6 @@
 
 local h = require "helpers"
 local discovery = require "discovery"
-local display = require "display"
 local profiles = require "profiles"
 
 local T = {}
@@ -26,38 +25,33 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_the_profile_constants_are_the_current_version()
-  -- discovery/display must not carry a second copy of the version (§14.3).
+  -- discovery must not carry a second copy of the version (§14.3).
   h.assert_equal(discovery.PROFILE, profiles.PC)
-  h.assert_equal(display.PROFILE, profiles.DISPLAY)
-  h.assert_equal(profiles.current(false), profiles.PC)
-  h.assert_equal(profiles.current(true), profiles.DISPLAY)
+  h.assert_equal(profiles.current(), profiles.PC)
 end
 
 function T.test_an_older_profile_migrates_to_the_current_one()
-  h.assert_equal(profiles.migration_for("pc.v1", false), "pc.v3")
-  h.assert_equal(profiles.migration_for("pc.v2", false), "pc.v3")
-  h.assert_equal(profiles.migration_for("pc-display.v1", true), "pc-display.v3")
-  h.assert_equal(profiles.migration_for("pc-display.v2", true), "pc-display.v3")
+  h.assert_equal(profiles.migration_for("pc.v1"), "pc.v3")
+  h.assert_equal(profiles.migration_for("pc.v2"), "pc.v3")
 end
 
 function T.test_the_current_profile_does_not_migrate()
-  h.assert_nil(profiles.migration_for("pc.v3", false))
-  h.assert_nil(profiles.migration_for("pc-display.v3", true))
+  h.assert_nil(profiles.migration_for("pc.v3"))
 end
 
 function T.test_an_unknown_profile_is_left_alone()
   -- Another driver's device, or one from a version newer than this driver.
-  h.assert_nil(profiles.migration_for("pc.v9", false))
-  h.assert_nil(profiles.migration_for("thermostat", false))
-  h.assert_nil(profiles.migration_for("", false))
-  h.assert_nil(profiles.migration_for(nil, false))
-  h.assert_nil(profiles.migration_for(42, false))
+  h.assert_nil(profiles.migration_for("pc.v9"))
+  h.assert_nil(profiles.migration_for("thermostat"))
+  h.assert_nil(profiles.migration_for(""))
+  h.assert_nil(profiles.migration_for(nil))
+  h.assert_nil(profiles.migration_for(42))
 end
 
-function T.test_the_two_series_do_not_cross()
-  -- A PC profile on a child (or the other way round) is not ours to fix.
-  h.assert_nil(profiles.migration_for("pc.v1", true))
-  h.assert_nil(profiles.migration_for("pc-display.v1", false))
+function T.test_a_removed_child_profile_is_never_migrated()
+  -- #81: the pc-display series is gone. Such a device is deleted, not moved.
+  h.assert_nil(profiles.migration_for("pc-display.v1"))
+  h.assert_nil(profiles.migration_for("pc-display.v3"))
 end
 
 function T.test_every_shipped_profile_name_is_known()
@@ -73,9 +67,69 @@ function T.test_every_shipped_profile_name_is_known()
   end
   h.assert_true(contains(profiles.KNOWN, profiles.PC), "KNOWN is missing " .. profiles.PC)
   h.assert_true(contains(profiles.KNOWN, profiles.LEGACY))
-  h.assert_true(contains(profiles.KNOWN_DISPLAY, profiles.DISPLAY),
-    "KNOWN_DISPLAY is missing " .. profiles.DISPLAY)
-  h.assert_true(contains(profiles.KNOWN_DISPLAY, profiles.LEGACY_DISPLAY))
+end
+
+--------------------------------------------------------------------------------
+-- #81: leftover display children
+--------------------------------------------------------------------------------
+
+function T.test_a_child_key_marks_a_legacy_child()
+  -- What an EDGE_CHILD created by an older driver looks like: no DNI of its
+  -- own, identified by the key the parent assigned.
+  local child = h.fake_device({})
+  child.parent_assigned_child_key = "display"
+  h.assert_true(profiles.is_legacy_child(child))
+end
+
+function T.test_a_display_profile_marks_a_legacy_child()
+  -- The other mark: no child key on this firmware, but the profile name is
+  -- from the removed series.
+  local child = device_on("pc-display.v2", "leftover-child")
+  h.assert_true(profiles.is_legacy_child(child))
+  local reported = h.fake_device({})
+  reported.profile = { id = "abc-123", name = "pc-display.v1", components = {} }
+  h.assert_true(profiles.is_legacy_child(reported))
+end
+
+function T.test_a_pc_is_not_a_legacy_child()
+  h.assert_false(profiles.is_legacy_child(device_on(profiles.PC, "a-pc")))
+  -- A device from before #79 has no name at all and falls back to pc.v1.
+  h.assert_false(profiles.is_legacy_child(device_on(nil, "old-pc")))
+  h.assert_false(profiles.is_legacy_child(nil))
+  h.assert_false(profiles.is_legacy_child("not a device"))
+end
+
+function T.test_a_legacy_child_is_deleted_once()
+  profiles.reset()
+  local child = device_on("pc-display.v3", "doomed-child")
+  child.deleted = 0
+  function child:try_delete_device()
+    self.deleted = self.deleted + 1
+    return true
+  end
+  h.assert_true(profiles.remove_legacy_child(nil, child))
+  h.assert_equal(child.deleted, 1)
+  h.assert_false(profiles.remove_legacy_child(nil, child),
+    "a second init must not ask the hub again")
+  h.assert_equal(child.deleted, 1)
+end
+
+function T.test_a_hub_without_the_device_method_falls_back_to_the_driver()
+  profiles.reset()
+  local child = device_on("pc-display.v1", "stubborn-child")
+  local asked = {}
+  local driver = { try_delete_device = function(_, id) asked[#asked + 1] = id end }
+  h.assert_true(profiles.remove_legacy_child(driver, child))
+  h.assert_deep_equal(asked, { "stubborn-child" })
+end
+
+function T.test_remove_legacy_child_leaves_a_pc_alone()
+  profiles.reset()
+  local device = device_on(profiles.PC, "a-real-pc")
+  function device:try_delete_device()
+    error("the PC must never be deleted", 0)
+  end
+  h.assert_false(profiles.remove_legacy_child(nil, device))
 end
 
 --------------------------------------------------------------------------------
@@ -85,19 +139,18 @@ end
 function T.test_the_hub_reported_name_wins()
   local device = device_on("pc.v1")
   device.profile = { id = "abc-123", name = "pc.v2", components = {} }
-  h.assert_equal(profiles.name_of(device, false), "pc.v2")
+  h.assert_equal(profiles.name_of(device), "pc.v2")
 end
 
 function T.test_a_profile_table_without_a_name_falls_back_to_the_field()
   -- What the hub actually gives us (§14.3): id and components, no name.
   local device = device_on("pc.v2")
   device.profile = { id = "abc-123", components = { { id = "main" } } }
-  h.assert_equal(profiles.name_of(device, false), "pc.v2")
+  h.assert_equal(profiles.name_of(device), "pc.v2")
 end
 
 function T.test_a_device_with_neither_is_from_before_the_field_existed()
-  h.assert_equal(profiles.name_of(device_on(nil), false), "pc.v1")
-  h.assert_equal(profiles.name_of(device_on(nil), true), "pc-display.v1")
+  h.assert_equal(profiles.name_of(device_on(nil)), "pc.v1")
 end
 
 --------------------------------------------------------------------------------
@@ -107,32 +160,25 @@ end
 function T.test_ensure_moves_an_old_device_and_records_it()
   profiles.reset()
   local device = device_on("pc.v1", "old-pc")
-  h.assert_equal(profiles.ensure(device, false), profiles.PC)
+  h.assert_equal(profiles.ensure(device), profiles.PC)
   h.assert_equal(#device.metadata_updates, 1)
   h.assert_deep_equal(device.metadata_updates[1], { profile = profiles.PC })
   h.assert_equal(device:get_field(profiles.FIELD), profiles.PC,
     "the new profile name has to be persisted, or init would retry forever")
 end
 
-function T.test_ensure_moves_an_old_child()
-  profiles.reset()
-  local child = device_on("pc-display.v1", "old-child")
-  h.assert_equal(profiles.ensure(child, true), profiles.DISPLAY)
-  h.assert_deep_equal(child.metadata_updates[1], { profile = profiles.DISPLAY })
-end
-
 function T.test_ensure_runs_at_most_once_per_device()
   profiles.reset()
   local device = device_on("pc.v1", "once-only")
-  profiles.ensure(device, false)
-  h.assert_nil(profiles.ensure(device, false), "a second attempt must be a no-op")
+  profiles.ensure(device)
+  h.assert_nil(profiles.ensure(device), "a second attempt must be a no-op")
   h.assert_equal(#device.metadata_updates, 1)
 end
 
 function T.test_ensure_does_nothing_for_a_current_device()
   profiles.reset()
   local device = device_on(profiles.PC, "current-pc")
-  h.assert_nil(profiles.ensure(device, false))
+  h.assert_nil(profiles.ensure(device))
   h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
 end
@@ -140,7 +186,7 @@ end
 function T.test_ensure_leaves_a_foreign_profile_alone()
   profiles.reset()
   local device = device_on("someone-else.v1", "foreign")
-  h.assert_nil(profiles.ensure(device, false))
+  h.assert_nil(profiles.ensure(device))
   h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(profiles.FIELD), "someone-else.v1",
     "a foreign name must not be overwritten with ours")
@@ -152,7 +198,7 @@ function T.test_ensure_survives_a_hub_that_refuses_the_update()
   function device:try_update_metadata()
     error("no such profile", 0)
   end
-  h.assert_nil(profiles.ensure(device, false))
+  h.assert_nil(profiles.ensure(device))
   -- The field still says v1, so the next driver start tries again.
   h.assert_equal(device:get_field(profiles.FIELD), "pc.v1")
 end
@@ -184,14 +230,22 @@ function T.test_init_migrates_a_device_created_by_an_older_driver()
   h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
 end
 
-function T.test_init_migrates_the_display_child_too()
+function T.test_init_deletes_a_leftover_display_child()
+  -- #81: a child created by an older driver has no profile in the package any
+  -- more, so init removes it instead of migrating it.
   profiles.reset()
   local child = h.fake_device({})
   child.id = "init-child"
-  child.device_network_id = discovery.DNI_PREFIX .. "9f3c-guid" .. display.SUFFIX
-  h.assert_true(display.is_child(child), "the fixture has to look like a child")
+  child.parent_assigned_child_key = "display"
+  child.deleted = 0
+  function child:try_delete_device()
+    self.deleted = self.deleted + 1
+    return true
+  end
   lifecycle().init(fake_driver({ child }), child)
-  h.assert_deep_equal(child.metadata_updates[1], { profile = profiles.DISPLAY })
+  h.assert_equal(child.deleted, 1)
+  h.assert_equal(#child.metadata_updates, 0,
+    "a device on its way out must not be migrated")
 end
 
 function T.test_added_records_the_profile_and_migrates_nothing()

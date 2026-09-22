@@ -136,6 +136,9 @@ end
 
 --- A device stand-in: preferences plus the get_field/set_field pair.
 function h.fake_device(preferences)
+  -- `parent_assigned_child_key` is deliberately absent: the hub only sets it on
+  -- a child device, and #81 uses its absence to tell a PC from a leftover
+  -- display child.
   local device = { id = "test-device", preferences = preferences or {}, fields = {}, emitted = {} }
   function device:get_field(name)
     return self.fields[name]

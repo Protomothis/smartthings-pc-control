@@ -11,7 +11,6 @@ local log = require "log"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
-local display = require "display"
 local i18n = require "i18n"
 local poll = require "poll"
 local profiles = require "profiles"
@@ -34,31 +33,27 @@ end
 
 local function device_init(driver, device)
   log.info(string.format("init %s (driver %s)", device.id, version))
-  local is_child = display.is_child(device)
-  -- §14.3: a device keeps the screen definition it was created with, so a
-  -- device left on an older profile is moved to the current one, once.
-  profiles.ensure(device, is_child)
-  if is_child then
-    -- The display child has no service of its own: it mirrors the parent.
+  -- #81: the display child is gone. A hub that ran an older driver still has
+  -- the children it created, and their profiles are no longer in the package,
+  -- so they are deleted here — once per device per driver run.
+  if profiles.remove_legacy_child(driver, device) then
     return
   end
+  -- §14.3: a device keeps the screen definition it was created with, so a
+  -- device left on an older profile is moved to the current one, once.
+  profiles.ensure(device)
   -- §6.4: one listener per driver, opened on the first device that needs it.
   push.start(driver)
   poll.start(driver, device)
-  display.ensure(driver, device)
 end
 
 local function device_added(driver, device)
   log.info("added " .. device.id)
-  local is_child = display.is_child(device)
   -- A device that is being added was created by this driver run, so it is on
   -- the current profile: record the name now (§14.3, the hub does not always
   -- expose it) and let `ensure` confirm there is nothing to migrate.
-  profiles.remember(device, is_child)
-  profiles.ensure(device, is_child)
-  if is_child then
-    return
-  end
+  profiles.remember(device)
+  profiles.ensure(device)
   -- §13.1: a device SSDP just created arrives with the address it was found at.
   discovery.adopt(device)
   -- Paint the tiles immediately; the first poll fills in the real values.
@@ -72,32 +67,19 @@ end
 
 local function device_removed(driver, device)
   log.info("removed " .. device.id)
-  if display.is_child(device) then
-    return
-  end
   poll.stop(driver, device)
   wol.cancel_wake(driver, device)
   push.stop(driver, device)
-  -- §5.2: the child belongs to this PC and goes with it.
-  display.delete(driver, display.child_of(driver, device))
 end
 
 local function device_info_changed(driver, device, _event, _args)
   -- Preferences are already updated on `device` here; restarting the timer
   -- picks up a new pollInterval and a poll picks up a new IP/secret/port.
   log.info("preferences changed for " .. device.id)
-  if display.is_child(device) then
-    return
-  end
   poll.start(driver, device)
-  -- createDisplayDevice may have been toggled either way.
-  display.ensure(driver, device)
 end
 
 local function device_do_configure(driver, device)
-  if display.is_child(device) then
-    return
-  end
   poll.start(driver, device)
 end
 
@@ -119,15 +101,7 @@ local function report_error(device, kind, body)
 end
 
 --- switch.on: WoL sequence, device goes to `waking` (§6.2/§6.3).
---- On the display child it is `turnscreenon` on the parent instead (§5.2).
 local function handle_switch_on(driver, device)
-  if display.is_child(device) then
-    local ok, kind = display.handle_switch(driver, device, "on")
-    if not ok then
-      log.warn(string.format("display on failed on %s: %s", device.id, tostring(kind)))
-    end
-    return
-  end
   local nxt = state.transition(poll.get_state(device), "switch_on")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
@@ -136,13 +110,6 @@ end
 
 --- switch.off: the configured off action with the service's own grace handling.
 local function handle_switch_off(driver, device)
-  if display.is_child(device) then
-    local ok, kind = display.handle_switch(driver, device, "off")
-    if not ok then
-      log.warn(string.format("display off failed on %s: %s", device.id, tostring(kind)))
-    end
-    return
-  end
   local prefs = device.preferences or {}
   local ok, body, kind = client.command(device, prefs.offAction or "shutdown", "default", 0)
   if not ok then
@@ -153,13 +120,6 @@ local function handle_switch_off(driver, device)
 end
 
 local function handle_refresh(driver, device)
-  if display.is_child(device) then
-    local parent = display.parent_of(driver, device)
-    if parent then
-      poll.once(driver, parent)
-    end
-    return
-  end
   poll.once(driver, device)
 end
 
