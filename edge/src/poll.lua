@@ -16,8 +16,10 @@ poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
 poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
--- #82: the last `pcAction.lastAction` value emitted for this device.
+-- #82: the last `pcRun.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
+-- #84: the `pcRun.planCommand` the user picked for `pcPlan.schedule`.
+poll.PLAN_FIELD = "plan_command"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
@@ -120,51 +122,25 @@ function poll.emit_connection(device, connection, message)
   })
 end
 
---- Emit `pcAction.lastAction` and remember it (#82).
+--- Emit `pcRun.lastAction` and remember it (#82, #84).
 --
--- The value is what the user last asked the PC to do, so nothing in a status
--- body can produce it: every command handler calls this after the service
--- accepted the command. The field is persisted so a hub restart does not make
--- the row fall back to "none" while the PC is off.
--- @param action a `lastAction` enum key, or a service command name
+-- #84: the only value this is ever called with is `none`. Closing the detail
+-- view's command list without picking anything sends the row's CURRENT value
+-- as the `execute` argument (measured on the phone 2026-09-22, §14.5), so the
+-- row has to rest on a value that is both a valid argument and a no-op -
+-- otherwise the cloud rejects the command with "network or server error"
+-- before it ever reaches the hub. What ran is told by `lastCommand` instead.
+-- Anything that is not a `lastAction` enum value is coerced to `none` rather
+-- than emitted, because the hub rejects a value outside the enum.
+-- @param action a `lastAction` enum value
 function poll.emit_action(device, action)
-  local value = state.action_for(action)
+  local value = state.is_action(action) and action or state.ACTION_NONE
   pcall(function() device:set_field(poll.ACTION_FIELD, value, { persist = true }) end)
   poll.emit(device, { { cap = caps.COMMAND, attr = "lastAction", value = value } })
   return value
 end
 
--- #82 follow-up: the command list is a picker, not a mode. After a command the
--- row shows what ran for a moment and then returns to the placeholder, so the
--- next glance reads "명령 선택…" instead of a stale "화면 끄기".
-poll.ACTION_RESET_SECONDS = 5
-poll.ACTION_RESET_TIMER_FIELD = "action_reset_timer"
-
---- Emit `lastAction` for a command that just ran, then reset it to `none`
---- after ACTION_RESET_SECONDS. Cancels an earlier pending reset.
-function poll.flash_action(driver, device, action)
-  local prior = device:get_field(poll.ACTION_RESET_TIMER_FIELD)
-  if prior then
-    pcall(function() driver:cancel_timer(prior) end)
-    device:set_field(poll.ACTION_RESET_TIMER_FIELD, nil)
-  end
-  local value = poll.emit_action(device, action)
-  if value == state.ACTION_NONE then
-    return value
-  end
-  local ok, timer = pcall(function()
-    return driver:call_with_delay(poll.ACTION_RESET_SECONDS, function()
-      device:set_field(poll.ACTION_RESET_TIMER_FIELD, nil)
-      poll.emit_action(device, state.ACTION_NONE)
-    end, "action-reset")
-  end)
-  if ok and timer then
-    device:set_field(poll.ACTION_RESET_TIMER_FIELD, timer)
-  end
-  return value
-end
-
---- Paint `lastAction` as `none` on a device that has never run a command, so
+--- Paint `lastAction` as `none` on a device that has never been told one, so
 --- the detail-view list reads "-" nowhere (#82). Does nothing afterwards.
 function poll.ensure_action(device)
   local seen
@@ -173,6 +149,39 @@ function poll.ensure_action(device)
     return false
   end
   poll.emit_action(device, state.ACTION_NONE)
+  return true
+end
+
+--- Emit `pcRun.planCommand` and remember it (#84).
+--
+-- The command a `pcPlan.schedule` without an explicit command runs. It is the
+-- user's own choice, made on the detail view, so it is persisted rather than
+-- derived from a status body. An unschedulable value is coerced (§4.3).
+function poll.emit_plan_command(device, command)
+  local value = state.plan_command_for(command)
+  pcall(function() device:set_field(poll.PLAN_FIELD, value, { persist = true }) end)
+  poll.emit(device, { { cap = caps.COMMAND, attr = "planCommand", value = value } })
+  return value
+end
+
+--- The command this device schedules when none is given: the picked one, else
+--- the `offAction` preference when that is schedulable, else `shutdown`.
+function poll.plan_command(device)
+  local picked
+  pcall(function() picked = device:get_field(poll.PLAN_FIELD) end)
+  return state.plan_command_for(picked, ((device or {}).preferences or {}).offAction)
+end
+
+--- Paint `planCommand` on a device that has never picked one (#84): an
+--- attribute that was never emitted reads as "-" on the phone, and the row is
+--- a list, which does not open at all without a value (§14.5).
+function poll.ensure_plan_command(device)
+  local seen
+  pcall(function() seen = device:get_field(poll.PLAN_FIELD) end)
+  if state.is_plan_command(seen) then
+    return false
+  end
+  poll.emit_plan_command(device, poll.plan_command(device))
   return true
 end
 
@@ -279,9 +288,10 @@ function poll.once(driver, device, opts)
       lang = lang,
       note = opts.note,
     }))
-    -- #82: no status body carries `lastAction`, so a device that has never run
-    -- a command through the app would leave that row empty until it does.
+    -- #82/#84: no status body carries `lastAction` or `planCommand`, so a
+    -- device that has never been told them would leave those rows empty.
     poll.ensure_action(device)
+    poll.ensure_plan_command(device)
     pcall(function() device:online() end)
     -- §6.4: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.

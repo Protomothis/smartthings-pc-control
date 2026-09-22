@@ -12,32 +12,54 @@
           "wake": {
             "label": "Wake"
           },
-          "suspend": {
-            "label": "Sleep"
+          "shutdown": {
+            "label": "Shut down"
           },
-          "hibernate": {
-            "label": "Hibernate"
+          "forceshutdown": {
+            "label": "Force shut down"
           },
           "restart": {
             "label": "Restart"
           },
-          "shutdown": {
-            "label": "Shut down"
+          "hibernate": {
+            "label": "Hibernate"
+          },
+          "suspend": {
+            "label": "Sleep"
           },
           "lock": {
             "label": "Lock"
           },
-          "screenOff": {
+          "turnscreenoff": {
             "label": "Screen off"
           },
-          "screenOn": {
+          "turnscreenon": {
             "label": "Screen on"
           }
         }
       }
     },
     "lastCommand": {
-      "label": "Last command"
+      "label": "Last run"
+    },
+    "planCommand": {
+      "label": "Command to schedule",
+      "i18n": {
+        "value": {
+          "shutdown": {
+            "label": "Shut down"
+          },
+          "restart": {
+            "label": "Restart"
+          },
+          "suspend": {
+            "label": "Sleep"
+          },
+          "hibernate": {
+            "label": "Hibernate"
+          }
+        }
+      }
     }
   },
   "commands": {
@@ -76,6 +98,14 @@
         },
         "minutes": {
           "label": "Delay (minutes)"
+        }
+      }
+    },
+    "setPlanCommand": {
+      "label": "Choose the command to schedule",
+      "arguments": {
+        "command": {
+          "label": "Command"
         }
       }
     }

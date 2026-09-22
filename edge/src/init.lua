@@ -61,8 +61,11 @@ local function device_added(driver, device)
   poll.set_state(device, initial)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
-  -- emitted reads as "-" on the phone. Nothing has been run yet, so: none.
+  -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
   poll.ensure_action(device)
+  -- #84: the same for the "command to schedule" row; its default comes from
+  -- the `offAction` preference.
+  poll.ensure_plan_command(device)
   if not client.device_base_url(device) then
     poll.emit_connection(device, "unreachable", i18n.t(poll.lang(device), "no_ip"))
   end
@@ -108,8 +111,6 @@ local function handle_switch_on(driver, device)
   local nxt = state.transition(poll.get_state(device), "switch_on")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
-  -- #82: the command row follows the switch, so both say the same thing.
-  poll.flash_action(driver, device, "wake")
   wol.wake(driver, device)
 end
 
@@ -122,7 +123,6 @@ local function handle_switch_off(driver, device)
     report_error(device, kind, body)
     return
   end
-  poll.flash_action(driver, device, command)
   poll.once(driver, device)
 end
 
@@ -163,13 +163,22 @@ local function button_mode(device)
   return "default"
 end
 
---- Run one service command and report what happened (#82).
+--- Run one service command and report what happened (#82, #84).
 --
--- The one path every command row takes: send it, paint `lastAction` when the
--- service accepted it, and poll straight away so the tiles show the result
--- instead of the state from up to `pollInterval` ago. `wake` never reaches the
--- service — it is the WoL sequence.
+-- The one path every command row takes: send it, then poll straight away so
+-- the tiles show the result instead of the state from up to `pollInterval`
+-- ago. What ran appears on the `lastCommand` row, which the poll fills in from
+-- the service's own `last_command`; `lastAction` stays on `none` (#84).
+-- `wake` never reaches the service — it is the WoL sequence.
+--
+-- #84: `none` is a command in the enum and does nothing on purpose. Closing
+-- the detail view's list without picking anything sends the row's current
+-- value (§14.5), and the row rests on `none`, so this is the path a dismissed
+-- picker takes: refresh the tiles and leave the PC alone.
 local function run_command(driver, device, service_command, mode, minutes)
+  if service_command == nil or service_command == "" or service_command == state.ACTION_NONE then
+    return poll.once(driver, device)
+  end
   if service_command == "wake" then
     return handle_switch_on(driver, device)
   end
@@ -178,11 +187,6 @@ local function run_command(driver, device, service_command, mode, minutes)
   if not ok then
     report_error(device, kind, body)
     return
-  end
-  if minutes <= 0 then
-    -- `minutes > 0` scheduled the command instead of running it; what is
-    -- pending belongs on the pcPlan row, not on "last command".
-    poll.flash_action(driver, device, service_command)
   end
   poll.once(driver, device)
 end
@@ -194,7 +198,7 @@ local function button_handler(service_command)
   end
 end
 
---- pcAction.execute(command, mode, minutes) — capabilities/pcAction.json.
+--- pcRun.execute(command, mode, minutes) — capabilities/pcRun.json.
 --- `minutes > 0` turns the same endpoint into a schedule (§4.3).
 --
 --- The detail-view list (#82) sends `command` alone: the mode then follows the
@@ -206,20 +210,23 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
--- Commands pcPlan.schedule may carry; anything else (or nothing, when the
--- detail-view list only sends minutes) falls back to the switch-off action
--- when that is schedulable, else shutdown.
-local SCHEDULABLE = { shutdown = true, restart = true, suspend = true, hibernate = true }
+--- pcRun.setPlanCommand(command): what a schedule without a command of its own
+--- runs (#84).
+--
+-- The detail view's schedule list can only pick the minutes (one argument per
+-- list, §14.5), so the command is picked on its own row and kept in a device
+-- field. Every value it can hold is a valid argument, so a dismissed picker
+-- simply re-sends the current one.
+local function handle_set_plan_command(_driver, device, cmd)
+  local args = (cmd or {}).args or {}
+  poll.emit_plan_command(device, args.command)
+end
 
+--- The command `pcPlan.schedule` runs when it carries none of its own:
+--- the automation's argument first, then the `planCommand` the user picked,
+--- then the `offAction` preference, else shutdown (§4.3).
 local function schedule_command(device, requested)
-  if requested and SCHEDULABLE[requested] then
-    return requested
-  end
-  local off = (device.preferences or {}).offAction
-  if off and SCHEDULABLE[off] then
-    return off
-  end
-  return "shutdown"
+  return state.plan_command_for(requested, poll.plan_command(device))
 end
 
 --- pcPlan.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
@@ -279,11 +286,11 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals: they are what `capabilities/pcAction.json` and
+-- Command names are literals: they are what `capabilities/pcRun.json` and
 -- `capabilities/pcPlan.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
-  local handlers = { execute = handle_execute }
+  local handlers = { execute = handle_execute, setPlanCommand = handle_set_plan_command }
   for name, service_command in pairs(BUTTONS) do
     handlers[name] = button_handler(service_command)
   end

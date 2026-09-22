@@ -19,7 +19,7 @@ components:
         version: 1
       - id: numbersystem53811.pcpower
         version: 1
-      - id: numbersystem53811.pcaction
+      - id: numbersystem53811.pcrun
         version: 1
       - id: numbersystem53811.pcplan
         version: 1

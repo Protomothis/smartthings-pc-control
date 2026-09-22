@@ -319,15 +319,22 @@ local REMOTE_BUTTONS = {
 -- #82: what the detail-view list offers, top to bottom. Service command names
 -- (§4.3), because that is what `execute(command)` takes; `wake` is the WoL
 -- sequence and `forceshutdown` is deliberately absent — an irreversible
--- command stays in automations only.
+-- command stays in automations only. #84 keeps the menu as it was: `none` is
+-- in the enum so a dismissed picker is valid, not so it can be picked.
 local ACTION_LIST = {
   "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
   "turnscreenoff", "turnscreenon",
 }
 
+-- #84: what the "command to schedule" row offers, and the `planCommand` enum.
+local PLAN_LIST = { "shutdown", "restart", "suspend", "hibernate" }
+
 local EXPECTED_COMMANDS = {
   power_state = {},
-  command = { execute = { "command", "mode", "minutes" } },
+  command = {
+    execute = { "command", "mode", "minutes" },
+    setPlanCommand = { "command" },
+  },
   schedule = { cancel = {}, schedule = { "minutes", "command" } },
   status = {},
   session = {},
@@ -370,20 +377,34 @@ function T.test_command_enums_match_the_service()
   -- reachability probe and is not offered in the app. #82 added `wake`, which
   -- is not a service command at all — the driver turns it into the WoL
   -- sequence — so that the detail-view list can offer it like the rest.
+  -- #84 added `none`, the no-op a dismissed picker sends (§14.5).
   local execute = definition("command").commands.execute.arguments[1].schema.enum
   local seen = {}
   for _, name in ipairs(execute) do
     seen[name] = true
   end
-  for _, name in ipairs({ "wake", "shutdown", "forceshutdown", "restart", "hibernate",
-      "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
-    h.assert_true(seen[name] == true, "pcAction.execute is missing " .. name)
+  for _, name in ipairs({ "none", "wake", "shutdown", "forceshutdown", "restart",
+      "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
+    h.assert_true(seen[name] == true, "pcRun.execute is missing " .. name)
   end
-  h.assert_equal(#execute, 9)
+  h.assert_equal(#execute, 10)
   for _, name in ipairs(ACTION_LIST) do
     h.assert_true(seen[name] == true,
       "the detail-view list offers " .. name .. ", which execute does not accept")
   end
+
+  -- #84: `lastAction` holds exactly what `execute` accepts, because the phone
+  -- sends the row's current value when the list is closed without a pick.
+  h.assert_deep_equal(definition("command").attributes.lastAction.schema.properties.value.enum,
+    execute, "lastAction and execute.command must be the same set, in the same order")
+  h.assert_deep_equal(state.ACTIONS, execute, "state.ACTIONS is the lastAction enum")
+
+  -- #84: the schedulable commands, shared by the attribute and its setter.
+  h.assert_deep_equal(definition("command").attributes.planCommand.schema.properties.value.enum,
+    PLAN_LIST)
+  h.assert_deep_equal(definition("command").commands.setPlanCommand.arguments[1].schema.enum,
+    PLAN_LIST)
+  h.assert_deep_equal(state.PLAN_COMMANDS, PLAN_LIST)
 
   local mode = definition("command").commands.execute.arguments[2].schema.enum
   h.assert_deep_equal(mode, { "default", "immediate", "grace" })
@@ -492,6 +513,9 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   -- #82: `lastAction` is a condition as well, so an automation can react to
   -- what was last asked of the PC.
   h.assert_true(condition_attributes("command").lastAction == true)
+  -- #84: and to the command a schedule would run.
+  h.assert_true(condition_attributes("command").planCommand == true)
+  h.assert_true(action_commands("command").setPlanCommand == true)
 end
 
 --------------------------------------------------------------------------------
@@ -510,12 +534,14 @@ local function list_keys(item)
   return commands, states
 end
 
-function T.test_the_action_detail_view_is_one_list()
+function T.test_the_action_detail_view_is_the_list_the_last_run_and_the_plan()
   -- §5.3 (#82): a pushButton has no value, so the phone drew "-" beside each
   -- of the eight. One list replaces them: the commands are the menu, and
   -- `lastAction` is the value it shows.
+  -- #84: the list rests on `none`, so what actually ran is read off the
+  -- `lastCommand` row below it, and a third row picks what a schedule runs.
   local detail = presentation("command").detailView
-  h.assert_equal(#detail, 1, "the command capability contributes exactly one row")
+  h.assert_equal(#detail, 3, "command list, last run, command to schedule")
   local item = detail[1]
   h.assert_equal(item.displayType, "list")
   h.assert_equal(item.label, "{{i18n.attributes.lastAction.label}}")
@@ -528,12 +554,84 @@ function T.test_the_action_detail_view_is_one_list()
     definition("command").attributes.lastAction.schema.properties.value.enum,
     "the state alternatives must cover the whole enum, `none` included")
 
-  local _, referenced = references(detail, {}, {})
-  h.assert_true(referenced.forceshutdown == nil, "forceshutdown must not be on screen")
+  for _, key in ipairs(commands) do
+    h.assert_true(key ~= "forceshutdown", "forceshutdown must not be on screen")
+    h.assert_true(key ~= "none", "`none` is what the row rests on, not a menu entry")
+  end
   for _, alternative in ipairs(item.list.command.alternatives) do
     h.assert_true(type(alternative.value) == "string" and alternative.value ~= "",
       "a command alternative needs a literal label (§14.2: arguments cannot be translated)")
   end
+
+  -- #84: the feedback row the 5 s flash was replaced with.
+  h.assert_equal(detail[2].displayType, "state")
+  h.assert_equal(detail[2].label, "{{i18n.attributes.lastCommand.label}}")
+  h.assert_contains(detail[2].state.label, "lastCommand.value")
+
+  -- #84: the schedule list can only pick minutes (one argument per list), so
+  -- the command it runs is picked here.
+  local plan = detail[3]
+  h.assert_equal(plan.displayType, "list")
+  h.assert_equal(plan.label, "{{i18n.attributes.planCommand.label}}")
+  h.assert_equal(plan.list.command.name, "setPlanCommand")
+  local plan_commands, plan_states = list_keys(plan)
+  h.assert_deep_equal(plan_commands, PLAN_LIST)
+  h.assert_equal(plan.list.state.value, "planCommand.value")
+  h.assert_deep_equal(plan_states, PLAN_LIST)
+end
+
+-- #84, measured on the phone (2026-09-22): closing a detailView `list` without
+-- picking anything sends the row's CURRENT state value as the command
+-- argument. `lastAction` was `none`, which `execute` did not accept, and the
+-- cloud answered "network or server error" without ever reaching the hub. So
+-- every value a list's state can hold has to be an argument the command takes.
+function T.test_every_detail_list_state_value_is_a_valid_command_argument()
+  local checked = 0
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "list" then
+        local where = string.format("%s detailView[%d]", id, i)
+        local command = definition(key).commands[item.list.command.name] or {}
+        local argument = (command.arguments or {})[1] or {}
+        local accepted = {}
+        for _, value in ipairs((argument.schema or {}).enum or {}) do
+          accepted[tostring(value)] = true
+        end
+        -- An integer argument (the schedule presets) has a range, not an enum;
+        -- its own test covers it, and a dismissed picker there re-sends a
+        -- minute count the driver already understands.
+        if next(accepted) then
+          local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
+          local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
+            .properties or {}).value or {}
+          for _, value in ipairs(spec.enum or {}) do
+            h.assert_true(accepted[value] == true,
+              string.format("%s: the row can hold %s, which %s() does not accept - "
+                .. "closing the list without a pick would fail (#84)",
+                where, tostring(value), item.list.command.name))
+          end
+          local _, states = list_keys(item)
+          for _, value in ipairs(states) do
+            h.assert_true(accepted[value] == true,
+              string.format("%s: the state alternative %s is not a valid argument",
+                where, tostring(value)))
+          end
+          checked = checked + 1
+        end
+      end
+    end
+  end
+  h.assert_true(checked >= 2, "the command and plan rows both have enum arguments")
+end
+
+function T.test_the_driver_never_leaves_a_flash_timer_behind()
+  -- #84: `lastAction` used to show the command that ran and reset itself five
+  -- seconds later. The row must now rest on `none`, so neither the timer nor
+  -- the function that scheduled it may come back.
+  local poll = require "poll"
+  h.assert_nil(poll.flash_action, "poll.flash_action is gone (#84)")
+  h.assert_nil(poll.ACTION_RESET_SECONDS)
+  h.assert_nil(poll.ACTION_RESET_TIMER_FIELD)
 end
 
 function T.test_the_schedule_detail_view_is_one_list_and_the_summary()

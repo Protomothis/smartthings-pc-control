@@ -337,38 +337,55 @@ function T.test_a_quiet_status_has_no_notice_at_all()
 end
 
 --------------------------------------------------------------------------------
--- pcAction.lastAction (#82)
+-- pcRun.lastAction (#82, #84)
 --------------------------------------------------------------------------------
 
-function T.test_action_for_maps_the_service_command_names()
-  h.assert_equal(state.action_for("turnscreenoff"), "screenOff")
-  h.assert_equal(state.action_for("turnscreenon"), "screenOn")
-  h.assert_equal(state.action_for("suspend"), "suspend")
-  h.assert_equal(state.action_for("hibernate"), "hibernate")
-  h.assert_equal(state.action_for("restart"), "restart")
-  h.assert_equal(state.action_for("lock"), "lock")
-  h.assert_equal(state.action_for("shutdown"), "shutdown")
-  -- Not an enum value of its own: what the user sees is the PC shutting down.
-  h.assert_equal(state.action_for("forceshutdown"), "shutdown")
-  -- The WoL sequence is an action even though no service command matches it.
-  h.assert_equal(state.action_for("wake"), "wake")
+function T.test_the_action_values_are_the_service_command_names()
+  -- #84: the enum is the `execute` argument enum, so whatever the row holds is
+  -- something `execute` accepts - a dismissed picker sends it straight back.
+  -- The old `screenOff`/`screenOn` spellings are gone with it.
+  for _, value in ipairs({ "none", "wake", "shutdown", "forceshutdown", "restart",
+      "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
+    h.assert_true(state.is_action(value), value .. " is not a lastAction value")
+  end
+  h.assert_equal(#state.ACTIONS, 10)
+  h.assert_equal(state.ACTION_NONE, "none")
+  h.assert_nil(state.action_for, "#84 removed the service-command mapping")
 end
 
-function T.test_action_for_accepts_an_enum_key_unchanged()
-  -- The no-argument commands send their own name, which is already a key.
-  for _, value in ipairs(state.ACTIONS) do
-    h.assert_equal(state.action_for(value), value)
+function T.test_is_action_rejects_anything_outside_the_enum()
+  -- The hub rejects an event whose value is not in the enum.
+  for _, bogus in ipairs({ "ping", "", "screenOff", "screenOn" }) do
+    h.assert_false(state.is_action(bogus), tostring(bogus) .. " must not pass")
   end
+  h.assert_false(state.is_action(nil))
+  h.assert_false(state.is_action(42))
 end
 
-function T.test_action_for_never_invents_an_enum_value()
-  -- The hub rejects an event whose value is not in the enum, so anything
-  -- unknown has to fall back to a value that is.
-  for _, bogus in ipairs({ "ping", "", "screenoff" }) do
-    h.assert_equal(state.action_for(bogus), state.ACTION_NONE)
+--------------------------------------------------------------------------------
+-- pcRun.planCommand (#84)
+--------------------------------------------------------------------------------
+
+function T.test_only_the_schedulable_commands_are_plan_commands()
+  for _, value in ipairs({ "shutdown", "restart", "suspend", "hibernate" }) do
+    h.assert_true(state.is_plan_command(value), value .. " is schedulable (§4.3)")
   end
-  h.assert_equal(state.action_for(nil), "none")
-  h.assert_equal(state.action_for(42), "none")
+  for _, value in ipairs({ "lock", "turnscreenoff", "wake", "forceshutdown", "none", "" }) do
+    h.assert_false(state.is_plan_command(value), value .. " must not be schedulable")
+  end
+  h.assert_false(state.is_plan_command(nil))
+end
+
+function T.test_plan_command_for_takes_the_first_schedulable_argument()
+  -- The caller's preference order: the automation's argument, then the command
+  -- the user picked on the detail view, then the `offAction` preference.
+  h.assert_equal(state.plan_command_for("restart", "suspend", "hibernate"), "restart")
+  h.assert_equal(state.plan_command_for(nil, "suspend", "hibernate"), "suspend")
+  -- `lock` is an offAction but not schedulable, so it is skipped.
+  h.assert_equal(state.plan_command_for(nil, nil, "lock"), state.PLAN_DEFAULT)
+  h.assert_equal(state.plan_command_for("lock", "hibernate"), "hibernate")
+  h.assert_equal(state.plan_command_for(), "shutdown")
+  h.assert_equal(state.plan_command_for(nil), "shutdown")
 end
 
 function T.test_schedule_summary_says_no_schedule_when_idle()
