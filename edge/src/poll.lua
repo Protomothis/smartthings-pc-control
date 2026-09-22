@@ -16,10 +16,16 @@ poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
 poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
--- #82: the last `pcRun.lastAction` value emitted for this device.
+-- #82: the last `pcExec.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
--- #84: the `pcRun.planCommand` the user picked for `pcPlan.schedule`.
+-- #84: the `pcCountdown.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
+-- #85: which generation of capability ids this device's rows were painted for.
+-- A renamed capability (pcRun -> pcExec, pcPlan -> pcCountdown) starts with
+-- every attribute unset on the hub, so the persisted "already painted" fields
+-- would otherwise skip a device that has been migrated (§14.4).
+poll.ROWS_FIELD = "rows_painted"
+poll.ROWS_VERSION = "85"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
@@ -122,7 +128,7 @@ function poll.emit_connection(device, connection, message)
   })
 end
 
---- Emit `pcRun.lastAction` and remember it (#82, #84).
+--- Emit `pcExec.lastAction` and remember it (#82, #84).
 --
 -- #84: the only value this is ever called with is `none`. Closing the detail
 -- view's command list without picking anything sends the row's CURRENT value
@@ -152,15 +158,19 @@ function poll.ensure_action(device)
   return true
 end
 
---- Emit `pcRun.planCommand` and remember it (#84).
+--- Emit `pcCountdown.planCommand` and remember it (#84, moved in #85).
 --
--- The command a `pcPlan.schedule` without an explicit command runs. It is the
--- user's own choice, made on the detail view, so it is persisted rather than
--- derived from a status body. An unschedulable value is coerced (§4.3).
+-- The command a `pcCountdown.schedule` without an explicit command runs. It is
+-- the user's own choice, made on the detail view, so it is persisted rather
+-- than derived from a status body. An unschedulable value is coerced (§4.3).
+--
+-- #85: emitted under the schedule capability, because the app puts a detail row
+-- in the card of the capability that owns it and this row belongs next to the
+-- schedule it configures.
 function poll.emit_plan_command(device, command)
   local value = state.plan_command_for(command)
   pcall(function() device:set_field(poll.PLAN_FIELD, value, { persist = true }) end)
-  poll.emit(device, { { cap = caps.COMMAND, attr = "planCommand", value = value } })
+  poll.emit(device, { { cap = caps.SCHEDULE, attr = "planCommand", value = value } })
   return value
 end
 
@@ -182,6 +192,30 @@ function poll.ensure_plan_command(device)
     return false
   end
   poll.emit_plan_command(device, poll.plan_command(device))
+  return true
+end
+
+--- #85: paint every pcExec and pcCountdown attribute once, so no row of either
+--- card reads "-" and the app stops saying the device has not reported all of
+--- its state.
+--
+-- Called from `added` and from `init`: a device that was migrated onto the new
+-- capability ids (§14.4) has never emitted any of them, even though the
+-- `last_action` / `plan_command` fields from the old ones survived, so the
+-- version stamp forces one repaint per generation instead of trusting them.
+function poll.ensure_rows(device)
+  local painted
+  pcall(function() painted = device:get_field(poll.ROWS_FIELD) end)
+  if painted == poll.ROWS_VERSION then
+    return false
+  end
+  pcall(function() device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION, { persist = true }) end)
+
+  local seen
+  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
+  poll.emit_action(device, seen)
+  poll.emit_plan_command(device, poll.plan_command(device))
+  poll.emit(device, state.initial_rows(poll.lang(device)))
   return true
 end
 
@@ -283,13 +317,16 @@ function poll.once(driver, device, opts)
     -- §13.1: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
     poll.remember_identity(device, body)
+    -- #82/#84/#85: no status body carries `lastAction` or `planCommand`, and a
+    -- migrated device has emitted nothing at all under the new capability ids,
+    -- so the resting values go out first and the status body overwrites the
+    -- rows it does know about.
+    poll.ensure_rows(device)
     poll.emit(device, state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
       note = opts.note,
     }))
-    -- #82/#84: no status body carries `lastAction` or `planCommand`, so a
-    -- device that has never been told them would leave those rows empty.
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     pcall(function() device:online() end)

@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcHealth.message`, `pcRun.lastCommand`, `pcPlan.origin`).
+-- (`pcHealth.message`, `pcExec.lastCommand`, `pcCountdown.origin`).
 --
 -- Design doc §6.5: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because

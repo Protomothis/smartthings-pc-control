@@ -1,11 +1,67 @@
 {
-  "id": "numbersystem53811.pcplan",
+  "id": "numbersystem53811.pccountdown",
   "version": 1,
   "dashboard": {
     "states": [],
     "actions": []
   },
   "detailView": [
+    {
+      "label": "{{i18n.attributes.planCommand.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "setPlanCommand",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        },
+        "state": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
     {
       "label": "{{i18n.commands.schedule.label}}",
       "displayType": "list",
@@ -110,6 +166,35 @@
             }
           ]
         }
+      },
+      {
+        "label": "{{i18n.attributes.planCommand.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        }
       }
     ],
     "actions": [
@@ -150,6 +235,11 @@
                     "key": "120",
                     "value": "2 hours",
                     "type": "active"
+                  },
+                  {
+                    "key": "0",
+                    "value": "Cancel the schedule",
+                    "type": "inactive"
                   }
                 ],
                 "name": "minutes"
@@ -158,6 +248,46 @@
             {
               "name": "command",
               "label": "{{i18n.commands.schedule.arguments.command.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  }
+                ],
+                "name": "command"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.commands.setPlanCommand.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "setPlanCommand",
+          "submitLabel": "Set",
+          "arguments": [
+            {
+              "name": "command",
+              "label": "{{i18n.commands.setPlanCommand.arguments.command.label}}",
               "displayType": "list",
               "list": {
                 "alternatives": [

@@ -21,7 +21,7 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcPlan.status enum (§5.1, #83): the string twin of `active`.
+-- pcCountdown.status enum (§5.1, #83): the string twin of `active`.
 state.IDLE = "idle"
 state.SCHEDULED = "scheduled"
 
@@ -52,7 +52,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcPlan.schedule` can say whether
+    -- last polled `schedule.active`, so `pcCountdown.schedule` can say whether
     -- it replaced an existing schedule (§4.3) without asking the service twice
     schedule_active = false,
   }
@@ -162,7 +162,7 @@ local function hhmm(iso)
 end
 
 --------------------------------------------------------------------------------
--- pcRun.lastAction (#82, #84)
+-- pcExec.lastAction (#82, #84, renamed #85)
 --------------------------------------------------------------------------------
 
 -- The value the detail-view list rests on. #84: it is also a valid `execute`
@@ -174,7 +174,7 @@ state.ACTION_NONE = "none"
 -- Every `lastAction` value. #84 made this the same set as the `execute`
 -- `command` enum - service command names (§4.3) plus `none` and `wake` - so
 -- that whatever the row holds is an argument `execute` accepts.
--- capabilities_test.lua checks this against the enum in pcRun.json.
+-- capabilities_test.lua checks this against the enum in pcExec.json.
 state.ACTIONS = {
   "none", "wake", "shutdown", "forceshutdown", "restart", "hibernate",
   "suspend", "lock", "turnscreenoff", "turnscreenon",
@@ -191,7 +191,7 @@ function state.is_action(value)
 end
 
 --------------------------------------------------------------------------------
--- pcRun.planCommand (#84)
+-- pcCountdown.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
 -- What the service can schedule (§4.3). `lock` and the screen commands are not
@@ -201,7 +201,7 @@ state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 -- What a device schedules when nothing else says otherwise.
 state.PLAN_DEFAULT = "shutdown"
 
---- True when `value` is a command `pcPlan.schedule` may carry.
+--- True when `value` is a command `pcCountdown.schedule` may carry.
 function state.is_plan_command(value)
   for _, command in ipairs(state.PLAN_COMMANDS) do
     if command == value then
@@ -226,7 +226,7 @@ function state.plan_command_for(...)
   return state.PLAN_DEFAULT
 end
 
---- Format `pcRun.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
 --- #84: this is the row that says what ran; `lastAction` stays on `none`.
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
@@ -270,7 +270,7 @@ function state.status_summary(connection, service_version, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcPlan.summary` (#78): "Shut down · 4 min left · SmartThings", or an
+--- `pcCountdown.summary` (#78): "Shut down · 4 min left · SmartThings", or an
 --- empty string when nothing is scheduled (the row is hidden then).
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
@@ -405,14 +405,16 @@ end
 -- `apply_status` produces all of them except `lastAction` and `planCommand`,
 -- which no status body carries: the first is the placeholder the command row
 -- rests on (poll.ensure_action, #84) and the second is the user's own choice
--- (poll.emit_plan_command).
+-- (poll.emit_plan_command). #85 moved `planCommand` to the schedule capability:
+-- the app groups detail rows by the capability that owns them, so the row that
+-- picks what a schedule runs has to belong to the schedule card.
 local ATTRIBUTES = {
   [state.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
-  [caps.COMMAND] = { lastCommand = true, lastAction = true, planCommand = true },
+  [caps.COMMAND] = { lastCommand = true, lastAction = true },
   [caps.SCHEDULE] = {
     active = true, status = true, command = true, remainingSeconds = true,
-    executeAt = true, origin = true, summary = true,
+    executeAt = true, origin = true, summary = true, planCommand = true,
   },
   [caps.STATUS] = {
     connection = true, serviceVersion = true, updateAvailable = true,
@@ -427,6 +429,32 @@ local ATTRIBUTES = {
 --- The set above. Read-only: it is a constant, not a copy.
 function state.attributes_used()
   return ATTRIBUTES
+end
+
+--- #85: the resting value of every pcExec / pcCountdown attribute that a
+--- status body does not carry on its own, for a device that has never been
+--- polled successfully.
+--
+-- An attribute that was never emitted reads as "-" on the phone (§14.5) and
+-- keeps the app saying not all of the device's state has been reported. A
+-- device that has just been added - or one that was just migrated onto the new
+-- capability ids, where every attribute starts out unset - therefore gets the
+-- whole set painted once before the first poll answers.
+--
+-- `lastAction` and `planCommand` are not here: they are the two rows the user
+-- (and the `offAction` preference) owns, so poll.lua emits them through
+-- `emit_action` / `emit_plan_command`, which also persist the choice.
+function state.initial_rows(lang)
+  local events = {}
+  ev(events, caps.COMMAND, "lastCommand", "")
+  ev(events, caps.SCHEDULE, "active", false)
+  ev(events, caps.SCHEDULE, "status", state.IDLE)
+  ev(events, caps.SCHEDULE, "command", "")
+  ev(events, caps.SCHEDULE, "remainingSeconds", 0)
+  ev(events, caps.SCHEDULE, "executeAt", "")
+  ev(events, caps.SCHEDULE, "origin", "")
+  ev(events, caps.SCHEDULE, "summary", state.schedule_summary(nil, lang))
+  return events
 end
 
 --- Turn a `GET /st/v1/status` body into capability events (§4.2 -> §5.1).

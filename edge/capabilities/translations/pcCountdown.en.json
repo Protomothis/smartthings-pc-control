@@ -32,6 +32,25 @@
     },
     "origin": {
       "label": "Requested by"
+    },
+    "planCommand": {
+      "label": "Command to schedule",
+      "i18n": {
+        "value": {
+          "shutdown": {
+            "label": "Shut down"
+          },
+          "restart": {
+            "label": "Restart"
+          },
+          "suspend": {
+            "label": "Sleep"
+          },
+          "hibernate": {
+            "label": "Hibernate"
+          }
+        }
+      }
     }
   },
   "commands": {
@@ -39,11 +58,19 @@
       "label": "Cancel schedule"
     },
     "schedule": {
-      "label": "Schedule",
+      "label": "Run in",
       "arguments": {
         "minutes": {
-          "label": "In (minutes)"
+          "label": "In (minutes, 0 cancels)"
         },
+        "command": {
+          "label": "Command"
+        }
+      }
+    },
+    "setPlanCommand": {
+      "label": "Choose the command to schedule",
+      "arguments": {
         "command": {
           "label": "Command"
         }

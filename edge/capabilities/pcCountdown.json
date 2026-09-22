@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcplan",
+  "id": "numbersystem53811.pccountdown",
   "version": 1,
   "status": "proposed",
-  "name": "pcPlan",
+  "name": "pcCountdown",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -119,6 +119,27 @@
         ]
       },
       "enumCommands": []
+    },
+    "planCommand": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
     }
   },
   "commands": {
@@ -134,13 +155,31 @@
           "optional": false,
           "schema": {
             "type": "integer",
-            "minimum": 1,
+            "minimum": 0,
             "maximum": 1440
           }
         },
         {
           "name": "command",
           "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        }
+      ]
+    },
+    "setPlanCommand": {
+      "name": "setPlanCommand",
+      "arguments": [
+        {
+          "name": "command",
+          "optional": false,
           "schema": {
             "type": "string",
             "enum": [

@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcrun",
+  "id": "numbersystem53811.pcexec",
   "version": 1,
   "status": "proposed",
-  "name": "pcRun",
+  "name": "pcExec",
   "ephemeral": false,
   "attributes": {
     "lastAction": {
@@ -37,25 +37,6 @@
           "value": {
             "type": "string",
             "maxLength": 255
-          }
-        },
-        "additionalProperties": false,
-        "required": ["value"]
-      },
-      "enumCommands": []
-    },
-    "planCommand": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "string",
-            "enum": [
-              "shutdown",
-              "restart",
-              "suspend",
-              "hibernate"
-            ]
           }
         },
         "additionalProperties": false,
@@ -134,24 +115,6 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 1440
-          }
-        }
-      ]
-    },
-    "setPlanCommand": {
-      "name": "setPlanCommand",
-      "arguments": [
-        {
-          "name": "command",
-          "optional": false,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "shutdown",
-              "restart",
-              "suspend",
-              "hibernate"
-            ]
           }
         }
       ]

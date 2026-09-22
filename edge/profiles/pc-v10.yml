@@ -21,9 +21,9 @@ components:
         version: 1
       - id: numbersystem53811.pcpower
         version: 1
-      - id: numbersystem53811.pcrun
+      - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pcplan
+      - id: numbersystem53811.pccountdown
         version: 1
       - id: numbersystem53811.pchealth
         version: 1

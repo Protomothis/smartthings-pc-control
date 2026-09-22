@@ -41,25 +41,6 @@
     },
     "lastCommand": {
       "label": "Last run"
-    },
-    "planCommand": {
-      "label": "Command to schedule",
-      "i18n": {
-        "value": {
-          "shutdown": {
-            "label": "Shut down"
-          },
-          "restart": {
-            "label": "Restart"
-          },
-          "suspend": {
-            "label": "Sleep"
-          },
-          "hibernate": {
-            "label": "Hibernate"
-          }
-        }
-      }
     }
   },
   "commands": {
@@ -98,14 +79,6 @@
         },
         "minutes": {
           "label": "Delay (minutes)"
-        }
-      }
-    },
-    "setPlanCommand": {
-      "label": "Choose the command to schedule",
-      "arguments": {
-        "command": {
-          "label": "Command"
         }
       }
     }

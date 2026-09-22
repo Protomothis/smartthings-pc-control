@@ -22,10 +22,18 @@ caps.POWER_STATE = NAMESPACE .. ".pcpower"
 -- #84: same rule once more. `execute` gained a `none` argument (a dismissed
 -- list sends the row's current value, §14.5) and the definition gained
 -- `planCommand`, so `pcAction` became `pcRun`.
-caps.COMMAND = NAMESPACE .. ".pcrun"
+-- #85: and again. `planCommand`/`setPlanCommand` moved to the schedule
+-- capability - the app groups detail rows by the capability that owns them, so
+-- "what a schedule runs" has to live in the schedule card - which made this a
+-- different definition: `pcRun` became `pcExec`.
+caps.COMMAND = NAMESPACE .. ".pcexec"
 -- #83: same rule again - the definition gained a `status` enum (a detailView
 -- list cannot read a boolean, §14.5), so `pcTimer` became `pcPlan`.
-caps.SCHEDULE = NAMESPACE .. ".pcplan"
+-- #85: `schedule(minutes)` now accepts 0 (the list's Cancel entry; the cloud
+-- validates arguments against the definition and rejected `minimum: 1`, so the
+-- entry never reached the hub) and the definition gained `planCommand` /
+-- `setPlanCommand`, so `pcPlan` became `pcCountdown`.
+caps.SCHEDULE = NAMESPACE .. ".pccountdown"
 caps.STATUS = NAMESPACE .. ".pchealth"
 caps.SESSION = NAMESPACE .. ".pcuser"
 
