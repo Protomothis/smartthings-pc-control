@@ -204,10 +204,21 @@ func TestSTSubscribeRenewsSameCallback(t *testing.T) {
 		t.Errorf("renewal did not extend the expiry: %s then %s", firstAt, secondAt)
 	}
 
-	// A different callback is a second subscription.
-	stDo(t, "POST", "/st/v1/subscribe", "192.168.1.20", "", subscribeBody("http://192.168.1.20:41235/pc/evt", 600))
+	// A different callback from the SAME host replaces the old one: the
+	// hub's driver restarted on a new ephemeral port and the old listener
+	// is gone.
+	third := stJSON(t, stDo(t, "POST", "/st/v1/subscribe", "192.168.1.20", "", subscribeBody("http://192.168.1.20:41235/pc/evt", 600)))
+	if n := len(stSubs.active()); n != 1 {
+		t.Errorf("%d subscriptions stored after a same-host re-subscribe, want 1", n)
+	}
+	if third["id"] == first["id"] {
+		t.Errorf("same-host replacement kept the old id %v", first["id"])
+	}
+
+	// A callback from another host (a second hub) is a second subscription.
+	stDo(t, "POST", "/st/v1/subscribe", "192.168.1.21", "", subscribeBody("http://192.168.1.21:41234/pc/evt", 600))
 	if n := len(stSubs.active()); n != 2 {
-		t.Errorf("%d subscriptions stored, want 2", n)
+		t.Errorf("%d subscriptions stored for two hubs, want 2", n)
 	}
 }
 

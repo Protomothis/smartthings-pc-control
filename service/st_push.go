@@ -115,6 +115,19 @@ func (s *stSubStore) subscribe(callback, driverVersion string, ttl time.Duration
 		sub.failures = 0
 		return *sub, true
 	}
+	// A hub whose driver restarted comes back on a new ephemeral port; the
+	// listener behind its old callback is gone. Keeping that subscription
+	// only buys 2s timeouts and retries on every event until it fails out,
+	// so a new callback from the same host replaces the host's old ones.
+	if host := stCallbackHost(callback); host != "" {
+		for id, old := range s.byID {
+			if old.Callback != callback && stCallbackHost(old.Callback) == host {
+				delete(s.byID, id)
+				delete(s.byCall, old.Callback)
+				logMsg("ST push: %s (%s) replaced by a new subscription from %s", id, old.Callback, host)
+			}
+		}
+	}
 	s.nextID++
 	sub := &stSubscription{
 		ID:            "sub-" + strconv.Itoa(s.nextID),
@@ -209,6 +222,15 @@ func stPushReset() {
 	stSubs.byID = map[string]*stSubscription{}
 	stSubs.byCall = map[string]*stSubscription{}
 	stSubs.mu.Unlock()
+}
+
+// stCallbackHost returns the host (without port) of a callback URL, or "".
+func stCallbackHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // ---- callback validation (§4.5, §8) ----------------------------------------
