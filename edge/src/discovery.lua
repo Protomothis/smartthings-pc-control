@@ -7,10 +7,13 @@
 
 local client = require "client"
 local i18n = require "i18n"
+local profiles = require "profiles"
 
 local discovery = {}
 
-discovery.PROFILE = "pc.v1"
+-- The profile new devices are created with; src/profiles.lua is the single
+-- source of truth for the version (§14.3).
+discovery.PROFILE = profiles.PC
 discovery.PLACEHOLDER_LABEL = "PC Control (set IP in settings)"
 discovery.DNI_PREFIX = "pc-control-"
 discovery.MANUFACTURER = "Protomothis"

@@ -9,8 +9,23 @@
 -- constructors.
 local RESERVED = { ID = true, NAME = true, commands = true, attributes = true, id = true }
 
+-- `capabilities.switch.commands.on.NAME` is how init.lua names a command, so
+-- indexing `commands` yields a stub carrying the name it was asked for.
+local function make_commands()
+  return setmetatable({}, {
+    __index = function(t, name)
+      if type(name) ~= "string" then
+        return nil
+      end
+      local command = { NAME = name, ID = name }
+      rawset(t, name, command)
+      return command
+    end,
+  })
+end
+
 local function make_capability(id)
-  local cap = { ID = id, NAME = id, commands = {}, attributes = {} }
+  local cap = { ID = id, NAME = id, commands = make_commands(), attributes = {} }
   setmetatable(cap, {
     __index = function(t, key)
       if type(key) ~= "string" or RESERVED[key] then

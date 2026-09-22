@@ -14,6 +14,7 @@ local discovery = require "discovery"
 local display = require "display"
 local i18n = require "i18n"
 local poll = require "poll"
+local profiles = require "profiles"
 local push = require "push"
 local state = require "state"
 local version = require "driver_version"
@@ -33,7 +34,11 @@ end
 
 local function device_init(driver, device)
   log.info(string.format("init %s (driver %s)", device.id, version))
-  if display.is_child(device) then
+  local is_child = display.is_child(device)
+  -- §14.3: a device keeps the screen definition it was created with, so a
+  -- device left on an older profile is moved to the current one, once.
+  profiles.ensure(device, is_child)
+  if is_child then
     -- The display child has no service of its own: it mirrors the parent.
     return
   end
@@ -45,7 +50,13 @@ end
 
 local function device_added(driver, device)
   log.info("added " .. device.id)
-  if display.is_child(device) then
+  local is_child = display.is_child(device)
+  -- A device that is being added was created by this driver run, so it is on
+  -- the current profile: record the name now (§14.3, the hub does not always
+  -- expose it) and let `ensure` confirm there is nothing to migrate.
+  profiles.remember(device, is_child)
+  profiles.ensure(device, is_child)
+  if is_child then
     return
   end
   -- §13.1: a device SSDP just created arrives with the address it was found at.
@@ -301,3 +312,7 @@ local pc_driver = Driver("smartthings-pc-control", {
 
 log.info("starting smartthings-pc-control driver " .. version)
 pc_driver:run()
+
+-- The hub ignores what this chunk returns; the driver object is returned so
+-- tests can call the lifecycle handlers exactly as the hub would.
+return pc_driver
