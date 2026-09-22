@@ -110,9 +110,9 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ```
 [ 전원 스위치 ]                     켜기 = WoL, 끄기 = 스위치 끄기 동작
-전원 상태        켜짐
-명령             종료                          ▼  ← 고르면 바로 실행
-예약             예약됨                        ▼  ← 5분 … 2시간 / 취소
+전원 상태        켜짐 (On)
+명령             종료 (Shut down)              ▼  ← 고르면 바로 실행
+예약             예약 중 (Scheduled)           ▼  ← 5분 … 2시간 / 취소
 예약 요약        종료 · 4분 남음 · SmartThings
 상태             연결됨 · v1.1.0
 세션             잠김 · 유휴 20분 · kim
@@ -133,15 +133,19 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
   유휴, 잠금, 사용자, 마지막 명령 문장)은 화면에서 빠졌지만 **속성으로는 그대로
   있어** 자동화 조건과 이력에서 계속 쓸 수 있습니다.
 - 앱 화면은 장치를 **추가한 시점의 정의**로 굳습니다. 드라이버를 올려도 바뀌지
-  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v6`로 자동
+  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v10`로 자동
   이전하지만, 이전이 막힌 허브에서는 재추가가 가장 확실합니다).
 
 ### 한국어 표시
 
-capability 라벨·enum 값·명령 인자는 **capability translations**로 번역돼 있어,
+**줄 이름**(capability 라벨·속성 라벨)은 **capability translations**로 번역돼 있어,
 휴대폰 언어가 한국어면 앱이 한국어로 보여 줍니다
-(`capabilities/translations/<이름>.ko.json`, 영어는 `.en.json`). 프레젠테이션 자체의
-라벨은 영어로 두고 번역이 덮어쓰는 구조입니다.
+(`capabilities/translations/<이름>.ko.json`, 영어는 `.en.json`).
+
+**줄에 보이는 값**은 번역이 닿지 않습니다(#83 실측: 한국어 로케일에서도 `On`,
+`None`이 그대로 나왔습니다). 그래서 값 문구는 프레젠테이션의 `alternatives`에
+**"한국어 (English)"로 병기**해 두었습니다 — `켜짐 (On)`, `예약 없음 (No schedule)`,
+`깨우기 (Wake)`처럼요. 드롭다운의 메뉴 항목도 같은 형식입니다.
 
 드라이버가 만들어 내는 문자열 속성(요약 줄, `message`, `lastCommand`)은 환경설정
 `문구 언어`를 따릅니다(`src/i18n.lua`). 두 가지는 별개입니다 — 앱 UI 라벨은 휴대폰
@@ -199,19 +203,21 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 ### 예약과 취소
 
-`pcTimer`이 대기 중인 예약을 보여 줍니다. 화면에는 드롭다운 한 줄(예약됨 / 예약 없음)
-과 요약 한 줄(`summary`: "종료 · 4분 남음 · SmartThings", 없으면 "예약 없음")이
-나옵니다. 뒤에 있는 속성 `active`, `command`, `remainingSeconds`,
+`pcPlan`이 대기 중인 예약을 보여 줍니다. 화면에는 드롭다운 한 줄(예약 중 (Scheduled) /
+예약 없음 (No schedule))과 요약 한 줄(`summary`: "종료 · 4분 남음 · SmartThings",
+없으면 "예약 없음")이 나옵니다. 드롭다운이 읽는 값은 `status`(`idle`/`scheduled`)이고,
+같은 사실의 bool 판인 `active`는 자동화 조건으로 남습니다. 뒤에 있는 속성
+`active`, `status`, `command`, `remainingSeconds`,
 `executeAt`(로컬 `HH:MM`), `origin`(앱 · SmartThings 명령 · 텔레그램 · SmartThings)은
 그대로 남아 자동화 조건과 이력에서 쓸 수 있습니다. 예약은 PC당 하나이고, 새 예약은
 기존 것을 대체합니다.
 
-- `pcTimer.schedule(minutes, command?)` — 예약합니다. 프리셋 5/15/30/60/120분이
+- `pcPlan.schedule(minutes, command?)` — 예약합니다. 프리셋 5/15/30/60/120분이
   선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다. 명령을 비우면 스위치 끄기
   동작(예약할 수 없는 명령이면 종료)을 씁니다.
 - **`minutes`가 0이면 취소**입니다 — 드롭다운의 `취소` 항목이 이것을 보냅니다.
   자동화에서도 `schedule(minutes: 0)`으로 취소하세요.
-- `pcTimer.cancel()` — 같은 취소이고, 정의에 그대로 남아 있습니다(자동화 액션에는
+- `pcPlan.cancel()` — 같은 취소이고, 정의에 그대로 남아 있습니다(자동화 액션에는
   넣을 수 없습니다). PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
 
 앱·트레이 토스트·텔레그램에서 취소해도 푸시로 즉시 반영됩니다. 반대도 마찬가지입니다.
@@ -256,7 +262,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 ```
 조건(If)  : 시각이 00:00이고
             PC의 Power state 가 on
-동작(Then): PC 의 pcTimer.schedule(minutes: 30, command: shutdown)
+동작(Then): PC 의 pcPlan.schedule(minutes: 30, command: shutdown)
 ```
 
 30분 카운트다운이 SmartThings·트레이 토스트·텔레그램에 동시에 뜨고, 어디서든 취소하면
@@ -408,7 +414,7 @@ pcPower.json               정의        -> smartthings capabilities:create -i <
 pcPower.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
 ```
 
-`pcPower`는 전원 상태, `pcAction`은 명령 실행과 마지막 명령, `pcTimer`은 예약 표시·조작,
+`pcPower`는 전원 상태, `pcAction`은 명령 실행과 마지막 명령, `pcPlan`은 예약 표시·조작,
 `pcHealth`는 연결·버전·메시지 카드, `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
 
 `src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
@@ -466,7 +472,10 @@ enum 값·명령·명령 인자**가 번역돼 있는지, 정의에 없는 것�
   `capabilities:create` + `capabilities:presentation:create` + 번역 upsert로 올린 뒤,
   옛 `...pccontrol`을 참조하는 장치가 남지 않은 것을 보고 `capabilities:delete`
   합니다. 허브가 정의를 id 단위로 캐시하기 때문에 이름을 바꾼 것입니다(설계 §14.4).
-- `pcTimer.schedule`의 `minutes`는 정의상 최소 1인데 상세 화면의 `취소` 항목은 0을
+- `pcPlan`도 같은 이유로 **새 capability**입니다(#83: `status` 속성 추가). 같은 순서로
+  올리고, 프로필 `pc.v10`이 배포돼 `...pctimer`를 참조하는 장치가 남지 않은 것을 본 뒤
+  `smartthings capabilities:delete <namespace>.pctimer` 합니다.
+- `pcPlan.schedule`의 `minutes`는 정의상 최소 1인데 상세 화면의 `취소` 항목은 0을
   보냅니다. 허브가 인자 스키마로 이것을 거부하면 취소 항목만 빼고 `cancel()`을 쓰는
   배치로 되돌려야 합니다(드라이버는 양쪽을 모두 처리합니다).
 - `capabilities:translations:upsert`가 받는 본문 형식
