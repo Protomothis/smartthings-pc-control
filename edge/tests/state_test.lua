@@ -180,7 +180,7 @@ function T.test_apply_status_clears_an_inactive_schedule()
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "none")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 0)
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "none")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "")
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "none")
 end
 
 function T.test_apply_status_handles_a_missing_schedule_block()
