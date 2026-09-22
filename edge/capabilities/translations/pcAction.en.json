@@ -7,7 +7,7 @@
       "i18n": {
         "value": {
           "none": {
-            "label": "None"
+            "label": "Select a command"
           },
           "wake": {
             "label": "Wake"

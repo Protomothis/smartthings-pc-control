@@ -15,32 +15,32 @@
           "alternatives": [
             {
               "key": "5",
-              "value": "5 minutes",
+              "value": "5분 (5 minutes)",
               "type": "active"
             },
             {
               "key": "15",
-              "value": "15 minutes",
+              "value": "15분 (15 minutes)",
               "type": "active"
             },
             {
               "key": "30",
-              "value": "30 minutes",
+              "value": "30분 (30 minutes)",
               "type": "active"
             },
             {
               "key": "60",
-              "value": "1 hour",
+              "value": "60분 (1 hour)",
               "type": "active"
             },
             {
               "key": "120",
-              "value": "2 hours",
+              "value": "120분 (2 hours)",
               "type": "active"
             },
             {
               "key": "0",
-              "value": "Cancel",
+              "value": "취소 (Cancel)",
               "type": "inactive"
             }
           ]

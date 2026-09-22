@@ -7,7 +7,7 @@
       "i18n": {
         "value": {
           "none": {
-            "label": "—"
+            "label": "명령 선택…"
           },
           "wake": {
             "label": "깨우기"

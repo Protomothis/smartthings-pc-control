@@ -89,6 +89,25 @@ local function last_action(device)
 end
 
 --------------------------------------------------------------------------------
+-- lastAction resets to the placeholder after a moment (#82 follow-up)
+function T.test_a_command_schedules_a_reset_to_none()
+  local device = device_with()
+  driver.timers = {}
+  with_service(nil, function()
+    handlers_for(caps.COMMAND).lock(driver, device, { command = "lock", args = {} })
+  end)
+  h.assert_equal(last_action(device), "lock")
+  local reset
+  for _, t in ipairs(driver.timers) do
+    if t.name == "action-reset" then reset = t end
+  end
+  h.assert_true(reset ~= nil, "no action-reset timer scheduled")
+  h.assert_equal(reset.delay, poll.ACTION_RESET_SECONDS)
+  device.emitted = {} -- event_value reads the first match; look only at the reset
+  reset.fn()
+  h.assert_equal(last_action(device), "none")
+end
+
 -- lastAction, one row per command (#82)
 --------------------------------------------------------------------------------
 

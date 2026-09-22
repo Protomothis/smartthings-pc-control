@@ -134,6 +134,36 @@ function poll.emit_action(device, action)
   return value
 end
 
+-- #82 follow-up: the command list is a picker, not a mode. After a command the
+-- row shows what ran for a moment and then returns to the placeholder, so the
+-- next glance reads "명령 선택…" instead of a stale "화면 끄기".
+poll.ACTION_RESET_SECONDS = 5
+poll.ACTION_RESET_TIMER_FIELD = "action_reset_timer"
+
+--- Emit `lastAction` for a command that just ran, then reset it to `none`
+--- after ACTION_RESET_SECONDS. Cancels an earlier pending reset.
+function poll.flash_action(driver, device, action)
+  local prior = device:get_field(poll.ACTION_RESET_TIMER_FIELD)
+  if prior then
+    pcall(function() driver:cancel_timer(prior) end)
+    device:set_field(poll.ACTION_RESET_TIMER_FIELD, nil)
+  end
+  local value = poll.emit_action(device, action)
+  if value == state.ACTION_NONE then
+    return value
+  end
+  local ok, timer = pcall(function()
+    return driver:call_with_delay(poll.ACTION_RESET_SECONDS, function()
+      device:set_field(poll.ACTION_RESET_TIMER_FIELD, nil)
+      poll.emit_action(device, state.ACTION_NONE)
+    end, "action-reset")
+  end)
+  if ok and timer then
+    device:set_field(poll.ACTION_RESET_TIMER_FIELD, timer)
+  end
+  return value
+end
+
 --- Paint `lastAction` as `none` on a device that has never run a command, so
 --- the detail-view list reads "-" nowhere (#82). Does nothing afterwards.
 function poll.ensure_action(device)

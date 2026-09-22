@@ -15,42 +15,42 @@
           "alternatives": [
             {
               "key": "wake",
-              "value": "Wake",
+              "value": "깨우기 (Wake)",
               "type": "active"
             },
             {
               "key": "suspend",
-              "value": "Sleep",
+              "value": "절전 (Sleep)",
               "type": "active"
             },
             {
               "key": "hibernate",
-              "value": "Hibernate",
+              "value": "최대 절전 (Hibernate)",
               "type": "active"
             },
             {
               "key": "restart",
-              "value": "Restart",
+              "value": "재시작 (Restart)",
               "type": "active"
             },
             {
               "key": "shutdown",
-              "value": "Shut down",
+              "value": "종료 (Shut down)",
               "type": "active"
             },
             {
               "key": "lock",
-              "value": "Lock",
+              "value": "잠금 (Lock)",
               "type": "active"
             },
             {
               "key": "turnscreenoff",
-              "value": "Screen off",
+              "value": "화면 끄기 (Screen off)",
               "type": "active"
             },
             {
               "key": "turnscreenon",
-              "value": "Screen on",
+              "value": "화면 켜기 (Screen on)",
               "type": "active"
             }
           ]

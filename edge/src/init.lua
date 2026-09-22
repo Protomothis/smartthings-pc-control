@@ -109,7 +109,7 @@ local function handle_switch_on(driver, device)
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
   -- #82: the command row follows the switch, so both say the same thing.
-  poll.emit_action(device, "wake")
+  poll.flash_action(driver, device, "wake")
   wol.wake(driver, device)
 end
 
@@ -122,7 +122,7 @@ local function handle_switch_off(driver, device)
     report_error(device, kind, body)
     return
   end
-  poll.emit_action(device, command)
+  poll.flash_action(driver, device, command)
   poll.once(driver, device)
 end
 
@@ -182,7 +182,7 @@ local function run_command(driver, device, service_command, mode, minutes)
   if minutes <= 0 then
     -- `minutes > 0` scheduled the command instead of running it; what is
     -- pending belongs on the pcTimer row, not on "last command".
-    poll.emit_action(device, service_command)
+    poll.flash_action(driver, device, service_command)
   end
   poll.once(driver, device)
 end
