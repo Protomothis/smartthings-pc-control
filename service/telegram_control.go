@@ -126,8 +126,8 @@ var tgTexts = map[string][2]string{
 	"menu_title":      {"무엇을 할까요?", "What should I do?"},
 	"executed":        {"✅ %s 실행", "✅ %s executed"},
 	"confirm_q":       {"⚠️ <b>%s</b> – 지금 바로 실행할까요?", "⚠️ <b>%s</b> – run it right now?"},
-	"bad_minutes":     {"분은 1~1440 사이의 숫자여야 합니다. 예: <code>/shutdown 30</code>", "Minutes must be a number from 1 to 1440, e.g. <code>/shutdown 30</code>"},
-	"scheduled":       {"⏱ <b>%s</b> %d분 후 예약됨 (%s)", "⏱ <b>%s</b> scheduled in %d min (%s)"},
+	"bad_minutes":     {"분은 1~4320(3일) 사이의 숫자여야 합니다. 예: <code>/shutdown 30</code>", "Minutes must be a number from 1 to 4320 (3 days), e.g. <code>/shutdown 30</code>"},
+	"scheduled":       {"⏱ <b>%s</b> %s 후 예약됨 (%s)", "⏱ <b>%s</b> scheduled in %s (%s)"},
 	"schedule_failed": {"예약 실패: %s", "Scheduling failed: %s"},
 	"cancelled":       {"✅ 취소됨: %s", "✅ Cancelled: %s"},
 	"no_schedule":     {"활성 예약 없음", "No active schedule"},
@@ -448,14 +448,42 @@ func (telegramControl) powerCommand(name string, args []string) (string, *telegr
 		return tgText("confirm_q", label), tgConfirmKeyboard(name), nil
 	}
 	minutes, err := strconv.Atoi(args[0])
-	if err != nil || minutes < 1 || minutes > 1440 {
+	// #89: up to three days, the same ceiling /st/v1 and the app carry.
+	if err != nil || minutes < 1 || minutes > maxScheduleMinutes {
 		return tgText("bad_minutes"), nil, fmt.Errorf("invalid minutes %q", args[0])
 	}
 	delay := time.Duration(minutes) * time.Minute
 	if err := setSchedule(name, delay, originTelegram); err != nil {
 		return tgText("schedule_failed", html.EscapeString(err.Error())), nil, err
 	}
-	return tgText("scheduled", label, minutes, time.Now().Add(delay).Format("15:04")), nil, nil
+	return tgText("scheduled", label, tgDelay(delay), time.Now().Add(delay).Format("15:04")), nil, nil
+}
+
+// tgDelay names a schedule delay in the bot's language: "30분", "2시간",
+// "1시간 30분", "1일 3시간" — and formatDelay's "1 d 3 h" in English (#89).
+// "4320분 후" is not a sentence anyone reads as three days.
+func tgDelay(d time.Duration) string {
+	if getConfig().Telegram.Lang == "en" {
+		return formatDelay(d)
+	}
+	minutes := int(d / time.Minute)
+	switch {
+	case minutes < 1:
+		return fmt.Sprintf("%d초", int(d/time.Second))
+	case minutes < 60:
+		return fmt.Sprintf("%d분", minutes)
+	case minutes < 1440:
+		if rest := minutes % 60; rest != 0 {
+			return fmt.Sprintf("%d시간 %d분", minutes/60, rest)
+		}
+		return fmt.Sprintf("%d시간", minutes/60)
+	default:
+		// The odd minutes are noise at a day's distance.
+		if hours := (minutes % 1440) / 60; hours != 0 {
+			return fmt.Sprintf("%d일 %d시간", minutes/1440, hours)
+		}
+		return fmt.Sprintf("%d일", minutes/1440)
+	}
 }
 
 func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, error) {

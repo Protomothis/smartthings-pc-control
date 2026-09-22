@@ -431,9 +431,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Invalid JSON"})
 				return
 			}
-			if body.Minutes < 1 || body.Minutes > 1440 {
+			// #89: the same ceiling as /st/v1, the Telegram bot and the app.
+			if body.Minutes < 1 || body.Minutes > maxScheduleMinutes {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Minutes must be between 1 and 1440"})
+				json.NewEncoder(w).Encode(map[string]string{"status": "error",
+					"message": fmt.Sprintf("Minutes must be between 1 and %d", maxScheduleMinutes)})
 				return
 			}
 			if err := setSchedule(body.Command, time.Duration(body.Minutes)*time.Minute, originUI); err != nil {

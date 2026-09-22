@@ -342,7 +342,7 @@
                             <option value="hibernate">Hibernate</option>
                             <option value="suspend">Suspend</option>
                         </select>
-                        <input type="number" id="schedMin" min="1" max="1440" value="30">
+                        <input type="number" id="schedMin" min="1" max="4320" value="30">
                         <span class="unit" data-i18n="min">min</span>
                         <button class="btn btn-primary" onclick="scheduleCmd()" style="font-size:0.82em;" data-i18n="schedule">Schedule</button>
                     </div>
@@ -622,9 +622,23 @@
                     return;
                 }
                 form.style.display = 'none';
-                const mins = Math.floor(data.remainingSec / 60);
-                const secs = data.remainingSec % 60;
-                const timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+                // #89: schedules reach three days, so the units climb instead
+                // of counting "4319m 58s".
+                const total = Math.max(0, data.remainingSec);
+                const days = Math.floor(total / 86400);
+                const hours = Math.floor((total % 86400) / 3600);
+                const mins = Math.floor((total % 3600) / 60);
+                const secs = total % 60;
+                let timeStr;
+                if (days > 0) {
+                    timeStr = days + 'd ' + hours + 'h';
+                } else if (hours > 0) {
+                    timeStr = hours + 'h ' + mins + 'm';
+                } else if (mins > 0) {
+                    timeStr = mins + 'm ' + secs + 's';
+                } else {
+                    timeStr = secs + 's';
+                }
                 el.innerHTML = '<div class="schedule-active">⏱️ <b>' + data.command + '</b> ' + t('scheduleIn') + ' ' + timeStr +
                     ' <button class="btn btn-secondary" onclick="cancelSchedule()" style="font-size:0.78em;padding:6px 12px;margin-left:12px;">' + t('cancel') + '</button></div>';
             } catch(e) {
@@ -634,8 +648,8 @@
         async function scheduleCmd() {
             const command = document.getElementById('schedCmd').value;
             const minutes = parseInt(document.getElementById('schedMin').value);
-            if (!minutes || minutes < 1 || minutes > 1440) {
-                showStatus('Minutes must be between 1 and 1440', 'error');
+            if (!minutes || minutes < 1 || minutes > 4320) {
+                showStatus('Minutes must be between 1 and 4320', 'error');
                 return;
             }
             if (!confirm(t('confirmSchedule').replace('{cmd}', command).replace('{min}', minutes))) return;

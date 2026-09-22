@@ -55,6 +55,12 @@ var messages = map[string]map[Lang]string{
 	"settings.app":               {LangKo: "앱", LangEn: "App"},
 	"duration.sec":               {LangKo: "%d초", LangEn: "%d sec"},
 	"duration.min":               {LangKo: "%d분", LangEn: "%d min"},
+	// #89: the schedule presets reach three days, so the labels climb the
+	// units — "1시간 30분", "3일" — instead of counting minutes to 4320.
+	"duration.hour":              {LangKo: "%d시간", LangEn: "%d h"},
+	"duration.hourmin":           {LangKo: "%d시간 %d분", LangEn: "%d h %d min"},
+	"duration.day":               {LangKo: "%d일", LangEn: "%d d"},
+	"duration.dayhour":           {LangKo: "%d일 %d시간", LangEn: "%d d %d h"},
 	"notify.grace.title":         {LangKo: "전원 명령 예약됨", LangEn: "Power command scheduled"},
 	"notify.grace.body":          {LangKo: "'%s'이(가) %s 후 실행됩니다. 취소하려면 트레이 메뉴 또는 앱의 예약 탭을 사용하세요.", LangEn: "'%s' runs in %s. Cancel from the tray menu or the app's Schedule tab."},
 	"toast.runnow":               {LangKo: "바로 실행", LangEn: "Run now"},
@@ -85,6 +91,8 @@ var messages = map[string]map[Lang]string{
 	"schedule.countdown":         {LangKo: "'%s' 실행까지 %s 남음", LangEn: "'%s' runs in %s"},
 	"schedule.for":               {LangKo: "'%s' 실행 예정 — 취소하려면 [예약 취소]", LangEn: "'%s' is scheduled — [Cancel Schedule] to abort"},
 	"schedule.idle":              {LangKo: "--:--", LangEn: "--:--"},
+	// #89: the big countdown puts the days in front of hh:mm:ss.
+	"schedule.countdown.days":    {LangKo: "%d일 %s", LangEn: "%dd %s"},
 	"schedule.origin.remote":     {LangKo: "SmartThings 원격 명령 · 유예 중", LangEn: "SmartThings remote command · grace period"},
 	"schedule.origin.ui":         {LangKo: "이 앱 / WebUI에서 예약", LangEn: "Scheduled from this app / WebUI"},
 	"schedule.replaced":          {LangKo: "기존 예약 '%s'(%s)을(를) 대체했습니다", LangEn: "Replaced the previous '%s' schedule (%s)"},

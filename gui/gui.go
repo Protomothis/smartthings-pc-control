@@ -58,7 +58,11 @@ var testCommands = []struct {
 
 // Preset delays (minutes) on the schedule tab. These are the only choices:
 // free-form minute entry was dropped in v0.3.4 (#52).
-var schedulePresets = []int{5, 15, 30, 60, 120}
+//
+// #89: the same sixteen the Edge driver's list offers, up to three days
+// (maxScheduleMinutes in service/server.go). Sixteen radio buttons do not fit
+// on a row, so the tab shows them in a dropdown.
+var schedulePresets = []int{5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320}
 
 // defaultSchedulePreset is preselected on the schedule tab.
 const defaultSchedulePreset = 30
@@ -428,6 +432,46 @@ func (u *ui) formatSeconds(sec int) string {
 		return fmt.Sprintf(u.t("duration.min"), sec/60)
 	}
 	return fmt.Sprintf(u.t("duration.sec"), sec)
+}
+
+// formatMinutes renders a schedule delay in the largest unit that fits:
+// "45분", "1시간 30분", "3일" (#89). The presets now reach three days, and
+// "4320분" is not a label anyone reads as that.
+func (u *ui) formatMinutes(min int) string {
+	switch {
+	case min < 60:
+		return fmt.Sprintf(u.t("duration.min"), min)
+	case min < 1440:
+		if rest := min % 60; rest != 0 {
+			return fmt.Sprintf(u.t("duration.hourmin"), min/60, rest)
+		}
+		return fmt.Sprintf(u.t("duration.hour"), min/60)
+	default:
+		// The odd minutes are noise at a day's distance.
+		if hours := (min % 1440) / 60; hours != 0 {
+			return fmt.Sprintf(u.t("duration.dayhour"), min/1440, hours)
+		}
+		return fmt.Sprintf(u.t("duration.day"), min/1440)
+	}
+}
+
+// formatCountdown renders the remaining time for the big countdown block:
+// "05:30", "3:15:00" and, from a day on, "2일 3:15:00" (#89).
+func (u *ui) formatCountdown(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int(d.Seconds())
+	days, rest := total/86400, total%86400
+	hh, mm, ss := rest/3600, rest%3600/60, rest%60
+	switch {
+	case days > 0:
+		return fmt.Sprintf(u.t("schedule.countdown.days"), days,
+			fmt.Sprintf("%d:%02d:%02d", hh, mm, ss))
+	case hh > 0:
+		return fmt.Sprintf("%d:%02d:%02d", hh, mm, ss)
+	}
+	return fmt.Sprintf("%02d:%02d", mm, ss)
 }
 
 // section renders a subtle bold header above content — lighter than
@@ -966,24 +1010,24 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	cmdSelect := widget.NewSelect(labels, nil)
 	cmdSelect.SetSelectedIndex(0)
 
-	// Delay is preset-only (#52): one radio entry per preset.
+	// Delay is preset-only (#52): one entry per preset. #89 grew the list to
+	// sixteen (5 minutes … 3 days), which is a dropdown rather than a row of
+	// radio buttons.
 	presetLabels := make([]string, len(schedulePresets))
 	defaultLabel := ""
 	for i, m := range schedulePresets {
-		presetLabels[i] = u.formatSeconds(m * 60)
+		presetLabels[i] = u.formatMinutes(m)
 		if m == defaultSchedulePreset {
 			defaultLabel = presetLabels[i]
 		}
 	}
-	delayRadio := widget.NewRadioGroup(presetLabels, nil)
-	delayRadio.Horizontal = true
-	delayRadio.Required = true
-	delayRadio.SetSelected(defaultLabel)
+	delaySelect := widget.NewSelect(presetLabels, nil)
+	delaySelect.SetSelected(defaultLabel)
 
 	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
 		minutes := defaultSchedulePreset
 		for i, l := range presetLabels {
-			if l == delayRadio.Selected {
+			if l == delaySelect.Selected {
 				minutes = schedulePresets[i]
 			}
 		}
@@ -1013,7 +1057,7 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 
 	form := widget.NewForm(
 		widget.NewFormItem(u.t("schedule.command"), cmdSelect),
-		widget.NewFormItem(u.t("schedule.delay"), delayRadio),
+		widget.NewFormItem(u.t("schedule.delay"), delaySelect),
 	)
 
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
@@ -1291,16 +1335,10 @@ func (u *ui) loadSchedule() {
 			u.setScheduleText("")
 			return
 		}
-		d := time.Duration(s.RemainingSec) * time.Second
-		hh := int(d.Hours())
-		mm := int(d.Minutes()) % 60
-		ss := int(d.Seconds()) % 60
-		var remain string
-		if hh > 0 {
-			remain = fmt.Sprintf("%d:%02d:%02d", hh, mm, ss)
-		} else {
-			remain = fmt.Sprintf("%02d:%02d", mm, ss)
-		}
+		// #89: a schedule can be three days out, so the countdown carries the
+		// days in front of hh:mm:ss ("2일 3:15:00") instead of running up to
+		// "72:00:00".
+		remain := u.formatCountdown(time.Duration(s.RemainingSec) * time.Second)
 		cmdLabel := u.commandLabel(s.Command)
 		// Origin decides the wording everywhere (#54): a remote grace
 		// deferral is "SmartThings … grace period", a timer set here is
