@@ -134,6 +134,32 @@ local STRINGS = {
   origin_telegram = { ko = "텔레그램", en = "Telegram" },
   origin_smartthings = { ko = "SmartThings", en = "SmartThings" },
 
+  -- powerState enum, for the one-line summaries (§5.1, #78). The enum itself is
+  -- localised by the capability translations; these are for `pcStatus.summary`,
+  -- which is a plain string attribute the driver composes.
+  power_on = { ko = "켜짐", en = "On" },
+  power_sleeping = { ko = "절전", en = "Sleeping" },
+  power_hibernated = { ko = "최대 절전", en = "Hibernated" },
+  power_off = { ko = "꺼짐", en = "Off" },
+  power_waking = { ko = "깨우는 중", en = "Waking up" },
+  power_shuttingDown = { ko = "종료 중", en = "Shutting down" },
+  power_unknown = { ko = "알 수 없음", en = "Unknown" },
+
+  -- connection, in the short form a summary line can carry (#78). The long
+  -- sentences above stay in `pcStatus.message`.
+  conn_ok = { ko = "연결됨", en = "Connected" },
+  conn_down = { ko = "연결 안 됨", en = "Not connected" },
+  conn_short_unauthorized = { ko = "시크릿 불일치", en = "Secret mismatch" },
+  conn_short_unreachable = { ko = "응답 없음", en = "No response" },
+  conn_short_incompatible = { ko = "버전 불일치", en = "Version mismatch" },
+
+  -- schedule / session summaries (#78)
+  schedule_remaining = { ko = "%d분 남음", en = "%d min left" },
+  schedule_soon = { ko = "곧 실행", en = "any moment now" },
+  session_locked = { ko = "잠김", en = "Locked" },
+  session_unlocked = { ko = "사용 중", en = "In use" },
+  session_idle = { ko = "유휴 %d분", en = "idle %d min" },
+
   -- command names (§4.3). Wording follows the Go side (service/telegram_control.go).
   cmd_shutdown = { ko = "종료", en = "Shut down" },
   cmd_forceshutdown = { ko = "강제 종료", en = "Force shut down" },
@@ -198,6 +224,36 @@ function i18n.command(lang, command)
     return i18n.t(lang, key)
   end
   return tostring(command)
+end
+
+--- Localised label for a `pcPowerState.powerState` value (#78 summaries).
+--- Unknown values are returned unchanged.
+function i18n.power(lang, power_state)
+  if power_state == nil or power_state == "" then
+    return ""
+  end
+  local key = "power_" .. tostring(power_state)
+  if STRINGS[key] then
+    return i18n.t(lang, key)
+  end
+  return tostring(power_state)
+end
+
+--- Short label for a `pcStatus.connection` value, for the summary line (#78).
+--- `ok` has its own wording ("Connected"); everything else is a reason that
+--- follows "Not connected · ".
+function i18n.connection(lang, connection)
+  if connection == nil or connection == "" then
+    return ""
+  end
+  if connection == "ok" then
+    return i18n.t(lang, "conn_ok")
+  end
+  local key = "conn_short_" .. tostring(connection)
+  if STRINGS[key] then
+    return i18n.t(lang, key)
+  end
+  return tostring(connection)
 end
 
 --- True when `key` exists; used by tests to catch typos in the table.

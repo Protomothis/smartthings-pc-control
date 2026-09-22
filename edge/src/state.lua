@@ -174,6 +174,73 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
+--- `pcStatus.summary` (#78): the one line that replaced the six raw rows in the
+--- detail view. "On · Connected · v1.1.0" when the PC answers,
+--- "Not connected · Secret mismatch" when it does not.
+-- @param power a `powerState` value
+-- @param connection a `pcStatus.connection` value; nil counts as `ok`
+-- @param service_version `status.service_version`, appended when known
+function state.status_summary(power, connection, service_version, lang)
+  local parts = {}
+  if connection == nil or connection == "ok" then
+    local label = i18n.power(lang, power or state.UNKNOWN)
+    if label ~= "" then
+      parts[#parts + 1] = label
+    end
+    parts[#parts + 1] = i18n.t(lang, "conn_ok")
+    if type(service_version) == "string" and service_version ~= "" then
+      parts[#parts + 1] = service_version
+    end
+  else
+    parts[#parts + 1] = i18n.t(lang, "conn_down")
+    local reason = i18n.connection(lang, connection)
+    if reason ~= "" then
+      parts[#parts + 1] = reason
+    end
+  end
+  return table.concat(parts, " · ")
+end
+
+--- `pcSchedule.summary` (#78): "Shut down · 4 min left · SmartThings", or an
+--- empty string when nothing is scheduled (the row is hidden then).
+function state.schedule_summary(schedule, lang)
+  schedule = schedule or {}
+  if schedule.active ~= true then
+    return ""
+  end
+  local parts = {}
+  local command = i18n.command(lang, schedule.command)
+  if command ~= "" then
+    parts[#parts + 1] = command
+  end
+  local seconds = math.floor(tonumber(schedule.remaining_seconds) or 0)
+  if seconds >= 60 then
+    -- Rounded up: "1 min left" is friendlier than "0 min left" at 40 seconds.
+    parts[#parts + 1] = i18n.t(lang, "schedule_remaining", math.ceil(seconds / 60))
+  else
+    parts[#parts + 1] = i18n.t(lang, "schedule_soon")
+  end
+  local origin = i18n.origin(lang, schedule.origin)
+  if origin ~= "" then
+    parts[#parts + 1] = origin
+  end
+  return table.concat(parts, " · ")
+end
+
+--- `pcSession.summary` (#78): "Locked · idle 20 min · kim". Only composed when
+--- the session block is exposed; see apply_status.
+function state.session_summary(session, lang)
+  session = session or {}
+  local parts = {
+    i18n.t(lang, session.locked == true and "session_locked" or "session_unlocked"),
+    i18n.t(lang, "session_idle", math.floor((tonumber(session.idle_seconds) or 0) / 60)),
+  }
+  if type(session.user) == "string" and session.user ~= "" then
+    parts[#parts + 1] = session.user
+  end
+  return table.concat(parts, " · ")
+end
+
 -- `pcStatus.message` shows one sentence, so several applicable notices need an
 -- order. Highest priority first:
 --
@@ -235,13 +302,16 @@ local ATTRIBUTES = {
   [caps.COMMAND] = { lastCommand = true },
   [caps.SCHEDULE] = {
     active = true, command = true, remainingSeconds = true,
-    executeAt = true, origin = true,
+    executeAt = true, origin = true, summary = true,
   },
   [caps.STATUS] = {
     connection = true, serviceVersion = true, updateAvailable = true,
-    wolReady = true, lastSeen = true, message = true,
+    wolReady = true, lastSeen = true, message = true, summary = true,
   },
-  [caps.SESSION] = { locked = true, idleMinutes = true, user = true },
+  [caps.SESSION] = {
+    locked = true, idleMinutes = true, user = true,
+    summary = true, exposed = true,
+  },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.
@@ -279,6 +349,8 @@ function state.apply_status(device_state, status, opts)
   -- `execute_at` is RFC3339 with the PC's offset; the app shows the local time.
   ev(events, caps.SCHEDULE, "executeAt", active and hhmm(schedule.execute_at) or "")
   ev(events, caps.SCHEDULE, "origin", active and i18n.origin(lang, schedule.origin) or "")
+  -- #78: the one row the detail view shows, and only while `active` is true.
+  ev(events, caps.SCHEDULE, "summary", state.schedule_summary(schedule, lang))
 
   local wol = status.wol or {}
   local update = status.update or {}
@@ -290,11 +362,17 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
   ev(events, caps.STATUS, "message",
     state.status_message(status, { lang = lang, error = opts.error, note = opts.note }))
+  -- #78: "On · Connected · v1.1.0". A successful status is always `ok` here;
+  -- the failure wording comes from poll.emit_connection.
+  ev(events, caps.STATUS, "summary", state.status_summary(power, "ok", status.service_version, lang))
 
-  -- §4.2: the session block is opt-in. When it is off we emit nothing at all,
-  -- so the tiles keep whatever they last showed rather than flipping to a
-  -- made-up "unlocked, 0 minutes, nobody".
+  -- §4.2: the session block is opt-in. `exposed` is emitted either way so the
+  -- detail view can hide the session row again when the user opts out; the
+  -- values themselves stay untouched when it is off, so the tiles keep what
+  -- they last showed rather than flipping to a made-up "unlocked, 0 minutes,
+  -- nobody".
   local session = status.session or {}
+  ev(events, caps.SESSION, "exposed", session.exposed == true)
   if session.exposed == true then
     -- `locked` and `idle_seconds` are absent when the service cannot read the
     -- session (nobody logged in, WTS refused); false/0 is the honest default
@@ -303,6 +381,7 @@ function state.apply_status(device_state, status, opts)
     ev(events, caps.SESSION, "idleMinutes",
       math.floor((tonumber(session.idle_seconds) or 0) / 60))
     ev(events, caps.SESSION, "user", session.user or "")
+    ev(events, caps.SESSION, "summary", state.session_summary(session, lang))
   end
 
   return events

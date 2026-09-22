@@ -152,6 +152,47 @@ local function handle_refresh(driver, device)
   poll.once(driver, device)
 end
 
+--- The remote-control buttons of the detail view (#78): one no-argument
+--- capability command per row, mapped to the service command name of §4.3.
+--- `wake` is not a service command at all — it is the WoL sequence, the same
+--- thing `switch on` does.
+local BUTTONS = {
+  wake = "wake",
+  suspend = "suspend",
+  hibernate = "hibernate",
+  restart = "restart",
+  shutdown = "shutdown",
+  lock = "lock",
+  screenOff = "turnscreenoff",
+  screenOn = "turnscreenon",
+}
+
+--- §4.3 `mode` for a button press, from the `buttonMode` preference (§5.4).
+--- `default` follows whatever grace period the PC is configured with (so the
+--- toast is still cancellable); `immediate` skips it.
+local function button_mode(device)
+  local mode = (device.preferences or {}).buttonMode
+  if mode == "immediate" then
+    return "immediate"
+  end
+  return "default"
+end
+
+--- Build the handler for one remote-control button.
+local function button_handler(service_command)
+  return function(driver, device)
+    if service_command == "wake" then
+      return handle_switch_on(driver, device)
+    end
+    local ok, body, kind = client.command(device, service_command, button_mode(device), 0)
+    if not ok then
+      report_error(device, kind, body)
+      return
+    end
+    poll.once(driver, device)
+  end
+end
+
 --- pcCommand.execute(command, mode, minutes) — capabilities/pcCommand.json.
 --- `minutes > 0` turns the same endpoint into a schedule (§4.3).
 local function handle_execute(driver, device, cmd)
@@ -231,7 +272,11 @@ local capability_handlers = {
 -- `capabilities/pcSchedule.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
-  capability_handlers[custom.command.ID] = { execute = handle_execute }
+  local handlers = { execute = handle_execute }
+  for name, service_command in pairs(BUTTONS) do
+    handlers[name] = button_handler(service_command)
+  end
+  capability_handlers[custom.command.ID] = handlers
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

@@ -105,11 +105,17 @@ function poll.emit_message(device, message)
   poll.emit(device, { { cap = caps.STATUS, attr = "message", value = message or "" } })
 end
 
---- Emit `pcStatus.connection` + `pcStatus.message` together.
+--- Emit `pcStatus.connection` + `pcStatus.message` + `pcStatus.summary` (#78).
+--- The summary is the only status row the detail view still shows, so a failed
+--- poll has to rewrite it as well; the power state comes from the device so the
+--- line stays consistent with the tile.
 function poll.emit_connection(device, connection, message)
+  local s = poll.get_state(device)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
+    { cap = caps.STATUS, attr = "summary",
+      value = state.status_summary((s or {}).power_state, connection, nil, poll.lang(device)) },
   })
 end
 

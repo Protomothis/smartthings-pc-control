@@ -4,7 +4,9 @@
 # `turnscreenoff`, and the state follows `status.display`. No custom
 # capabilities and no preferences - everything about the connection belongs to
 # the parent, and the child is created and removed by its `createDisplayDevice`
-# preference.
+# preference. There is nothing to translate here for #78: the label comes from
+# i18n.lua (`display_label`) and the only capability is the stock `switch`,
+# which SmartThings localises itself.
 name: pc-display.v1
 components:
   - id: main
