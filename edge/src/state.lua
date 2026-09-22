@@ -21,6 +21,10 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
+-- pcPlan.status enum (§5.1, #83): the string twin of `active`.
+state.IDLE = "idle"
+state.SCHEDULED = "scheduled"
+
 -- "switch" is not a custom capability, so it is referenced by its plain id.
 state.CAP_SWITCH = "switch"
 
@@ -48,7 +52,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcTimer.schedule` can say whether
+    -- last polled `schedule.active`, so `pcPlan.schedule` can say whether
     -- it replaced an existing schedule (§4.3) without asking the service twice
     schedule_active = false,
   }
@@ -250,7 +254,7 @@ function state.status_summary(connection, service_version, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcTimer.summary` (#78): "Shut down · 4 min left · SmartThings", or an
+--- `pcPlan.summary` (#78): "Shut down · 4 min left · SmartThings", or an
 --- empty string when nothing is scheduled (the row is hidden then).
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
@@ -390,7 +394,7 @@ local ATTRIBUTES = {
   [caps.POWER_STATE] = { powerState = true },
   [caps.COMMAND] = { lastCommand = true, lastAction = true },
   [caps.SCHEDULE] = {
-    active = true, command = true, remainingSeconds = true,
+    active = true, status = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true,
   },
   [caps.STATUS] = {
@@ -432,6 +436,11 @@ function state.apply_status(device_state, status, opts)
   local schedule = status.schedule or {}
   local active = schedule.active == true
   ev(events, caps.SCHEDULE, "active", active)
+  -- #83: the same fact as a string enum. A detailView `list` whose `state`
+  -- points at a boolean attribute does not render at all (the row shows "-"
+  -- with no chevron, measured 2026-09-22), so the schedule list reads
+  -- `status` and `active` stays for the automation condition.
+  ev(events, caps.SCHEDULE, "status", active and state.SCHEDULED or state.IDLE)
   ev(events, caps.SCHEDULE, "command", active and i18n.command(lang, schedule.command) or "")
   ev(events, caps.SCHEDULE, "remainingSeconds",
     active and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0)

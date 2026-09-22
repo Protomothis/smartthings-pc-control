@@ -237,6 +237,9 @@ function T.test_the_status_block_goes_through_the_same_path_as_a_poll()
   local nxt, events = push.apply(state.new(), body, { now = "14:05:00", lang = "en" })
   h.assert_true(nxt.schedule_active)
   h.assert_true(h.event_value(events, caps.SCHEDULE, "active"))
+  -- #83: a push carries `status` too, so the schedule row updates without
+  -- waiting for the next poll.
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), "scheduled")
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "23:10")
   h.assert_equal(h.event_value(events, caps.STATUS, "lastSeen"), "14:05:00")
   h.assert_equal(h.event_value(events, caps.STATUS, "connection"), "ok")

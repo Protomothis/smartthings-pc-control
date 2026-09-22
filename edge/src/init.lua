@@ -181,7 +181,7 @@ local function run_command(driver, device, service_command, mode, minutes)
   end
   if minutes <= 0 then
     -- `minutes > 0` scheduled the command instead of running it; what is
-    -- pending belongs on the pcTimer row, not on "last command".
+    -- pending belongs on the pcPlan row, not on "last command".
     poll.flash_action(driver, device, service_command)
   end
   poll.once(driver, device)
@@ -206,7 +206,7 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
--- Commands pcTimer.schedule may carry; anything else (or nothing, when the
+-- Commands pcPlan.schedule may carry; anything else (or nothing, when the
 -- detail-view list only sends minutes) falls back to the switch-off action
 -- when that is schedulable, else shutdown.
 local SCHEDULABLE = { shutdown = true, restart = true, suspend = true, hibernate = true }
@@ -222,11 +222,11 @@ local function schedule_command(device, requested)
   return "shutdown"
 end
 
---- pcTimer.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- pcPlan.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcTimer.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
+--- pcPlan.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -280,7 +280,7 @@ local capability_handlers = {
 }
 
 -- Command names are literals: they are what `capabilities/pcAction.json` and
--- `capabilities/pcTimer.json` declare, and the generated capability object
+-- `capabilities/pcPlan.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
   local handlers = { execute = handle_execute }

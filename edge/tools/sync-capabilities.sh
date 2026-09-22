@@ -16,14 +16,15 @@
 #
 # A capability that does not exist on the account yet has to be CREATED first:
 # `capabilities:update` refuses an unknown id. That is what a rename means -
-# #82 turned `pcControl` into `pcAction`, because the hub caches a definition by
-# id for the whole hub (§14.4) and never re-reads a changed one:
+# #82 turned `pcControl` into `pcAction` and #83 turned `pcTimer` into `pcPlan`,
+# because the hub caches a definition by id for the whole hub (§14.4) and never
+# re-reads a changed one:
 #
-#   smartthings capabilities:create -i capabilities/pcAction.json
+#   smartthings capabilities:create -i capabilities/pcPlan.json
 #   smartthings capabilities:presentation:create <new id> --capability-version 1 \
-#     -i capabilities/pcAction.presentation.json
+#     -i capabilities/pcPlan.presentation.json
 #   smartthings capabilities:translations:upsert <new id> --capability-version 1 \
-#     -i capabilities/translations/pcAction.ko.json     # and .en.json
+#     -i capabilities/translations/pcPlan.ko.json     # and .en.json
 #
 # and once every profile that referenced the old id is deployed and no device
 # is on it any more, `smartthings capabilities:delete <old id>`.
@@ -37,7 +38,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcAction pcTimer pcHealth pcUser)
+CAPABILITIES=(pcPower pcAction pcPlan pcHealth pcUser)
 VERSION=1
 TAGS=(ko en)
 

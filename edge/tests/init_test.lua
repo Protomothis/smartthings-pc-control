@@ -187,7 +187,7 @@ end
 
 function T.test_a_scheduled_execute_does_not_claim_it_already_ran()
   -- `minutes > 0` schedules instead of executing (§4.3); what is pending is
-  -- the pcTimer row's business.
+  -- the pcPlan row's business.
   local device = device_with()
   with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
@@ -237,7 +237,7 @@ function T.test_a_device_that_has_run_nothing_shows_none()
 end
 
 --------------------------------------------------------------------------------
--- pcTimer: the cancel entry of the preset list (#82)
+-- pcPlan: the cancel entry of the preset list (#82)
 --------------------------------------------------------------------------------
 
 function T.test_schedule_zero_cancels()

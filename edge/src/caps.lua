@@ -20,7 +20,9 @@ caps.POWER_STATE = NAMESPACE .. ".pcpower"
 -- new id: `pcControl` became `pcAction`. The Lua constant keeps its name -
 -- what it points at is "the command capability", whatever it is called.
 caps.COMMAND = NAMESPACE .. ".pcaction"
-caps.SCHEDULE = NAMESPACE .. ".pctimer"
+-- #83: same rule again - the definition gained a `status` enum (a detailView
+-- list cannot read a boolean, §14.5), so `pcTimer` became `pcPlan`.
+caps.SCHEDULE = NAMESPACE .. ".pcplan"
 caps.STATUS = NAMESPACE .. ".pchealth"
 caps.SESSION = NAMESPACE .. ".pcuser"
 
