@@ -1,0 +1,47 @@
+{
+  "tag": "en",
+  "label": "PC status",
+  "attributes": {
+    "summary": {
+      "label": "Status"
+    },
+    "connection": {
+      "label": "Connection",
+      "i18n": {
+        "value": {
+          "ok": {
+            "label": "Connected"
+          },
+          "unauthorized": {
+            "label": "Not authorized"
+          },
+          "unreachable": {
+            "label": "Unreachable"
+          },
+          "incompatible": {
+            "label": "Incompatible version"
+          }
+        }
+      }
+    },
+    "serviceVersion": {
+      "label": "Service version"
+    },
+    "updateAvailable": {
+      "label": "Update available"
+    },
+    "wolReady": {
+      "label": "Wake-on-LAN ready"
+    },
+    "lastSeen": {
+      "label": "Last seen"
+    },
+    "message": {
+      "label": "Notice"
+    },
+    "versions": {
+      "label": "Versions"
+    }
+  },
+  "commands": {}
+}

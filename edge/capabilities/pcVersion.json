@@ -1,0 +1,24 @@
+{
+  "id": "numbersystem53811.pcversion",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcVersion",
+  "ephemeral": false,
+  "attributes": {
+    "versions": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {}
+}

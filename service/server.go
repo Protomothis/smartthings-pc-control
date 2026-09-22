@@ -141,6 +141,8 @@ type Config struct {
 	GraceSeconds int `json:"grace_seconds"`
 	// Telegram is the notification channel (v1.0, design doc §10).
 	Telegram TelegramConfig `json:"telegram"`
+	// SmartThings holds the Edge driver settings (edge-driver doc §3.7).
+	SmartThings SmartThingsConfig `json:"smartthings"`
 	// Notify says which Category.Kind events are sent. Missing entries
 	// mean the catalogue default; loadConfig/saveConfig store the full map.
 	Notify notify.Config `json:"notify"`
@@ -164,6 +166,35 @@ type TelegramConfig struct {
 	QuietHours     notify.QuietHours `json:"quiet_hours"`
 }
 
+// SmartThingsConfig is the "smartthings" object in config.json
+// (edge-driver doc §3.7). Hot-reloaded: every /st/v1 request reads the
+// live value, so a save takes effect without a restart.
+type SmartThingsConfig struct {
+	// Discovery answers SSDP M-SEARCH probes (#69). A missing key in an
+	// older config.json keeps the default true, because loadConfig decodes
+	// over defaultConfig.
+	Discovery bool `json:"discovery"`
+	// AllowedHubs restricts /st/v1/* to these source IPs. Empty (the
+	// default) allows any source that knows the secret.
+	AllowedHubs []string `json:"allowed_hubs"`
+	// ExposeSession opts into the session block of GET /st/v1/status
+	// (lock state and idle time); ExposeSessionUser additionally reveals
+	// the user name. Both default to off.
+	ExposeSession     bool `json:"expose_session"`
+	ExposeSessionUser bool `json:"expose_session_user"`
+}
+
+// withDefaults normalises the slice field; Discovery cannot be defaulted
+// here (false is a legitimate value) and relies on decoding over defaults.
+func (s SmartThingsConfig) withDefaults() SmartThingsConfig {
+	if s.AllowedHubs == nil {
+		s.AllowedHubs = []string{}
+	} else {
+		s.AllowedHubs = slices.Clone(s.AllowedHubs)
+	}
+	return s
+}
+
 var defaultConfig = Config{
 	Port:          5001,
 	Secret:        "",
@@ -178,6 +209,12 @@ var defaultConfig = Config{
 		// over defaultConfig (security_bypass/digest default true).
 		QuietHours: notify.QuietHours{Start: "22:00", End: "07:00", SecurityBypass: true, Digest: true},
 	},
+	SmartThings: SmartThingsConfig{
+		// A missing "smartthings" object (an older config.json) keeps SSDP
+		// discovery on; everything else stays off/empty.
+		Discovery:   true,
+		AllowedHubs: []string{},
+	},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -186,6 +223,7 @@ var defaultConfig = Config{
 // config.json may omit. It never aliases maps or slices of the receiver.
 func (c Config) withDefaults() Config {
 	c.Telegram = c.Telegram.withDefaults()
+	c.SmartThings = c.SmartThings.withDefaults()
 	c.Notify = c.Notify.WithDefaults()
 	return c
 }
@@ -222,6 +260,7 @@ func (t TelegramConfig) withDefaults() TelegramConfig {
 func (c Config) forUpdate() Config {
 	c.Notify = nil
 	c.Telegram.AllowedChatIDs = nil
+	c.SmartThings.AllowedHubs = nil
 	return c
 }
 
@@ -337,6 +376,9 @@ func normalizeConfig(cfg Config, current Config) Config {
 	if cfg.Telegram.AllowedChatIDs == nil {
 		cfg.Telegram.AllowedChatIDs = current.Telegram.AllowedChatIDs
 	}
+	if cfg.SmartThings.AllowedHubs == nil {
+		cfg.SmartThings.AllowedHubs = current.SmartThings.AllowedHubs
+	}
 	if cfg.Notify == nil {
 		cfg.Notify = current.Notify
 	}
@@ -365,6 +407,10 @@ func configChangedKeys(old, new Config) []string {
 	add("telegram.lang", old.Telegram.Lang != new.Telegram.Lang)
 	add("telegram.pc_name", old.Telegram.PCName != new.Telegram.PCName)
 	add("telegram.quiet_hours", old.Telegram.QuietHours != new.Telegram.QuietHours)
+	add("smartthings.discovery", old.SmartThings.Discovery != new.SmartThings.Discovery)
+	add("smartthings.allowed_hubs", !slices.Equal(old.SmartThings.AllowedHubs, new.SmartThings.AllowedHubs))
+	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
+	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
 	return keys
 }
 
@@ -400,6 +446,9 @@ func saveConfig(cfg Config) error {
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see telegram_control.go).
 	reconcileTelegramControl()
+	// SSDP discovery follows smartthings.discovery without a restart
+	// (no-op unless the service has started it, see st_ssdp.go).
+	reconcileSSDP()
 	return nil
 }
 
@@ -517,6 +566,10 @@ func StartHTTPServer(stop chan struct{}) {
 	}
 
 	mux := http.NewServeMux()
+	// The /st/v1 tree (edge-driver doc §3) shares the command port; a more
+	// specific pattern wins over "/", so the legacy /{secret}/{command}
+	// handler still sees everything else.
+	registerSTRoutes(mux)
 	mux.HandleFunc("/", newCommandHandler())
 
 	server := &http.Server{
@@ -541,6 +594,7 @@ func StartHTTPServer(stop chan struct{}) {
 // (shutdown, restart, ...) and logs the outcome; a failure also raises
 // system.exec_failed naming that command.
 func executeCommand(command string, name string, args ...string) {
+	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -575,6 +629,7 @@ func executeCommandWithLog(label string, name string, args ...string) {
 // executePowerShell runs script for the catalogue command `command`; see
 // executeCommand for the failure notification.
 func executePowerShell(command string, script string) {
+	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -682,7 +737,22 @@ func getWoLStatus() WoLStatus {
 
 	// Get WoL status via PowerShell (by MAC matching)
 	// WakeOnMagicPacket: 0=Unsupported, 1=Disabled, 2=Enabled
-	wolScript := "Get-NetAdapterPowerManagement | Select-Object @{N='MAC';E={(Get-NetAdapter $_.Name).MacAddress}}, WakeOnMagicPacket | ConvertTo-Json -Compress"
+	//
+	// Per adapter, not one pipeline: Get-NetAdapterPowerManagement throws
+	// "A device attached to the system is not functioning" on some Realtek
+	// drivers, which used to fail the whole query and report WoL as off even
+	// though the adapter's advanced property "*WakeOnMagicPacket" is enabled.
+	// That property is the fallback (registry value 1 = enabled).
+	wolScript := `Get-NetAdapter -Physical | ForEach-Object {
+  $n = $_.Name; $v = 0
+  try { $pm = Get-NetAdapterPowerManagement -Name $n -ErrorAction Stop; $v = [int]$pm.WakeOnMagicPacket } catch { $v = -1 }
+  if ($v -ne 2) {
+    $p = Get-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*WakeOnMagicPacket' -ErrorAction SilentlyContinue
+    if ($p) { if ([int]($p.RegistryValue | Select-Object -First 1) -eq 1) { $v = 2 } elseif ($v -lt 1) { $v = 1 } }
+    elseif ($v -lt 0) { $v = 0 }
+  }
+  [pscustomobject]@{ MAC = $_.MacAddress; WakeOnMagicPacket = $v }
+} | ConvertTo-Json -Compress`
 	wolCmd := exec.Command("powershell", "-NoProfile", "-Command", wolScript)
 	wolOutput, wolErr := wolCmd.CombinedOutput()
 	if wolErr != nil {
@@ -852,6 +922,12 @@ const (
 	// originTelegram: "/shutdown 30" and friends from the Telegram bot (#61).
 	// The user asked from their phone, so no tray toast is needed.
 	originTelegram
+	// originSmartThings: an explicit schedule from the Edge driver
+	// (POST /st/v1/command with minutes > 0, #67). Like Telegram, the user
+	// is acting from their phone, so no tray toast is needed — a grace
+	// deferral of an immediate SmartThings command stays originRemote,
+	// because there the toast is the point.
+	originSmartThings
 )
 
 // wakesTrayApp reports whether a schedule from this origin should launch
@@ -860,14 +936,16 @@ func (o scheduleOrigin) wakesTrayApp() bool {
 	return o == originRemote
 }
 
-// String is the wire form used by /api/schedule ("ui", "remote" or
-// "telegram").
+// String is the wire form used by /api/schedule ("ui", "remote",
+// "telegram" or "smartthings").
 func (o scheduleOrigin) String() string {
 	switch o {
 	case originRemote:
 		return "remote"
 	case originTelegram:
 		return "telegram"
+	case originSmartThings:
+		return "smartthings"
 	}
 	return "ui"
 }
@@ -890,6 +968,17 @@ func wakeTrayApp(command string) {
 	}()
 }
 
+const (
+	// maxScheduleMinutes is the longest delay a schedule may carry, in
+	// minutes: three days (#89). Every front end shares it — the SmartThings
+	// driver's `schedule(minutes)` definition, /api/schedule, the WebUI form,
+	// the Telegram `/shutdown N` argument and the app's schedule tab — so a
+	// delay one of them offers is a delay the others can show and cancel.
+	maxScheduleMinutes = 4320
+	// maxScheduleDelay is the same ceiling as a duration.
+	maxScheduleDelay = maxScheduleMinutes * time.Minute
+)
+
 // setSchedule creates a new scheduled task. origin says who requested it;
 // remote grace schedules additionally wake the tray app (see wakeTrayApp).
 func setSchedule(command string, delay time.Duration, origin scheduleOrigin) error {
@@ -908,6 +997,12 @@ func setSchedule(command string, delay time.Duration, origin scheduleOrigin) err
 func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) error {
 	if delay <= 0 {
 		return fmt.Errorf("invalid delay: %s", delay)
+	}
+	// #89: the ceiling every front end shares. The Edge driver, /api/schedule
+	// and the Telegram bot all check it before they get here; this is the last
+	// guard, so no caller can arm a timer the others could never show.
+	if delay > maxScheduleDelay {
+		return fmt.Errorf("delay too long: %s (at most %d minutes)", delay, maxScheduleMinutes)
 	}
 	scheduleMu.Lock()
 	defer scheduleMu.Unlock()
@@ -974,13 +1069,31 @@ func scheduleTask(command string, delay time.Duration, origin scheduleOrigin) er
 	return nil
 }
 
-// formatDelay renders a delay for log lines: whole minutes as "5 min",
-// anything shorter (or not a whole minute) as seconds ("30 sec").
+// formatDelay renders a delay for log lines and notifications: whole minutes
+// as "5 min", anything shorter (or not a whole minute) as seconds ("30 sec").
+// #89: schedules now reach three days, and "4320 min" is not a number anyone
+// reads as three days, so from an hour on it climbs the units — "2 h",
+// "1 h 30 min", "1 d", "1 d 3 h".
 func formatDelay(d time.Duration) string {
-	if d >= time.Minute && d%time.Minute == 0 {
-		return fmt.Sprintf("%d min", int(d/time.Minute))
+	if d < time.Minute || d%time.Minute != 0 {
+		return fmt.Sprintf("%d sec", int(d/time.Second))
 	}
-	return fmt.Sprintf("%d sec", int(d/time.Second))
+	minutes := int(d / time.Minute)
+	switch {
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes < 1440:
+		if rest := minutes % 60; rest != 0 {
+			return fmt.Sprintf("%d h %d min", minutes/60, rest)
+		}
+		return fmt.Sprintf("%d h", minutes/60)
+	default:
+		// The odd minutes are noise at a day's distance.
+		if hours := (minutes % 1440) / 60; hours != 0 {
+			return fmt.Sprintf("%d d %d h", minutes/1440, hours)
+		}
+		return fmt.Sprintf("%d d", minutes/1440)
+	}
 }
 
 // cancelSchedule cancels the current scheduled task on behalf of the local

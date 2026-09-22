@@ -34,11 +34,12 @@ SmartThings PC Control은 SmartThings(그리고 원하면 텔레그램)에서 Wi
 ### 주요 기능
 
 🖥️ **네이티브 데스크톱 앱** — 설정 / 명령 / 예약 / 알림 / 네트워크 / 로그 6개 탭, 트레이 상주, 한국어·영어, 다크/라이트 테마  
-🎮 **8개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off, force shutdown, ping  
+🎮 **9개 전원 명령** — shutdown, restart, hibernate, suspend, lock, screen off, **screen on**, force shutdown, ping  
+📲 **전용 SmartThings Edge 드라이버** (v1.1.0 신규) — 전원 상태(절전·최대절전·깨우는 중·종료 대기)·유예 카운트다운과 출처·예약/취소·연결 및 WoL 진단을 SmartThings 앱에 그대로 표시. **SSDP 자동 검색**으로 IP 입력 없이 추가, 화면 켜기/끄기를 포함한 명령 목록, 푸시로 즉시 반영. 기존 PCControl 드라이버도 계속 동작  
 🛡️ **원격 명령 유예** — SmartThings의 종료/재시작/절전/최대절전을 선택한 시간(10초~30분, 기본 5분) 뒤 실행, 토스트·트레이·앱·텔레그램에서 취소  
-📨 **텔레그램 알림** — 원격 명령·예약·전원·보안·시스템 이벤트 21종을 골라 받기, 조용한 시간대와 요약 한 통, HTML 템플릿 메시지  
-🤖 **텔레그램에서 제어** — `/status` `/menu` `/shutdown 30` 같은 명령과 인라인 버튼, 허용 Chat ID만 처리  
-⏱️ **예약 종료** — 5/15/30/60/120분 프리셋, 큰 카운트다운, 출처(SmartThings / 앱 / 텔레그램) 표시  
+📨 **텔레그램 알림** — 원격 명령·예약·전원·보안·시스템 이벤트 21종을 골라 받기, 조용한 시간대와 요약 한 통, HTML 템플릿 메시지, 메시지 머리말에 **PC 이름** 표시  
+🤖 **텔레그램에서 제어** — `/status` `/menu` `/shutdown 30` `/screenon` 같은 명령과 인라인 버튼, 허용 Chat ID만 처리  
+⏱️ **예약 종료** — 5분~3일(72시간) 프리셋 16종, 큰 카운트다운, 출처(SmartThings / 앱 / 텔레그램) 표시  
 📡 **WoL 상태** — 어댑터별 Wake-on-LAN 상태, MAC, IP, 외부 IP  
 🔄 **서명된 자동 업데이트** — ed25519 서명 매니페스트로 검증한 릴리스만 UAC 한 번으로 교체, 실패 시 롤백  
 🌐 **Web UI (선택)** — 기본 비활성, 켜면 로컬/LAN 브라우저에서 접속  
@@ -56,6 +57,7 @@ SmartThings PC Control은 SmartThings(그리고 원하면 텔레그램)에서 Wi
 | `forceshutdown` | 즉시 강제 종료 (유예 없음) | – |
 | `lock` | 모든 활성 세션 잠금 | – |
 | `turnscreenoff` | 모니터 끄기 (로그인 상태에서만) | – |
+| `turnscreenon` | 모니터 켜기 (로그인 상태에서만) | – |
 
 ### 설치
 
@@ -80,6 +82,8 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 2. SmartThings 허브에 [PCControl Edge 드라이버](https://github.com/toddaustin07/PCControl)를 설치하고 PC 디바이스를 추가합니다.
 3. 디바이스 설정에 PC의 **IP 주소**, **포트**, **시크릿**을 이 서비스와 같게 넣습니다. 명령 URL은 `http://<PC-IP>:5001/{secret}/{command}` 형식입니다.
 
+> 💡 v1.1.0부터는 **전용 Edge 드라이버**를 쓸 수 있습니다. 상태 표시와 예약·취소가 훨씬 자세하고 IP를 손으로 넣을 필요도 없습니다 — 아래 [SmartThings Edge 드라이버](#smartthings-edge-드라이버) 참고.
+
 **텔레그램 연결** (선택)
 
 1. 텔레그램에서 [@BotFather](https://t.me/BotFather)에게 `/newbot`을 보내 봇을 만들고 토큰을 복사합니다.
@@ -91,15 +95,32 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 
 <img src="docs/gui-notify.png" alt="알림 탭 — 텔레그램 연결" width="49%"> <img src="docs/gui-schedule.png" alt="예약 탭 — 카운트다운과 취소" width="49%">
 
+### SmartThings Edge 드라이버
+
+v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함께 들어 있습니다(`edge/` 폴더). 허브 안에서 로컬로 돌고, 서비스의 `/st/v1` API로 통신합니다. **채널 공개는 실기 테스트를 마친 뒤** 별도로 안내합니다. 그때까지는 기존 PCControl 드라이버를 그대로 쓰면 됩니다.
+
+- **정확한 전원 상태** — 켜짐 / 절전 / 최대절전 / 꺼짐 / 깨우는 중 / 종료 대기를 구분합니다. 서비스가 종료·절전 직전에 허브로 푸시를 보내므로 폴링을 기다리지 않습니다.
+- **유예와 예약이 보입니다** — 남은 시간 카운트다운, 출처(SmartThings · 앱 · 텔레그램), [취소] 버튼, 5분에서 3일(72시간)까지 16개 프리셋 예약. 어디서 취소하든 모든 곳에서 함께 사라집니다.
+- **SSDP 자동 검색** — [기기 추가 → 주변 기기 검색]으로 PC를 찾습니다. IP·포트·호스트 이름이 채워진 채 추가되므로 **시크릿만** 넣으면 됩니다. DHCP로 IP가 바뀌어도 따라갑니다.
+- **조용한 실패 제거** — 시크릿 불일치·연결 불가·버전 비호환·WoL 비활성 어댑터를 상태 줄에 한 줄로 표시합니다.
+- **상세 화면 두 카드** — 위에 상태(전원 상태·마지막 실행·예약 요약·세션·상태·버전), 아래에 조작(명령·예약할 명령·예약 시간). 화면 켜기/끄기도 명령 목록에 있고, 자동화는 `pcExec.execute`·`pcDelay.schedule`을 씁니다.
+- **여러 PC** — MachineGuid로 장치를 구분하므로 허브 하나로 여러 PC를 다뤄도 섞이지 않습니다. 시크릿·MAC은 장치별 설정입니다.
+
+설치·환경설정·자동화 예시·문제 해결은 **[`edge/README.md`](edge/README.md)** 와 Wiki의 [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) 페이지에 있습니다.
+
+> 기존 [PCControl 드라이버](https://github.com/toddaustin07/PCControl)는 그대로 동작합니다. 레거시 명령 경로(`/{secret}/{command}`)를 바꾸지 않았으므로 **옮겨 갈 의무는 없습니다.**
+>
+> SSDP 자동 검색을 쓰려면 PC에서 UDP 1900 인바운드가 열려 있어야 하고(설치 시 자동 추가), 네트워크 프로필이 **개인**이어야 하며, 허브와 PC가 같은 서브넷에 있어야 합니다.
+
 ### 데스크톱 앱 한눈에
 
 | 탭 | 내용 |
 |---|---|
 | **설정** | 서비스 설치·시작·제거, 포트·시크릿, 원격 명령 유예 시간, WebUI 브라우저 접속, 서비스 재시작, 로그인 자동 시작, 업데이트 확인 |
-| **명령** | 8개 명령을 이 PC에서 즉시 실행 (전원 명령은 확인 대화상자) |
-| **예약** | 명령 + 5/15/30/60/120분 프리셋으로 예약, 큰 카운트다운, 출처 표시, [예약 취소] |
+| **명령** | 9개 명령을 이 PC에서 즉시 실행 (전원 명령은 확인 대화상자) |
+| **예약** | 명령 + 프리셋 16종(5분~3일)으로 예약, 큰 카운트다운, 출처 표시, [예약 취소] |
 | **알림** | 텔레그램 연결·제어 허용·받을 알림(카테고리별 체크)·조용한 시간대·상세 수준·PC 이름 |
-| **네트워크** | 어댑터별 WoL 상태·MAC·IP, 외부 IP |
+| **네트워크** | 어댑터별 WoL 상태·MAC·IP, 외부 IP, **SmartThings**(연결된 허브·자동 검색·세션 노출·허브 허용 목록) |
 | **로그** | service.log 실시간 보기, 필터, 자동 새로고침, 파일·폴더 열기 |
 
 - 상단 상태줄: 연결 상태 색 점, 버전, 언어 전환(한국어/English).
@@ -118,6 +139,12 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
   "webui_remote": false,
   "shutdown_grace": true,
   "grace_seconds": 300,
+  "smartthings": {
+    "discovery": true,
+    "allowed_hubs": [],
+    "expose_session": false,
+    "expose_session_user": false
+  },
   "telegram": {
     "enabled": false,
     "bot_token": "dpapi:...",
@@ -132,7 +159,7 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
   "notify": {
     "remote":   { "received": true, "grace_scheduled": true, "grace_cancelled": true, "executed": true, "force": true },
     "schedule": { "created": false, "cancelled": false, "executed": true, "replaced": true },
-    "power":    { "started": true, "resumed": true, "stopping": false },
+    "power":    { "started": true, "resumed": true, "stopping": true },
     "security": { "unauthorized": true, "login_limited": true, "unknown_command": true, "config_changed": true, "unknown_chat": true },
     "system":   { "update_available": true, "updated": true, "exec_failed": true, "tray_wake_failed": true }
   }
@@ -145,6 +172,9 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 | `secret` | 인증 키. 비어 있으면 인증 없음 | "" |
 | `webui_remote` | 브라우저 WebUI 허용 (로컬+LAN, 시크릿 필수, 재시작 필요) | false |
 | `shutdown_grace` / `grace_seconds` | 원격 전원 명령 유예 on/off와 길이(초, 5~3600) | true / 300 |
+| `smartthings.discovery` | Edge 드라이버의 SSDP 자동 검색에 응답 (UDP 1900) | true |
+| `smartthings.allowed_hubs` | `/st/v1`을 쓸 수 있는 허브 IP 목록. 비어 있으면 모두 허용 | [] |
+| `smartthings.expose_session` / `expose_session_user` | 잠금·유휴 시간을 드라이버에 노출, 사용자 이름 포함 | false / false |
 | `telegram.enabled` | 텔레그램 알림 발송 | false |
 | `telegram.bot_token` | 봇 토큰. 저장 시 DPAPI 암호화(`dpapi:`), API에는 마스킹(`****1234`)만 노출 | "" |
 | `telegram.chat_id` | 알림을 받을 채팅 | "" |
@@ -162,7 +192,7 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 ### 자세한 안내 (Wiki)
 
 - [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정) · [데스크톱 앱 가이드](https://github.com/Protomothis/smartthings-pc-control/wiki/데스크톱-앱-가이드)
-- [SmartThings 연동](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-연동) · [원격 명령 유예와 예약](https://github.com/Protomothis/smartthings-pc-control/wiki/원격-명령-유예와-예약)
+- [SmartThings 연동](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-연동) · [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) · [여러 PC 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/여러-PC-설정) · [원격 명령 유예와 예약](https://github.com/Protomothis/smartthings-pc-control/wiki/원격-명령-유예와-예약)
 - [텔레그램 알림 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램-알림-설정) · [텔레그램에서 PC 제어](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램에서-PC-제어) · [알림 카테고리와 조용한 시간대](https://github.com/Protomothis/smartthings-pc-control/wiki/알림-카테고리와-조용한-시간대)
 - [자동 업데이트와 서명](https://github.com/Protomothis/smartthings-pc-control/wiki/자동-업데이트와-서명) · [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스) · [CLI와 API 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/CLI와-API-레퍼런스)
 - [보안](https://github.com/Protomothis/smartthings-pc-control/wiki/보안) · [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ) · [아키텍처](https://github.com/Protomothis/smartthings-pc-control/wiki/아키텍처) (개발자용)
@@ -201,11 +231,12 @@ SmartThings PC Control is a **Windows service plus tray app** that lets SmartThi
 ### Features
 
 🖥️ **Native desktop app** — Settings / Commands / Schedule / Notifications / Network / Logs tabs, tray resident, Korean/English, dark/light theme  
-🎮 **8 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, force shutdown, ping  
+🎮 **9 power commands** — shutdown, restart, hibernate, suspend, lock, screen off, **screen on**, force shutdown, ping  
+📲 **Dedicated SmartThings Edge driver** (new in v1.1.0) — real power state (sleeping / hibernated / waking / shutting down), the grace countdown with its origin, schedule and cancel, connection and WoL diagnostics, **SSDP discovery** so no IP has to be typed, screen on/off in the command list and push updates. The existing PCControl driver keeps working  
 🛡️ **Remote command grace period** — SmartThings shutdown/restart/suspend/hibernate run after a chosen delay (10 s – 30 min, default 5 min); cancel from the toast, tray, app or Telegram  
-📨 **Telegram notifications** — pick from 21 remote-command, schedule, power, security and system events; quiet hours with a single digest; HTML-templated messages  
-🤖 **Control from Telegram** — `/status`, `/menu`, `/shutdown 30` and inline buttons, accepted only from allowed chat IDs  
-⏱️ **Scheduled shutdown** — 5/15/30/60/120-minute presets, large countdown, origin shown (SmartThings / app / Telegram)  
+📨 **Telegram notifications** — pick from 21 remote-command, schedule, power, security and system events; quiet hours with a single digest; HTML-templated messages headed with the **PC name**  
+🤖 **Control from Telegram** — `/status`, `/menu`, `/shutdown 30`, `/screenon` and inline buttons, accepted only from allowed chat IDs  
+⏱️ **Scheduled shutdown** — presets from 5 minutes to 3 days, large countdown, origin shown (SmartThings / app / Telegram)  
 📡 **WoL status** — per-adapter Wake-on-LAN state, MAC, IP, external IP  
 🔄 **Signed auto-update** — only releases verified against an ed25519-signed manifest are installed, one UAC prompt, rollback on failure  
 🌐 **Web UI (optional)** — off by default; enable for local/LAN browser access  
@@ -223,6 +254,7 @@ SmartThings PC Control is a **Windows service plus tray app** that lets SmartThi
 | `forceshutdown` | Immediate forced shutdown (no grace) | – |
 | `lock` | Lock all active sessions | – |
 | `turnscreenoff` | Turn off the monitor (needs a logged-in user) | – |
+| `turnscreenon` | Turn the monitor back on (needs a logged-in user) | – |
 
 ### Installation
 
@@ -247,6 +279,8 @@ The CLI works too: `smartthings-pc-control.exe install` (as administrator). Remo
 2. Install the [PCControl Edge driver](https://github.com/toddaustin07/PCControl) on your SmartThings hub and add a PC device.
 3. In the device settings enter the PC's **IP address**, **port** and **secret** exactly as configured here. Command URLs look like `http://<pc-ip>:5001/{secret}/{command}`.
 
+> 💡 Since v1.1.0 there is a **dedicated Edge driver** with far more detail and no IP to type — see [SmartThings Edge driver](#smartthings-edge-driver) below.
+
 **Connect Telegram** (optional)
 
 1. In Telegram, send `/newbot` to [@BotFather](https://t.me/BotFather) and copy the token.
@@ -258,15 +292,32 @@ No open ports and no webhook are needed (outbound Bot API calls and long polling
 
 <img src="docs/gui-notify.png" alt="Notifications tab — Telegram connection" width="49%"> <img src="docs/gui-schedule.png" alt="Schedule tab — countdown and cancel" width="49%">
 
+### SmartThings Edge Driver
+
+v1.1.0 ships a **purpose-built Edge driver** for this service (the `edge/` folder). It runs locally on the hub and talks to the service's `/st/v1` API.
+
+- **A real power state** — on / sleeping / hibernated / off / waking / shutting down. The service pushes an event to the hub just before it shuts down or sleeps, so the tile does not wait for the next poll.
+- **Grace and schedules are visible** — remaining countdown, origin (SmartThings · app · Telegram), a [Cancel] button and sixteen presets from 5 minutes to 3 days. Cancelling anywhere clears it everywhere.
+- **SSDP discovery** — *Add device → Scan nearby* finds the PC and fills in its IP, port and hostname, so only the **secret** is left to type. The device follows the PC if DHCP moves it.
+- **No silent failures** — wrong secret, unreachable PC, incompatible version and Wake-on-LAN-disabled adapters all show up as one status line.
+- **Two cards in the detail view** — status on top (power state, last action, schedule summary, session, status, versions) and controls below (command, what to schedule, when to schedule). Screen on/off is in the command list, and automations use `pcExec.execute` / `pcDelay.schedule`.
+- **Several PCs** — devices are keyed by MachineGuid, so one hub can drive many PCs without mixing them up. Secret and MAC are per-device preferences.
+
+Installation, preferences, automation examples and troubleshooting are in **[`edge/README.md`](edge/README.md)** and on the wiki page [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Korean).
+
+> The existing [PCControl driver](https://github.com/toddaustin07/PCControl) still works — the legacy `/{secret}/{command}` path is unchanged, so **migrating is optional**.
+>
+> SSDP discovery needs inbound UDP 1900 on the PC (added at install), a **Private** network profile, and hub and PC on the same subnet.
+
 ### The Desktop App at a Glance
 
 | Tab | Contents |
 |---|---|
 | **Settings** | Install/start/uninstall the service, port and secret, remote grace length, browser WebUI access, restart service, start at login, update check |
-| **Commands** | Run any of the 8 commands on this PC immediately (power commands ask for confirmation) |
-| **Schedule** | Command + 5/15/30/60/120-minute preset, large countdown, origin label, [Cancel Schedule] |
+| **Commands** | Run any of the 9 commands on this PC immediately (power commands ask for confirmation) |
+| **Schedule** | Command + one of sixteen presets (5 min – 3 days), large countdown, origin label, [Cancel Schedule] |
 | **Notifications** | Telegram connection, control permission, events to receive (per-category checks), quiet hours, detail level, PC name |
-| **Network** | Per-adapter WoL state, MAC, IPs, external IP |
+| **Network** | Per-adapter WoL state, MAC, IPs, external IP, **SmartThings** (connected hub, discovery, session exposure, hub allow list) |
 | **Logs** | Live service.log view, filter, auto-refresh, open file/folder |
 
 - Top bar: connection-state dot, version, language switch (한국어/English).
@@ -285,6 +336,12 @@ No open ports and no webhook are needed (outbound Bot API calls and long polling
   "webui_remote": false,
   "shutdown_grace": true,
   "grace_seconds": 300,
+  "smartthings": {
+    "discovery": true,
+    "allowed_hubs": [],
+    "expose_session": false,
+    "expose_session_user": false
+  },
   "telegram": {
     "enabled": false,
     "bot_token": "dpapi:...",
@@ -299,7 +356,7 @@ No open ports and no webhook are needed (outbound Bot API calls and long polling
   "notify": {
     "remote":   { "received": true, "grace_scheduled": true, "grace_cancelled": true, "executed": true, "force": true },
     "schedule": { "created": false, "cancelled": false, "executed": true, "replaced": true },
-    "power":    { "started": true, "resumed": true, "stopping": false },
+    "power":    { "started": true, "resumed": true, "stopping": true },
     "security": { "unauthorized": true, "login_limited": true, "unknown_command": true, "config_changed": true, "unknown_chat": true },
     "system":   { "update_available": true, "updated": true, "exec_failed": true, "tray_wake_failed": true }
   }
@@ -312,6 +369,9 @@ No open ports and no webhook are needed (outbound Bot API calls and long polling
 | `secret` | Auth key; empty means no auth | "" |
 | `webui_remote` | Allow the browser WebUI (local+LAN, secret required, restart needed) | false |
 | `shutdown_grace` / `grace_seconds` | Grace period for remote power commands on/off and length in seconds (5–3600) | true / 300 |
+| `smartthings.discovery` | Answer the Edge driver's SSDP search (UDP 1900) | true |
+| `smartthings.allowed_hubs` | Hub IPs allowed to use `/st/v1`; empty means any | [] |
+| `smartthings.expose_session` / `expose_session_user` | Expose lock state and idle time to the driver, and include the user name | false / false |
 | `telegram.enabled` | Send Telegram notifications | false |
 | `telegram.bot_token` | Bot token; DPAPI-encrypted on save (`dpapi:`), the API only exposes a masked form (`****1234`) | "" |
 | `telegram.chat_id` | Chat that receives notifications | "" |
@@ -329,7 +389,7 @@ The app checks GitHub Releases at startup and every 24 hours. When a newer versi
 ### Detailed Guides (Wiki, Korean)
 
 - [Home (English overview)](https://github.com/Protomothis/smartthings-pc-control/wiki/Home-EN)
-- [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정) · [데스크톱 앱 가이드](https://github.com/Protomothis/smartthings-pc-control/wiki/데스크톱-앱-가이드) · [SmartThings 연동](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-연동)
+- [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정) · [데스크톱 앱 가이드](https://github.com/Protomothis/smartthings-pc-control/wiki/데스크톱-앱-가이드) · [SmartThings 연동](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-연동) · [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Edge driver) · [여러 PC 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/여러-PC-설정) (several PCs)
 - [텔레그램 알림 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램-알림-설정) · [텔레그램에서 PC 제어](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램에서-PC-제어) · [알림 카테고리와 조용한 시간대](https://github.com/Protomothis/smartthings-pc-control/wiki/알림-카테고리와-조용한-시간대)
 - [자동 업데이트와 서명](https://github.com/Protomothis/smartthings-pc-control/wiki/자동-업데이트와-서명) · [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스) · [CLI와 API 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/CLI와-API-레퍼런스) · [보안](https://github.com/Protomothis/smartthings-pc-control/wiki/보안) · [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ)
 

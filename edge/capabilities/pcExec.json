@@ -1,0 +1,123 @@
+{
+  "id": "numbersystem53811.pcexec",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcExec",
+  "ephemeral": false,
+  "attributes": {
+    "lastAction": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "none",
+              "wake",
+              "shutdown",
+              "forceshutdown",
+              "restart",
+              "hibernate",
+              "suspend",
+              "lock",
+              "turnscreenoff",
+              "turnscreenon"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    },
+    "lastCommand": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "wake": {
+      "name": "wake",
+      "arguments": []
+    },
+    "suspend": {
+      "name": "suspend",
+      "arguments": []
+    },
+    "hibernate": {
+      "name": "hibernate",
+      "arguments": []
+    },
+    "restart": {
+      "name": "restart",
+      "arguments": []
+    },
+    "shutdown": {
+      "name": "shutdown",
+      "arguments": []
+    },
+    "lock": {
+      "name": "lock",
+      "arguments": []
+    },
+    "screenOff": {
+      "name": "screenOff",
+      "arguments": []
+    },
+    "screenOn": {
+      "name": "screenOn",
+      "arguments": []
+    },
+    "execute": {
+      "name": "execute",
+      "arguments": [
+        {
+          "name": "command",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "none",
+              "wake",
+              "shutdown",
+              "forceshutdown",
+              "restart",
+              "hibernate",
+              "suspend",
+              "lock",
+              "turnscreenoff",
+              "turnscreenon"
+            ]
+          }
+        },
+        {
+          "name": "mode",
+          "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": ["default", "immediate", "grace"]
+          }
+        },
+        {
+          "name": "minutes",
+          "optional": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          }
+        }
+      ]
+    }
+  }
+}

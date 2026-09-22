@@ -166,6 +166,27 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("telegram rate limited, retry after %s: %s", e.RetryAfter, e.Description)
 }
 
+// ConflictError is HTTP/Bot-API 409 ("Conflict: terminated by other
+// getUpdates request"). Telegram hands long polling to exactly one client
+// per bot token, so this is how a second PC sharing the token learns that
+// another one owns the command channel (#75, hub-agent doc §1).
+type ConflictError struct {
+	Description string
+}
+
+func (e *ConflictError) Error() string {
+	if e.Description == "" {
+		return "telegram conflict: another client is polling this bot"
+	}
+	return "telegram conflict: " + e.Description
+}
+
+// IsConflict reports whether err is (or wraps) a *ConflictError.
+func IsConflict(err error) bool {
+	var ce *ConflictError
+	return errors.As(err, &ce)
+}
+
 // RetryAfterOf reports the back-off Telegram asked for if err is (or wraps)
 // a *RateLimitError.
 func RetryAfterOf(err error) (time.Duration, bool) {
@@ -319,6 +340,11 @@ func (c *Client) callTimeout(ctx context.Context, method string, req any, out an
 			c.logf("%s: %v", method, rl)
 			return rl
 		}
+		if resp.StatusCode == http.StatusConflict {
+			ce := &ConflictError{Description: http.StatusText(resp.StatusCode)}
+			c.logf("%s: %v", method, ce)
+			return ce
+		}
 		e := &APIError{Code: resp.StatusCode, Description: "non-JSON response: " + snippet(raw)}
 		c.logf("%s: %v", method, e)
 		return e
@@ -338,6 +364,11 @@ func (c *Client) callTimeout(ctx context.Context, method string, req any, out an
 			rl := &RateLimitError{RetryAfter: ra, Description: ar.Description}
 			c.logf("%s: %v", method, rl)
 			return rl
+		}
+		if code == http.StatusConflict {
+			ce := &ConflictError{Description: ar.Description}
+			c.logf("%s: %v", method, ce)
+			return ce
 		}
 		e := &APIError{Code: code, Description: ar.Description}
 		c.logf("%s: %v", method, e)

@@ -38,6 +38,13 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// Inbound Telegram commands (#61): polls only while telegram.enabled
 	// and control_enabled are both set; config saves reconcile it.
 	startTelegramControl()
+	// SSDP discovery (#69): answers M-SEARCH while smartthings.discovery
+	// is on; config saves reconcile it.
+	startSSDP()
+	// The responder needs inbound UDP 1900; an install made before #69 has
+	// no such rule, so re-check here (#76). Off the startup path: netsh
+	// must never delay the service reaching Running.
+	go ensureSSDPFirewallRuleAtStart()
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -58,9 +65,27 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 				reason = "shutdown"
 			}
 			logMsg("Service stopping (%s)", reason)
-			emit("power", "stopping", map[string]string{"reason": reason})
+			// The next start reads this back as last_shutdown_clean; a
+			// power cut never reaches here, so the flag stays false.
+			markCleanShutdown(statePath())
+			// The SmartThings push sink taps this event and delivers it
+			// synchronously (up to 1.5s, edge-driver doc §3.5) so the hub
+			// learns the PC is going away before it stops answering; the
+			// stop continues right afterwards either way. reason is
+			// shutdown/restart/suspend/hibernate/unknown (§6.2): the SCM
+			// only distinguishes a system shutdown from a plain stop, so
+			// the command this service just ran refines it.
+			//
+			// #87: when nothing this service ran explains the stop - the
+			// user pressed 다시 시작 in the Start menu, or Windows Update
+			// did - the System log's User32/1074 record still knows
+			// whether this is a restart or a power off. That query costs
+			// up to 1.5s, so it runs only on that path, never when a
+			// remote command already answered.
+			emit("power", "stopping", map[string]string{"reason": stopReason(c.Cmd == svc.Shutdown)})
 			close(s.stop)
 			stopTelegramControl()
+			stopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
@@ -95,9 +120,17 @@ func ShowInstallCompleteDialog() {
 // RunConsole runs in console mode for debugging
 func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
+	// Same start-up order as Execute: the logger and the live config must
+	// exist before the subsystems below read getConfig() (SSDP, Telegram)
+	// or log — otherwise the responder silently sees discovery=false and
+	// its messages are dropped.
+	initLogger()
+	setConfig(loadConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
+	startSSDP()
+	defer stopSSDP()
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)
@@ -177,6 +210,14 @@ func Install() error {
 	} else {
 		fmt.Println("  OK - Firewall rule added")
 	}
+	// SSDP discovery (#69) answers M-SEARCH on UDP 1900; without this rule
+	// the Edge driver never sees this PC (#76).
+	if err := ensureSSDPFirewallRule(); err != nil {
+		fmt.Printf("  WARNING: %v\n", err)
+		fmt.Println("  SmartThings discovery may not find this PC until UDP 1900 is allowed.")
+	} else {
+		fmt.Println("  OK - Discovery firewall rule added (UDP 1900)")
+	}
 
 	// Start service
 	fmt.Println("[3/3] Starting service...")
@@ -230,6 +271,7 @@ func Uninstall() error {
 		fmt.Println("  OK - Firewall rule removed")
 	}
 	removeWebUIFirewallRule() // best-effort; only exists when webui_remote was enabled
+	removeSSDPFirewallRule()  // best-effort; only exists on installs from #76 on
 
 	return nil
 }
@@ -282,29 +324,17 @@ func Status() {
 
 const firewallRuleName = "SmartThings PC Control"
 
+// addFirewallRule opens the command port. The delete comes first because
+// the port may have changed since the rule was written; ensureFirewallRule
+// only looks at the name (service/firewall.go, #76).
 func addFirewallRule(port int) error {
 	// Remove existing rule first (in case port changed)
 	removeFirewallRule()
-
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+firewallRuleName,
-		"dir=in", "action=allow", "protocol=tcp",
-		"localport="+fmt.Sprintf("%d", port))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh add rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return ensureFirewallRule(firewallRuleName, firewallProtoTCP, port)
 }
 
 func removeFirewallRule() error {
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name="+firewallRuleName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh delete rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return deleteFirewallRule(firewallRuleName)
 }
 
 const webUIFirewallRuleName = "SmartThings PC Control WebUI"
@@ -313,25 +343,11 @@ const webUIFirewallRuleName = "SmartThings PC Control WebUI"
 // service at startup (runs as SYSTEM) when webui_remote is enabled.
 func addWebUIFirewallRule(port int) error {
 	removeWebUIFirewallRule()
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+webUIFirewallRuleName,
-		"dir=in", "action=allow", "protocol=tcp",
-		"localport="+fmt.Sprintf("%d", port))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh add rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return ensureFirewallRule(webUIFirewallRuleName, firewallProtoTCP, port)
 }
 
 func removeWebUIFirewallRule() error {
-	cmd := exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		"name="+webUIFirewallRuleName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("netsh delete rule failed: %v - output: %s", err, string(output))
-	}
-	return nil
+	return deleteFirewallRule(webUIFirewallRuleName)
 }
 
 // restartSelf restarts the service using sc.exe.

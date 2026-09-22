@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -31,6 +32,65 @@ type serviceState struct {
 	// LastNotifiedTag is the newest release tag already announced with
 	// system.update_available, so a 24h re-check stays silent.
 	LastNotifiedTag string `json:"last_notified_tag,omitempty"`
+	// CleanShutdown is set when the service handles a stop/shutdown and
+	// cleared again on the next start (edge-driver doc §3.2): finding it
+	// false at startup means the PC lost power instead of shutting down.
+	CleanShutdown bool `json:"clean_shutdown"`
+}
+
+// lastShutdownClean is what CleanShutdown said at startup, reported by
+// GET /st/v1/status. It stays false until startupHooks has run.
+var lastShutdownClean atomic.Bool
+
+// latestRelease caches the newest release tag the update checker has seen
+// in this process, whether or not it is newer than us. GET /st/v1/status
+// reports it as update.latest (#68); it is empty until the first check
+// succeeds.
+var latestRelease atomic.Value // string
+
+// noteLatestRelease records one successful release lookup.
+func noteLatestRelease(tag string) {
+	if tag != "" {
+		latestRelease.Store(tag)
+	}
+}
+
+// latestReleaseTag returns the cached tag, or "" before the first check.
+func latestReleaseTag() string {
+	tag, _ := latestRelease.Load().(string)
+	return tag
+}
+
+// markCleanShutdown records that this stop was orderly. Called from the
+// SCM handler next to power.stopping, so a crash or power cut never gets
+// the flag.
+func markCleanShutdown(path string) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	st := loadState(path)
+	if st.CleanShutdown {
+		return
+	}
+	st.CleanShutdown = true
+	if err := saveState(path, st); err != nil {
+		logMsg("WARNING: %s 저장 실패: %v", stateFileName, err)
+	}
+}
+
+// takeCleanShutdown reads the flag and clears it in the file, so the next
+// start only sees it when that start's predecessor stopped cleanly.
+func takeCleanShutdown(path string) bool {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	st := loadState(path)
+	if !st.CleanShutdown {
+		return false
+	}
+	st.CleanShutdown = false
+	if err := saveState(path, st); err != nil {
+		logMsg("WARNING: %s 저장 실패: %v", stateFileName, err)
+	}
+	return true
 }
 
 // stateMu serialises state.json access between the startup hook and the
@@ -172,6 +232,9 @@ func (c *updateChecker) check(ctx context.Context) bool {
 		logMsg("Update check failed: %v", err)
 		return false
 	}
+	// Cache it either way: GET /st/v1/status reports update.latest even
+	// when this build is already the newest.
+	noteLatestRelease(rel.TagName)
 	if !release.IsNewer(c.version, rel.TagName) {
 		return false
 	}
@@ -203,9 +266,16 @@ func (c *updateChecker) check(ctx context.Context) bool {
 // so the external-IP lookup never delays startup) and the release checker.
 func startupHooks(stop <-chan struct{}) {
 	path := statePath()
+	// Read (and clear) the clean-shutdown flag before anything else can
+	// touch state.json; GET /st/v1/status reports it for this run.
+	lastShutdownClean.Store(takeCleanShutdown(path))
 	recordVersion(path, Version)
 	go emitStarted()
 	go newUpdateChecker(path, Version).run(stop)
+	// session.locked/unlocked for the SmartThings push (#68); it checks
+	// smartthings.expose_session on every tick and costs nothing while
+	// the option is off.
+	go watchSessionLock(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP
@@ -263,6 +333,14 @@ func (p *powerTracker) handle(eventType uint32) bool {
 	case pbtAPMSuspend:
 		p.suspendedAt = now()
 		logMsg("Power: suspending")
+		// The Edge driver's power state machine reaches sleeping /
+		// hibernated through power.stopping (edge-driver doc §6.2), and
+		// the service is not stopped when Windows sleeps — so the suspend
+		// broadcast is where that event comes from. PBT_APMSUSPEND does
+		// not say which of the two it is; the last command run does.
+		// The push sink delivers this one synchronously (≤1.5s), which is
+		// the point: after this returns the machine may be asleep.
+		emit("power", "stopping", map[string]string{"reason": stoppingReason("suspend")})
 		return false
 	case pbtAPMResumeAutomatic:
 		since := "-"

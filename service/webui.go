@@ -285,16 +285,36 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			WebUIRemote   bool
 			ShutdownGrace bool
 			Version       string
-		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version})
+			// SmartThings is shown as plain form fields (#70); the desktop
+			// app's network tab is the designed UI for these.
+			SmartThings SmartThingsConfig
+			AllowedHubs string
+			// telegram.pc_name is the one Telegram setting this page edits
+			// (#75); the token and the chat id belong to the app's
+			// notifications tab, and are deliberately not handed to the
+			// template. Hostname is the entry's placeholder: what an empty
+			// pc_name falls back to.
+			PCName   string
+			Hostname string
+		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
+			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
+			liveCfg.Telegram.PCName, hostname()})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)
 	mux.HandleFunc("/api/config", handleConfigAPI)
 
+	// API: SmartThings hub connection state for the GUI (#67, shown by #70)
+	mux.HandleFunc("/api/st/hub", handleSTHubAPI)
+
+	// API: idle-time heartbeat from the tray app (#77, see st_idle.go)
+	mux.HandleFunc("/api/session/heartbeat", handleSessionHeartbeat)
+
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
 	mux.HandleFunc("/api/telegram/me", handleTelegramMe)
 	mux.HandleFunc("/api/telegram/chats", handleTelegramChats)
+	mux.HandleFunc("/api/telegram/state", handleTelegramState)
 
 	// API: Test commands
 	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
@@ -411,9 +431,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Invalid JSON"})
 				return
 			}
-			if body.Minutes < 1 || body.Minutes > 1440 {
+			// #89: the same ceiling as /st/v1, the Telegram bot and the app.
+			if body.Minutes < 1 || body.Minutes > maxScheduleMinutes {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Minutes must be between 1 and 1440"})
+				json.NewEncoder(w).Encode(map[string]string{"status": "error",
+					"message": fmt.Sprintf("Minutes must be between 1 and %d", maxScheduleMinutes)})
 				return
 			}
 			if err := setSchedule(body.Command, time.Duration(body.Minutes)*time.Minute, originUI); err != nil {
@@ -433,11 +455,12 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-			// ?by=app|tray|toast|webui says which UI the user cancelled from;
-			// it only affects the notification wording (default "api").
+			// ?by=app|tray|toast|webui|smartthings says which UI the user
+			// cancelled from; it only affects the notification wording
+			// (default "api").
 			by := "api"
 			switch v := r.URL.Query().Get("by"); v {
-			case "app", "tray", "toast", "webui":
+			case "app", "tray", "toast", "webui", "smartthings":
 				by = v
 			}
 			if cancelScheduleBy(by) {
@@ -574,6 +597,42 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+// ---- SmartThings hub state (#67) -------------------------------------------
+
+// stHubView is GET /api/st/hub: what the GUI SmartThings section (#70)
+// shows about the Edge driver's last contact. "connected" means the hub
+// polled within stHubStale (2× the longest poll interval the driver offers).
+type stHubView struct {
+	Connected     bool   `json:"connected"`
+	IP            string `json:"ip"`
+	DriverVersion string `json:"driver_version"`
+	LastSeen      string `json:"last_seen"`
+}
+
+// handleSTHubAPI serves GET /api/st/hub.
+func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
+	liveCfg := getConfig()
+	if !checkAuth(r, liveCfg.Secret) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	seen, ok := hubLastSeenInfo()
+	if !ok {
+		writeJSON(w, http.StatusOK, stHubView{})
+		return
+	}
+	writeJSON(w, http.StatusOK, stHubView{
+		Connected:     time.Since(seen.At) <= stHubStale,
+		IP:            seen.IP,
+		DriverVersion: seen.DriverVersion,
+		LastSeen:      seen.At.Format(time.RFC3339),
+	})
 }
 
 // ---- Telegram helper endpoints (#63) ---------------------------------------
@@ -741,6 +800,30 @@ func handleTelegramMe(w http.ResponseWriter, r *http.Request) {
 		"username": u.Username,
 		"name":     strings.TrimSpace(u.FirstName + " " + u.LastName),
 	})
+}
+
+// handleTelegramState serves GET /api/telegram/state: the local state of
+// inbound Telegram control, with no Bot API call of its own.
+//
+//	{status:"ok", polling:bool, conflict:bool, since:"RFC3339"}
+//
+// conflict is true while getUpdates keeps answering 409 because another PC
+// shares this bot token (#75); since is when that started and is omitted
+// otherwise. The GUI notify tab shows a warning for it.
+func handleTelegramState(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "GET") {
+		return
+	}
+	conflict, since := telegramConflictState()
+	out := map[string]any{
+		"status":   "ok",
+		"polling":  telegramControlRunning(),
+		"conflict": conflict,
+	}
+	if conflict && !since.IsZero() {
+		out["since"] = since.Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // telegramChat is one entry of /api/telegram/chats.

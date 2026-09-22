@@ -201,7 +201,8 @@ func TestDefaultConfigCatalogue(t *testing.T) {
 		"schedule.cancelled":      false,
 		"schedule.executed":       true,
 		"power.started":           true,
-		"power.stopping":          false,
+		// #87: on by default now that the message names the reason.
+		"power.stopping": true,
 		"security.unauthorized":   true,
 		"security.unknown_chat":   true,
 		"system.update_available": true,
@@ -241,8 +242,21 @@ func TestConfigEnabledFallsBackToDefaults(t *testing.T) {
 	if !cfg.Enabled("remote", "force") {
 		t.Error("missing kind in a present category must fall back to default (true)")
 	}
-	if cfg.Enabled("power", "stopping") {
-		t.Error("missing category must fall back to default (power.stopping off)")
+	if !cfg.Enabled("power", "stopping") {
+		t.Error("missing category must fall back to default (power.stopping on since #87)")
+	}
+	// #87: a config.json written before the default flipped still says
+	// what its owner chose. Only an absent key adopts the new default.
+	kept := Config{"power": {"stopping": false}}
+	if kept.Enabled("power", "stopping") {
+		t.Error("an explicit false must survive the default flipping to true")
+	}
+	if kept.WithDefaults()["power"]["stopping"] {
+		t.Error("WithDefaults overwrote an explicit false with the new default")
+	}
+	partial := Config{"power": {"resumed": false}}
+	if !partial.Enabled("power", "stopping") {
+		t.Error("a present category with the key absent must take the default")
 	}
 	// Not in the catalogue: never swallowed.
 	if !cfg.Enabled("system", "test") || !nilCfg.Enabled("system", "digest") {

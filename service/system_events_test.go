@@ -301,9 +301,14 @@ func TestPowerTrackerResume(t *testing.T) {
 		t.Errorf("since = %q, want -", ev.Fields["since"])
 	}
 
-	// Suspend, sleep 3h05m, resume.
+	// Suspend, sleep 3h05m, resume. #87: power.stopping is on by default
+	// now, so the suspend broadcast's own event is delivered too - it is
+	// how the Edge driver's tile reaches "sleeping" (§6.2).
 	if p.handle(pbtAPMSuspend) {
 		t.Errorf("suspend emitted")
+	}
+	if ev := expectNotification(t, events, "power.stopping"); ev.Fields["reason"] != "suspend" {
+		t.Errorf("suspend reason = %q, want suspend", ev.Fields["reason"])
 	}
 	now = now.Add(3*time.Hour + 5*time.Minute)
 	p.handle(pbtAPMResumeAutomatic)

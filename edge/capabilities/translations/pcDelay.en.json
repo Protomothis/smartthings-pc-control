@@ -1,0 +1,90 @@
+{
+  "tag": "en",
+  "label": "PC schedule",
+  "attributes": {
+    "summary": {
+      "label": "Schedule"
+    },
+    "active": {
+      "label": "Scheduled"
+    },
+    "status": {
+      "label": "Schedule state",
+      "i18n": {
+        "value": {
+          "idle": {
+            "label": "No schedule"
+          },
+          "scheduled": {
+            "label": "Scheduled"
+          }
+        }
+      }
+    },
+    "command": {
+      "label": "Scheduled command"
+    },
+    "remainingSeconds": {
+      "label": "Time left (s)"
+    },
+    "executeAt": {
+      "label": "Runs at"
+    },
+    "origin": {
+      "label": "Requested by"
+    },
+    "minutesPick": {
+      "label": "Delay",
+      "i18n": {
+        "value": {
+          "-1": {
+            "label": "Pick a delay"
+          }
+        }
+      }
+    },
+    "planCommand": {
+      "label": "Command to schedule",
+      "i18n": {
+        "value": {
+          "shutdown": {
+            "label": "Shut down"
+          },
+          "restart": {
+            "label": "Restart"
+          },
+          "suspend": {
+            "label": "Sleep"
+          },
+          "hibernate": {
+            "label": "Hibernate"
+          }
+        }
+      }
+    }
+  },
+  "commands": {
+    "cancel": {
+      "label": "Cancel schedule"
+    },
+    "schedule": {
+      "label": "Run in",
+      "arguments": {
+        "minutes": {
+          "label": "In (minutes, 0 cancels, up to 3 days)"
+        },
+        "command": {
+          "label": "Command"
+        }
+      }
+    },
+    "setPlanCommand": {
+      "label": "Choose the command to schedule",
+      "arguments": {
+        "command": {
+          "label": "Command"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "numbersystem53811.pcuser",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.locked.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "locked.value",
+          "alternatives": [
+            {
+              "key": "true",
+              "value": "Locked",
+              "type": "active"
+            },
+            {
+              "key": "false",
+              "value": "Unlocked",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

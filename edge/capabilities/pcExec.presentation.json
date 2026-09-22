@@ -1,0 +1,296 @@
+{
+  "id": "numbersystem53811.pcexec",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.lastAction.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "execute",
+          "alternatives": [
+            {
+              "key": "wake",
+              "value": "깨우기 (Wake)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "lock",
+              "value": "잠금 (Lock)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenoff",
+              "value": "화면 끄기 (Screen off)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenon",
+              "value": "화면 켜기 (Screen on)",
+              "type": "active"
+            }
+          ]
+        },
+        "state": {
+          "value": "lastAction.value",
+          "alternatives": [
+            {
+              "key": "none",
+              "value": "명령 선택… (Select a command)",
+              "type": "inactive"
+            },
+            {
+              "key": "wake",
+              "value": "깨우기 (Wake)",
+              "type": "active"
+            },
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "forceshutdown",
+              "value": "강제 종료 (Force shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "lock",
+              "value": "잠금 (Lock)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenoff",
+              "value": "화면 끄기 (Screen off)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenon",
+              "value": "화면 켜기 (Screen on)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "{{i18n.attributes.lastCommand.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{lastCommand.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.lastAction.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "lastAction.value",
+          "alternatives": [
+            {
+              "key": "none",
+              "value": "명령 선택… (Select a command)",
+              "type": "inactive"
+            },
+            {
+              "key": "wake",
+              "value": "깨우기 (Wake)",
+              "type": "active"
+            },
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "forceshutdown",
+              "value": "강제 종료 (Force shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "lock",
+              "value": "잠금 (Lock)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenoff",
+              "value": "화면 끄기 (Screen off)",
+              "type": "active"
+            },
+            {
+              "key": "turnscreenon",
+              "value": "화면 켜기 (Screen on)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": [
+      {
+        "label": "{{i18n.commands.execute.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "execute",
+          "submitLabel": "Run",
+          "arguments": [
+            {
+              "name": "command",
+              "label": "{{i18n.commands.execute.arguments.command.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  },
+                  {
+                    "key": "lock",
+                    "value": "Lock",
+                    "type": "active"
+                  },
+                  {
+                    "key": "turnscreenoff",
+                    "value": "Screen off",
+                    "type": "active"
+                  },
+                  {
+                    "key": "turnscreenon",
+                    "value": "Screen on",
+                    "type": "active"
+                  },
+                  {
+                    "key": "wake",
+                    "value": "Wake",
+                    "type": "active"
+                  },
+                  {
+                    "key": "forceshutdown",
+                    "value": "Force shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "none",
+                    "value": "Do nothing",
+                    "type": "inactive"
+                  }
+                ],
+                "name": "command"
+              }
+            },
+            {
+              "name": "mode",
+              "label": "{{i18n.commands.execute.arguments.mode.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "default",
+                    "value": "Use the PC's grace period",
+                    "type": "active"
+                  },
+                  {
+                    "key": "immediate",
+                    "value": "Immediately",
+                    "type": "active"
+                  },
+                  {
+                    "key": "grace",
+                    "value": "Force the grace period",
+                    "type": "active"
+                  }
+                ],
+                "name": "mode"
+              }
+            },
+            {
+              "name": "minutes",
+              "label": "{{i18n.commands.execute.arguments.minutes.label}}",
+              "displayType": "numberField",
+              "numberField": {
+                "range": [
+                  0,
+                  1440
+                ],
+                "unit": "min",
+                "name": "minutes"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

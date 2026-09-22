@@ -41,6 +41,31 @@ const (
 
 const genericTemplate = "generic.tmpl"
 
+// HeaderIcon opens the PC-name header line every Telegram message starts
+// with (#75, hub-agent doc §1). Several PCs may share one bot, so the
+// name is always shown — it is harmless with a single PC.
+const HeaderIcon = "🖥"
+
+// Header is that line for pcName: "🖥 <b>DESKTOP-TEST</b>". The name is
+// HTML-escaped; the message body follows on the next line.
+func Header(pcName string) string {
+	return HeaderIcon + " <b>" + html.EscapeString(pcName) + "</b>"
+}
+
+// HasHeader reports whether msg already opens with a PC-name header. The
+// icon alone is the marker, so a message read back from Telegram (tags
+// stripped) is recognised too.
+func HasHeader(msg string) bool { return strings.HasPrefix(msg, HeaderIcon) }
+
+// WithHeader prefixes Header(pcName) to msg unless msg already carries a
+// header. Empty stays empty (the poller sends nothing for it).
+func WithHeader(pcName, msg string) string {
+	if msg == "" || HasHeader(msg) {
+		return msg
+	}
+	return Header(pcName) + "\n" + msg
+}
+
 // Renderer turns a notify.Event into Telegram HTML.
 type Renderer struct {
 	lang   string
@@ -118,13 +143,41 @@ func (r *Renderer) HasTemplate(key string) bool {
 }
 
 // funcMap is what templates may call. secs localises a duration given in
-// seconds (the aggregation window's window_sec field) as "5분" / "5 min".
+// seconds (the aggregation window's window_sec field) as "5분" / "5 min";
+// reason localises a power.stopping reason.
 func funcMap(lang string) template.FuncMap {
 	return template.FuncMap{
-		"esc":  html.EscapeString,
-		"join": strings.Join,
-		"secs": func(s string) string { return secondsText(lang, s) },
+		"esc":    html.EscapeString,
+		"join":   strings.Join,
+		"secs":   func(s string) string { return secondsText(lang, s) },
+		"reason": func(s string) string { return stopReasonText(lang, s) },
 	}
+}
+
+// stopReasonNames is the power.stopping reason wire value (edge-driver doc
+// §6.2) in the two languages. "unknown" is a plain service stop, which the
+// service cannot tell apart from the start of a shutdown, so it is worded
+// as one rather than as "unknown" (#87).
+var stopReasonNames = map[string][2]string{
+	// {ko, en}
+	"shutdown":  {"종료", "Shut down"},
+	"restart":   {"재시작", "Restart"},
+	"suspend":   {"절전", "Sleep"},
+	"hibernate": {"최대 절전", "Hibernate"},
+	"unknown":   {"종료", "Shut down"},
+}
+
+// stopReasonText localises one power.stopping reason. A reason from a
+// newer service is shown as it came, so the message still says something.
+func stopReasonText(lang, s string) string {
+	names, ok := stopReasonNames[strings.TrimSpace(s)]
+	if !ok {
+		return s
+	}
+	if lang == LangEn {
+		return names[1]
+	}
+	return names[0]
 }
 
 // secondsText renders a decimal number of seconds as a short localised
@@ -155,6 +208,7 @@ func secondsText(lang, s string) string {
 
 // Render produces the HTML message for ev:
 //
+//	🖥 <b>{pcName}</b>                  (#75, always)
 //	{icon} <b>{title}</b>
 //	<blockquote>{summary}</blockquote>
 //	{label}: <code>{value}</code>      (detail=full only, 2–4 lines)
@@ -199,6 +253,8 @@ func (r *Renderer) Render(ev notify.Event, pcName string) (string, error) {
 	}
 
 	var b strings.Builder
+	b.WriteString(Header(pcName))
+	b.WriteString("\n")
 	b.WriteString(IconFor(ev.Category, ev.Kind))
 	b.WriteString(" <b>")
 	b.WriteString(oneLine(title))

@@ -3,12 +3,13 @@ package gui
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
 // baseConfig is what GET /api/config hands the tab: masked token, the full
-// catalogue with the schedule.created/cancelled and power.stopping defaults
-// off, plus one key the GUI does not know (must survive a save).
+// catalogue with the schedule.created/cancelled defaults off, plus one key
+// the GUI does not know (must survive a save).
 func baseConfig() Config {
 	notify := map[string]map[string]bool{}
 	for _, c := range notifyCatalogue {
@@ -42,6 +43,19 @@ func TestNotifyCatalogueCoversDesignDoc(t *testing.T) {
 	for _, hidden := range []string{"system.test", "system.digest"} {
 		if slices.Contains(kinds, hidden) {
 			t.Errorf("%s must not be user-toggleable", hidden)
+		}
+	}
+	// #87: the defaults this tab falls back to are the service's
+	// (service/notify/config.go). A checkbox opening on the wrong one
+	// would tell the user something the service does not do.
+	for key, want := range map[string]bool{
+		"schedule.created": false, "schedule.cancelled": false,
+		"power.stopping": true, "power.started": true,
+		"remote.received": true, "system.updated": true,
+	} {
+		cat, kind, _ := strings.Cut(key, ".")
+		if got := notifyValue(Config{}, cat, kind); got != want {
+			t.Errorf("notifyValue(%s) = %v, want %v (service catalogue default)", key, got, want)
 		}
 	}
 	// Every kind and category has both translations.
@@ -257,6 +271,54 @@ func TestQuietHourOptions(t *testing.T) {
 	}
 	if !slices.Contains(opts, defaultQuietStart) || !slices.Contains(opts, defaultQuietEnd) {
 		t.Error("defaults must be selectable")
+	}
+}
+
+// #75: the PC-name entry falls back to the translated hint only when the
+// hostname is unknown.
+func TestPCNamePlaceholder(t *testing.T) {
+	const fallback = "Empty: this PC's hostname"
+	cases := []struct{ host, want string }{
+		{"DESKTOP-TEST", "DESKTOP-TEST"},
+		{"  DESKTOP-TEST  ", "DESKTOP-TEST"},
+		{"", fallback},
+		{"   ", fallback},
+	}
+	for _, c := range cases {
+		if got := pcNamePlaceholder(c.host, fallback); got != c.want {
+			t.Errorf("pcNamePlaceholder(%q) = %q, want %q", c.host, got, c.want)
+		}
+	}
+}
+
+// The PC name is part of the form round-trip and of the dirty check.
+func TestNotifyFormPCNameRoundTrip(t *testing.T) {
+	base := Config{Telegram: TelegramConfig{ChatID: "42", Detail: "full", PCName: "OFFICE"}}
+	s := notifyStateFromConfig(base)
+	if s.PCName != "OFFICE" {
+		t.Fatalf("PCName = %q", s.PCName)
+	}
+	if s.dirty(base) {
+		t.Error("an unchanged form must not be dirty")
+	}
+	s.PCName = "  OFFICE  " // only whitespace differs
+	if s.dirty(base) {
+		t.Error("whitespace alone is not a change")
+	}
+	s.PCName = "LIVING ROOM"
+	if !s.dirty(base) {
+		t.Error("a new PC name must be dirty")
+	}
+	if got := s.applyTo(base, LangKo).Telegram.PCName; got != "LIVING ROOM" {
+		t.Errorf("applied PCName = %q", got)
+	}
+	// Cleared: the service falls back to the hostname.
+	s.PCName = "   "
+	if !s.dirty(base) {
+		t.Error("clearing the PC name must be dirty")
+	}
+	if got := s.applyTo(base, LangKo).Telegram.PCName; got != "" {
+		t.Errorf("cleared PCName = %q", got)
 	}
 }
 

@@ -1,0 +1,428 @@
+{
+  "id": "numbersystem53811.pcdelay",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.planCommand.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "setPlanCommand",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        },
+        "state": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "{{i18n.commands.schedule.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "schedule",
+          "alternatives": [
+            {
+              "key": "5",
+              "value": "5분 (5 min)",
+              "type": "active"
+            },
+            {
+              "key": "10",
+              "value": "10분 (10 min)",
+              "type": "active"
+            },
+            {
+              "key": "15",
+              "value": "15분",
+              "type": "active"
+            },
+            {
+              "key": "30",
+              "value": "30분",
+              "type": "active"
+            },
+            {
+              "key": "45",
+              "value": "45분",
+              "type": "active"
+            },
+            {
+              "key": "60",
+              "value": "1시간 (1 h)",
+              "type": "active"
+            },
+            {
+              "key": "90",
+              "value": "1시간 30분 (1.5 h)",
+              "type": "active"
+            },
+            {
+              "key": "120",
+              "value": "2시간 (2 h)",
+              "type": "active"
+            },
+            {
+              "key": "180",
+              "value": "3시간 (3 h)",
+              "type": "active"
+            },
+            {
+              "key": "240",
+              "value": "4시간 (4 h)",
+              "type": "active"
+            },
+            {
+              "key": "360",
+              "value": "6시간 (6 h)",
+              "type": "active"
+            },
+            {
+              "key": "480",
+              "value": "8시간 (8 h)",
+              "type": "active"
+            },
+            {
+              "key": "720",
+              "value": "12시간 (12 h)",
+              "type": "active"
+            },
+            {
+              "key": "1440",
+              "value": "1일 (1 day)",
+              "type": "active"
+            },
+            {
+              "key": "2880",
+              "value": "2일 (2 days)",
+              "type": "active"
+            },
+            {
+              "key": "4320",
+              "value": "3일 (3 days)",
+              "type": "active"
+            },
+            {
+              "key": "0",
+              "value": "취소 (Cancel)",
+              "type": "inactive"
+            }
+          ],
+          "argumentType": "integer"
+        },
+        "state": {
+          "value": "minutesPick.value",
+          "alternatives": [
+            {
+              "key": "-1",
+              "value": "시간 선택… (Pick a delay)",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.status.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "status.value",
+          "alternatives": [
+            {
+              "key": "idle",
+              "value": "예약 없음 (No schedule)",
+              "type": "inactive"
+            },
+            {
+              "key": "scheduled",
+              "value": "예약 중 (Scheduled)",
+              "type": "active"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.active.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "active.value",
+          "alternatives": [
+            {
+              "key": "true",
+              "value": "예 (Yes)",
+              "type": "active"
+            },
+            {
+              "key": "false",
+              "value": "아니요 (No)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.planCommand.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": [
+      {
+        "label": "{{i18n.commands.schedule.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "schedule",
+          "submitLabel": "Schedule",
+          "arguments": [
+            {
+              "name": "minutes",
+              "label": "{{i18n.commands.schedule.arguments.minutes.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "5",
+                    "value": "5분 (5 min)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "10",
+                    "value": "10분 (10 min)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "15",
+                    "value": "15분",
+                    "type": "active"
+                  },
+                  {
+                    "key": "30",
+                    "value": "30분",
+                    "type": "active"
+                  },
+                  {
+                    "key": "45",
+                    "value": "45분",
+                    "type": "active"
+                  },
+                  {
+                    "key": "60",
+                    "value": "1시간 (1 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "90",
+                    "value": "1시간 30분 (1.5 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "120",
+                    "value": "2시간 (2 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "180",
+                    "value": "3시간 (3 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "240",
+                    "value": "4시간 (4 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "360",
+                    "value": "6시간 (6 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "480",
+                    "value": "8시간 (8 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "720",
+                    "value": "12시간 (12 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "1440",
+                    "value": "1일 (1 day)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "2880",
+                    "value": "2일 (2 days)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "4320",
+                    "value": "3일 (3 days)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "0",
+                    "value": "취소 (Cancel)",
+                    "type": "inactive"
+                  }
+                ],
+                "name": "minutes"
+              }
+            },
+            {
+              "name": "command",
+              "label": "{{i18n.commands.schedule.arguments.command.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  }
+                ],
+                "name": "command"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.commands.setPlanCommand.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "setPlanCommand",
+          "submitLabel": "Set",
+          "arguments": [
+            {
+              "name": "command",
+              "label": "{{i18n.commands.setPlanCommand.arguments.command.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  }
+                ],
+                "name": "command"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

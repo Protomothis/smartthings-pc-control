@@ -142,6 +142,44 @@ func TestRateLimitWithoutParametersDefaultsToOneSecond(t *testing.T) {
 	}
 }
 
+// #75: 409 is its own error type, so the poller can tell "another PC owns
+// this bot" apart from an ordinary API failure.
+func TestConflictMapping(t *testing.T) {
+	cli, _ := newFakeAPI(t, 409, `{"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}`)
+	_, err := cli.GetUpdates(context.Background(), 0, 0)
+	var ce *ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("want *ConflictError, got %T: %v", err, err)
+	}
+	if !IsConflict(err) {
+		t.Error("IsConflict should be true")
+	}
+	if !strings.Contains(ce.Description, "terminated by other getUpdates") {
+		t.Errorf("description = %q", ce.Description)
+	}
+	if !strings.Contains(ce.Error(), "terminated by other getUpdates") {
+		t.Errorf("Error() = %q", ce.Error())
+	}
+	// A conflict is not a rate limit, and an ordinary error is not a conflict.
+	if _, ok := RetryAfterOf(err); ok {
+		t.Error("RetryAfterOf should be false for ConflictError")
+	}
+	if IsConflict(&APIError{Code: 400}) || IsConflict(nil) {
+		t.Error("IsConflict should be false for non-conflicts")
+	}
+	if got := (&ConflictError{}).Error(); !strings.Contains(got, "another client") {
+		t.Errorf("empty-description Error() = %q", got)
+	}
+}
+
+// A proxy or gateway may answer 409 without the Bot API envelope.
+func TestNonJSONConflictBecomesConflictError(t *testing.T) {
+	cli, _ := newFakeAPI(t, 409, `<html>Conflict</html>`)
+	if _, err := cli.GetUpdates(context.Background(), 0, 0); !IsConflict(err) {
+		t.Fatalf("want a ConflictError, got %T: %v", err, err)
+	}
+}
+
 func TestAPIErrorMapping(t *testing.T) {
 	cli, _ := newFakeAPI(t, 400, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)
 	_, err := cli.SendMessage(context.Background(), "42", "x", nil)
