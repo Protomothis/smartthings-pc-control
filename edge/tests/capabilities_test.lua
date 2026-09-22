@@ -308,11 +308,21 @@ end
 --------------------------------------------------------------------------------
 
 -- The commands init.lua registers handlers for (§5.1). The eight no-argument
--- ones are the remote-control buttons of the detail view (#78); `execute` stays
--- for automations, where the mode and the delay are worth asking about.
+-- ones were the detail view's push buttons until #82 replaced them with one
+-- `execute` list; they stay in the definition (older profiles still show them,
+-- and a scene can call them) and `execute` carries the screen and automations.
 local REMOTE_BUTTONS = {
   "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
   "screenOff", "screenOn",
+}
+
+-- #82: what the detail-view list offers, top to bottom. Service command names
+-- (§4.3), because that is what `execute(command)` takes; `wake` is the WoL
+-- sequence and `forceshutdown` is deliberately absent — an irreversible
+-- command stays in automations only.
+local ACTION_LIST = {
+  "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
+  "turnscreenoff", "turnscreenon",
 }
 
 local EXPECTED_COMMANDS = {
@@ -357,17 +367,23 @@ end
 
 function T.test_command_enums_match_the_service()
   -- §4.3: the command names the service accepts. `ping` is the driver's own
-  -- reachability probe and is not offered in the app.
+  -- reachability probe and is not offered in the app. #82 added `wake`, which
+  -- is not a service command at all — the driver turns it into the WoL
+  -- sequence — so that the detail-view list can offer it like the rest.
   local execute = definition("command").commands.execute.arguments[1].schema.enum
   local seen = {}
   for _, name in ipairs(execute) do
     seen[name] = true
   end
-  for _, name in ipairs({ "shutdown", "forceshutdown", "restart", "hibernate",
+  for _, name in ipairs({ "wake", "shutdown", "forceshutdown", "restart", "hibernate",
       "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
-    h.assert_true(seen[name] == true, "pcControl.execute is missing " .. name)
+    h.assert_true(seen[name] == true, "pcAction.execute is missing " .. name)
   end
-  h.assert_equal(#execute, 8)
+  h.assert_equal(#execute, 9)
+  for _, name in ipairs(ACTION_LIST) do
+    h.assert_true(seen[name] == true,
+      "the detail-view list offers " .. name .. ", which execute does not accept")
+  end
 
   local mode = definition("command").commands.execute.arguments[2].schema.enum
   h.assert_deep_equal(mode, { "default", "immediate", "grace" })
@@ -466,32 +482,107 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
     return commands
   end
   h.assert_true(action_commands("command").execute == true)
-  -- cancel is a detail-view pushButton; automation.actions may not carry
-  -- pushButton (SmartThings presentation rules), so it is not expected there.
+  -- cancel has no automation action: `automation.actions` may not carry a
+  -- pushButton (SmartThings presentation rules), and #82 removed the detail
+  -- view's one too. An automation cancels with `schedule(0)`.
   h.assert_true(action_commands("schedule").schedule == true)
+  -- #82: `lastAction` is a condition as well, so an automation can react to
+  -- what was last asked of the PC.
+  h.assert_true(condition_attributes("command").lastAction == true)
 end
 
 --------------------------------------------------------------------------------
--- the remote-control detail view (#78)
+-- the detail view (#78 remote control, #82 final layout)
 --------------------------------------------------------------------------------
 
-function T.test_the_command_detail_view_is_one_button_per_command()
-  -- §5.3: a vertical list of pushButtons, in the order of the issue, with
-  -- forceshutdown deliberately left off the screen (automation only).
+--- The alternative keys of a detail-view `list`, command side and state side.
+local function list_keys(item)
+  local commands, states = {}, {}
+  for _, alternative in ipairs(((item.list or {}).command or {}).alternatives or {}) do
+    commands[#commands + 1] = alternative.key
+  end
+  for _, alternative in ipairs(((item.list or {}).state or {}).alternatives or {}) do
+    states[#states + 1] = alternative.key
+  end
+  return commands, states
+end
+
+function T.test_the_action_detail_view_is_one_list()
+  -- §5.3 (#82): a pushButton has no value, so the phone drew "-" beside each
+  -- of the eight. One list replaces them: the commands are the menu, and
+  -- `lastAction` is the value it shows.
   local detail = presentation("command").detailView
-  local buttons = {}
-  for _, item in ipairs(detail) do
-    if item.displayType == "pushButton" then
-      buttons[#buttons + 1] = item.pushButton.command
+  h.assert_equal(#detail, 1, "the command capability contributes exactly one row")
+  local item = detail[1]
+  h.assert_equal(item.displayType, "list")
+  h.assert_equal(item.label, "{{i18n.attributes.lastAction.label}}")
+  h.assert_equal(item.list.command.name, "execute")
+
+  local commands, states = list_keys(item)
+  h.assert_deep_equal(commands, ACTION_LIST)
+  h.assert_equal(item.list.state.value, "lastAction.value")
+  h.assert_deep_equal(states,
+    definition("command").attributes.lastAction.schema.properties.value.enum,
+    "the state alternatives must cover the whole enum, `none` included")
+
+  local _, referenced = references(detail, {}, {})
+  h.assert_true(referenced.forceshutdown == nil, "forceshutdown must not be on screen")
+  for _, alternative in ipairs(item.list.command.alternatives) do
+    h.assert_true(type(alternative.value) == "string" and alternative.value ~= "",
+      "a command alternative needs a literal label (§14.2: arguments cannot be translated)")
+  end
+end
+
+function T.test_the_schedule_detail_view_is_one_list_and_the_summary()
+  -- #82: the cancel pushButton became the `0` entry of the preset list, and
+  -- the list shows `active` so the row is never blank.
+  local detail = presentation("schedule").detailView
+  h.assert_equal(#detail, 2)
+  local item = detail[1]
+  h.assert_equal(item.displayType, "list")
+  h.assert_equal(item.list.command.name, "schedule")
+  local minutes, states = list_keys(item)
+  h.assert_deep_equal(minutes, { "5", "15", "30", "60", "120", "0" })
+  h.assert_equal(item.list.state.value, "active.value")
+  h.assert_deep_equal(states, { "true", "false" })
+  h.assert_equal(detail[2].displayType, "state")
+  h.assert_contains(detail[2].state.label, "summary.value")
+end
+
+function T.test_no_detail_row_is_a_push_button()
+  -- #82, measured on the hub: a pushButton row has no value, so the phone
+  -- renders "-" next to its label. Every row is a value now.
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      h.assert_true(item.displayType ~= "pushButton",
+        string.format("%s detailView[%d] is a pushButton, which renders as \"-\"", id, i))
+      h.assert_true(item.displayType ~= "multiArgCommand",
+        "multiArgCommand is rejected in a detailView (§14)")
     end
   end
-  h.assert_deep_equal(buttons, REMOTE_BUTTONS)
-  for _, item in ipairs(detail) do
-    h.assert_true(item.displayType ~= "multiArgCommand",
-      "multiArgCommand is rejected in a detailView (§14)")
+end
+
+function T.test_every_detail_list_carries_state_alternatives()
+  -- §14: the presentation API requires `state.alternatives` whenever a
+  -- detailView list has a `state`, and a list without one shows nothing.
+  local lists = 0
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "list" then
+        lists = lists + 1
+        local where = string.format("%s detailView[%d]", id, i)
+        h.assert_true(type((item.list or {}).state) == "table", where .. " has no state")
+        h.assert_true(type(item.list.state.value) == "string", where .. " state has no value")
+        h.assert_true(#(item.list.state.alternatives or {}) > 0,
+          where .. " state has no alternatives (the API rejects that)")
+        h.assert_true(type((item.list or {}).command) == "table",
+          where .. " list has no command object")
+        h.assert_true(type(item.list.command.name) == "string",
+          where .. " command needs a `name` (§14)")
+      end
+    end
   end
-  local _, commands = references(detail, {}, {})
-  h.assert_true(commands.forceshutdown == nil, "forceshutdown must not be on screen")
+  h.assert_true(lists >= 2, "the action and schedule rows are both lists")
 end
 
 function T.test_no_automation_action_uses_a_push_button()
@@ -506,8 +597,11 @@ end
 
 -- Attributes that are still defined and emitted but no longer have a row of
 -- their own in the detail view (#78): the summaries replaced them.
+-- `active` is not in here any more: #82 put it back on screen as the value of
+-- the schedule list, so the row says "Scheduled"/"No schedule" instead of
+-- standing empty.
 local RAW_ROWS_REMOVED = {
-  schedule = { "remainingSeconds", "executeAt", "origin", "command", "active" },
+  schedule = { "remainingSeconds", "executeAt", "origin", "command" },
   status = { "serviceVersion", "updateAvailable", "wolReady", "lastSeen", "connection" },
   session = { "idleMinutes", "locked", "user" },
 }
@@ -665,6 +759,19 @@ function T.test_translations_cover_every_command_and_argument()
         h.assert_true((definition(key).commands or {})[name] ~= nil,
           string.format("%s %s translates %s(), which is not defined", id, tag, name))
       end
+    end
+  end
+end
+
+function T.test_every_last_action_value_is_translated()
+  -- #82: the list row reads its text from these, `none` included — an
+  -- untranslated value shows the raw enum key next to eight Korean ones.
+  for _, tag in ipairs(TAGS) do
+    local values = ((translation("command", tag).attributes or {}).lastAction or {}).i18n or {}
+    for _, value in ipairs(definition("command").attributes.lastAction.schema.properties.value.enum) do
+      local label = ((values.value or {})[value] or {}).label
+      h.assert_true(type(label) == "string" and label ~= "",
+        "lastAction." .. value .. " has no " .. tag .. " label")
     end
   end
 end

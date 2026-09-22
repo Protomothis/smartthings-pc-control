@@ -14,6 +14,20 @@
 # It only works while the capabilities are `status: proposed` - SmartThings
 # freezes a published capability, and a change then needs a new version.
 #
+# A capability that does not exist on the account yet has to be CREATED first:
+# `capabilities:update` refuses an unknown id. That is what a rename means -
+# #82 turned `pcControl` into `pcAction`, because the hub caches a definition by
+# id for the whole hub (§14.4) and never re-reads a changed one:
+#
+#   smartthings capabilities:create -i capabilities/pcAction.json
+#   smartthings capabilities:presentation:create <new id> --capability-version 1 \
+#     -i capabilities/pcAction.presentation.json
+#   smartthings capabilities:translations:upsert <new id> --capability-version 1 \
+#     -i capabilities/translations/pcAction.ko.json     # and .en.json
+#
+# and once every profile that referenced the old id is deployed and no device
+# is on it any more, `smartthings capabilities:delete <old id>`.
+#
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
 #   - authenticated (CLI 2.x has no `login`; the first command opens a browser),
@@ -23,7 +37,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcControl pcTimer pcHealth pcUser)
+CAPABILITIES=(pcPower pcAction pcTimer pcHealth pcUser)
 VERSION=1
 TAGS=(ko en)
 

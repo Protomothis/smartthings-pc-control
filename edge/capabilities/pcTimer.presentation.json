@@ -37,6 +37,26 @@
               "key": "120",
               "value": "2 hours",
               "type": "active"
+            },
+            {
+              "key": "0",
+              "value": "Cancel",
+              "type": "inactive"
+            }
+          ]
+        },
+        "state": {
+          "value": "active.value",
+          "alternatives": [
+            {
+              "key": "true",
+              "value": "Scheduled",
+              "type": "active"
+            },
+            {
+              "key": "false",
+              "value": "No schedule",
+              "type": "inactive"
             }
           ]
         }
@@ -47,13 +67,6 @@
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
-      }
-    },
-    {
-      "label": "{{i18n.commands.cancel.label}}",
-      "displayType": "pushButton",
-      "pushButton": {
-        "command": "cancel"
       }
     }
   ],

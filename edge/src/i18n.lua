@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcHealth.message`, `pcControl.lastCommand`, `pcTimer.origin`).
+-- (`pcHealth.message`, `pcAction.lastCommand`, `pcTimer.origin`).
 --
 -- Design doc §6.5: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -147,6 +147,14 @@ local STRINGS = {
   conn_short_unauthorized = { ko = "시크릿 불일치", en = "Secret mismatch" },
   conn_short_unreachable = { ko = "응답 없음", en = "No response" },
   conn_short_incompatible = { ko = "버전 불일치", en = "Version mismatch" },
+
+  -- #82: the short forms the `pcHealth.summary` line carries. The long
+  -- sentences above stay in `pcHealth.message`, which automations and the
+  -- history read; this row is glanced at and the phone truncates it.
+  no_secret_short = { ko = "시크릿 미설정 · 설정 권장", en = "No secret · set one" },
+  wol_not_ready_short = { ko = "어댑터 WoL 꺼짐", en = "Adapter WoL off" },
+  update_available_short = { ko = "업데이트 %s 사용 가능", en = "Update %s available" },
+  update_available_plain_short = { ko = "업데이트 사용 가능", en = "Update available" },
 
   -- schedule / session summaries (#78)
   schedule_remaining = { ko = "%d분 남음", en = "%d min left" },

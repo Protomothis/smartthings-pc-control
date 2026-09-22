@@ -157,7 +157,57 @@ local function hhmm(iso)
   return iso:match("T(%d%d:%d%d)") or iso
 end
 
---- Format `pcControl.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--------------------------------------------------------------------------------
+-- pcAction.lastAction (#82)
+--------------------------------------------------------------------------------
+
+-- The value the detail-view list shows before anything has been run.
+state.ACTION_NONE = "none"
+
+-- service command name (§4.3) -> `lastAction` enum key. `wake` is not a service
+-- command at all (it is the WoL sequence), but it is an action the user can
+-- pick, so it is in the enum. `forceshutdown` has no enum value of its own:
+-- what the user sees happening is a shut down.
+local ACTIONS = {
+  wake = "wake",
+  suspend = "suspend",
+  hibernate = "hibernate",
+  restart = "restart",
+  shutdown = "shutdown",
+  forceshutdown = "shutdown",
+  lock = "lock",
+  turnscreenoff = "screenOff",
+  turnscreenon = "screenOn",
+}
+
+-- Every `lastAction` value, in the order the presentation lists them.
+-- capabilities_test.lua checks this against the enum in pcAction.json.
+state.ACTIONS = {
+  "none", "wake", "suspend", "hibernate", "restart", "shutdown",
+  "lock", "screenOff", "screenOn",
+}
+
+--- The `lastAction` enum key for a service command name, or for an enum key
+--- that is already one (the no-argument commands send their own name).
+--- Anything unknown yields `none` rather than an invalid enum value, which the
+--- hub would reject.
+function state.action_for(command)
+  if type(command) ~= "string" or command == "" then
+    return state.ACTION_NONE
+  end
+  local mapped = ACTIONS[command]
+  if mapped then
+    return mapped
+  end
+  for _, value in ipairs(state.ACTIONS) do
+    if value == command then
+      return value
+    end
+  end
+  return state.ACTION_NONE
+end
+
+--- Format `pcAction.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
     return ""
@@ -175,18 +225,17 @@ function state.format_last_command(last, lang)
 end
 
 --- `pcHealth.summary` (#78): the one line that replaced the six raw rows in the
---- detail view. "On · Connected · v1.1.0" when the PC answers,
+--- detail view. "Connected · v1.1.0" when the PC answers,
 --- "Not connected · Secret mismatch" when it does not.
--- @param power a `powerState` value
+--
+-- #82: the power word is gone from this line. The detail view now starts with
+-- the `pcPower.powerState` row, so repeating "On" here only made the status
+-- line longer than the phone shows.
 -- @param connection a `pcHealth.connection` value; nil counts as `ok`
 -- @param service_version `status.service_version`, appended when known
-function state.status_summary(power, connection, service_version, lang)
+function state.status_summary(connection, service_version, lang)
   local parts = {}
   if connection == nil or connection == "ok" then
-    local label = i18n.power(lang, power or state.UNKNOWN)
-    if label ~= "" then
-      parts[#parts + 1] = label
-    end
     parts[#parts + 1] = i18n.t(lang, "conn_ok")
     if type(service_version) == "string" and service_version ~= "" then
       parts[#parts + 1] = service_version
@@ -295,13 +344,51 @@ function state.status_message(status, opts)
   return ""
 end
 
--- Every attribute `apply_status` can emit, capability id -> attribute names.
+--- The same ladder as `status_message`, in the short wording the summary line
+--- carries (#82). `message` keeps the full sentence for automations and for the
+--- history; the summary row is read at a glance and the phone truncates it, so
+--- "No secret · set one" goes there instead of
+--- "No secret is set · setting one is recommended".
+function state.status_notice(status, opts)
+  opts = opts or {}
+  if type(opts.error) == "string" and opts.error ~= "" then
+    return opts.error
+  end
+
+  status = status or {}
+  local lang = opts.lang
+
+  if (status.wol or {}).ready ~= true then
+    return i18n.t(lang, "wol_not_ready_short")
+  end
+  if (status.update or {}).available == true then
+    local latest = status.update.latest
+    if type(latest) == "string" and latest ~= "" then
+      return i18n.t(lang, "update_available_short", latest)
+    end
+    return i18n.t(lang, "update_available_plain_short")
+  end
+  if status.secret_set == false then
+    return i18n.t(lang, "no_secret_short")
+  end
+
+  if type(opts.note) == "string" and opts.note ~= "" then
+    return opts.note
+  end
+  return ""
+end
+
+-- Every attribute the driver can emit, capability id -> attribute names.
 -- capabilities_test.lua checks this against the JSON in `capabilities/`, so a
 -- new attribute that is emitted but never defined fails the suite.
+--
+-- `apply_status` produces all of them except `lastAction`, which no status body
+-- carries: it is what the user last asked for, so poll.emit_action writes it
+-- from the command handlers (#82).
 local ATTRIBUTES = {
   [state.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
-  [caps.COMMAND] = { lastCommand = true },
+  [caps.COMMAND] = { lastCommand = true, lastAction = true },
   [caps.SCHEDULE] = {
     active = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true,
@@ -364,13 +451,16 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
   local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
   ev(events, caps.STATUS, "message", message)
-  -- #78: "On · Connected · v1.1.0". A successful status is always `ok` here;
+  -- #78/#82: "Connected · v1.1.0". A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
   -- The notice rides on the summary line: the detail view shows one status
   -- row, and a separate message row read as "-" when there was nothing to say.
-  local summary = state.status_summary(power, "ok", status.service_version, lang)
-  if message ~= nil and message ~= "" then
-    summary = summary .. " · " .. message
+  -- It is the short wording (`status_notice`), because this row sits next to
+  -- three other summaries and the phone cuts a long one off.
+  local summary = state.status_summary("ok", status.service_version, lang)
+  local notice = state.status_notice(status, { lang = lang, error = opts.error, note = opts.note })
+  if notice ~= nil and notice ~= "" then
+    summary = summary .. " · " .. notice
   end
   ev(events, caps.STATUS, "summary", summary)
 

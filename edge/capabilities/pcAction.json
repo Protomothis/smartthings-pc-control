@@ -1,10 +1,34 @@
 {
-  "id": "numbersystem53811.pccontrol",
+  "id": "numbersystem53811.pcaction",
   "version": 1,
   "status": "proposed",
-  "name": "pcControl",
+  "name": "pcAction",
   "ephemeral": false,
   "attributes": {
+    "lastAction": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "none",
+              "wake",
+              "suspend",
+              "hibernate",
+              "restart",
+              "shutdown",
+              "lock",
+              "screenOff",
+              "screenOn"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    },
     "lastCommand": {
       "schema": {
         "type": "object",
@@ -62,6 +86,7 @@
           "schema": {
             "type": "string",
             "enum": [
+              "wake",
               "shutdown",
               "forceshutdown",
               "restart",

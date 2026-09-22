@@ -60,6 +60,9 @@ local function device_added(driver, device)
   local initial = state.new()
   poll.set_state(device, initial)
   poll.emit_power(device, initial)
+  -- #82: the command list shows `lastAction`, and an attribute that was never
+  -- emitted reads as "-" on the phone. Nothing has been run yet, so: none.
+  poll.ensure_action(device)
   if not client.device_base_url(device) then
     poll.emit_connection(device, "unreachable", i18n.t(poll.lang(device), "no_ip"))
   end
@@ -105,17 +108,21 @@ local function handle_switch_on(driver, device)
   local nxt = state.transition(poll.get_state(device), "switch_on")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
+  -- #82: the command row follows the switch, so both say the same thing.
+  poll.emit_action(device, "wake")
   wol.wake(driver, device)
 end
 
 --- switch.off: the configured off action with the service's own grace handling.
 local function handle_switch_off(driver, device)
   local prefs = device.preferences or {}
-  local ok, body, kind = client.command(device, prefs.offAction or "shutdown", "default", 0)
+  local command = prefs.offAction or "shutdown"
+  local ok, body, kind = client.command(device, command, "default", 0)
   if not ok then
     report_error(device, kind, body)
     return
   end
+  poll.emit_action(device, command)
   poll.once(driver, device)
 end
 
@@ -123,10 +130,16 @@ local function handle_refresh(driver, device)
   poll.once(driver, device)
 end
 
---- The remote-control buttons of the detail view (#78): one no-argument
---- capability command per row, mapped to the service command name of §4.3.
---- `wake` is not a service command at all — it is the WoL sequence, the same
---- thing `switch on` does.
+--- The no-argument commands of §5.1, mapped to the service command name of
+--- §4.3. `wake` is not a service command at all — it is the WoL sequence, the
+--- same thing `switch on` does.
+---
+--- #82 took their `pushButton` rows off the detail view (a button has no value,
+--- so the phone drew "-" next to each of the eight); the screen sends
+--- `execute(command)` from one list instead. The commands stay in the
+--- definition and keep their handlers: a device created on an older profile
+--- still shows the buttons, and they are the shape a hub-local automation or a
+--- scene can call.
 local BUTTONS = {
   wake = "wake",
   suspend = "suspend",
@@ -138,9 +151,10 @@ local BUTTONS = {
   screenOn = "turnscreenon",
 }
 
---- §4.3 `mode` for a button press, from the `buttonMode` preference (§5.4).
---- `default` follows whatever grace period the PC is configured with (so the
---- toast is still cancellable); `immediate` skips it.
+--- §4.3 `mode` for a command sent without one, from the `buttonMode`
+--- preference (§5.4). `default` follows whatever grace period the PC is
+--- configured with (so the toast is still cancellable); `immediate` skips it.
+--- The detail-view list sends `command` only, so it lands here too (#82).
 local function button_mode(device)
   local mode = (device.preferences or {}).buttonMode
   if mode == "immediate" then
@@ -149,33 +163,47 @@ local function button_mode(device)
   return "default"
 end
 
---- Build the handler for one remote-control button.
-local function button_handler(service_command)
-  return function(driver, device)
-    if service_command == "wake" then
-      return handle_switch_on(driver, device)
-    end
-    local ok, body, kind = client.command(device, service_command, button_mode(device), 0)
-    if not ok then
-      report_error(device, kind, body)
-      return
-    end
-    poll.once(driver, device)
+--- Run one service command and report what happened (#82).
+--
+-- The one path every command row takes: send it, paint `lastAction` when the
+-- service accepted it, and poll straight away so the tiles show the result
+-- instead of the state from up to `pollInterval` ago. `wake` never reaches the
+-- service — it is the WoL sequence.
+local function run_command(driver, device, service_command, mode, minutes)
+  if service_command == "wake" then
+    return handle_switch_on(driver, device)
   end
-end
-
---- pcControl.execute(command, mode, minutes) — capabilities/pcControl.json.
---- `minutes > 0` turns the same endpoint into a schedule (§4.3).
-local function handle_execute(driver, device, cmd)
-  local args = (cmd or {}).args or {}
-  local ok, body, kind = client.command(device, args.command, args.mode or "default", args.minutes or 0)
+  minutes = math.floor(tonumber(minutes) or 0)
+  local ok, body, kind = client.command(device, service_command, mode, minutes)
   if not ok then
     report_error(device, kind, body)
     return
   end
-  -- The service acted; poll straight away so the tiles show the result instead
-  -- of the state from up to `pollInterval` ago.
+  if minutes <= 0 then
+    -- `minutes > 0` scheduled the command instead of running it; what is
+    -- pending belongs on the pcTimer row, not on "last command".
+    poll.emit_action(device, service_command)
+  end
   poll.once(driver, device)
+end
+
+--- Build the handler for one no-argument command.
+local function button_handler(service_command)
+  return function(driver, device)
+    return run_command(driver, device, service_command, button_mode(device), 0)
+  end
+end
+
+--- pcAction.execute(command, mode, minutes) — capabilities/pcAction.json.
+--- `minutes > 0` turns the same endpoint into a schedule (§4.3).
+--
+--- The detail-view list (#82) sends `command` alone: the mode then follows the
+--- `buttonMode` preference, exactly as the buttons it replaced did, and the
+--- delay is 0. An automation fills all three in.
+local function handle_execute(driver, device, cmd)
+  local args = (cmd or {}).args or {}
+  return run_command(driver, device, args.command,
+    args.mode or button_mode(device), args.minutes or 0)
 end
 
 -- Commands pcTimer.schedule may carry; anything else (or nothing, when the
@@ -194,12 +222,26 @@ local function schedule_command(device, requested)
   return "shutdown"
 end
 
+--- pcTimer.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- `{"cancelled": false}` when there was nothing to cancel.
+local handle_cancel
+
 --- pcTimer.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
+---
+--- #82: the detail view is one list with the presets and a `Cancel` entry that
+--- sends `minutes = 0`, because a `pushButton` row has no value and drew "-".
+--- The capability definition is unchanged (the hub caches definitions by id,
+--- §14.4), so `cancel()` is still there and still handled; zero minutes simply
+--- takes the same path. The list sends the key as a string on some firmwares,
+--- hence the `tonumber`.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
+  if math.floor(tonumber(args.minutes) or 0) <= 0 then
+    return handle_cancel(driver, device)
+  end
   local had_schedule = poll.get_state(device).schedule_active == true
   local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", args.minutes or 0)
   if not ok then
@@ -211,9 +253,7 @@ local function handle_schedule(driver, device, cmd)
   })
 end
 
---- pcTimer.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
---- `{"cancelled": false}` when there was nothing to cancel.
-local function handle_cancel(driver, device)
+function handle_cancel(driver, device)
   local ok, body, kind = client.cancel(device)
   if not ok then
     report_error(device, kind, body)
@@ -239,7 +279,7 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals: they are what `capabilities/pcControl.json` and
+-- Command names are literals: they are what `capabilities/pcAction.json` and
 -- `capabilities/pcTimer.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then

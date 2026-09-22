@@ -79,7 +79,7 @@ local function golden(lang)
     { cap = caps.STATUS, attr = "lastSeen", value = NOW },
     { cap = caps.STATUS, attr = "message", value = "" },
     { cap = caps.STATUS, attr = "summary",
-      value = en and "On · Connected · v1.1.0" or "켜짐 · 연결됨 · v1.1.0" },
+      value = en and "Connected · v1.1.0" or "연결됨 · v1.1.0" },
     -- #78: emitted either way, so the session row can be hidden again.
     { cap = caps.SESSION, attr = "exposed", value = true },
     { cap = caps.SESSION, attr = "locked", value = true },
@@ -244,24 +244,26 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_status_summary_reads_like_the_issue()
-  h.assert_equal(state.status_summary(state.ON, "ok", "v1.1.0", "ko"), "켜짐 · 연결됨 · v1.1.0")
-  h.assert_equal(state.status_summary(state.ON, "ok", "v1.1.0", "en"), "On · Connected · v1.1.0")
-  h.assert_equal(state.status_summary(state.OFF, "unauthorized", nil, "ko"),
-    "연결 안 됨 · 시크릿 불일치")
-  h.assert_equal(state.status_summary(state.OFF, "unauthorized", nil, "en"),
+  -- #82: no power word — the pcPower row sits directly above this one.
+  h.assert_equal(state.status_summary("ok", "v1.1.0", "ko"), "연결됨 · v1.1.0")
+  h.assert_equal(state.status_summary("ok", "v1.1.0", "en"), "Connected · v1.1.0")
+  h.assert_equal(state.status_summary("unauthorized", nil, "ko"), "연결 안 됨 · 시크릿 불일치")
+  h.assert_equal(state.status_summary("unauthorized", nil, "en"),
     "Not connected · Secret mismatch")
 end
 
-function T.test_status_summary_covers_every_power_state_and_connection()
+function T.test_status_summary_never_repeats_the_power_state()
+  -- #82: the power word moved out of this line for good; a summary that
+  -- carried it again would duplicate the row above it.
   for _, power in ipairs({ state.ON, state.SLEEPING, state.HIBERNATED, state.OFF,
                            state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN }) do
-    local summary = state.status_summary(power, "ok", "", "ko")
+    local summary = state.status_summary("ok", "", "ko")
     h.assert_contains(summary, "연결됨", power)
-    -- A missing label would leave the raw enum value in the line.
-    h.assert_equal(summary:find(power, 1, true), nil, power .. " has no Korean label")
+    h.assert_equal(summary:find(i18n.power("ko", power), 1, true), nil,
+      power .. " is the pcPower row's job")
   end
   for _, connection in ipairs({ "unauthorized", "unreachable", "incompatible" }) do
-    local summary = state.status_summary(state.OFF, connection, nil, "ko")
+    local summary = state.status_summary(connection, nil, "ko")
     h.assert_contains(summary, "연결 안 됨", connection)
     h.assert_equal(summary:find(connection, 1, true), nil,
       connection .. " has no short Korean label")
@@ -269,8 +271,86 @@ function T.test_status_summary_covers_every_power_state_and_connection()
 end
 
 function T.test_status_summary_omits_an_unknown_version()
-  h.assert_equal(state.status_summary(state.ON, nil, nil, "en"), "On · Connected")
-  h.assert_equal(state.status_summary(state.ON, "ok", "", "en"), "On · Connected")
+  h.assert_equal(state.status_summary(nil, nil, "en"), "Connected")
+  h.assert_equal(state.status_summary("ok", "", "en"), "Connected")
+end
+
+--------------------------------------------------------------------------------
+-- the short notices the summary carries (#82)
+--------------------------------------------------------------------------------
+
+function T.test_the_summary_notice_is_shorter_than_the_message()
+  -- Both ladders pick the same notice; the summary takes the short wording
+  -- because it shares the screen with three other summary rows.
+  local status = sample_status()
+  status.secret_set = false
+  h.assert_equal(state.status_notice(status, { lang = "ko" }), "시크릿 미설정 · 설정 권장")
+  h.assert_equal(state.status_notice(status, { lang = "en" }), "No secret · set one")
+  h.assert_equal(state.status_message(status, { lang = "en" }),
+    "No secret is set · setting one is recommended")
+
+  status = sample_status()
+  status.wol = { ready = false, adapters = {} }
+  h.assert_equal(state.status_notice(status, { lang = "ko" }), "어댑터 WoL 꺼짐")
+  h.assert_equal(state.status_notice(status, { lang = "en" }), "Adapter WoL off")
+
+  status = sample_status()
+  status.update = { available = true, latest = "v1.2.0" }
+  h.assert_equal(state.status_notice(status, { lang = "ko" }), "업데이트 v1.2.0 사용 가능")
+  h.assert_equal(state.status_notice(status, { lang = "en" }), "Update v1.2.0 available")
+  status.update = { available = true }
+  h.assert_equal(state.status_notice(status, { lang = "en" }), "Update available")
+end
+
+function T.test_the_summary_carries_the_short_notice_and_message_the_long_one()
+  local status = sample_status()
+  status.secret_set = false
+  local events = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"),
+    "연결됨 · v1.1.0 · 시크릿 미설정 · 설정 권장")
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"),
+    "시크릿이 설정되지 않았습니다 · 설정을 권장합니다")
+end
+
+function T.test_a_quiet_status_has_no_notice_at_all()
+  h.assert_equal(state.status_notice(sample_status(), { lang = "en" }), "")
+  h.assert_equal(h.event_value(events_for(sample_status()), caps.STATUS, "summary"),
+    "Connected · v1.1.0")
+end
+
+--------------------------------------------------------------------------------
+-- pcAction.lastAction (#82)
+--------------------------------------------------------------------------------
+
+function T.test_action_for_maps_the_service_command_names()
+  h.assert_equal(state.action_for("turnscreenoff"), "screenOff")
+  h.assert_equal(state.action_for("turnscreenon"), "screenOn")
+  h.assert_equal(state.action_for("suspend"), "suspend")
+  h.assert_equal(state.action_for("hibernate"), "hibernate")
+  h.assert_equal(state.action_for("restart"), "restart")
+  h.assert_equal(state.action_for("lock"), "lock")
+  h.assert_equal(state.action_for("shutdown"), "shutdown")
+  -- Not an enum value of its own: what the user sees is the PC shutting down.
+  h.assert_equal(state.action_for("forceshutdown"), "shutdown")
+  -- The WoL sequence is an action even though no service command matches it.
+  h.assert_equal(state.action_for("wake"), "wake")
+end
+
+function T.test_action_for_accepts_an_enum_key_unchanged()
+  -- The no-argument commands send their own name, which is already a key.
+  for _, value in ipairs(state.ACTIONS) do
+    h.assert_equal(state.action_for(value), value)
+  end
+end
+
+function T.test_action_for_never_invents_an_enum_value()
+  -- The hub rejects an event whose value is not in the enum, so anything
+  -- unknown has to fall back to a value that is.
+  for _, bogus in ipairs({ "ping", "", "screenoff" }) do
+    h.assert_equal(state.action_for(bogus), state.ACTION_NONE)
+  end
+  h.assert_equal(state.action_for(nil), "none")
+  h.assert_equal(state.action_for(42), "none")
 end
 
 function T.test_schedule_summary_says_no_schedule_when_idle()
