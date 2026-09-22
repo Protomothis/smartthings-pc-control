@@ -7,28 +7,18 @@
   },
   "detailView": [
     {
-      "label": "Session locked",
+      "label": "Session",
       "displayType": "state",
       "state": {
-        "label": "{{locked.value}}",
-        "alternatives": [
-          { "key": "true", "value": "Locked", "type": "active" },
-          { "key": "false", "value": "Unlocked", "type": "inactive" }
-        ]
-      }
-    },
-    {
-      "label": "Idle",
-      "displayType": "state",
-      "state": {
-        "label": "{{idleMinutes.value}} min"
-      }
-    },
-    {
-      "label": "Signed in as",
-      "displayType": "state",
-      "state": {
-        "label": "{{user.value}}"
+        "label": "{{summary.value}}"
+      },
+      "visibleCondition": {
+        "capability": "numbersystem53811.pcsession",
+        "version": 1,
+        "component": "main",
+        "value": "exposed.value",
+        "operator": "EQUALS",
+        "operand": true
       }
     }
   ],

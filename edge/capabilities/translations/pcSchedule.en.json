@@ -1,0 +1,32 @@
+{
+  "tag": "en",
+  "label": "PC schedule",
+  "attributes": {
+    "summary": { "label": "Schedule" },
+    "active": { "label": "Scheduled" },
+    "command": { "label": "Scheduled command" },
+    "remainingSeconds": { "label": "Time left (s)" },
+    "executeAt": { "label": "Runs at" },
+    "origin": { "label": "Requested by" }
+  },
+  "commands": {
+    "cancel": { "label": "Cancel schedule" },
+    "schedule": {
+      "label": "Schedule",
+      "arguments": {
+        "minutes": { "label": "In (minutes)" },
+        "command": {
+          "label": "Command",
+          "i18n": {
+            "value": {
+              "shutdown": { "label": "Shut down" },
+              "restart": { "label": "Restart" },
+              "suspend": { "label": "Sleep" },
+              "hibernate": { "label": "Hibernate" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

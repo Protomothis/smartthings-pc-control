@@ -7,53 +7,6 @@
   },
   "detailView": [
     {
-      "label": "Scheduled",
-      "displayType": "state",
-      "state": {
-        "label": "{{active.value}}",
-        "alternatives": [
-          {
-            "key": "true",
-            "value": "Yes",
-            "type": "active"
-          },
-          {
-            "key": "false",
-            "value": "No",
-            "type": "inactive"
-          }
-        ]
-      }
-    },
-    {
-      "label": "Scheduled command",
-      "displayType": "state",
-      "state": {
-        "label": "{{command.value}}"
-      }
-    },
-    {
-      "label": "Time left",
-      "displayType": "state",
-      "state": {
-        "label": "{{remainingSeconds.value}} s"
-      }
-    },
-    {
-      "label": "Runs at",
-      "displayType": "state",
-      "state": {
-        "label": "{{executeAt.value}}"
-      }
-    },
-    {
-      "label": "Requested by",
-      "displayType": "state",
-      "state": {
-        "label": "{{origin.value}}"
-      }
-    },
-    {
       "label": "Schedule shutdown in",
       "displayType": "list",
       "list": {
@@ -90,11 +43,34 @@
       }
     },
     {
+      "label": "Scheduled",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      },
+      "visibleCondition": {
+        "capability": "numbersystem53811.pcschedule",
+        "version": 1,
+        "component": "main",
+        "value": "active.value",
+        "operator": "EQUALS",
+        "operand": true
+      }
+    },
+    {
       "label": "Cancel schedule",
       "displayType": "pushButton",
       "pushButton": {
         "command": "cancel",
         "argument": null
+      },
+      "visibleCondition": {
+        "capability": "numbersystem53811.pcschedule",
+        "version": 1,
+        "component": "main",
+        "value": "active.value",
+        "operator": "EQUALS",
+        "operand": true
       }
     }
   ],
