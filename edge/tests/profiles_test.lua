@@ -34,13 +34,15 @@ function T.test_the_profile_constants_are_the_current_version()
 end
 
 function T.test_an_older_profile_migrates_to_the_current_one()
-  h.assert_equal(profiles.migration_for("pc.v1", false), "pc.v2")
-  h.assert_equal(profiles.migration_for("pc-display.v1", true), "pc-display.v2")
+  h.assert_equal(profiles.migration_for("pc.v1", false), "pc.v3")
+  h.assert_equal(profiles.migration_for("pc.v2", false), "pc.v3")
+  h.assert_equal(profiles.migration_for("pc-display.v1", true), "pc-display.v3")
+  h.assert_equal(profiles.migration_for("pc-display.v2", true), "pc-display.v3")
 end
 
 function T.test_the_current_profile_does_not_migrate()
-  h.assert_nil(profiles.migration_for("pc.v2", false))
-  h.assert_nil(profiles.migration_for("pc-display.v2", true))
+  h.assert_nil(profiles.migration_for("pc.v3", false))
+  h.assert_nil(profiles.migration_for("pc-display.v3", true))
 end
 
 function T.test_an_unknown_profile_is_left_alone()
@@ -105,18 +107,18 @@ end
 function T.test_ensure_moves_an_old_device_and_records_it()
   profiles.reset()
   local device = device_on("pc.v1", "old-pc")
-  h.assert_equal(profiles.ensure(device, false), "pc.v2")
+  h.assert_equal(profiles.ensure(device, false), profiles.PC)
   h.assert_equal(#device.metadata_updates, 1)
-  h.assert_deep_equal(device.metadata_updates[1], { profile = "pc.v2" })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v2",
+  h.assert_deep_equal(device.metadata_updates[1], { profile = profiles.PC })
+  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC,
     "the new profile name has to be persisted, or init would retry forever")
 end
 
 function T.test_ensure_moves_an_old_child()
   profiles.reset()
   local child = device_on("pc-display.v1", "old-child")
-  h.assert_equal(profiles.ensure(child, true), "pc-display.v2")
-  h.assert_deep_equal(child.metadata_updates[1], { profile = "pc-display.v2" })
+  h.assert_equal(profiles.ensure(child, true), profiles.DISPLAY)
+  h.assert_deep_equal(child.metadata_updates[1], { profile = profiles.DISPLAY })
 end
 
 function T.test_ensure_runs_at_most_once_per_device()
@@ -129,10 +131,10 @@ end
 
 function T.test_ensure_does_nothing_for_a_current_device()
   profiles.reset()
-  local device = device_on("pc.v2", "current-pc")
+  local device = device_on(profiles.PC, "current-pc")
   h.assert_nil(profiles.ensure(device, false))
   h.assert_equal(#device.metadata_updates, 0)
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v2")
+  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
 end
 
 function T.test_ensure_leaves_a_foreign_profile_alone()
@@ -178,8 +180,8 @@ function T.test_init_migrates_a_device_created_by_an_older_driver()
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-1"
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates[1], { profile = "pc.v2" })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v2")
+  h.assert_deep_equal(device.metadata_updates[1], { profile = profiles.PC })
+  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
 end
 
 function T.test_init_migrates_the_display_child_too()
@@ -189,7 +191,7 @@ function T.test_init_migrates_the_display_child_too()
   child.device_network_id = discovery.DNI_PREFIX .. "9f3c-guid" .. display.SUFFIX
   h.assert_true(display.is_child(child), "the fixture has to look like a child")
   lifecycle().init(fake_driver({ child }), child)
-  h.assert_deep_equal(child.metadata_updates[1], { profile = "pc-display.v2" })
+  h.assert_deep_equal(child.metadata_updates[1], { profile = profiles.DISPLAY })
 end
 
 function T.test_added_records_the_profile_and_migrates_nothing()
@@ -200,7 +202,7 @@ function T.test_added_records_the_profile_and_migrates_nothing()
   device.id = "added-pc"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-2"
   lifecycle().added(fake_driver({ device }), device)
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v2")
+  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
   h.assert_equal(#device.metadata_updates, 0,
     "a brand new device is already on the current profile")
 end
