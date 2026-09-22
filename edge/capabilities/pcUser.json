@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcsession",
+  "id": "numbersystem53811.pcuser",
   "version": 1,
   "status": "proposed",
-  "name": "pcSession",
+  "name": "pcUser",
   "ephemeral": false,
   "attributes": {
     "exposed": {

@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcpowerstate",
+  "id": "numbersystem53811.pcpower",
   "version": 1,
   "status": "proposed",
-  "name": "pcPowerState",
+  "name": "pcPower",
   "ephemeral": false,
   "attributes": {
     "powerState": {

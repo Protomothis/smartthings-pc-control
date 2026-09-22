@@ -19,12 +19,12 @@
 local profiles = {}
 
 -- What new devices are created with.
-profiles.PC = "pc.v3"
+profiles.PC = "pc.v4"
 
 -- Every profile name this driver has ever shipped, oldest first. A name that
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone.
-profiles.KNOWN = { "pc.v1", "pc.v2", "pc.v3" }
+profiles.KNOWN = { "pc.v1", "pc.v2", "pc.v3", "pc.v4" }
 
 -- The profile name is written here at creation time and after a migration,
 -- because `device.profile` does not always carry a name (see `name_of`).

@@ -49,7 +49,7 @@ local function capability_for(id)
   return nil
 end
 
---- `pcStatus.lastSeen`: the hub's local clock time of the last good poll.
+--- `pcHealth.lastSeen`: the hub's local clock time of the last good poll.
 --- A tile the user glances at wants "14:05:12", not an ISO timestamp, and the
 --- date is never interesting for a value that is at most a few minutes old.
 function poll.now()
@@ -100,12 +100,12 @@ function poll.emit_power(device, s)
   })
 end
 
---- Emit only `pcStatus.message`.
+--- Emit only `pcHealth.message`.
 function poll.emit_message(device, message)
   poll.emit(device, { { cap = caps.STATUS, attr = "message", value = message or "" } })
 end
 
---- Emit `pcStatus.connection` + `pcStatus.message` + `pcStatus.summary` (#78).
+--- Emit `pcHealth.connection` + `pcHealth.message` + `pcHealth.summary` (#78).
 --- The summary is the only status row the detail view still shows, so a failed
 --- poll has to rewrite it as well; the power state comes from the device so the
 --- line stays consistent with the tile.
@@ -119,7 +119,7 @@ function poll.emit_connection(device, connection, message)
   })
 end
 
---- err_kind (client.lua) -> `pcStatus.connection` enum value (§5.1), or nil
+--- err_kind (client.lua) -> `pcHealth.connection` enum value (§5.1), or nil
 --- when the failure says nothing about the connection and the last state
 --- should stand.
 function poll.connection_for(kind)
@@ -174,7 +174,7 @@ end
 
 --- One poll cycle: GET /st/v1/status, advance the state machine, emit, and set
 --- health online/offline. Also used by `refresh` and after a command.
---- `opts.note` is a one-off confirmation to show in `pcStatus.message` when
+--- `opts.note` is a one-off confirmation to show in `pcHealth.message` when
 --- nothing more important applies (§5.1, state.MESSAGE_ORDER); `opts.deps` is
 --- the injected http/json/ltn12 the tests use instead of a socket.
 function poll.once(driver, device, opts)

@@ -86,7 +86,7 @@ for _, name in ipairs(list_json()) do
   end
 end
 
--- short key (caps.ids) -> definition file name, e.g. power_state -> pcPowerState.json.
+-- short key (caps.ids) -> definition file name, e.g. power_state -> pcPower.json.
 -- SmartThings lower-cases the name part of a capability id, so the match
 -- against the camelCase file names is case-insensitive.
 local function file_for(key)
@@ -298,7 +298,7 @@ function T.test_the_enums_match_the_lua_constants()
     state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN,
   })
   -- §4.1: `noSecret` is deliberately not a connection value; the warning goes
-  -- into pcStatus.message instead.
+  -- into pcHealth.message instead.
   local connection = definition("status").attributes.connection.schema.properties.value
   h.assert_deep_equal(connection.enum, { "ok", "unauthorized", "unreachable", "incompatible" })
 end
@@ -365,7 +365,7 @@ function T.test_command_enums_match_the_service()
   end
   for _, name in ipairs({ "shutdown", "forceshutdown", "restart", "hibernate",
       "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
-    h.assert_true(seen[name] == true, "pcCommand.execute is missing " .. name)
+    h.assert_true(seen[name] == true, "pcControl.execute is missing " .. name)
   end
   h.assert_equal(#execute, 8)
 
@@ -565,13 +565,13 @@ function T.test_the_conditional_rows_are_guarded_by_a_visible_condition()
   end
 
   check(condition_of("status", "message.value"), caps.STATUS,
-    "message.value", "NOT_EQUALS", "pcStatus message row")
+    "message.value", "NOT_EQUALS", "pcHealth message row")
   check(condition_of("schedule", "summary.value"), caps.SCHEDULE,
-    "active.value", "EQUALS", "pcSchedule summary row")
+    "active.value", "EQUALS", "pcTimer summary row")
   check(condition_of("schedule", "cancel"), caps.SCHEDULE,
-    "active.value", "EQUALS", "pcSchedule cancel button")
+    "active.value", "EQUALS", "pcTimer cancel button")
   check(condition_of("session", "summary.value"), caps.SESSION,
-    "exposed.value", "EQUALS", "pcSession summary row")
+    "exposed.value", "EQUALS", "pcUser summary row")
   h.assert_true(condition_of("schedule", "summary.value").operand == true)
   h.assert_equal(condition_of("status", "message.value").operand, "")
 end

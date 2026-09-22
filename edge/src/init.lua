@@ -87,7 +87,7 @@ end
 -- capability handlers
 --------------------------------------------------------------------------------
 
--- Report a failed command through pcStatus instead of failing silently (§1.3).
+-- Report a failed command through pcHealth instead of failing silently (§1.3).
 -- A rate-limited request (§8) says nothing about the connection, so it is
 -- logged and the tiles keep what the last poll put there.
 local function report_error(device, kind, body)
@@ -164,7 +164,7 @@ local function button_handler(service_command)
   end
 end
 
---- pcCommand.execute(command, mode, minutes) — capabilities/pcCommand.json.
+--- pcControl.execute(command, mode, minutes) — capabilities/pcControl.json.
 --- `minutes > 0` turns the same endpoint into a schedule (§4.3).
 local function handle_execute(driver, device, cmd)
   local args = (cmd or {}).args or {}
@@ -178,7 +178,7 @@ local function handle_execute(driver, device, cmd)
   poll.once(driver, device)
 end
 
--- Commands pcSchedule.schedule may carry; anything else (or nothing, when the
+-- Commands pcTimer.schedule may carry; anything else (or nothing, when the
 -- detail-view list only sends minutes) falls back to the switch-off action
 -- when that is schedulable, else shutdown.
 local SCHEDULABLE = { shutdown = true, restart = true, suspend = true, hibernate = true }
@@ -194,7 +194,7 @@ local function schedule_command(device, requested)
   return "shutdown"
 end
 
---- pcSchedule.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
+--- pcTimer.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -211,7 +211,7 @@ local function handle_schedule(driver, device, cmd)
   })
 end
 
---- pcSchedule.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- pcTimer.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local function handle_cancel(driver, device)
   local ok, body, kind = client.cancel(device)
@@ -239,8 +239,8 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals: they are what `capabilities/pcCommand.json` and
--- `capabilities/pcSchedule.json` declare, and the generated capability object
+-- Command names are literals: they are what `capabilities/pcControl.json` and
+-- `capabilities/pcTimer.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
   local handlers = { execute = handle_execute }

@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcStatus.message`, `pcCommand.lastCommand`, `pcSchedule.origin`).
+-- (`pcHealth.message`, `pcControl.lastCommand`, `pcTimer.origin`).
 --
 -- Design doc §6.5: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -130,7 +130,7 @@ local STRINGS = {
   origin_smartthings = { ko = "SmartThings", en = "SmartThings" },
 
   -- powerState enum, for the one-line summaries (§5.1, #78). The enum itself is
-  -- localised by the capability translations; these are for `pcStatus.summary`,
+  -- localised by the capability translations; these are for `pcHealth.summary`,
   -- which is a plain string attribute the driver composes.
   power_on = { ko = "켜짐", en = "On" },
   power_sleeping = { ko = "절전", en = "Sleeping" },
@@ -141,7 +141,7 @@ local STRINGS = {
   power_unknown = { ko = "알 수 없음", en = "Unknown" },
 
   -- connection, in the short form a summary line can carry (#78). The long
-  -- sentences above stay in `pcStatus.message`.
+  -- sentences above stay in `pcHealth.message`.
   conn_ok = { ko = "연결됨", en = "Connected" },
   conn_down = { ko = "연결 안 됨", en = "Not connected" },
   conn_short_unauthorized = { ko = "시크릿 불일치", en = "Secret mismatch" },
@@ -221,7 +221,7 @@ function i18n.command(lang, command)
   return tostring(command)
 end
 
---- Localised label for a `pcPowerState.powerState` value (#78 summaries).
+--- Localised label for a `pcPower.powerState` value (#78 summaries).
 --- Unknown values are returned unchanged.
 function i18n.power(lang, power_state)
   if power_state == nil or power_state == "" then
@@ -234,7 +234,7 @@ function i18n.power(lang, power_state)
   return tostring(power_state)
 end
 
---- Short label for a `pcStatus.connection` value, for the summary line (#78).
+--- Short label for a `pcHealth.connection` value, for the summary line (#78).
 --- `ok` has its own wording ("Connected"); everything else is a reason that
 --- follows "Not connected · ".
 function i18n.connection(lang, connection)

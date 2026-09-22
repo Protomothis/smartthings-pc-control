@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcstatus",
+  "id": "numbersystem53811.pctimer",
   "version": 1,
   "status": "proposed",
-  "name": "pcStatus",
+  "name": "pcTimer",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -15,25 +15,61 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
-    "connection": {
+    "active": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "command": {
       "schema": {
         "type": "object",
         "properties": {
           "value": {
             "type": "string",
-            "enum": ["ok", "unauthorized", "unreachable", "incompatible"]
+            "maxLength": 64
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
-    "serviceVersion": {
+    "remainingSeconds": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "executeAt": {
       "schema": {
         "type": "object",
         "properties": {
@@ -43,64 +79,60 @@
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     },
-    "updateAvailable": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false,
-        "required": ["value"]
-      },
-      "enumCommands": []
-    },
-    "wolReady": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false,
-        "required": ["value"]
-      },
-      "enumCommands": []
-    },
-    "lastSeen": {
+    "origin": {
       "schema": {
         "type": "object",
         "properties": {
           "value": {
             "type": "string",
-            "maxLength": 32
+            "maxLength": 64
           }
         },
         "additionalProperties": false,
-        "required": ["value"]
-      },
-      "enumCommands": []
-    },
-    "message": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "string",
-            "maxLength": 255
-          }
-        },
-        "additionalProperties": false,
-        "required": ["value"]
+        "required": [
+          "value"
+        ]
       },
       "enumCommands": []
     }
   },
-  "commands": {}
+  "commands": {
+    "cancel": {
+      "name": "cancel",
+      "arguments": []
+    },
+    "schedule": {
+      "name": "schedule",
+      "arguments": [
+        {
+          "name": "minutes",
+          "optional": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          }
+        },
+        {
+          "name": "command",
+          "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        }
+      ]
+    }
+  }
 }

@@ -48,7 +48,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcSchedule.schedule` can say whether
+    -- last polled `schedule.active`, so `pcTimer.schedule` can say whether
     -- it replaced an existing schedule (§4.3) without asking the service twice
     schedule_active = false,
   }
@@ -157,7 +157,7 @@ local function hhmm(iso)
   return iso:match("T(%d%d:%d%d)") or iso
 end
 
---- Format `pcCommand.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--- Format `pcControl.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
     return ""
@@ -174,11 +174,11 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcStatus.summary` (#78): the one line that replaced the six raw rows in the
+--- `pcHealth.summary` (#78): the one line that replaced the six raw rows in the
 --- detail view. "On · Connected · v1.1.0" when the PC answers,
 --- "Not connected · Secret mismatch" when it does not.
 -- @param power a `powerState` value
--- @param connection a `pcStatus.connection` value; nil counts as `ok`
+-- @param connection a `pcHealth.connection` value; nil counts as `ok`
 -- @param service_version `status.service_version`, appended when known
 function state.status_summary(power, connection, service_version, lang)
   local parts = {}
@@ -201,7 +201,7 @@ function state.status_summary(power, connection, service_version, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcSchedule.summary` (#78): "Shut down · 4 min left · SmartThings", or an
+--- `pcTimer.summary` (#78): "Shut down · 4 min left · SmartThings", or an
 --- empty string when nothing is scheduled (the row is hidden then).
 function state.schedule_summary(schedule, lang)
   schedule = schedule or {}
@@ -227,7 +227,7 @@ function state.schedule_summary(schedule, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcSession.summary` (#78): "Locked · idle 20 min · kim". Only composed when
+--- `pcUser.summary` (#78): "Locked · idle 20 min · kim". Only composed when
 --- the session block is exposed; see apply_status.
 function state.session_summary(session, lang)
   session = session or {}
@@ -241,7 +241,7 @@ function state.session_summary(session, lang)
   return table.concat(parts, " · ")
 end
 
--- `pcStatus.message` shows one sentence, so several applicable notices need an
+-- `pcHealth.message` shows one sentence, so several applicable notices need an
 -- order. Highest priority first:
 --
 --   error            a failed request (unauthorized / unreachable / bad request)
@@ -258,7 +258,7 @@ state.MESSAGE_ORDER = {
   "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
 }
 
---- The single `pcStatus.message` for a status body (§5.1), by MESSAGE_ORDER.
+--- The single `pcHealth.message` for a status body (§5.1), by MESSAGE_ORDER.
 -- @param opts `lang`, `error` (a ready-made message that outranks the body),
 --   `note` (a confirmation shown only when nothing is wrong)
 function state.status_message(status, opts)

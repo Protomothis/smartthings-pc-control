@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcstatus",
+  "id": "numbersystem53811.pchealth",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -20,7 +20,7 @@
         "label": "{{message.value}}"
       },
       "visibleCondition": {
-        "capability": "numbersystem53811.pcstatus",
+        "capability": "numbersystem53811.pchealth",
         "version": 1,
         "component": "main",
         "value": "message.value",

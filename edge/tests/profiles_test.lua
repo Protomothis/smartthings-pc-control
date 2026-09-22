@@ -31,12 +31,13 @@ function T.test_the_profile_constants_are_the_current_version()
 end
 
 function T.test_an_older_profile_migrates_to_the_current_one()
-  h.assert_equal(profiles.migration_for("pc.v1"), "pc.v3")
-  h.assert_equal(profiles.migration_for("pc.v2"), "pc.v3")
+  h.assert_equal(profiles.migration_for("pc.v1"), "pc.v4")
+  h.assert_equal(profiles.migration_for("pc.v2"), "pc.v4")
 end
 
 function T.test_the_current_profile_does_not_migrate()
-  h.assert_nil(profiles.migration_for("pc.v3"))
+  h.assert_equal(profiles.migration_for("pc.v3"), "pc.v4")
+  h.assert_nil(profiles.migration_for("pc.v4"))
 end
 
 function T.test_an_unknown_profile_is_left_alone()

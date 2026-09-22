@@ -23,7 +23,7 @@ ping만 제공하는 것과 달리, 이 드라이버는 서비스가 이미 알�
 | **허브** | SmartThings 허브 (Edge 드라이버를 실행할 수 있는 모델). 드라이버는 허브 안에서 로컬로 동작하며 클라우드를 거치지 않습니다 |
 | **서비스** | PC Control **v1.1.0 이상**. `/st/v1` API는 v1.1.0에서 추가되었습니다. 이전 버전에 연결하면 드라이버가 `connection=incompatible`과 "서비스 v1.1.0 이상 필요" 메시지를 표시합니다 |
 | **네트워크** | 허브와 PC가 **같은 서브넷/VLAN**. 드라이버는 LAN으로만 통신합니다 |
-| **시크릿** | 필수는 아니지만 강력히 권장합니다. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고, 드라이버는 `pcStatus.message`에 경고를 띄웁니다 |
+| **시크릿** | 필수는 아니지만 강력히 권장합니다. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고, 드라이버는 `pcHealth.message`에 경고를 띄웁니다 |
 
 ### 방화벽과 네트워크
 
@@ -163,13 +163,13 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 ### 전원 상태
 
-`pcPowerState.powerState`는 `on` · `sleeping` · `hibernated` · `off` · `waking` ·
+`pcPower.powerState`는 `on` · `sleeping` · `hibernated` · `off` · `waking` ·
 `shuttingDown` · `unknown` 중 하나입니다. 서비스가 종료·절전 직전에 푸시를 보내므로
 폴링 주기를 기다리지 않고 바뀝니다.
 
 ### 명령 실행
 
-상세 화면의 버튼은 `pcCommand`의 **인자 없는 명령**입니다.
+상세 화면의 버튼은 `pcControl`의 **인자 없는 명령**입니다.
 
 | 버튼 | capability 명령 | 서비스 명령(§4.3) |
 |---|---|---|
@@ -184,7 +184,7 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 `깨우기`를 뺀 전부는 `버튼 실행 방식` 환경설정의 모드로 `minutes=0` 호출을 보냅니다.
 
-자동화에서는 인자를 가진 `pcCommand.execute(command, mode, minutes)`를 씁니다 — 명령
+자동화에서는 인자를 가진 `pcControl.execute(command, mode, minutes)`를 씁니다 — 명령
 8종(`shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff`
 `turnscreenon`; `ping`은 드라이버 내부 확인용이라 노출하지 않습니다), 모드 3종
 (`default` 설정된 유예를 따름 / `immediate` 유예 없이 / `grace` 유예를 강제),
@@ -195,22 +195,22 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 ### 예약과 취소
 
-`pcSchedule`이 대기 중인 예약을 보여 줍니다. 화면에는 요약 한 줄
+`pcTimer`이 대기 중인 예약을 보여 줍니다. 화면에는 요약 한 줄
 (`summary`: "종료 · 4분 남음 · SmartThings")과 [예약 취소]만 나오고, 예약이 없으면
 둘 다 사라집니다. 뒤에 있는 속성 `active`, `command`, `remainingSeconds`,
 `executeAt`(로컬 `HH:MM`), `origin`(앱 · SmartThings 명령 · 텔레그램 · SmartThings)은
 그대로 남아 자동화 조건과 이력에서 쓸 수 있습니다. 예약은 PC당 하나이고, 새 예약은
 기존 것을 대체합니다.
 
-- `pcSchedule.schedule(command, minutes)` — 예약합니다. 프리셋 5/15/30/60/120분이
+- `pcTimer.schedule(command, minutes)` — 예약합니다. 프리셋 5/15/30/60/120분이
   선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다.
-- `pcSchedule.cancel()` — 취소합니다. PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
+- `pcTimer.cancel()` — 취소합니다. PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
 
 앱·트레이 토스트·텔레그램에서 취소해도 푸시로 즉시 반영됩니다. 반대도 마찬가지입니다.
 
 ### 상태 카드
 
-`pcStatus`는 조용한 실패를 드러내기 위한 카드입니다. 화면에는 요약 한 줄
+`pcHealth`는 조용한 실패를 드러내기 위한 카드입니다. 화면에는 요약 한 줄
 (`summary`)과, 할 말이 있을 때만 나타나는 `안내`(`message`) 두 줄만 보입니다.
 요약은 연결이 살아 있으면 "켜짐 · 연결됨 · v1.1.0", 끊겼으면
 "연결 안 됨 · 시크릿 불일치"처럼 씁니다. 나머지는 속성으로 남아 자동화에서 쓰입니다.
@@ -227,7 +227,7 @@ capability 라벨·enum 값·명령 인자는 **capability translations**로 번
 
 ### 세션 정보 (선택)
 
-PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이 요약 한 줄
+PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 요약 한 줄
 ("잠김 · 유휴 20분 · kim")을 보여 줍니다. 기본은 꺼져 있고, 꺼져 있으면 드라이버는
 `exposed=false`만 내보내 그 줄을 화면에서 감춥니다(값 자체는 마지막 것이 남습니다).
 
@@ -246,7 +246,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 ```
 조건(If)  : 시각이 00:00이고
             PC의 Power state 가 on
-동작(Then): PC 의 pcSchedule.schedule(command: shutdown, minutes: 30)
+동작(Then): PC 의 pcTimer.schedule(command: shutdown, minutes: 30)
 ```
 
 30분 카운트다운이 SmartThings·트레이 토스트·텔레그램에 동시에 뜨고, 어디서든 취소하면
@@ -256,8 +256,8 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
 
 ```
 조건(If)  : 구성원 전원이 집을 떠남
-동작(Then): PC 의 pcCommand.execute(command: lock, mode: immediate)
-            PC 의 pcCommand.screenOff
+동작(Then): PC 의 pcControl.execute(command: lock, mode: immediate)
+            PC 의 pcControl.screenOff
 ```
 
 **3. 책상 주변기기 전원 연동** — 모니터·스피커 스마트플러그를 PC에 맞춥니다.
@@ -291,7 +291,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcSession`이
   않게 합니다. 푸시 리스너는 드라이버당 하나이고, 구독은 PC별로 하나입니다.
 - **MachineGuid 복제 주의.** 한 PC를 이미지로 복제하면 두 대의 `machine_id`가 같아져
   SSDP에서 한 장치로 합쳐집니다. 드라이버는 "같은 machine_id, 다른 hostname"을 만나면
-  `pcStatus.message`로 경고합니다. 해결은 한쪽에서 MachineGuid를 재생성하는 것입니다
+  `pcHealth.message`로 경고합니다. 해결은 한쪽에서 MachineGuid를 재생성하는 것입니다
   (Sysprep, 또는 `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` 직접 교체).
 - **텔레그램은 이 드라이버와 무관**합니다. PC 서비스의 텔레그램은 **봇 하나 = PC 하나**
   전제로 유지됩니다. 여러 PC가 같은 봇 토큰을 쓰면 `getUpdates`가 409 Conflict를 내고
@@ -394,15 +394,15 @@ CI의 node와 로컬의 bun에서 같은 명령이 그대로 돕니다.
 두 파일로 들어 있습니다.
 
 ```
-pcPowerState.json               정의        -> smartthings capabilities:create -i <file>
-pcPowerState.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
+pcPower.json               정의        -> smartthings capabilities:create -i <file>
+pcPower.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
 ```
 
-`pcPowerState`는 전원 상태, `pcCommand`는 명령 실행, `pcSchedule`은 예약 표시·조작,
-`pcStatus`는 연결·버전·메시지 카드, `pcSession`은 선택 항목인 잠금·유휴 블록입니다.
+`pcPower`는 전원 상태, `pcControl`는 명령 실행, `pcTimer`은 예약 표시·조작,
+`pcHealth`는 연결·버전·메시지 카드, `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
 
 `src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
-네임스페이스 `numbersystem53811`** 을 씁니다(2026-09-22 생성). SmartThings는 id의 이름 부분을 소문자로 바꾸므로 id는 `numbersystem53811.pcpowerstate`처럼 소문자입니다. 다른 계정에서 다시 만들면 네임스페이스가 달라지며, 그때는 `tools/apply-namespace.js`로 다시 반영합니다. 원래 네임스페이스는 소유자가 커스텀
+네임스페이스 `numbersystem53811`** 을 씁니다(2026-09-22 생성). SmartThings는 id의 이름 부분을 소문자로 바꾸므로 id는 `numbersystem53811.pcpower`처럼 소문자입니다. 다른 계정에서 다시 만들면 네임스페이스가 달라지며, 그때는 `tools/apply-namespace.js`로 다시 반영합니다. 원래 네임스페이스는 소유자가 커스텀
 capability를 만들 때 SmartThings가 발급합니다.
 
 ```sh
@@ -437,7 +437,7 @@ cd edge
 
 ```sh
 smartthings capabilities:translations:upsert <id> --capability-version 1 \
-  -i capabilities/translations/pcCommand.ko.json
+  -i capabilities/translations/pcControl.ko.json
 smartthings capabilities:translations <id> --capability-version 1 ko   # 읽어서 확인
 ```
 
@@ -591,7 +591,7 @@ schedule presets, and rows that only appear when they apply (a notice, the
 schedule summary with its cancel button, the session summary). Switch on sends
 Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and 9); switch off sends
 `offAction` and honours the PC's grace period. The buttons follow the
-`buttonMode` preference. `pcCommand.execute(command, mode, minutes)` is kept for
+`buttonMode` preference. `pcControl.execute(command, mode, minutes)` is kept for
 automations and schedules when `minutes > 0`. The raw attributes
 (`remainingSeconds`, `executeAt`, `origin`, `serviceVersion`, `updateAvailable`,
 `wolReady`, `lastSeen`, `idleMinutes`, `locked`, `user`) are still there for
@@ -634,6 +634,6 @@ assigns it to the channel and attaches the zip to the release. It needs the
 `SMARTTHINGS_TOKEN` and `ST_CHANNEL_ID` repository secrets.
 
 The ids in `src/caps.lua`, `profiles/pc.yml` and `capabilities/*.json` use the
-namespace `numbersystem53811` that SmartThings assigned to the owner account (ids are lower-cased by SmartThings, e.g. `numbersystem53811.pcpowerstate`); on another account `apply-namespace.js` rewrites it;
+namespace `numbersystem53811` that SmartThings assigned to the owner account (ids are lower-cased by SmartThings, e.g. `numbersystem53811.pcpower`); on another account `apply-namespace.js` rewrites it;
 until then `caps.load` skips capabilities it cannot resolve and `switch`,
 `refresh` and `healthCheck` keep working.

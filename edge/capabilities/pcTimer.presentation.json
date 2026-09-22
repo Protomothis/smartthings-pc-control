@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcschedule",
+  "id": "numbersystem53811.pctimer",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -49,7 +49,7 @@
         "label": "{{summary.value}}"
       },
       "visibleCondition": {
-        "capability": "numbersystem53811.pcschedule",
+        "capability": "numbersystem53811.pctimer",
         "version": 1,
         "component": "main",
         "value": "active.value",
@@ -65,7 +65,7 @@
         "argument": null
       },
       "visibleCondition": {
-        "capability": "numbersystem53811.pcschedule",
+        "capability": "numbersystem53811.pctimer",
         "version": 1,
         "component": "main",
         "value": "active.value",

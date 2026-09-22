@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcsession",
+  "id": "numbersystem53811.pcuser",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -13,7 +13,7 @@
         "label": "{{summary.value}}"
       },
       "visibleCondition": {
-        "capability": "numbersystem53811.pcsession",
+        "capability": "numbersystem53811.pcuser",
         "version": 1,
         "component": "main",
         "value": "exposed.value",

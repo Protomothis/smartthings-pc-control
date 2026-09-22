@@ -2,8 +2,8 @@
 --
 -- The namespace is the one SmartThings assigned to the owner's account when
 -- the capabilities were created (design doc §11.1). Note that SmartThings
--- lower-cases the name part of a capability id ("pcPowerState" becomes
--- ".pcpowerstate"), so the ids below are lower-case while the definition
+-- lower-cases the name part of a capability id ("pcPower" becomes
+-- ".pcpower"), so the ids below are lower-case while the definition
 -- files keep the camelCase `name`. `tools/apply-namespace.js` rewrites the
 -- namespace here, in the profile YAML and in capabilities/*.json in one go.
 -- `caps.load` degrades gracefully if an id does not resolve on a hub.
@@ -14,11 +14,11 @@ local caps = {}
 
 caps.NAMESPACE = NAMESPACE
 
-caps.POWER_STATE = NAMESPACE .. ".pcpowerstate"
-caps.COMMAND = NAMESPACE .. ".pccommand"
-caps.SCHEDULE = NAMESPACE .. ".pcschedule"
-caps.STATUS = NAMESPACE .. ".pcstatus"
-caps.SESSION = NAMESPACE .. ".pcsession"
+caps.POWER_STATE = NAMESPACE .. ".pcpower"
+caps.COMMAND = NAMESPACE .. ".pccontrol"
+caps.SCHEDULE = NAMESPACE .. ".pctimer"
+caps.STATUS = NAMESPACE .. ".pchealth"
+caps.SESSION = NAMESPACE .. ".pcuser"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {

@@ -7,7 +7,7 @@
 # Preference titles and descriptions are Korean first with the English term in
 # parentheses (#78): the SmartThings app shows profile preferences in whatever
 # the driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v3
+name: pc.v4
 components:
   - id: main
     capabilities:

@@ -9,7 +9,7 @@ SmartThings를 위한 전용 **Edge 드라이버**와, 그 드라이버가 쓰�
 ### SmartThings Edge 드라이버 (`edge/`)
 
 - **전용 Edge 드라이버** — 레포의 `edge/` 폴더에 Lua 5.3 드라이버가 들어왔습니다. 허브 안에서 로컬로 돌며 서비스의 `/st/v1` API로 통신합니다. 전원 상태(켜짐·절전·최대절전·꺼짐·깨우는 중·종료 대기), 유예 카운트다운과 출처, 예약·취소, 연결·버전·WoL 진단, 상세 화면의 화면 끄기/켜기 버튼, SSDP 자동 검색을 SmartThings 앱에 그대로 드러냅니다. 기기 하나가 PC 하나이며, 모니터용 자식 장치는 따로 만들지 않습니다 (#81). 설치와 사용법은 [`edge/README.md`](edge/README.md) (#71 #72 #73 #74 #81)
-- **커스텀 capability 5종** — `pcPowerState`(전원 상태), `pcCommand`(명령 실행), `pcSchedule`(예약 표시·취소), `pcStatus`(연결·버전·업데이트·WoL·메시지), `pcSession`(잠금·유휴, 옵트인). 정의와 프레젠테이션 JSON은 `edge/capabilities/`에 있습니다 (#72)
+- **커스텀 capability 5종** — `pcPower`(전원 상태), `pcControl`(명령 실행), `pcTimer`(예약 표시·취소), `pcHealth`(연결·버전·업데이트·WoL·메시지), `pcUser`(잠금·유휴, 옵트인). 정의와 프레젠테이션 JSON은 `edge/capabilities/`에 있습니다 (#72)
 - **CI와 배포 도구** — `.github/workflows/edge.yml`이 `edge/**` 변경마다 Lua 테스트와 문법 검사를 돌리고, `edge-vX.Y.Z` 태그에서 태그와 `edge/src/version.lua`가 일치하는지 확인한 뒤 패키징 → 채널 배정 → 릴리스 자산 첨부까지 수행합니다. 네임스페이스 일괄 적용 `edge/tools/apply-namespace.js`, capability 생성 `edge/tools/create-capabilities.sh` (#74)
 
 ### 서비스 `/st/v1` API (#67)

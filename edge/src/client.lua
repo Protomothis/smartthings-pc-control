@@ -197,7 +197,7 @@ function client.request(device, opts, deps)
   local kind = client.classify(code)
   if kind then
     -- §4.1: an error body is `{"error": "..."}`. It comes back so the caller
-    -- can put the service's own words in `pcStatus.message` (an unknown
+    -- can put the service's own words in `pcHealth.message` (an unknown
     -- command says which one), and so a 400 from a newer service is readable.
     return false, body, kind
   end

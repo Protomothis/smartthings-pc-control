@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pccommand",
+  "id": "numbersystem53811.pccontrol",
   "version": 1,
   "status": "proposed",
-  "name": "pcCommand",
+  "name": "pcControl",
   "ephemeral": false,
   "attributes": {
     "lastCommand": {

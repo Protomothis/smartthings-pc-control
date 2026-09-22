@@ -145,7 +145,7 @@ function T.test_identity_is_remembered_from_a_status_body()
 end
 
 function T.test_a_failed_poll_rewrites_the_status_summary()
-  -- #78: the summary is the only pcStatus row left on screen, so the failure
+  -- #78: the summary is the only pcHealth row left on screen, so the failure
   -- path has to repaint it too — otherwise it would still read "Connected".
   local caps = require "caps"
   local state = require "state"

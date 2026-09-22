@@ -7,7 +7,7 @@
  *
  * SmartThings assigns a namespace to the account the first time
  * `smartthings capabilities:create` runs, and every custom capability id is
- * `<namespace>.pcPowerState` and friends. The repository ships the placeholder
+ * `<namespace>.pcPower` and friends. The repository ships the placeholder
  * `pccontrol00000` (design doc §11.1) because that value is not knowable until
  * the owner creates the capabilities; this script puts the real one in.
  *

@@ -17,15 +17,15 @@ components:
         version: 1
       - id: healthCheck
         version: 1
-      - id: numbersystem53811.pcpowerstate
+      - id: numbersystem53811.pcpower
         version: 1
-      - id: numbersystem53811.pccommand
+      - id: numbersystem53811.pccontrol
         version: 1
-      - id: numbersystem53811.pcschedule
+      - id: numbersystem53811.pctimer
         version: 1
-      - id: numbersystem53811.pcstatus
+      - id: numbersystem53811.pchealth
         version: 1
-      - id: numbersystem53811.pcsession
+      - id: numbersystem53811.pcuser
         version: 1
     categories:
       - name: Others
