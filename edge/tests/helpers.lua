@@ -119,9 +119,27 @@ end
 function h.emitted(device)
   local out = {}
   for i, e in ipairs((device or {}).emitted or {}) do
-    out[i] = { cap = e.capability, attr = e.attribute, value = e.value }
+    out[i] = {
+      cap = e.capability, attr = e.attribute, value = e.value,
+      -- #86: the emit options, so a test can tell a forced event (the answer to
+      -- an app command) from an ordinary poll update.
+      options = e.options,
+    }
   end
   return out
+end
+
+--- True when `cap.attr` was emitted with `{ state_change = true }` (#86), false
+--- when it was emitted plainly, nil when it was not emitted at all.
+-- The last emit wins, which is the one the app sees last.
+function h.event_forced(events, cap, attr)
+  local forced
+  for _, e in ipairs(events or {}) do
+    if e.cap == cap and e.attr == attr then
+      forced = (e.options or {}).state_change == true
+    end
+  end
+  return forced
 end
 
 --- True when the event list contains any record for `cap`.

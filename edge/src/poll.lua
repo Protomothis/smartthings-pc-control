@@ -25,7 +25,9 @@ poll.PLAN_FIELD = "plan_command"
 -- every attribute unset on the hub, so the persisted "already painted" fields
 -- would otherwise skip a device that has been migrated (§14.4).
 poll.ROWS_FIELD = "rows_painted"
-poll.ROWS_VERSION = "85"
+-- #86 bumps it again: `pcVersion` is a new capability, so its row starts unset
+-- on every existing device and has to be painted once.
+poll.ROWS_VERSION = "86"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
@@ -84,14 +86,54 @@ function poll.transition(s, event, arg)
   return state.transition(s, event, arg)
 end
 
---- Emit a list of `{ cap, attr, value }` records.
+-- #86: what a record's `force = true` becomes on the hub. An event whose value
+-- equals the current one is dropped by the platform, and the app - which is
+-- waiting for exactly that attribute to change - keeps its spinner up until it
+-- gives up with an error. Cancelling with nothing scheduled and re-picking the
+-- value a list already shows are both that case (measured on the phone
+-- 2026-09-22, §14.5), so every emit that answers an app command is forced.
+poll.FORCE = { state_change = true }
+
+-- #86: the rows the schedule list is bound to. `schedule` and `cancel` are
+-- answered on them, and cancelling with nothing scheduled leaves every one of
+-- them exactly as it was, which is the case that used to spin and then fail.
+poll.SCHEDULE_ROWS = {
+  [caps.SCHEDULE .. ".status"] = true,
+  [caps.SCHEDULE .. ".active"] = true,
+  [caps.SCHEDULE .. ".summary"] = true,
+}
+
+--- Mark the events whose `<cap>.<attr>` is in `keys` as forced (#86).
+-- Returns the same list, so it can wrap a call.
+function poll.force_rows(events, keys)
+  if type(keys) ~= "table" then
+    return events
+  end
+  for _, e in ipairs(events or {}) do
+    if keys[tostring(e.cap) .. "." .. tostring(e.attr)] then
+      e.force = true
+    end
+  end
+  return events
+end
+
+--- Emit a list of `{ cap, attr, value, force? }` records.
+-- `force` marks an emit that answers a command from the app: it goes out with
+-- `{ state_change = true }` so the platform delivers it even when the value did
+-- not change. Ordinary poll updates stay unforced.
 function poll.emit(device, events)
   local log = logger()
   for _, e in ipairs(events or {}) do
     local cap = capability_for(e.cap)
     local attr = cap and cap[e.attr]
     if attr then
-      local ok, err = pcall(function() device:emit_event(attr(e.value)) end)
+      local ok, err = pcall(function()
+        if e.force then
+          device:emit_event(attr(e.value, poll.FORCE))
+        else
+          device:emit_event(attr(e.value))
+        end
+      end)
       if not ok then
         log.warn(string.format("emit %s.%s failed: %s", tostring(e.cap), tostring(e.attr), tostring(err)))
       end
@@ -130,6 +172,9 @@ function poll.emit_connection(device, connection, message)
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
       value = state.status_summary(connection, nil, lang) },
+    -- #86: the row lives on its own capability now; pcInfo keeps the attribute
+    -- (and the emit) because its definition cannot change without a rename.
+    { cap = caps.VERSION, attr = "versions", value = state.versions(nil, lang) },
     { cap = caps.STATUS, attr = "versions", value = state.versions(nil, lang) },
   })
 end
@@ -145,11 +190,28 @@ end
 -- Anything that is not a `lastAction` enum value is coerced to `none` rather
 -- than emitted, because the hub rejects a value outside the enum.
 -- @param action a `lastAction` enum value
-function poll.emit_action(device, action)
+-- @param force #86: true when this emit answers an `execute` from the app. The
+--   row rests on `none` and therefore never changes value, so without
+--   `state_change` the platform drops the event and the app spins until it
+--   errors out (§14.5).
+function poll.emit_action(device, action, force)
   local value = state.is_action(action) and action or state.ACTION_NONE
   pcall(function() device:set_field(poll.ACTION_FIELD, value, { persist = true }) end)
-  poll.emit(device, { { cap = caps.COMMAND, attr = "lastAction", value = value } })
+  poll.emit(device, {
+    { cap = caps.COMMAND, attr = "lastAction", value = value, force = force == true },
+  })
   return value
+end
+
+--- #86: answer an `execute` on the row the app is watching.
+--
+-- The command list rests on `none` whatever is picked (#84), so the attribute
+-- it is bound to never changes and the app's spinner would run out into an
+-- error. A forced re-emit of the resting value ends it.
+function poll.answer_action(device)
+  local seen
+  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
+  return poll.emit_action(device, seen, true)
 end
 
 --- Paint `lastAction` as `none` on a device that has never been told one, so
@@ -173,10 +235,15 @@ end
 -- #85: emitted under the schedule capability, because the app puts a detail row
 -- in the card of the capability that owns it and this row belongs next to the
 -- schedule it configures.
-function poll.emit_plan_command(device, command)
+-- #86: `force` for the same reason as `emit_action` - picking the value the row
+-- already shows (restart -> restart) changes nothing, and the app waits for a
+-- change it will never see.
+function poll.emit_plan_command(device, command, force)
   local value = state.plan_command_for(command)
   pcall(function() device:set_field(poll.PLAN_FIELD, value, { persist = true }) end)
-  poll.emit(device, { { cap = caps.SCHEDULE, attr = "planCommand", value = value } })
+  poll.emit(device, {
+    { cap = caps.SCHEDULE, attr = "planCommand", value = value, force = force == true },
+  })
   return value
 end
 
@@ -328,11 +395,15 @@ function poll.once(driver, device, opts)
     -- so the resting values go out first and the status body overwrites the
     -- rows it does know about.
     poll.ensure_rows(device)
-    poll.emit(device, state.apply_status(nxt, body, {
+    -- #86: `opts.force` names the rows this poll is answering a command on
+    -- (the schedule rows after `schedule` / `cancel`). They go out with
+    -- `state_change = true` so the app's spinner ends even when the value is
+    -- the one it already had; everything else stays an ordinary update.
+    poll.emit(device, poll.force_rows(state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
       note = opts.note,
-    }))
+    }), opts.force))
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     pcall(function() device:online() end)

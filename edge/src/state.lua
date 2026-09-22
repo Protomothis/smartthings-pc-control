@@ -228,9 +228,13 @@ end
 
 --- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
 --- #84: this is the row that says what ran; `lastAction` stays on `none`.
+--
+-- #86: a PC that has run nothing yet gets a sentence, not an empty string. The
+-- phone draws "-" for an empty `state` row exactly as it does for one that was
+-- never emitted (§14.5), and a "-" with a label beside it reads like a fault.
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
-    return ""
+    return i18n.t(lang, "last_command_none")
   end
   local parts = { i18n.command(lang, last.command) }
   local origin = i18n.origin(lang, last.origin)
@@ -270,12 +274,17 @@ function state.status_summary(connection, service_version, lang)
   return table.concat(parts, " · ")
 end
 
---- `pcInfo.versions` (#85): "Service 1.1.0 · Driver 1.0.0 · Screen pc.v12".
+--- `pcVersion.versions` (#85, its own capability since #86):
+--- "Service 1.1.0 · Driver 1.0.0 · Screen pc.v13".
 --
 -- The last row of the last card, and the one every "the app still looks the
 -- way it did" report needs: a device's screen is generated from the capability
 -- presentations at device-creation time and never regenerated (§14.3), so the
 -- profile the device sits on says as much as the two version numbers do.
+--
+-- #86: the same value goes out under `pcVersion.versions` (the row on screen)
+-- and `pcInfo.versions` (the definition, which cannot be dropped without yet
+-- another rename and would make the app report missing state if left unset).
 --
 -- `service_version` is whatever the status body carried; a PC we have not
 -- reached yet has none, and the row still has to say something (an attribute
@@ -453,6 +462,9 @@ local ATTRIBUTES = {
     locked = true, idleMinutes = true, user = true,
     summary = true, exposed = true,
   },
+  -- #86: the version row, moved onto a capability of its own so that it is not
+  -- drawn in a narrow half-width column next to `pcInfo.summary`.
+  [caps.VERSION] = { versions = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.
@@ -476,7 +488,8 @@ end
 -- `emit_action` / `emit_plan_command`, which also persist the choice.
 function state.initial_rows(lang)
   local events = {}
-  ev(events, caps.COMMAND, "lastCommand", "")
+  -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (§14.5).
+  ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
   ev(events, caps.SCHEDULE, "active", false)
   ev(events, caps.SCHEDULE, "status", state.IDLE)
   ev(events, caps.SCHEDULE, "command", "")
@@ -486,7 +499,9 @@ function state.initial_rows(lang)
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(nil, lang))
   -- The service version is not known yet, so the row says "?" for it and the
   -- driver/screen halves - the two that matter for "is my update live?" - are
-  -- right from the start.
+  -- right from the start. #86: on the row's own capability and, unchanged, on
+  -- pcInfo, whose definition still declares the attribute.
+  ev(events, caps.VERSION, "versions", state.versions(nil, lang))
   ev(events, caps.STATUS, "versions", state.versions(nil, lang))
   return events
 end
@@ -538,7 +553,10 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.STATUS, "wolReady", wol.ready == true)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
   -- #85: the bottom row of the bottom card, refreshed on every poll so a
-  -- service update shows up without touching the driver.
+  -- service update shows up without touching the driver. #86: the row itself
+  -- is `pcVersion.versions`; `pcInfo.versions` keeps being emitted because the
+  -- attribute is still defined there (§14.4).
+  ev(events, caps.VERSION, "versions", state.versions(status.service_version, lang))
   ev(events, caps.STATUS, "versions", state.versions(status.service_version, lang))
   local message = state.status_message(status, { lang = lang, error = opts.error, note = opts.note })
   ev(events, caps.STATUS, "message", message)

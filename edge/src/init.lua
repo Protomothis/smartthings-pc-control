@@ -179,7 +179,13 @@ end
 -- the detail view's list without picking anything sends the row's current
 -- value (§14.5), and the row rests on `none`, so this is the path a dismissed
 -- picker takes: refresh the tiles and leave the PC alone.
+--
+-- #86: whatever happens next, the command row is answered first with a forced
+-- re-emit of its resting value. The row never changes value (it rests on
+-- `none`), so without that the app keeps a spinner up until it fails with an
+-- error - measured on the phone 2026-09-22 (§14.5).
 local function run_command(driver, device, service_command, mode, minutes)
+  poll.answer_action(device)
   if service_command == nil or service_command == "" or service_command == state.ACTION_NONE then
     return poll.once(driver, device)
   end
@@ -225,9 +231,13 @@ end
 -- #85: the row sits in the schedule card, because the app groups detail rows by
 -- the capability that owns them and the user read the schedule card as
 -- "minutes only" while this row lived with the PC commands.
+--
+-- #86: emitted with `state_change = true`. Re-picking the value the row already
+-- shows (restart -> restart) changes nothing, and the app then spins until it
+-- gives up with an error (§14.5).
 local function handle_set_plan_command(_driver, device, cmd)
   local args = (cmd or {}).args or {}
-  poll.emit_plan_command(device, args.command)
+  poll.emit_plan_command(device, args.command, true)
 end
 
 --- The command `pcCountdown.schedule` runs when it carries none of its own:
@@ -267,6 +277,8 @@ local function handle_schedule(driver, device, cmd)
   end
   poll.once(driver, device, {
     note = had_schedule and i18n.t(poll.lang(device), "schedule_replaced") or nil,
+    -- #86: the rows the schedule list is bound to answer this command.
+    force = poll.SCHEDULE_ROWS,
   })
 end
 
@@ -283,6 +295,10 @@ function handle_cancel(driver, device)
   poll.emit_power(device, nxt)
   poll.once(driver, device, {
     note = i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"),
+    -- #86: cancelling with nothing scheduled leaves every schedule row exactly
+    -- as it was, which is precisely when the app's spinner used to end in an
+    -- error. Forced, the rows go out anyway and the spinner finishes (§14.5).
+    force = poll.SCHEDULE_ROWS,
   })
 end
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Create the five custom capabilities and their presentations on the
-# SmartThings account (design doc §11.1).
+# Create the six custom capabilities and their presentations on the
+# SmartThings account (design doc §11.1). #86 added `pcVersion`.
 #
 #   cd edge && ./tools/create-capabilities.sh
 #
@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Order matters only for readability; the capabilities are independent.
-CAPABILITIES=(pcPower pcExec pcCountdown pcUser pcInfo)
+CAPABILITIES=(pcPower pcExec pcCountdown pcUser pcInfo pcVersion)
 
 if ! command -v smartthings >/dev/null 2>&1; then
   echo "error: the 'smartthings' CLI is not on PATH." >&2
@@ -82,7 +82,7 @@ for name in "${CAPABILITIES[@]}"; do
   echo
 done
 
-echo "All five capabilities and presentations created."
+echo "All ${#CAPABILITIES[@]} capabilities and presentations created."
 echo
 echo "Namespace: ${namespace}"
 echo

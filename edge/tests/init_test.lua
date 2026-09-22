@@ -41,7 +41,9 @@ end
 -- @param opts `fail` (an err_kind the service answers with), `cancelled`
 local function with_service(opts, fn)
   opts = opts or {}
-  local calls = { commands = {}, cancels = 0, polls = 0, wakes = 0 }
+  -- #86: `poll_opts` keeps what each poll was asked for, so a test can see
+  -- which rows a command declared it is answering (`force`).
+  local calls = { commands = {}, cancels = 0, polls = 0, wakes = 0, poll_opts = {} }
   local original = {
     command = client.command,
     cancel = client.cancel,
@@ -64,8 +66,9 @@ local function with_service(opts, fn)
     end
     return true, { cancelled = opts.cancelled ~= false }, nil
   end
-  poll.once = function()
+  poll.once = function(_driver, _device, poll_opts)
     calls.polls = calls.polls + 1
+    calls.poll_opts[#calls.poll_opts + 1] = poll_opts or {}
     return true
   end
   wol.wake = function()
@@ -97,6 +100,21 @@ local function all_actions(device)
     end
   end
   return out
+end
+
+--- #84/#86: every `lastAction` a command emitted is the resting `none`, and
+--- #86 requires at least one of them to be forced: the row never changes value,
+--- so an unforced event is dropped by the platform and the app spins until it
+--- fails (§14.5).
+local function assert_answers_with_none(device, context)
+  local values = all_actions(device)
+  for _, value in ipairs(values) do
+    h.assert_equal(value, state.ACTION_NONE,
+      (context or "") .. " moved lastAction off `none`")
+  end
+  h.assert_true(#values > 0, (context or "") .. " never answered the command row (#86)")
+  h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"),
+    (context or "") .. " answered lastAction without state_change (#86)")
 end
 
 --- The `planCommand` a device was last told to show, or nil.
@@ -132,8 +150,9 @@ function T.test_every_no_argument_command_sends_its_service_command()
     end)
     -- #84: what ran is read off `lastCommand`, which the poll fills in. The
     -- picker row itself must stay on `none` - it is what a dismissed list
-    -- sends back as the argument.
-    h.assert_deep_equal(all_actions(device), {}, case.command .. " touched lastAction")
+    -- sends back as the argument. #86: and it is re-emitted, forced, as the
+    -- answer the app is waiting for.
+    assert_answers_with_none(device, case.command)
   end
 end
 
@@ -184,7 +203,8 @@ function T.test_a_dismissed_command_list_does_nothing()
   h.assert_equal(#calls.commands, 0, "`none` must not reach the service")
   h.assert_equal(calls.wakes, 0, "`none` must not wake the PC either")
   h.assert_equal(calls.polls, 1, "`none` refreshes the tiles")
-  h.assert_deep_equal(all_actions(device), {})
+  -- #86: even the no-op answers the row, or the app spins and then errors.
+  assert_answers_with_none(device, "the dismissed list")
 end
 
 function T.test_an_execute_without_a_command_does_nothing()
@@ -250,7 +270,7 @@ function T.test_a_scheduled_execute_still_goes_to_the_service()
       { command = "execute", args = { command = "shutdown", mode = "default", minutes = 30 } })
   end)
   h.assert_equal(calls.commands[1].minutes, 30)
-  h.assert_deep_equal(all_actions(device), {})
+  assert_answers_with_none(device, "a scheduled execute")
 end
 
 function T.test_a_refused_command_says_so()
@@ -315,6 +335,12 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
     "the versions row was never emitted")
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "versions"),
     state.versions(nil, nil))
+  -- #86: and the capability the row actually lives on now, which is new and
+  -- therefore unset on every device until this paint.
+  h.assert_true(seen[caps.VERSION .. ".versions"] == true,
+    "the pcVersion row was never emitted")
+  h.assert_equal(h.event_value(h.emitted(device), caps.VERSION, "versions"),
+    state.versions(nil, nil))
 end
 
 function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
@@ -343,6 +369,31 @@ function T.test_set_plan_command_persists_and_emits()
   h.assert_equal(plan_command(device), "restart")
   h.assert_equal(device:get_field(poll.PLAN_FIELD), "restart",
     "the choice has to survive a hub restart")
+end
+
+function T.test_set_plan_command_answers_even_when_the_value_does_not_change()
+  -- #86, measured on the phone: picking the value the row already shows
+  -- (restart -> restart) changes no attribute, the platform drops the event and
+  -- the app keeps a spinner up until it fails with an error. So the answer goes
+  -- out with `state_change = true` (§14.5).
+  local device = device_with()
+  local pick = function()
+    handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
+      { command = "setPlanCommand", args = { command = "restart" } })
+  end
+  pick()
+  pick()
+
+  local emits = 0
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.SCHEDULE and e.attr == "planCommand" then
+      emits = emits + 1
+      h.assert_equal(e.value, "restart")
+      h.assert_true((e.options or {}).state_change == true,
+        "setPlanCommand must force the event (#86)")
+    end
+  end
+  h.assert_equal(emits, 2, "the second, unchanged pick has to be answered too")
 end
 
 function T.test_set_plan_command_refuses_a_command_the_service_cannot_schedule()
@@ -407,6 +458,41 @@ function T.test_the_cancel_command_is_still_handled()
     handlers_for(caps.SCHEDULE).cancel(driver, device, { command = "cancel", args = {} })
   end)
   h.assert_equal(calls.cancels, 1)
+end
+
+function T.test_schedule_and_cancel_answer_the_rows_the_list_is_bound_to()
+  -- #86, measured on the phone: cancelling while nothing is scheduled leaves
+  -- every schedule row exactly as it was, so the app's spinner runs out into an
+  -- error. The poll that follows the command therefore declares which rows it
+  -- is answering, and `poll.emit` sends those with `state_change = true`.
+  local function forced_rows(run)
+    local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+    local calls = with_service({ cancelled = false }, function() run(device) end)
+    h.assert_equal(#calls.poll_opts, 1, "the command has to refresh the tiles")
+    return calls.poll_opts[1].force
+  end
+
+  local cases = {
+    ["schedule(30)"] = function(device)
+      handlers_for(caps.SCHEDULE).schedule(driver, device,
+        { command = "schedule", args = { minutes = 30 } })
+    end,
+    ["schedule(0)"] = function(device)
+      handlers_for(caps.SCHEDULE).schedule(driver, device,
+        { command = "schedule", args = { minutes = 0 } })
+    end,
+    ["cancel()"] = function(device)
+      handlers_for(caps.SCHEDULE).cancel(driver, device, { command = "cancel", args = {} })
+    end,
+  }
+  for name, run in pairs(cases) do
+    local force = forced_rows(run)
+    h.assert_true(type(force) == "table", name .. " forces no row (#86)")
+    for _, attr in ipairs({ "status", "summary" }) do
+      h.assert_true(force[caps.SCHEDULE .. "." .. attr] == true,
+        name .. " does not answer the " .. attr .. " row (#86)")
+    end
+  end
 end
 
 function T.test_a_preset_still_schedules()

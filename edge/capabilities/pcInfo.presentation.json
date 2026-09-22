@@ -12,13 +12,6 @@
       "state": {
         "label": "{{summary.value}}"
       }
-    },
-    {
-      "label": "{{i18n.attributes.versions.label}}",
-      "displayType": "state",
-      "state": {
-        "label": "{{versions.value}}"
-      }
     }
   ],
   "automation": {
