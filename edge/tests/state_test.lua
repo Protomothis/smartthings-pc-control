@@ -457,7 +457,7 @@ function T.test_is_action_rejects_anything_outside_the_enum()
 end
 
 --------------------------------------------------------------------------------
--- pcPlanner.planCommand (#84, moved in #85)
+-- pcDelay.planCommand (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_only_the_schedulable_commands_are_plan_commands()
@@ -510,8 +510,44 @@ function T.test_schedule_summary_rounds_the_countdown_up()
   }, "en"), "Restart · in 10 min")
 end
 
+function T.test_schedule_summary_reads_hours_and_days_for_the_long_presets()
+  -- #89: the presets reach three days, and "4320분 후" is not a number anyone
+  -- reads as three days. Under an hour stays in minutes; from an hour on the
+  -- row switches to hours, and from a day on to days and hours.
+  local function summary(seconds, lang)
+    return state.schedule_summary({
+      active = true, command = "shutdown", origin = "smartthings",
+      remaining_seconds = seconds,
+    }, lang or "ko")
+  end
+  h.assert_equal(summary(59 * 60), "종료 · 59분 후", "under an hour stays in minutes")
+  h.assert_equal(summary(60 * 60), "종료 · 1시간 후")
+  h.assert_equal(summary(120 * 60), "종료 · 2시간 후")
+  h.assert_equal(summary(120 * 60, "en"), "Shut down · in 2 h")
+  h.assert_equal(summary(90 * 60), "종료 · 1시간 30분 후")
+  h.assert_equal(summary(90 * 60, "en"), "Shut down · in 1 h 30 min")
+  h.assert_equal(summary(1440 * 60), "종료 · 1일 후")
+  h.assert_equal(summary(4320 * 60), "종료 · 3일 후")
+  h.assert_equal(summary(4320 * 60, "en"), "Shut down · in 3 d")
+  -- 1일 3시간: the odd minutes are noise at that distance and are dropped.
+  h.assert_equal(summary((1440 + 180 + 5) * 60), "종료 · 1일 3시간 후")
+  h.assert_equal(summary((1440 + 180 + 5) * 60, "en"), "Shut down · in 1 d 3 h")
+end
+
+function T.test_remaining_text_is_the_unit_ladder_on_its_own()
+  -- The helper the summary is built from (#89), so the ladder can be read
+  -- without a whole schedule table around it.
+  h.assert_equal(state.remaining_text(0, "ko"), "곧")
+  h.assert_equal(state.remaining_text(1, "ko"), "1분 후")
+  h.assert_equal(state.remaining_text(59, "en"), "in 59 min")
+  h.assert_equal(state.remaining_text(60, "en"), "in 1 h")
+  h.assert_equal(state.remaining_text(1439, "ko"), "23시간 59분 후")
+  h.assert_equal(state.remaining_text(2880, "ko"), "2일 후")
+  h.assert_equal(state.remaining_text(4320, "ko"), "3일 후")
+end
+
 function T.test_schedule_summary_drops_the_origin()
-  -- #87: who asked is in `pcPlanner.origin` and `pcExec.lastCommand`; on the
+  -- #87: who asked is in `pcDelay.origin` and `pcExec.lastCommand`; on the
   -- summary row it pushed the minutes off the end of the line.
   for _, origin in ipairs({ "smartthings", "ui", "telegram", "remote" }) do
     local summary = state.schedule_summary({

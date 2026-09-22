@@ -71,7 +71,7 @@
       "label": "예약 시간",
       "arguments": {
         "minutes": {
-          "label": "몇 분 뒤 (0은 취소)"
+          "label": "얼마 뒤 (분, 0은 취소, 최대 3일)"
         },
         "command": {
           "label": "명령"

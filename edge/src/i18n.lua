@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcInfo.message`, `pcExec.lastCommand`, `pcPlanner.origin`).
+-- (`pcInfo.message`, `pcExec.lastCommand`, `pcDelay.origin`).
 --
 -- Design doc §6.8: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -177,6 +177,12 @@ local STRINGS = {
   -- half of a row that already carries a label, so the label's words are not
   -- repeated in the value: the schedule row says "없음", not "예약 없음".
   schedule_remaining = { ko = "%d분 후", en = "in %d min" },
+  -- #89: the presets reach three days, so the row reads in the largest unit
+  -- that fits - "4320분 후" says nothing at a glance (state.remaining_text).
+  schedule_remaining_h = { ko = "%d시간 후", en = "in %d h" },
+  schedule_remaining_hm = { ko = "%d시간 %d분 후", en = "in %d h %d min" },
+  schedule_remaining_d = { ko = "%d일 후", en = "in %d d" },
+  schedule_remaining_dh = { ko = "%d일 %d시간 후", en = "in %d d %d h" },
   schedule_idle = { ko = "없음", en = "None" },
   schedule_soon = { ko = "곧", en = "soon" },
   session_locked = { ko = "잠김", en = "Locked" },

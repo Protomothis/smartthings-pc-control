@@ -409,6 +409,14 @@ local ACTION_LIST = {
 -- #84: what the "command to schedule" row offers, and the `planCommand` enum.
 local PLAN_LIST = { "shutdown", "restart", "suspend", "hibernate" }
 
+-- #89: the delays the 예약 시간 row offers, shortest first, with the Cancel
+-- entry (0) last. The same list drives the automation action's `minutes`
+-- picker, so both are checked against this one table.
+local PRESET_LIST = {
+  "5", "10", "15", "30", "45", "60", "90", "120", "180", "240",
+  "360", "480", "720", "1440", "2880", "4320", "0",
+}
+
 local EXPECTED_COMMANDS = {
   power_state = {},
   command = {
@@ -498,7 +506,7 @@ function T.test_command_enums_match_the_service()
   local mode = definition("command").commands.execute.arguments[2].schema.enum
   h.assert_deep_equal(mode, { "default", "immediate", "grace" })
 
-  -- §3.3: the service caps a schedule at 1440 minutes.
+  -- §3.3: the service caps a schedule at 4320 minutes (three days, #89).
   -- schedule(minutes, command?): minutes first so a one-argument list works.
   local minutes = definition("schedule").commands.schedule.arguments[1].schema
   h.assert_equal(minutes.type, "integer")
@@ -509,7 +517,12 @@ function T.test_command_enums_match_the_service()
   -- on `minutesPick` = "-1", and a value the row can show has to be a value the
   -- command accepts (platform notes "상세 화면(detailView) 위젯").
   h.assert_equal(minutes.minimum, -1, "minutes = -1 is what a dismissed picker sends (#88)")
-  h.assert_equal(minutes.maximum, 1440)
+  h.assert_equal(minutes.maximum, 4320, "#89: the presets reach three days")
+  -- ... and the countdown the driver emits has to fit the same span.
+  local remaining = definition("schedule").attributes.remainingSeconds
+    .schema.properties.value
+  h.assert_equal(remaining.maximum, 4320 * 60,
+    "remainingSeconds must cover the longest schedule (#89)")
   h.assert_equal(state.MINUTES_NONE, -1, "state.MINUTES_NONE is the no-op argument")
 
   -- #88: the attribute the 예약 시간 row rests on holds exactly that one value.
@@ -663,6 +676,25 @@ function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
     end
   end
   h.assert_true(keys["0"] == true, "the automation's minutes picker cannot cancel")
+end
+
+function T.test_the_automation_offers_the_same_delays_as_the_detail_view()
+  -- #89: one list of presets, in two places. A routine that can only pick the
+  -- five old delays while the detail view offers sixteen is the kind of drift
+  -- nobody notices until they look for "3일" in a routine and it is not there.
+  local keys = {}
+  for _, action in ipairs((presentation("schedule").automation or {}).actions or {}) do
+    if (action.multiArgCommand or {}).command == "schedule" then
+      for _, argument in ipairs(action.multiArgCommand.arguments or {}) do
+        if argument.name == "minutes" then
+          for _, alternative in ipairs((argument.list or {}).alternatives or {}) do
+            keys[#keys + 1] = alternative.key
+          end
+        end
+      end
+    end
+  end
+  h.assert_deep_equal(keys, PRESET_LIST)
 end
 
 --------------------------------------------------------------------------------
@@ -934,7 +966,7 @@ function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary
   h.assert_equal(item.displayType, "list")
   h.assert_equal(item.list.command.name, "schedule")
   local minutes, states = list_keys(item)
-  h.assert_deep_equal(minutes, { "5", "15", "30", "60", "120", "0" })
+  h.assert_deep_equal(minutes, PRESET_LIST)
   h.assert_equal(item.list.command.argumentType, "integer",
     "a list of integer arguments needs argumentType (platform notes '상세 화면(detailView) 위젯')")
   -- #88: the row rests on `minutesPick`, not on `status`. A dismissed picker
@@ -968,6 +1000,11 @@ function T.test_every_schedule_preset_is_inside_the_definitions_range()
     zero = zero or minutes == 0
   end
   h.assert_true(zero, "the schedule row has no Cancel entry (minutes = 0)")
+  -- #89: and the top of the list is the top of the range - a maximum no preset
+  -- reaches is a promise the screen never keeps.
+  h.assert_equal(schema.maximum, 4320, "the ceiling is three days (#89)")
+  h.assert_true(tonumber(presets[#presets - 1]) == schema.maximum,
+    "the last delay before Cancel must be the definition's maximum")
 end
 
 function T.test_the_info_detail_view_is_only_the_summary()

@@ -43,7 +43,7 @@ local function device_init(driver, device)
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
-  -- pcExec and pcPlanner unset, which reads as "-" and keeps the app saying
+  -- pcExec and pcDelay unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   if poll.ensure_rows(device) then
     -- First run on this generation of rows: one forced poll so attributes
@@ -71,7 +71,7 @@ local function device_added(driver, device)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
-  -- #85: and the same goes for every other pcExec / pcPlanner attribute,
+  -- #85: and the same goes for every other pcExec / pcDelay attribute,
   -- including the "command to schedule" row, whose default is the `offAction`
   -- preference.
   poll.ensure_rows(device)
@@ -229,7 +229,7 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
---- pcPlanner.setPlanCommand(command): what a schedule without a command of
+--- pcDelay.setPlanCommand(command): what a schedule without a command of
 --- its own runs (#84; moved onto the schedule capability in #85).
 --
 -- The detail view's schedule list can only pick the minutes (one argument per
@@ -249,18 +249,18 @@ local function handle_set_plan_command(_driver, device, cmd)
   poll.emit_plan_command(device, args.command, true)
 end
 
---- The command `pcPlanner.schedule` runs when it carries none of its own:
+--- The command `pcDelay.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
 --- then the `offAction` preference, else shutdown (§3.3).
 local function schedule_command(device, requested)
   return state.plan_command_for(requested, poll.plan_command(device))
 end
 
---- pcPlanner.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
+--- pcDelay.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcPlanner.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
+--- pcDelay.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -337,7 +337,7 @@ local capability_handlers = {
 }
 
 -- Command names are literals: they are what `capabilities/pcExec.json` and
--- `capabilities/pcPlanner.json` declare, and the generated capability object
+-- `capabilities/pcDelay.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
   local handlers = { execute = handle_execute }

@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcplanner",
+  "id": "numbersystem53811.pcdelay",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -71,27 +71,82 @@
           "alternatives": [
             {
               "key": "5",
-              "value": "5분 (5 minutes)",
+              "value": "5분 (5 min)",
+              "type": "active"
+            },
+            {
+              "key": "10",
+              "value": "10분 (10 min)",
               "type": "active"
             },
             {
               "key": "15",
-              "value": "15분 (15 minutes)",
+              "value": "15분",
               "type": "active"
             },
             {
               "key": "30",
-              "value": "30분 (30 minutes)",
+              "value": "30분",
+              "type": "active"
+            },
+            {
+              "key": "45",
+              "value": "45분",
               "type": "active"
             },
             {
               "key": "60",
-              "value": "60분 (1 hour)",
+              "value": "1시간 (1 h)",
+              "type": "active"
+            },
+            {
+              "key": "90",
+              "value": "1시간 30분 (1.5 h)",
               "type": "active"
             },
             {
               "key": "120",
-              "value": "120분 (2 hours)",
+              "value": "2시간 (2 h)",
+              "type": "active"
+            },
+            {
+              "key": "180",
+              "value": "3시간 (3 h)",
+              "type": "active"
+            },
+            {
+              "key": "240",
+              "value": "4시간 (4 h)",
+              "type": "active"
+            },
+            {
+              "key": "360",
+              "value": "6시간 (6 h)",
+              "type": "active"
+            },
+            {
+              "key": "480",
+              "value": "8시간 (8 h)",
+              "type": "active"
+            },
+            {
+              "key": "720",
+              "value": "12시간 (12 h)",
+              "type": "active"
+            },
+            {
+              "key": "1440",
+              "value": "1일 (1 day)",
+              "type": "active"
+            },
+            {
+              "key": "2880",
+              "value": "2일 (2 days)",
+              "type": "active"
+            },
+            {
+              "key": "4320",
+              "value": "3일 (3 days)",
               "type": "active"
             },
             {
@@ -208,32 +263,87 @@
                 "alternatives": [
                   {
                     "key": "5",
-                    "value": "5 minutes",
+                    "value": "5분 (5 min)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "10",
+                    "value": "10분 (10 min)",
                     "type": "active"
                   },
                   {
                     "key": "15",
-                    "value": "15 minutes",
+                    "value": "15분",
                     "type": "active"
                   },
                   {
                     "key": "30",
-                    "value": "30 minutes",
+                    "value": "30분",
+                    "type": "active"
+                  },
+                  {
+                    "key": "45",
+                    "value": "45분",
                     "type": "active"
                   },
                   {
                     "key": "60",
-                    "value": "1 hour",
+                    "value": "1시간 (1 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "90",
+                    "value": "1시간 30분 (1.5 h)",
                     "type": "active"
                   },
                   {
                     "key": "120",
-                    "value": "2 hours",
+                    "value": "2시간 (2 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "180",
+                    "value": "3시간 (3 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "240",
+                    "value": "4시간 (4 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "360",
+                    "value": "6시간 (6 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "480",
+                    "value": "8시간 (8 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "720",
+                    "value": "12시간 (12 h)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "1440",
+                    "value": "1일 (1 day)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "2880",
+                    "value": "2일 (2 days)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "4320",
+                    "value": "3일 (3 days)",
                     "type": "active"
                   },
                   {
                     "key": "0",
-                    "value": "Cancel the schedule",
+                    "value": "취소 (Cancel)",
                     "type": "inactive"
                   }
                 ],
