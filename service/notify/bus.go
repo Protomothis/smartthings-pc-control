@@ -130,7 +130,7 @@ func New(opts Options) *Bus {
 // Tap registers fn to receive every emitted event *before* the pipeline —
 // no category filter, no aggregation, no quiet hours, no throttle. It
 // exists for consumers that mirror device state rather than notify a
-// person (the SmartThings push sink, edge-driver doc §4.5).
+// person (the SmartThings push sink, edge-driver doc §3.5).
 //
 // fn runs on the emitting goroutine, so it must return quickly; the one
 // deliberate exception is power.stopping, which the push sink delivers

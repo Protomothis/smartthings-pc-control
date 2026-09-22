@@ -115,7 +115,7 @@ func readLocalConfig() localConfig {
 func localSecret() string { return readLocalConfig().Secret }
 
 // localExposeSession reports whether the service currently publishes the
-// session block (smartthings.expose_session, edge-driver doc §4.2). A
+// session block (smartthings.expose_session, edge-driver doc §3.2). A
 // missing key means off, matching the service's default.
 func localExposeSession() bool { return readLocalConfig().SmartThings.ExposeSession }
 

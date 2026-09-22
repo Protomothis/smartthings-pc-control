@@ -33,7 +33,7 @@ type serviceState struct {
 	// system.update_available, so a 24h re-check stays silent.
 	LastNotifiedTag string `json:"last_notified_tag,omitempty"`
 	// CleanShutdown is set when the service handles a stop/shutdown and
-	// cleared again on the next start (edge-driver doc §4.2): finding it
+	// cleared again on the next start (edge-driver doc §3.2): finding it
 	// false at startup means the PC lost power instead of shutting down.
 	CleanShutdown bool `json:"clean_shutdown"`
 }

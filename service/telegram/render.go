@@ -42,7 +42,7 @@ const (
 const genericTemplate = "generic.tmpl"
 
 // HeaderIcon opens the PC-name header line every Telegram message starts
-// with (#75, edge-driver doc §13.4). Several PCs may share one bot, so the
+// with (#75, hub-agent doc §1). Several PCs may share one bot, so the
 // name is always shown — it is harmless with a single PC.
 const HeaderIcon = "🖥"
 

@@ -1,17 +1,17 @@
 package service
 
-// SmartThings Edge driver protocol, /st/v1 (docs/design/edge-driver.md §4,
+// SmartThings Edge driver protocol, /st/v1 (docs/design/edge-driver.md §3,
 // issue #67). The routes live on the main command port next to the legacy
 // PCControl path, so the driver needs no second port:
 //
-//	GET    /st/v1/status    §4.2
-//	POST   /st/v1/command   §4.3
-//	DELETE /st/v1/schedule  §4.4
+//	GET    /st/v1/status    §3.2
+//	POST   /st/v1/command   §3.3
+//	DELETE /st/v1/schedule  §3.4
 //
-// Authentication is the X-PC-Secret header (§4.1) — never the URL — plus an
-// optional hub allow-list and a per-source-IP rate limit (§8).
-// /st/v1/subscribe (§4.5) lives in st_push.go; /st/v1/description and the
-// SSDP responder (§4.6) live in st_ssdp.go.
+// Authentication is the X-PC-Secret header (§3.1) — never the URL — plus an
+// optional hub allow-list and a per-source-IP rate limit (§3.1).
+// /st/v1/subscribe (§3.5) lives in st_push.go; /st/v1/description and the
+// SSDP responder (§3.6) live in st_ssdp.go.
 
 import (
 	"encoding/json"
@@ -30,15 +30,15 @@ import (
 )
 
 const (
-	// stProtocol is the wire version the driver compares against (§4.2).
+	// stProtocol is the wire version the driver compares against (§3.2).
 	stProtocol = 1
-	// stRatePerSecond is the token-bucket refill rate per source IP (§8).
+	// stRatePerSecond is the token-bucket refill rate per source IP (§3.1).
 	stRatePerSecond = 10
 	// stDriverAgent is the User-Agent prefix the Edge driver sends,
 	// "smartthings-pc-control-edge/<driver version>".
 	stDriverAgent = "smartthings-pc-control-edge"
 	// stHubStale is 2× the longest poll interval the driver offers (5 min,
-	// §5.4), after which the GUI calls the hub disconnected.
+	// §7), after which the GUI calls the hub disconnected.
 	stHubStale = 10 * time.Minute
 	// stMaxBody caps a command body; the JSON is a handful of fields.
 	stMaxBody = 8 << 10
@@ -46,7 +46,7 @@ const (
 	stMaxMinutes = 1440
 )
 
-// ---- rate limiting (§8) ----------------------------------------------------
+// ---- rate limiting (§3.1) --------------------------------------------------
 
 // stBucket is one source IP's token bucket: stRatePerSecond tokens per
 // second, burst stRatePerSecond.
@@ -101,7 +101,7 @@ func resetSTRateLimit() {
 	stBucketsMu.Unlock()
 }
 
-// ---- hub last seen (§4.2) --------------------------------------------------
+// ---- hub last seen ---------------------------------------------------------
 
 // hubSeen is the last authenticated /st/v1 caller. The GUI SmartThings
 // section (#70) shows it as "hub 192.168.1.20 · driver v1.0.0 · 3s ago".
@@ -142,7 +142,7 @@ func driverVersionOf(userAgent string) string {
 	return truncate(ua, 64)
 }
 
-// ---- auth (§4.1) -----------------------------------------------------------
+// ---- auth (§3.1) -----------------------------------------------------------
 
 // stAuth wraps a /st/v1 handler with the rate limit, the hub allow-list and
 // the header secret check, and records the hub on success. The secret is
@@ -201,12 +201,12 @@ func stHubAllowed(hubs []string, from string) bool {
 	return false
 }
 
-// stError writes the {"error": ...} body the driver shows in pcStatus.
+// stError writes the {"error": ...} body the driver shows in pcInfo.
 func stError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// ---- status (§4.2) ---------------------------------------------------------
+// ---- status (§3.2) ---------------------------------------------------------
 
 type stStatusResponse struct {
 	Protocol          int            `json:"protocol"`
@@ -254,7 +254,7 @@ type stWoLAdapter struct {
 	WoLCapable bool   `json:"wol_capable"`
 }
 
-// stSession is the opt-in session block (§4.2). Everything but Exposed is
+// stSession is the opt-in session block (§3.2). Everything but Exposed is
 // omitted while smartthings.expose_session is off; Locked is null when the
 // service cannot read the session state, and IdleSeconds is null unless the
 // tray app posted a heartbeat within idleHeartbeatTTL (#77).
@@ -279,7 +279,7 @@ var (
 
 const wolCacheTTL = time.Minute
 
-// stWoLStatus returns the (cached) adapter scan mapped to the §4.2 shape.
+// stWoLStatus returns the (cached) adapter scan mapped to the §3.2 shape.
 func stWoLStatus() stWoL {
 	wolCacheMu.Lock()
 	if wolCachedAt.IsZero() || time.Since(wolCachedAt) > wolCacheTTL {
@@ -301,7 +301,7 @@ func stWoLStatus() stWoL {
 	return out
 }
 
-// stScheduleView is getSchedule() under the §4.2 key names. The wire form
+// stScheduleView is getSchedule() under the §3.2 key names. The wire form
 // of /api/schedule (executeAt/remainingSec) stays as it is for the GUI.
 func stScheduleView() map[string]any {
 	s := getSchedule()
@@ -415,15 +415,15 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildSTStatus(getConfig()))
 }
 
-// buildSTStatus assembles the §4.2 status document for cfg. Push bodies
-// carry the very same object (§4.5), so the driver never needs a diff.
+// buildSTStatus assembles the §3.2 status document for cfg. Push bodies
+// carry the very same object (§3.5), so the driver never needs a diff.
 func buildSTStatus(cfg Config) stStatusResponse {
 	resp := stStatusResponse{
 		Protocol:       stProtocol,
 		ServiceVersion: Version,
 		MachineID:      machineID(),
 		Hostname:       hostname(),
-		// Answering at all proves the PC is awake (§4.2); sleep and
+		// Answering at all proves the PC is awake (§3.2); sleep and
 		// shutdown are the driver's job to infer.
 		Power: "on",
 		// Uptime describes the PC, not this process: the driver shows it
@@ -448,7 +448,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 	return resp
 }
 
-// ---- command (§4.3) --------------------------------------------------------
+// ---- command (§3.3) --------------------------------------------------------
 
 type stCommandRequest struct {
 	Command string `json:"command"`
@@ -501,7 +501,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// An explicit delay is a schedule the user set from their phone, so it
-	// carries its own origin and needs no tray toast (§4.3).
+	// carries its own origin and needs no tray toast (§3.3).
 	if body.Minutes > 0 {
 		delay := time.Duration(body.Minutes) * time.Minute
 		if err := setSchedule(name, delay, originSmartThings); err != nil {
@@ -515,7 +515,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No delay: run now, or defer by the configured grace period so the
-	// user at the PC can cancel. forceshutdown is always immediate (§4.3).
+	// user at the PC can cancel. forceshutdown is always immediate (§3.3).
 	cfg := getConfig()
 	graceWanted := mode != "immediate" && name != "forceshutdown" && graceCommands[name] &&
 		(cfg.ShutdownGrace || mode == "grace")
@@ -554,7 +554,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ---- schedule (§4.4) -------------------------------------------------------
+// ---- schedule (§3.4) -------------------------------------------------------
 
 // handleSTSchedule serves DELETE /st/v1/schedule.
 func handleSTSchedule(w http.ResponseWriter, r *http.Request) {
@@ -575,7 +575,7 @@ func stHandler() http.Handler {
 	mux.HandleFunc("/st/v1/command", stAuth(handleSTCommand))
 	mux.HandleFunc("/st/v1/schedule", stAuth(handleSTSchedule))
 	registerSTDescriptionRoute(mux) // #69, unauthenticated (see st_ssdp.go)
-	registerSTPushRoutes(mux)       // /st/v1/subscribe (§4.5, #68)
+	registerSTPushRoutes(mux)       // /st/v1/subscribe (§3.5, #68)
 	// Anything else under /st/v1 is a 404 rather than falling through to
 	// the legacy /{secret}/{command} handler.
 	mux.HandleFunc("/st/v1/", func(w http.ResponseWriter, r *http.Request) {

@@ -141,7 +141,7 @@ type Config struct {
 	GraceSeconds int `json:"grace_seconds"`
 	// Telegram is the notification channel (v1.0, design doc §10).
 	Telegram TelegramConfig `json:"telegram"`
-	// SmartThings holds the Edge driver settings (edge-driver doc §4.7).
+	// SmartThings holds the Edge driver settings (edge-driver doc §3.7).
 	SmartThings SmartThingsConfig `json:"smartthings"`
 	// Notify says which Category.Kind events are sent. Missing entries
 	// mean the catalogue default; loadConfig/saveConfig store the full map.
@@ -167,7 +167,7 @@ type TelegramConfig struct {
 }
 
 // SmartThingsConfig is the "smartthings" object in config.json
-// (edge-driver doc §4.7). Hot-reloaded: every /st/v1 request reads the
+// (edge-driver doc §3.7). Hot-reloaded: every /st/v1 request reads the
 // live value, so a save takes effect without a restart.
 type SmartThingsConfig struct {
 	// Discovery answers SSDP M-SEARCH probes (#69). A missing key in an
@@ -566,7 +566,7 @@ func StartHTTPServer(stop chan struct{}) {
 	}
 
 	mux := http.NewServeMux()
-	// The /st/v1 tree (edge-driver doc §4) shares the command port; a more
+	// The /st/v1 tree (edge-driver doc §3) shares the command port; a more
 	// specific pattern wins over "/", so the legacy /{secret}/{command}
 	// handler still sees everything else.
 	registerSTRoutes(mux)
@@ -594,7 +594,7 @@ func StartHTTPServer(stop chan struct{}) {
 // (shutdown, restart, ...) and logs the outcome; a failure also raises
 // system.exec_failed naming that command.
 func executeCommand(command string, name string, args ...string) {
-	notePowerCommand(command) // hint for power.stopping's reason (§4.5)
+	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -629,7 +629,7 @@ func executeCommandWithLog(label string, name string, args ...string) {
 // executePowerShell runs script for the catalogue command `command`; see
 // executeCommand for the failure notification.
 func executePowerShell(command string, script string) {
-	notePowerCommand(command) // hint for power.stopping's reason (§4.5)
+	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

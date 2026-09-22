@@ -1,34 +1,21 @@
-# Main device profile (design doc §5.1, §5.4).
+# Main device profile - what new devices are created with (design doc §4, §7).
+# `src/profiles.lua` is the single source of truth for the name; a device is
+# moved here from an older profile on its first `init`.
 #
-# v13 (#86): the version row moved onto a capability of its own, `pcVersion`,
-# which is LAST in this list. Measured on the phone 2026-09-22: two `state` rows
-# of the SAME capability are drawn side by side in two narrow columns and both
-# are truncated - that is what "상태" and "버전" looked like while they shared
-# pcInfo. One state row per capability renders full width (§14.5). The app also
-# puts every state-only row in one card and every interactive row in a second
-# one, so the card order below is what the reading order follows.
+# The capability ORDER below is the reading order on screen: the app collects
+# every state-only row into one card and every interactive row into a second
+# one, and follows this list inside each card. `pcVersion` is last so the
+# version row sits at the bottom. It is also a capability of its own because
+# two state rows of one capability are drawn side by side and truncated
+# (platform notes "화면 배치").
 #
-# v12 (#85): pcPlan became pcCountdown and pcRun became pcExec (new definitions
-# -> new capability ids, §14.4). Two things were measured on the phone
-# 2026-09-22: the cloud validates a command's arguments against the definition
-# before the hub sees them, so the schedule list's `취소` entry (minutes = 0)
-# only produced a "system error" against `minimum: 1` - the minimum is 0 now;
-# and the app groups detail rows by the capability that owns them, so
-# `planCommand` / `setPlanCommand` moved onto the schedule capability, where the
-# "what to schedule" row belongs next to the "when" row.
-#
-# v12 also renamed pcHealth -> pcInfo for a third new attribute, `versions`
-# ("서비스 1.1.0 · 드라이버 1.0.0 · 화면 pc.v12"), and moved that capability to
-# the END of this list: the app draws the cards in the order they appear here,
-# and the version row belongs at the bottom of the screen.
-#
-# The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (§14). Keep it in sync with `NAMESPACE` in src/caps.lua -
-# tools/apply-namespace.js rewrites both.
+# The `numbersystem53811` namespace is the one SmartThings assigned to the
+# owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
+# with `NAMESPACE` in src/caps.lua - tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in
-# parentheses (#78): the SmartThings app shows profile preferences in whatever
-# the driver wrote, with no per-locale variant, and this project is Korean-first.
+# parentheses: the SmartThings app shows profile preferences in whatever the
+# driver wrote, with no per-locale variant, and this project is Korean-first.
 name: pc.v13
 components:
   - id: main

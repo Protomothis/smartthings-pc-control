@@ -2,7 +2,7 @@
 --
 -- Entry point only: lifecycle and capability handlers wire the modules
 -- together, all logic lives in client/state/poll/wol/discovery so it can be
--- unit-tested without a hub (design doc §3).
+-- unit-tested without a hub (design doc §2).
 
 local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
@@ -39,14 +39,14 @@ local function device_init(driver, device)
   if profiles.remove_legacy_child(driver, device) then
     return
   end
-  -- §14.3: a device keeps the screen definition it was created with, so a
+  -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
   -- pcExec and pcCountdown unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   poll.ensure_rows(device)
-  -- §6.4: one listener per driver, opened on the first device that needs it.
+  -- §6.3: one listener per driver, opened on the first device that needs it.
   push.start(driver)
   poll.start(driver, device)
 end
@@ -54,11 +54,11 @@ end
 local function device_added(driver, device)
   log.info("added " .. device.id)
   -- A device that is being added was created by this driver run, so it is on
-  -- the current profile: record the name now (§14.3, the hub does not always
+  -- the current profile: record the name now (platform notes "프로필과 화면 생성", the hub does not always
   -- expose it) and let `ensure` confirm there is nothing to migrate.
   profiles.remember(device)
   profiles.ensure(device)
-  -- §13.1: a device SSDP just created arrives with the address it was found at.
+  -- §6.5: a device SSDP just created arrives with the address it was found at.
   discovery.adopt(device)
   -- Paint the tiles immediately; the first poll fills in the real values.
   local initial = state.new()
@@ -97,8 +97,8 @@ end
 -- capability handlers
 --------------------------------------------------------------------------------
 
--- Report a failed command through pcInfo instead of failing silently (§1.3).
--- A rate-limited request (§8) says nothing about the connection, so it is
+-- Report a failed command through pcInfo instead of failing silently (§1).
+-- A rate-limited request (§3.1) says nothing about the connection, so it is
 -- logged and the tiles keep what the last poll put there.
 local function report_error(device, kind, body)
   local connection = poll.connection_for(kind)
@@ -110,7 +110,7 @@ local function report_error(device, kind, body)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
 end
 
---- switch.on: WoL sequence, device goes to `waking` (§6.2/§6.3).
+--- switch.on: WoL sequence, device goes to `waking` (§6.2/§6.4).
 local function handle_switch_on(driver, device)
   local nxt = state.transition(poll.get_state(device), "switch_on")
   poll.set_state(device, nxt)
@@ -134,8 +134,8 @@ local function handle_refresh(driver, device)
   poll.once(driver, device)
 end
 
---- The no-argument commands of §5.1, mapped to the service command name of
---- §4.3. `wake` is not a service command at all — it is the WoL sequence, the
+--- The no-argument commands of §4, mapped to the service command name of
+--- §3.3. `wake` is not a service command at all — it is the WoL sequence, the
 --- same thing `switch on` does.
 ---
 --- #82 took their `pushButton` rows off the detail view (a button has no value,
@@ -155,8 +155,8 @@ local BUTTONS = {
   screenOn = "turnscreenon",
 }
 
---- §4.3 `mode` for a command sent without one, from the `buttonMode`
---- preference (§5.4). `default` follows whatever grace period the PC is
+--- §3.3 `mode` for a command sent without one, from the `buttonMode`
+--- preference (§7). `default` follows whatever grace period the PC is
 --- configured with (so the toast is still cancellable); `immediate` skips it.
 --- The detail-view list sends `command` only, so it lands here too (#82).
 local function button_mode(device)
@@ -177,13 +177,13 @@ end
 --
 -- #84: `none` is a command in the enum and does nothing on purpose. Closing
 -- the detail view's list without picking anything sends the row's current
--- value (§14.5), and the row rests on `none`, so this is the path a dismissed
+-- value (platform notes "상세 화면(detailView) 위젯"), and the row rests on `none`, so this is the path a dismissed
 -- picker takes: refresh the tiles and leave the PC alone.
 --
 -- #86: whatever happens next, the command row is answered first with a forced
 -- re-emit of its resting value. The row never changes value (it rests on
 -- `none`), so without that the app keeps a spinner up until it fails with an
--- error - measured on the phone 2026-09-22 (§14.5).
+-- error - measured on the phone 2026-09-22 (platform notes "상세 화면(detailView) 위젯").
 local function run_command(driver, device, service_command, mode, minutes)
   poll.answer_action(device)
   if service_command == nil or service_command == "" or service_command == state.ACTION_NONE then
@@ -209,7 +209,7 @@ local function button_handler(service_command)
 end
 
 --- pcExec.execute(command, mode, minutes) — capabilities/pcExec.json.
---- `minutes > 0` turns the same endpoint into a schedule (§4.3).
+--- `minutes > 0` turns the same endpoint into a schedule (§3.3).
 --
 --- The detail-view list (#82) sends `command` alone: the mode then follows the
 --- `buttonMode` preference, exactly as the buttons it replaced did, and the
@@ -224,7 +224,7 @@ end
 --- its own runs (#84; moved onto the schedule capability in #85).
 --
 -- The detail view's schedule list can only pick the minutes (one argument per
--- list, §14.5), so the command is picked on its own row and kept in a device
+-- list, platform notes "상세 화면(detailView) 위젯"), so the command is picked on its own row and kept in a device
 -- field. Every value it can hold is a valid argument, so a dismissed picker
 -- simply re-sends the current one.
 --
@@ -234,7 +234,7 @@ end
 --
 -- #86: emitted with `state_change = true`. Re-picking the value the row already
 -- shows (restart -> restart) changes nothing, and the app then spins until it
--- gives up with an error (§14.5).
+-- gives up with an error (platform notes "상세 화면(detailView) 위젯").
 local function handle_set_plan_command(_driver, device, cmd)
   local args = (cmd or {}).args or {}
   poll.emit_plan_command(device, args.command, true)
@@ -242,16 +242,16 @@ end
 
 --- The command `pcCountdown.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
---- then the `offAction` preference, else shutdown (§4.3).
+--- then the `offAction` preference, else shutdown (§3.3).
 local function schedule_command(device, requested)
   return state.plan_command_for(requested, poll.plan_command(device))
 end
 
---- pcCountdown.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- pcCountdown.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcCountdown.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
+--- pcCountdown.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -261,7 +261,7 @@ local handle_cancel
 --- #85: and the definition now says `minimum: 0`, because the cloud validates
 --- a command's arguments against the definition before the hub ever sees them -
 --- with `minimum: 1` the Cancel entry only ever produced a "system error"
---- popup (§14.5). Zero minutes takes the `cancel()` path, which is still in the
+--- popup (platform notes "상세 화면(detailView) 위젯"). Zero minutes takes the `cancel()` path, which is still in the
 --- definition and still handled for devices on an older profile. The list sends
 --- the key as a string on some firmwares, hence the `tonumber`.
 local function handle_schedule(driver, device, cmd)
@@ -297,7 +297,7 @@ function handle_cancel(driver, device)
     note = i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"),
     -- #86: cancelling with nothing scheduled leaves every schedule row exactly
     -- as it was, which is precisely when the app's spinner used to end in an
-    -- error. Forced, the rows go out anyway and the spinner finishes (§14.5).
+    -- error. Forced, the rows go out anyway and the spinner finishes (platform notes "상세 화면(detailView) 위젯").
     force = poll.SCHEDULE_ROWS,
   })
 end

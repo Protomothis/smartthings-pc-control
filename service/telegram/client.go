@@ -169,7 +169,7 @@ func (e *RateLimitError) Error() string {
 // ConflictError is HTTP/Bot-API 409 ("Conflict: terminated by other
 // getUpdates request"). Telegram hands long polling to exactly one client
 // per bot token, so this is how a second PC sharing the token learns that
-// another one owns the command channel (#75, edge-driver doc §13.4).
+// another one owns the command channel (#75, hub-agent doc §1).
 type ConflictError struct {
 	Description string
 }

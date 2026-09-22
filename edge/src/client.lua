@@ -1,4 +1,4 @@
--- HTTP client for the service's `/st/v1` protocol (design doc §4).
+-- HTTP client for the service's `/st/v1` protocol (design doc §3).
 --
 -- Every call returns `(ok, body, err_kind)`:
 --   ok = true   -> body is the decoded JSON table, err_kind is nil
@@ -20,13 +20,13 @@ client.PROTOCOL = 1
 client.TIMEOUT = 5
 client.DEFAULT_PORT = 5001
 client.BASE_PATH = "/st/v1"
--- §4.5: the default subscription lifetime, and what the service falls back to
+-- §3.5: the default subscription lifetime, and what the service falls back to
 -- when `ttl_seconds` is absent. Valid range is 60..3600.
 client.DEFAULT_TTL = 600
--- The service records this as `hubLastSeen` and shows it in the GUI (§4.2).
+-- The service records this as `hubLastSeen` and shows it in the GUI.
 client.USER_AGENT = "smartthings-pc-control-edge/" .. VERSION
 
--- §13.2: what SSDP last told us about this PC. The `ipAddress` preference wins
+-- §6.5: what SSDP last told us about this PC. The `ipAddress` preference wins
 -- when it is set (the user declared a fixed address); an empty one means the
 -- driver follows discovery, and these fields are where it remembers the answer.
 client.IP_FIELD = "discovered_ip"
@@ -34,7 +34,7 @@ client.PORT_FIELD = "discovered_port"
 
 --- `http://<ip>:<port>/st/v1`, or nil when no IP is known yet.
 -- @param discovered optional `{ ip = ..., port = ... }` fallback used only when
---   the `ipAddress` preference is empty (§13.2).
+--   the `ipAddress` preference is empty (§6.5).
 function client.base_url(prefs, discovered)
   prefs = prefs or {}
   discovered = discovered or {}
@@ -65,12 +65,12 @@ function client.discovered(device)
   return { ip = ip, port = port }
 end
 
---- `client.base_url` for a device: preference first, discovery second (§13.2).
+--- `client.base_url` for a device: preference first, discovery second (§6.5).
 function client.device_base_url(device)
   return client.base_url((device or {}).preferences, client.discovered(device))
 end
 
---- Request headers. §4.1/§8: the secret travels in `X-PC-Secret`, never in the
+--- Request headers. §3.1/§8: the secret travels in `X-PC-Secret`, never in the
 --- URL, and is omitted entirely when the service has no secret set.
 function client.headers(prefs, body_length)
   prefs = prefs or {}
@@ -117,7 +117,7 @@ function client.classify(code)
     return "unauthorized"
   end
   if code == 403 then
-    -- The hub is not in `smartthings.allowed_hubs` (§4.1). It shows up as the
+    -- The hub is not in `smartthings.allowed_hubs` (§3.1). It shows up as the
     -- same `connection = unauthorized` as a wrong secret, but the fix is a
     -- different one, so the kind stays separate for the message.
     return "forbidden"
@@ -130,7 +130,7 @@ function client.classify(code)
     return "incompatible"
   end
   if code == 429 then
-    -- Rate limited (§8): the service is up, authenticated and healthy, it just
+    -- Rate limited (§3.1): the service is up, authenticated and healthy, it just
     -- refused this one request. Nothing about the PC changed, so the caller
     -- keeps the last state instead of painting an error.
     return "ratelimited"
@@ -196,7 +196,7 @@ function client.request(device, opts, deps)
 
   local kind = client.classify(code)
   if kind then
-    -- §4.1: an error body is `{"error": "..."}`. It comes back so the caller
+    -- §3.1: an error body is `{"error": "..."}`. It comes back so the caller
     -- can put the service's own words in `pcInfo.message` (an unknown
     -- command says which one), and so a 400 from a newer service is readable.
     return false, body, kind
@@ -218,12 +218,12 @@ function client.request(device, opts, deps)
   return true, body, nil
 end
 
---- `GET /st/v1/status` (§4.2).
+--- `GET /st/v1/status` (§3.2).
 function client.get_status(device, deps)
   return client.request(device, { method = "GET", path = "/status", expect_protocol = true }, deps)
 end
 
---- `POST /st/v1/command` (§4.3). `minutes > 0` schedules instead of executing.
+--- `POST /st/v1/command` (§3.3). `minutes > 0` schedules instead of executing.
 function client.command(device, cmd, mode, minutes, deps)
   return client.request(device, {
     method = "POST",
@@ -236,12 +236,12 @@ function client.command(device, cmd, mode, minutes, deps)
   }, deps)
 end
 
---- `DELETE /st/v1/schedule` (§4.4).
+--- `DELETE /st/v1/schedule` (§3.4).
 function client.cancel(device, deps)
   return client.request(device, { method = "DELETE", path = "/schedule" }, deps)
 end
 
---- `POST /st/v1/subscribe` (§4.5). Field names are the ones `stSubscribeRequest`
+--- `POST /st/v1/subscribe` (§3.5). Field names are the ones `stSubscribeRequest`
 --- in service/st_push.go decodes; the answer is `{ id, expires_at }`.
 -- The service requires the callback host to equal the request source IP, so
 -- `callback` has to be built from the hub address the PC sees (push.lua).
@@ -257,7 +257,7 @@ function client.subscribe(device, callback, ttl, deps)
   }, deps)
 end
 
---- `DELETE /st/v1/subscribe/{id}` (§4.5).
+--- `DELETE /st/v1/subscribe/{id}` (§3.5).
 function client.unsubscribe(device, id, deps)
   if type(id) ~= "string" or id == "" then
     return false, nil, "badrequest"
@@ -265,7 +265,7 @@ function client.unsubscribe(device, id, deps)
   return client.request(device, { method = "DELETE", path = "/subscribe/" .. id }, deps)
 end
 
---- GET an absolute URL and decode the JSON body (the SSDP `LOCATION`, §4.6).
+--- GET an absolute URL and decode the JSON body (the SSDP `LOCATION`, §3.6).
 --- Unlike `client.request` this has no device, no secret and no protocol check
 --- beyond what the caller does with the returned table.
 function client.fetch(url, deps)

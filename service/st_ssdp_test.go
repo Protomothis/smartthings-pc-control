@@ -1,7 +1,7 @@
 package service
 
 // Tests for SSDP discovery and GET /st/v1/description (edge-driver doc
-// §4.6, #69). Nothing here joins a multicast group: the responder's socket
+// §3.6, #69). Nothing here joins a multicast group: the responder's socket
 // factory is replaced with a loopback pair, so the tests run on a build
 // agent with no LAN.
 
@@ -233,7 +233,7 @@ func TestSTDescriptionNeedsNoSecret(t *testing.T) {
 		hubLastSeenMu.Unlock()
 	})
 
-	// No X-PC-Secret at all: an unconfigured driver has none yet (§4.6).
+	// No X-PC-Secret at all: an unconfigured driver has none yet (§3.6).
 	r := httptest.NewRequest(http.MethodGet, "/st/v1/description", nil)
 	r.RemoteAddr = "192.168.1.20:51234"
 	w := httptest.NewRecorder()
@@ -475,7 +475,7 @@ func TestServeSSDPStopsWhenTheSocketCloses(t *testing.T) {
 	}
 }
 
-// ---- config hot reload (§4.7) ----------------------------------------------
+// ---- config hot reload (§3.7) ----------------------------------------------
 
 func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	protectConfigFile(t)
@@ -483,7 +483,7 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 		Discovery: true, AllowedHubs: []string{"192.168.1.20"}, ExposeSession: true,
 	}})
 
-	// GET hands the GUI every §4.7 key.
+	// GET hands the GUI every §3.7 key.
 	w := httptest.NewRecorder()
 	handleConfigAPI(w, httptest.NewRequest("GET", "/api/config", nil))
 	if w.Code != http.StatusOK {

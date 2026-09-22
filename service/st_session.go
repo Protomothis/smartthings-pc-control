@@ -1,6 +1,6 @@
 package service
 
-// Opt-in session information for GET /st/v1/status (edge-driver doc §4.2,
+// Opt-in session information for GET /st/v1/status (edge-driver doc §3.2,
 // "smartthings.expose_session"). A service runs in session 0, so the lock
 // state and the user name come from one WTSQuerySessionInformation call with
 // WTSSessionInfoEx, which the terminal-services stack fills in on the
@@ -144,13 +144,13 @@ func readUTF16(b []byte, off, chars int) string {
 	return windows.UTF16ToString(u)
 }
 
-// ---- lock/unlock watcher (§4.5) --------------------------------------------
+// ---- lock/unlock watcher (§3.5) --------------------------------------------
 
 // sessionPollInterval is how often the lock state is sampled. A service in
 // session 0 gets no WM_WTSSESSION_CHANGE and SERVICE_CONTROL_SESSIONCHANGE
 // reports console connect/disconnect, not the lock screen — so there is no
 // event to subscribe to and the state has to be polled. One
-// WTSQuerySessionInformation call every 5s is cheap enough (§4.5 asks for
+// WTSQuerySessionInformation call every 5s is cheap enough (§3.5 asks for
 // "immediate", and 5s is the resolution the driver gets), and the poll only
 // runs while smartthings.expose_session is on.
 const sessionPollInterval = 5 * time.Second
@@ -203,7 +203,7 @@ func emitSessionLock(info sessionInfo) {
 	}
 	// No idle_seconds here: idle is heartbeat state, never an event (#77).
 	fields := map[string]string{}
-	// The user name follows the same opt-in as the status block (§4.2).
+	// The user name follows the same opt-in as the status block (§3.2).
 	if getConfig().SmartThings.ExposeSessionUser && info.User != "" {
 		fields["user"] = info.User
 	}

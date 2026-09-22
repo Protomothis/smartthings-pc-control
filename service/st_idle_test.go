@@ -1,7 +1,7 @@
 package service
 
 // Tests for the idle-time heartbeat (#77): the WebUI endpoint the tray app
-// posts to, and how the §4.2 session block reports the stored sample.
+// posts to, and how the §3.2 session block reports the stored sample.
 
 import (
 	"net/http"

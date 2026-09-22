@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Create the six custom capabilities and their presentations on the
-# SmartThings account (design doc §11.1). #86 added `pcVersion`.
+# SmartThings account.
 #
 #   cd edge && ./tools/create-capabilities.sh
 #

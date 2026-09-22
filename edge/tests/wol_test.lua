@@ -107,7 +107,7 @@ function T.test_send_refuses_an_invalid_mac()
 end
 
 function T.test_retry_schedule_matches_the_design()
-  -- §6.3: immediately, at 2s and at 5s; give up after 90s.
+  -- §6.4: immediately, at 2s and at 5s; give up after 90s.
   h.assert_deep_equal(wol.RETRY_DELAYS, { 0, 2, 5 })
   h.assert_equal(wol.WAKE_TIMEOUT, 90)
   h.assert_deep_equal(wol.PORTS, { 7, 9 })

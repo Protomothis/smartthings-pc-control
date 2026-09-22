@@ -1,6 +1,6 @@
 package service
 
-// Tests for the /st/v1 SmartThings protocol (edge-driver doc §4, #67).
+// Tests for the /st/v1 SmartThings protocol (edge-driver doc §3, #67).
 
 import (
 	"encoding/json"
@@ -79,7 +79,7 @@ func stSetup(t *testing.T, cfg Config) {
 	})
 }
 
-// ---- auth (§4.1) -----------------------------------------------------------
+// ---- auth (§3.1) -----------------------------------------------------------
 
 func TestSTHeaderSecretAuth(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
@@ -158,7 +158,7 @@ func TestSTRateLimitPerSourceIP(t *testing.T) {
 	}
 }
 
-// ---- status (§4.2) ---------------------------------------------------------
+// ---- status (§3.2) ---------------------------------------------------------
 
 func TestSTStatusShape(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t", ShutdownGrace: true, GraceSeconds: 300})
@@ -174,7 +174,7 @@ func TestSTStatusShape(t *testing.T) {
 	}
 	got := stJSON(t, w)
 
-	// Required keys and their JSON types (§4.2).
+	// Required keys and their JSON types (§3.2).
 	wantTypes := map[string]string{
 		"protocol": "number", "service_version": "string", "machine_id": "string",
 		"hostname": "string", "power": "string", "uptime_seconds": "number",
@@ -288,7 +288,7 @@ func TestSTStatusReportsScheduleAndSession(t *testing.T) {
 	}
 }
 
-// ---- command (§4.3) --------------------------------------------------------
+// ---- command (§3.3) --------------------------------------------------------
 
 func TestSTCommandSchedulesWithSmartThingsOrigin(t *testing.T) {
 	stSetup(t, Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 300})
@@ -421,7 +421,7 @@ func TestSTCommandRejectsBadInput(t *testing.T) {
 	}
 }
 
-// ---- schedule (§4.4) -------------------------------------------------------
+// ---- schedule (§3.4) -------------------------------------------------------
 
 func TestSTScheduleDelete(t *testing.T) {
 	// schedule.created/cancelled are off in the catalogue by default.
@@ -452,7 +452,7 @@ func TestSTScheduleDelete(t *testing.T) {
 	}
 }
 
-// ---- hub tracking (§4.2) ---------------------------------------------------
+// ---- hub tracking ----------------------------------------------------------
 
 func TestSTHubLastSeen(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
@@ -519,7 +519,7 @@ func TestSTUnknownRouteIs404(t *testing.T) {
 	}
 }
 
-// ---- turnscreenon (§4.3) ---------------------------------------------------
+// ---- turnscreenon (§3.3) ---------------------------------------------------
 
 func TestTurnScreenOnCommand(t *testing.T) {
 	if _, ok := Commands["turnscreenon"]; !ok {
@@ -538,7 +538,7 @@ func TestTurnScreenOnCommand(t *testing.T) {
 	}
 }
 
-// ---- config (§4.7) ---------------------------------------------------------
+// ---- config (§3.7) ---------------------------------------------------------
 
 func TestSmartThingsConfigDefaults(t *testing.T) {
 	// A config.json that predates v1.1.0 keeps discovery on and the rest off.
