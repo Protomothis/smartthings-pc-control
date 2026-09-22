@@ -118,7 +118,7 @@ function T.test_manual_add_creates_a_placeholder_device()
   h.assert_equal(#driver.created, 1)
   local spec = driver.created[1]
   h.assert_equal(spec.label, "PC Control (set IP in settings)")
-  h.assert_equal(spec.profile, "pc.v8")
+  h.assert_equal(spec.profile, "pc.v9")
   h.assert_equal(spec.type, "LAN")
   h.assert_contains(spec.device_network_id, "pc-control-manual-")
 end
