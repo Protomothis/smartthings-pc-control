@@ -162,56 +162,72 @@ local function hhmm(iso)
 end
 
 --------------------------------------------------------------------------------
--- pcAction.lastAction (#82)
+-- pcRun.lastAction (#82, #84)
 --------------------------------------------------------------------------------
 
--- The value the detail-view list shows before anything has been run.
+-- The value the detail-view list rests on. #84: it is also a valid `execute`
+-- argument, and the one the driver does nothing for - closing the list without
+-- picking anything sends the row's current value (§14.5), so the value the row
+-- shows has to be harmless.
 state.ACTION_NONE = "none"
 
--- service command name (§4.3) -> `lastAction` enum key. `wake` is not a service
--- command at all (it is the WoL sequence), but it is an action the user can
--- pick, so it is in the enum. `forceshutdown` has no enum value of its own:
--- what the user sees happening is a shut down.
-local ACTIONS = {
-  wake = "wake",
-  suspend = "suspend",
-  hibernate = "hibernate",
-  restart = "restart",
-  shutdown = "shutdown",
-  forceshutdown = "shutdown",
-  lock = "lock",
-  turnscreenoff = "screenOff",
-  turnscreenon = "screenOn",
-}
-
--- Every `lastAction` value, in the order the presentation lists them.
--- capabilities_test.lua checks this against the enum in pcAction.json.
+-- Every `lastAction` value. #84 made this the same set as the `execute`
+-- `command` enum - service command names (§4.3) plus `none` and `wake` - so
+-- that whatever the row holds is an argument `execute` accepts.
+-- capabilities_test.lua checks this against the enum in pcRun.json.
 state.ACTIONS = {
-  "none", "wake", "suspend", "hibernate", "restart", "shutdown",
-  "lock", "screenOff", "screenOn",
+  "none", "wake", "shutdown", "forceshutdown", "restart", "hibernate",
+  "suspend", "lock", "turnscreenoff", "turnscreenon",
 }
 
---- The `lastAction` enum key for a service command name, or for an enum key
---- that is already one (the no-argument commands send their own name).
---- Anything unknown yields `none` rather than an invalid enum value, which the
---- hub would reject.
-function state.action_for(command)
-  if type(command) ~= "string" or command == "" then
-    return state.ACTION_NONE
-  end
-  local mapped = ACTIONS[command]
-  if mapped then
-    return mapped
-  end
-  for _, value in ipairs(state.ACTIONS) do
-    if value == command then
-      return value
+--- True when `value` is a `lastAction` enum value.
+function state.is_action(value)
+  for _, action in ipairs(state.ACTIONS) do
+    if action == value then
+      return true
     end
   end
-  return state.ACTION_NONE
+  return false
 end
 
---- Format `pcAction.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--------------------------------------------------------------------------------
+-- pcRun.planCommand (#84)
+--------------------------------------------------------------------------------
+
+-- What the service can schedule (§4.3). `lock` and the screen commands are not
+-- in here: the service refuses to schedule them.
+state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
+
+-- What a device schedules when nothing else says otherwise.
+state.PLAN_DEFAULT = "shutdown"
+
+--- True when `value` is a command `pcPlan.schedule` may carry.
+function state.is_plan_command(value)
+  for _, command in ipairs(state.PLAN_COMMANDS) do
+    if command == value then
+      return true
+    end
+  end
+  return false
+end
+
+--- The first schedulable command among the arguments, else `shutdown`.
+--
+-- The callers pass their preference order: the command an automation sent, the
+-- `planCommand` the user picked on the detail view, and the `offAction`
+-- preference (#84 - before it, the schedule row could only pick the minutes).
+function state.plan_command_for(...)
+  for i = 1, select("#", ...) do
+    local candidate = select(i, ...)
+    if state.is_plan_command(candidate) then
+      return candidate
+    end
+  end
+  return state.PLAN_DEFAULT
+end
+
+--- Format `pcRun.lastCommand` as "Shut down · SmartThings · 23:05" (§5.1).
+--- #84: this is the row that says what ran; `lastAction` stays on `none`.
 function state.format_last_command(last, lang)
   if type(last) ~= "table" or not last.command then
     return ""
@@ -386,13 +402,14 @@ end
 -- capabilities_test.lua checks this against the JSON in `capabilities/`, so a
 -- new attribute that is emitted but never defined fails the suite.
 --
--- `apply_status` produces all of them except `lastAction`, which no status body
--- carries: it is what the user last asked for, so poll.emit_action writes it
--- from the command handlers (#82).
+-- `apply_status` produces all of them except `lastAction` and `planCommand`,
+-- which no status body carries: the first is the placeholder the command row
+-- rests on (poll.ensure_action, #84) and the second is the user's own choice
+-- (poll.emit_plan_command).
 local ATTRIBUTES = {
   [state.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
-  [caps.COMMAND] = { lastCommand = true, lastAction = true },
+  [caps.COMMAND] = { lastCommand = true, lastAction = true, planCommand = true },
   [caps.SCHEDULE] = {
     active = true, status = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true,

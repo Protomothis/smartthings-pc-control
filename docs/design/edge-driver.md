@@ -44,11 +44,11 @@ PCControl 호환 경로(`/{secret}/{command}`)는 그대로 유지한다. 기존
 edge/
   config.yml                 # Edge driver 메타 (name, packageKey, permissions: lan)
   profiles/
-    pc-v10.yml               # main 컴포넌트 프로필(현행 pc.v10, §14.3)
-    pc.yml … pc-v9.yml       # v1~v9: 아직 이전되지 않은 장치가 참조 (#79)
+    pc-v11.yml               # main 컴포넌트 프로필(현행 pc.v11, §14.3)
+    pc.yml … pc-v10.yml      # v1~v10: 아직 이전되지 않은 장치가 참조 (#79)
   capabilities/              # 커스텀 capability 정의/프레젠테이션 JSON (CLI로 생성)
     pcPower.json  pcPower.presentation.json
-    pcAction.json      pcAction.presentation.json
+    pcRun.json         pcRun.presentation.json
     pcPlan.json     pcPlan.presentation.json
     pcHealth.json      pcHealth.presentation.json
     pcUser.json     pcUser.presentation.json
@@ -219,14 +219,14 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 
 ## 5. 드라이버 장치 모델
 
-### 5.1 프로필 `pc-v10.yml` (main, 이름 `pc.v10`; 버전 규칙은 §14.3)
+### 5.1 프로필 `pc-v11.yml` (main, 이름 `pc.v11`; 버전 규칙은 §14.3)
 
 | capability | 용도 |
 |---|---|
 | `switch` | on → WoL 시퀀스, off → 환경설정의 기본 off 명령(`mode=default`) |
 | ~~`healthCheck`~~ | 제거(pc.v9). 드라이버가 채우지 않는 표준 속성이 남아 앱이 "상태 정보를 아직 업데이트하지 않았다"고 계속 안내했다. 장치 health는 device:online()으로만 다루며 항상 online(PC가 꺼져도 조작 가능해야 WoL을 보낼 수 있음). PC 상태는 powerState/switch |
 | `{NS}.pcPower` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` |
-| `{NS}.pcAction` | (#82로 `pcControl`에서 이름·id를 바꿨다 — §14.4) 명령 `execute(command, mode?, minutes?)`(상세 화면의 명령 목록과 자동화가 모두 쓴다. `command` enum은 §4.3의 8개에 `wake`를 더한 9개이고 `wake`는 서비스로 나가지 않는 WoL 시퀀스다. `forceshutdown`은 자동화에만 둔다) + 인자 없는 명령 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(#78의 버튼. 화면에서는 빠졌지만 정의와 핸들러에 남아 옛 프로필의 장치와 씬이 쓴다); attrs `lastAction` enum `none` `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(마지막으로 실행한 명령 — 상세 화면 목록이 보여 주는 값), `lastCommand` string("종료 · SmartThings · 23:05") |
+| `{NS}.pcRun` | (#82로 `pcControl`→`pcAction`, #84로 `pcAction`→`pcRun` — 정의가 바뀌면 새 id다, §14.4) 명령 `execute(command, mode?, minutes?)`(상세 화면의 명령 목록과 자동화가 모두 쓴다. `command` enum은 §4.3의 8개에 `wake`와 **`none`**을 더한 10개다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`은 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다(§14.5). `forceshutdown`은 화면에 없고 자동화에만 둔다) + 인자 없는 명령 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn`(#78의 버튼. 화면에서는 빠졌지만 정의와 핸들러에 남아 옛 프로필의 장치와 씬이 쓴다) + `setPlanCommand(command)`(#84, 예약이 실행할 명령); attrs `lastAction` enum(**`execute`의 `command` enum과 같은 10개**: `none` `wake` `shutdown` `forceshutdown` `restart` `hibernate` `suspend` `lock` `turnscreenoff` `turnscreenon`. #84로 **항상 `none`**이다 — 목록이 쉬는 값이자 유효한 무해 인자여야 한다), `lastCommand` string("종료 · SmartThings · 23:05" — 실제로 무엇이 실행됐는지는 이 줄이 말한다), `planCommand` enum `shutdown` `restart` `suspend` `hibernate`(#84, `pcPlan.schedule`이 명령 없이 올 때 쓸 명령) |
 | `{NS}.pcPlan` | (#83으로 `pcTimer`에서 이름·id를 바꿨다 — 정의에 `status`가 늘어서 §14.4 규칙이 걸린다) attrs `summary` string("종료 · 4분 남음 · SmartThings", 예약 없으면 `""`), `status` enum `idle` `scheduled`(상세 화면 목록이 보여 주는 값 — 목록의 `state`는 **문자열 enum이어야** 한다, §14.5), `active` bool(같은 사실의 bool 판. 화면에서는 빠졌고 자동화 조건으로 남는다), `command` string, `remainingSeconds` integer, `executeAt` string(로컬 `HH:MM`), `origin` string; command `cancel()` ; command `schedule(minutes, command?)` — `minutes`는 capability 상으로는 integer 1..1440(서비스 상한과 동일)이고, 프리셋 5/15/30/60/120은 프레젠테이션의 선택지로만 제공한다 |
 | `{NS}.pcHealth` | attrs `summary` string("연결됨 · v1.1.0" / "연결 안 됨 · 시크릿 불일치" — #82로 전원 낱말이 빠졌다. 바로 위 줄이 `pcPower`다), `connection` enum(`ok` `unauthorized` `unreachable` `incompatible`), `serviceVersion` string, `updateAvailable` bool, `wolReady` bool, `lastSeen` string(마지막 성공 폴링의 로컬 `HH:MM:SS`), `message` string(사람이 읽는 오류/안내 **한 줄**) |
 | `{NS}.pcUser` | attrs `exposed` bool, `summary` string("잠김 · 유휴 20분 · kim"), `locked` bool, `idleMinutes` integer, `user` string — `exposed`는 항상 내보내고(상세 화면의 `visibleCondition` 기준), 나머지는 `session.exposed=false`면 내보내지 않아 마지막 값이 유지된다 |
@@ -246,7 +246,7 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 
 제거됨(#81): 본체의 화면 끄기/켜기 버튼으로 대체.
 
-### 5.3 프레젠테이션 (#78 리모컨 모델, #82 최종 배치)
+### 5.3 프레젠테이션 (#78 리모컨 모델, #82 최종 배치, #84 무해한 기본값)
 
 2026-09-22 실기 피드백으로 배치를 확정했다. `pushButton` 줄은 값이 없어 휴대폰이
 라벨 옆에 "-"를 그리고(§14.5), 조건부 줄은 `visibleCondition`이 무시돼 늘 보인다.
@@ -255,31 +255,46 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
 - 대시보드: `switch` + `pcPower.powerState` 상태 문구. (변경 없음)
 - 상세: 위에서부터
   1. `pcPower.powerState` 상태 줄 (그 위에 표준 `switch` 토글)
-  2. `pcAction`: `list` — `command: {name: "execute", alternatives: 8}`,
-     `state: {value: "lastAction.value", alternatives: 9}`. 고르면 곧바로 실행되고,
-     줄에는 마지막으로 실행한 명령이 남는다. 순서는 깨우기 · 절전 · 최대 절전 ·
-     재시작 · 종료 · 잠금 · 화면 끄기 · 화면 켜기. **강제 종료는 화면에 없다**
-     (되돌릴 수 없는 명령은 자동화에서만). alternatives의 `key`는 `execute`의
-     `command` enum 값(서비스 명령 이름)이고, `state`의 `key`는 `lastAction` enum
-     값이다 — 드라이버가 둘을 `state.action_for`로 잇는다.
-  3. `pcPlan`: `list` — `command: {name: "schedule", argumentType: "integer",
+  2. `pcRun`: `list` — `command: {name: "execute", alternatives: 8}`,
+     `state: {value: "lastAction.value", alternatives: 10}`. 고르면 곧바로
+     실행된다. 메뉴 순서는 깨우기 · 절전 · 최대 절전 · 재시작 · 종료 · 잠금 ·
+     화면 끄기 · 화면 켜기. **강제 종료는 메뉴에 없다**(되돌릴 수 없는 명령은
+     자동화에서만). #84로 **줄 자체는 늘 `none`("명령 선택…")에 머문다**:
+     목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내므로
+     (§14.5) 줄이 가질 수 있는 값은 모두 **유효하고 무해한 인자**여야 한다.
+     그래서 `state`의 `alternatives`는 `execute`의 `command` enum 10개를 그대로
+     덮고(`none`·`forceshutdown` 포함), 명령 쪽 `key`와 상태 쪽 `key`가 같은
+     집합이 됐다 — #82의 `state.action_for` 매핑은 그래서 사라졌다.
+  3. `pcRun.lastCommand` 상태 줄("마지막 실행": "잠금 · SmartThings · 16:16").
+     #84로 추가. 명령 줄이 `none`에 머물게 되면서 "무엇이 실행됐는가"를 말하는
+     자리가 없어졌고, 폴링이 서비스의 `last_command`로 채우는 이 줄이 대신한다
+     (5초 플래시보다 오래 남아 더 쓸모 있다).
+  4. `pcRun.planCommand`: `list` — `command: {name: "setPlanCommand",
+     alternatives: 4}`, `state: {value: "planCommand.value", alternatives: 4}`.
+     #84로 추가. 예약 줄은 인자가 하나뿐이라 분(minutes)밖에 고를 수 없었으므로,
+     **무엇을 예약할지**는 이 줄에서 고른다(종료 · 재시작 · 절전 · 최대 절전).
+     드라이버가 장치 필드에 저장하고(persist), 기본값은 `offAction` 환경설정이다.
+     여기서도 값 4개가 모두 `setPlanCommand`의 유효한 인자다.
+  5. `pcPlan`: `list` — `command: {name: "schedule", argumentType: "integer",
      alternatives: 5·15·30·60·120분 + `0`(취소)}`,
      `state: {value: "status.value", alternatives: 예약 중/예약 없음}`.
      `minutes = 0`은 드라이버가 `cancel`과 같은 경로로 보낸다(정의는 그대로다).
      **`state`는 `active`(bool)가 아니라 `status`(enum)다** — bool 을 가리키는
-     목록은 아예 그려지지 않았다(§14.5, #83).
-  4. `pcPlan.summary` 상태 줄 (예약 없음 / "종료 · 4분 남음 · SmartThings")
-  5. `pcHealth.summary` 상태 줄 (전원 낱말 없이, 안내는 짧은 형태)
-  6. `pcUser.summary` 상태 줄 (꺼져 있으면 그렇다고 적는다)
+     목록은 아예 그려지지 않았다(§14.5, #83). 명령 없이 오는 예약은 4번 줄에서
+     고른 `planCommand`를 쓴다(#84).
+  6. `pcPlan.summary` 상태 줄 (예약 없음 / "종료 · 4분 남음 · SmartThings")
+  7. `pcHealth.summary` 상태 줄 (전원 낱말 없이, 안내는 짧은 형태)
+  8. `pcUser.summary` 상태 줄 (꺼져 있으면 그렇다고 적는다)
 - **detailView에 `pushButton`은 하나도 없다**(§14.5). 인자 없는 명령 8개와
   `pcPlan.cancel`은 정의에 그대로 남아 핸들러도 유지된다 — 아직 옛 프로필에 있는
   장치가 그 화면을 쓰고, 씬·허브 로컬 자동화가 부를 수 있는 형태이기 때문이다.
 - 원시 속성(`remainingSeconds` `executeAt` `origin` `serviceVersion`
-  `updateAvailable` `wolReady` `lastSeen` `idleMinutes` `locked` `user`
-  `lastCommand`)은 detailView에서 빠졌지만 정의와 자동화 조건에는 그대로 남는다.
-- 자동화: 조건 `powerState`, `pcAction.lastAction`, `pcPlan.status`,
-  `pcPlan.active`, `connection`, `locked`; 액션 `pcAction.execute`,
-  `pcPlan.schedule`, `switch`.
+  `updateAvailable` `wolReady` `lastSeen` `idleMinutes` `locked` `user`)은
+  detailView에서 빠졌지만 정의와 자동화 조건에는 그대로 남는다.
+  `lastCommand`는 #84로 다시 화면에 올라왔다(위 3번).
+- 자동화: 조건 `powerState`, `pcRun.lastAction`, `pcRun.planCommand`,
+  `pcPlan.status`, `pcPlan.active`, `connection`, `locked`; 액션
+  `pcRun.execute`, `pcRun.setPlanCommand`, `pcPlan.schedule`, `switch`.
   `pushButton`은 `automation.actions`에 넣을 수 없다(§14). 자동화에서 예약을
   취소하려면 `schedule(minutes: 0)`을 쓴다.
 - 목록이 보내는 `execute(command)`에는 `mode`가 없다. 이때 모드는 환경설정
@@ -292,8 +307,8 @@ ubuntu에서 `npm ci && npm test`로 같은 테스트를 돈다. Edge 런타임�
   환경설정(preferences)은 로케일별 변형이 없으므로 프로필에 한국어 우선으로 병기한다.
 - **속성 값 라벨은 번역이 닿지 않는다**(#83 실측, §14.2). 사용자가 읽는 것은
   프레젠테이션의 `alternatives[].value` 뿐이므로 거기에 "한국어 (English)"로
-  **병기**한다 — `pcPower.powerState`, `pcAction.lastAction`, `pcPlan.status`의
-  대시보드·상세·자동화 조건 모두. 번역 파일의 `i18n.value`는 지우지 않고 남겨 둔다
+  **병기**한다 — `pcPower.powerState`, `pcRun.lastAction`, `pcRun.planCommand`,
+  `pcPlan.status`의 대시보드·상세·자동화 조건 모두. 번역 파일의 `i18n.value`는 지우지 않고 남겨 둔다
   (Routine 요약 등 다른 화면이 쓸 수 있다).
 
 ### 5.4 환경설정(preferences)
@@ -361,7 +376,7 @@ PC에서 유예를 취소하면 `schedule.cancelled` 푸시 → 스위치 on 복
    영어로 적고, capability translations가 휴대폰 로케일에 맞춰 덮어쓴다(§5.3). 드라이버는
    여기에 관여하지 않는다.
 2. **문자열 속성 값** — `pcHealth.summary`/`message`, `pcPlan.summary`,
-   `pcUser.summary`, `pcAction.lastCommand`, `pcPlan.origin`/`command`. 이것들은
+   `pcUser.summary`, `pcRun.lastCommand`, `pcPlan.origin`/`command`. 이것들은
    드라이버가 만들어 내므로 `language` 환경설정(auto=허브 로케일 추정 불가하므로 ko,
    프로젝트가 한국어 우선)에 따라 `i18n.lua`에서 ko/en을 고른다.
 
@@ -496,7 +511,7 @@ develop → main → `v1.1.0` 태그.
   - `automation.actions`에 `multiArgCommand`는 **허용**(문서에는 없음). 각 인자의 위젯(`list`/`numberField`)에 `name`(인자 이름) 필수.
   - `automation.actions`에 `pushButton` 불가 → 예약 취소는 detailView pushButton만 제공.
   - 프레젠테이션 본문의 `id`는 경로의 capability id와 같아야 한다.
-- 정의 변경: `pcPlan.schedule(minutes, command?)` — 인자 순서를 바꾸고 `command`를 선택으로 만들어 한 인자만 보내는 detailView `list`가 동작하도록 했다(드라이버는 비어 있으면 `offAction`→`shutdown`으로 보정). `pcControl.execute`의 `mode`/`minutes`도 선택.
+- 정의 변경: `pcPlan.schedule(minutes, command?)` — 인자 순서를 바꾸고 `command`를 선택으로 만들어 한 인자만 보내는 detailView `list`가 동작하도록 했다(드라이버는 비어 있으면 `pcRun.planCommand`→`offAction`→`shutdown`으로 보정, #84). `pcControl.execute`의 `mode`/`minutes`도 선택.
 - 다섯 정의와 프레젠테이션 모두 계정에 생성 완료(`status: proposed`). 수정은 `capabilities:update` / `capabilities:presentation:update`로만 가능.
 
 ### 14.1 #78에서 추가한 것과 아직 확인되지 않은 가정 (2026-09-22)
@@ -572,7 +587,7 @@ develop → main → `v1.1.0` 태그.
 
 - 허브는 커스텀 capability 정의를 **id 단위로 허브 전체에 캐시**하고, 같은 id·버전의 정의를 클라우드에서 바꿔도(`capabilities:update`) 다시 받지 않는다.
   드라이버 재설치, 새 드라이버 id 설치, 장치 삭제·재추가, 프로필 이전 모두 무효. 확인된 갱신 경로는 허브 재부팅(전원 재연결)뿐이다.
-- 그래서 정의(속성·명령)를 바꿀 때는 **새 id**로 만든다. v1.1.0 최종 이름: `pcPower` `pcAction` `pcPlan` `pcHealth` `pcUser`(id는 소문자). `pcControl`이 `pcAction`이 된 것도(#82: `lastAction` 속성 추가), `pcTimer`가 `pcPlan`이 된 것도(#83: `status` 속성 추가) 이 규칙 때문이다. 쓰이지 않게 된 이름은 참조가 사라진 뒤 `capabilities:delete`로 계정에서 삭제한다.
+- 그래서 정의(속성·명령)를 바꿀 때는 **새 id**로 만든다. v1.1.0 최종 이름: `pcPower` `pcRun` `pcPlan` `pcHealth` `pcUser`(id는 소문자). `pcControl`이 `pcAction`이 된 것도(#82: `lastAction` 속성 추가), `pcTimer`가 `pcPlan`이 된 것도(#83: `status` 속성 추가), `pcAction`이 `pcRun`이 된 것도(#84: `execute`에 `none` 추가, `planCommand`/`setPlanCommand` 추가) 이 규칙 때문이다. 쓰이지 않게 된 이름은 참조가 사라진 뒤 `capabilities:delete`로 계정에서 삭제한다(`pcaction`은 #84 배포 후 삭제).
 - 프레젠테이션·번역만 바꾸는 경우는 프로필 버전 업(pc.vN)으로 충분하다(§14.3). 정의가 바뀌면 새 capability id + 프로필 버전 업.
 - 배포 후 원칙: 정의 변경은 새 id로, 드라이버는 옛 id 참조를 한 버전 동안 유지하지 않고 바로 새 id로 이전한다(장치는 프로필 이전으로 따라온다).
 
@@ -590,7 +605,7 @@ develop → main → `v1.1.0` 태그.
   형식이어야 하고, `state`를 넣으면 **`state.alternatives`가 필수**다(§14).
 - **`list`의 `state`가 bool 속성이면 목록 자체가 그려지지 않는다**(2026-09-22 #83 실측).
   `pcTimer.active`(bool)를 가리킨 예약 줄은 라벨 옆이 "-"였고 우측 꺾쇠(chevron)도 없어
-  눌러도 열리지 않았다. 바로 위의 명령 줄은 `pcAction.lastAction`(문자열 enum)을 가리켜
+  눌러도 열리지 않았다. 바로 위의 명령 줄은 `pcRun.lastAction`(문자열 enum)을 가리켜
   정상 동작했다. 그래서 **목록의 `state`는 반드시 문자열 enum 속성**이어야 하며,
   #83이 `pcPlan.status`(`idle`/`scheduled`)를 만든 이유다. bool 판(`active`)은 정의와
   자동화 조건에 남는다. `capabilities_test.lua` 의
@@ -603,7 +618,19 @@ develop → main → `v1.1.0` 태그.
   (API는 받아 주지만 휴대폰이 반영하지 않는다). 그래서 모든 줄은 해당 사항이 없을
   때도 혼자 읽혀야 한다 — "예약 없음", "세션 정보 꺼짐"처럼.
 - 값이 한 번도 emit 되지 않은 속성도 "-"로 보인다. 그래서 `lastAction`은 장치
-  추가 시점과 첫 폴링에 `none`을 내보낸다(§5.3).
+  추가 시점과 첫 폴링에 `none`을 내보낸다(§5.3). `planCommand`도 같다(#84).
+- **목록을 고르지 않고 닫으면 그 줄의 현재 값이 그대로 명령 인자로 나간다**
+  (2026-09-22 실기, #84). `lastAction`이 `none`인 상태에서 명령 목록을 열었다가
+  뒤로 가면 앱이 `execute(command: "none")`을 보냈고, `none`이 `execute`의 enum에
+  없어 **클라우드가 거부**했다 — 허브에는 닿지도 않고 "네트워크 또는 서버 오류"
+  팝업만 떴다. 그래서 규칙은 둘이다:
+  1. **`state` 값은 모두 유효한 무해 인자여야 한다.** 목록의 `state.alternatives`
+     키 집합 ⊆ 명령 첫 인자의 enum. `capabilities_test.lua`의
+     `test_every_detail_list_state_value_is_a_valid_command_argument`가 지킨다.
+  2. **줄은 무동작 값에 머물러야 한다.** 그래서 `lastAction`은 `none`에서 움직이지
+     않고(#82의 5초 플래시 제거), 무엇이 실행됐는지는 `lastCommand` 줄이 말한다.
+     값이 상태를 뜻하는 줄(`pcPlan.status`, `pcRun.planCommand`)은 현재 값을 다시
+     보내도 결과가 같으므로 그 자체로 안전하다.
 - `automation.actions`에는 여전히 `pushButton`을 넣을 수 없고 `multiArgCommand`는
   허용된다(§14). 자동화에서 예약을 취소하려면 `schedule(minutes: 0)`을 쓴다.
 - 번역은 **명령 인자의 enum 값을 바꾸지 못한다**(§14.2). ~~상태 쪽
@@ -615,7 +642,7 @@ develop → main → `v1.1.0` 태그.
 ## 15. 정식 릴리스 전 체크리스트 (edge)
 
 1. **프로필 이름 리셋**: 최신 프로필 파일을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 올라간 `pc.v2`~`pc.vN` 파일과 `profiles.lua`의 KNOWN 목록을 `pc.v1`만 남긴다. 사용자 눈에 보이지 않는 이름표일 뿐이라 정식은 v1에서 시작한다. 개발 허브의 "hk 컴퓨터"는 삭제 후 재추가(우리 장치만 해당).
-2. **capability 이름 확정**: 최종 이름(`pcPower` `pcAction` `pcPlan` `pcHealth` `pcUser`)이 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities` 목록으로 확인. 배포 후 정의 변경은 새 id로만(§14.4).
+2. **capability 이름 확정**: 최종 이름(`pcPower` `pcRun` `pcPlan` `pcHealth` `pcUser`)이 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities` 목록으로 확인. 배포 후 정의 변경은 새 id로만(§14.4).
 3. **버전 표기**: `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치 검증). SmartThings 쪽 드라이버 버전은 패키징 시각 문자열이라 통제 대상이 아니다.
 4. **채널 정리**: 개발용 드라이버 버전은 채널에 마지막 것만 남는다. 초대 링크를 README/Wiki 자리표시자에 기입.
 5. **서비스**: v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서, 사용자 검토 후.

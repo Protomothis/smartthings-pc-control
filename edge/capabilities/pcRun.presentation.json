@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcaction",
+  "id": "numbersystem53811.pcrun",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -69,13 +69,13 @@
               "type": "active"
             },
             {
-              "key": "suspend",
-              "value": "절전 (Sleep)",
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
               "type": "active"
             },
             {
-              "key": "hibernate",
-              "value": "최대 절전 (Hibernate)",
+              "key": "forceshutdown",
+              "value": "강제 종료 (Force shut down)",
               "type": "active"
             },
             {
@@ -84,8 +84,13 @@
               "type": "active"
             },
             {
-              "key": "shutdown",
-              "value": "종료 (Shut down)",
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
               "type": "active"
             },
             {
@@ -94,13 +99,76 @@
               "type": "active"
             },
             {
-              "key": "screenOff",
+              "key": "turnscreenoff",
               "value": "화면 끄기 (Screen off)",
               "type": "active"
             },
             {
-              "key": "screenOn",
+              "key": "turnscreenon",
               "value": "화면 켜기 (Screen on)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "{{i18n.attributes.lastCommand.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{lastCommand.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.planCommand.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "setPlanCommand",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            }
+          ]
+        },
+        "state": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
               "type": "active"
             }
           ]
@@ -127,13 +195,13 @@
               "type": "active"
             },
             {
-              "key": "suspend",
-              "value": "절전 (Sleep)",
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
               "type": "active"
             },
             {
-              "key": "hibernate",
-              "value": "최대 절전 (Hibernate)",
+              "key": "forceshutdown",
+              "value": "강제 종료 (Force shut down)",
               "type": "active"
             },
             {
@@ -142,8 +210,13 @@
               "type": "active"
             },
             {
-              "key": "shutdown",
-              "value": "종료 (Shut down)",
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
               "type": "active"
             },
             {
@@ -152,13 +225,42 @@
               "type": "active"
             },
             {
-              "key": "screenOff",
+              "key": "turnscreenoff",
               "value": "화면 끄기 (Screen off)",
               "type": "active"
             },
             {
-              "key": "screenOn",
+              "key": "turnscreenon",
               "value": "화면 켜기 (Screen on)",
+              "type": "active"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.planCommand.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "planCommand.value",
+          "alternatives": [
+            {
+              "key": "shutdown",
+              "value": "종료 (Shut down)",
+              "type": "active"
+            },
+            {
+              "key": "restart",
+              "value": "재시작 (Restart)",
+              "type": "active"
+            },
+            {
+              "key": "suspend",
+              "value": "절전 (Sleep)",
+              "type": "active"
+            },
+            {
+              "key": "hibernate",
+              "value": "최대 절전 (Hibernate)",
               "type": "active"
             }
           ]
@@ -223,6 +325,11 @@
                     "key": "forceshutdown",
                     "value": "Force shut down",
                     "type": "active"
+                  },
+                  {
+                    "key": "none",
+                    "value": "Do nothing",
+                    "type": "inactive"
                   }
                 ],
                 "name": "command"
@@ -264,6 +371,46 @@
                 ],
                 "unit": "min",
                 "name": "minutes"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.commands.setPlanCommand.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "setPlanCommand",
+          "submitLabel": "Set",
+          "arguments": [
+            {
+              "name": "command",
+              "label": "{{i18n.commands.setPlanCommand.arguments.command.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "shutdown",
+                    "value": "Shut down",
+                    "type": "active"
+                  },
+                  {
+                    "key": "restart",
+                    "value": "Restart",
+                    "type": "active"
+                  },
+                  {
+                    "key": "suspend",
+                    "value": "Sleep",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hibernate",
+                    "value": "Hibernate",
+                    "type": "active"
+                  }
+                ],
+                "name": "command"
               }
             }
           ]

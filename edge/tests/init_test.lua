@@ -88,42 +88,38 @@ local function last_action(device)
   return h.event_value(h.emitted(device), caps.COMMAND, "lastAction")
 end
 
---------------------------------------------------------------------------------
--- lastAction resets to the placeholder after a moment (#82 follow-up)
-function T.test_a_command_schedules_a_reset_to_none()
-  local device = device_with()
-  driver.timers = {}
-  with_service(nil, function()
-    handlers_for(caps.COMMAND).lock(driver, device, { command = "lock", args = {} })
-  end)
-  h.assert_equal(last_action(device), "lock")
-  local reset
-  for _, t in ipairs(driver.timers) do
-    if t.name == "action-reset" then reset = t end
+--- Every `lastAction` value a device was told, in order.
+local function all_actions(device)
+  local out = {}
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.COMMAND and e.attr == "lastAction" then
+      out[#out + 1] = e.value
+    end
   end
-  h.assert_true(reset ~= nil, "no action-reset timer scheduled")
-  h.assert_equal(reset.delay, poll.ACTION_RESET_SECONDS)
-  device.emitted = {} -- event_value reads the first match; look only at the reset
-  reset.fn()
-  h.assert_equal(last_action(device), "none")
+  return out
 end
 
--- lastAction, one row per command (#82)
+--- The `planCommand` a device was last told to show, or nil.
+local function plan_command(device)
+  return h.event_value(h.emitted(device), caps.COMMAND, "planCommand")
+end
+
+--------------------------------------------------------------------------------
+-- the command row rests on `none` (#84)
 --------------------------------------------------------------------------------
 
--- capability command -> the service command it sends and the enum value the
--- row ends up showing (§4.3 / §5.1).
+-- capability command -> the service command it sends (§4.3).
 local BUTTONS = {
-  { command = "suspend", sends = "suspend", action = "suspend" },
-  { command = "hibernate", sends = "hibernate", action = "hibernate" },
-  { command = "restart", sends = "restart", action = "restart" },
-  { command = "shutdown", sends = "shutdown", action = "shutdown" },
-  { command = "lock", sends = "lock", action = "lock" },
-  { command = "screenOff", sends = "turnscreenoff", action = "screenOff" },
-  { command = "screenOn", sends = "turnscreenon", action = "screenOn" },
+  { command = "suspend", sends = "suspend" },
+  { command = "hibernate", sends = "hibernate" },
+  { command = "restart", sends = "restart" },
+  { command = "shutdown", sends = "shutdown" },
+  { command = "lock", sends = "lock" },
+  { command = "screenOff", sends = "turnscreenoff" },
+  { command = "screenOn", sends = "turnscreenon" },
 }
 
-function T.test_every_no_argument_command_paints_its_own_action()
+function T.test_every_no_argument_command_sends_its_service_command()
   local handlers = handlers_for(caps.COMMAND)
   for _, case in ipairs(BUTTONS) do
     local device = device_with()
@@ -133,8 +129,71 @@ function T.test_every_no_argument_command_paints_its_own_action()
       h.assert_equal(calls.commands[1].command, case.sends, case.command .. " service command")
       h.assert_equal(calls.polls, 1, case.command .. " did not refresh the tiles")
     end)
-    h.assert_equal(last_action(device), case.action, case.command .. " lastAction")
+    -- #84: what ran is read off `lastCommand`, which the poll fills in. The
+    -- picker row itself must stay on `none` - it is what a dismissed list
+    -- sends back as the argument.
+    h.assert_deep_equal(all_actions(device), {}, case.command .. " touched lastAction")
   end
+end
+
+function T.test_no_command_ever_paints_an_action()
+  -- The invariant #84 rests on, over every path that used to flash a value.
+  local handlers = handlers_for(caps.COMMAND)
+  local cases = {
+    function(device) handlers.lock(driver, device, { command = "lock", args = {} }) end,
+    function(device) handlers.wake(driver, device, { command = "wake", args = {} }) end,
+    function(device)
+      handlers.execute(driver, device, { command = "execute", args = { command = "turnscreenoff" } })
+    end,
+    function(device)
+      handlers.execute(driver, device,
+        { command = "execute", args = { command = "forceshutdown", mode = "grace" } })
+    end,
+    function(device)
+      handlers_for("switch").off(driver, device, { command = "off", args = {} })
+    end,
+    function(device)
+      handlers_for("switch").on(driver, device, { command = "on", args = {} })
+    end,
+  }
+  for i, run in ipairs(cases) do
+    local device = device_with()
+    driver.timers = {}
+    with_service(nil, function() run(device) end)
+    for _, value in ipairs(all_actions(device)) do
+      h.assert_equal(value, state.ACTION_NONE,
+        string.format("case %d emitted lastAction = %s", i, tostring(value)))
+    end
+    for _, timer in ipairs(driver.timers) do
+      h.assert_true(timer.name ~= "action-reset",
+        "the 5 s flash timer is gone (#84)")
+    end
+  end
+end
+
+function T.test_a_dismissed_command_list_does_nothing()
+  -- Measured on the phone (2026-09-22): closing the list without picking
+  -- anything sends the row's current value, which is `none`. It has to be a
+  -- valid argument (or the cloud refuses it) and it has to be harmless.
+  local device = device_with()
+  local calls = with_service(nil, function()
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "none" } })
+  end)
+  h.assert_equal(#calls.commands, 0, "`none` must not reach the service")
+  h.assert_equal(calls.wakes, 0, "`none` must not wake the PC either")
+  h.assert_equal(calls.polls, 1, "`none` refreshes the tiles")
+  h.assert_deep_equal(all_actions(device), {})
+end
+
+function T.test_an_execute_without_a_command_does_nothing()
+  -- Some firmwares send the list's argument as an empty string.
+  local device = device_with()
+  local calls = with_service(nil, function()
+    handlers_for(caps.COMMAND).execute(driver, device, { command = "execute", args = {} })
+  end)
+  h.assert_equal(#calls.commands, 0)
+  h.assert_equal(calls.polls, 1)
 end
 
 function T.test_wake_never_reaches_the_service()
@@ -144,7 +203,6 @@ function T.test_wake_never_reaches_the_service()
   end)
   h.assert_equal(#calls.commands, 0, "wake is the WoL sequence, not a service command")
   h.assert_equal(calls.wakes, 1)
-  h.assert_equal(last_action(device), "wake")
   -- §6.2: the switch follows the power state, which is now `waking`.
   h.assert_equal(h.event_value(h.emitted(device), caps.POWER_STATE, "powerState"), state.WAKING)
 end
@@ -160,7 +218,6 @@ function T.test_the_detail_view_list_sends_execute_with_the_command_only()
   h.assert_equal(calls.commands[1].command, "turnscreenoff")
   h.assert_equal(calls.commands[1].mode, "immediate")
   h.assert_equal(calls.commands[1].minutes, 0)
-  h.assert_equal(last_action(device), "screenOff")
 end
 
 function T.test_execute_from_an_automation_keeps_its_own_mode()
@@ -169,9 +226,8 @@ function T.test_execute_from_an_automation_keeps_its_own_mode()
     handlers_for(caps.COMMAND).execute(driver, device,
       { command = "execute", args = { command = "forceshutdown", mode = "grace", minutes = 0 } })
   end)
+  h.assert_equal(calls.commands[1].command, "forceshutdown")
   h.assert_equal(calls.commands[1].mode, "grace")
-  -- `forceshutdown` has no enum value of its own (§5.1).
-  h.assert_equal(last_action(device), "shutdown")
 end
 
 function T.test_execute_can_wake_from_the_list()
@@ -182,58 +238,95 @@ function T.test_execute_can_wake_from_the_list()
   end)
   h.assert_equal(#calls.commands, 0)
   h.assert_equal(calls.wakes, 1)
-  h.assert_equal(last_action(device), "wake")
 end
 
-function T.test_a_scheduled_execute_does_not_claim_it_already_ran()
+function T.test_a_scheduled_execute_still_goes_to_the_service()
   -- `minutes > 0` schedules instead of executing (§4.3); what is pending is
   -- the pcPlan row's business.
   local device = device_with()
-  with_service(nil, function()
+  local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
       { command = "execute", args = { command = "shutdown", mode = "default", minutes = 30 } })
   end)
-  h.assert_nil(last_action(device))
+  h.assert_equal(calls.commands[1].minutes, 30)
+  h.assert_deep_equal(all_actions(device), {})
 end
 
-function T.test_a_refused_command_paints_no_action()
+function T.test_a_refused_command_says_so()
   local device = device_with()
   local calls = with_service({ fail = "unauthorized" }, function()
     handlers_for(caps.COMMAND).shutdown(driver, device, { command = "shutdown", args = {} })
   end)
   h.assert_equal(#calls.commands, 1)
   h.assert_equal(calls.polls, 0, "a refused command has nothing to refresh")
-  h.assert_nil(last_action(device), "the PC did not act, so the row must not say it did")
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "connection"), "unauthorized")
 end
 
-function T.test_the_switch_paints_the_action_it_stands_for()
+function T.test_the_switch_off_sends_the_configured_action()
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "turnscreenoff" })
-  local switch = handlers_for("switch")
   local calls = with_service(nil, function()
-    switch.off(driver, device, { command = "off", args = {} })
+    handlers_for("switch").off(driver, device, { command = "off", args = {} })
   end)
   h.assert_equal(calls.commands[1].command, "turnscreenoff")
-  h.assert_equal(last_action(device), "screenOff")
-
-  device = device_with()
-  with_service(nil, function()
-    switch.on(driver, device, { command = "on", args = {} })
-  end)
-  h.assert_equal(last_action(device), "wake")
 end
 
-function T.test_a_device_that_has_run_nothing_shows_none()
+function T.test_a_new_device_shows_the_placeholder_and_a_plan_command()
   -- #82: an attribute that was never emitted reads as "-" on the phone, so
   -- `added` paints `none` and a poll fills it in for a device from before.
-  local device = device_with()
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "hibernate" })
   driver.lifecycle_handlers.added(driver, device)
   h.assert_equal(last_action(device), state.ACTION_NONE)
+  -- #84: the schedule row's command, defaulted from `offAction`.
+  h.assert_equal(plan_command(device), "hibernate")
 
-  -- ... and only once: the value a command wrote is not reset by the next poll.
+  -- ... and only once: neither row is repainted by the next poll.
   local emitted_before = #device.emitted
   poll.ensure_action(device)
-  h.assert_equal(#device.emitted, emitted_before, "none was painted twice")
+  poll.ensure_plan_command(device)
+  h.assert_equal(#device.emitted, emitted_before, "a row was painted twice")
+end
+
+--------------------------------------------------------------------------------
+-- pcRun.setPlanCommand: what a schedule runs (#84)
+--------------------------------------------------------------------------------
+
+function T.test_set_plan_command_persists_and_emits()
+  local device = device_with()
+  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+    { command = "setPlanCommand", args = { command = "restart" } })
+  h.assert_equal(plan_command(device), "restart")
+  h.assert_equal(device:get_field(poll.PLAN_FIELD), "restart",
+    "the choice has to survive a hub restart")
+end
+
+function T.test_set_plan_command_refuses_a_command_the_service_cannot_schedule()
+  local device = device_with()
+  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+    { command = "setPlanCommand", args = { command = "lock" } })
+  h.assert_equal(plan_command(device), "shutdown", "an unschedulable value is coerced")
+end
+
+function T.test_a_schedule_without_a_command_uses_the_picked_one()
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+    { command = "setPlanCommand", args = { command = "suspend" } })
+  local calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = 30 } })
+  end)
+  h.assert_equal(calls.commands[1].command, "suspend",
+    "the detail view's schedule list only picks the minutes (#84)")
+end
+
+function T.test_an_explicit_schedule_command_still_wins()
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+    { command = "setPlanCommand", args = { command = "suspend" } })
+  local calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = 30, command = "restart" } })
+  end)
+  h.assert_equal(calls.commands[1].command, "restart")
 end
 
 --------------------------------------------------------------------------------
