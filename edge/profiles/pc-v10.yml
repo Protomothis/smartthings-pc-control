@@ -21,13 +21,13 @@ components:
         version: 1
       - id: numbersystem53811.pcpower
         version: 1
-      - id: numbersystem53811.pcrun
+      - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pcplan
-        version: 1
-      - id: numbersystem53811.pchealth
+      - id: numbersystem53811.pccountdown
         version: 1
       - id: numbersystem53811.pcuser
+        version: 1
+      - id: numbersystem53811.pcinfo
         version: 1
     categories:
       - name: Others

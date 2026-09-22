@@ -38,6 +38,9 @@
     },
     "message": {
       "label": "Notice"
+    },
+    "versions": {
+      "label": "Versions"
     }
   },
   "commands": {}

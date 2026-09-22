@@ -42,6 +42,10 @@ local function device_init(driver, device)
   -- §14.3: a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
+  -- #85: a migration onto the new capability ids leaves every attribute of
+  -- pcExec and pcCountdown unset, which reads as "-" and keeps the app saying
+  -- the device has not reported all of its state. Paint them once.
+  poll.ensure_rows(device)
   -- §6.4: one listener per driver, opened on the first device that needs it.
   push.start(driver)
   poll.start(driver, device)
@@ -62,10 +66,10 @@ local function device_added(driver, device)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
-  poll.ensure_action(device)
-  -- #84: the same for the "command to schedule" row; its default comes from
-  -- the `offAction` preference.
-  poll.ensure_plan_command(device)
+  -- #85: and the same goes for every other pcExec / pcCountdown attribute,
+  -- including the "command to schedule" row, whose default is the `offAction`
+  -- preference.
+  poll.ensure_rows(device)
   if not client.device_base_url(device) then
     poll.emit_connection(device, "unreachable", i18n.t(poll.lang(device), "no_ip"))
   end
@@ -93,7 +97,7 @@ end
 -- capability handlers
 --------------------------------------------------------------------------------
 
--- Report a failed command through pcHealth instead of failing silently (§1.3).
+-- Report a failed command through pcInfo instead of failing silently (§1.3).
 -- A rate-limited request (§8) says nothing about the connection, so it is
 -- logged and the tiles keep what the last poll put there.
 local function report_error(device, kind, body)
@@ -198,7 +202,7 @@ local function button_handler(service_command)
   end
 end
 
---- pcRun.execute(command, mode, minutes) — capabilities/pcRun.json.
+--- pcExec.execute(command, mode, minutes) — capabilities/pcExec.json.
 --- `minutes > 0` turns the same endpoint into a schedule (§4.3).
 --
 --- The detail-view list (#82) sends `command` alone: the mode then follows the
@@ -210,40 +214,46 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
---- pcRun.setPlanCommand(command): what a schedule without a command of its own
---- runs (#84).
+--- pcCountdown.setPlanCommand(command): what a schedule without a command of
+--- its own runs (#84; moved onto the schedule capability in #85).
 --
 -- The detail view's schedule list can only pick the minutes (one argument per
 -- list, §14.5), so the command is picked on its own row and kept in a device
 -- field. Every value it can hold is a valid argument, so a dismissed picker
 -- simply re-sends the current one.
+--
+-- #85: the row sits in the schedule card, because the app groups detail rows by
+-- the capability that owns them and the user read the schedule card as
+-- "minutes only" while this row lived with the PC commands.
 local function handle_set_plan_command(_driver, device, cmd)
   local args = (cmd or {}).args or {}
   poll.emit_plan_command(device, args.command)
 end
 
---- The command `pcPlan.schedule` runs when it carries none of its own:
+--- The command `pcCountdown.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
 --- then the `offAction` preference, else shutdown (§4.3).
 local function schedule_command(device, requested)
   return state.plan_command_for(requested, poll.plan_command(device))
 end
 
---- pcPlan.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
+--- pcCountdown.cancel(): DELETE /st/v1/schedule (§4.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcPlan.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
+--- pcCountdown.schedule(minutes, command?): same endpoint, minutes > 0 (§4.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
 ---
 --- #82: the detail view is one list with the presets and a `Cancel` entry that
 --- sends `minutes = 0`, because a `pushButton` row has no value and drew "-".
---- The capability definition is unchanged (the hub caches definitions by id,
---- §14.4), so `cancel()` is still there and still handled; zero minutes simply
---- takes the same path. The list sends the key as a string on some firmwares,
---- hence the `tonumber`.
+--- #85: and the definition now says `minimum: 0`, because the cloud validates
+--- a command's arguments against the definition before the hub ever sees them -
+--- with `minimum: 1` the Cancel entry only ever produced a "system error"
+--- popup (§14.5). Zero minutes takes the `cancel()` path, which is still in the
+--- definition and still handled for devices on an older profile. The list sends
+--- the key as a string on some firmwares, hence the `tonumber`.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
   if math.floor(tonumber(args.minutes) or 0) <= 0 then
@@ -286,11 +296,11 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals: they are what `capabilities/pcRun.json` and
--- `capabilities/pcPlan.json` declare, and the generated capability object
+-- Command names are literals: they are what `capabilities/pcExec.json` and
+-- `capabilities/pcCountdown.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
-  local handlers = { execute = handle_execute, setPlanCommand = handle_set_plan_command }
+  local handlers = { execute = handle_execute }
   for name, service_command in pairs(BUTTONS) do
     handlers[name] = button_handler(service_command)
   end
@@ -298,6 +308,8 @@ if custom.command then
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {
+    -- #85: `setPlanCommand` moved here with the row it drives.
+    setPlanCommand = handle_set_plan_command,
     cancel = handle_cancel,
     schedule = handle_schedule,
   }

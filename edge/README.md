@@ -23,7 +23,7 @@ ping만 제공하는 것과 달리, 이 드라이버는 서비스가 이미 알�
 | **허브** | SmartThings 허브 (Edge 드라이버를 실행할 수 있는 모델). 드라이버는 허브 안에서 로컬로 동작하며 클라우드를 거치지 않습니다 |
 | **서비스** | PC Control **v1.1.0 이상**. `/st/v1` API는 v1.1.0에서 추가되었습니다. 이전 버전에 연결하면 드라이버가 `connection=incompatible`과 "서비스 v1.1.0 이상 필요" 메시지를 표시합니다 |
 | **네트워크** | 허브와 PC가 **같은 서브넷/VLAN**. 드라이버는 LAN으로만 통신합니다 |
-| **시크릿** | 필수는 아니지만 강력히 권장합니다. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고, 드라이버는 `pcHealth.message`에 경고를 띄웁니다 |
+| **시크릿** | 필수는 아니지만 강력히 권장합니다. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고, 드라이버는 `pcInfo.message`에 경고를 띄웁니다 |
 
 ### 방화벽과 네트워크
 
@@ -106,7 +106,8 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ### 상세 화면
 
-상세 화면은 **스위치 하나와 일곱 줄**입니다(#82, #84). 위에서부터 이렇게 나옵니다.
+상세 화면은 **스위치 하나와 여덟 줄**입니다(#82, #84, #85). 위에서부터 이렇게 나옵니다.
+줄은 카드(capability)별로 묶이고, 카드 순서는 프로필의 capability 목록 순서입니다.
 
 ```
 [ 전원 스위치 ]                     켜기 = WoL, 끄기 = 스위치 끄기 동작
@@ -116,8 +117,9 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 예약할 명령      종료 (Shut down)              ▼  ← 예약이 실행할 명령
 예약             예약 중 (Scheduled)           ▼  ← 5분 … 2시간 / 취소
 예약 요약        종료 · 4분 남음 · SmartThings
-상태             연결됨 · v1.1.0
 세션             잠김 · 유휴 20분 · kim
+상태             연결됨 · v1.1.0
+버전             서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v12
 ```
 
 - `명령` · `예약할 명령` · `예약`은 **드롭다운**입니다.
@@ -137,8 +139,9 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
   유휴, 잠금, 사용자)은 화면에서 빠졌지만 **속성으로는 그대로 있어** 자동화 조건과
   이력에서 계속 쓸 수 있습니다.
 - 앱 화면은 장치를 **추가한 시점의 정의**로 굳습니다. 드라이버를 올려도 바뀌지
-  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v11`로 자동
-  이전하지만, 이전이 막힌 허브에서는 재추가가 가장 확실합니다).
+  않으면 장치를 지우고 다시 추가하세요(드라이버가 새 프로필 `pc.v12`로 자동
+  이전하지만, 이전이 막힌 허브에서는 재추가가 가장 확실합니다). 지금 어느 화면을
+  쓰고 있는지는 맨 아래 **`버전`** 줄의 `화면` 값이 말해 줍니다.
 
 ### 한국어 표시
 
@@ -174,7 +177,7 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 
 ### 명령 실행
 
-상세 화면의 `명령` 줄은 `pcRun.execute(command)`를 보냅니다. 고른 항목과 실제로
+상세 화면의 `명령` 줄은 `pcExec.execute(command)`를 보냅니다. 고른 항목과 실제로
 나가는 서비스 명령(§4.3)은 이렇습니다.
 
 | 항목 | 보내는 서비스 명령 |
@@ -197,12 +200,12 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 서비스가 기록한 마지막 명령을 "잠금 · SmartThings · 16:16"처럼 보여 줍니다(앱에서
 건 것이든 트레이·텔레그램에서 건 것이든 같습니다).
 
-자동화에서는 인자를 모두 가진 `pcRun.execute(command, mode, minutes)`를 씁니다 —
+자동화에서는 인자를 모두 가진 `pcExec.execute(command, mode, minutes)`를 씁니다 —
 명령 10종(`none` `wake` `shutdown` `forceshutdown` `restart` `hibernate` `suspend`
 `lock` `turnscreenoff` `turnscreenon`; `ping`은 드라이버 내부 확인용이라 노출하지
 않습니다), 모드 3종(`default` 설정된 유예를 따름 / `immediate` 유예 없이 / `grace`
 유예를 강제), 분 0~1440. 화면에 없는 **강제 종료는 여기에만** 있습니다. 조건으로는
-`pcRun.lastAction`과 `pcRun.planCommand`를 쓸 수 있습니다.
+`pcExec.lastAction`과 `pcCountdown.planCommand`를 쓸 수 있습니다.
 
 `minutes`가 0보다 크면 실행 대신 **예약**이 걸립니다(그때는 `명령` 줄이 아니라
 `예약` 줄이 바뀝니다).
@@ -210,17 +213,19 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 ### 예약할 명령
 
 `예약` 줄은 분만 고를 수 있으므로(목록 하나가 인자 하나입니다), **무엇을 예약할지**는
-바로 위 `예약할 명령` 줄에서 고릅니다: 종료 · 재시작 · 절전 · 최대 절전. 고른 값은
+**예약 카드의 첫 줄인** `예약할 명령`에서 고릅니다: 종료 · 재시작 · 절전 · 최대 절전.
+(#85 이전에는 이 줄이 PC 명령 카드에 있었습니다 — 앱은 줄을 그 줄을 소유한
+capability의 카드에 그리므로, 예약 카드만 보면 시간만 고르는 화면이었습니다.) 고른 값은
 장치에 저장되고, 명령 없이 들어온 예약이 그것을 씁니다. 아직 고르지 않았다면
 `스위치 끄기 동작` 환경설정을 따르고(예약할 수 없는 값이면 종료), 자동화가
-`pcPlan.schedule(minutes, command)`로 명령을 직접 주면 그쪽이 우선합니다.
+`pcCountdown.schedule(minutes, command)`로 명령을 직접 주면 그쪽이 우선합니다.
 
 > 인자 없는 명령 8개(`wake` `suspend` … `screenOn`)도 그대로 남아 있습니다. 화면에서
 > 빠졌을 뿐이고, 씬이나 옛 프로필에 남은 장치가 계속 씁니다.
 
 ### 예약과 취소
 
-`pcPlan`이 대기 중인 예약을 보여 줍니다. 화면에는 드롭다운 한 줄(예약 중 (Scheduled) /
+`pcCountdown`이 대기 중인 예약을 보여 줍니다. 화면에는 드롭다운 한 줄(예약 중 (Scheduled) /
 예약 없음 (No schedule))과 요약 한 줄(`summary`: "종료 · 4분 남음 · SmartThings",
 없으면 "예약 없음")이 나옵니다. 드롭다운이 읽는 값은 `status`(`idle`/`scheduled`)이고,
 같은 사실의 bool 판인 `active`는 자동화 조건으로 남습니다. 뒤에 있는 속성
@@ -229,20 +234,26 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 그대로 남아 자동화 조건과 이력에서 쓸 수 있습니다. 예약은 PC당 하나이고, 새 예약은
 기존 것을 대체합니다.
 
-- `pcPlan.schedule(minutes, command?)` — 예약합니다. 프리셋 5/15/30/60/120분이
-  선택지로 나오지만 1~1440분 아무 값이나 쓸 수 있습니다. 명령을 비우면 스위치 끄기
+- `pcCountdown.schedule(minutes, command?)` — 예약합니다. 프리셋 5/15/30/60/120분이
+  선택지로 나오지만 0~1440분 아무 값이나 쓸 수 있습니다. 명령을 비우면 스위치 끄기
   동작(예약할 수 없는 명령이면 종료)을 씁니다.
 - **`minutes`가 0이면 취소**입니다 — 드롭다운의 `취소` 항목이 이것을 보냅니다.
   자동화에서도 `schedule(minutes: 0)`으로 취소하세요.
-- `pcPlan.cancel()` — 같은 취소이고, 정의에 그대로 남아 있습니다(자동화 액션에는
+- `pcCountdown.cancel()` — 같은 취소이고, 정의에 그대로 남아 있습니다(자동화 액션에는
   넣을 수 없습니다). PC 쪽에는 "SmartThings에서 취소됨"으로 기록됩니다.
 
 앱·트레이 토스트·텔레그램에서 취소해도 푸시로 즉시 반영됩니다. 반대도 마찬가지입니다.
 
 ### 상태 카드
 
-`pcHealth`는 조용한 실패를 드러내기 위한 카드입니다. 화면에는 요약 한 줄
-(`summary`)만 보입니다. 연결이 살아 있으면 "연결됨 · v1.1.0", 끊겼으면
+`pcInfo`는 조용한 실패를 드러내기 위한 카드이고, **화면의 맨 아래**에 옵니다(카드
+순서는 프로필의 capability 목록 순서라, `pcinfo`를 목록 끝에 두었습니다). 화면에는
+요약 한 줄(`summary`)과 **버전 한 줄**(`versions`: "서비스 v1.1.0 · 드라이버 1.0.0 ·
+화면 pc.v12")이 보입니다. 버전 줄의 `화면`은 이 장치가 쓰고 있는 프로필입니다 —
+장치의 화면은 **추가한 시점의 정의로 굳기** 때문에, "왜 아직 옛날 화면이지?"에
+답하는 것은 대개 이 값입니다. PC에 아직 연결되지 않았으면 서비스 자리에 `?`가
+들어가고, 줄 자체는 그래도 나옵니다. 요약 줄은
+연결이 살아 있으면 "연결됨 · v1.1.0", 끊겼으면
 "연결 안 됨 · 시크릿 불일치"처럼 쓰고, 할 말이 있으면 짧은 안내를 뒤에 붙입니다
 ("연결됨 · v1.1.0 · 시크릿 미설정 · 설정 권장"). 전원은 바로 위 `전원 상태` 줄이
 말하므로 요약에서 뺐습니다. 나머지는 속성으로 남아 자동화에서 쓰입니다.
@@ -256,6 +267,7 @@ SSDP가 같은 PC를 찾아도 중복 생성하지 않고 주소만 갱신합니
 | `wolReady` | WoL 가능 어댑터가 하나라도 있는지 |
 | `lastSeen` | 마지막으로 성공한 상태 조회 시각 |
 | `message` | 사람이 읽는 안내 **한 줄**. 요약에 붙는 짧은 형태와 달리 문장 그대로이고, 화면이 아니라 자동화·이력에서 읽습니다. 여러 개가 겹치면 오류 > 호환성 > WoL 미준비 > 업데이트 > 시크릿 없음 순으로 하나만 고릅니다 |
+| `versions` | "서비스 v1.1.0 · 드라이버 1.0.0 · 화면 pc.v12". 화면에 보이는 두 번째 줄이고, `화면`은 장치가 쓰는 프로필 이름입니다. 연결 전이면 서비스가 `?` |
 
 ### 세션 정보 (선택)
 
@@ -279,7 +291,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 ```
 조건(If)  : 시각이 00:00이고
             PC의 Power state 가 on
-동작(Then): PC 의 pcPlan.schedule(minutes: 30, command: shutdown)
+동작(Then): PC 의 pcCountdown.schedule(minutes: 30, command: shutdown)
 ```
 
 30분 카운트다운이 SmartThings·트레이 토스트·텔레그램에 동시에 뜨고, 어디서든 취소하면
@@ -289,8 +301,8 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
 
 ```
 조건(If)  : 구성원 전원이 집을 떠남
-동작(Then): PC 의 pcRun.execute(command: lock, mode: immediate)
-            PC 의 pcRun.execute(command: turnscreenoff, mode: immediate)
+동작(Then): PC 의 pcExec.execute(command: lock, mode: immediate)
+            PC 의 pcExec.execute(command: turnscreenoff, mode: immediate)
 ```
 
 **3. 책상 주변기기 전원 연동** — 모니터·스피커 스마트플러그를 PC에 맞춥니다.
@@ -324,7 +336,7 @@ PC의 GUI 네트워크 탭에서 *세션 정보 노출*을 켜면 `pcUser`이 �
   않게 합니다. 푸시 리스너는 드라이버당 하나이고, 구독은 PC별로 하나입니다.
 - **MachineGuid 복제 주의.** 한 PC를 이미지로 복제하면 두 대의 `machine_id`가 같아져
   SSDP에서 한 장치로 합쳐집니다. 드라이버는 "같은 machine_id, 다른 hostname"을 만나면
-  `pcHealth.message`로 경고합니다. 해결은 한쪽에서 MachineGuid를 재생성하는 것입니다
+  `pcInfo.message`로 경고합니다. 해결은 한쪽에서 MachineGuid를 재생성하는 것입니다
   (Sysprep, 또는 `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` 직접 교체).
 - **텔레그램은 이 드라이버와 무관**합니다. PC 서비스의 텔레그램은 **봇 하나 = PC 하나**
   전제로 유지됩니다. 여러 PC가 같은 봇 토큰을 쓰면 `getUpdates`가 409 Conflict를 내고
@@ -431,8 +443,8 @@ pcPower.json               정의        -> smartthings capabilities:create -i <
 pcPower.presentation.json  프레젠테이션 -> smartthings capabilities:presentation:create
 ```
 
-`pcPower`는 전원 상태, `pcRun`은 명령 실행·마지막 실행·예약할 명령, `pcPlan`은 예약 표시·조작,
-`pcHealth`는 연결·버전·메시지 카드, `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
+`pcPower`는 전원 상태, `pcExec`은 명령 실행·마지막 실행·예약할 명령, `pcCountdown`은 예약 표시·조작,
+`pcInfo`는 연결·버전·메시지 카드(맨 아래), `pcUser`은 선택 항목인 잠금·유휴 블록입니다.
 
 `src/caps.lua`, `profiles/pc.yml`, `capabilities/*.json`은 계정에 발급된 **실제
 네임스페이스 `numbersystem53811`** 을 씁니다(2026-09-22 생성). SmartThings는 id의 이름 부분을 소문자로 바꾸므로 id는 `numbersystem53811.pcpower`처럼 소문자입니다. 다른 계정에서 다시 만들면 네임스페이스가 달라지며, 그때는 `tools/apply-namespace.js`로 다시 반영합니다. 원래 네임스페이스는 소유자가 커스텀
@@ -470,7 +482,7 @@ cd edge
 
 ```sh
 smartthings capabilities:translations:upsert <id> --capability-version 1 \
-  -i capabilities/translations/pcRun.ko.json
+  -i capabilities/translations/pcExec.ko.json
 smartthings capabilities:translations <id> --capability-version 1 ko   # 읽어서 확인
 ```
 
@@ -485,16 +497,19 @@ enum 값·명령·명령 인자**가 번역돼 있는지, 정의에 없는 것�
 다만 SmartThings가 이 파일들의 **형식**을 받아들일지는 CLI만이 압니다. 올릴 때 확인할
 부분:
 
-- `pcRun`은 **새 capability**입니다(#84: `execute`에 `none` 추가, `planCommand`·
-  `setPlanCommand` 추가). `capabilities:update`가 아니라 `capabilities:create` +
-  `capabilities:presentation:create` + 번역 upsert로 올린 뒤, 프로필 `pc.v11`이
-  배포돼 옛 `...pcaction`을 참조하는 장치가 남지 않은 것을 보고
-  `smartthings capabilities:delete <namespace>.pcaction` 합니다. 허브가 정의를 id
-  단위로 캐시하기 때문에 이름을 바꾼 것입니다(설계 §14.4). `pcControl`→`pcAction`
-  (#82), `pcTimer`→`pcPlan`(#83)도 같은 이유였습니다.
-- `pcPlan.schedule`의 `minutes`는 정의상 최소 1인데 상세 화면의 `취소` 항목은 0을
-  보냅니다. 허브가 인자 스키마로 이것을 거부하면 취소 항목만 빼고 `cancel()`을 쓰는
-  배치로 되돌려야 합니다(드라이버는 양쪽을 모두 처리합니다).
+- `pcExec`·`pcCountdown`·`pcInfo`는 **셋 다 새 capability**입니다(#85: `schedule`의
+  `minutes` 최소값이 0, `planCommand`·`setPlanCommand`가 예약 쪽으로 이동,
+  `versions` 속성 추가). `capabilities:update`가 아니라 `capabilities:create` +
+  `capabilities:presentation:create` + 번역 upsert로 올린 뒤, 프로필 `pc.v12`가
+  배포돼 옛 `...pcplan`·`...pcrun`·`...pchealth`를 참조하는 장치가 남지 않은 것을
+  보고 `smartthings capabilities:delete <namespace>.pcplan`(그리고 `.pcrun`,
+  `.pchealth`) 합니다. 허브가 정의를 id 단위로 캐시하기 때문에 이름을 바꾸는
+  것입니다(설계 §14.4). `pcControl`→`pcAction`(#82), `pcTimer`→`pcPlan`(#83),
+  `pcAction`→`pcRun`(#84)도 같은 이유였습니다.
+- `pcCountdown.schedule`의 `minutes`는 정의상 최소 **0**입니다. 상세 화면의 `취소`
+  항목이 0을 보내는데, **인자 검증은 클라우드가 정의로 하고 거부하면 허브에 닿지도
+  않기 때문입니다**(최소 1이던 동안 "시스템 오류" 팝업만 떴습니다, 설계 §14.5).
+  목록의 모든 키는 정의의 인자 범위 안에 있어야 합니다.
 - `capabilities:translations:upsert`가 받는 본문 형식
   (`{"tag","label","attributes":{...,"i18n":{"value":{...}}},"commands":{...}}`).
 - 정의의 `id`, `version`, `status`, `ephemeral` — CLI가 무시하거나 거부하고 자기 값을
@@ -640,7 +655,7 @@ a row without a value renders as "-" on the phone, which is what eight buttons
 looked like. Switch on sends Wake-on-LAN (immediately, +2 s, +5 s, ports 7 and
 9); switch off sends `offAction` and honours the PC's grace period. A command
 picked from the list follows the `buttonMode` preference, exactly as the buttons
-did. `pcRun.execute(command, mode, minutes)` is what both the screen and
+did. `pcExec.execute(command, mode, minutes)` is what both the screen and
 automations send, and it schedules when `minutes > 0`; the eight no-argument
 commands stay in the definition for scenes and for devices still on an older
 profile. The raw attributes (`remainingSeconds`, `executeAt`, `origin`,
@@ -654,15 +669,26 @@ deleted on the driver's first init.
 row's CURRENT value as the argument, so every value the row can hold has to be
 a valid and harmless one. The command row therefore rests on `none` (a real
 `execute` argument the driver answers with a refresh and nothing else), what
-actually ran is read off the `lastCommand` row below it, and a third row picks
+actually ran is read off the `lastCommand` row below it, and another row picks
 which command a schedule runs (`planCommand` / `setPlanCommand`, because a list
 carries exactly one argument and the schedule list spends it on the minutes).
 
-The capability was renamed `pcControl` -> `pcAction` -> `pcRun` (id
-`<ns>.pcrun`) because the hub caches a capability definition by id for the whole
-hub and never re-reads a changed one, so a changed definition needs a new id;
-the profile goes up a version (`pc.v11`) for the same reason on the presentation
-side. Devices are migrated automatically on the driver's first init.
+#85 fixed two more things measured on the phone. The cloud validates a command's
+arguments against the capability definition and never forwards a rejected one,
+so the schedule list's Cancel entry (`minutes = 0`) died against `minimum: 1`
+with a "system error" popup; the minimum is 0 now, and every list key has to sit
+inside its argument's schema. And the app draws a detail row in the card of the
+capability that owns it, so `planCommand` / `setPlanCommand` moved onto the
+schedule capability, where "what to schedule" now sits above "when".
+
+The capabilities were renamed `pcControl` -> `pcAction` -> `pcRun` -> `pcExec`
+(id `<ns>.pcexec`) and `pcTimer` -> `pcPlan` -> `pcCountdown` (id
+`<ns>.pccountdown`) because the hub caches a capability definition by id for the
+whole hub and never re-reads a changed one, so a changed definition needs a new
+id; the profile goes up a version (`pc.v12`) for the same reason on the
+presentation side. Devices are migrated automatically on the driver's first
+init, and the driver repaints every attribute of both capabilities once after a
+migration — under a new id they all start out unset, which reads as "-".
 
 **Korean** — capability labels, enum values and command arguments are translated
 through `capabilities/translations/<name>.{ko,en}.json`, so the app follows the

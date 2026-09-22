@@ -100,8 +100,9 @@ local function all_actions(device)
 end
 
 --- The `planCommand` a device was last told to show, or nil.
+-- #85: emitted on the schedule capability, with the row it drives.
 local function plan_command(device)
-  return h.event_value(h.emitted(device), caps.COMMAND, "planCommand")
+  return h.event_value(h.emitted(device), caps.SCHEDULE, "planCommand")
 end
 
 --------------------------------------------------------------------------------
@@ -242,7 +243,7 @@ end
 
 function T.test_a_scheduled_execute_still_goes_to_the_service()
   -- `minutes > 0` schedules instead of executing (§4.3); what is pending is
-  -- the pcPlan row's business.
+  -- the pcCountdown row's business.
   local device = device_with()
   local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
@@ -283,16 +284,61 @@ function T.test_a_new_device_shows_the_placeholder_and_a_plan_command()
   local emitted_before = #device.emitted
   poll.ensure_action(device)
   poll.ensure_plan_command(device)
+  poll.ensure_rows(device)
   h.assert_equal(#device.emitted, emitted_before, "a row was painted twice")
 end
 
+function T.test_a_new_device_reports_every_command_and_schedule_attribute()
+  -- #85: an attribute that was never emitted reads as "-" on the phone and
+  -- keeps the app saying the device has not reported all of its state. No
+  -- status body carries `lastAction` / `planCommand`, and a device that has
+  -- just been added has no status body at all, so the whole set is painted at
+  -- its resting value up front.
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "restart" })
+  driver.lifecycle_handlers.added(driver, device)
+
+  local seen = {}
+  for _, e in ipairs(h.emitted(device)) do
+    seen[e.cap .. "." .. e.attr] = true
+  end
+  local used = state.attributes_used()
+  for _, id in ipairs({ caps.COMMAND, caps.SCHEDULE }) do
+    for attr in pairs(used[id]) do
+      h.assert_true(seen[id .. "." .. attr] == true,
+        id .. "." .. attr .. ' was never emitted, so the row reads "-"')
+    end
+  end
+
+  -- #85: and the version row of the info card, which no status body has filled
+  -- in yet - it names the driver and the screen template regardless.
+  h.assert_true(seen[caps.STATUS .. ".versions"] == true,
+    "the versions row was never emitted")
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "versions"),
+    state.versions(nil, nil))
+end
+
+function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
+  -- #85: pcPlan/pcRun became pcCountdown/pcExec, so on the hub every attribute
+  -- of the new ids starts out unset - but the driver's own persisted fields
+  -- survive the migration and would otherwise say "already painted".
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+  device:set_field(poll.ACTION_FIELD, state.ACTION_NONE, { persist = true })
+  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+
+  h.assert_true(poll.ensure_rows(device), "a migrated device has to be repainted")
+  h.assert_equal(last_action(device), state.ACTION_NONE)
+  h.assert_equal(plan_command(device), "suspend",
+    "the command the user picked survives the rename")
+  h.assert_false(poll.ensure_rows(device), "... and is painted only once")
+end
+
 --------------------------------------------------------------------------------
--- pcRun.setPlanCommand: what a schedule runs (#84)
+-- pcCountdown.setPlanCommand: what a schedule runs (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_set_plan_command_persists_and_emits()
   local device = device_with()
-  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+  handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "restart" } })
   h.assert_equal(plan_command(device), "restart")
   h.assert_equal(device:get_field(poll.PLAN_FIELD), "restart",
@@ -301,14 +347,14 @@ end
 
 function T.test_set_plan_command_refuses_a_command_the_service_cannot_schedule()
   local device = device_with()
-  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+  handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "lock" } })
   h.assert_equal(plan_command(device), "shutdown", "an unschedulable value is coerced")
 end
 
 function T.test_a_schedule_without_a_command_uses_the_picked_one()
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
-  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+  handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "suspend" } })
   local calls = with_service(nil, function()
     handlers_for(caps.SCHEDULE).schedule(driver, device,
@@ -320,7 +366,7 @@ end
 
 function T.test_an_explicit_schedule_command_still_wins()
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
-  handlers_for(caps.COMMAND).setPlanCommand(driver, device,
+  handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "suspend" } })
   local calls = with_service(nil, function()
     handlers_for(caps.SCHEDULE).schedule(driver, device,
@@ -330,7 +376,7 @@ function T.test_an_explicit_schedule_command_still_wins()
 end
 
 --------------------------------------------------------------------------------
--- pcPlan: the cancel entry of the preset list (#82)
+-- pcCountdown: the cancel entry of the preset list (#82, valid argument since #85)
 --------------------------------------------------------------------------------
 
 function T.test_schedule_zero_cancels()

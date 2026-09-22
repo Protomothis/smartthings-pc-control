@@ -16,10 +16,16 @@ poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
 poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
--- #82: the last `pcRun.lastAction` value emitted for this device.
+-- #82: the last `pcExec.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
--- #84: the `pcRun.planCommand` the user picked for `pcPlan.schedule`.
+-- #84: the `pcCountdown.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
+-- #85: which generation of capability ids this device's rows were painted for.
+-- A renamed capability (pcRun -> pcExec, pcPlan -> pcCountdown) starts with
+-- every attribute unset on the hub, so the persisted "already painted" fields
+-- would otherwise skip a device that has been migrated (§14.4).
+poll.ROWS_FIELD = "rows_painted"
+poll.ROWS_VERSION = "85"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§4).
@@ -53,7 +59,7 @@ local function capability_for(id)
   return nil
 end
 
---- `pcHealth.lastSeen`: the hub's local clock time of the last good poll.
+--- `pcInfo.lastSeen`: the hub's local clock time of the last good poll.
 --- A tile the user glances at wants "14:05:12", not an ISO timestamp, and the
 --- date is never interesting for a value that is at most a few minutes old.
 function poll.now()
@@ -104,25 +110,31 @@ function poll.emit_power(device, s)
   })
 end
 
---- Emit only `pcHealth.message`.
+--- Emit only `pcInfo.message`.
 function poll.emit_message(device, message)
   poll.emit(device, { { cap = caps.STATUS, attr = "message", value = message or "" } })
 end
 
---- Emit `pcHealth.connection` + `pcHealth.message` + `pcHealth.summary` (#78).
+--- Emit `pcInfo.connection` + `pcInfo.message` + `pcInfo.summary` (#78).
 --- The summary is the only status row the detail view still shows, so a failed
 --- poll has to rewrite it as well. #82: the power word is not in it any more -
 --- the `pcPower` row right above says that.
+-- #85: the `versions` row goes out here as well. A PC we cannot reach has no
+-- service version to report, but the driver and screen halves are still the
+-- answer to "did my update land?", and a row that was never emitted reads as
+-- "-" (§14.5). `state.versions` writes "?" for the service half.
 function poll.emit_connection(device, connection, message)
+  local lang = poll.lang(device)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, nil, poll.lang(device)) },
+      value = state.status_summary(connection, nil, lang) },
+    { cap = caps.STATUS, attr = "versions", value = state.versions(nil, lang) },
   })
 end
 
---- Emit `pcRun.lastAction` and remember it (#82, #84).
+--- Emit `pcExec.lastAction` and remember it (#82, #84).
 --
 -- #84: the only value this is ever called with is `none`. Closing the detail
 -- view's command list without picking anything sends the row's CURRENT value
@@ -152,15 +164,19 @@ function poll.ensure_action(device)
   return true
 end
 
---- Emit `pcRun.planCommand` and remember it (#84).
+--- Emit `pcCountdown.planCommand` and remember it (#84, moved in #85).
 --
--- The command a `pcPlan.schedule` without an explicit command runs. It is the
--- user's own choice, made on the detail view, so it is persisted rather than
--- derived from a status body. An unschedulable value is coerced (§4.3).
+-- The command a `pcCountdown.schedule` without an explicit command runs. It is
+-- the user's own choice, made on the detail view, so it is persisted rather
+-- than derived from a status body. An unschedulable value is coerced (§4.3).
+--
+-- #85: emitted under the schedule capability, because the app puts a detail row
+-- in the card of the capability that owns it and this row belongs next to the
+-- schedule it configures.
 function poll.emit_plan_command(device, command)
   local value = state.plan_command_for(command)
   pcall(function() device:set_field(poll.PLAN_FIELD, value, { persist = true }) end)
-  poll.emit(device, { { cap = caps.COMMAND, attr = "planCommand", value = value } })
+  poll.emit(device, { { cap = caps.SCHEDULE, attr = "planCommand", value = value } })
   return value
 end
 
@@ -185,7 +201,31 @@ function poll.ensure_plan_command(device)
   return true
 end
 
---- err_kind (client.lua) -> `pcHealth.connection` enum value (§5.1), or nil
+--- #85: paint every pcExec and pcCountdown attribute once, so no row of either
+--- card reads "-" and the app stops saying the device has not reported all of
+--- its state.
+--
+-- Called from `added` and from `init`: a device that was migrated onto the new
+-- capability ids (§14.4) has never emitted any of them, even though the
+-- `last_action` / `plan_command` fields from the old ones survived, so the
+-- version stamp forces one repaint per generation instead of trusting them.
+function poll.ensure_rows(device)
+  local painted
+  pcall(function() painted = device:get_field(poll.ROWS_FIELD) end)
+  if painted == poll.ROWS_VERSION then
+    return false
+  end
+  pcall(function() device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION, { persist = true }) end)
+
+  local seen
+  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
+  poll.emit_action(device, seen)
+  poll.emit_plan_command(device, poll.plan_command(device))
+  poll.emit(device, state.initial_rows(poll.lang(device)))
+  return true
+end
+
+--- err_kind (client.lua) -> `pcInfo.connection` enum value (§5.1), or nil
 --- when the failure says nothing about the connection and the last state
 --- should stand.
 function poll.connection_for(kind)
@@ -240,7 +280,7 @@ end
 
 --- One poll cycle: GET /st/v1/status, advance the state machine, emit, and set
 --- health online/offline. Also used by `refresh` and after a command.
---- `opts.note` is a one-off confirmation to show in `pcHealth.message` when
+--- `opts.note` is a one-off confirmation to show in `pcInfo.message` when
 --- nothing more important applies (§5.1, state.MESSAGE_ORDER); `opts.deps` is
 --- the injected http/json/ltn12 the tests use instead of a socket.
 function poll.once(driver, device, opts)
@@ -283,13 +323,16 @@ function poll.once(driver, device, opts)
     -- §13.1: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
     poll.remember_identity(device, body)
+    -- #82/#84/#85: no status body carries `lastAction` or `planCommand`, and a
+    -- migrated device has emitted nothing at all under the new capability ids,
+    -- so the resting values go out first and the status body overwrites the
+    -- rows it does know about.
+    poll.ensure_rows(device)
     poll.emit(device, state.apply_status(nxt, body, {
       now = poll.now(),
       lang = lang,
       note = opts.note,
     }))
-    -- #82/#84: no status body carries `lastAction` or `planCommand`, so a
-    -- device that has never been told them would leave those rows empty.
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     pcall(function() device:online() end)

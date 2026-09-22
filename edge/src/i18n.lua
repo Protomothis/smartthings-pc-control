@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcHealth.message`, `pcRun.lastCommand`, `pcPlan.origin`).
+-- (`pcInfo.message`, `pcExec.lastCommand`, `pcCountdown.origin`).
 --
 -- Design doc §6.5: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -130,7 +130,7 @@ local STRINGS = {
   origin_smartthings = { ko = "SmartThings", en = "SmartThings" },
 
   -- powerState enum, for the one-line summaries (§5.1, #78). The enum itself is
-  -- localised by the capability translations; these are for `pcHealth.summary`,
+  -- localised by the capability translations; these are for `pcInfo.summary`,
   -- which is a plain string attribute the driver composes.
   power_on = { ko = "켜짐", en = "On" },
   power_sleeping = { ko = "절전", en = "Sleeping" },
@@ -141,20 +141,31 @@ local STRINGS = {
   power_unknown = { ko = "알 수 없음", en = "Unknown" },
 
   -- connection, in the short form a summary line can carry (#78). The long
-  -- sentences above stay in `pcHealth.message`.
+  -- sentences above stay in `pcInfo.message`.
   conn_ok = { ko = "연결됨", en = "Connected" },
   conn_down = { ko = "연결 안 됨", en = "Not connected" },
   conn_short_unauthorized = { ko = "시크릿 불일치", en = "Secret mismatch" },
   conn_short_unreachable = { ko = "응답 없음", en = "No response" },
   conn_short_incompatible = { ko = "버전 불일치", en = "Version mismatch" },
 
-  -- #82: the short forms the `pcHealth.summary` line carries. The long
-  -- sentences above stay in `pcHealth.message`, which automations and the
+  -- #82: the short forms the `pcInfo.summary` line carries. The long
+  -- sentences above stay in `pcInfo.message`, which automations and the
   -- history read; this row is glanced at and the phone truncates it.
   no_secret_short = { ko = "시크릿 미설정 · 설정 권장", en = "No secret · set one" },
   wol_not_ready_short = { ko = "어댑터 WoL 꺼짐", en = "Adapter WoL off" },
   update_available_short = { ko = "업데이트 %s 사용 가능", en = "Update %s available" },
   update_available_plain_short = { ko = "업데이트 사용 가능", en = "Update available" },
+
+  -- #85: the `pcInfo.versions` row. Which service, driver and screen template
+  -- a device is actually on is the first question every "it still looks the
+  -- old way" report needs answered - the screen is frozen at device-creation
+  -- time (§14.3), so the profile name is as interesting as the two versions.
+  -- `?` stands in for a service version we have not been told yet.
+  versions = {
+    ko = "서비스 %s · 드라이버 %s · 화면 %s",
+    en = "Service %s · Driver %s · Screen %s",
+  },
+  version_unknown = { ko = "?", en = "?" },
 
   -- schedule / session summaries (#78)
   schedule_remaining = { ko = "%d분 남음", en = "%d min left" },
@@ -244,7 +255,7 @@ function i18n.power(lang, power_state)
   return tostring(power_state)
 end
 
---- Short label for a `pcHealth.connection` value, for the summary line (#78).
+--- Short label for a `pcInfo.connection` value, for the summary line (#78).
 --- `ok` has its own wording ("Connected"); everything else is a reason that
 --- follows "Not connected · ".
 function i18n.connection(lang, connection)

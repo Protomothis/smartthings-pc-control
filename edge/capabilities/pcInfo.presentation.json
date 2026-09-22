@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pchealth",
+  "id": "numbersystem53811.pcinfo",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -11,6 +11,13 @@
       "displayType": "state",
       "state": {
         "label": "{{summary.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.versions.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{versions.value}}"
       }
     }
   ],

@@ -236,6 +236,22 @@ function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
   h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
 end
 
+function T.test_the_info_capability_is_last_in_every_profile()
+  -- #85: the app draws one card per capability, in the order the profile lists
+  -- them, so the version row sits at the bottom of the screen only if pcInfo is
+  -- the last entry. Checked in every profile file: a device on an older one
+  -- gets the same reading order.
+  for name, text in pairs(profile_files) do
+    local order = {}
+    for id in (text or ""):gmatch("numbersystem53811%.(%a+)") do
+      order[#order + 1] = id
+    end
+    h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
+    h.assert_equal(order[#order], (caps.STATUS:gsub("^.*%.", "")),
+      "profiles/" .. name .. " must list the info capability last (#85)")
+  end
+end
+
 function T.test_no_two_profile_files_share_a_name()
   -- Two files with the same `name:` is what a copied-but-not-renamed version
   -- bump looks like, and the hub would take whichever it read last.
@@ -298,7 +314,7 @@ function T.test_the_enums_match_the_lua_constants()
     state.WAKING, state.SHUTTING_DOWN, state.UNKNOWN,
   })
   -- §4.1: `noSecret` is deliberately not a connection value; the warning goes
-  -- into pcHealth.message instead.
+  -- into pcInfo.message instead.
   local connection = definition("status").attributes.connection.schema.properties.value
   h.assert_deep_equal(connection.enum, { "ok", "unauthorized", "unreachable", "incompatible" })
 end
@@ -333,9 +349,13 @@ local EXPECTED_COMMANDS = {
   power_state = {},
   command = {
     execute = { "command", "mode", "minutes" },
+  },
+  -- #85: `setPlanCommand` lives here, with the row it drives.
+  schedule = {
+    cancel = {},
+    schedule = { "minutes", "command" },
     setPlanCommand = { "command" },
   },
-  schedule = { cancel = {}, schedule = { "minutes", "command" } },
   status = {},
   session = {},
 }
@@ -385,7 +405,7 @@ function T.test_command_enums_match_the_service()
   end
   for _, name in ipairs({ "none", "wake", "shutdown", "forceshutdown", "restart",
       "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
-    h.assert_true(seen[name] == true, "pcRun.execute is missing " .. name)
+    h.assert_true(seen[name] == true, "pcExec.execute is missing " .. name)
   end
   h.assert_equal(#execute, 10)
   for _, name in ipairs(ACTION_LIST) do
@@ -399,10 +419,13 @@ function T.test_command_enums_match_the_service()
     execute, "lastAction and execute.command must be the same set, in the same order")
   h.assert_deep_equal(state.ACTIONS, execute, "state.ACTIONS is the lastAction enum")
 
-  -- #84: the schedulable commands, shared by the attribute and its setter.
-  h.assert_deep_equal(definition("command").attributes.planCommand.schema.properties.value.enum,
+  -- #84/#85: the schedulable commands, shared by the attribute, its setter and
+  -- the optional argument of `schedule` - all three on the schedule capability.
+  h.assert_deep_equal(definition("schedule").attributes.planCommand.schema.properties.value.enum,
     PLAN_LIST)
-  h.assert_deep_equal(definition("command").commands.setPlanCommand.arguments[1].schema.enum,
+  h.assert_deep_equal(definition("schedule").commands.setPlanCommand.arguments[1].schema.enum,
+    PLAN_LIST)
+  h.assert_deep_equal(definition("schedule").commands.schedule.arguments[2].schema.enum,
     PLAN_LIST)
   h.assert_deep_equal(state.PLAN_COMMANDS, PLAN_LIST)
 
@@ -413,9 +436,13 @@ function T.test_command_enums_match_the_service()
   -- schedule(minutes, command?): minutes first so a one-argument list works.
   local minutes = definition("schedule").commands.schedule.arguments[1].schema
   h.assert_equal(minutes.type, "integer")
-  h.assert_equal(minutes.minimum, 1)
+  -- #85, measured on the phone: the cloud validates command arguments against
+  -- the definition and never forwards a rejected one, so the list's `취소`
+  -- entry (minutes = 0) failed with "system error" while the minimum was 1.
+  h.assert_equal(minutes.minimum, 0, "minutes = 0 is the list's Cancel entry (#85)")
   h.assert_equal(minutes.maximum, 1440)
 end
+
 
 --------------------------------------------------------------------------------
 -- presentations
@@ -457,6 +484,30 @@ function T.test_presentations_only_reference_defined_attributes_and_commands()
         string.format("%s presentation runs %s(), which is not defined", id, name))
     end
   end
+end
+
+function T.test_plan_command_belongs_to_the_schedule_capability()
+  -- #85: the app groups detail rows by the capability that owns them, so the
+  -- row that picks WHAT a schedule runs has to be part of the schedule card;
+  -- with it on the command capability the schedule card read "minutes only".
+  h.assert_true(definition("schedule").attributes.planCommand ~= nil,
+    "planCommand belongs to " .. caps.ids.schedule)
+  h.assert_true(definition("schedule").commands.setPlanCommand ~= nil,
+    "setPlanCommand belongs to " .. caps.ids.schedule)
+  h.assert_nil(definition("command").attributes.planCommand,
+    caps.ids.command .. " must not define planCommand any more")
+  h.assert_nil(definition("command").commands.setPlanCommand,
+    caps.ids.command .. " must not define setPlanCommand any more")
+
+  -- ... and the command presentation must not mention either of them.
+  local attributes, commands = references(presentation("command"), {}, {})
+  h.assert_nil(attributes.planCommand, "the command presentation still reads planCommand")
+  h.assert_nil(commands.setPlanCommand, "the command presentation still runs setPlanCommand")
+
+  -- state.lua emits it under the schedule capability, not the command one.
+  local used = state.attributes_used()
+  h.assert_true(used[caps.ids.schedule].planCommand == true)
+  h.assert_nil(used[caps.ids.command].planCommand)
 end
 
 function T.test_the_dashboard_state_is_the_power_state()
@@ -513,9 +564,29 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   -- #82: `lastAction` is a condition as well, so an automation can react to
   -- what was last asked of the PC.
   h.assert_true(condition_attributes("command").lastAction == true)
-  -- #84: and to the command a schedule would run.
-  h.assert_true(condition_attributes("command").planCommand == true)
-  h.assert_true(action_commands("command").setPlanCommand == true)
+  -- #84: and to the command a schedule would run - on the schedule capability
+  -- since #85.
+  h.assert_true(condition_attributes("schedule").planCommand == true)
+  h.assert_true(action_commands("schedule").setPlanCommand == true)
+end
+
+function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
+  -- §14.5: `automation.actions` may not carry a pushButton, so `cancel()` has
+  -- no action of its own and a routine cancels with `schedule(minutes: 0)`.
+  -- #85 made 0 a valid argument, so the picker can offer it.
+  local keys = {}
+  for _, action in ipairs((presentation("schedule").automation or {}).actions or {}) do
+    if (action.multiArgCommand or {}).command == "schedule" then
+      for _, argument in ipairs(action.multiArgCommand.arguments or {}) do
+        if argument.name == "minutes" then
+          for _, alternative in ipairs((argument.list or {}).alternatives or {}) do
+            keys[alternative.key] = true
+          end
+        end
+      end
+    end
+  end
+  h.assert_true(keys["0"] == true, "the automation's minutes picker cannot cancel")
 end
 
 --------------------------------------------------------------------------------
@@ -534,14 +605,16 @@ local function list_keys(item)
   return commands, states
 end
 
-function T.test_the_action_detail_view_is_the_list_the_last_run_and_the_plan()
+function T.test_the_action_detail_view_is_the_list_and_the_last_run()
   -- §5.3 (#82): a pushButton has no value, so the phone drew "-" beside each
   -- of the eight. One list replaces them: the commands are the menu, and
   -- `lastAction` is the value it shows.
   -- #84: the list rests on `none`, so what actually ran is read off the
-  -- `lastCommand` row below it, and a third row picks what a schedule runs.
+  -- `lastCommand` row below it.
+  -- #85: the "command to schedule" row moved to the schedule card, where the
+  -- app draws the rows of the capability that owns them.
   local detail = presentation("command").detailView
-  h.assert_equal(#detail, 3, "command list, last run, command to schedule")
+  h.assert_equal(#detail, 2, "command list, last run")
   local item = detail[1]
   h.assert_equal(item.displayType, "list")
   h.assert_equal(item.label, "{{i18n.attributes.lastAction.label}}")
@@ -567,17 +640,6 @@ function T.test_the_action_detail_view_is_the_list_the_last_run_and_the_plan()
   h.assert_equal(detail[2].displayType, "state")
   h.assert_equal(detail[2].label, "{{i18n.attributes.lastCommand.label}}")
   h.assert_contains(detail[2].state.label, "lastCommand.value")
-
-  -- #84: the schedule list can only pick minutes (one argument per list), so
-  -- the command it runs is picked here.
-  local plan = detail[3]
-  h.assert_equal(plan.displayType, "list")
-  h.assert_equal(plan.label, "{{i18n.attributes.planCommand.label}}")
-  h.assert_equal(plan.list.command.name, "setPlanCommand")
-  local plan_commands, plan_states = list_keys(plan)
-  h.assert_deep_equal(plan_commands, PLAN_LIST)
-  h.assert_equal(plan.list.state.value, "planCommand.value")
-  h.assert_deep_equal(plan_states, PLAN_LIST)
 end
 
 -- #84, measured on the phone (2026-09-22): closing a detailView `list` without
@@ -585,43 +647,119 @@ end
 -- argument. `lastAction` was `none`, which `execute` did not accept, and the
 -- cloud answered "network or server error" without ever reaching the hub. So
 -- every value a list's state can hold has to be an argument the command takes.
-function T.test_every_detail_list_state_value_is_a_valid_command_argument()
+--- Is `key` something `schema` accepts as an argument value? Returns a reason
+--- when it is not. Enums are matched by membership, numbers by their range -
+--- the two shapes a capability argument can have here.
+local function argument_error(schema, key)
+  schema = schema or {}
+  if schema.enum then
+    for _, value in ipairs(schema.enum) do
+      if tostring(value) == tostring(key) then
+        return nil
+      end
+    end
+    return "not one of " .. table.concat(schema.enum, "/")
+  end
+  if schema.type == "integer" or schema.type == "number" then
+    local number = tonumber(key)
+    if not number then
+      return "not a number"
+    end
+    if schema.type == "integer" and number ~= math.floor(number) then
+      return "not an integer"
+    end
+    if schema.minimum and number < schema.minimum then
+      return "below the minimum (" .. tostring(schema.minimum) .. ")"
+    end
+    if schema.maximum and number > schema.maximum then
+      return "above the maximum (" .. tostring(schema.maximum) .. ")"
+    end
+    return nil
+  end
+  return nil
+end
+
+-- #85, measured on the phone: the cloud validates every command argument
+-- against the capability definition and answers "system error" without ever
+-- forwarding the command, so a list key outside the definition's schema is
+-- dead on arrival. That is what the schedule row's `취소` entry (minutes = 0,
+-- `minimum: 1`) was. #84's rule is the same defect one layer up - a dismissed
+-- list sends the row's CURRENT value as the argument - so both are checked
+-- here: every key a list can send, command side and state side, detail view and
+-- automation action, has to be a valid argument.
+function T.test_every_list_key_is_a_valid_command_argument()
   local checked = 0
+
+  --- Check one set of keys against the schema of `argument_name` of `command`.
+  local function check(key, command_name, argument_name, keys, where)
+    local command = (definition(key).commands or {})[command_name]
+    h.assert_true(command ~= nil,
+      string.format("%s runs %s(), which is not defined", where, tostring(command_name)))
+    local schema
+    for i, argument in ipairs(command.arguments or {}) do
+      if argument.name == argument_name or (argument_name == nil and i == 1) then
+        schema = argument.schema
+        break
+      end
+    end
+    h.assert_true(schema ~= nil,
+      string.format("%s sends %s(%s), which the definition has no argument for",
+        where, tostring(command_name), tostring(argument_name)))
+    for _, value in ipairs(keys) do
+      local err = argument_error(schema, value)
+      h.assert_nil(err, string.format("%s: %s() would reject %s - %s (#85: the cloud "
+        .. "validates arguments against the definition)",
+        where, command_name, tostring(value), tostring(err)))
+      checked = checked + 1
+    end
+  end
+
   for key, id in pairs(caps.ids) do
     for i, item in ipairs(presentation(key).detailView or {}) do
       if item.displayType == "list" then
         local where = string.format("%s detailView[%d]", id, i)
-        local command = definition(key).commands[item.list.command.name] or {}
-        local argument = (command.arguments or {})[1] or {}
-        local accepted = {}
-        for _, value in ipairs((argument.schema or {}).enum or {}) do
-          accepted[tostring(value)] = true
-        end
-        -- An integer argument (the schedule presets) has a range, not an enum;
-        -- its own test covers it, and a dismissed picker there re-sends a
-        -- minute count the driver already understands.
-        if next(accepted) then
+        local command_name = item.list.command.name
+        local commands, states = list_keys(item)
+        -- The menu itself: every entry the user can pick.
+        check(key, command_name, nil, commands, where)
+        -- #84: and whatever the row can be left showing, because closing the
+        -- list without a pick sends that value as the argument. Both the
+        -- declared alternatives and the attribute's own enum count. Only for an
+        -- enum argument: a row whose command takes an integer (the schedule
+        -- presets) shows a status word the app cannot send as a number, and
+        -- the phone leaves that picker alone (§14.5).
+        local argument = ((definition(key).commands[command_name] or {}).arguments or {})[1] or {}
+        if (argument.schema or {}).enum then
           local attr = (item.list.state.value or ""):match("^([%a][%w_]*)%.value$")
           local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
             .properties or {}).value or {}
-          for _, value in ipairs(spec.enum or {}) do
-            h.assert_true(accepted[value] == true,
-              string.format("%s: the row can hold %s, which %s() does not accept - "
-                .. "closing the list without a pick would fail (#84)",
-                where, tostring(value), item.list.command.name))
+          check(key, command_name, nil, states, where .. " state")
+          check(key, command_name, nil, spec.enum or {}, where .. " " .. tostring(attr))
+        end
+      end
+    end
+
+    -- §14: an automation action is a multiArgCommand whose argument widgets
+    -- carry the argument name, so each list is checked against its own
+    -- argument rather than the first one.
+    for i, action in ipairs((presentation(key).automation or {}).actions or {}) do
+      local multi = action.multiArgCommand
+      if multi then
+        for _, argument in ipairs(multi.arguments or {}) do
+          local keys = {}
+          for _, alternative in ipairs((argument.list or {}).alternatives or {}) do
+            keys[#keys + 1] = alternative.key
           end
-          local _, states = list_keys(item)
-          for _, value in ipairs(states) do
-            h.assert_true(accepted[value] == true,
-              string.format("%s: the state alternative %s is not a valid argument",
-                where, tostring(value)))
+          if #keys > 0 then
+            check(key, multi.command, argument.name,
+              keys, string.format("%s automation.actions[%d]", id, i))
           end
-          checked = checked + 1
         end
       end
     end
   end
-  h.assert_true(checked >= 2, "the command and plan rows both have enum arguments")
+
+  h.assert_true(checked >= 20, "far too few list keys were checked: " .. checked)
 end
 
 function T.test_the_driver_never_leaves_a_flash_timer_behind()
@@ -634,13 +772,25 @@ function T.test_the_driver_never_leaves_a_flash_timer_behind()
   h.assert_nil(poll.ACTION_RESET_TIMER_FIELD)
 end
 
-function T.test_the_schedule_detail_view_is_one_list_and_the_summary()
+function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary()
   -- #82: the cancel pushButton became the `0` entry of the preset list.
   -- #83: the list's value is the `status` enum, not the boolean `active` - a
   -- list bound to a boolean drew "-" with no chevron and never opened.
+  -- #85: "what to schedule" comes first, because the card was read as "pick a
+  -- time" while that row sat in the command card two cards further down.
   local detail = presentation("schedule").detailView
-  h.assert_equal(#detail, 2)
-  local item = detail[1]
+  h.assert_equal(#detail, 3, "command to schedule, presets, summary")
+
+  local plan = detail[1]
+  h.assert_equal(plan.displayType, "list")
+  h.assert_equal(plan.label, "{{i18n.attributes.planCommand.label}}")
+  h.assert_equal(plan.list.command.name, "setPlanCommand")
+  local plan_commands, plan_states = list_keys(plan)
+  h.assert_deep_equal(plan_commands, PLAN_LIST)
+  h.assert_equal(plan.list.state.value, "planCommand.value")
+  h.assert_deep_equal(plan_states, PLAN_LIST)
+
+  local item = detail[2]
   h.assert_equal(item.displayType, "list")
   h.assert_equal(item.list.command.name, "schedule")
   local minutes, states = list_keys(item)
@@ -651,8 +801,47 @@ function T.test_the_schedule_detail_view_is_one_list_and_the_summary()
   h.assert_deep_equal(states,
     definition("schedule").attributes.status.schema.properties.value.enum,
     "the state alternatives must cover the whole status enum")
-  h.assert_equal(detail[2].displayType, "state")
-  h.assert_contains(detail[2].state.label, "summary.value")
+
+  h.assert_equal(detail[3].displayType, "state")
+  h.assert_contains(detail[3].state.label, "summary.value")
+end
+
+function T.test_every_schedule_preset_is_inside_the_definitions_range()
+  -- #85, measured on the phone: the cloud checks a command's arguments against
+  -- the definition and answers "system error" without ever reaching the hub.
+  -- The `취소` entry sent `minutes = 0` against `minimum: 1` and died there.
+  local schema = definition("schedule").commands.schedule.arguments[1].schema
+  local presets = select(1, list_keys(presentation("schedule").detailView[2]))
+  h.assert_true(#presets > 0, "the schedule row has no presets")
+  local zero = false
+  for _, key in ipairs(presets) do
+    local minutes = tonumber(key)
+    h.assert_true(minutes ~= nil, "the preset " .. tostring(key) .. " is not a number")
+    h.assert_true(minutes >= schema.minimum,
+      string.format("the preset %s is below minutes' minimum (%s)", key, tostring(schema.minimum)))
+    h.assert_true(minutes <= schema.maximum,
+      string.format("the preset %s is above minutes' maximum (%s)", key, tostring(schema.maximum)))
+    zero = zero or minutes == 0
+  end
+  h.assert_true(zero, "the schedule row has no Cancel entry (minutes = 0)")
+end
+
+function T.test_the_info_detail_view_is_the_summary_and_the_versions()
+  -- #85: "which service, driver and screen am I actually on?" is the first
+  -- question a "the app still looks the old way" report needs answered, and the
+  -- screen is frozen at device-creation time (§14.3), so the profile name earns
+  -- its place next to the two version numbers.
+  local detail = presentation("status").detailView
+  h.assert_equal(#detail, 2, "status summary, versions")
+  h.assert_equal(detail[1].displayType, "state")
+  h.assert_contains(detail[1].state.label, "summary.value")
+
+  local versions = detail[2]
+  h.assert_equal(versions.displayType, "state")
+  h.assert_equal(versions.label, "{{i18n.attributes.versions.label}}")
+  h.assert_contains(versions.state.label, "versions.value")
+  h.assert_true(definition("status").attributes.versions ~= nil,
+    caps.ids.status .. " does not define versions")
 end
 
 -- #83, measured on the phone: a detailView `list` whose `state.value` points at
@@ -952,6 +1141,13 @@ function T.test_every_last_action_value_is_translated()
         "lastAction." .. value .. " has no " .. tag .. " label")
     end
   end
+end
+
+function T.test_the_versions_row_has_a_label_in_both_languages()
+  -- #85: a row label is one of the few things translations really do reach
+  -- (§14.2), so this is where the user's "버전" / "Versions" comes from.
+  h.assert_equal(((translation("status", "ko").attributes or {}).versions or {}).label, "버전")
+  h.assert_equal(((translation("status", "en").attributes or {}).versions or {}).label, "Versions")
 end
 
 function T.test_the_korean_translation_is_actually_korean()

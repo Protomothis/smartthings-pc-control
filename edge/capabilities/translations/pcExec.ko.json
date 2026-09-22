@@ -41,25 +41,6 @@
     },
     "lastCommand": {
       "label": "마지막 실행"
-    },
-    "planCommand": {
-      "label": "예약할 명령",
-      "i18n": {
-        "value": {
-          "shutdown": {
-            "label": "종료"
-          },
-          "restart": {
-            "label": "재시작"
-          },
-          "suspend": {
-            "label": "절전"
-          },
-          "hibernate": {
-            "label": "최대 절전"
-          }
-        }
-      }
     }
   },
   "commands": {
@@ -98,14 +79,6 @@
         },
         "minutes": {
           "label": "지연 (분)"
-        }
-      }
-    },
-    "setPlanCommand": {
-      "label": "예약할 명령 선택",
-      "arguments": {
-        "command": {
-          "label": "명령"
         }
       }
     }
