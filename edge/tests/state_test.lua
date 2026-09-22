@@ -182,7 +182,7 @@ function T.test_apply_status_emits_session_only_when_exposed()
   -- summary row (always shown; the phone ignores visibleCondition) says the
   -- feature is off instead of reading "-". The values themselves stay untouched.
   h.assert_equal(h.event_value(events, caps.SESSION, "exposed"), false)
-  h.assert_equal(h.event_value(events, caps.SESSION, "summary"), i18n.t("ko", "session_hidden"))
+  h.assert_equal(h.event_value(events, caps.SESSION, "summary"), i18n.t("en", "session_hidden"))
   for _, attr in ipairs({ "locked", "idleMinutes", "user" }) do
     h.assert_nil(h.event_value(events, caps.SESSION, attr),
       "session is opt-in and must not invent " .. attr)
@@ -281,7 +281,7 @@ function T.test_schedule_summary_says_no_schedule_when_idle()
     status.schedule = { active = false }
     return status
   end)())
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "summary"), "예약 없음")
+  h.assert_equal(h.event_value(events, caps.SCHEDULE, "summary"), "No schedule")
 end
 
 function T.test_schedule_summary_rounds_the_countdown_up()
