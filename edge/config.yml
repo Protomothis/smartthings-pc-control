@@ -1,5 +1,5 @@
 name: SmartThings PC Control
-packageKey: smartthings-pc-control
+packageKey: smartthings-pc-control-driver
 description: Control and monitor a Windows PC running the PC Control service - power state, grace periods, schedules and Wake-on-LAN.
 vendorSupportInformation: https://github.com/Protomothis/smartthings-pc-control
 permissions:
