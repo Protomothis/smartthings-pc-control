@@ -1,0 +1,90 @@
+{
+  "tag": "ko",
+  "label": "PC 예약",
+  "attributes": {
+    "summary": {
+      "label": "예약 요약"
+    },
+    "active": {
+      "label": "예약 중"
+    },
+    "status": {
+      "label": "예약 상태",
+      "i18n": {
+        "value": {
+          "idle": {
+            "label": "예약 없음"
+          },
+          "scheduled": {
+            "label": "예약 중"
+          }
+        }
+      }
+    },
+    "command": {
+      "label": "예약된 명령"
+    },
+    "remainingSeconds": {
+      "label": "남은 시간(초)"
+    },
+    "executeAt": {
+      "label": "실행 시각"
+    },
+    "origin": {
+      "label": "요청 출처"
+    },
+    "minutesPick": {
+      "label": "예약 시간",
+      "i18n": {
+        "value": {
+          "-1": {
+            "label": "시간 선택"
+          }
+        }
+      }
+    },
+    "planCommand": {
+      "label": "예약할 명령",
+      "i18n": {
+        "value": {
+          "shutdown": {
+            "label": "종료"
+          },
+          "restart": {
+            "label": "재시작"
+          },
+          "suspend": {
+            "label": "절전"
+          },
+          "hibernate": {
+            "label": "최대 절전"
+          }
+        }
+      }
+    }
+  },
+  "commands": {
+    "cancel": {
+      "label": "예약 취소"
+    },
+    "schedule": {
+      "label": "예약 시간",
+      "arguments": {
+        "minutes": {
+          "label": "얼마 뒤 (분, 0은 취소, 최대 3일)"
+        },
+        "command": {
+          "label": "명령"
+        }
+      }
+    },
+    "setPlanCommand": {
+      "label": "예약할 명령 선택",
+      "arguments": {
+        "command": {
+          "label": "명령"
+        }
+      }
+    }
+  }
+}

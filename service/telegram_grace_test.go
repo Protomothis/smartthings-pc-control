@@ -335,7 +335,7 @@ func TestTelegramStaleGraceButtonsStripKeyboard(t *testing.T) {
 		if err != nil || toast != "활성 예약 없음" {
 			t.Errorf("%s: toast=%q err=%v", data, toast, err)
 		}
-		if want := html.EscapeString(msgText) + "\n⏹ 이미 처리됨"; edit != want {
+		if want := tgWithHeader(html.EscapeString(msgText) + "\n⏹ 이미 처리됨"); edit != want {
 			t.Errorf("%s: edit = %q, want %q", data, edit, want)
 		}
 		if h.EditKeyboard(data) != nil {
@@ -347,7 +347,7 @@ func TestTelegramStaleGraceButtonsStripKeyboard(t *testing.T) {
 		}
 	}
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
-	if edit, _, _ := h.HandleCallback(context.Background(), "42", 7, "old", "cancel:"); edit != "old\n⏹ Already handled" {
+	if edit, _, _ := h.HandleCallback(context.Background(), "42", 7, "old", "cancel:"); edit != tgWithHeader("old\n⏹ Already handled") {
 		t.Errorf("en stale edit = %q", edit)
 	}
 }
@@ -388,10 +388,10 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 
 	// dismiss: same for a /shutdown prompt on its own; unknown text is escaped.
 	q := tgText("confirm_q", "종료")
-	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, tgPlain(q), "dismiss:"); !strings.HasPrefix(edit, q+"\n❎ 취소됨 · ") {
+	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, tgPlain(q), "dismiss:"); !strings.HasPrefix(edit, tgWithHeader(q)+"\n❎ 취소됨 · ") {
 		t.Errorf("dismiss edit = %q", edit)
 	}
-	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "a<b", "dismiss:"); !strings.HasPrefix(edit, "a&lt;b\n❎ 취소됨 · ") {
+	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "a<b", "dismiss:"); !strings.HasPrefix(edit, tgWithHeader("a&lt;b")+"\n❎ 취소됨 · ") {
 		t.Errorf("dismiss edit of foreign text = %q", edit)
 	}
 
@@ -433,7 +433,7 @@ func TestTgPlainAndStampBy(t *testing.T) {
 		t.Errorf("tgKeep(\"\") = %q", got)
 	}
 	setConfig(Config{})
-	for by, want := range map[string]string{"toast": "토스트", "tray": "트레이", "app": "앱", "webui": "WebUI", "api": "API", "telegram": "텔레그램", "timer": "타이머", "x<y": "x&lt;y"} {
+	for by, want := range map[string]string{"toast": "토스트", "tray": "트레이", "app": "앱", "webui": "WebUI", "api": "API", "telegram": "텔레그램", "smartthings": "SmartThings", "timer": "타이머", "x<y": "x&lt;y"} {
 		if got := tgByLabel(by); got != want {
 			t.Errorf("tgByLabel(%q) = %q, want %q", by, got, want)
 		}

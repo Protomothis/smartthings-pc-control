@@ -33,6 +33,10 @@ var catalogue = []notify.Event{
 	{Category: "power", Kind: "started", Fields: map[string]string{"version": "v1.0.0", "boot_time": "2026-09-10 14:34:12", "external_ip": "203.0.113.7"}},
 	{Category: "power", Kind: "resumed", Fields: map[string]string{"since": "2시간 10분"}},
 	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "shutdown"}},
+	// #87: the reason is what this message is for, so the golden covers
+	// more than one of them.
+	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "restart"}},
+	{Category: "power", Kind: "stopping", Fields: map[string]string{"reason": "hibernate"}},
 
 	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5, 10.0.0.9 외 1곳", "path": "/shutdown", "count": "12", "window": "5m", "window_sec": "300"}},
 	{Category: "security", Kind: "unauthorized", Fields: map[string]string{"from": "10.0.0.5", "path": "/lock", "count": "1", "window": "5m", "window_sec": "300"}},
@@ -115,23 +119,28 @@ func TestRenderLayoutSimpleVsFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	sl := strings.Split(s, "\n")
-	if len(sl) != 2 {
-		t.Errorf("simple should be exactly two lines, got %d: %q", len(sl), s)
+	if len(sl) != 3 {
+		t.Errorf("simple should be header + two lines, got %d: %q", len(sl), s)
 	}
-	if !strings.HasPrefix(sl[0], "🔌 <b>") || !strings.HasSuffix(sl[0], "</b>") {
-		t.Errorf("title line = %q", sl[0])
+	// #75: every message opens with the PC-name header, the event title
+	// stays the first line of the body.
+	if sl[0] != "🖥 <b>DESKTOP-TEST</b>" {
+		t.Errorf("header line = %q", sl[0])
 	}
-	if !strings.HasPrefix(sl[1], "<blockquote>") || !strings.HasSuffix(sl[1], "</blockquote>") {
-		t.Errorf("summary line = %q", sl[1])
+	if !strings.HasPrefix(sl[1], "🔌 <b>") || !strings.HasSuffix(sl[1], "</b>") {
+		t.Errorf("title line = %q", sl[1])
+	}
+	if !strings.HasPrefix(sl[2], "<blockquote>") || !strings.HasSuffix(sl[2], "</blockquote>") {
+		t.Errorf("summary line = %q", sl[2])
 	}
 	if !strings.HasPrefix(f, s) {
 		t.Errorf("full should start with the simple rendering\nsimple: %q\nfull: %q", s, f)
 	}
 	fl := strings.Split(f, "\n")
-	if got := len(fl) - 3; got < 2 || got > 4 {
+	if got := len(fl) - 4; got < 2 || got > 4 {
 		t.Errorf("full should have 2–4 field lines, got %d: %q", got, f)
 	}
-	for _, line := range fl[2 : len(fl)-1] {
+	for _, line := range fl[3 : len(fl)-1] {
 		if !strings.Contains(line, ": <code>") || !strings.HasSuffix(line, "</code>") {
 			t.Errorf("field line = %q", line)
 		}
@@ -157,9 +166,13 @@ func TestRenderEscapesFieldValues(t *testing.T) {
 		if strings.Contains(out, "<u>") || strings.Contains(out, "&\n") {
 			t.Errorf("%s: raw markup leaked: %q", lang, out)
 		}
-		// Exactly the template's own <b>…</b> pair survives; the value's does not.
-		if strings.Count(out, "<b>") != 2 || strings.Count(out, "</b>") != 2 {
+		// The header's, the title's and the summary's <b>…</b> survive; the
+		// field value's does not.
+		if strings.Count(out, "<b>") != 3 || strings.Count(out, "</b>") != 3 {
 			t.Errorf("%s: unexpected <b> count: %q", lang, out)
+		}
+		if !strings.HasPrefix(out, "🖥 <b>PC &lt;1&gt;</b>\n") {
+			t.Errorf("%s: pc name not escaped in the header: %q", lang, out)
 		}
 		if !strings.Contains(out, "<i>PC &lt;1&gt; · ") {
 			t.Errorf("%s: pc name not escaped: %q", lang, out)
@@ -178,14 +191,14 @@ func TestRenderUnknownKindFallsBackToGeneric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "🔌 <b>remote.does_not_exist</b>\n<blockquote>alpha: x&amp;y · zeta: 1</blockquote>\nalpha: <code>x&amp;y</code>\nzeta: <code>1</code>\n<i>DESKTOP-TEST · 14:35:00</i>"
+	want := "🖥 <b>DESKTOP-TEST</b>\n🔌 <b>remote.does_not_exist</b>\n<blockquote>alpha: x&amp;y · zeta: 1</blockquote>\nalpha: <code>x&amp;y</code>\nzeta: <code>1</code>\n<i>DESKTOP-TEST · 14:35:00</i>"
 	if out != want {
 		t.Errorf("generic rendering\n got: %q\nwant: %q", out, want)
 	}
 	// Unknown category gets the bell icon.
 	ev.Category = "nope"
 	out, _ = r.Render(ev, goldenPC)
-	if !strings.HasPrefix(out, "🔔 <b>nope.does_not_exist</b>") {
+	if !strings.HasPrefix(out, "🖥 <b>DESKTOP-TEST</b>\n🔔 <b>nope.does_not_exist</b>") {
 		t.Errorf("unknown category: %q", out)
 	}
 }
@@ -199,6 +212,43 @@ func TestRenderMissingFieldIsEmptyNotNoValue(t *testing.T) {
 	}
 	if strings.Contains(out, "<no value>") {
 		t.Errorf("missing field rendered as <no value>: %q", out)
+	}
+}
+
+func TestPowerStoppingNamesTheReason(t *testing.T) {
+	// #87: power.stopping is on by default now, so its message has to say
+	// what is happening rather than print the wire value at the reader.
+	for _, tc := range []struct{ reason, ko, en string }{
+		{"shutdown", "종료", "Shut down"},
+		{"restart", "재시작", "Restart"},
+		{"suspend", "절전", "Sleep"},
+		{"hibernate", "최대 절전", "Hibernate"},
+		// A plain service stop: the service cannot tell it apart from the
+		// beginning of a shutdown, and "unknown" says nothing to a reader.
+		{"unknown", "종료", "Shut down"},
+	} {
+		for lang, want := range map[string]string{LangKo: tc.ko, LangEn: tc.en} {
+			r, err := NewRenderer(lang, DetailFull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ev := notify.Event{Category: "power", Kind: "stopping", At: goldenTime,
+				Fields: map[string]string{"reason": tc.reason}}
+			out, err := r.Render(ev, goldenPC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "<b>"+want+"</b>") {
+				t.Errorf("%s/%s: %q does not name the reason %q", lang, tc.reason, out, want)
+			}
+			if strings.Contains(out, tc.reason) {
+				t.Errorf("%s/%s: the raw wire value reached the message: %q", lang, tc.reason, out)
+			}
+		}
+	}
+	// A reason from a newer service is shown as it came rather than dropped.
+	if got := stopReasonText(LangKo, "fastboot"); got != "fastboot" {
+		t.Errorf("unknown reason = %q, want it passed through", got)
 	}
 }
 
@@ -261,6 +311,52 @@ func TestTemplateSetsMatchAcrossLanguages(t *testing.T) {
 	for name := range ko {
 		if !known[name] {
 			t.Errorf("templates/ko/%s is not in the catalogue", name)
+		}
+	}
+}
+
+// #75: the PC-name header.
+func TestHeader(t *testing.T) {
+	if got := Header("PC <1> & co"); got != "🖥 <b>PC &lt;1&gt; &amp; co</b>" {
+		t.Errorf("Header = %q", got)
+	}
+	cases := []struct{ name, msg, want string }{
+		{"empty stays empty", "", ""},
+		{"plain body gets one", "hello", "🖥 <b>DESKTOP-TEST</b>\nhello"},
+		{"already headered", "🖥 <b>DESKTOP-TEST</b>\nhello", "🖥 <b>DESKTOP-TEST</b>\nhello"},
+		// Text read back from Telegram has its tags stripped but keeps the icon.
+		{"plain-text header", "🖥 DESKTOP-TEST\nhello", "🖥 DESKTOP-TEST\nhello"},
+		// Another PC's header is still a header: never stack two.
+		{"other pc header", "🖥 <b>OTHER-PC</b>\nhello", "🖥 <b>OTHER-PC</b>\nhello"},
+	}
+	for _, c := range cases {
+		if got := WithHeader(goldenPC, c.msg); got != c.want {
+			t.Errorf("%s: WithHeader = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if HasHeader("hello") || !HasHeader(Header(goldenPC)) {
+		t.Error("HasHeader")
+	}
+}
+
+// Even the longest catalogue message stays well inside Telegram's 4096
+// character limit with the header added (#75).
+func TestRenderWithinTelegramLimit(t *testing.T) {
+	const telegramMaxMessage = 4096
+	for _, lang := range []string{LangKo, LangEn} {
+		r, err := NewRenderer(lang, DetailFull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range catalogue {
+			ev.At = goldenTime
+			out, err := r.Render(ev, goldenPC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len([]rune(out)) > telegramMaxMessage {
+				t.Errorf("%s/%s: %d runes exceeds the %d limit", lang, ev.Key(), len([]rune(out)), telegramMaxMessage)
+			}
 		}
 	}
 }

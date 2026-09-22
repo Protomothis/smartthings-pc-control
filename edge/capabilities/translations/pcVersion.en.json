@@ -1,0 +1,10 @@
+{
+  "tag": "en",
+  "label": "PC version",
+  "attributes": {
+    "versions": {
+      "label": "Versions"
+    }
+  },
+  "commands": {}
+}

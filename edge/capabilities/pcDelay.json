@@ -1,0 +1,214 @@
+{
+  "id": "numbersystem53811.pcdelay",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcDelay",
+  "ephemeral": false,
+  "attributes": {
+    "summary": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "active": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "status": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "scheduled"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "command": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "remainingSeconds": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 259200
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "executeAt": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "origin": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "planCommand": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "minutesPick": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "-1"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "cancel": {
+      "name": "cancel",
+      "arguments": []
+    },
+    "schedule": {
+      "name": "schedule",
+      "arguments": [
+        {
+          "name": "minutes",
+          "optional": false,
+          "schema": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 4320
+          }
+        },
+        {
+          "name": "command",
+          "optional": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        }
+      ]
+    },
+    "setPlanCommand": {
+      "name": "setPlanCommand",
+      "arguments": [
+        {
+          "name": "command",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "shutdown",
+              "restart",
+              "suspend",
+              "hibernate"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

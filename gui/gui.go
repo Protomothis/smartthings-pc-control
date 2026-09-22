@@ -48,6 +48,7 @@ var testCommands = []struct {
 	{"ping", "cmd.ping", theme.ConfirmIcon, false},
 	{"lock", "cmd.lock", theme.AccountIcon, false},
 	{"turnscreenoff", "cmd.screenoff", theme.VisibilityOffIcon, false},
+	{"turnscreenon", "cmd.screenon", theme.VisibilityIcon, false},
 	{"suspend", "cmd.suspend", theme.MediaPauseIcon, true},
 	{"hibernate", "cmd.hibernate", theme.MediaStopIcon, true},
 	{"restart", "cmd.restart", theme.ViewRefreshIcon, true},
@@ -57,7 +58,11 @@ var testCommands = []struct {
 
 // Preset delays (minutes) on the schedule tab. These are the only choices:
 // free-form minute entry was dropped in v0.3.4 (#52).
-var schedulePresets = []int{5, 15, 30, 60, 120}
+//
+// #89: the same sixteen the Edge driver's list offers, up to three days
+// (maxScheduleMinutes in service/server.go). Sixteen radio buttons do not fit
+// on a row, so the tab shows them in a dropdown.
+var schedulePresets = []int{5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320}
 
 // defaultSchedulePreset is preselected on the schedule tab.
 const defaultSchedulePreset = 30
@@ -106,9 +111,13 @@ type ui struct {
 	schedBig       *widget.RichText
 	scheduleLabel  *widget.Label
 	schedCancelBtn *widget.Button
-	networkBox     *fyne.Container
-	svcBox         *fyne.Container
-	remoteCheck    *toggle
+	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
+	// SmartThings hub list changes) and the SmartThings section (#70).
+	networkBox  *fyne.Container
+	networkRoot *fyne.Container
+	st          *stSection
+	svcBox      *fyne.Container
+	remoteCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -423,6 +432,46 @@ func (u *ui) formatSeconds(sec int) string {
 		return fmt.Sprintf(u.t("duration.min"), sec/60)
 	}
 	return fmt.Sprintf(u.t("duration.sec"), sec)
+}
+
+// formatMinutes renders a schedule delay in the largest unit that fits:
+// "45분", "1시간 30분", "3일" (#89). The presets now reach three days, and
+// "4320분" is not a label anyone reads as that.
+func (u *ui) formatMinutes(min int) string {
+	switch {
+	case min < 60:
+		return fmt.Sprintf(u.t("duration.min"), min)
+	case min < 1440:
+		if rest := min % 60; rest != 0 {
+			return fmt.Sprintf(u.t("duration.hourmin"), min/60, rest)
+		}
+		return fmt.Sprintf(u.t("duration.hour"), min/60)
+	default:
+		// The odd minutes are noise at a day's distance.
+		if hours := (min % 1440) / 60; hours != 0 {
+			return fmt.Sprintf(u.t("duration.dayhour"), min/1440, hours)
+		}
+		return fmt.Sprintf(u.t("duration.day"), min/1440)
+	}
+}
+
+// formatCountdown renders the remaining time for the big countdown block:
+// "05:30", "3:15:00" and, from a day on, "2일 3:15:00" (#89).
+func (u *ui) formatCountdown(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int(d.Seconds())
+	days, rest := total/86400, total%86400
+	hh, mm, ss := rest/3600, rest%3600/60, rest%60
+	switch {
+	case days > 0:
+		return fmt.Sprintf(u.t("schedule.countdown.days"), days,
+			fmt.Sprintf("%d:%02d:%02d", hh, mm, ss))
+	case hh > 0:
+		return fmt.Sprintf("%d:%02d:%02d", hh, mm, ss)
+	}
+	return fmt.Sprintf("%02d:%02d", mm, ss)
 }
 
 // section renders a subtle bold header above content — lighter than
@@ -961,24 +1010,24 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	cmdSelect := widget.NewSelect(labels, nil)
 	cmdSelect.SetSelectedIndex(0)
 
-	// Delay is preset-only (#52): one radio entry per preset.
+	// Delay is preset-only (#52): one entry per preset. #89 grew the list to
+	// sixteen (5 minutes … 3 days), which is a dropdown rather than a row of
+	// radio buttons.
 	presetLabels := make([]string, len(schedulePresets))
 	defaultLabel := ""
 	for i, m := range schedulePresets {
-		presetLabels[i] = u.formatSeconds(m * 60)
+		presetLabels[i] = u.formatMinutes(m)
 		if m == defaultSchedulePreset {
 			defaultLabel = presetLabels[i]
 		}
 	}
-	delayRadio := widget.NewRadioGroup(presetLabels, nil)
-	delayRadio.Horizontal = true
-	delayRadio.Required = true
-	delayRadio.SetSelected(defaultLabel)
+	delaySelect := widget.NewSelect(presetLabels, nil)
+	delaySelect.SetSelected(defaultLabel)
 
 	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
 		minutes := defaultSchedulePreset
 		for i, l := range presetLabels {
-			if l == delayRadio.Selected {
+			if l == delaySelect.Selected {
 				minutes = schedulePresets[i]
 			}
 		}
@@ -1008,7 +1057,7 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 
 	form := widget.NewForm(
 		widget.NewFormItem(u.t("schedule.command"), cmdSelect),
-		widget.NewFormItem(u.t("schedule.delay"), delayRadio),
+		widget.NewFormItem(u.t("schedule.delay"), delaySelect),
 	)
 
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
@@ -1021,10 +1070,33 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 
 func (u *ui) buildNetworkTab() fyne.CanvasObject {
 	u.networkBox = container.NewVBox(widget.NewLabel(u.t("network.loading")))
-	refreshBtn := widget.NewButtonWithIcon(u.t("network.refresh"), theme.ViewRefreshIcon(), func() { go u.loadNetwork() })
+	// One button for the whole tab: the SmartThings hub state and the WoL
+	// adapter list are both re-read (the tab has no polling loop of its own,
+	// so it also refreshes whenever it is shown — see setCurTab).
+	refreshBtn := widget.NewButtonWithIcon(u.t("network.refresh"), theme.ViewRefreshIcon(), u.refreshNetwork)
+	stBody := u.buildSTSection()
+
+	// Save lives in the fixed footer (savebar.go), enabled only while the
+	// SmartThings section differs from cfgBaseline.
+	u.st.bar = newSaveBar(u, func() { u.saveSTSection(false) })
+
+	u.networkRoot = container.NewVBox(
+		container.NewHBox(layout.NewSpacer(), refreshBtn),
+		section(u.t("st.section"), stBody),
+		widget.NewSeparator(),
+		section(u.t("network.wol.section"), u.networkBox),
+		// Trailing padding so the last row never sits flush against the
+		// footer (same as the settings and notifications tabs).
+		widget.NewLabel(""),
+	)
+	u.refreshNetwork()
+	return withSaveBar(u.networkRoot, u.st.bar)
+}
+
+// refreshNetwork re-reads both halves of the network tab off the UI thread.
+func (u *ui) refreshNetwork() {
 	go u.loadNetwork()
-	top := container.NewHBox(layout.NewSpacer(), refreshBtn)
-	return container.NewBorder(top, nil, nil, nil, container.NewVScroll(u.networkBox))
+	go u.loadSTHub()
 }
 
 func (u *ui) buildLogsTab() fyne.CanvasObject {
@@ -1128,10 +1200,12 @@ func (u *ui) initialLoad() {
 		u.setGraceSelection(cfg)
 		u.updateSaveState()
 		u.fillNotifyTab(cfg)
+		u.fillSTSection(cfg)
 	})
 	if err == nil {
 		u.loadLogs()
 		u.loadSchedule()
+		u.loadSTHub()
 	}
 }
 
@@ -1151,10 +1225,12 @@ func (u *ui) pollLoop() {
 	schedTick := time.NewTicker(2 * time.Second)
 	connTick := time.NewTicker(5 * time.Second)
 	updateTick := time.NewTicker(24 * time.Hour)
+	idleTick := time.NewTicker(idleHeartbeatInterval)
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
 	defer updateTick.Stop()
+	defer idleTick.Stop()
 
 	for {
 		select {
@@ -1176,6 +1252,11 @@ func (u *ui) pollLoop() {
 			if !u.connected.Load() {
 				go u.initialLoad()
 			}
+		case <-idleTick.C:
+			// Not gated on u.connected: the heartbeat is the service's
+			// only source of idle time (#77) and must keep flowing while
+			// the window is closed, so it makes its own (silent) attempt.
+			go u.sendIdleHeartbeat()
 		}
 	}
 }
@@ -1254,16 +1335,10 @@ func (u *ui) loadSchedule() {
 			u.setScheduleText("")
 			return
 		}
-		d := time.Duration(s.RemainingSec) * time.Second
-		hh := int(d.Hours())
-		mm := int(d.Minutes()) % 60
-		ss := int(d.Seconds()) % 60
-		var remain string
-		if hh > 0 {
-			remain = fmt.Sprintf("%d:%02d:%02d", hh, mm, ss)
-		} else {
-			remain = fmt.Sprintf("%02d:%02d", mm, ss)
-		}
+		// #89: a schedule can be three days out, so the countdown carries the
+		// days in front of hh:mm:ss ("2일 3:15:00") instead of running up to
+		// "72:00:00".
+		remain := u.formatCountdown(time.Duration(s.RemainingSec) * time.Second)
 		cmdLabel := u.commandLabel(s.Command)
 		// Origin decides the wording everywhere (#54): a remote grace
 		// deferral is "SmartThings … grace period", a timer set here is
@@ -1274,6 +1349,8 @@ func (u *ui) loadSchedule() {
 			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
 		case "telegram":
 			originKey = "schedule.origin.telegram"
+		case "smartthings":
+			originKey = "schedule.origin.smartthings"
 		}
 		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
 		u.setCountdown(remain)
@@ -1324,6 +1401,8 @@ func (u *ui) originShortKey(origin string) string {
 		return "origin.remote.short"
 	case "telegram":
 		return "origin.telegram.short"
+	case "smartthings":
+		return "origin.smartthings.short"
 	}
 	return "origin.ui.short"
 }
@@ -1355,6 +1434,13 @@ func (u *ui) loadNetwork() {
 			l.Wrapping = fyne.TextWrapWord
 			return l
 		}
+		// The adapter list is the last section of the tab root, so it has to
+		// re-lay out the parent once it grows (like fillSvcBox, #53).
+		defer func() {
+			if u.networkRoot != nil {
+				u.networkRoot.Refresh()
+			}
+		}()
 		u.networkBox.RemoveAll()
 		if s.Error != "" {
 			u.networkBox.Add(wrapped(s.Error))

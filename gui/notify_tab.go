@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 
@@ -44,7 +45,12 @@ var notifyCatalogue = []struct {
 }{
 	{"remote", []notifyKind{{"received", true}, {"grace_scheduled", true}, {"grace_cancelled", true}, {"executed", true}, {"force", true}}},
 	{"schedule", []notifyKind{{"created", false}, {"cancelled", false}, {"executed", true}, {"replaced", true}}},
-	{"power", []notifyKind{{"started", true}, {"resumed", true}, {"stopping", false}}},
+	// #87: power.stopping is on by default now that its message names the
+	// reason. This row is only the fallback for a key config.json does not
+	// carry; it must stay in step with the service catalogue
+	// (service/notify/config.go), or the checkbox would open on a value the
+	// service does not use.
+	{"power", []notifyKind{{"started", true}, {"resumed", true}, {"stopping", true}}},
 	{"security", []notifyKind{{"unauthorized", true}, {"login_limited", true}, {"unknown_command", true}, {"config_changed", true}, {"unknown_chat", true}}},
 	{"system", []notifyKind{{"update_available", true}, {"updated", true}, {"exec_failed", true}, {"tray_wake_failed", true}}},
 }
@@ -295,6 +301,16 @@ func quietHourOptions() []string {
 	return out
 }
 
+// pcNamePlaceholder is what the PC-name entry shows while it is empty: the
+// name the service would fall back to (#75). An unknown hostname leaves the
+// placeholder to the caller's translated text.
+func pcNamePlaceholder(host, fallback string) string {
+	if h := strings.TrimSpace(host); h != "" {
+		return h
+	}
+	return fallback
+}
+
 // chatLabel renders one /api/telegram/chats entry for the picker:
 // "title (@username) · chat_id".
 func chatLabel(c TelegramChat) string {
@@ -326,6 +342,9 @@ type notifyTab struct {
 	controlCheck *toggle
 	allowedEntry *widget.Entry
 	controlWarn  *widget.Label
+	// conflictWarn is shown while the service reports a 409 from getUpdates:
+	// another PC polls the same bot, so this one receives no commands (#75).
+	conflictWarn *widget.Label
 
 	masters map[string]*widget.Check
 	kinds   map[string]map[string]*widget.Check
@@ -413,6 +432,23 @@ func (t *notifyTab) setControlWarn(on bool) {
 	}
 }
 
+// setConflictWarn shows or hides the "another PC is polling this bot" line
+// (#75). Hiding it while control is off keeps a stale warning from
+// outliving the feature it is about.
+func (t *notifyTab) setConflictWarn(on bool) {
+	if t.conflictWarn == nil {
+		return
+	}
+	if on && t.controlCheck.Checked {
+		t.conflictWarn.Show()
+	} else {
+		t.conflictWarn.Hide()
+	}
+	if t.root != nil {
+		t.root.Refresh()
+	}
+}
+
 // indent is a fixed-width transparent spacer used to nest the kind checks
 // under their category master.
 func indent(width float32) fyne.CanvasObject {
@@ -466,8 +502,15 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	t.controlWarn.Wrapping = fyne.TextWrapWord
 	t.controlWarn.Importance = widget.WarningImportance
 	t.controlWarn.Hide()
+	t.conflictWarn = widget.NewLabel(u.t("notify.control.conflict"))
+	t.conflictWarn.Wrapping = fyne.TextWrapWord
+	t.conflictWarn.Importance = widget.WarningImportance
+	t.conflictWarn.Hide()
 	t.controlCheck = newToggle(u.t("notify.control.enabled"), func(on bool) {
 		t.setControlWarn(on)
+		if !on {
+			t.setConflictWarn(false)
+		}
 		u.updateNotifySaveState()
 	})
 	t.allowedEntry = widget.NewEntry()
@@ -476,6 +519,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 
 	controlBody := container.NewVBox(
 		t.controlCheck,
+		t.conflictWarn,
 		t.controlWarn,
 		widget.NewForm(widget.NewFormItem(u.t("notify.control.allowed"), t.allowedEntry)),
 		hint(u.t("notify.control.allowed.hint")),
@@ -569,13 +613,15 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	// 5. Display ---------------------------------------------------------------
 	t.detailSelect = widget.NewSelect([]string{u.t("notify.detail.simple"), u.t("notify.detail.full")}, onEdit)
 	t.pcNameEntry = widget.NewEntry()
-	t.pcNameEntry.SetPlaceHolder(u.t("notify.pcname.placeholder"))
+	host, _ := os.Hostname()
+	t.pcNameEntry.SetPlaceHolder(pcNamePlaceholder(host, u.t("notify.pcname.placeholder")))
 	t.pcNameEntry.OnChanged = onEdit
 	displayBody := container.NewVBox(
 		widget.NewForm(
 			widget.NewFormItem(u.t("notify.detail"), t.detailSelect),
 			widget.NewFormItem(u.t("notify.pcname"), t.pcNameEntry),
 		),
+		hint(u.t("notify.pcname.hint")),
 		hint(u.t("notify.display.hint")),
 	)
 
@@ -653,6 +699,7 @@ func (u *ui) fillNotifyTab(cfg Config) {
 	t.testStatus.SetText("")
 	t.filling = false
 	u.updateNotifySaveState()
+	u.refreshTelegramState()
 
 	// Connection status: ask the service which bot the stored token belongs
 	// to. Low importance — informational, and the error text may be long.
@@ -670,6 +717,29 @@ func (u *ui) fillNotifyTab(cfg Config) {
 				return
 			}
 			status.SetText(fmt.Sprintf(u.t("notify.bot.connected"), username))
+		})
+	}()
+}
+
+// refreshTelegramState re-reads /api/telegram/state and shows or hides the
+// "another PC is polling this bot" warning (#75). The tab has no polling
+// loop, so this runs when it is filled and whenever it is shown (setCurTab).
+// Safe to call before the tab exists; errors leave the warning as it is
+// rather than claiming everything is fine.
+func (u *ui) refreshTelegramState() {
+	if u.notify == nil {
+		return
+	}
+	go func() {
+		s, err := u.client.TelegramState()
+		if err != nil {
+			u.markDisconnectedOnNetError(err)
+			return
+		}
+		fyne.Do(func() {
+			if t := u.notify; t != nil {
+				t.setConflictWarn(s.Conflict)
+			}
 		})
 	}()
 }

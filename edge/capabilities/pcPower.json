@@ -1,0 +1,32 @@
+{
+  "id": "numbersystem53811.pcpower",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcPower",
+  "ephemeral": false,
+  "attributes": {
+    "powerState": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "on",
+              "sleeping",
+              "hibernated",
+              "off",
+              "waking",
+              "shuttingDown",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {}
+}

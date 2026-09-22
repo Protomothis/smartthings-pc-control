@@ -1,0 +1,51 @@
+{
+  "id": "numbersystem53811.pcinfo",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.connection.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "connection.value",
+          "alternatives": [
+            {
+              "key": "ok",
+              "value": "Connected",
+              "type": "active"
+            },
+            {
+              "key": "unauthorized",
+              "value": "Not authorized",
+              "type": "inactive"
+            },
+            {
+              "key": "unreachable",
+              "value": "Unreachable",
+              "type": "inactive"
+            },
+            {
+              "key": "incompatible",
+              "value": "Incompatible version",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "numbersystem53811.pcversion",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.versions.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{versions.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": []
+  }
+}

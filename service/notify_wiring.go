@@ -39,6 +39,25 @@ func emit(cat, kind string, fields map[string]string, actions ...notify.Action) 
 	})
 }
 
+// emitDevice reports a device-state change (display.changed,
+// session.locked/unlocked) to the bus taps only — the SmartThings push
+// sink in practice. Device state is not a notification (edge-driver doc
+// §3.5), so it never reaches Telegram and has no catalogue entry.
+func emitDevice(cat, kind string, fields map[string]string) {
+	busMu.RLock()
+	b := bus
+	busMu.RUnlock()
+	if b == nil {
+		return
+	}
+	b.TapOnly(notify.Event{
+		Category: cat,
+		Kind:     kind,
+		At:       time.Now(),
+		Fields:   fields,
+	})
+}
+
 // startNotifier builds the bus on top of sink, reading the notify and
 // quiet-hours settings from the live config on every event (hot reload).
 // A nil sink installs debugSink so the pipeline still runs. Issue #56
@@ -55,6 +74,10 @@ func startNotifier(sink notify.Sink) {
 		Quiet:  func() notify.QuietHours { return getConfig().Telegram.QuietHours },
 		Log:    logMsg,
 	})
+	// The SmartThings hub push (#68) rides on a raw tap so device state
+	// reaches the Edge driver unfiltered; it is a no-op without
+	// subscriptions, and has to be re-attached to every new bus.
+	b.Tap(stPushTap)
 	busMu.Lock()
 	old := bus
 	bus = b

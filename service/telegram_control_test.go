@@ -57,6 +57,55 @@ func keyboardData(kb *telegram.InlineKeyboard) []string {
 	return out
 }
 
+// tgBody drops the "🖥 <b>name</b>" header line every reply now opens with
+// (#75) so a test can assert on the reply text itself. Replies that put the
+// header on the body's first line (/status) are returned unchanged.
+func tgBody(h string) string {
+	header := tgHeader() + "\n"
+	return strings.TrimPrefix(h, header)
+}
+
+// Every command reply starts with the PC-name header (#75).
+func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
+	initLogger()
+	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko", PCName: "MY<PC>"}})
+	stubTrayLauncher(t, nil)
+	stubCommand(t, "lock")
+	defer cancelSchedule()
+	var h telegramControl
+
+	const header = "🖥 <b>MY&lt;PC&gt;</b>"
+	for _, cmd := range []string{"help", "status", "menu", "lock", "shutdown", "cancel", "now", "unmute", "frobnicate", telegram.StaleCommand} {
+		reply, _, _ := h.HandleCommand(context.Background(), "42", cmd, nil)
+		if !strings.HasPrefix(reply, header) {
+			t.Errorf("/%s reply lacks the header: %q", cmd, reply)
+		}
+		// Exactly one header, never a stacked pair.
+		if strings.Count(reply, telegram.HeaderIcon) != 1 {
+			t.Errorf("/%s reply has %d headers: %q", cmd, strings.Count(reply, telegram.HeaderIcon), reply)
+		}
+	}
+	// Button edits too, whether or not the kept text already had one.
+	for _, msgText := range []string{"", "old text", "🖥 MY<PC>\n무엇을 할까요?"} {
+		edit, _, _ := h.HandleCallback(context.Background(), "42", 7, msgText, "dismiss:")
+		if !strings.HasPrefix(edit, telegram.HeaderIcon) {
+			t.Errorf("edit of %q lacks the header: %q", msgText, edit)
+		}
+		if strings.Count(edit, telegram.HeaderIcon) != 1 {
+			t.Errorf("edit of %q has %d headers: %q", msgText, strings.Count(edit, telegram.HeaderIcon), edit)
+		}
+	}
+	// An empty reply stays empty (the poller sends nothing for it).
+	if got := tgWithHeader(""); got != "" {
+		t.Errorf("empty reply = %q", got)
+	}
+	// Without telegram.pc_name the hostname is used.
+	setConfig(Config{Port: 5001})
+	if got := tgPCName(); got != hostname() {
+		t.Errorf("tgPCName = %q, want the hostname %q", got, hostname())
+	}
+}
+
 func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko", PCName: "MY<PC>"}})
@@ -131,6 +180,13 @@ func TestTelegramLockAndScreenOffRunImmediately(t *testing.T) {
 		t.Error(err)
 	}
 	expectExecuted(t, screen, "turnscreenoff")
+
+	// /screenon mirrors /screenoff (#67).
+	screenOn := stubCommand(t, "turnscreenon")
+	if html, _, err := h.HandleCommand(context.Background(), "42", "screenon", nil); err != nil || !strings.Contains(html, "화면 켜기") {
+		t.Errorf("screenon reply = %q err=%v", html, err)
+	}
+	expectExecuted(t, screenOn, "turnscreenon")
 }
 
 func TestTelegramShutdownWithoutMinutesAsksConfirmation(t *testing.T) {
@@ -205,7 +261,7 @@ func TestTelegramCancelAndNow(t *testing.T) {
 	var h telegramControl
 
 	html, _, _ := h.HandleCommand(context.Background(), "42", "cancel", nil)
-	if html != "활성 예약 없음" {
+	if tgBody(html) != "활성 예약 없음" {
 		t.Errorf("cancel without schedule = %q", html)
 	}
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
@@ -231,7 +287,7 @@ func TestTelegramCancelAndNow(t *testing.T) {
 	if getSchedule()["active"] == true {
 		t.Error("schedule still active after /now")
 	}
-	if html, _, _ = h.HandleCommand(context.Background(), "42", "now", nil); html != "활성 예약 없음" {
+	if html, _, _ = h.HandleCommand(context.Background(), "42", "now", nil); tgBody(html) != "활성 예약 없음" {
 		t.Errorf("now without schedule = %q", html)
 	}
 }
@@ -252,7 +308,7 @@ func TestTelegramMuteUnmute(t *testing.T) {
 	if _, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"soon"}); err == nil {
 		t.Error("mute soon accepted")
 	}
-	if html, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"2h"}); err != nil || !strings.HasPrefix(html, "🔕") {
+	if html, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"2h"}); err != nil || !strings.HasPrefix(tgBody(html), "🔕") {
 		t.Errorf("mute 2h = %q err=%v", html, err)
 	}
 	until := currentBus().MutedUntil()
@@ -262,7 +318,7 @@ func TestTelegramMuteUnmute(t *testing.T) {
 	if html, _, _ := h.HandleCommand(context.Background(), "42", "status", nil); !strings.Contains(html, "알림 일시 중지") {
 		t.Errorf("status should show the mute:\n%s", html)
 	}
-	if html, _, _ := h.HandleCommand(context.Background(), "42", "unmute", nil); !strings.HasPrefix(html, "🔔") {
+	if html, _, _ := h.HandleCommand(context.Background(), "42", "unmute", nil); !strings.HasPrefix(tgBody(html), "🔔") {
 		t.Errorf("unmute = %q", html)
 	}
 	if !currentBus().MutedUntil().IsZero() {
@@ -318,7 +374,7 @@ func TestTelegramCallbackExecAndDismiss(t *testing.T) {
 	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
 	edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "", "exec:shutdown")
 	expectExecuted(t, shutdown, "shutdown")
-	if !strings.HasPrefix(edit, "Shut down\n✅ Executed · ") || !strings.HasSuffix(edit, " · Telegram") {
+	if !strings.HasPrefix(tgBody(edit), "Shut down\n✅ Executed · ") || !strings.HasSuffix(edit, " · Telegram") {
 		t.Errorf("en exec edit = %q", edit)
 	}
 }
@@ -437,7 +493,7 @@ func TestTelegramAllowedChatIDsFallsBackToChatID(t *testing.T) {
 func TestTelegramBotCommandsFollowLang(t *testing.T) {
 	ko := telegramBotCommands("ko")
 	en := telegramBotCommands("en")
-	if len(ko) != 13 || len(en) != len(ko) {
+	if len(ko) != 14 || len(en) != len(ko) {
 		t.Fatalf("command count ko=%d en=%d", len(ko), len(en))
 	}
 	if ko[0].Command != "status" || ko[0].Description != "상태" || en[0].Description != "Status" {

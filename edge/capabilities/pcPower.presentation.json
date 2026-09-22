@@ -1,0 +1,144 @@
+{
+  "id": "numbersystem53811.pcpower",
+  "version": 1,
+  "dashboard": {
+    "states": [
+      {
+        "label": "{{powerState.value}}",
+        "alternatives": [
+          {
+            "key": "on",
+            "value": "켜짐 (On)",
+            "type": "active"
+          },
+          {
+            "key": "waking",
+            "value": "깨우는 중 (Waking)",
+            "type": "active"
+          },
+          {
+            "key": "shuttingDown",
+            "value": "종료 대기 (Shutting down)",
+            "type": "active"
+          },
+          {
+            "key": "sleeping",
+            "value": "절전 (Sleeping)",
+            "type": "inactive"
+          },
+          {
+            "key": "hibernated",
+            "value": "최대 절전 (Hibernated)",
+            "type": "inactive"
+          },
+          {
+            "key": "off",
+            "value": "꺼짐 (Off)",
+            "type": "inactive"
+          },
+          {
+            "key": "unknown",
+            "value": "알 수 없음 (Unknown)",
+            "type": "inactive"
+          }
+        ]
+      }
+    ],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.powerState.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{powerState.value}}",
+        "alternatives": [
+          {
+            "key": "on",
+            "value": "켜짐 (On)",
+            "type": "active"
+          },
+          {
+            "key": "waking",
+            "value": "깨우는 중 (Waking)",
+            "type": "active"
+          },
+          {
+            "key": "shuttingDown",
+            "value": "종료 대기 (Shutting down)",
+            "type": "active"
+          },
+          {
+            "key": "sleeping",
+            "value": "절전 (Sleeping)",
+            "type": "inactive"
+          },
+          {
+            "key": "hibernated",
+            "value": "최대 절전 (Hibernated)",
+            "type": "inactive"
+          },
+          {
+            "key": "off",
+            "value": "꺼짐 (Off)",
+            "type": "inactive"
+          },
+          {
+            "key": "unknown",
+            "value": "알 수 없음 (Unknown)",
+            "type": "inactive"
+          }
+        ]
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.powerState.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "powerState.value",
+          "alternatives": [
+            {
+              "key": "on",
+              "value": "켜짐 (On)",
+              "type": "active"
+            },
+            {
+              "key": "sleeping",
+              "value": "절전 (Sleeping)",
+              "type": "inactive"
+            },
+            {
+              "key": "hibernated",
+              "value": "최대 절전 (Hibernated)",
+              "type": "inactive"
+            },
+            {
+              "key": "off",
+              "value": "꺼짐 (Off)",
+              "type": "inactive"
+            },
+            {
+              "key": "waking",
+              "value": "깨우는 중 (Waking)",
+              "type": "active"
+            },
+            {
+              "key": "shuttingDown",
+              "value": "종료 대기 (Shutting down)",
+              "type": "active"
+            },
+            {
+              "key": "unknown",
+              "value": "알 수 없음 (Unknown)",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

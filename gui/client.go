@@ -25,6 +25,18 @@ type Config struct {
 	// "notify" catalogue: Category → Kind → enabled.
 	Telegram TelegramConfig             `json:"telegram"`
 	Notify   map[string]map[string]bool `json:"notify"`
+	// SmartThings is the "smartthings" object (edge-driver doc §3.7).
+	SmartThings SmartThingsConfig `json:"smartthings"`
+}
+
+// SmartThingsConfig mirrors service.SmartThingsConfig. The widgets that
+// edit it live in the network tab (#70); this struct only keeps the values
+// alive across a GET/POST round trip.
+type SmartThingsConfig struct {
+	Discovery         bool     `json:"discovery"`
+	AllowedHubs       []string `json:"allowed_hubs"`
+	ExposeSession     bool     `json:"expose_session"`
+	ExposeSessionUser bool     `json:"expose_session_user"`
 }
 
 // TelegramConfig mirrors service.TelegramConfig plus the GET-only
@@ -206,6 +218,54 @@ func (c *Client) GetWoLStatus() (WoLStatus, error) {
 	return s, json.NewDecoder(resp.Body).Decode(&s)
 }
 
+// STHub mirrors GET /api/st/hub (#67): the Edge driver's last contact with
+// this service. Connected is false — and the other fields empty — until a
+// hub has polled recently; LastSeen is RFC3339.
+type STHub struct {
+	Connected     bool   `json:"connected"`
+	IP            string `json:"ip"`
+	DriverVersion string `json:"driver_version"`
+	LastSeen      string `json:"last_seen"`
+}
+
+// GetSTHub fetches the SmartThings hub connection state shown by the
+// network tab's SmartThings section (#70).
+func (c *Client) GetSTHub() (STHub, error) {
+	var h STHub
+	resp, err := c.do("GET", "/api/st/hub", nil)
+	if err != nil {
+		return h, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return h, errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return h, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return h, json.NewDecoder(resp.Body).Decode(&h)
+}
+
+// SessionHeartbeat reports the interactive session's idle time to the
+// service (#77). Only this app can measure it, and the service publishes
+// the newest sample in the /st/v1/status session block for 90s; after that
+// it reports null, so a missed post degrades to "unknown" rather than to a
+// wrong number.
+func (c *Client) SessionHeartbeat(idleSeconds int64) error {
+	resp, err := c.do("POST", "/api/session/heartbeat", map[string]int64{"idle_seconds": idleSeconds})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // Schedule mirrors /api/schedule GET.
 type Schedule struct {
 	Active       bool   `json:"active"`
@@ -366,6 +426,34 @@ func (c *Client) TelegramMe() (username, name string, err error) {
 		return "", "", err
 	}
 	return r.Username, r.Name, nil
+}
+
+// TelegramState mirrors GET /api/telegram/state: the local state of
+// inbound Telegram control, with no Bot API call behind it.
+type TelegramState struct {
+	// Polling is true while this PC runs the getUpdates loop.
+	Polling bool `json:"polling"`
+	// Conflict is true while getUpdates keeps answering 409 because
+	// another PC shares this bot token (#75). Since is when that started.
+	Conflict bool   `json:"conflict"`
+	Since    string `json:"since"`
+}
+
+// TelegramState fetches that state for the notify tab's warning line.
+func (c *Client) TelegramState() (TelegramState, error) {
+	var s TelegramState
+	resp, err := c.do("GET", "/api/telegram/state", nil)
+	if err != nil {
+		return s, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return s, errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return s, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return s, json.NewDecoder(resp.Body).Decode(&s)
 }
 
 // TelegramChat is one recent chat of the bot, from /api/telegram/chats.

@@ -47,7 +47,7 @@ func TestSinkSendRendersAndAttachesKeyboard(t *testing.T) {
 	}
 	// Layout only; template wording is covered by the render golden tests.
 	text, _ := cap.body["text"].(string)
-	if !strings.HasPrefix(text, "🔌 <b>") || !strings.Contains(text, "</b>\n<blockquote>") {
+	if !strings.HasPrefix(text, "🖥 <b>DESKTOP-TEST</b>\n🔌 <b>") || !strings.Contains(text, "</b>\n<blockquote>") {
 		t.Errorf("text = %q", text)
 	}
 	if !strings.Contains(text, "<code>shutdown</code>") || !strings.HasSuffix(text, "<i>DESKTOP-TEST · 14:35:00</i>") {

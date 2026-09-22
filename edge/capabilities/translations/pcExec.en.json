@@ -1,0 +1,86 @@
+{
+  "tag": "en",
+  "label": "PC command",
+  "attributes": {
+    "lastAction": {
+      "label": "Command",
+      "i18n": {
+        "value": {
+          "none": {
+            "label": "Select a command"
+          },
+          "wake": {
+            "label": "Wake"
+          },
+          "shutdown": {
+            "label": "Shut down"
+          },
+          "forceshutdown": {
+            "label": "Force shut down"
+          },
+          "restart": {
+            "label": "Restart"
+          },
+          "hibernate": {
+            "label": "Hibernate"
+          },
+          "suspend": {
+            "label": "Sleep"
+          },
+          "lock": {
+            "label": "Lock"
+          },
+          "turnscreenoff": {
+            "label": "Screen off"
+          },
+          "turnscreenon": {
+            "label": "Screen on"
+          }
+        }
+      }
+    },
+    "lastCommand": {
+      "label": "Last run"
+    }
+  },
+  "commands": {
+    "wake": {
+      "label": "Wake"
+    },
+    "suspend": {
+      "label": "Sleep"
+    },
+    "hibernate": {
+      "label": "Hibernate"
+    },
+    "restart": {
+      "label": "Restart"
+    },
+    "shutdown": {
+      "label": "Shut down"
+    },
+    "lock": {
+      "label": "Lock"
+    },
+    "screenOff": {
+      "label": "Screen off"
+    },
+    "screenOn": {
+      "label": "Screen on"
+    },
+    "execute": {
+      "label": "Run command",
+      "arguments": {
+        "command": {
+          "label": "Command"
+        },
+        "mode": {
+          "label": "Mode"
+        },
+        "minutes": {
+          "label": "Delay (minutes)"
+        }
+      }
+    }
+  }
+}

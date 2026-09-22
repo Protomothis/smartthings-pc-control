@@ -1,0 +1,136 @@
+# Main device profile (design doc §4, §7).
+#
+# The `numbersystem53811` namespace is the one SmartThings assigned to the owner
+# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
+# tools/apply-namespace.js rewrites both.
+#
+# Preference titles and descriptions are Korean first with the English term in
+# parentheses (#78): the SmartThings app shows profile preferences in whatever
+# the driver wrote, with no per-locale variant, and this project is Korean-first.
+name: pc.v4
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+      - id: refresh
+        version: 1
+      - id: healthCheck
+        version: 1
+      - id: numbersystem53811.pcpower
+        version: 1
+      - id: numbersystem53811.pcexec
+        version: 1
+      - id: numbersystem53811.pcdelay
+        version: 1
+      - id: numbersystem53811.pcuser
+        version: 1
+      - id: numbersystem53811.pcinfo
+        version: 1
+    categories:
+      - name: Others
+preferences:
+  - name: ipAddress
+    title: PC IP 주소 (IP address)
+    description: "PC Control 서비스가 도는 PC의 IPv4 주소(예: 192.168.1.20). 비워 두면 SSDP로 찾은 주소를 씁니다. / IPv4 address of the PC; empty means follow SSDP."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: ""
+  - name: followDiscovery
+    title: 검색 따라가기 (Follow discovery)
+    description: "SSDP가 같은 PC를 다른 주소로 알려 오면 따라갑니다. 끄면 지금 주소에 고정됩니다. 위의 IP 주소를 채우면 언제나 그 값이 우선합니다. / Track the PC's address with SSDP."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
+  - name: port
+    title: 서비스 포트 (Service port)
+    description: "PC Control 서비스의 명령 포트(기본 5001). / Main port of the PC Control service."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 65535
+      default: 5001
+  - name: secret
+    title: 시크릿 (Secret)
+    description: "PC Control 설정 탭의 시크릿. X-PC-Secret 헤더로 보냅니다. Edge에는 비밀번호 입력 타입이 없어 입력 중 화면에 그대로 보입니다. / Shared secret, sent as the X-PC-Secret header; visible while typing."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 64
+      default: ""
+  - name: macAddress
+    title: MAC 주소 (MAC address)
+    description: "Wake-on-LAN에 쓸 MAC 주소(예: AA:BB:CC:DD:EE:FF). 비워 두면 서비스가 보고한 WoL 가능 어댑터의 MAC을 씁니다. / MAC for Wake-on-LAN; empty uses the adapter the service reports."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 17
+      default: ""
+  - name: wolBroadcast
+    title: WoL 브로드캐스트 (Broadcast)
+    description: "매직 패킷을 보낼 주소. 공유기가 255.255.255.255를 막으면 서브넷 브로드캐스트(예: 192.168.1.255)를 넣으세요. / Where the magic packet is sent."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: "255.255.255.255"
+  - name: pollInterval
+    title: 상태 확인 주기 (Poll interval)
+    description: "드라이버가 PC에 상태를 묻는 주기. / How often the driver asks the PC for its status."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        "10": 10초마다 (10 s)
+        "30": 30초마다 (30 s)
+        "60": 1분마다 (1 min)
+        "300": 5분마다 (5 min)
+      default: "30"
+  - name: offAction
+    title: 스위치 끄기 동작 (Off action)
+    description: "스위치를 끌 때 보낼 명령. 강제 종료를 뺀 나머지는 PC에 설정된 유예를 따릅니다. / Command sent when the switch is turned off."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        shutdown: 종료 (Shut down)
+        suspend: 절전 (Sleep)
+        hibernate: 최대 절전 (Hibernate)
+        lock: 잠금 (Lock)
+        turnscreenoff: 화면 끄기 (Screen off)
+        restart: 재시작 (Restart)
+        forceshutdown: 강제 종료 (Force shutdown)
+      default: shutdown
+  - name: buttonMode
+    title: 버튼 실행 방식 (Button mode)
+    description: "상세 화면의 명령 버튼을 누를 때 유예를 따를지 여부. 유예를 따르면 트레이 토스트에서 취소할 수 있습니다. 자동화의 명령 실행은 자기 모드를 따로 가집니다. / Grace handling for the detail-view buttons."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        default: 설정된 유예 따름 (Grace)
+        immediate: 즉시 실행 (Immediate)
+      default: default
+  - name: language
+    title: 문구 언어 (Language)
+    description: "상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 한국어로 동작합니다. / Language of the status and schedule text; auto means Korean."
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        auto: 자동 (한국어)
+        ko: 한국어 (Korean)
+        en: English
+      default: auto

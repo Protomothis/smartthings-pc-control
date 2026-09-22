@@ -1,0 +1,10 @@
+{
+  "tag": "ko",
+  "label": "PC 버전",
+  "attributes": {
+    "versions": {
+      "label": "버전"
+    }
+  },
+  "commands": {}
+}

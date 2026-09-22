@@ -279,6 +279,36 @@
                         </label>
                         <div class="info" data-i18n="shutdownGraceInfo">Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.</div>
                     </div>
+                    <div class="section-title" data-i18n="smartthings">SmartThings</div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="stDiscovery" {{if .SmartThings.Discovery}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="stDiscovery">Allow discovery (SSDP)</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="stSession" {{if .SmartThings.ExposeSession}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="stSession">Expose session info (lock, idle)</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="stSessionUser" {{if .SmartThings.ExposeSessionUser}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="stSessionUser">Include user name</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label data-i18n="stHubs">Allowed hubs</label>
+                        <input type="text" id="stHubs" value="{{.AllowedHubs}}" placeholder="192.168.1.20, 192.168.1.21" oninput="checkChanges()">
+                        <div class="info" data-i18n="stHubsInfo">Comma separated. Empty = any hub allowed.</div>
+                    </div>
+                    <div class="section-title" data-i18n="telegram">Telegram</div>
+                    <div class="field">
+                        <label data-i18n="tgPCName">PC name</label>
+                        <input type="text" id="tgPCName" value="{{.PCName}}" placeholder="{{.Hostname}}" oninput="checkChanges()">
+                        <div class="info" data-i18n="tgPCNameInfo">Shown in the Telegram message header; empty uses the computer name.</div>
+                    </div>
                     <div class="actions">
                         <button class="btn btn-primary" id="btnSave" onclick="saveConfig()" disabled data-i18n="save">💾 Save</button>
                         <button class="btn btn-secondary" onclick="restartService()" data-i18n="restart">🔄 Restart</button>
@@ -312,7 +342,7 @@
                             <option value="hibernate">Hibernate</option>
                             <option value="suspend">Suspend</option>
                         </select>
-                        <input type="number" id="schedMin" min="1" max="1440" value="30">
+                        <input type="number" id="schedMin" min="1" max="4320" value="30">
                         <span class="unit" data-i18n="min">min</span>
                         <button class="btn btn-primary" onclick="scheduleCmd()" style="font-size:0.82em;" data-i18n="schedule">Schedule</button>
                     </div>
@@ -360,6 +390,11 @@
                 webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
                 shutdownGrace: 'Grace period for remote power commands (length is set in the desktop app)',
                 shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
+                smartthings: 'SmartThings', stDiscovery: 'Allow discovery (SSDP)',
+                stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
+                stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
+                telegram: 'Telegram', tgPCName: 'PC name',
+                tgPCNameInfo: 'Shown in the Telegram message header; empty uses the computer name.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
                 networkWol: 'Network / WoL', loading: 'Loading...',
                 scheduledTask: 'Scheduled Task', min: 'min', schedule: 'Schedule',
@@ -387,6 +422,11 @@
                 webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
                 shutdownGrace: '원격 전원 명령 유예 (시간은 데스크톱 앱에서 설정)',
                 shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
+                smartthings: 'SmartThings', stDiscovery: '자동 검색(SSDP) 허용',
+                stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
+                stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
+                telegram: '텔레그램', tgPCName: 'PC 이름',
+                tgPCNameInfo: '알림 머리말에 표시. 비우면 컴퓨터 이름',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
                 networkWol: '네트워크 / WoL', loading: '로딩 중...',
                 scheduledTask: '예약 작업', min: '분', schedule: '예약',
@@ -430,11 +470,21 @@
         const originalSecret = document.getElementById('secret').value;
         const originalRemote = document.getElementById('webuiRemote').checked;
         const originalGrace = document.getElementById('shutdownGrace').checked;
+        const originalStDiscovery = document.getElementById('stDiscovery').checked;
+        const originalStSession = document.getElementById('stSession').checked;
+        const originalStSessionUser = document.getElementById('stSessionUser').checked;
+        const originalStHubs = document.getElementById('stHubs').value;
+        const originalTgPCName = document.getElementById('tgPCName').value;
         function checkChanges() {
             const changed = document.getElementById('port').value !== originalPort ||
                             document.getElementById('secret').value !== originalSecret ||
                             document.getElementById('webuiRemote').checked !== originalRemote ||
-                            document.getElementById('shutdownGrace').checked !== originalGrace;
+                            document.getElementById('shutdownGrace').checked !== originalGrace ||
+                            document.getElementById('stDiscovery').checked !== originalStDiscovery ||
+                            document.getElementById('stSession').checked !== originalStSession ||
+                            document.getElementById('stSessionUser').checked !== originalStSessionUser ||
+                            document.getElementById('stHubs').value !== originalStHubs ||
+                            document.getElementById('tgPCName').value !== originalTgPCName;
             document.getElementById('btnSave').disabled = !changed;
         }
         async function saveConfig() {
@@ -442,8 +492,19 @@
             const secret = document.getElementById('secret').value;
             const webui_remote = document.getElementById('webuiRemote').checked;
             const shutdown_grace = document.getElementById('shutdownGrace').checked;
+            // allowed_hubs must travel as an array (never omitted), or the
+            // service keeps the stored list and it can never be cleared.
+            const smartthings = {
+                discovery: document.getElementById('stDiscovery').checked,
+                expose_session: document.getElementById('stSession').checked,
+                expose_session_user: document.getElementById('stSession').checked && document.getElementById('stSessionUser').checked,
+                allowed_hubs: document.getElementById('stHubs').value.split(',').map(s => s.trim()).filter(s => s !== ''),
+            };
+            // Only pc_name: the service decodes over the live config, so the
+            // bot token, chat id and the rest of telegram{} are left alone.
+            const telegram = {pc_name: document.getElementById('tgPCName').value.trim()};
             try {
-                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace})});
+                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram})});
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, data.status === 'error' ? 'error' : 'success');
@@ -561,9 +622,23 @@
                     return;
                 }
                 form.style.display = 'none';
-                const mins = Math.floor(data.remainingSec / 60);
-                const secs = data.remainingSec % 60;
-                const timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+                // #89: schedules reach three days, so the units climb instead
+                // of counting "4319m 58s".
+                const total = Math.max(0, data.remainingSec);
+                const days = Math.floor(total / 86400);
+                const hours = Math.floor((total % 86400) / 3600);
+                const mins = Math.floor((total % 3600) / 60);
+                const secs = total % 60;
+                let timeStr;
+                if (days > 0) {
+                    timeStr = days + 'd ' + hours + 'h';
+                } else if (hours > 0) {
+                    timeStr = hours + 'h ' + mins + 'm';
+                } else if (mins > 0) {
+                    timeStr = mins + 'm ' + secs + 's';
+                } else {
+                    timeStr = secs + 's';
+                }
                 el.innerHTML = '<div class="schedule-active">⏱️ <b>' + data.command + '</b> ' + t('scheduleIn') + ' ' + timeStr +
                     ' <button class="btn btn-secondary" onclick="cancelSchedule()" style="font-size:0.78em;padding:6px 12px;margin-left:12px;">' + t('cancel') + '</button></div>';
             } catch(e) {
@@ -573,8 +648,8 @@
         async function scheduleCmd() {
             const command = document.getElementById('schedCmd').value;
             const minutes = parseInt(document.getElementById('schedMin').value);
-            if (!minutes || minutes < 1 || minutes > 1440) {
-                showStatus('Minutes must be between 1 and 1440', 'error');
+            if (!minutes || minutes < 1 || minutes > 4320) {
+                showStatus('Minutes must be between 1 and 4320', 'error');
                 return;
             }
             if (!confirm(t('confirmSchedule').replace('{cmd}', command).replace('{min}', minutes))) return;

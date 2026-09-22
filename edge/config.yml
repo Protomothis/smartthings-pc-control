@@ -1,0 +1,11 @@
+name: SmartThings PC Control
+packageKey: smartthings-pc-control-driver
+description: Control and monitor a Windows PC running the PC Control service - power state, grace periods, schedules and Wake-on-LAN.
+vendorSupportInformation: https://github.com/Protomothis/smartthings-pc-control
+permissions:
+  lan: {}
+  # discovery: without this the hub never invokes the driver for "Scan nearby"
+  # while it has no devices (found on the first on-hub test, 2026-09-22).
+  discovery: {}
+# There is no standard `version` field here; the driver version lives in
+# src/driver_version.lua and is checked against the `edge-vX.Y.Z` tag in CI (#74).
