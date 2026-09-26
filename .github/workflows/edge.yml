@@ -127,17 +127,20 @@ jobs:
       - name: Install the SmartThings CLI
         run: npm i -g @smartthings/cli
 
-      # Builds the driver zip without contacting SmartThings, so the release
-      # asset exists even if the upload below fails, and so a packaging error
-      # (bad profile YAML, unknown capability id) is reported before any
-      # channel is touched.
+      # Builds the driver zip. With a token the CLI does it (--build-only never
+      # contacts SmartThings); without one the CLI refuses to start at all
+      # ("Invalid base URL undefined"), so the zip is assembled by hand from
+      # the same three entries the CLI packages: config.yml, profiles/, src/.
       - name: Build the driver package
-        env:
-          # Not strictly needed to build a zip, but the CLI prompts for a login
-          # when it has no credentials and a prompt in CI is a 60-minute hang.
-          # A placeholder keeps --build-only offline when the secret is unset.
-          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN || 'build-only' }}
-        run: smartthings edge:drivers:package edge/ --build-only "smartthings-pc-control-${GITHUB_REF_NAME}.zip"
+        run: |
+          zip_name="smartthings-pc-control-${GITHUB_REF_NAME}.zip"
+          if [ -n "${SMARTTHINGS_TOKEN}" ]; then
+            smartthings edge:drivers:package edge/ --build-only "$zip_name"
+          else
+            echo "SMARTTHINGS_TOKEN is not set: building the zip without the CLI"
+            (cd edge && zip -r "../$zip_name" config.yml profiles src -x 'src/*.md')
+          fi
+          unzip -l "$zip_name"
 
       # Uploads it and prints the assigned driverId/version as JSON.
       - name: Upload the driver to SmartThings
