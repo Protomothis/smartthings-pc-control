@@ -106,6 +106,96 @@ function T.test_send_refuses_an_invalid_mac()
   h.assert_equal(#sockets, 0, "no socket should be opened")
 end
 
+--------------------------------------------------------------------------------
+-- wake: which MAC, and what it says while sending (§6.4)
+--------------------------------------------------------------------------------
+
+-- A driver stand-in. `call_with_delay` records instead of running, so the two
+-- retries and the 90s timeout do not need a clock.
+local function fake_driver()
+  local driver = { delays = {} }
+  function driver:call_with_delay(seconds, fn, name)
+    self.delays[#self.delays + 1] = { seconds = seconds, fn = fn, name = name }
+    return { name = name }
+  end
+  function driver:cancel_timer(timer)
+    self.cancelled = timer
+  end
+  return driver
+end
+
+-- The device-layer glue `wol.wake` reaches for (poll.lua in the driver).
+local function fake_devices()
+  local devices = { messages = {} }
+  function devices.emit_message(_, message)
+    devices.messages[#devices.messages + 1] = message
+  end
+  function devices.get_state() return "off" end
+  function devices.transition() return "off" end
+  function devices.set_state() end
+  function devices.emit_power() end
+  function devices.ensure_action() end
+  return devices
+end
+
+local function wake(device)
+  local factory, sockets = recording_socket()
+  local devices = fake_devices()
+  local ok, err = wol.wake(fake_driver(), device, { devices = devices, socket = factory })
+  return ok, err, sockets, devices.messages
+end
+
+function T.test_wake_sends_to_the_mac_address_preference_above_all()
+  -- §6.4/#97: the preference is the user's own value, typed into the driver.
+  -- A MAC the service chose and the last poll remembered does not displace it.
+  local device = h.fake_device({ macAddress = "AA:BB:CC:DD:EE:FF" })
+  device:set_field("wol_mac", "11:22:33:44:55:66")
+  local ok, _, sockets = wake(device)
+  h.assert_true(ok)
+  h.assert_equal(sockets[1].sent[1].data, wol.magic_packet("AA:BB:CC:DD:EE:FF"))
+end
+
+function T.test_wake_falls_back_to_the_remembered_mac()
+  -- #97: what the last poll learned - `wol.selected.mac` from a service that
+  -- chooses, the driver's own guess from one that does not.
+  local device = h.fake_device({ macAddress = "" })
+  device:set_field("wol_mac", "11:22:33:44:55:66")
+  local ok, _, sockets = wake(device)
+  h.assert_true(ok)
+  h.assert_equal(sockets[1].sent[1].data, wol.magic_packet("11:22:33:44:55:66"))
+
+  -- Nothing to send to: say so rather than sending into the void.
+  local blank = h.fake_device({})
+  local sent, err, no_sockets, messages = wake(blank)
+  h.assert_false(sent)
+  h.assert_equal(err, "no mac")
+  h.assert_equal(#no_sockets, 0)
+  h.assert_contains(messages[1], "MAC")
+end
+
+function T.test_wake_warns_about_the_adapter_it_knows_has_wol_off()
+  -- §6.4: the packet still goes out, but the last poll already knew it would
+  -- probably not land. #97: on the adapter the service chose, by name.
+  local device = h.fake_device({ language = "ko" })
+  device:set_field("wol_mac", "AA:BB:CC:DD:EE:FF")
+  device:set_field("wol_ready", false)
+  device:set_field("wol_adapter", "이더넷")
+  local ok, _, sockets, messages = wake(device)
+  h.assert_true(ok, "the packet goes out anyway")
+  h.assert_equal(#sockets, 1)
+  h.assert_equal(messages[1], "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+
+  -- A service too old to name one still gets the general sentence.
+  device:set_field("wol_adapter", nil)
+  local _, _, _, plain = wake(device)
+  h.assert_equal(plain[1], "PC의 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+
+  -- And a healthy adapter says nothing at all.
+  device:set_field("wol_ready", true)
+  local _, _, _, quiet = wake(device)
+  h.assert_equal(#quiet, 0)
+end
+
 function T.test_retry_schedule_matches_the_design()
   -- §6.4: immediately, at 2s and at 5s; give up after 90s.
   h.assert_deep_equal(wol.RETRY_DELAYS, { 0, 2, 5 })

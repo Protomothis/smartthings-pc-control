@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcdelay",
+  "id": "numbersystem53811.pcdefer",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -154,8 +154,7 @@
               "value": "취소 (Cancel)",
               "type": "inactive"
             }
-          ],
-          "argumentType": "integer"
+          ]
         },
         "state": {
           "value": "minutesPick.value",

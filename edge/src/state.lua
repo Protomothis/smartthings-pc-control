@@ -21,7 +21,7 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcDelay.status enum (§4, #83): the string twin of `active`.
+-- pcDefer.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
 -- Placeholder for automation-only string attributes that have nothing to say
 -- (the app never shows them; "" would be stored as null by the cloud).
@@ -34,10 +34,19 @@ state.SCHEDULED = "scheduled"
 -- on something `schedule(minutes: integer)` accepts. It rested on `status`
 -- ("idle"/"scheduled"), which the cloud rejected before the hub ever saw it -
 -- the "네트워크 오류" popup of #88. `minutesPick` is a one-value enum holding the
--- string "-1", and `minimum: -1` makes that a valid, harmless argument.
+-- string "-1", and the argument has to accept that value as a harmless no-op.
+--
+-- #91: it was not enough to widen the range to `minimum: -1`. The value a
+-- dismissed list sends skips the presentation's `argumentType` conversion and
+-- leaves as the STRING "-1", which the cloud rejects against `integer` with a
+-- 422 - so `minutes` is a string enum now (`pcDelay` -> `pcDefer`). The driver
+-- keeps reading it as a number: `MINUTES_NONE` is what `tonumber` makes of the
+-- resting value, and `MINUTES_PICK` is what goes over the wire.
 state.MINUTES_NONE = -1
 -- The attribute value is a string: the phone sends a list key, and an enum
 -- attribute is a string attribute (a list bound to a number does not render).
+-- #91: the `minutes` argument is a string enum for the same reason, and this
+-- is a member of it.
 state.MINUTES_PICK = "-1"
 
 -- "switch" is not a custom capability, so it is referenced by its plain id.
@@ -67,9 +76,20 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcDelay.schedule` can say whether
+    -- last polled `schedule.active`, so `pcDefer.schedule` can say whether
     -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
+    -- #93: and how long it still has to run, plus what it will run. A PC that
+    -- was switched off with a grace period looks exactly like a schedule a
+    -- minute away - it IS one, made by the service - and that minute is a power
+    -- transition the command list has to show as "in progress"
+    -- (`state.is_transitioning`).
+    schedule_seconds = 0,
+    schedule_command = nil,
+    -- #93: the PC's own grace period (`grace.seconds`, §3.2), which is how
+    -- close a pending schedule has to be to be that grace rather than something
+    -- the user asked for (`state.grace_limit`).
+    grace_seconds = nil,
   }
 end
 
@@ -80,6 +100,11 @@ local function copy(s)
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
     schedule_active = s.schedule_active or false,
+    schedule_seconds = s.schedule_seconds or 0,
+    schedule_command = s.schedule_command,
+    -- Survives every event: the PC's configured grace does not change because
+    -- it shut down, and a state machine step has no new status body to read.
+    grace_seconds = s.grace_seconds,
   }
 end
 
@@ -153,6 +178,10 @@ function state.transition(s, event, arg)
     end
   elseif event == "schedule_cancelled" then
     nxt.schedule_active = false
+    -- #93: and with it the grace period the command list was showing as "in
+    -- progress" - `is_transitioning` reads these two.
+    nxt.schedule_seconds = 0
+    nxt.schedule_command = nil
     -- §6.2: cancelling the grace period on the PC must bring the switch back on.
     if cur == state.SHUTTING_DOWN then
       nxt.power_state = state.ON
@@ -177,7 +206,7 @@ local function hhmm(iso)
 end
 
 --------------------------------------------------------------------------------
--- pcExec.lastAction (#82, #84, renamed #85)
+-- pcRemote.lastAction (#82, #84, renamed #85 and #93)
 --------------------------------------------------------------------------------
 
 -- The value the detail-view list rests on. #84: it is also a valid `execute`
@@ -186,13 +215,44 @@ end
 -- shows has to be harmless.
 state.ACTION_NONE = "none"
 
+-- #93: the values the list rests on WHILE the PC is in a power transition. The
+-- app has no disabled or loading row, so this is how close we get: the row says
+-- "종료 진행 중…" instead of "명령 선택…", and the driver refuses the commands
+-- that would pile up behind the one already running (init.lua `is_blocked`).
+-- Each one is an `execute` argument too, and just as harmless as `none` - the
+-- row is resting on it, so a dismissed list sends it back.
+state.ACTION_BUSY_OFF = "busyOff"
+state.ACTION_BUSY_RESTART = "busyRestart"
+state.ACTION_BUSY_WAKE = "busyWake"
+state.ACTION_BUSY_SLEEP = "busySleep"
+state.ACTION_BUSY_HIBERNATE = "busyHibernate"
+
+state.BUSY_ACTIONS = {
+  state.ACTION_BUSY_OFF, state.ACTION_BUSY_RESTART, state.ACTION_BUSY_WAKE,
+  state.ACTION_BUSY_SLEEP, state.ACTION_BUSY_HIBERNATE,
+}
+
+-- What the list offers, top to bottom (#82): service command names plus `wake`,
+-- which is the WoL sequence rather than a service command. `forceshutdown` is
+-- deliberately absent - an irreversible command stays in automations - and
+-- neither `none` nor the busy values are menu entries: they are what the row
+-- rests on. #93: this is also what `supportedCommands` carries when the PC is
+-- not going anywhere.
+state.EXECUTE_KEYS = {
+  "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
+  "turnscreenoff", "turnscreenon",
+}
+
 -- Every `lastAction` value. #84 made this the same set as the `execute`
 -- `command` enum - service command names (§3.3) plus `none` and `wake` - so
--- that whatever the row holds is an argument `execute` accepts.
--- capabilities_test.lua checks this against the enum in pcExec.json.
+-- that whatever the row holds is an argument `execute` accepts. #93 appends the
+-- five busy values for the same reason.
+-- capabilities_test.lua checks this against the enum in pcRemote.json, in this
+-- order.
 state.ACTIONS = {
   "none", "wake", "shutdown", "forceshutdown", "restart", "hibernate",
   "suspend", "lock", "turnscreenoff", "turnscreenon",
+  "busyOff", "busyRestart", "busyWake", "busySleep", "busyHibernate",
 }
 
 --- True when `value` is a `lastAction` enum value.
@@ -205,8 +265,176 @@ function state.is_action(value)
   return false
 end
 
+--- #93: true when `value` is one of the five "in progress" resting values.
+function state.is_busy_action(value)
+  for _, action in ipairs(state.BUSY_ACTIONS) do
+    if action == value then
+      return true
+    end
+  end
+  return false
+end
+
 --------------------------------------------------------------------------------
--- pcDelay.planCommand (#84, moved off the command capability in #85)
+-- #93: power transitions
+--------------------------------------------------------------------------------
+
+-- The fallback for how long a pending schedule may still be the PC's own grace
+-- period, for a service too old to say (see `grace_limit`).
+--
+-- `switch off` (and any `execute` in `default`/`grace` mode) is deferred by the
+-- service for the grace period it is configured with - 60 seconds by default -
+-- and that wait reaches the driver as an ORDINARY schedule: `executed: false`
+-- and a `schedule` block (§3.3). powerState is still `on`, because the PC is.
+-- So "the PC is on its way out" is only visible as a schedule about to fire,
+-- and the bound below is what separates it from the three-day schedule a user
+-- set on purpose - that one must keep the whole command list open.
+state.GRACE_SECONDS = 120
+
+--- How close a pending schedule has to be before it counts as the PC leaving.
+--
+-- The service tells us: `grace.seconds` in every status body (§3.2) is the
+-- period this PC is configured with, and it goes up to 30 minutes. Guessing
+-- would be wrong in both directions - a PC with a five-minute grace would look
+-- idle for the first three of them, and a generous fixed bound would swallow
+-- the short schedules a user sets on purpose - so the PC's own number is the
+-- bound, and `GRACE_SECONDS` is only what a service too old to send one gets.
+--
+-- `grace.enabled` is deliberately not consulted: `execute(mode = "grace")`
+-- forces the wait whatever the PC is configured to do by default, so the
+-- length is the useful half of the block and the flag is not.
+function state.grace_limit(device_state)
+  local seconds = tonumber((device_state or {}).grace_seconds)
+  if seconds and seconds > 0 then
+    return math.floor(seconds)
+  end
+  return state.GRACE_SECONDS
+end
+
+-- The commands that take the PC away. A schedule running one of these is a
+-- transition; `lock` and the screen commands are not (and the service refuses
+-- to schedule them anyway).
+local STOPPING_COMMANDS = {
+  shutdown = true, forceshutdown = true, restart = true,
+  suspend = true, hibernate = true,
+}
+
+--- True when the last polled schedule is the PC's own grace period (see above).
+function state.is_grace(device_state)
+  device_state = device_state or {}
+  if device_state.schedule_active ~= true then
+    return false
+  end
+  local seconds = tonumber(device_state.schedule_seconds)
+  if not seconds or seconds > state.grace_limit(device_state) then
+    return false
+  end
+  return STOPPING_COMMANDS[tostring(device_state.schedule_command or "")] == true
+end
+
+--- #93: true while the PC is going away or coming up.
+--
+-- `shuttingDown` and `waking` are the two states of §6.2 that say "this will be
+-- over in a moment, and nothing else can usefully be asked for until it is".
+-- The grace period is the third shape of the same fact (see `grace_limit`);
+-- a long schedule is NOT one - a PC that shuts down in three days is an
+-- ordinary, fully usable PC.
+function state.is_transitioning(device_state)
+  device_state = device_state or {}
+  local power = device_state.power_state
+  if power == state.SHUTTING_DOWN or power == state.WAKING then
+    return true
+  end
+  return state.is_grace(device_state)
+end
+
+-- The command that is under way -> the value the list rests on.
+local BUSY_FOR_COMMAND = {
+  restart = state.ACTION_BUSY_RESTART,
+  suspend = state.ACTION_BUSY_SLEEP,
+  hibernate = state.ACTION_BUSY_HIBERNATE,
+  shutdown = state.ACTION_BUSY_OFF,
+  forceshutdown = state.ACTION_BUSY_OFF,
+}
+
+--- #93: which busy value a transition shows.
+--
+-- `waking` is unambiguous. Going away, the wording comes from what is actually
+-- happening: the `reason` of the `power.stopping` push (the only source that
+-- knows sleep from hibernation, §3.5) first, then the command the pending grace
+-- period is going to run. Anything else - an `unknown` reason, a PC that went
+-- quiet on its own - reads as "종료 진행 중", which is what the user sees happen.
+function state.busy_action(device_state)
+  device_state = device_state or {}
+  if device_state.power_state == state.WAKING then
+    return state.ACTION_BUSY_WAKE
+  end
+  return BUSY_FOR_COMMAND[tostring(device_state.last_stopping_reason or "")]
+    or BUSY_FOR_COMMAND[tostring(device_state.schedule_command or "")]
+    or state.ACTION_BUSY_OFF
+end
+
+--- #93: the value `lastAction` rests on right now - `busyX` while the PC is in
+--- a transition, `none` the rest of the time.
+function state.resting_action(device_state)
+  if state.is_transitioning(device_state) then
+    return state.busy_action(device_state)
+  end
+  return state.ACTION_NONE
+end
+
+--- #93: `pcRemote.supportedCommands`, the experiment of the issue.
+--
+-- The detail-view list binds `supportedValues` to this attribute, so what is in
+-- here is what the menu offers. Normally that is the whole menu; during a
+-- transition it is the one busy value the row is resting on, which is not a
+-- menu entry at all - the hoped-for effect is a list with nothing to pick.
+-- Whether the app honours it is "실측 대기" (platform notes); the driver guard
+-- of init.lua is what actually enforces the rule either way.
+--
+-- NOT an empty array: the community reports that an empty `supportedValues`
+-- makes the app fall back to the full list rather than to none.
+function state.supported_commands(device_state)
+  if state.is_transitioning(device_state) then
+    return { state.busy_action(device_state) }
+  end
+  local out = {}
+  for i, key in ipairs(state.EXECUTE_KEYS) do
+    out[i] = key
+  end
+  return out
+end
+
+--- #93: remember what the last status body said about the pending schedule,
+--- and about the grace period that may be what created it.
+--
+-- `schedule_active` has been here since #85 (so `schedule` can say it replaced
+-- something); the countdown and the command come with it now, because that is
+-- all the grace period ever shows up as, and `grace.seconds` comes with them
+-- because it is what tells the two apart (`grace_limit`). Mutates and returns
+-- `device_state`, which is the freshly copied one `transition` just handed back.
+--
+-- The grace length is only overwritten when the body carries one: a service too
+-- old to send it never will, and a body that arrives without it (a truncated
+-- push payload) should not cost us a number we already learned.
+function state.remember_schedule(device_state, status)
+  device_state = device_state or state.new()
+  status = status or {}
+  local schedule = status.schedule or {}
+  local active = schedule.active == true
+  device_state.schedule_active = active
+  device_state.schedule_seconds = active
+    and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0
+  device_state.schedule_command = active and schedule.command or nil
+  local grace = tonumber((status.grace or {}).seconds)
+  if grace and grace > 0 then
+    device_state.grace_seconds = math.floor(grace)
+  end
+  return device_state
+end
+
+--------------------------------------------------------------------------------
+-- pcDefer.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
 -- What the service can schedule (§3.3). `lock` and the screen commands are not
@@ -216,7 +444,7 @@ state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 -- What a device schedules when nothing else says otherwise.
 state.PLAN_DEFAULT = "shutdown"
 
---- True when `value` is a command `pcDelay.schedule` may carry.
+--- True when `value` is a command `pcDefer.schedule` may carry.
 function state.is_plan_command(value)
   for _, command in ipairs(state.PLAN_COMMANDS) do
     if command == value then
@@ -241,7 +469,7 @@ function state.plan_command_for(...)
   return state.PLAN_DEFAULT
 end
 
---- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§4).
+--- Format `pcRemote.lastCommand` as "Shut down · SmartThings · 23:05" (§4).
 --- #84: this is the row that says what ran; `lastAction` stays on `none`.
 --
 -- #86: a PC that has run nothing yet gets a sentence, not an empty string. The
@@ -263,6 +491,19 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
+-- UTF-8 code points, not bytes: a Korean syllable is three bytes, so `#` would
+-- call "연결됨 · WoL 꺼짐" a 22-character string. Continuation bytes are
+-- 10xxxxxx (0x80-0xBF); dropping them leaves one byte per code point.
+local function char_len(s)
+  return #(tostring(s):gsub("[\128-\191]", ""))
+end
+
+--- How long `pcInfo.summary` may get before the row truncates it (#97). The
+--- detail row is narrow and cuts with "…" without saying so (platform notes,
+--- "화면 배치"), so an optional part - today only the WoL adapter's name - is
+--- added only while the whole line stays inside this.
+state.SUMMARY_MAX_CHARS = 24
+
 --- `pcInfo.summary` (#78): the one line that replaced the six raw rows in the
 --- detail view. "Connected" when the PC answers, "Not connected · Secret
 --- mismatch" when it does not.
@@ -276,10 +517,14 @@ end
 -- notices, which are advice rather than status and stay in `pcInfo.message`.
 -- What is left is the connection, plus the one warning that changes what the
 -- switch will do: WoL off on the adapter means `switch on` cannot work.
+--
+-- #97: and the name of the adapter it is off on, when the service named one
+-- and the row can still hold it.
 -- @param connection a `pcInfo.connection` value; nil counts as `ok`
 -- @param lang the resolved `language` preference
 -- @param wol_off true when the PC answers but its adapter has WoL disabled
-function state.status_summary(connection, lang, wol_off)
+-- @param adapter the chosen adapter's name (state.wol_adapter), optional
+function state.status_summary(connection, lang, wol_off, adapter)
   if connection ~= nil and connection ~= "ok" then
     local parts = { i18n.t(lang, "conn_down") }
     local reason = i18n.connection(lang, connection)
@@ -289,7 +534,15 @@ function state.status_summary(connection, lang, wol_off)
     return table.concat(parts, " · ")
   end
   if wol_off == true then
-    return i18n.t(lang, "conn_ok") .. " · " .. i18n.t(lang, "wol_off_short")
+    local ok = i18n.t(lang, "conn_ok")
+    if type(adapter) == "string" and adapter ~= "" then
+      local named = ok .. " · " .. i18n.t(lang, "wol_off_short_on", adapter)
+      if char_len(named) <= state.SUMMARY_MAX_CHARS then
+        return named
+      end
+      -- Too long for the row: `pcInfo.message` carries the name instead.
+    end
+    return ok .. " · " .. i18n.t(lang, "wol_off_short")
   end
   return i18n.t(lang, "conn_ok")
 end
@@ -323,9 +576,12 @@ end
 -- and `pcInfo.versions` (the definition, which cannot be dropped without yet
 -- another rename and would make the app report missing state if left unset).
 --
--- `service_version` is whatever the status body carried; a PC we have not
--- reached yet has none, and the row still has to say something (an attribute
--- that was never emitted reads as "-", platform notes "상세 화면(detailView) 위젯"), so it becomes "v?".
+-- `service_version` is whatever the status body carried - or, off the connected
+-- path since #92, the last one a successful poll saw (`poll.SERVICE_VERSION_FIELD`):
+-- a PC that is off has not changed its version, so there is no reason for the
+-- row to forget it. Only a PC we have never reached has none, and the row still
+-- has to say something (an attribute that was never emitted reads as "-",
+-- platform notes "상세 화면(detailView) 위젯"), so it becomes "v?".
 -- @param update `status.update`; the update half is appended only when
 --   `available` is set, so a current PC's row stays two numbers long
 function state.versions(service_version, lang, update)
@@ -352,11 +608,11 @@ function state.versions(service_version, lang, update)
   return text
 end
 
---- `pcDelay.summary` (#78, reworded in #87): "Shut down · in 4 min", or
+--- `pcDefer.summary` (#78, reworded in #87): "Shut down · in 4 min", or
 --- "None" when nothing is scheduled.
 --
 -- #87: the origin left the line. Who asked for the shutdown is in
--- `pcDelay.origin` and in `pcExec.lastCommand`; on the summary row it
+-- `pcDefer.origin` and in `pcRemote.lastCommand`; on the summary row it
 -- pushed the minutes - the one number the row exists for - off the end.
 --- #89: how far away a schedule is, in the largest unit that fits.
 --
@@ -470,8 +726,14 @@ function state.status_message(status, opts)
   status = status or {}
   local lang = opts.lang
 
-  if (status.wol or {}).ready ~= true then
+  if state.wol_off(status) then
     -- §6.4: we still send the magic packet, but say why it may not work.
+    -- #97: on the adapter the service chose, by name when it gave one - this
+    -- is the line with room for it, and it is the adapter to go and open.
+    local adapter = state.wol_adapter(status)
+    if adapter then
+      return i18n.t(lang, "wol_not_ready_on", adapter)
+    end
     return i18n.t(lang, "wol_not_ready")
   end
   if (status.update or {}).available == true then
@@ -512,7 +774,11 @@ end
 local ATTRIBUTES = {
   [state.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
-  [caps.COMMAND] = { lastCommand = true, lastAction = true },
+  -- #93: `supportedCommands` is derived from the power state rather than from
+  -- the body, exactly like `lastAction`'s resting value - but unlike it, it is
+  -- part of every `apply_status`, because the menu has to reopen by itself the
+  -- moment the transition ends.
+  [caps.COMMAND] = { lastCommand = true, lastAction = true, supportedCommands = true },
   [caps.SCHEDULE] = {
     active = true, status = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true, planCommand = true,
@@ -540,7 +806,7 @@ function state.attributes_used()
   return ATTRIBUTES
 end
 
---- #85: the resting value of every pcExec / pcDelay attribute that a
+--- #85: the resting value of every pcRemote / pcDefer attribute that a
 --- status body does not carry on its own (plus the `pcInfo.versions` row, which
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.
@@ -554,10 +820,17 @@ end
 -- `lastAction` and `planCommand` are not here: they are the two rows the user
 -- (and the `offAction` preference) owns, so poll.lua emits them through
 -- `emit_action` / `emit_plan_command`, which also persist the choice.
-function state.initial_rows(lang)
+-- @param service_version #92: the last version a successful poll saw
+--   (`poll.last_service_version`), or nil for a device that never answered one.
+function state.initial_rows(lang, service_version)
   local events = {}
   -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (platform notes "상세 화면(detailView) 위젯").
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
+  -- #93: a device that has never been polled is not transitioning, so its menu
+  -- is the whole menu. An attribute that was never emitted is the app's "not
+  -- all of the state has been reported", and a `supportedValues` that was never
+  -- emitted could take the list away entirely.
+  ev(events, caps.COMMAND, "supportedCommands", state.supported_commands(nil))
   ev(events, caps.SCHEDULE, "active", false)
   ev(events, caps.SCHEDULE, "status", state.IDLE)
   -- Never "": the cloud records an empty string as null (platform notes).
@@ -570,12 +843,14 @@ function state.initial_rows(lang)
   -- emitted shows "-" and does not open (platform notes "상세 화면(detailView) 위젯"), and this one never
   -- moves off "-1", so this is the only place a new device is told it.
   ev(events, caps.SCHEDULE, "minutesPick", state.MINUTES_PICK)
-  -- The service version is not known yet, so the row says "?" for it and the
-  -- driver/screen halves - the two that matter for "is my update live?" - are
-  -- right from the start. #86: on the row's own capability and, unchanged, on
-  -- pcInfo, whose definition still declares the attribute.
-  ev(events, caps.VERSION, "versions", state.versions(nil, lang))
-  ev(events, caps.STATUS, "versions", state.versions(nil, lang))
+  -- The driver/screen halves - the two that matter for "is my update live?" -
+  -- are right from the start; the service half is the last version we saw
+  -- (#92), and "?" only for a PC that has never answered. #86: on the row's own
+  -- capability and, unchanged, on pcInfo, whose definition still declares the
+  -- attribute. No `update`: an offer to update can only come from a live answer.
+  local versions = state.versions(service_version, lang)
+  ev(events, caps.VERSION, "versions", versions)
+  ev(events, caps.STATUS, "versions", versions)
   return events
 end
 
@@ -599,6 +874,10 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.POWER_STATE, "powerState", power)
 
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(status.last_command, lang))
+  -- #93: which entries of the command list are worth offering. `device_state`
+  -- already carries the pending schedule (`state.remember_schedule`, called by
+  -- the poll before this), so the grace period is visible here too.
+  ev(events, caps.COMMAND, "supportedCommands", state.supported_commands(device_state))
 
   local schedule = status.schedule or {}
   local active = schedule.active == true
@@ -617,13 +896,16 @@ function state.apply_status(device_state, status, opts)
   -- #78: the one row the detail view shows, and only while `active` is true.
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(schedule, lang))
 
-  local wol = status.wol or {}
   local update = status.update or {}
+  -- #97: one answer for all three rows below - `wolReady`, the summary and the
+  -- message - read off the adapter the service chose when it named one.
+  local wol_off = state.wol_off(status)
+  local wol_adapter = state.wol_adapter(status)
 
   ev(events, caps.STATUS, "connection", "ok")
   ev(events, caps.STATUS, "serviceVersion", status.service_version or "")
   ev(events, caps.STATUS, "updateAvailable", update.available == true)
-  ev(events, caps.STATUS, "wolReady", wol.ready == true)
+  ev(events, caps.STATUS, "wolReady", not wol_off)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
   -- #85: the bottom row of the bottom card, refreshed on every poll so a
   -- service update shows up without touching the driver. #86: the row itself
@@ -637,7 +919,7 @@ function state.apply_status(device_state, status, opts)
   -- #78/#82/#87: "Connected", or "Connected · WoL off" when the switch cannot
   -- do what the row above it offers. A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
-  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol.ready ~= true))
+  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol_off, wol_adapter))
 
   -- §3.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
@@ -662,9 +944,9 @@ function state.apply_status(device_state, status, opts)
   return events
 end
 
---- The first MAC of a WoL-capable adapter in a status body (§6.4: the
---- `macAddress` preference is auto-filled from it).
-function state.wol_mac(status)
+--- The first MAC of a WoL-capable adapter in a status body (§6.4), used when
+--- the service is too old to have chosen one itself.
+local function first_wol_mac(status)
   local adapters = (status or {}).wol and status.wol.adapters
   if type(adapters) ~= "table" then
     return nil
@@ -679,6 +961,70 @@ function state.wol_mac(status)
     end
   end
   return fallback
+end
+
+--- #96/#97: the adapter the service picked for WoL, or nil when it did not.
+--
+-- The PC knows which NIC the hub actually reaches; the driver was guessing
+-- "the first adapter with WoL on", which lands on a Hyper-V or VPN adapter as
+-- easily as on the real one. So the choice moved to the service and the driver
+-- reads it back: `wol.selected` is the answer, and `adapters[].selected` is the
+-- same answer spelled on the row it belongs to (a service may carry either).
+-- Returns the adapter-shaped table (`name`, `mac`, `ip`, `wol_enabled`,
+-- `wol_capable`, and on `selected` also `source`).
+function state.wol_selected(status)
+  local wol = (status or {}).wol
+  if type(wol) ~= "table" then
+    return nil
+  end
+  if type(wol.selected) == "table" and next(wol.selected) ~= nil then
+    return wol.selected
+  end
+  if type(wol.adapters) == "table" then
+    for _, a in ipairs(wol.adapters) do
+      if type(a) == "table" and a.selected == true then
+        return a
+      end
+    end
+  end
+  return nil
+end
+
+--- The MAC to wake this PC on (§6.4). `wol.selected.mac` when the service chose
+--- one, else the old first-enabled-adapter guess. The `macAddress` preference
+--- still outranks both - that lives in wol.lua, because it is the user's own
+--- value and a status body has no say in it.
+function state.wol_mac(status)
+  local selected = state.wol_selected(status)
+  if selected and type(selected.mac) == "string" and selected.mac ~= "" then
+    return selected.mac
+  end
+  return first_wol_mac(status)
+end
+
+--- The name of the chosen adapter ("이더넷"), or nil.
+function state.wol_adapter(status)
+  local selected = state.wol_selected(status)
+  local name = selected and selected.name
+  if type(name) == "string" and name ~= "" then
+    return name
+  end
+  return nil
+end
+
+--- Is the "WoL is off" warning due? (§6.4)
+--
+-- `wol.ready` is the service's own summary and stays the answer for a service
+-- that has no `selected`. When there is one, its `wol_enabled` is the sharper
+-- fact: it is about the single adapter the packet will actually be sent to, so
+-- another NIC having WoL on does not hide the warning (and does not raise a
+-- false one when the chosen adapter is fine).
+function state.wol_off(status)
+  local selected = state.wol_selected(status)
+  if selected ~= nil and selected.wol_enabled ~= nil then
+    return selected.wol_enabled ~= true
+  end
+  return ((status or {}).wol or {}).ready ~= true
 end
 
 return state

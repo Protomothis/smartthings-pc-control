@@ -27,6 +27,13 @@ function T.test_formats_arguments()
   h.assert_equal(i18n.t("ko", "incompatible_service", "1.1.0"), "서비스 v1.1.0 이상 필요")
   h.assert_equal(i18n.t("en", "incompatible_service", "1.1.0"), "Requires service v1.1.0 or newer")
   h.assert_contains(i18n.t("en", "wol_bad_mac", "zz:zz"), "zz:zz")
+  -- #97: the adapter name is the one argument both WoL warnings take.
+  h.assert_equal(i18n.t("ko", "wol_not_ready_on", "이더넷"),
+    "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+  h.assert_equal(i18n.t("en", "wol_not_ready_on", "Ethernet"),
+    "Wake-on-LAN is off on Ethernet · check the Network tab")
+  h.assert_equal(i18n.t("ko", "wol_off_short_on", "이더넷"), "WoL 꺼짐 (이더넷)")
+  h.assert_equal(i18n.t("en", "wol_off_short_on", "Ethernet"), "WoL off (Ethernet)")
 end
 
 function T.test_unknown_key_returns_the_key()
@@ -44,6 +51,8 @@ function T.test_all_required_keys_exist()
     "schedule_replaced", "schedule_cancelled", "schedule_none",
     -- #73: discovery, the device label and the multi-PC warning.
     "discovery_found", "ip_updated", "hostname_mismatch", "pc_label",
+    -- #94: the hint a search that nobody answered leaves in the log.
+    "discovery_none",
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
     "schedule_idle", "session_locked", "session_unlocked", "session_idle",
@@ -54,10 +63,36 @@ function T.test_all_required_keys_exist()
     -- status row still carries, and the two halves of the version row.
     "session_off", "wol_off_short",
     "versions", "version_unknown", "versions_update", "versions_update_plain",
+    -- #93: the note a command held back by a power transition leaves behind.
+    "busy_off", "busy_restart", "busy_wake", "busy_sleep", "busy_hibernate",
+    -- #97: the same two WoL warnings, naming the adapter the service chose.
+    "wol_not_ready_on", "wol_off_short_on",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
   end
+end
+
+function T.test_every_busy_value_has_a_try_again_note()
+  -- #93: the sentence a refused command leaves on `pcInfo.message` and
+  -- `pcInfo.summary`. Every busy `lastAction` value needs one, or the user gets
+  -- a command that silently does nothing.
+  local state = require "state"
+  for _, action in ipairs(state.BUSY_ACTIONS) do
+    for _, lang in ipairs({ "ko", "en" }) do
+      local note = i18n.busy(lang, action)
+      h.assert_true(type(note) == "string" and note ~= "",
+        action .. " has no " .. lang .. " note")
+      h.assert_contains(note, "·")
+    end
+  end
+  h.assert_contains(i18n.busy("ko", "busyOff"), "종료 진행 중")
+  h.assert_contains(i18n.busy("en", "busyWake"), "Waking")
+  -- Anything that is not a busy value has nothing to say.
+  for _, bogus in ipairs({ "none", "shutdown", "", "busy" }) do
+    h.assert_equal(i18n.busy("ko", bogus), "")
+  end
+  h.assert_equal(i18n.busy("ko", nil), "")
 end
 
 function T.test_every_service_command_has_a_display_name()

@@ -111,8 +111,11 @@ function wol.wake(driver, device, deps)
   local prefs = device.preferences or {}
   local lang = prefs.language
 
-  -- §6.4: the preference wins; otherwise fall back to the WoL-capable adapter
-  -- MAC that the last successful poll learned from `status.wol.adapters`.
+  -- §6.4: the preference wins - it is the user's own value, typed into the
+  -- driver, and nothing the PC reports may override it. Otherwise fall back to
+  -- the MAC the last successful poll remembered: the adapter the service chose
+  -- (#97, `status.wol.selected`), or the one the driver guessed from
+  -- `status.wol.adapters` when the service is older than that.
   local mac = prefs.macAddress
   if mac == nil or mac == "" then
     mac = device:get_field("wol_mac")
@@ -130,7 +133,13 @@ function wol.wake(driver, device, deps)
   -- the last poll already knew it would probably not work, so say so now
   -- rather than at the next poll.
   if device:get_field("wol_ready") == false then
-    devices.emit_message(device, i18n.t(lang, "wol_not_ready"))
+    -- #97: naming the chosen adapter, when the last poll learned one.
+    local adapter = device:get_field("wol_adapter")
+    if type(adapter) == "string" and adapter ~= "" then
+      devices.emit_message(device, i18n.t(lang, "wol_not_ready_on", adapter))
+    else
+      devices.emit_message(device, i18n.t(lang, "wol_not_ready"))
+    end
   end
 
   local broadcast = prefs.wolBroadcast
@@ -157,6 +166,9 @@ function wol.wake(driver, device, deps)
     local nxt = devices.transition(st, "wake_timeout")
     devices.set_state(device, nxt)
     devices.emit_power(device, nxt)
+    -- #93: the wake is over, however it ended, so the command list stops saying
+    -- "켜는 중…" and opens again.
+    devices.ensure_action(device)
     devices.emit_message(device, i18n.t(lang, "wake_failed"))
   end, "wol-timeout")
   device:set_field("wake_timer", timer)

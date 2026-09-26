@@ -1,5 +1,7 @@
 # Changelog
 
+Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
+
 ## [v1.1.1] - 2026-09-26
 
 장치를 추가하는 길은 SSDP 검색 하나뿐인데, 검색이 이 PC까지 왔는지 확인할 방법이 없었습니다. 이제 앱이 그것을 보여 주고, 검색을 끄는 설정은 사라졌습니다 (#95).
