@@ -18,6 +18,11 @@ poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
 -- #82: the last `pcRemote.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
+-- #93 follow-up: a `lastAction` value that changed is re-sent once more on the
+-- next poll, and this is what remembers that the repeat is owed. Measured on
+-- the hub: a forced event can be dropped between hub and cloud, and the one
+-- that must not be is the `none` that says a transition is over.
+poll.ACTION_CONFIRM_FIELD = "last_action_confirm"
 -- #84: the `pcDefer.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
 -- #85: which generation of capability ids this device's rows were painted for.
@@ -303,8 +308,15 @@ end
 -- error. A forced re-emit of the resting value ends it.
 -- #93: which resting value that is depends on the power state - a command that
 -- arrives mid-transition is answered with `busyX`, not with `none`.
+--
+-- #93 follow-up: this is the ONLY place a forced re-emit of an unchanged
+-- `lastAction` comes from now, and it is the one place that has a reason - the
+-- app is holding a spinner open waiting for it. A repeat that `ensure_action`
+-- still owed is settled by it, because this event is that repeat.
 function poll.answer_action(device)
-  return poll.emit_action(device, poll.resting_action(device), true)
+  local resting = poll.resting_action(device)
+  poll.owe_action_repeat(device, nil)
+  return poll.emit_action(device, resting, true)
 end
 
 --- Keep `lastAction` on the value the row rests on (#82, #84, #93).
@@ -312,22 +324,62 @@ end
 -- Originally: paint `none` once on a device that has never been told one, so
 -- the detail-view list reads "-" nowhere. Since #93 the resting value moves -
 -- `none` while the PC is idle, `busyX` while it is in a transition - so this
--- runs on every poll instead of only on the first one. A value that changed
--- goes out as an ordinary update; one that did not is forced, because the
--- platform drops an unchanged event and the row has to keep saying "in
--- progress" for as long as the transition lasts.
+-- runs on every poll, every push and every wake instead of only once.
+--
+-- Two rules, both of them measured on the hub 2026-09-26 (#93 follow-up):
+--
+-- 1. **A value that did not change is not re-sent.** It used to be re-sent
+--    forced, on the theory that the row had to keep saying "in progress". It
+--    does not - the hub keeps the attribute - and the repeats did harm: a
+--    refused command plus the pushes a grace period produces put four forced
+--    `busyOff` events out inside five seconds, and the `none` that followed
+--    them never reached the cloud. The device record sat on `busyOff` for 90
+--    seconds, and because this function then saw "already rests on `none`" it
+--    never tried again.
+-- 2. **A value that DID change goes out forced, and once more on the next
+--    poll.** Forcing a changed value costs nothing (`state_change` only adds
+--    "deliver this even if it looks unchanged") and it is the one event that
+--    must not be dropped - especially the `none` that ends a transition, which
+--    is what got lost. `ACTION_CONFIRM_FIELD` remembers that one repeat is
+--    owed, so the next poll sends it again and then stops.
+--
+-- The repeat is a field rather than a timer on purpose: `repaint_soon`'s 15 s
+-- and 90 s follow-ups would do it, but each of them repaints every row of every
+-- card and fires a forced poll besides - far too much machinery for one
+-- attribute, and it needs a `driver` this function is not given (it is called
+-- from push.lua and wol.lua as well).
 -- Returns true when something was emitted.
 function poll.ensure_action(device)
   local seen
   pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
   local resting = poll.resting_action(device)
-  if seen == resting and resting == state.ACTION_NONE then
-    -- The quiet case, which is nearly every poll: the row already rests on
-    -- `none` and nothing is waiting for an answer.
-    return false
+
+  if seen ~= resting then
+    -- The row has somewhere new to be. Send it forced, and promise one repeat.
+    poll.emit_action(device, resting, true)
+    poll.owe_action_repeat(device, resting)
+    return true
   end
-  poll.emit_action(device, resting, seen == resting)
-  return true
+
+  -- Unchanged. Nothing to say - except the one repeat promised above, which is
+  -- what makes a dropped "the transition is over" recoverable.
+  local owed
+  pcall(function() owed = device:get_field(poll.ACTION_CONFIRM_FIELD) end)
+  if owed ~= nil and owed == resting then
+    poll.owe_action_repeat(device, nil)
+    poll.emit_action(device, resting, true)
+    return true
+  end
+  return false
+end
+
+--- Remember that one forced re-emit of `value` is still owed (nil clears it).
+--
+-- Not persisted: it is worth one extra event on the next poll, not a hub write,
+-- and a driver that restarted mid-transition repaints everything anyway.
+function poll.owe_action_repeat(device, value)
+  pcall(function() device:set_field(poll.ACTION_CONFIRM_FIELD, value) end)
+  return value
 end
 
 --- Emit `pcDefer.planCommand` and remember it (#84, moved in #85).
@@ -430,7 +482,11 @@ end
 --- otherwise drop the re-emit of values it considers unchanged.
 function poll.repaint(device)
   -- #93: the resting value, not the remembered one - a repaint in the middle of
-  -- a transition has to leave the row saying "in progress".
+  -- a transition has to leave the row saying "in progress". A repeat
+  -- `ensure_action` still owed is settled here too: `repaint_soon` sends this
+  -- same forced event again at 15 s and at 90 s, which is more than the one
+  -- extra emit the debt was worth.
+  poll.owe_action_repeat(device, nil)
   poll.emit_action(device, poll.resting_action(device), true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
   -- #92: a repaint of a device that has answered before keeps its version on
