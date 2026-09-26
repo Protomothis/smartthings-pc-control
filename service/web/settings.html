@@ -293,6 +293,13 @@
                         </label>
                     </div>
                     <div class="field">
+                        <label data-i18n="stWolMac">WoL adapter</label>
+                        <!-- Filled by loadSTWoL() from /api/st/hub; the value
+                             saved is the adapter's MAC, empty for automatic. -->
+                        <select id="stWolMac" data-current="{{.SmartThings.WoLMAC}}" onchange="checkChanges()"></select>
+                        <div class="info" data-i18n="stWolMacInfo">Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.</div>
+                    </div>
+                    <div class="field">
                         <label data-i18n="stHubs">Allowed hubs</label>
                         <input type="text" id="stHubs" value="{{.AllowedHubs}}" placeholder="192.168.1.20, 192.168.1.21" oninput="checkChanges()">
                         <div class="info" data-i18n="stHubsInfo">Comma separated. Empty = any hub allowed.</div>
@@ -387,6 +394,11 @@
                 smartthings: 'SmartThings',
                 stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
                 stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
+                stWolMac: 'WoL adapter',
+                stWolMacInfo: 'Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.',
+                stWolAuto: 'Automatic', stWolAutoNone: 'Automatic (no adapter found)',
+                stWolOn: 'WoL on', stWolOff: 'WoL off', stWolNA: 'WoL not supported',
+                stWolUnknown: 'Adapter not found',
                 telegram: 'Telegram', tgPCName: 'PC name',
                 tgPCNameInfo: 'Shown in the Telegram message header; empty uses the computer name.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
@@ -419,6 +431,11 @@
                 smartthings: 'SmartThings',
                 stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
                 stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
+                stWolMac: 'WoL 어댑터',
+                stWolMacInfo: 'Edge 드라이버가 이 PC를 깨울 때 쓸 어댑터입니다. 자동은 허브가 실제로 이 PC에 닿는 어댑터를 먼저 고릅니다.',
+                stWolAuto: '자동', stWolAutoNone: '자동 (어댑터 없음)',
+                stWolOn: 'WoL 켜짐', stWolOff: 'WoL 꺼짐', stWolNA: 'WoL 미지원',
+                stWolUnknown: '없는 어댑터',
                 telegram: '텔레그램', tgPCName: 'PC 이름',
                 tgPCNameInfo: '알림 머리말에 표시. 비우면 컴퓨터 이름',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
@@ -456,6 +473,7 @@
             localStorage.setItem('lang', currentLang);
             applyLang();
             loadWoL();
+            loadSTWoL();
             loadSchedule();
         }
 
@@ -467,6 +485,9 @@
         const originalStSession = document.getElementById('stSession').checked;
         const originalStSessionUser = document.getElementById('stSessionUser').checked;
         const originalStHubs = document.getElementById('stHubs').value;
+        // The dropdown's options arrive with /api/st/hub, so the baseline is
+        // the value the template rendered, not the (still empty) selection.
+        const originalStWolMac = document.getElementById('stWolMac').dataset.current || '';
         const originalTgPCName = document.getElementById('tgPCName').value;
         function checkChanges() {
             const changed = document.getElementById('port').value !== originalPort ||
@@ -476,6 +497,7 @@
                             document.getElementById('stSession').checked !== originalStSession ||
                             document.getElementById('stSessionUser').checked !== originalStSessionUser ||
                             document.getElementById('stHubs').value !== originalStHubs ||
+                            document.getElementById('stWolMac').value !== originalStWolMac ||
                             document.getElementById('tgPCName').value !== originalTgPCName;
             document.getElementById('btnSave').disabled = !changed;
         }
@@ -490,6 +512,7 @@
                 expose_session: document.getElementById('stSession').checked,
                 expose_session_user: document.getElementById('stSession').checked && document.getElementById('stSessionUser').checked,
                 allowed_hubs: document.getElementById('stHubs').value.split(',').map(s => s.trim()).filter(s => s !== ''),
+                wol_mac: document.getElementById('stWolMac').value,
             };
             // Only pc_name: the service decodes over the live config, so the
             // bot token, chat id and the rest of telegram{} are left alone.
@@ -600,6 +623,38 @@
                 document.getElementById('wolStatus').textContent = 'Failed to load';
             }
         }
+        // Fills the WoL adapter dropdown from /api/st/hub. The first entry is
+        // "Automatic", labelled with the adapter the service would pick; the
+        // rest are the adapters themselves. A saved MAC that no longer exists
+        // keeps an entry of its own so the selection is never silently lost.
+        async function loadSTWoL() {
+            const sel = document.getElementById('stWolMac');
+            const chosen = sel.value || sel.dataset.current || '';
+            try {
+                const res = await fetch('/api/st/hub', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                const data = await res.json();
+                const wol = data.wol || {};
+                const auto = wol.auto;
+                let html = '<option value="">' +
+                    (auto ? t('stWolAuto') + ' (' + auto.name + ' · ' + auto.mac + ')' : t('stWolAutoNone')) +
+                    '</option>';
+                let found = false;
+                for (const a of (wol.adapters || [])) {
+                    if (!a.mac) continue;
+                    const state = a.wol_enabled ? t('stWolOn') : a.wol_capable ? t('stWolOff') : t('stWolNA');
+                    if (a.mac === chosen) found = true;
+                    html += '<option value="' + a.mac + '">' + a.name + ' · ' + a.mac + ' · ' + state + '</option>';
+                }
+                if (chosen && !found) {
+                    html += '<option value="' + chosen + '">' + t('stWolUnknown') + ' · ' + chosen + '</option>';
+                }
+                sel.innerHTML = html;
+                sel.value = chosen;
+            } catch(e) {
+                // Leave whatever is there; the saved value still round-trips.
+            }
+        }
         async function loadSchedule() {
             try {
                 const res = await fetch('/api/schedule', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
@@ -670,6 +725,7 @@
         applyLang();
         loadLogs();
         loadWoL();
+        loadSTWoL();
         loadSchedule();
         setInterval(loadSchedule, 5000);
         autoRefreshTimer = setInterval(loadLogs, 5000);

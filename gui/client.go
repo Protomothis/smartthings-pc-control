@@ -37,6 +37,9 @@ type SmartThingsConfig struct {
 	AllowedHubs       []string `json:"allowed_hubs"`
 	ExposeSession     bool     `json:"expose_session"`
 	ExposeSessionUser bool     `json:"expose_session_user"`
+	// WoLMAC pins the adapter the Edge driver wakes this PC through (#96).
+	// Empty means the service chooses; the network tab's dropdown edits it.
+	WoLMAC string `json:"wol_mac"`
 }
 
 // TelegramConfig mirrors service.TelegramConfig plus the GET-only
@@ -229,6 +232,39 @@ type STHub struct {
 	LastSeen      string      `json:"last_seen"`
 	MachineID     string      `json:"machine_id"`
 	SSDP          STSSDPState `json:"ssdp"`
+	// WoL is the adapter choice (#96) the section's dropdown shows and
+	// edits. An older service leaves it zero: no adapters, no selection.
+	WoL STWoLInfo `json:"wol"`
+}
+
+// STWoLInfo is the WoL adapter picture: the adapter in force, the one the
+// service's automatic rule would pick (the dropdown's first entry names
+// it, even while a manual MAC overrides it) and the adapters to choose
+// from. Selected and Auto are nil when this PC has no adapter with a MAC.
+type STWoLInfo struct {
+	Selected *STWoLSelected `json:"selected"`
+	Auto     *STWoLSelected `json:"auto"`
+	Adapters []STWoLAdapter `json:"adapters"`
+}
+
+// STWoLSelected is one chosen adapter; Source is "manual" or "auto".
+type STWoLSelected struct {
+	Name       string `json:"name"`
+	MAC        string `json:"mac"`
+	IP         string `json:"ip"`
+	WoLEnabled bool   `json:"wol_enabled"`
+	WoLCapable bool   `json:"wol_capable"`
+	Source     string `json:"source"`
+}
+
+// STWoLAdapter is one row of the dropdown.
+type STWoLAdapter struct {
+	Name       string `json:"name"`
+	MAC        string `json:"mac"`
+	IP         string `json:"ip"`
+	WoLEnabled bool   `json:"wol_enabled"`
+	WoLCapable bool   `json:"wol_capable"`
+	Selected   bool   `json:"selected"`
 }
 
 // STSSDPState is the SSDP responder's state: whether it holds a socket,

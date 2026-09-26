@@ -184,6 +184,13 @@ type SmartThingsConfig struct {
 	// the user name. Both default to off.
 	ExposeSession     bool `json:"expose_session"`
 	ExposeSessionUser bool `json:"expose_session_user"`
+	// WoLMAC pins the adapter the Edge driver addresses its magic packet
+	// to (#96). Empty — the default — means the service chooses (see
+	// selectWoLAdapter), and so does a value matching no adapter. Stored
+	// in the upper-case dash form the adapter list reports
+	// ("B4-2E-99-45-B4-F5"); withDefaults normalises whatever a client
+	// sends.
+	WoLMAC string `json:"wol_mac"`
 }
 
 // withDefaults normalises the slice field; the bools cannot be defaulted
@@ -194,6 +201,9 @@ func (s SmartThingsConfig) withDefaults() SmartThingsConfig {
 	} else {
 		s.AllowedHubs = slices.Clone(s.AllowedHubs)
 	}
+	// An unparseable MAC is stored as "" rather than kept verbatim: the
+	// value only ever means "this adapter", and nothing it could match.
+	s.WoLMAC = normalizeMAC(s.WoLMAC)
 	return s
 }
 
@@ -446,6 +456,7 @@ func configChangedKeys(old, new Config) []string {
 	add("smartthings.allowed_hubs", !slices.Equal(old.SmartThings.AllowedHubs, new.SmartThings.AllowedHubs))
 	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
 	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
+	add("smartthings.wol_mac", old.SmartThings.WoLMAC != new.SmartThings.WoLMAC)
 	return keys
 }
 
