@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+장치를 추가하는 길은 SSDP 검색 하나뿐인데, 검색이 이 PC까지 왔는지 확인할 방법이 없었습니다. 이제 앱이 그것을 보여 주고, 검색을 끄는 설정은 사라졌습니다 (#95).
+
+### 서비스
+
+- **SSDP 검색을 항상 켭니다.** `smartthings.discovery` 설정을 없앴습니다. 응답기는 서비스가 도는 동안 계속 켜져 있고, 인바운드 UDP 1900 규칙 *SmartThings PC Control SSDP*는 조건 없이 시작할 때마다 확인·복구합니다. `/st/v1/*` 접근 제어는 지금처럼 시크릿과 `smartthings.allowed_hubs`가 맡습니다 (#95)
+- 옛 `config.json`의 `discovery: false`는 오류 없이 읽고 무시하며, 다음 저장에서 키를 지웁니다. 그때 로그에 `SSDP 검색은 항상 켜져 있습니다 (discovery 설정은 더 이상 쓰지 않습니다)`를 한 번 남깁니다 (#95)
+- 이 PC가 응답한 마지막 M-SEARCH의 출처 IP와 시각을 기억합니다 (#95)
+- `GET /api/st/hub`에 `machine_id`(전체 값)와 `ssdp: {running, firewall_rule, last_search: {ip, at}}`를 더했습니다. 기존 필드는 그대로입니다 (#95)
+
+### 데스크톱 앱
+
+- 네트워크 탭의 SmartThings 섹션에 **이 PC의 ID**(8자리 축약 + [복사]로 전체 값)를 표시합니다. SmartThings 앱의 장치 정보에 보이는 값과 같으므로 여러 PC를 구분할 때 씁니다 (#95)
+- **검색 상태** 줄 — `검색 응답기 켜짐 · 방화벽 규칙 OK · 마지막 검색 요청 192.168.1.105, 12초 전`. 아직 없으면 `검색 요청 없음`, 소켓을 못 열었으면 `검색 응답기 꺼짐`, 규칙이 없으면 `방화벽 규칙 없음`으로 읽습니다 (#95)
+- 안내 문구 — "SmartThings 앱에서 [주변 기기 검색]을 누르기 전에 이 PC와 PC Control이 켜져 있어야 합니다." 자동 검색 토글은 없어졌습니다 (#95)
+
+### 문서
+
+- README에 검색 전제 조건과 "검색이 안 될 때" 점검 순서(앱 켜짐 → 방화벽 규칙 → 마지막 검색 요청 시각 → 허브 allow list)를 넣고, 설정 표에서 `smartthings.discovery`를 뺐습니다 (#95)
+
 ## [v1.1.0] - 2026-09-22
 
 SmartThings를 위한 **전용 Edge 드라이버**와, 그 드라이버가 쓰는 서비스 API `/st/v1`이 추가되었습니다. 설계 문서: `docs/design/edge-driver.md`.
