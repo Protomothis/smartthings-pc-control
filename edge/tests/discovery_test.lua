@@ -1,12 +1,13 @@
--- Discovery: manual add (#71), SSDP search and the multi-PC identity rules of
--- §6.5. The socket and the description fetch are injected, so this never
--- multicasts anything.
+-- Discovery: the SSDP search, the multi-PC identity rules of §6.5 and the PC
+-- id the device's model carries (#94). The socket and the description fetch
+-- are injected, so this never multicasts anything.
 
 local h = require "helpers"
 local Driver = require "st.driver"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
+local i18n = require "i18n"
 local json = require "st.json"
 
 local T = {}
@@ -109,39 +110,121 @@ local function search_deps(responses, bodies)
 end
 
 --------------------------------------------------------------------------------
--- manual add (#71)
+-- a search that finds nothing (#94)
 --------------------------------------------------------------------------------
 
-function T.test_manual_add_creates_a_placeholder_device()
+function T.test_a_search_that_nobody_answers_creates_nothing()
+  -- #94: the placeholder device (`PC Control (set IP in settings)`) is gone.
+  -- A scan with the PC off has to leave the hub exactly as it was, or the next
+  -- scan - for any brand of device - finds a blank PC Control device in the way.
   local driver = fake_driver()
   discovery.handle(driver, {}, function() return true end, search_deps({}))
-  h.assert_equal(#driver.created, 1)
+  h.assert_nil(driver.created, "nothing answered, so nothing is added")
+end
+
+function T.test_a_search_that_finds_nothing_leaves_existing_devices_alone()
+  local existing = pc_device("pc-control-9f3c-guid", { ipAddress = "192.168.1.20" })
+  local driver = fake_driver({ existing })
+  discovery.handle(driver, {}, function() return true end, search_deps({}))
+  h.assert_nil(driver.created)
+  h.assert_nil(existing:get_field(client.IP_FIELD), "no hit, no address change")
+end
+
+function T.test_the_empty_search_hint_names_the_precondition()
+  -- The only thing the driver can still say: the PC and the service have to be
+  -- running and UDP 1900 has to reach them. Korean and English in one line,
+  -- because a log line belongs to no device and follows no preference.
+  local hint = i18n.t(nil, "discovery_none")
+  h.assert_contains(hint, "PC Control")
+  h.assert_contains(hint, "1900")
+  h.assert_contains(hint, "켜져 있고")
+  h.assert_contains(i18n.t("en", "discovery_none"), "UDP 1900")
+end
+
+--------------------------------------------------------------------------------
+-- the PC id in the device model (#94)
+--------------------------------------------------------------------------------
+
+function T.test_the_model_carries_the_first_eight_characters_of_the_id()
+  h.assert_equal(discovery.short_id("58bff996-1c2d-4e5f-8a9b-0c1d2e3f4a5b"), "58bff996")
+  h.assert_equal(discovery.model_for("58bff996-1c2d-4e5f"), "PC Control · 58bff996")
+  -- A short id is taken whole rather than padded.
+  h.assert_equal(discovery.model_for("abc"), "PC Control · abc")
+  -- No identity: the bare model name every device had before #94.
+  h.assert_equal(discovery.model_for(nil), "PC Control")
+  h.assert_equal(discovery.model_for(""), "PC Control")
+end
+
+function T.test_a_created_device_carries_the_pc_id_in_its_model()
+  local driver = fake_driver()
+  discovery.create(driver, { ip = "192.168.1.20", hostname = "DESKTOP-ABC",
+    machine_id = "58bff996-1c2d-4e5f" })
   local spec = driver.created[1]
-  h.assert_equal(spec.label, "PC Control (set IP in settings)")
-  h.assert_equal(spec.profile, "pc.v16")
-  h.assert_equal(spec.type, "LAN")
-  h.assert_contains(spec.device_network_id, "pc-control-manual-")
+  h.assert_equal(spec.model, "PC Control · 58bff996")
+  -- The label is still the name a person gave the PC, and the vendor label
+  -- still names the product.
+  h.assert_equal(spec.label, "DESKTOP-ABC 컴퓨터")
+  h.assert_equal(spec.vendor_provided_label, "PC Control")
+  h.assert_equal(spec.manufacturer, "Protomothis")
+
+  -- Created with the id in place, so the one-time update has nothing to do.
+  local device = pc_device("pc-control-58bff996-1c2d-4e5f")
+  discovery.adopt(device)
+  h.assert_false(discovery.ensure_model(device))
+  h.assert_equal(#device.metadata_updates, 0)
 end
 
-function T.test_scan_does_not_pile_up_blank_devices()
-  local blank = h.fake_device({ ipAddress = "" })
-  local driver = fake_driver({ blank })
-  discovery.handle(driver, {}, function() return true end, search_deps({}))
-  h.assert_nil(driver.created, "a device still awaiting its IP already exists")
+function T.test_an_existing_device_learns_the_model_once()
+  -- A device added before #94: its model is the bare product name.
+  local device = pc_device("pc-control-58bff996-1c2d-4e5f", { ipAddress = "192.168.1.20" })
+  device.model = "PC Control"
+
+  h.assert_true(discovery.ensure_model(device))
+  h.assert_equal(#device.metadata_updates, 1)
+  h.assert_equal(device.metadata_updates[1].model, "PC Control · 58bff996")
+  h.assert_nil(device.metadata_updates[1].profile, "only the model is touched")
+  h.assert_equal(device.model, "PC Control · 58bff996")
+
+  h.assert_false(discovery.ensure_model(device), "once per device")
+  h.assert_equal(#device.metadata_updates, 1)
 end
 
-function T.test_scan_adds_another_device_once_the_first_is_configured()
-  local configured = h.fake_device({ ipAddress = "192.168.1.20" })
-  local driver = fake_driver({ configured })
-  discovery.handle(driver, {}, function() return true end, search_deps({}))
-  h.assert_equal(#driver.created, 1, "a second PC can be added")
+function T.test_a_device_without_an_identity_keeps_its_model()
+  -- §6.5: a device added by hand before #94 has no machine_id until its first
+  -- successful poll, and there is nothing to put in the model until then.
+  local manual = pc_device("pc-control-manual-abc-1", { ipAddress = "192.168.1.20" })
+  h.assert_false(discovery.ensure_model(manual))
+  h.assert_equal(#manual.metadata_updates, 0)
+
+  manual:set_field(discovery.MACHINE_FIELD, "58bff996-1c2d-4e5f")
+  h.assert_true(discovery.ensure_model(manual))
+  h.assert_equal(manual.metadata_updates[1].model, "PC Control · 58bff996")
 end
 
-function T.test_a_device_with_only_a_discovered_ip_counts_as_configured()
-  -- §6.5: no `ipAddress` preference, but SSDP found it, so it is not blank.
-  local followed = h.fake_device({ ipAddress = "" })
-  followed:set_field(client.IP_FIELD, "192.168.1.21")
-  h.assert_false(discovery.has_unconfigured(fake_driver({ followed })))
+function T.test_a_hub_that_refuses_the_update_is_survived()
+  local device = pc_device("pc-control-58bff996-1c2d", { ipAddress = "192.168.1.20" })
+  function device:try_update_metadata()
+    error("hub says no")
+  end
+  h.assert_false(discovery.ensure_model(device))
+  h.assert_nil(device:get_field(discovery.MODEL_FIELD), "so the next run tries again")
+end
+
+function T.test_the_first_successful_poll_puts_the_id_in_the_model()
+  -- §6.5: `remember_identity` is where a device learns or confirms its id, so
+  -- it is where an existing device picks the model up (#94).
+  local poll = require "poll"
+  local device = pc_device("pc-control-manual-abc-1", { ipAddress = "192.168.1.20" })
+  device.model = "PC Control"
+  poll.remember_identity(device, { machine_id = "58bff996-1c2d-4e5f",
+    hostname = "DESKTOP-ABC" })
+  h.assert_equal(device.model, "PC Control · 58bff996")
+  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "58bff996-1c2d-4e5f")
+
+  -- Every later poll is a field read and nothing else.
+  poll.remember_identity(device, { machine_id = "58bff996-1c2d-4e5f",
+    hostname = "DESKTOP-ABC" })
+  h.assert_equal(#device.metadata_updates, 1)
 end
 
 function T.test_network_ids_are_unique()
