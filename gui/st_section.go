@@ -35,6 +35,8 @@ type stFormState struct {
 	ExposeSessionUser bool
 	// Hubs is the edited allow list; empty means "any hub".
 	Hubs []string
+	// WoLMAC is the adapter the dropdown picked; empty means automatic.
+	WoLMAC string
 }
 
 // stStateFromConfig is what the section shows for cfg. The hub list is
@@ -44,6 +46,7 @@ func stStateFromConfig(cfg Config) stFormState {
 		ExposeSession:     cfg.SmartThings.ExposeSession,
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		Hubs:              normalizeHubs(cfg.SmartThings.AllowedHubs),
+		WoLMAC:            cfg.SmartThings.WoLMAC,
 	}
 }
 
@@ -96,6 +99,7 @@ func (s stFormState) applyTo(base Config) Config {
 		AllowedHubs:       normalizeHubs(s.Hubs),
 		ExposeSession:     s.ExposeSession,
 		ExposeSessionUser: s.effectiveUser(),
+		WoLMAC:            s.WoLMAC,
 	}
 	return cfg
 }
@@ -105,7 +109,101 @@ func (s stFormState) dirty(base Config) bool {
 	st := base.SmartThings
 	return s.ExposeSession != st.ExposeSession ||
 		s.effectiveUser() != st.ExposeSessionUser ||
+		s.WoLMAC != st.WoLMAC ||
 		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs))
+}
+
+// --- WoL adapter labels (unit-tested) ---------------------------------------
+
+// stWoLStateLabel is the trailing "WoL 켜짐 / 꺼짐 / 미지원" of a dropdown
+// entry. "off" and "not supported" are different problems: the first the
+// user can fix in the adapter's properties, the second they cannot.
+func stWoLStateLabel(l Lang, enabled, capable bool) string {
+	switch {
+	case enabled:
+		return T(l, "st.wol.on")
+	case capable:
+		return T(l, "st.wol.off")
+	}
+	return T(l, "st.wol.na")
+}
+
+// stWoLAutoOption is the dropdown's first entry, "자동 (이더넷 ·
+// B4-2E-99-45-B4-F5)": automatic, with what automatic currently means
+// spelled out so picking it is not a leap of faith.
+func stWoLAutoOption(l Lang, auto *STWoLSelected) string {
+	if auto == nil || auto.MAC == "" {
+		return T(l, "st.wol.auto.none")
+	}
+	return fmt.Sprintf(T(l, "st.wol.auto"), auto.Name, auto.MAC)
+}
+
+// stWoLAdapterOption is one adapter's entry, "이더넷 · B4-2E-99-45-B4-F5 ·
+// WoL 켜짐".
+func stWoLAdapterOption(l Lang, a STWoLAdapter) string {
+	return fmt.Sprintf(T(l, "st.wol.adapter"), a.Name, a.MAC, stWoLStateLabel(l, a.WoLEnabled, a.WoLCapable))
+}
+
+// stWoLOptions builds the dropdown from the service's picture: the labels
+// and, in step with them, the wol_mac each one saves ("" for automatic).
+// mac is the value currently in the form; when it names no adapter — the
+// card was swapped, or config.json was edited by hand — it keeps an entry
+// of its own so the dropdown never shows something other than what is
+// saved.
+func stWoLOptions(l Lang, info STWoLInfo, mac string) (labels, macs []string) {
+	labels = []string{stWoLAutoOption(l, info.Auto)}
+	macs = []string{""}
+	found := false
+	for _, a := range info.Adapters {
+		if a.MAC == "" {
+			continue
+		}
+		if strings.EqualFold(a.MAC, mac) {
+			found = true
+		}
+		labels = append(labels, stWoLAdapterOption(l, a))
+		macs = append(macs, a.MAC)
+	}
+	if mac != "" && !found {
+		labels = append(labels, fmt.Sprintf(T(l, "st.wol.missing"), mac))
+		macs = append(macs, mac)
+	}
+	return labels, macs
+}
+
+// stWoLPick resolves the form's wol_mac against the service's picture, the
+// same way the service does: the adapter it names, or the automatic pick
+// when it is empty or matches nothing. It is what the hint below the
+// dropdown describes, so an unsaved choice is explained straight away.
+func stWoLPick(info STWoLInfo, mac string) *STWoLSelected {
+	if mac != "" {
+		for _, a := range info.Adapters {
+			if strings.EqualFold(a.MAC, mac) {
+				return &STWoLSelected{
+					Name: a.Name, MAC: a.MAC, IP: a.IP,
+					WoLEnabled: a.WoLEnabled, WoLCapable: a.WoLCapable,
+					Source: "manual",
+				}
+			}
+		}
+	}
+	return info.Auto
+}
+
+// stWoLLine is the hint under the dropdown: whether this PC can actually
+// be woken through the chosen adapter, naming it rather than talking about
+// adapters in general.
+func stWoLLine(l Lang, sel *STWoLSelected) string {
+	if sel == nil || sel.MAC == "" {
+		return T(l, "st.wol.none")
+	}
+	switch {
+	case sel.WoLEnabled:
+		return fmt.Sprintf(T(l, "st.wol.ready"), sel.Name)
+	case sel.WoLCapable:
+		return fmt.Sprintf(T(l, "st.wol.notready"), sel.Name)
+	}
+	return fmt.Sprintf(T(l, "st.wol.unsupported"), sel.Name)
 }
 
 // stRelKey maps the age of the last hub contact to the i18n key of its
@@ -204,6 +302,8 @@ type stSection struct {
 	search      *widget.Label
 	session     *toggle
 	sessionUser *toggle
+	wolSelect   *widget.Select
+	wolHint     *widget.Label
 	hubBox      *fyne.Container
 	addBtn      *widget.Button
 
@@ -211,6 +311,15 @@ type stSection struct {
 	// (the [Add current hub] button and the [복사] button need both).
 	hubs []string
 	hub  STHub
+
+	// wolMAC is the edited smartthings.wol_mac and wolMACs the value each
+	// dropdown option saves, in step with wolSelect.Options — the labels
+	// are translated prose, so the index is the only reliable link back.
+	// wolLoaded stays false until /api/st/hub has answered once, while the
+	// dropdown shows its placeholder rather than an empty adapter list.
+	wolMAC    string
+	wolMACs   []string
+	wolLoaded bool
 
 	bar *saveBar
 	// filling suppresses the OnChanged cascade while fillSTSection writes
@@ -224,6 +333,7 @@ func (t *stSection) state() stFormState {
 		ExposeSession:     t.session.Checked,
 		ExposeSessionUser: t.sessionUser.Checked,
 		Hubs:              t.hubs,
+		WoLMAC:            t.wolMAC,
 	}
 }
 
@@ -268,6 +378,15 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.sessionUser = newToggle(u.t("st.session.user"), onToggle)
 	t.sessionUser.Disable()
 
+	// The adapter dropdown (#96). Its options only exist once /api/st/hub
+	// has answered, so it starts as a placeholder; OnChanged is attached
+	// after construction so filling it can never look like a user pick.
+	t.wolSelect = widget.NewSelect(nil, nil)
+	t.wolSelect.PlaceHolder = u.t("st.wol.loading")
+	t.wolSelect.OnChanged = func(string) { u.onWoLAdapterPicked() }
+	t.wolHint = widget.NewLabel(u.t("st.wol.loading"))
+	t.wolHint.Wrapping = fyne.TextWrapWord
+
 	t.hubBox = container.NewVBox()
 	t.addBtn = widget.NewButtonWithIcon(u.t("st.hubs.add"), theme.ContentAddIcon(), func() { u.addCurrentHub() })
 	t.addBtn.Disable() // enabled by updateAddHubButton once a hub is known
@@ -286,6 +405,11 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 		hint(u.t("st.session.hint")),
 		t.sessionUser,
 		hint(u.t("st.session.user.hint")),
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle(u.t("st.wol"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		t.wolSelect,
+		t.wolHint,
+		hint(u.t("st.wol.hint")),
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(u.t("st.hubs"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		t.hubBox,
@@ -324,6 +448,59 @@ func (u *ui) renderHubs() {
 	if u.networkRoot != nil {
 		u.networkRoot.Refresh()
 	}
+}
+
+// onWoLAdapterPicked records the dropdown's choice as the edited wol_mac.
+// The labels are translated prose, so the selected index — not the text —
+// is what maps back to a MAC. UI thread only.
+func (u *ui) onWoLAdapterPicked() {
+	t := u.st
+	if t == nil || t.filling || t.wolSelect == nil {
+		return
+	}
+	i := t.wolSelect.SelectedIndex()
+	if i < 0 || i >= len(t.wolMACs) {
+		return
+	}
+	t.wolMAC = t.wolMACs[i]
+	u.renderWoLHint()
+	u.updateSTSaveState()
+}
+
+// renderWoLAdapters redraws the dropdown from the last /api/st/hub result,
+// keeping the edited selection. Filling the widget must not look like a
+// user pick, hence the filling guard. UI thread only.
+func (u *ui) renderWoLAdapters() {
+	t := u.st
+	if t == nil || t.wolSelect == nil || !t.wolLoaded {
+		return
+	}
+	labels, macs := stWoLOptions(u.lang, t.hub.WoL, t.wolMAC)
+	was := t.filling
+	t.filling = true
+	t.wolSelect.Options = labels
+	t.wolMACs = macs
+	if i := slices.Index(macs, t.wolMAC); i >= 0 {
+		t.wolSelect.SetSelectedIndex(i)
+	} else {
+		// Cannot happen (stWoLOptions keeps an entry for an unknown MAC),
+		// but a blank dropdown would be worse than falling back to auto.
+		t.wolMAC = ""
+		t.wolSelect.SetSelectedIndex(0)
+	}
+	t.wolSelect.Refresh()
+	t.filling = was
+	u.renderWoLHint()
+}
+
+// renderWoLHint writes the "WoL is off on Ethernet" line for whatever the
+// dropdown currently shows. UI thread only.
+func (u *ui) renderWoLHint() {
+	t := u.st
+	if t == nil || t.wolHint == nil || !t.wolLoaded {
+		return
+	}
+	t.wolHint.SetText(stWoLLine(u.lang, stWoLPick(t.hub.WoL, t.wolMAC)))
 }
 
 // addCurrentHub puts the connected hub's IP on the allow list (dirty until
@@ -378,7 +555,9 @@ func (u *ui) fillSTSection(cfg Config) {
 	t.sessionUser.SetChecked(s.ExposeSessionUser)
 	t.setUserEnabled(s.ExposeSession)
 	t.hubs = s.Hubs
+	t.wolMAC = s.WoLMAC
 	u.renderHubs()
+	u.renderWoLAdapters()
 	// The secret lives on the settings tab; this only points at it.
 	if cfg.Secret == "" {
 		t.secretHint.Show()
@@ -454,6 +633,8 @@ func (u *ui) loadSTHub() {
 			return
 		}
 		t.hub = h
+		t.wolLoaded = true
+		u.renderWoLAdapters()
 		t.status.SetText(u.stHubLine(h, now))
 		t.machineID.SetText(u.stMachineIDLine(h.MachineID))
 		t.search.SetText(u.stSearchLine(h.SSDP, now))

@@ -615,6 +615,21 @@ type stHubView struct {
 	LastSeen      string     `json:"last_seen"`
 	MachineID     string     `json:"machine_id"`
 	SSDP          stSSDPView `json:"ssdp"`
+	// WoL is the adapter choice (#96) the section's dropdown edits. It
+	// rides on this poll rather than on a second endpoint so the whole
+	// section refreshes in one round trip.
+	WoL stHubWoLView `json:"wol"`
+}
+
+// stHubWoLView is what the app needs to draw the WoL adapter dropdown:
+// the adapter in force, the one the automatic rule would choose (the
+// first dropdown entry names it even while a manual MAC overrides it) and
+// the list to choose from. Selected and Auto are null when this PC has no
+// adapter with a MAC.
+type stHubWoLView struct {
+	Selected *stWoLSelected `json:"selected"`
+	Auto     *stWoLSelected `json:"auto"`
+	Adapters []stWoLAdapter `json:"adapters"`
 }
 
 // stSSDPView is the responder's state: whether it holds a socket, whether
@@ -651,7 +666,12 @@ func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	view := stHubView{MachineID: machineID(), SSDP: stSSDPStatus()}
+	wol, auto := stWoLView(liveCfg.SmartThings)
+	view := stHubView{
+		MachineID: machineID(),
+		SSDP:      stSSDPStatus(),
+		WoL:       stHubWoLView{Selected: wol.Selected, Auto: auto, Adapters: wol.Adapters},
+	}
 	if seen, ok := hubLastSeenInfo(); ok {
 		view.Connected = time.Since(seen.At) <= stHubStale
 		view.IP = seen.IP
