@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Edge 드라이버
+
+- 버전 줄이 PC가 꺼져 있어도 마지막으로 확인한 서비스 버전을 그대로 보여 줍니다. `v?`는 한 번도 응답받지 못한 PC에만 쓰입니다 (#92)
+
 ## [v1.1.0] - 2026-09-22
 
 SmartThings를 위한 **전용 Edge 드라이버**와, 그 드라이버가 쓰는 서비스 API `/st/v1`이 추가되었습니다. 설계 문서: `docs/design/edge-driver.md`.

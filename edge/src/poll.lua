@@ -25,6 +25,9 @@ poll.PLAN_FIELD = "plan_command"
 -- every attribute unset on the hub, so the persisted "already painted" fields
 -- would otherwise skip a device that has been migrated (platform notes "허브의 정의 캐시").
 poll.ROWS_FIELD = "rows_painted"
+-- #92: the last `service_version` a successful poll saw. Persisted, because the
+-- whole point is to still know it after the hub restarts while the PC is off.
+poll.SERVICE_VERSION_FIELD = "service_version"
 -- #86 bumps it again: `pcVersion` is a new capability, so its row starts unset
 -- on every existing device and has to be painted once.
 -- #88 bumps it once more: `pcCountdown` became `pcPlanner` and gained
@@ -176,12 +179,18 @@ end
 --- The summary is the only status row the detail view still shows, so a failed
 --- poll has to rewrite it as well. #82: the power word is not in it any more -
 --- the `pcPower` row right above says that.
--- #85: the `versions` row goes out here as well. A PC we cannot reach has no
--- service version to report, but the driver half is still the answer to "did
--- my update land?", and a row that was never emitted reads as
--- "-" (platform notes "상세 화면(detailView) 위젯"). `state.versions` writes "v?" for the service half.
+-- #85: the `versions` row goes out here as well. A row that was never emitted
+-- reads as "-" (platform notes "상세 화면(detailView) 위젯"), and the driver half is still the answer to
+-- "did my update land?".
+-- #92: the service half is the last version a successful poll saw, not "v?".
+-- A PC that is off has not changed its version, so the row keeps saying
+-- "v1.1.0 · 드라이버 1.0" instead of losing half of itself every night;
+-- `state.versions` falls back to "v?" only for a PC that never answered.
+-- The update suffix is deliberately not remembered: whether a newer service is
+-- out is something only a live answer can claim.
 function poll.emit_connection(device, connection, message)
   local lang = poll.lang(device)
+  local versions = state.versions(poll.last_service_version(device), lang)
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
@@ -189,9 +198,38 @@ function poll.emit_connection(device, connection, message)
       value = state.status_summary(connection, lang) },
     -- #86: the row lives on its own capability now; pcInfo keeps the attribute
     -- (and the emit) because its definition cannot change without a rename.
-    { cap = caps.VERSION, attr = "versions", value = state.versions(nil, lang) },
-    { cap = caps.STATUS, attr = "versions", value = state.versions(nil, lang) },
+    { cap = caps.VERSION, attr = "versions", value = versions },
+    { cap = caps.STATUS, attr = "versions", value = versions },
   })
+end
+
+--- The last `service_version` a successful poll saw (#92), or nil when this
+--- device has never answered one.
+function poll.last_service_version(device)
+  local seen
+  pcall(function() seen = device:get_field(poll.SERVICE_VERSION_FIELD) end)
+  if type(seen) == "string" and seen ~= "" then
+    return seen
+  end
+  return nil
+end
+
+--- Remember `status.service_version` (#92). Returns true when it changed.
+--
+-- Written only on a change: a persisted field is a hub write, and the version
+-- moves once per service update while the poll runs every 30 seconds.
+function poll.remember_service_version(device, body)
+  local version = (body or {}).service_version
+  if type(version) ~= "string" or version == "" then
+    return false
+  end
+  if poll.last_service_version(device) == version then
+    return false
+  end
+  pcall(function()
+    device:set_field(poll.SERVICE_VERSION_FIELD, version, { persist = true })
+  end)
+  return true
 end
 
 --- Emit `pcExec.lastAction` and remember it (#82, #84).
@@ -344,7 +382,10 @@ function poll.repaint(device)
   pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
   poll.emit_action(device, seen, true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
-  poll.emit(device, poll.force_all(state.initial_rows(poll.lang(device))))
+  -- #92: a repaint of a device that has answered before keeps its version on
+  -- the row; only one that never answered falls back to "v?".
+  poll.emit(device, poll.force_all(
+    state.initial_rows(poll.lang(device), poll.last_service_version(device))))
 end
 
 --- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil
@@ -445,6 +486,9 @@ function poll.once(driver, device, opts)
     -- §6.5: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
     poll.remember_identity(device, body)
+    -- #92: and the version, so the row survives the PC being switched off.
+    -- Before `ensure_rows`, which repaints that very row.
+    poll.remember_service_version(device, body)
     -- #82/#84/#85: no status body carries `lastAction` or `planCommand`, and a
     -- migrated device has emitted nothing at all under the new capability ids,
     -- so the resting values go out first and the status body overwrites the
