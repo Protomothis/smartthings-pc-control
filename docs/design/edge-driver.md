@@ -293,7 +293,7 @@
 
 ### 6.6 프로필 이전
 
-- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v17`**.
+- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v1`**(파일 `profiles/pc.yml`) — 첫 공개 때 개발 중 쌓인 v2~v17을 지우고 v1로 초기화했다(#90, §11). 다음 화면 변경은 `pc-v2.yml`부터다.
 - 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
 - `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다.
 - 이전 직후에는 capability id가 바뀌었을 수 있어 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`)를 보고 전 줄을 한 번 다시 칠한다.
@@ -422,7 +422,7 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 
 ## 11. 정식 릴리스 전 체크리스트
 
-1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-v2`~`pc-v16` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다.
+1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-vN` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다. **첫 공개 때 pc.v1로 초기화했다(#90); 이후 화면이 바뀌면 v2부터 올린다.** `poll.ROWS_VERSION`도 같이 `"1"`로 되돌렸다 — 이전 스탬프를 가진 장치가 채널에는 없다.
 2. **capability 이름 확정** — `pcPower` `pcRemote` `pcDefer` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
 3. **버전** — `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치를 검증한다).
 4. **채널** — 채널 이름은 `Protomothis`(id `53831a53-…`, 드라이버 id는 그대로). 개발용 버전을 정리하고 초대 링크를 README/Wiki의 자리표시자에 기입한다.

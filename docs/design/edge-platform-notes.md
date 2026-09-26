@@ -21,7 +21,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v17`으로 이전된 뒤 `smartthings capabilities:delete <id>`.
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`.
 
 ## 프로필과 화면 생성
 

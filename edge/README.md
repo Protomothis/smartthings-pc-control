@@ -104,7 +104,7 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 
 **프로필 이름이 중요한 이유**: 장치의 화면은 **추가한 시점의 정의로 굳는다.** "왜 아직
 옛날 화면이지?"의 답은 대개 장치가 아직 옛 프로필(`pc.vN`)에 있다는 것이다. 드라이버가
-첫 `init`에서 현재 프로필(`pc.v17`)로 옮긴다.
+첫 `init`에서 현재 프로필(`pc.v1`)로 옮긴다.
 
 ## 사용
 
@@ -251,7 +251,7 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
   src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               pc-vN.yml — 현재는 pc-v15.yml
+  profiles/               pc-vN.yml — 현재는 pc.yml (pc.v1)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
   tools/                  테스트 러너와 배포 스크립트

@@ -11,6 +11,12 @@
 -- (existing devices still reference them until they are moved), and this
 -- module moves each device over on its first `init` after the update.
 --
+-- #90: at the first channel release the numbering was reset to `pc.v1`. The
+-- pc.v2…pc.v17 of the development phase never reached a user's hub, so nothing
+-- has to be migrated from them and `KNOWN` holds the one current name - which
+-- makes `migration_for` a no-op for every device. The machinery stays: the
+-- next screen change ships `pc.v2` and appends it here.
+--
 -- Everything here is pure except `remember`, `ensure` and
 -- `remove_legacy_child`, which touch the device, and all three are guarded: a
 -- hub that refuses `try_update_metadata` or `try_delete_device` must not take
@@ -19,24 +25,30 @@
 local profiles = {}
 
 -- What new devices are created with.
-profiles.PC = "pc.v17"
+profiles.PC = "pc.v1"
 
 -- Every profile name this driver has ever shipped, oldest first. A name that
 -- is not in here belongs to another driver, or to a version newer than this
--- one, and is left alone.
-profiles.KNOWN = { "pc.v1", "pc.v2", "pc.v3", "pc.v4", "pc.v5", "pc.v6", "pc.v7", "pc.v8", "pc.v9", "pc.v10", "pc.v11", "pc.v12", "pc.v13", "pc.v14", "pc.v15", "pc.v16", "pc.v17" }
+-- one, and is left alone. Only the current name is in here at the first
+-- release (#90), so there is nothing to migrate from; a `pc.v2` appends.
+profiles.KNOWN = { "pc.v1" }
 
 -- The profile name is written here at creation time and after a migration,
 -- because `device.profile` does not always carry a name (see `name_of`).
 profiles.FIELD = "profile_name"
 
--- What a device with neither a name nor the field is assumed to be on: every
--- device that existed before #79 was created with the v1 profile.
+-- What a device with neither a name nor the field is assumed to be on: the
+-- oldest name this driver ever created a device with. At v1.0.0 that is also
+-- the current one, so the assumption costs nothing.
 profiles.LEGACY = "pc.v1"
 
 -- #81: the display child device is gone. Its profiles (`pc-display.vN`) are no
 -- longer in the package, so a child left on a hub from an older driver has
 -- nothing to render and is deleted on the next init.
+--
+-- Only a development hub can still carry such a child, since #81 predates the
+-- first channel release (#90). Kept anyway: the check is one pure comparison
+-- per device per driver run and the author's own hub is such a hub.
 profiles.DISPLAY_PREFIX = "pc-display"
 
 local function logger()

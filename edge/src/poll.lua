@@ -33,22 +33,12 @@ poll.ROWS_FIELD = "rows_painted"
 -- #92: the last `service_version` a successful poll saw. Persisted, because the
 -- whole point is to still know it after the hub restarts while the PC is off.
 poll.SERVICE_VERSION_FIELD = "service_version"
--- #86 bumps it again: `pcVersion` is a new capability, so its row starts unset
--- on every existing device and has to be painted once.
--- #88 bumps it once more: `pcCountdown` became `pcPlanner` and gained
--- `minutesPick`, so every schedule row of a migrated device starts out unset.
--- #89 bumps it again: `pcPlanner` became `pcDelay` (the preset list now reaches
--- three days, and a wider `minutes` range is a definition change), so the whole
--- schedule card is unset once more on every device this driver migrates.
--- #91 bumps it once more: `pcDelay` became `pcDefer` (`schedule(minutes)` is a
--- string enum now, because the value a dismissed list sends skips the
--- presentation's `argumentType` conversion), so the schedule card starts out
--- unset again on every migrated device.
--- #93 bumps it once more: `pcExec` became `pcRemote` (five busy `lastAction`
--- values and the new `supportedCommands` attribute), so the whole command card
--- - the new `supportedValues` row included - starts out unset on every device
--- this driver migrates.
-poll.ROWS_VERSION = "93a"
+-- The generation stamp itself. #90: it starts fresh at the first channel
+-- release, because no device outside development ever carried an older one -
+-- every device installed from the channel paints its rows once on `added` and
+-- then matches. Bump it (to "2", "3", …) whenever a capability id changes or a
+-- new one is added, so `ensure_rows` repaints every already-installed device.
+poll.ROWS_VERSION = "1"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status

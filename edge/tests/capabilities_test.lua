@@ -296,8 +296,9 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   -- with. That is the info card last for everything up to #85, and the version
   -- card last from #86 on - which is when the version row got a capability of
   -- its own. A file is read for which of the two it carries rather than by its
-  -- number, so a rename like #88's (pc.v13 becoming an older profile) does not
-  -- have to be spelled out here.
+  -- number, so a version bump does not have to be spelled out here.
+  -- #90 reset the numbering, so at v1.0.0 there is no older file and this
+  -- loop runs empty; it guards the files a future `pc.v2` leaves behind.
   local profiles = require "profiles"
   local version = (caps.VERSION:gsub("^.*%.", ""))
   local info = (caps.STATUS:gsub("^.*%.", ""))
