@@ -159,10 +159,46 @@ function T.test_a_failed_poll_rewrites_the_status_summary()
   -- #85/#86: the version row goes out on a failed poll too - the driver half
   -- still answers "did my update land?" - and since #86 it is a capability of
   -- its own, while pcInfo keeps the attribute it defines.
-  -- #87: the service half is "v?" until a PC answers.
+  -- #87/#92: the service half is "v?" until a PC answers - and only until then.
   local unreached = "v? · 드라이버 " .. require("driver_version"):match("^(%d+%.%d+)")
   h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), unreached)
   h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), unreached)
+end
+
+function T.test_the_version_row_keeps_the_last_version_the_pc_reported()
+  -- #92: the remembered half of the row, from the field up to the events.
+  local caps = require "caps"
+  local state = require "state"
+  local device = h.fake_device({ language = "ko" })
+
+  h.assert_false(poll.remember_service_version(device, {}),
+    "a status body without a version changes nothing")
+  h.assert_nil(poll.last_service_version(device))
+  h.assert_false(poll.remember_service_version(device, { service_version = "" }),
+    "an empty version is not a version")
+
+  h.assert_true(poll.remember_service_version(device, { service_version = "v1.1.0" }))
+  h.assert_equal(device:get_field(poll.SERVICE_VERSION_FIELD), "v1.1.0",
+    "the version survives in the device's field store")
+  h.assert_false(poll.remember_service_version(device, { service_version = "v1.1.0" }),
+    "an unchanged version is not written to the hub again")
+  h.assert_true(poll.remember_service_version(device, { service_version = "v1.2.0" }),
+    "a service update moves it")
+  h.assert_equal(poll.last_service_version(device), "v1.2.0")
+
+  local kept = state.versions("v1.2.0", "ko")
+  h.assert_contains(kept, "v1.2.0")
+  poll.emit_connection(device, "unreachable", "응답 없음")
+  local emitted = h.emitted(device)
+  h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), kept)
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), kept)
+
+  -- ... and a repaint (profile change, migration) keeps it too, rather than
+  -- resetting the row to "v?" on a device that has been answering for months.
+  device.emitted = {}
+  poll.repaint(device)
+  h.assert_equal(h.event_value(h.emitted(device), caps.VERSION, "versions"), kept)
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "versions"), kept)
 end
 
 function T.test_emit_passes_the_state_change_option_through()

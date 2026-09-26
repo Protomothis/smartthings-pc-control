@@ -1,5 +1,10 @@
 -- Device discovery: SSDP search (design doc §3.6) plus the identity and
--- duplicate rules of §6.5/§6.5, and manual add for a PC that does not answer.
+-- duplicate rules of §6.5.
+--
+-- #94: SSDP is the only way a device is added. A search that nobody answers
+-- creates nothing at all any more - the PC is off, the service is not running
+-- or UDP 1900 is closed, and a blank device named after the problem only got
+-- in the way of the next scan.
 --
 -- The parsing (`msearch`, `parse_response`) and every decision (`plan`,
 -- `should_search`) are pure; only `ssdp_search` and the `apply*` helpers touch a
@@ -14,10 +19,15 @@ local discovery = {}
 -- The profile new devices are created with; src/profiles.lua is the single
 -- source of truth for the version (§6.6).
 discovery.PROFILE = profiles.PC
-discovery.PLACEHOLDER_LABEL = "PC Control (set IP in settings)"
 discovery.DNI_PREFIX = "pc-control-"
 discovery.MANUFACTURER = "Protomothis"
 discovery.MODEL = "PC Control"
+-- #94: the device's `model` carries the PC's id, because the app's device
+-- information screen is the only place a user can read it and the same eight
+-- characters are what the Windows app's SmartThings section shows (#95).
+-- The label stays "<호스트> 컴퓨터" - a name, not an id.
+discovery.MODEL_SEPARATOR = " · "
+discovery.MODEL_ID_LENGTH = 8
 -- §3.6: the search target the service's responder answers.
 discovery.SSDP_ST = "urn:smartthings-pc-control:device:pc:1"
 discovery.SSDP_GROUP = "239.255.255.250"
@@ -36,6 +46,10 @@ discovery.SEARCH_COOLDOWN = 300
 discovery.MACHINE_FIELD = "machine_id"
 discovery.HOSTNAME_FIELD = "hostname"
 discovery.LAST_SEARCH_FIELD = "last_ssdp"
+-- #94: the short id already written into this device's `model`. A device
+-- created before #94 has "PC Control" there, so the update runs once per
+-- device and the field stops it from running on every poll afterwards.
+discovery.MODEL_FIELD = "model_id"
 
 local function logger()
   local ok, log = pcall(require, "log")
@@ -136,6 +150,27 @@ function discovery.network_id(machine_id)
   return string.format("%smanual-%x-%d", discovery.DNI_PREFIX, os.time(), manual_seq)
 end
 
+--- The first `MODEL_ID_LENGTH` characters of a machine_id, or nil (#94).
+--- Eight characters of a MachineGuid ("58bff996") are enough to tell two PCs
+--- apart at a glance and short enough for a device-information row.
+function discovery.short_id(machine_id)
+  if type(machine_id) ~= "string" or machine_id == "" then
+    return nil
+  end
+  return machine_id:sub(1, discovery.MODEL_ID_LENGTH)
+end
+
+--- The `model` a device with this machine_id carries: `PC Control · 58bff996`
+--- (#94). Without an id it is the bare model name, which is what a device
+--- created before #94 already has.
+function discovery.model_for(machine_id)
+  local short = discovery.short_id(machine_id)
+  if not short then
+    return discovery.MODEL
+  end
+  return discovery.MODEL .. discovery.MODEL_SEPARATOR .. short
+end
+
 local function get_field(device, name)
   if type(device) ~= "table" or type(device.get_field) ~= "function" then
     return nil
@@ -213,8 +248,12 @@ function discovery.plan(device, found)
     return {
       action = "create",
       device_network_id = discovery.network_id(found.machine_id),
-      label = (found.hostname ~= nil and found.hostname ~= "") and i18n.t(nil, "pc_label", found.hostname)
-        or discovery.PLACEHOLDER_LABEL,
+      label = (found.hostname ~= nil and found.hostname ~= "")
+        and i18n.t(nil, "pc_label", found.hostname)
+        -- A responder that gives no hostname is still a PC we found, so it is
+        -- named after the id its model carries rather than after a problem.
+        or discovery.model_for(found.machine_id),
+      model = discovery.model_for(found.machine_id),
       ip = found.ip,
       port = found.port,
       hostname = found.hostname,
@@ -405,7 +444,7 @@ function discovery.apply(driver, device, found, deps)
   return plan
 end
 
---- Create one device for `found` (nil = manual placeholder).
+--- Create one device for an SSDP hit (#94: there is no other way in).
 function discovery.create(driver, found)
   found = found or {}
   local plan = discovery.plan(nil, found)
@@ -415,7 +454,9 @@ function discovery.create(driver, found)
     label = plan.label,
     profile = discovery.PROFILE,
     manufacturer = discovery.MANUFACTURER,
-    model = discovery.MODEL,
+    -- #94: `PC Control · <id 8자리>`, so the app's device information screen
+    -- shows the same id the Windows app does.
+    model = plan.model,
     vendor_provided_label = discovery.MODEL,
   })
   -- The device object does not exist yet, so the address travels in a pending
@@ -456,6 +497,41 @@ function discovery.adopt(device)
   set_field(device, client.PORT_FIELD, info.port)
   set_field(device, discovery.MACHINE_FIELD, info.machine_id)
   set_field(device, discovery.HOSTNAME_FIELD, info.hostname)
+  -- #94: this device was created with the id already in its model, so the
+  -- one-time update has nothing to do.
+  set_field(device, discovery.MODEL_FIELD, discovery.short_id(info.machine_id))
+  return true
+end
+
+--- #94: put the PC id in `model` on a device that was created without it.
+--
+-- Runs once per device: the short id is persisted, so the poll that calls this
+-- on every successful status only reads a field afterwards. A hub that refuses
+-- `try_update_metadata` simply keeps the old model (the same rule
+-- `profiles.ensure` follows) - nothing else depends on it.
+function discovery.ensure_model(device)
+  local short = discovery.short_id(discovery.machine_id_of(device))
+  if not short then
+    -- No identity yet: the first successful poll learns it (§6.5).
+    return false
+  end
+  if get_field(device, discovery.MODEL_FIELD) == short then
+    return false
+  end
+  local current = (device or {}).model
+  if type(current) == "string" and current:find(short, 1, true) then
+    -- Created with it (or updated by an earlier driver run).
+    set_field(device, discovery.MODEL_FIELD, short)
+    return false
+  end
+  local model = discovery.model_for(discovery.machine_id_of(device))
+  local ok = pcall(function() device:try_update_metadata({ model = model }) end)
+  if not ok then
+    logger().warn("could not put the PC id in the device model: " .. tostring(model))
+    return false
+  end
+  set_field(device, discovery.MODEL_FIELD, short)
+  logger().info("device model is now " .. model)
   return true
 end
 
@@ -488,30 +564,20 @@ end
 -- the discovery handler
 --------------------------------------------------------------------------------
 
---- True when the hub already has a PC Control device with no IP configured.
---- Without this, every tap on "Scan" would leave another blank device behind.
-function discovery.has_unconfigured(driver)
-  local ok, devices = pcall(function() return driver:get_devices() end)
-  if not ok or type(devices) ~= "table" then
-    return false
-  end
-  for _, device in ipairs(devices) do
-    if not client.device_base_url(device) then
-      return true
-    end
-  end
-  return false
-end
-
---- Driver discovery handler: SSDP first, manual placeholder as the fallback.
+--- Driver discovery handler: SSDP is the only way a device is added (#94).
 function discovery.handle(driver, _opts, should_continue, deps)
   deps = deps or {}
   local log = logger()
 
   local found = discovery.ssdp_search(discovery.SSDP_TIMEOUT, deps) or {}
-  if #found > 0 then
-    log.info(i18n.t(nil, "discovery_found", #found))
+  if #found == 0 then
+    -- #94: nothing is created. The one line the user needs is why, and what
+    -- to check, in the log the driver writes (ko + en, like every sentence
+    -- this driver produces).
+    log.info(i18n.t(nil, "discovery_none"))
+    return
   end
+  log.info(i18n.t(nil, "discovery_found", #found))
 
   local ok, devices = pcall(function() return driver:get_devices() end)
   devices = ok and devices or {}
@@ -530,18 +596,6 @@ function discovery.handle(driver, _opts, should_continue, deps)
       discovery.create(driver, hit)
     end
   end
-
-  if #found > 0 then
-    return
-  end
-
-  if discovery.has_unconfigured(driver) then
-    log.info("a PC Control device without an IP address already exists, not adding another")
-    return
-  end
-
-  log.info("no SSDP responder answered, adding a device for manual setup")
-  discovery.create(driver, nil)
 end
 
 return discovery

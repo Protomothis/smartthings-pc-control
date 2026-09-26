@@ -157,7 +157,10 @@ function push.apply(device_state, payload, opts)
     -- No status block: the event still moved the power state, nothing else.
     return nxt, nil, event
   end
-  nxt.schedule_active = ((status.schedule or {}).active == true)
+  -- #93: the countdown and the command come with `active` now - the grace
+  -- period a `switch off` starts is only ever visible as a pending schedule,
+  -- and `apply_status` reads it back out for `supportedCommands`.
+  state.remember_schedule(nxt, status)
   return nxt, state.apply_status(nxt, status, opts), event
 end
 
@@ -463,6 +466,11 @@ function push.apply_to_device(driver, device, payload, deps)
   else
     poll.emit_power(device, nxt)
   end
+  -- #93: a `power.stopping` push is the fastest the driver ever learns that the
+  -- PC is on its way out, so the command list is moved to its "진행 중…" resting
+  -- value right here rather than at the next poll - and back to `none` the same
+  -- way once the PC answers again.
+  pcall(function() poll.ensure_action(device) end)
 
   return true
 end

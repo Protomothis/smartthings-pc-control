@@ -53,7 +53,7 @@
 | `src/state.lua` | status JSON → capability 이벤트 매핑, 전원 상태 머신, 요약 문자열 |
 | `src/poll.lua` | 폴링 타이머, 장치 필드, `emit` 글루 |
 | `src/push.lua` | 허브 TCP 리스너(`/pc/evt`), 구독·갱신 |
-| `src/discovery.lua` | SSDP 검색, 식별·중복 방지, 수동 추가 |
+| `src/discovery.lua` | SSDP 검색, 식별·중복 방지, 모델명의 PC id |
 | `src/wol.lua` | 매직 패킷, 깨우기 시퀀스 |
 | `src/profiles.lua` | 프로필 이름과 장치 이전 |
 | `src/caps.lua` | 커스텀 capability id |
@@ -118,6 +118,7 @@
   - `wol_mac`이 어떤 어댑터와도 맞지 않으면 자동으로 되돌아가고 로그에 한 번 남긴다.
 - `wol.ready`는 **선택된 어댑터** 기준이다("아무 어댑터나 하나 켜져 있으면 true"가 아니다).
 - `adapters[]`의 `ip`는 그 어댑터의 첫 IPv4(없으면 `""`), `selected`는 위에서 고른 어댑터인지 여부다.
+- `grace.seconds`는 이 PC에 설정된 유예 길이(기본 60초, 최대 30분)다. 드라이버는 이것을 **"곧 실행될 예약 = PC가 떠나는 중"의 상한**으로 쓴다(§6.9).
 - `session`은 옵트인이다. `smartthings.expose_session`이 꺼져 있으면 `{"exposed": false}`뿐이고, 켜져 있어도 세션을 읽을 수 없으면 `locked`가 없다. `idle_seconds`는 트레이 앱의 하트비트가 90초 이내일 때만 실린다.
 
 ### 3.3 `POST /st/v1/command`
@@ -200,17 +201,20 @@
 | capability | 속성 | 명령 |
 |---|---|---|
 | `pcPower` | `powerState` enum: `on` `sleeping` `hibernated` `off` `waking` `shuttingDown` `unknown` | – |
-| `pcExec` | `lastAction` enum(= `execute`의 `command` enum), `lastCommand` string("종료 · SmartThings · 23:05") | `execute(command, mode?, minutes?)`, 인자 없는 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn` |
-| `pcDelay` | `summary` string, `status` enum `idle`\|`scheduled`, `active` bool, `command` string, `remainingSeconds` int(0~259200), `executeAt` string(`HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate`, `minutesPick` enum `-1`(한 값) | `schedule(minutes: -1~4320, command?)`, `cancel()`, `setPlanCommand(command)` |
+| `pcRemote` | `lastAction` enum(= `execute`의 `command` enum), `supportedCommands` string 배열, `lastCommand` string("종료 · SmartThings · 23:05") | `execute(command, mode?, minutes?)`, 인자 없는 `wake` `suspend` `hibernate` `restart` `shutdown` `lock` `screenOff` `screenOn` |
+| `pcDefer` | `summary` string, `status` enum `idle`\|`scheduled`, `active` bool, `command` string, `remainingSeconds` int(0~259200), `executeAt` string(`HH:MM`), `origin` string, `planCommand` enum `shutdown` `restart` `suspend` `hibernate`, `minutesPick` enum `-1`(한 값) | `schedule(minutes: 문자열 enum `-1` `0` `5`…`4320`, command?)`, `cancel()`, `setPlanCommand(command)` |
 | `pcUser` | `exposed` bool, `summary` string, `locked` bool, `idleMinutes` int, `user` string | – |
 | `pcInfo` | `summary` string, `connection` enum `ok` `unauthorized` `unreachable` `incompatible`, `serviceVersion`, `updateAvailable` bool, `wolReady` bool, `lastSeen` string, `message` string, `versions` string | – |
 | `pcVersion` | `versions` string("v1.1.0 · 드라이버 1.0", 업데이트가 있으면 " · 업데이트 v1.2.0") | – |
 
-- `execute`의 `command` enum은 서비스 명령 여덟에 `wake`와 `none`을 더한 열이다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`은 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다.
-- `lastAction`은 언제나 `none`에 머문다. 무엇이 실행됐는지는 `lastCommand`가 말한다.
-- `schedule`의 `minutes`는 -1~4320이다(#89: 최대 3일. 정의의 범위가 바뀌었으므로 capability id도 `pcPlanner` → `pcDelay`로 바뀌었다 — 허브가 정의를 id로 캐시한다). `remainingSeconds`의 상한도 같이 259200으로 올라갔다. **`-1`은 무동작**(폴링만), **`0`은 취소**, 양수는 예약이다. 클라우드가 인자를 정의로 검증하므로 목록이 보내는 값 — 고른 값이든 닫을 때 나가는 현재 값이든 — 이 모두 정의 안에 있어야 한다.
+- `execute`의 `command` enum은 서비스 명령 여덟에 `wake`와 `none`, 그리고 #93의 `busyOff` `busyRestart` `busyWake` `busySleep` `busyHibernate`를 더한 열다섯이다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`과 `busy*`는 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다.
+- `lastAction`은 **쉬는 값**에 머문다. 평소에는 `none`("명령 선택…"), 전원 전환 중에는 `busy*`("종료 진행 중…")다(§6.9). 무엇이 실행됐는지는 `lastCommand`가 말한다.
+- `supportedCommands`(#93)는 명령 목록이 보여 줄 키의 배열이다. 평소에는 메뉴 전체(`wake` `suspend` `hibernate` `restart` `shutdown` `lock` `turnscreenoff` `turnscreenon`), 전환 중에는 지금 쉬는 `busy*` 하나뿐이다 — 그 값은 메뉴 항목이 아니므로 고를 것이 없어지기를 노린다. 프레젠테이션의 `supportedValues`가 이 속성을 읽는다. **실기 확인 대기**(플랫폼 노트 "supportedValues"). 빈 배열은 쓰지 않는다.
+- `schedule`의 `minutes`는 **문자열 enum**이다: `-1` `0`과 프리셋 열여섯(`5` `10` `15` `30` `45` `60` `90` `120` `180` `240` `360` `480` `720` `1440` `2880` `4320`). **`-1`은 무동작**(폴링만), **`0`은 취소**, 나머지는 예약이다. 드라이버는 `tonumber`로 숫자를 되읽는다. `remainingSeconds`의 상한은 가장 긴 프리셋에 맞춘 259200이다.
+- 문자열인 이유(#91, 실측): 목록을 고르지 않고 닫을 때 나가는 현재 값은 프레젠테이션의 `argumentType` 변환을 **거치지 않는다.** `schedule(-1)`은 허브에 닿았지만 `schedule("-1")`은 `422 commands[0].arguments[0]: string found, integer expected`로 클라우드에서 막혔다. 그래서 목록이 보내는 인자는 문자열 enum으로 정의하고, 프레젠테이션에서 `argumentType`은 뺀다. 정의가 바뀌었으므로 capability id도 `pcDelay` → `pcDefer`다 — 허브가 정의를 id로 캐시한다(#89에는 같은 이유로 `pcPlanner` → `pcDelay`였다).
+- 클라우드가 인자를 정의로 검증하므로 목록이 보내는 값 — 고른 값이든 닫을 때 나가는 현재 값이든 — 이 모두 정의 안에 있어야 한다.
 - `minutesPick`은 `-1` 한 값뿐인 enum이고, 예약 시간 목록이 쉬는 자리다. `lastAction`이 `none`에 머무는 것과 같은 이유다 — 목록을 고르지 않고 닫으면 그 줄의 현재 값이 `minutes` 인자로 나간다. 그 전에는 이 줄이 `status`에 묶여 있어 `schedule(minutes: "idle")`이 나갔고, 클라우드가 거부해 "네트워크 오류" 팝업만 떴다.
-- `pcDelay.status`는 `active`의 문자열 판이고, 이제 자동화 조건 전용이다. 목록의 `state`는 bool을 읽지 못한다.
+- `pcDefer.status`는 `active`의 문자열 판이고, 이제 자동화 조건 전용이다. 목록의 `state`는 bool을 읽지 못한다.
 - `pcInfo.versions`는 정의에 남아 있고 계속 emit 되지만, 화면에 그려지는 줄은 `pcVersion.versions`다.
 
 ## 5. 화면 구성
@@ -222,17 +226,17 @@
 | 상태 카드 | 값 |
 |---|---|
 | 전원 상태 | `pcPower.powerState` |
-| 마지막 실행 | `pcExec.lastCommand` |
-| 예약 요약 | `pcDelay.summary` |
+| 마지막 실행 | `pcRemote.lastCommand` |
+| 예약 요약 | `pcDefer.summary` |
 | 세션 | `pcUser.summary` |
 | 상태 | `pcInfo.summary` |
 | 버전 | `pcVersion.versions` |
 
 | 조작 카드 | 위젯 |
 |---|---|
-| 명령 | `pcExec.execute` 목록(깨우기·절전·최대 절전·재시작·종료·잠금·화면 끄기/켜기) |
-| 예약할 명령 | `pcDelay.setPlanCommand` 목록 |
-| 예약 시간 | `pcDelay.schedule` 목록(#89: 5·10·15·30·45분, 1·1.5·2·3·4·6·8·12시간, 1·2·3일, 그리고 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
+| 명령 | `pcRemote.execute` 목록(깨우기·절전·최대 절전·재시작·종료·잠금·화면 끄기/켜기). 줄이 쉬는 값은 `lastAction`의 "명령 선택… (Select a command)", 전원 전환 중에는 "종료 진행 중… (Shutting down…)" 계열이고 목록에 담기는 항목은 `supportedCommands`가 정한다(#93) |
+| 예약할 명령 | `pcDefer.setPlanCommand` 목록 |
+| 예약 시간 | `pcDefer.schedule` 목록(#89: 5·10·15·30·45분, 1·1.5·2·3·4·6·8·12시간, 1·2·3일, 그리고 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
 
 - 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 목록 맨 끝이다.
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
@@ -240,9 +244,9 @@
 - **값 문구는 줄 라벨을 되풀이하지 않는다**(#87). 라벨이 이미 "예약"·"세션"이라고 말하고 있고, 값 칸은 휴대폰이 잘라 낸다. 각 줄이 말하는 것:
   - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". 시크릿 권장·업데이트 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
   - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
-  - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다.
-  - `pcDelay.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). #89: 1시간부터는 시간으로("종료 · 2시간 후", "종료 · 1시간 30분 후"), 하루부터는 일과 시간으로("종료 · 1일 3시간 후") 읽는다 — "4320분 후"는 아무도 3일로 읽지 못한다. 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
-- 자동화용 조건은 `powerState`, `pcDelay.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`. 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
+  - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다. #92: 성공한 폴링마다 `service_version`을 장치 필드(persist)에 남기고, 연결이 끊긴 동안에도 그 값을 그대로 보여 준다 — 꺼진 PC의 버전은 바뀌지 않는다. `v?`는 **한 번도 응답받지 못한** PC에만 쓴다. 업데이트 꼬리말(" · 업데이트 v1.2.0")은 기억하지 않는다. 있다/없다는 살아 있는 응답만 말할 수 있다.
+  - `pcDefer.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). #89: 1시간부터는 시간으로("종료 · 2시간 후", "종료 · 1시간 30분 후"), 하루부터는 일과 시간으로("종료 · 1일 3시간 후") 읽는다 — "4320분 후"는 아무도 3일로 읽지 못한다. 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
+- 자동화용 조건은 `powerState`, `pcDefer.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`. 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
 
 ## 6. 드라이버 동작
 
@@ -278,16 +282,20 @@
 ### 6.4 Wake-on-LAN
 
 - `switch on`과 `execute(wake)`는 같은 시퀀스다: 매직 패킷을 **즉시·2초 뒤·5초 뒤** 세 번, 포트 **7과 9** 양쪽으로 보낸다.
-- MAC은 `macAddress` 환경설정이 우선이고, 비어 있으면 마지막 폴링이 `wol.adapters`에서 배운 WoL 가능 어댑터의 MAC을 쓴다(persist).
+- **MAC은 세 단계로 고른다**(#97): ① `macAddress` 환경설정 — 사용자가 드라이버에 직접 넣은 값이라 무엇도 밀어내지 못한다 ② 마지막 폴링이 기억한 `wol.selected.mac`(없으면 `adapters[].selected`가 가리키는 행) — 서비스가 고른 어댑터다(§3.2) ③ 그것도 없는 옛 서비스면 예전 추측, 즉 `wol.adapters`에서 `wol_enabled`인 첫 어댑터, 아니면 MAC이 있는 첫 어댑터. ②③은 persist 한다: 깨우는 시점은 PC가 꺼져 있는 시점이라 읽을 상태 응답이 없다.
+- **"WoL 꺼짐" 안내는 고른 어댑터 하나를 기준으로 한다**(#97). `wol.selected.wol_enabled`가 답이고, `selected`가 없는 옛 서비스에서만 `wol.ready`를 쓴다. 다른 랜카드에 WoL이 켜져 있다고 경고가 가려지지도, 고른 어댑터가 멀쩡한데 경고가 뜨지도 않는다. `pcInfo.message`는 어댑터 이름을 넣어 "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인"이라고 쓰고, `pcInfo.summary`는 줄이 `state.SUMMARY_MAX_CHARS`(24자) 안에 들어올 때만 "연결됨 · WoL 꺼짐 (이더넷)"까지 쓴다 — 넘치면 이름을 빼고 "연결됨 · WoL 꺼짐"으로 돌아간다(상세 줄은 말없이 잘린다, 플랫폼 노트 "화면 배치").
 - 보내는 주소는 `wolBroadcast`(기본 `255.255.255.255`). 공유기가 막으면 서브넷 브로드캐스트를 넣는다.
 - 상태는 `waking`이 되고 90초 뒤에도 응답이 없으면 직전 상태로 돌아가며 "깨우기 실패"를 `pcInfo.message`에 쓴다. 그 사이 폴링이나 푸시가 성공하면 타임아웃을 취소한다.
-- 어댑터의 WoL이 꺼져 있다는 것을 이미 알고 있으면 패킷은 그대로 보내되 미리 안내를 띄운다.
+- 어댑터의 WoL이 꺼져 있다는 것을 이미 알고 있으면 패킷은 그대로 보내되 미리 안내를 띄운다. 마지막 폴링이 어댑터 이름까지 기억해 두므로(persist) PC가 꺼져 있어도 어느 랜카드를 열어야 하는지 말해 준다.
 
 ### 6.5 검색과 식별
 
+- **장치 추가는 SSDP 검색이 유일한 경로다. 검색 전에 PC와 PC Control 서비스가 켜져 있어야 한다**(#94). 인바운드 UDP 1900이 허브에서 PC로 닿아야 하고, 네트워크 프로필은 개인이어야 한다.
 - [주변 기기 검색]에서 M-SEARCH를 보내고, 응답한 `LOCATION`마다 설명 문서를 받아 `{ip, port, machine_id, hostname, …}`을 만든 뒤 `machine_id`로 병합한다.
-- **`machine_id`가 식별자다.** 이미 그 id를 가진 장치가 있으면 새로 만들지 않고 주소만 갱신한다. 수동으로 추가한 장치도 첫 성공 조회에서 id를 기억하므로 나중에 검색이 같은 PC를 찾아도 중복되지 않는다.
-- 아무도 응답하지 않으면 수동 설정용 장치(`PC Control (set IP in settings)`)를 하나 만든다. 단, IP가 비어 있는 장치가 이미 있으면 만들지 않는다.
+- **`machine_id`가 식별자다.** 이미 그 id를 가진 장치가 있으면 새로 만들지 않고 주소만 갱신한다. `ipAddress`를 손으로 채워 쓰는 장치도 첫 성공 조회에서 id를 기억하므로 나중에 검색이 같은 PC를 찾아도 중복되지 않는다.
+- **장치의 `model`이 PC id를 나른다**(#94): `PC Control · <machine_id 앞 8자>`(예: `PC Control · 58bff996`). 라벨은 이름(`<호스트> 컴퓨터`)이고 모델이 id이므로, 앱의 장치 정보 화면에서 Windows 앱 SmartThings 섹션(#95)과 같은 값을 맞춰 볼 수 있다. #94 이전에 만들어진 장치는 폴링이 `machine_id`를 배우거나 확인할 때(`poll.remember_identity`) `try_update_metadata`로 한 번 갱신하고, 쓴 id를 장치 필드에 persist 해 장치당 한 번만 돈다. 허브가 거부하면 옛 모델명을 그대로 두고 다음 기회에 다시 시도한다. **실측(2026-09-26)**: 허브는 갱신을 받지만 클라우드의 `deviceModel`은 바뀌지 않았다(플랫폼 노트). 그래서 id는 실질적으로 **생성 시점에** 들어가며, 채널 공개 전 개발 장치를 지우고 다시 추가하는 §11 절차가 이 경로를 대신한다.
+- **아무도 응답하지 않으면 아무것도 만들지 않는다**(#94). 예전에는 자리표시 장치(`PC Control (set IP in settings)`)를 만들었지만, 그것은 "PC가 꺼져 있다"를 장치로 굳히는 일이었고 IP가 빈 장치가 하나라도 있으면 다음 검색을 막았으며 다른 기기를 찾는 검색에도 쓸모없는 장치로 끼어들었다. 대신 `discovery_none`(한국어+영어 한 줄)을 info 로그에 남긴다.
+- 검색이 안 될 때 진단 순서: ① PC와 PC Control이 켜져 있는지 → ② 인바운드 UDP 1900 방화벽 규칙 *SmartThings PC Control SSDP*(와 네트워크 프로필 개인) → ③ 앱의 SmartThings 섹션에 찍히는 **'마지막 검색 요청'** 시각 — 허브의 M-SEARCH가 PC에 닿았는지를 말해 준다(#95, 서비스 v1.1.1) → ④ `allowed_hubs` 허브 허용 목록.
 - `machine_id`는 같은데 호스트 이름이 다르면(이미지 복제) 경고를 `pcInfo.message`에 띄운다.
 - `ipAddress` 환경설정이 비어 있고 `followDiscovery`가 켜져 있으면 검색이 알려 온 주소를 따라간다. `unreachable`이 된 장치는 **장치당 5분에 한 번** 표적 검색을 돈다.
 - `config.yml`의 `permissions`에는 `lan`과 `discovery`가 모두 필요하다.
@@ -295,7 +303,7 @@
 
 ### 6.6 프로필 이전
 
-- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v15`**.
+- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v1`**(파일 `profiles/pc.yml`) — 첫 공개 때 개발 중 쌓인 v2~v17을 지우고 v1로 초기화했다(#90, §11). 다음 화면 변경은 `pc-v2.yml`부터다.
 - 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
 - `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다.
 - 이전 직후에는 capability id가 바뀌었을 수 있어 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`)를 보고 전 줄을 한 번 다시 칠한다.
@@ -310,6 +318,77 @@
 
 - 프로필·프레젠테이션의 **라벨**은 번역 파일(ko/en)이 담당하고, 값 문구는 병기 문자열이다.
 - 드라이버가 만드는 **문장**(`pcInfo.message`, 요약 줄, `lastCommand`, `origin`)만 `language` 환경설정을 따른다. 드라이버는 허브 로케일을 읽을 수 없으므로 `auto`는 한국어다.
+
+### 6.9 전환 중 동작 (#93)
+
+PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, 추가 명령은 서비스로
+나가지 않는다. 종료 유예에 들어갔거나 WoL로 켜는 중인데 목록·토글이 평소처럼
+열려 있으면, 사용자가 보내는 두 번째 명령은 이미 도는 명령과 경합하거나 이미
+없는 PC에 닿는다. 앱에는 줄 비활성화·로딩 상태가 없으므로(플랫폼 노트
+"supportedValues") 다음 셋으로 근접시킨다.
+
+**무엇이 전환인가** (`state.is_transitioning`)
+
+- `powerState`가 `shuttingDown` 또는 `waking`.
+- **또는** 유예 중. `switch off`(과 `default`/`grace` 모드의 `execute`)는 서비스가 유예만큼 미뤄 두므로 `executed: false`와 함께 **예약으로 돌아온다**(§3.3). 그동안 `powerState`는 여전히 `on`이고, 전환의 유일한 흔적은 곧 실행될 예약뿐이다. 그래서 **`remaining_seconds ≤ 유예 길이`이고 명령이 `shutdown`·`forceshutdown`·`restart`·`suspend`·`hibernate`인 활성 예약**을 전환으로 친다.
+- **유예 길이는 서비스가 알려 준다.** status의 `grace.seconds`(§3.2, 기본 60초, 최대 30분)가 그대로 상한이다(`state.grace_limit`). 짐작하면 양쪽으로 다 틀린다 — 5분 유예를 건 PC는 앞의 3분 동안 멀쩡해 보이고, 넉넉히 잡은 고정값은 사용자가 일부러 건 짧은 예약까지 삼킨다. **같은 "4분 남음"이 5분 유예를 쓰는 PC에서는 전환이고 60초 유예를 쓰는 PC에서는 예약**이다. `grace.enabled`는 보지 않는다 — `execute(mode: "grace")`는 기본 설정과 무관하게 유예를 강제하므로 쓸모 있는 절반은 길이다.
+- `grace` 블록을 보내지 않는 옛 서비스에만 고정 폴백 `state.GRACE_SECONDS`(120초)를 쓴다. 기본 60초 유예를 여유 있게 덮는 값이다.
+- **사용자가 건 예약은 전환이 아니다.** 3일 뒤 종료가 걸린 PC는 평범하게 쓰는 PC다. 유예 길이 상한이 그 둘을 가른다.
+- `state.remember_schedule`이 `active`·남은 초·명령·유예 길이 넷을 폴링과 푸시에서 함께 기억한다. 유예 길이는 status가 실어 줄 때만 덮어쓴다(끊긴 푸시 본문 때문에 이미 배운 값을 잃지 않는다). `schedule_cancelled`는 예약 셋을 지우므로 취소하면 전환도 끝난다.
+
+**① 목록이 쉬는 값** — `lastAction`이 `none` 대신 `busy*`가 된다.
+
+| 전환 | 값 | 문구 |
+|---|---|---|
+| `waking` | `busyWake` | 켜는 중… (Waking…) |
+| 재시작(`power.stopping` reason 또는 유예 중인 명령이 `restart`) | `busyRestart` | 재시작 진행 중… (Restarting…) |
+| 절전 `suspend` | `busySleep` | 절전 진행 중… (Going to sleep…) |
+| 최대 절전 `hibernate` | `busyHibernate` | 최대 절전 진행 중… (Hibernating…) |
+| 그 밖의 종료 | `busyOff` | 종료 진행 중… (Shutting down…) |
+
+`busy*`는 `execute`의 인자이기도 하다 — 목록을 고르지 않고 닫으면 그 줄의 현재 값이
+나가므로, `none`과 똑같이 **무동작**이어야 한다. 목록의 **명령 쪽 항목은 아니다.**
+전환이 끝나면 `none`으로 돌아온다. 폴링뿐 아니라 실패한 폴링·푸시·`switch on`·깨우기
+타임아웃도 이 값을 따라 움직인다 — `waking` 동안에는 폴링이 계속 실패하므로 성공
+경로만으로는 줄이 멈춰 있다.
+
+`lastAction` 재전송 규칙은 둘뿐이다(2026-09-26 실측으로 다시 좁혔다, 플랫폼 노트
+"강제 이벤트 연발"):
+
+- **쉬는 값이 바뀌면** 강제로(`state_change`) 내보내고, **다음 폴링에 한 번 더** 같은 값을 강제로 내보낸다(`poll.ACTION_CONFIRM_FIELD`). 반드시 닿아야 하는 것은 전환의 끝을 말하는 `none`이고, 실측에서 잃은 것도 그것이다. 바뀐 값을 강제해도 손해가 없다 — `state_change`는 "같아 보여도 전달하라"는 뜻일 뿐이다.
+- **바뀌지 않았으면 아무것도 보내지 않는다.** 예외는 앱이 회전 표시를 띄운 채 기다리는 **명령의 응답**(`poll.answer_action`) 하나뿐이고, 그것이 갚을 재전송이 남아 있으면 같이 갚는다.
+
+한 번의 반복을 타이머가 아니라 장치 필드로 두는 이유: `repaint_soon`의 15초·90초
+후속이 같은 일을 하지만 그때마다 **모든 카드의 모든 줄**을 다시 칠하고 강제 폴링까지
+돌린다. 줄 하나에 쓰기에는 너무 크고, `ensure_action`은 푸시·WoL 경로에서도 불리므로
+`driver` 핸들을 받지 않는다.
+
+**② 항목 숨김 실험** — `supportedCommands`(string 배열)를 프레젠테이션의
+`supportedValues`가 읽는다. 평소에는 메뉴 여덟, 전환 중에는 지금 쉬는 `busy*`
+하나뿐이다. **실기 확인 대기**이고, 먹지 않아도 ①과 ③은 그대로 성립한다. 빈
+배열은 쓰지 않는다(플랫폼 노트).
+
+**③ 드라이버 가드** — 전환 중 막히는 것과 통과하는 것:
+
+| | |
+|---|---|
+| 막힌다 | `execute(<명령>)` 전부(`lock`·화면 켜기/끄기 포함 — 떠나는 PC도, 아직 뜨지 않은 PC도 못 한다), 인자 없는 명령들, `switch off`, `schedule(N>0)`, `setPlanCommand` |
+| 통과한다 | `refresh`, `cancel()`, `schedule("0")`(취소)·`schedule("-1")`(무동작), `execute("none")`·`execute("busy*")`, **`switch on`과 `execute("wake")`** |
+
+`switch on`은 언제나 통과한다. `shuttingDown` 중에는 §6.2의 "유예 취소가 스위치를
+되살린다"가 바로 그 줄이고, `waking` 중에는 매직 패킷을 한 번 더 보내는 것뿐이다.
+`execute("wake")`는 같은 시퀀스이므로 같이 통과한다.
+
+막힌 명령은 ⑴ 그 명령이 들어온 줄을 **쉬는 값으로 강제 재전송**하고(그러지 않으면
+앱이 회전 표시 뒤 오류로 끝난다, 플랫폼 노트), ⑵ `pcInfo.message`와
+`pcInfo.summary`에 "종료 진행 중 · 끝난 뒤 다시 시도"를 띄운다. 다음 폴링이 원래
+문구로 되돌린다. 서비스로는 아무것도 나가지 않는다. `setPlanCommand`는 서비스로
+나가는 명령이 아니지만, 지금 돌 예약을 다시 겨누는 것도 "앱은 받았는데 아무 일도
+없는" 같은 종류라 막고 줄은 **원래 값**으로 답한다.
+
+표준 `switch` 토글은 회색 처리가 불가하므로 ③으로만 처리한다. `shuttingDown`
+동안 스위치는 §6.2에 따라 여전히 `on`이므로, 거부된 끄기는 그 값을 강제로 다시
+내보내 토글이 제자리로 튕겨 나간다.
 
 ## 7. 환경설정
 
@@ -353,8 +432,8 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 
 ## 11. 정식 릴리스 전 체크리스트
 
-1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-v2`~`pc-v15` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다.
-2. **capability 이름 확정** — `pcPower` `pcExec` `pcDelay` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
+1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-vN` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다. **첫 공개 때 pc.v1로 초기화했다(#90); 이후 화면이 바뀌면 v2부터 올린다.** `poll.ROWS_VERSION`도 같이 `"1"`로 되돌렸다 — 이전 스탬프를 가진 장치가 채널에는 없다.
+2. **capability 이름 확정** — `pcPower` `pcRemote` `pcDefer` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
 3. **버전** — `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치를 검증한다).
-4. **채널** — 개발용 버전을 정리하고 초대 링크를 README/Wiki의 자리표시자에 기입한다.
+4. **채널** — 채널 이름은 `Protomothis`(id `53831a53-…`, 드라이버 id는 그대로). 초대 링크 `https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A`(만료 없음, `edge:channels:invites:create`로 생성)는 README/edge README/Wiki에 적혀 있다.
 5. **서비스** — v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서로 올린다.

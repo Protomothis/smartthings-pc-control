@@ -97,13 +97,13 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 
 ### SmartThings Edge 드라이버
 
-v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함께 들어 있습니다(`edge/` 폴더). 허브 안에서 로컬로 돌고, 서비스의 `/st/v1` API로 통신합니다. **채널 공개는 실기 테스트를 마친 뒤** 별도로 안내합니다. 그때까지는 기존 PCControl 드라이버를 그대로 쓰면 됩니다.
+v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함께 들어 있습니다(`edge/` 폴더). 허브 안에서 로컬로 돌고, 서비스의 `/st/v1` API로 통신합니다. **Protomothis 채널**에서 설치할 수 있습니다: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A> (가입 → 드라이버 설치 → SmartThings 앱의 [주변 기기 검색]). 설치와 사용법은 [edge/README.md](edge/README.md)와 [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-%EB%93%9C%EB%9D%BC%EC%9D%B4%EB%B2%84)에 있습니다. 기존 PCControl 드라이버 경로도 그대로 동작하므로 옮겨 갈 의무는 없습니다.
 
 - **정확한 전원 상태** — 켜짐 / 절전 / 최대절전 / 꺼짐 / 깨우는 중 / 종료 대기를 구분합니다. 서비스가 종료·절전 직전에 허브로 푸시를 보내므로 폴링을 기다리지 않습니다.
 - **유예와 예약이 보입니다** — 남은 시간 카운트다운, 출처(SmartThings · 앱 · 텔레그램), [취소] 버튼, 5분에서 3일(72시간)까지 16개 프리셋 예약. 어디서 취소하든 모든 곳에서 함께 사라집니다.
 - **SSDP 자동 검색** — [기기 추가 → 주변 기기 검색]으로 PC를 찾습니다. IP·포트·호스트 이름이 채워진 채 추가되므로 **시크릿만** 넣으면 됩니다. DHCP로 IP가 바뀌어도 따라갑니다. 장치를 추가할 방법은 이 검색뿐이므로 응답기는 항상 켜져 있고, 끄는 설정은 없습니다.
 - **조용한 실패 제거** — 시크릿 불일치·연결 불가·버전 비호환·WoL 비활성 어댑터를 상태 줄에 한 줄로 표시합니다.
-- **상세 화면 두 카드** — 위에 상태(전원 상태·마지막 실행·예약 요약·세션·상태·버전), 아래에 조작(명령·예약할 명령·예약 시간). 화면 켜기/끄기도 명령 목록에 있고, 자동화는 `pcExec.execute`·`pcDelay.schedule`을 씁니다.
+- **상세 화면 두 카드** — 위에 상태(전원 상태·마지막 실행·예약 요약·세션·상태·버전), 아래에 조작(명령·예약할 명령·예약 시간). 화면 켜기/끄기도 명령 목록에 있고, 자동화는 `pcExec.execute`·`pcDefer.schedule`을 씁니다.
 - **여러 PC** — MachineGuid로 장치를 구분하므로 허브 하나로 여러 PC를 다뤄도 섞이지 않습니다. 시크릿·MAC은 장치별 설정입니다.
 
 설치·환경설정·자동화 예시·문제 해결은 **[`edge/README.md`](edge/README.md)** 와 Wiki의 [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) 페이지에 있습니다.
@@ -328,7 +328,7 @@ v1.1.0 ships a **purpose-built Edge driver** for this service (the `edge/` folde
 - **Grace and schedules are visible** — remaining countdown, origin (SmartThings · app · Telegram), a [Cancel] button and sixteen presets from 5 minutes to 3 days. Cancelling anywhere clears it everywhere.
 - **SSDP discovery** — *Add device → Scan nearby* finds the PC and fills in its IP, port and hostname, so only the **secret** is left to type. The device follows the PC if DHCP moves it. It is the only way to add the device, so the responder is always on and there is no setting to turn it off.
 - **No silent failures** — wrong secret, unreachable PC, incompatible version and Wake-on-LAN-disabled adapters all show up as one status line.
-- **Two cards in the detail view** — status on top (power state, last action, schedule summary, session, status, versions) and controls below (command, what to schedule, when to schedule). Screen on/off is in the command list, and automations use `pcExec.execute` / `pcDelay.schedule`.
+- **Two cards in the detail view** — status on top (power state, last action, schedule summary, session, status, versions) and controls below (command, what to schedule, when to schedule). Screen on/off is in the command list, and automations use `pcExec.execute` / `pcDefer.schedule`.
 - **Several PCs** — devices are keyed by MachineGuid, so one hub can drive many PCs without mixing them up. Secret and MAC are per-device preferences.
 
 Installation, preferences, automation examples and troubleshooting are in **[`edge/README.md`](edge/README.md)** and on the wiki page [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Korean).

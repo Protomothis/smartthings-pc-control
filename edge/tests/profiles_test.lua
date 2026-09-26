@@ -4,6 +4,12 @@
 -- device at all; the rest drives the real lifecycle handlers of init.lua with
 -- the st.driver mock, because the point of the feature is that a device left
 -- on an old profile is moved on its first init.
+--
+-- #90 reset the numbering for the first channel release: `KNOWN` holds one
+-- name, so no real profile name migrates anywhere. The machinery still has to
+-- work for the day `pc.v2` ships, so the tests that exercise it swap in a
+-- pretend two-version history (`with_fake_versions`) instead of depending on
+-- profile files that no longer exist.
 
 local h = require "helpers"
 local discovery = require "discovery"
@@ -20,6 +26,25 @@ local function device_on(profile_name, id)
   return device
 end
 
+-- The pretend history: `OLD` is a shipped-but-superseded name, `NEW` the
+-- current one. Neither has a file in profiles/ and neither ever has to - the
+-- migration decision is made from these constants alone.
+local OLD, NEW = "pc.test1", "pc.test2"
+
+--- Run `body` as if the driver had shipped two profile versions.
+--
+-- Restores the constants afterwards even when `body` fails, so one broken
+-- expectation cannot leak a fake profile name into the rest of the suite.
+local function with_fake_versions(body)
+  local pc, known, legacy = profiles.PC, profiles.KNOWN, profiles.LEGACY
+  profiles.PC, profiles.KNOWN, profiles.LEGACY = NEW, { OLD, NEW }, OLD
+  local ok, err = pcall(body)
+  profiles.PC, profiles.KNOWN, profiles.LEGACY = pc, known, legacy
+  if not ok then
+    error(err, 0)
+  end
+end
+
 --------------------------------------------------------------------------------
 -- pure: migration_for
 --------------------------------------------------------------------------------
@@ -30,35 +55,40 @@ function T.test_the_profile_constants_are_the_current_version()
   h.assert_equal(profiles.current(), profiles.PC)
 end
 
+function T.test_the_first_release_has_nothing_to_migrate()
+  -- #90: one known name means `migration_for` answers nil for everything,
+  -- including the development names that never left the author's hub.
+  h.assert_deep_equal(profiles.KNOWN, { "pc.v1" })
+  h.assert_equal(profiles.PC, "pc.v1")
+  h.assert_nil(profiles.migration_for(profiles.PC))
+  h.assert_nil(profiles.migration_for("pc.v2"))
+  h.assert_nil(profiles.migration_for("pc.v17"))
+end
+
 function T.test_an_older_profile_migrates_to_the_current_one()
-  h.assert_equal(profiles.migration_for("pc.v1"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v2"), "pc.v15")
+  with_fake_versions(function()
+    h.assert_equal(profiles.migration_for(OLD), NEW)
+  end)
 end
 
 function T.test_the_current_profile_does_not_migrate()
-  h.assert_equal(profiles.migration_for("pc.v3"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v4"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v5"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v6"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v7"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v8"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v9"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v10"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v11"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v12"), "pc.v15")
-  h.assert_equal(profiles.migration_for("pc.v13"), "pc.v15")
-  -- #89: v14 is now an older profile too - `pcPlanner` became `pcDelay`.
-  h.assert_equal(profiles.migration_for("pc.v14"), "pc.v15")
-  h.assert_nil(profiles.migration_for("pc.v15"))
+  h.assert_nil(profiles.migration_for(profiles.PC))
+  with_fake_versions(function()
+    h.assert_nil(profiles.migration_for(NEW))
+  end)
 end
 
 function T.test_an_unknown_profile_is_left_alone()
   -- Another driver's device, or one from a version newer than this driver.
-  h.assert_nil(profiles.migration_for("pc.v15"))
+  h.assert_nil(profiles.migration_for("pc.v99"))
   h.assert_nil(profiles.migration_for("thermostat"))
   h.assert_nil(profiles.migration_for(""))
   h.assert_nil(profiles.migration_for(nil))
   h.assert_nil(profiles.migration_for(42))
+  with_fake_versions(function()
+    h.assert_nil(profiles.migration_for("pc.v1"),
+      "a name outside KNOWN is never ours to move")
+  end)
 end
 
 function T.test_a_removed_child_profile_is_never_migrated()
@@ -106,7 +136,7 @@ end
 
 function T.test_a_pc_is_not_a_legacy_child()
   h.assert_false(profiles.is_legacy_child(device_on(profiles.PC, "a-pc")))
-  -- A device from before #79 has no name at all and falls back to pc.v1.
+  -- A device with no name at all falls back to LEGACY, which is still a PC.
   h.assert_false(profiles.is_legacy_child(device_on(nil, "old-pc")))
   h.assert_false(profiles.is_legacy_child(nil))
   h.assert_false(profiles.is_legacy_child("not a device"))
@@ -150,20 +180,20 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_the_hub_reported_name_wins()
-  local device = device_on("pc.v1")
-  device.profile = { id = "abc-123", name = "pc.v2", components = {} }
-  h.assert_equal(profiles.name_of(device), "pc.v2")
+  local device = device_on(OLD)
+  device.profile = { id = "abc-123", name = NEW, components = {} }
+  h.assert_equal(profiles.name_of(device), NEW)
 end
 
 function T.test_a_profile_table_without_a_name_falls_back_to_the_field()
   -- What the hub actually gives us (platform notes "프로필과 화면 생성"): id and components, no name.
-  local device = device_on("pc.v2")
+  local device = device_on(OLD)
   device.profile = { id = "abc-123", components = { { id = "main" } } }
-  h.assert_equal(profiles.name_of(device), "pc.v2")
+  h.assert_equal(profiles.name_of(device), OLD)
 end
 
 function T.test_a_device_with_neither_is_from_before_the_field_existed()
-  h.assert_equal(profiles.name_of(device_on(nil)), "pc.v1")
+  h.assert_equal(profiles.name_of(device_on(nil)), profiles.LEGACY)
 end
 
 --------------------------------------------------------------------------------
@@ -172,20 +202,35 @@ end
 
 function T.test_ensure_moves_an_old_device_and_records_it()
   profiles.reset()
-  local device = device_on("pc.v1", "old-pc")
-  h.assert_equal(profiles.ensure(device), profiles.PC)
-  h.assert_equal(#device.metadata_updates, 1)
-  h.assert_deep_equal(device.metadata_updates[1], { profile = profiles.PC })
-  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC,
-    "the new profile name has to be persisted, or init would retry forever")
+  with_fake_versions(function()
+    local device = device_on(OLD, "old-pc")
+    h.assert_equal(profiles.ensure(device), NEW)
+    h.assert_equal(#device.metadata_updates, 1)
+    h.assert_deep_equal(device.metadata_updates[1], { profile = NEW })
+    h.assert_equal(device:get_field(profiles.FIELD), NEW,
+      "the new profile name has to be persisted, or init would retry forever")
+  end)
 end
 
 function T.test_ensure_runs_at_most_once_per_device()
   profiles.reset()
-  local device = device_on("pc.v1", "once-only")
-  profiles.ensure(device)
-  h.assert_nil(profiles.ensure(device), "a second attempt must be a no-op")
-  h.assert_equal(#device.metadata_updates, 1)
+  with_fake_versions(function()
+    local device = device_on(OLD, "once-only")
+    profiles.ensure(device)
+    h.assert_nil(profiles.ensure(device), "a second attempt must be a no-op")
+    h.assert_equal(#device.metadata_updates, 1)
+  end)
+end
+
+function T.test_ensure_does_not_move_a_device_at_the_first_release()
+  -- #90: with one known name every device is already where it belongs, so no
+  -- install from the channel ever sees a `try_update_metadata` call.
+  profiles.reset()
+  for _, name in ipairs({ "pc.v1", "pc.v2", "pc.v17" }) do
+    local device = device_on(name, "release-" .. name)
+    h.assert_nil(profiles.ensure(device))
+    h.assert_equal(#device.metadata_updates, 0)
+  end
 end
 
 function T.test_ensure_does_nothing_for_a_current_device()
@@ -207,13 +252,15 @@ end
 
 function T.test_ensure_survives_a_hub_that_refuses_the_update()
   profiles.reset()
-  local device = device_on("pc.v1", "grumpy-hub")
-  function device:try_update_metadata()
-    error("no such profile", 0)
-  end
-  h.assert_nil(profiles.ensure(device))
-  -- The field still says v1, so the next driver start tries again.
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v1")
+  with_fake_versions(function()
+    local device = device_on(OLD, "grumpy-hub")
+    function device:try_update_metadata()
+      error("no such profile", 0)
+    end
+    h.assert_nil(profiles.ensure(device))
+    -- The field still says the old name, so the next driver start tries again.
+    h.assert_equal(device:get_field(profiles.FIELD), OLD)
+  end)
 end
 
 --------------------------------------------------------------------------------
@@ -230,16 +277,31 @@ local function fake_driver(devices)
   return driver
 end
 
-function T.test_init_migrates_a_device_created_by_an_older_driver()
+function T.test_init_migrates_a_device_left_on_an_older_profile()
   profiles.reset()
-  -- No profile_name field and no name on device.profile: exactly what a
-  -- device added before #79 looks like.
+  with_fake_versions(function()
+    -- No profile_name field and no name on device.profile: the device falls
+    -- back to LEGACY, which in the pretend history is the superseded name.
+    local device = h.fake_device({ ipAddress = "192.168.1.20" })
+    device.id = "init-pc"
+    device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-1"
+    device.profile = { id = "abc-123", components = { { id = "main" } } }
+    lifecycle().init(fake_driver({ device }), device)
+    h.assert_deep_equal(device.metadata_updates[1], { profile = NEW })
+    h.assert_equal(device:get_field(profiles.FIELD), NEW)
+  end)
+end
+
+function T.test_init_leaves_a_first_release_device_where_it_is()
+  -- #90: the same device on the real constants is already current, so init
+  -- touches no metadata at all.
+  profiles.reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
-  device.id = "init-pc"
-  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-1"
+  device.id = "init-pc-v1"
+  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-3"
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates[1], { profile = profiles.PC })
+  h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
 end
 

@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcexec",
+  "id": "numbersystem53811.pcremote",
   "version": 1,
   "status": "proposed",
-  "name": "pcExec",
+  "name": "pcRemote",
   "ephemeral": false,
   "attributes": {
     "lastAction": {
@@ -21,8 +21,29 @@
               "suspend",
               "lock",
               "turnscreenoff",
-              "turnscreenon"
+              "turnscreenon",
+              "busyOff",
+              "busyRestart",
+              "busyWake",
+              "busySleep",
+              "busyHibernate"
             ]
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    },
+    "supportedCommands": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false,
@@ -96,7 +117,12 @@
               "suspend",
               "lock",
               "turnscreenoff",
-              "turnscreenon"
+              "turnscreenon",
+              "busyOff",
+              "busyRestart",
+              "busyWake",
+              "busySleep",
+              "busyHibernate"
             ]
           }
         },

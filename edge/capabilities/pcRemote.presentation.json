@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcexec",
+  "id": "numbersystem53811.pcremote",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -53,7 +53,8 @@
               "value": "화면 켜기 (Screen on)",
               "type": "active"
             }
-          ]
+          ],
+          "supportedValues": "supportedCommands.value"
         },
         "state": {
           "value": "lastAction.value",
@@ -107,6 +108,31 @@
               "key": "turnscreenon",
               "value": "화면 켜기 (Screen on)",
               "type": "active"
+            },
+            {
+              "key": "busyOff",
+              "value": "종료 진행 중… (Shutting down…)",
+              "type": "inactive"
+            },
+            {
+              "key": "busyRestart",
+              "value": "재시작 진행 중… (Restarting…)",
+              "type": "inactive"
+            },
+            {
+              "key": "busyWake",
+              "value": "켜는 중… (Waking…)",
+              "type": "inactive"
+            },
+            {
+              "key": "busySleep",
+              "value": "절전 진행 중… (Going to sleep…)",
+              "type": "inactive"
+            },
+            {
+              "key": "busyHibernate",
+              "value": "최대 절전 진행 중… (Hibernating…)",
+              "type": "inactive"
             }
           ]
         }

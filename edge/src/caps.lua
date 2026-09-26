@@ -26,7 +26,13 @@ caps.POWER_STATE = NAMESPACE .. ".pcpower"
 -- capability - the app groups detail rows by the capability that owns them, so
 -- "what a schedule runs" has to live in the schedule card - which made this a
 -- different definition: `pcRun` became `pcExec`.
-caps.COMMAND = NAMESPACE .. ".pcexec"
+-- #93: and once more. While the PC is shutting down or waking the list rests on
+-- a `busyX` value instead of `none` ("종료 진행 중…"), and the row learns which
+-- entries are still worth offering from a new `supportedCommands` attribute.
+-- Five enum values and an attribute are both definition changes, so `pcExec`
+-- became `pcRemote` - and the name is honest again: the card is the remote
+-- control, not just the `execute` command.
+caps.COMMAND = NAMESPACE .. ".pcremote"
 -- #83: same rule again - the definition gained a `status` enum (a detailView
 -- list cannot read a boolean, platform notes "상세 화면(detailView) 위젯"), so `pcTimer` became `pcPlan`.
 -- #85: `schedule(minutes)` now accepts 0 (the list's Cancel entry; the cloud
@@ -44,7 +50,14 @@ caps.COMMAND = NAMESPACE .. ".pcexec"
 -- `schedule(minutes)` accepts up to 4320 and `remainingSeconds` up to 259200 -
 -- a range is part of the definition and the hub caches definitions by id
 -- (platform notes "허브의 정의 캐시"), so `pcPlanner` became `pcDelay`.
-caps.SCHEDULE = NAMESPACE .. ".pcdelay"
+-- #91: and once more, for the last remaining hole in #88's fix. The phone does
+-- send the row's current value when the list is closed without a pick, but that
+-- path does NOT go through the presentation's `argumentType: "integer"`
+-- conversion: the argument leaves as the STRING "-1", and the cloud rejects it
+-- against `minutes: integer` with a 422 before the hub sees it (platform notes
+-- "상세 화면(detailView) 위젯"). A list argument therefore has to be defined as a
+-- string enum, which is a definition change: `pcDelay` became `pcDefer`.
+caps.SCHEDULE = NAMESPACE .. ".pcdefer"
 -- #85: the definition gained a `versions` attribute (the row that says which
 -- service, driver and screen template a device is actually running), so by the
 -- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant

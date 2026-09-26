@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcInfo.message`, `pcExec.lastCommand`, `pcDelay.origin`).
+-- (`pcInfo.message`, `pcRemote.lastCommand`, `pcDefer.origin`).
 --
 -- Design doc §6.8: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -21,6 +21,14 @@ local STRINGS = {
   wol_not_ready = {
     ko = "PC의 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
     en = "Wake-on-LAN is off on the PC's adapter · check the Network tab",
+  },
+  -- #97: the same sentence, but naming the adapter the service picked
+  -- (`status.wol.selected.name`). With several NICs "the PC's adapter" does not
+  -- say which one to open, and the PC's own WoL dropdown (#96) names it too.
+  -- A service too old to name one still gets `wol_not_ready`.
+  wol_not_ready_on = {
+    ko = "%s 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
+    en = "Wake-on-LAN is off on %s · check the Network tab",
   },
   wol_no_mac = {
     ko = "MAC 주소를 설정하세요",
@@ -85,6 +93,32 @@ local STRINGS = {
     en = "A service update is available",
   },
 
+  -- #93: what a command that arrived during a power transition is answered
+  -- with. It goes into `pcInfo.message` AND `pcInfo.summary` - the message row
+  -- is a sentence the user may never scroll to, and the summary is the line
+  -- they are already looking at - and the next poll puts the normal wording
+  -- back. Short, because the summary row is truncated on the phone.
+  busy_off = {
+    ko = "종료 진행 중 · 끝난 뒤 다시 시도",
+    en = "Shutting down · try again after",
+  },
+  busy_restart = {
+    ko = "재시작 진행 중 · 끝난 뒤 다시 시도",
+    en = "Restarting · try again after",
+  },
+  busy_wake = {
+    ko = "켜는 중 · 끝난 뒤 다시 시도",
+    en = "Waking · try again after",
+  },
+  busy_sleep = {
+    ko = "절전 진행 중 · 끝난 뒤 다시 시도",
+    en = "Going to sleep · try again after",
+  },
+  busy_hibernate = {
+    ko = "최대 절전 진행 중 · 끝난 뒤 다시 시도",
+    en = "Hibernating · try again after",
+  },
+
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {
     ko = "기존 예약을 새 예약으로 대체했습니다",
@@ -103,6 +137,16 @@ local STRINGS = {
   discovery_found = {
     ko = "PC %d대를 찾았습니다",
     en = "Found %d PC(s)",
+  },
+  -- #94: nobody answered the M-SEARCH. Nothing is created any more, so this
+  -- line in the driver log is the whole explanation - and it is the first
+  -- step of the diagnosis order in edge/README ("검색이 안 될 때"). Written
+  -- in both languages at once: a log line does not follow the `language`
+  -- preference, because it belongs to no device.
+  discovery_none = {
+    ko = "응답한 PC가 없습니다 · PC와 PC Control이 켜져 있고 UDP 1900이 열려 있어야 합니다"
+      .. " (No PC answered · the PC and PC Control must be running and UDP 1900 reachable)",
+    en = "No PC answered · the PC and PC Control must be running and UDP 1900 reachable",
   },
   ip_updated = {
     ko = "IP 주소를 %s(으)로 변경했습니다",
@@ -155,6 +199,12 @@ local STRINGS = {
   -- to act on at a glance, and both stay in `pcInfo.message`.
   wol_off_short = { ko = "WoL 꺼짐", en = "WoL off" },
 
+  -- #97: the same warning with the chosen adapter's name, used only while the
+  -- whole row still fits in `state.SUMMARY_MAX_CHARS`. The row is narrow and
+  -- truncates silently (platform notes, "화면 배치"), so a long adapter name
+  -- drops back to `wol_off_short` and the name is read in `pcInfo.message`.
+  wol_off_short_on = { ko = "WoL 꺼짐 (%s)", en = "WoL off (%s)" },
+
   -- #87: the `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0". The screen
   -- (profile) name left it: it answered a question only the author asks, and
   -- it pushed the two numbers that matter off the end of a narrow row.
@@ -168,7 +218,7 @@ local STRINGS = {
   versions_update = { ko = "업데이트 v%s", en = "Update v%s" },
   versions_update_plain = { ko = "업데이트 있음", en = "Update available" },
 
-  -- #86: `pcExec.lastCommand` before the PC has run anything. An empty string
+  -- #86: `pcRemote.lastCommand` before the PC has run anything. An empty string
   -- is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault rather than as "nothing has
   -- happened yet", so the row always carries a sentence.
   last_command_none = { ko = "없음 (None)", en = "None" },
@@ -257,6 +307,26 @@ function i18n.command(lang, command)
     return i18n.t(lang, key)
   end
   return tostring(command)
+end
+
+-- #93: `lastAction` busy value -> the note key above. The enum values are
+-- camelCase because they are what the app reads; the string keys are not.
+local BUSY_NOTES = {
+  busyOff = "busy_off",
+  busyRestart = "busy_restart",
+  busyWake = "busy_wake",
+  busySleep = "busy_sleep",
+  busyHibernate = "busy_hibernate",
+}
+
+--- #93: the "try again after" note for a busy `lastAction` value, or "" for
+--- anything that is not one (so a caller can test it like any other notice).
+function i18n.busy(lang, action)
+  local key = BUSY_NOTES[tostring(action or "")]
+  if not key then
+    return ""
+  end
+  return i18n.t(lang, key)
 end
 
 --- Localised label for a `pcPower.powerState` value (#78 summaries).

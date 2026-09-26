@@ -33,10 +33,19 @@ local function sample_status()
       at = "2026-09-17T23:05:00+09:00",
     },
     update = { available = false, latest = "v1.1.0" },
+    -- #96/#97: the service picks the adapter and says which one in `selected`;
+    -- `adapters[]` carries the same answer as `ip` + `selected` on the row.
+    -- `wol_mac_falls_back_*` below keeps an old-shape body, from a service that
+    -- only lists adapters, so the guess this replaced stays covered.
     wol = {
       ready = true,
+      selected = {
+        name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+        wol_enabled = true, wol_capable = true, source = "auto",
+      },
       adapters = {
-        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = true, wol_capable = true },
+        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+          wol_enabled = true, wol_capable = true, selected = true },
       },
     },
     display = "on",
@@ -64,6 +73,10 @@ local function golden(lang)
     { cap = caps.POWER_STATE, attr = "powerState", value = "on" },
     { cap = caps.COMMAND, attr = "lastCommand",
       value = en and "Shut down · SmartThings · 23:05" or "종료 · SmartThings · 23:05" },
+    -- #93: which entries the command list is allowed to offer. The sample PC is
+    -- on and its schedule is four minutes away, so that is the whole menu; a PC
+    -- in a transition gets the one busy value instead (see the tests below).
+    { cap = caps.COMMAND, attr = "supportedCommands", value = state.EXECUTE_KEYS },
     { cap = caps.SCHEDULE, attr = "active", value = true },
     -- #83: the same fact as an enum, because a list cannot read a boolean.
     { cap = caps.SCHEDULE, attr = "status", value = "scheduled" },
@@ -332,6 +345,9 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
   local events = state.initial_rows("ko")
   for _, case in ipairs({
     { caps.COMMAND, "lastCommand" },
+    -- #93: the menu the list reads through `supportedValues`. A device that has
+    -- never been polled is not transitioning, so it gets the whole menu.
+    { caps.COMMAND, "supportedCommands" },
     { caps.SCHEDULE, "active" }, { caps.SCHEDULE, "status" },
     { caps.SCHEDULE, "command" }, { caps.SCHEDULE, "remainingSeconds" },
     { caps.SCHEDULE, "executeAt" }, { caps.SCHEDULE, "origin" },
@@ -346,6 +362,20 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
   h.assert_equal(h.event_value(events, caps.VERSION, "versions"), state.versions(nil, "ko"))
   -- #86: and no painted row is an empty string - that is drawn as "-" too.
   h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "없음 (None)")
+  h.assert_deep_equal(h.event_value(events, caps.COMMAND, "supportedCommands"),
+    state.EXECUTE_KEYS)
+end
+
+function T.test_the_initial_rows_keep_a_remembered_service_version()
+  -- #92: `initial_rows` is also what a repaint paints, and a device that has
+  -- been answering for months must not have its version reset to "v?" by a
+  -- profile change or by the PC being off at the time.
+  local events = state.initial_rows("ko", "v1.1.0")
+  h.assert_equal(h.event_value(events, caps.VERSION, "versions"), state.versions("v1.1.0", "ko"))
+  h.assert_equal(h.event_value(events, caps.STATUS, "versions"), state.versions("v1.1.0", "ko"))
+  -- Nothing remembered is still "v?": the row has to say something.
+  h.assert_equal(h.event_value(state.initial_rows("ko"), caps.VERSION, "versions"),
+    state.versions(nil, "ko"))
 end
 
 function T.test_status_summary_reads_like_the_issue()
@@ -368,6 +398,22 @@ function T.test_status_summary_warns_when_wol_is_off()
   h.assert_equal(state.status_summary("ok", "en", true), "Connected · WoL off")
   -- A PC we cannot reach is not told off for its adapter as well.
   h.assert_equal(state.status_summary("unreachable", "en", true), "Not connected · No response")
+end
+
+function T.test_status_summary_names_the_adapter_while_it_fits()
+  -- #97: which NIC to go and open, on the row the user glances at.
+  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷"), "연결됨 · WoL 꺼짐 (이더넷)")
+  -- The row truncates silently, so the name is added only while the line stays
+  -- inside SUMMARY_MAX_CHARS - counted in characters, not in UTF-8 bytes.
+  h.assert_true(#state.status_summary("ok", "ko", true, "이더넷") > state.SUMMARY_MAX_CHARS,
+    "the Korean line is longer than 24 bytes, which is the point of the count")
+  h.assert_equal(state.status_summary("ok", "ko", true, "vEthernet (Default Switch)"),
+    "연결됨 · WoL 꺼짐", "a long adapter name is dropped rather than cut off")
+  -- English is wordier, so the name rarely fits there; `pcInfo.message` says it.
+  h.assert_equal(state.status_summary("ok", "en", true, "Ethernet"), "Connected · WoL off")
+  -- No name, or WoL fine: exactly what the row said before #97.
+  h.assert_equal(state.status_summary("ok", "ko", true, ""), "연결됨 · WoL 꺼짐")
+  h.assert_equal(state.status_summary("ok", "ko", false, "이더넷"), "연결됨")
 end
 
 function T.test_status_summary_never_repeats_the_power_state()
@@ -425,13 +471,34 @@ function T.test_the_summary_warns_about_a_wol_that_is_off()
   h.assert_contains(h.event_value(events, caps.STATUS, "message"), "네트워크 탭")
 end
 
+function T.test_the_wol_warning_follows_the_selected_adapter()
+  -- #97: three rows, one answer. The sample PC's Wi-Fi card has WoL on, but
+  -- the service picked the Ethernet one and that is the adapter that matters.
+  local status = sample_status()
+  status.wol.selected.wol_enabled = false
+  status.wol.adapters[2] = { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = true }
+  local events = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(events, caps.STATUS, "wolReady"), false)
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (Ethernet)")
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"),
+    "Ethernet 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+
+  -- And the other way round: `wol.ready` says no, the chosen adapter says yes.
+  status.wol.selected.wol_enabled = true
+  status.wol.ready = false
+  local ok = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(ok, caps.STATUS, "wolReady"), true)
+  h.assert_equal(h.event_value(ok, caps.STATUS, "summary"), "연결됨")
+  h.assert_equal(h.event_value(ok, caps.STATUS, "message"), "")
+end
+
 function T.test_a_quiet_status_has_no_notice_at_all()
   h.assert_equal(h.event_value(events_for(sample_status()), caps.STATUS, "summary"),
     "Connected")
 end
 
 --------------------------------------------------------------------------------
--- pcExec.lastAction (#82, #84)
+-- pcRemote.lastAction (#82, #84, #93)
 --------------------------------------------------------------------------------
 
 function T.test_the_action_values_are_the_service_command_names()
@@ -442,8 +509,16 @@ function T.test_the_action_values_are_the_service_command_names()
       "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
     h.assert_true(state.is_action(value), value .. " is not a lastAction value")
   end
-  h.assert_equal(#state.ACTIONS, 10)
+  -- #93: plus the five the row rests on during a transition, which are
+  -- arguments for exactly the same reason.
+  for _, value in ipairs(state.BUSY_ACTIONS) do
+    h.assert_true(state.is_action(value), value .. " is not a lastAction value")
+    h.assert_true(state.is_busy_action(value))
+  end
+  h.assert_equal(#state.ACTIONS, 15)
   h.assert_equal(state.ACTION_NONE, "none")
+  h.assert_false(state.is_busy_action(state.ACTION_NONE),
+    "`none` is the idle resting value, not a busy one")
   h.assert_nil(state.action_for, "#84 removed the service-command mapping")
 end
 
@@ -454,10 +529,231 @@ function T.test_is_action_rejects_anything_outside_the_enum()
   end
   h.assert_false(state.is_action(nil))
   h.assert_false(state.is_action(42))
+  for _, bogus in ipairs({ "busy", "busyoff", "busyLock" }) do
+    h.assert_false(state.is_action(bogus), tostring(bogus) .. " must not pass")
+    h.assert_false(state.is_busy_action(bogus))
+  end
 end
 
 --------------------------------------------------------------------------------
--- pcDelay.planCommand (#84, moved in #85)
+-- #93: power transitions
+--------------------------------------------------------------------------------
+
+--- A device state with a pending schedule on it, and optionally the PC's own
+--- grace period (`grace.seconds`, §3.2). Without one, `grace_limit` falls back
+--- to `state.GRACE_SECONDS` - which is what a service too old to send it gets.
+local function scheduled(power, command, seconds, grace)
+  local s = state.new(power)
+  s.schedule_active = true
+  s.schedule_command = command
+  s.schedule_seconds = seconds
+  s.grace_seconds = grace
+  return s
+end
+
+function T.test_shutting_down_and_waking_are_transitions()
+  -- The two states of §6.2 that mean "this is over in a moment, and nothing
+  -- else can usefully be asked for until it is".
+  h.assert_true(state.is_transitioning(state.new(state.SHUTTING_DOWN)))
+  h.assert_true(state.is_transitioning(state.new(state.WAKING)))
+  for _, power in ipairs({ state.ON, state.OFF, state.SLEEPING,
+      state.HIBERNATED, state.UNKNOWN }) do
+    h.assert_false(state.is_transitioning(state.new(power)),
+      power .. " is a settled state, not a transition")
+  end
+  h.assert_false(state.is_transitioning(nil))
+  h.assert_false(state.is_transitioning({}))
+end
+
+function T.test_the_grace_period_is_a_transition_and_a_long_schedule_is_not()
+  -- §3.3: a `switch off` that follows the PC's grace period is not executed at
+  -- all - the service turns it into a schedule and answers `executed: false`.
+  -- powerState is still `on`, because the PC is, so that minute is only ever
+  -- visible as a schedule about to fire.
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60, 60)),
+    "the 60 s grace after a switch off is a transition (#93)")
+  h.assert_true(state.is_grace(scheduled(state.ON, "restart", 0, 60)))
+  h.assert_true(state.is_grace(scheduled(state.ON, "suspend", 60, 60)),
+    "a schedule exactly at the grace length is that grace")
+
+  -- ... and a schedule the user set on purpose is not. A PC that shuts down in
+  -- three days is an ordinary, fully usable PC.
+  for _, seconds in ipairs({ 61, 240, 1800, 259200 }) do
+    h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", seconds, 60)),
+      seconds .. " s away on a 60 s grace is a schedule, not a transition (#93)")
+  end
+  -- Nor is a schedule that does not take the PC away, or none at all.
+  h.assert_false(state.is_grace(scheduled(state.ON, "lock", 30, 60)))
+  local inactive = scheduled(state.ON, "shutdown", 30, 60)
+  inactive.schedule_active = false
+  h.assert_false(state.is_grace(inactive))
+  h.assert_false(state.is_grace(state.new(state.ON)))
+end
+
+function T.test_the_bound_is_the_pcs_own_grace_period()
+  -- The service says how long its grace is (`grace.seconds`, §3.2, up to 30
+  -- minutes), so the driver does not guess. The same four minutes is the tail
+  -- of a five-minute grace on one PC and a schedule somebody set on another.
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 300)),
+    "four minutes left of a 300 s grace IS the PC leaving (#93)")
+  h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 60)),
+    "four minutes on a 60 s grace is a schedule, not the PC leaving (#93)")
+  -- The ceiling the service allows, and one second past it.
+  h.assert_true(state.is_grace(scheduled(state.ON, "shutdown", 1800, 1800)))
+  h.assert_false(state.is_grace(scheduled(state.ON, "shutdown", 1801, 1800)))
+
+  -- A service too old to send the block falls back to the fixed bound, which
+  -- covers the 60 s default with room to spare.
+  h.assert_equal(state.grace_limit(nil), state.GRACE_SECONDS)
+  h.assert_equal(state.grace_limit(state.new(state.ON)), state.GRACE_SECONDS)
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60)),
+    "without a grace block the fallback still catches the default grace")
+  h.assert_false(state.is_transitioning(
+    scheduled(state.ON, "shutdown", state.GRACE_SECONDS + 1)))
+  -- Nonsense in the block is the same as no block.
+  for _, bogus in ipairs({ 0, -1, "later" }) do
+    h.assert_equal(state.grace_limit({ grace_seconds = bogus }), state.GRACE_SECONDS,
+      "grace.seconds = " .. tostring(bogus))
+  end
+  h.assert_equal(state.grace_limit({ grace_seconds = "300" }), 300,
+    "a number that arrived as a string is still a number")
+end
+
+function T.test_the_busy_value_says_what_is_happening()
+  -- `waking` is unambiguous; going away, the wording comes from the reason of
+  -- the `power.stopping` push, which is the only source that knows sleep from
+  -- hibernation (§3.5).
+  h.assert_equal(state.busy_action(state.new(state.WAKING)), state.ACTION_BUSY_WAKE)
+  local cases = {
+    shutdown = state.ACTION_BUSY_OFF,
+    forceshutdown = state.ACTION_BUSY_OFF,
+    restart = state.ACTION_BUSY_RESTART,
+    suspend = state.ACTION_BUSY_SLEEP,
+    hibernate = state.ACTION_BUSY_HIBERNATE,
+  }
+  for reason, expected in pairs(cases) do
+    local s = state.transition(state.new(state.ON), "stopping", reason)
+    h.assert_equal(state.busy_action(s), expected, "stopping(" .. reason .. ")")
+  end
+  -- An `unknown` reason, or a PC that went quiet on its own, reads as "종료
+  -- 진행 중" - which is what the user sees happen.
+  h.assert_equal(state.busy_action(state.transition(state.new(state.ON), "stopping", "unknown")),
+    state.ACTION_BUSY_OFF)
+  h.assert_equal(state.busy_action(state.new(state.SHUTTING_DOWN)), state.ACTION_BUSY_OFF)
+
+  -- The grace period has no reason yet, so the pending command is the word.
+  for command, expected in pairs(cases) do
+    h.assert_equal(state.busy_action(scheduled(state.ON, command, 60)), expected,
+      "the grace period running " .. command)
+  end
+
+  -- `waking` wins over a stopping reason left over from before the wake.
+  local waking = state.transition(state.transition(state.new(state.ON), "stopping", "suspend"),
+    "switch_on")
+  h.assert_equal(waking.power_state, state.WAKING)
+  h.assert_equal(state.busy_action(waking), state.ACTION_BUSY_WAKE)
+end
+
+function T.test_the_resting_action_is_none_unless_something_is_happening()
+  h.assert_equal(state.resting_action(state.new(state.ON)), state.ACTION_NONE)
+  h.assert_equal(state.resting_action(nil), state.ACTION_NONE)
+  h.assert_equal(state.resting_action(state.new(state.SHUTTING_DOWN)), state.ACTION_BUSY_OFF)
+  h.assert_equal(state.resting_action(state.new(state.WAKING)), state.ACTION_BUSY_WAKE)
+  h.assert_equal(state.resting_action(scheduled(state.ON, "hibernate", 45)),
+    state.ACTION_BUSY_HIBERNATE)
+  -- ... and back to `none` the moment the transition ends.
+  h.assert_equal(state.resting_action(state.transition(state.new(state.SHUTTING_DOWN), "status_ok")),
+    state.ACTION_NONE)
+end
+
+function T.test_supported_commands_is_the_menu_or_the_one_busy_value()
+  -- #93, the experiment: the detail-view list reads its menu from this
+  -- attribute. Idle, it is the whole menu; mid-transition it is the one busy
+  -- value the row rests on, which is not a menu entry at all.
+  h.assert_deep_equal(state.supported_commands(state.new(state.ON)), state.EXECUTE_KEYS)
+  h.assert_deep_equal(state.supported_commands(nil), state.EXECUTE_KEYS)
+  h.assert_deep_equal(state.supported_commands(state.new(state.SHUTTING_DOWN)),
+    { state.ACTION_BUSY_OFF })
+  h.assert_deep_equal(state.supported_commands(state.new(state.WAKING)),
+    { state.ACTION_BUSY_WAKE })
+  h.assert_deep_equal(state.supported_commands(scheduled(state.ON, "restart", 60)),
+    { state.ACTION_BUSY_RESTART })
+  -- Never empty: an empty `supportedValues` is reported to make the app fall
+  -- back to the full list rather than to none.
+  for _, s in ipairs({ state.new(state.ON), state.new(state.WAKING) }) do
+    h.assert_true(#state.supported_commands(s) > 0, "supportedCommands is empty")
+  end
+  -- A copy, so a caller cannot edit the constant out from under the next one.
+  local list = state.supported_commands(state.new(state.ON))
+  list[1] = "nonsense"
+  h.assert_deep_equal(state.supported_commands(state.new(state.ON)), state.EXECUTE_KEYS)
+end
+
+function T.test_apply_status_restricts_the_menu_during_a_transition()
+  local shutting = state.new(state.SHUTTING_DOWN)
+  local events = state.apply_status(shutting, sample_status(), { now = NOW, lang = "en" })
+  h.assert_deep_equal(h.event_value(events, caps.COMMAND, "supportedCommands"),
+    { state.ACTION_BUSY_OFF })
+  -- ... and hands the whole menu back when the PC is up again.
+  h.assert_deep_equal(
+    h.event_value(events_for(sample_status()), caps.COMMAND, "supportedCommands"),
+    state.EXECUTE_KEYS)
+end
+
+function T.test_remember_schedule_carries_the_countdown_the_command_and_the_grace()
+  -- #93: `schedule_active` alone cannot tell the grace period from a schedule
+  -- three days out, so the poll remembers all four.
+  local s = state.remember_schedule(state.new(state.ON), sample_status())
+  h.assert_true(s.schedule_active)
+  h.assert_equal(s.schedule_seconds, 240)
+  h.assert_equal(s.schedule_command, "shutdown")
+  -- The §3.2 sample PC has a five-minute grace, so its four-minutes-left
+  -- shutdown is that grace running, not something anyone typed in.
+  h.assert_equal(s.grace_seconds, 300)
+  h.assert_true(state.is_transitioning(s),
+    "four minutes left of a 300 s grace is the PC leaving (#93)")
+
+  -- The same body on a PC with the default grace is an ordinary schedule.
+  local short = sample_status()
+  short.grace = { enabled = true, seconds = 60 }
+  h.assert_false(state.is_transitioning(state.remember_schedule(state.new(state.ON), short)))
+
+  -- An inactive schedule leaves nothing behind for `is_grace` to read.
+  local cleared = state.remember_schedule(s, { schedule = { active = false, command = "shutdown" } })
+  h.assert_false(cleared.schedule_active)
+  h.assert_equal(cleared.schedule_seconds, 0)
+  h.assert_nil(cleared.schedule_command)
+  h.assert_false(state.is_transitioning(cleared))
+  h.assert_equal(cleared.grace_seconds, 300,
+    "a body without a grace block must not cost us the number we know")
+
+  -- And so does a body with no schedule block at all.
+  local empty = state.remember_schedule(state.new(state.ON), {})
+  h.assert_false(empty.schedule_active)
+  h.assert_equal(empty.schedule_seconds, 0)
+  h.assert_nil(empty.grace_seconds, "nothing was ever learned, so nothing is remembered")
+
+  -- The grace survives the state machine, which has no status body to re-read.
+  local stopping = state.transition(s, "stopping", "shutdown")
+  h.assert_equal(stopping.grace_seconds, 300)
+end
+
+function T.test_cancelling_a_schedule_ends_the_transition()
+  -- §6.2 already brings the switch back on; #93 needs the grace period to stop
+  -- reading as a transition as well, or the command list would stay "in
+  -- progress" until the next poll.
+  local grace = scheduled(state.SHUTTING_DOWN, "shutdown", 30)
+  h.assert_true(state.is_transitioning(grace))
+  local cancelled = state.transition(grace, "schedule_cancelled")
+  h.assert_equal(cancelled.power_state, state.ON)
+  h.assert_false(cancelled.schedule_active)
+  h.assert_equal(cancelled.schedule_seconds, 0)
+  h.assert_nil(cancelled.schedule_command)
+  h.assert_false(state.is_transitioning(cancelled))
+end
+
+--------------------------------------------------------------------------------
+-- pcDefer.planCommand (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_only_the_schedulable_commands_are_plan_commands()
@@ -547,7 +843,7 @@ function T.test_remaining_text_is_the_unit_ladder_on_its_own()
 end
 
 function T.test_schedule_summary_drops_the_origin()
-  -- #87: who asked is in `pcDelay.origin` and `pcExec.lastCommand`; on the
+  -- #87: who asked is in `pcDefer.origin` and `pcRemote.lastCommand`; on the
   -- summary row it pushed the minutes off the end of the line.
   for _, origin in ipairs({ "smartthings", "ui", "telegram", "remote" }) do
     local summary = state.schedule_summary({
@@ -652,8 +948,11 @@ function T.test_apply_status_survives_an_empty_body()
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
 end
 
-function T.test_wol_mac_prefers_an_enabled_adapter()
-  local status = {
+-- An old-shape `wol` block: a service that only lists adapters and never says
+-- which one it picked. This is the fixture the fallback below is about, so it
+-- deliberately keeps the pre-#97 shape (no `selected` anywhere).
+local function listed_adapters()
+  return {
     wol = {
       ready = true,
       adapters = {
@@ -662,10 +961,68 @@ function T.test_wol_mac_prefers_an_enabled_adapter()
       },
     },
   }
+end
+
+function T.test_wol_mac_falls_back_to_an_enabled_adapter()
+  -- #97: only when the service named no adapter of its own.
+  local status = listed_adapters()
   h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
   status.wol.adapters[2].wol_enabled = false
   h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66", "falls back to the first mac")
   h.assert_nil(state.wol_mac({}))
+  h.assert_nil(state.wol_selected(listed_adapters()))
+end
+
+function T.test_wol_mac_takes_the_adapter_the_service_selected()
+  -- #96/#97: the PC knows which NIC the hub reaches; the driver's own guess
+  -- ("the first one with WoL on") would take the Wi-Fi card here, which is
+  -- listed first and enabled.
+  local status = listed_adapters()
+  status.wol.adapters[1].wol_enabled = true
+  status.wol.selected = {
+    name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+    wol_enabled = true, wol_capable = true, source = "auto",
+  }
+  h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
+  h.assert_equal(state.wol_adapter(status), "Ethernet")
+  -- Even a selected adapter nothing else would have chosen: `wol_enabled` off
+  -- and last in the list. The service decided; the driver does not argue.
+  status.wol.selected = { name = "Wi-Fi", mac = "99:88:77:66:55:44", wol_enabled = false }
+  h.assert_equal(state.wol_mac(status), "99:88:77:66:55:44")
+  -- A `selected` without a usable MAC is no answer at all: back to the guess.
+  status.wol.selected = { name = "vEthernet", mac = "" }
+  h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66")
+end
+
+function T.test_wol_mac_reads_a_selected_flag_on_the_adapter_row()
+  -- #96 marks the chosen adapter on its row as well. Either spelling answers.
+  local status = listed_adapters()
+  status.wol.adapters[1].selected = true
+  h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66")
+  h.assert_equal(state.wol_adapter(status), "Wi-Fi")
+  -- `wol.selected` is the more specific statement and wins over the flag.
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF" }
+  h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
+end
+
+function T.test_wol_off_follows_the_selected_adapter()
+  -- #97: the warning is about the one adapter the packet is sent to. Another
+  -- NIC with WoL on must not hide it, and must not raise a false one either.
+  local status = listed_adapters()
+  h.assert_false(state.wol_off(status), "wol.ready is the answer without a selected")
+  status.wol.ready = false
+  h.assert_true(state.wol_off(status))
+
+  status.wol.ready = true
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = false }
+  h.assert_true(state.wol_off(status), "the chosen adapter has WoL off")
+  status.wol.ready = false
+  status.wol.selected.wol_enabled = true
+  h.assert_false(state.wol_off(status), "the chosen adapter is fine")
+  -- A `selected` that says nothing about WoL leaves `wol.ready` in charge.
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF" }
+  h.assert_true(state.wol_off(status))
+  h.assert_true(state.wol_off({}), "nothing known means nothing promised")
 end
 
 --------------------------------------------------------------------------------
