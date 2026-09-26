@@ -348,6 +348,18 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
   h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "없음 (None)")
 end
 
+function T.test_the_initial_rows_keep_a_remembered_service_version()
+  -- #92: `initial_rows` is also what a repaint paints, and a device that has
+  -- been answering for months must not have its version reset to "v?" by a
+  -- profile change or by the PC being off at the time.
+  local events = state.initial_rows("ko", "v1.1.0")
+  h.assert_equal(h.event_value(events, caps.VERSION, "versions"), state.versions("v1.1.0", "ko"))
+  h.assert_equal(h.event_value(events, caps.STATUS, "versions"), state.versions("v1.1.0", "ko"))
+  -- Nothing remembered is still "v?": the row has to say something.
+  h.assert_equal(h.event_value(state.initial_rows("ko"), caps.VERSION, "versions"),
+    state.versions(nil, "ko"))
+end
+
 function T.test_status_summary_reads_like_the_issue()
   -- #82: no power word — the pcPower row sits directly above this one.
   -- #87: no version either — the pcVersion row is nothing but versions.

@@ -323,9 +323,12 @@ end
 -- and `pcInfo.versions` (the definition, which cannot be dropped without yet
 -- another rename and would make the app report missing state if left unset).
 --
--- `service_version` is whatever the status body carried; a PC we have not
--- reached yet has none, and the row still has to say something (an attribute
--- that was never emitted reads as "-", platform notes "상세 화면(detailView) 위젯"), so it becomes "v?".
+-- `service_version` is whatever the status body carried - or, off the connected
+-- path since #92, the last one a successful poll saw (`poll.SERVICE_VERSION_FIELD`):
+-- a PC that is off has not changed its version, so there is no reason for the
+-- row to forget it. Only a PC we have never reached has none, and the row still
+-- has to say something (an attribute that was never emitted reads as "-",
+-- platform notes "상세 화면(detailView) 위젯"), so it becomes "v?".
 -- @param update `status.update`; the update half is appended only when
 --   `available` is set, so a current PC's row stays two numbers long
 function state.versions(service_version, lang, update)
@@ -554,7 +557,9 @@ end
 -- `lastAction` and `planCommand` are not here: they are the two rows the user
 -- (and the `offAction` preference) owns, so poll.lua emits them through
 -- `emit_action` / `emit_plan_command`, which also persist the choice.
-function state.initial_rows(lang)
+-- @param service_version #92: the last version a successful poll saw
+--   (`poll.last_service_version`), or nil for a device that never answered one.
+function state.initial_rows(lang, service_version)
   local events = {}
   -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (platform notes "상세 화면(detailView) 위젯").
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
@@ -570,12 +575,14 @@ function state.initial_rows(lang)
   -- emitted shows "-" and does not open (platform notes "상세 화면(detailView) 위젯"), and this one never
   -- moves off "-1", so this is the only place a new device is told it.
   ev(events, caps.SCHEDULE, "minutesPick", state.MINUTES_PICK)
-  -- The service version is not known yet, so the row says "?" for it and the
-  -- driver/screen halves - the two that matter for "is my update live?" - are
-  -- right from the start. #86: on the row's own capability and, unchanged, on
-  -- pcInfo, whose definition still declares the attribute.
-  ev(events, caps.VERSION, "versions", state.versions(nil, lang))
-  ev(events, caps.STATUS, "versions", state.versions(nil, lang))
+  -- The driver/screen halves - the two that matter for "is my update live?" -
+  -- are right from the start; the service half is the last version we saw
+  -- (#92), and "?" only for a PC that has never answered. #86: on the row's own
+  -- capability and, unchanged, on pcInfo, whose definition still declares the
+  -- attribute. No `update`: an offer to update can only come from a live answer.
+  local versions = state.versions(service_version, lang)
+  ev(events, caps.VERSION, "versions", versions)
+  ev(events, caps.STATUS, "versions", versions)
   return events
 end
 
