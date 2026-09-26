@@ -15,18 +15,22 @@ import (
 )
 
 // The SmartThings section of the network tab (issue #70, edge-driver doc
-// §7): the Edge driver's connection state plus the `smartthings` part of
-// the config (§3.7) — SSDP discovery, session exposure and the hub allow
-// list. Saving goes through the shared saveBar flow like the settings and
-// notifications tabs; only the smartthings fields are written over the
-// baseline, so a save here never clobbers another tab's edits.
+// §7): the Edge driver's connection state, this PC's discovery identity
+// and search diagnostics (#95), plus the editable `smartthings` part of
+// the config (§3.7) — session exposure and the hub allow list. Saving goes
+// through the shared saveBar flow like the settings and notifications
+// tabs; only the smartthings fields are written over the baseline, so a
+// save here never clobbers another tab's edits.
+//
+// SSDP itself has no switch any more: adding the device has no other path,
+// so the responder always runs and the section reports on it instead of
+// offering to turn it off.
 
 // --- Pure form model (unit-tested) -----------------------------------------
 
 // stFormState is the section's contents as plain values, independent of
 // widgets, so the config round-trip and the dirty check are testable.
 type stFormState struct {
-	Discovery         bool
 	ExposeSession     bool
 	ExposeSessionUser bool
 	// Hubs is the edited allow list; empty means "any hub".
@@ -37,7 +41,6 @@ type stFormState struct {
 // copied so editing it never writes into the baseline.
 func stStateFromConfig(cfg Config) stFormState {
 	return stFormState{
-		Discovery:         cfg.SmartThings.Discovery,
 		ExposeSession:     cfg.SmartThings.ExposeSession,
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		Hubs:              normalizeHubs(cfg.SmartThings.AllowedHubs),
@@ -90,7 +93,6 @@ func removeHub(hubs []string, ip string) []string {
 func (s stFormState) applyTo(base Config) Config {
 	cfg := base
 	cfg.SmartThings = SmartThingsConfig{
-		Discovery:         s.Discovery,
 		AllowedHubs:       normalizeHubs(s.Hubs),
 		ExposeSession:     s.ExposeSession,
 		ExposeSessionUser: s.effectiveUser(),
@@ -101,8 +103,7 @@ func (s stFormState) applyTo(base Config) Config {
 // dirty reports whether saving would change base.
 func (s stFormState) dirty(base Config) bool {
 	st := base.SmartThings
-	return s.Discovery != st.Discovery ||
-		s.ExposeSession != st.ExposeSession ||
+	return s.ExposeSession != st.ExposeSession ||
 		s.effectiveUser() != st.ExposeSessionUser ||
 		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs))
 }
@@ -152,6 +153,45 @@ func (u *ui) stHubLine(h STHub, now time.Time) string {
 	return fmt.Sprintf(u.t("st.hub.connected"), h.IP, version, u.stRelative(h.LastSeen, now))
 }
 
+// stMachineIDShort is the first 8 characters of the machine id
+// ("58bff996"), which is what the Edge driver shows as the device model
+// and what tells two PCs apart at a glance. A shorter id is used whole;
+// the [복사] button always copies the full value.
+func stMachineIDShort(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// stMachineIDLine is the "이 PC의 ID 58bff996" line. An empty id means the
+// service has not answered yet.
+func (u *ui) stMachineIDLine(id string) string {
+	if id == "" {
+		return u.t("st.machineid.unknown")
+	}
+	return fmt.Sprintf(u.t("st.machineid"), stMachineIDShort(id))
+}
+
+// stSearchLine is the discovery diagnostic: is the responder listening, is
+// the firewall rule there, and did a search ever arrive. A responder that
+// could not open a socket answers nothing, so that case replaces the whole
+// line rather than adding to it — the rest would only be noise.
+func (u *ui) stSearchLine(s STSSDPState, now time.Time) string {
+	if !s.Running {
+		return u.t("st.search.off")
+	}
+	firewall := "st.search.fw.missing"
+	if s.FirewallRule {
+		firewall = "st.search.fw.ok"
+	}
+	last := u.t("st.search.none")
+	if s.LastSearch != nil && s.LastSearch.IP != "" {
+		last = fmt.Sprintf(u.t("st.search.last"), s.LastSearch.IP, u.stRelative(s.LastSearch.At, now))
+	}
+	return strings.Join([]string{u.t("st.search.on"), u.t(firewall), last}, " · ")
+}
+
 // --- Widgets -----------------------------------------------------------------
 
 // stSection holds the section's widgets; rebuilt with the window on a
@@ -159,14 +199,16 @@ func (u *ui) stHubLine(h STHub, now time.Time) string {
 type stSection struct {
 	status      *widget.Label
 	secretHint  *widget.Label
-	discovery   *toggle
+	machineID   *widget.Label
+	copyBtn     *widget.Button
+	search      *widget.Label
 	session     *toggle
 	sessionUser *toggle
 	hubBox      *fyne.Container
 	addBtn      *widget.Button
 
 	// hubs is the edited allow list and hub the last /api/st/hub result
-	// (the [Add current hub] button needs both).
+	// (the [Add current hub] button and the [복사] button need both).
 	hubs []string
 	hub  STHub
 
@@ -179,7 +221,6 @@ type stSection struct {
 // state reads the widgets into the pure form model.
 func (t *stSection) state() stFormState {
 	return stFormState{
-		Discovery:         t.discovery.Checked,
 		ExposeSession:     t.session.Checked,
 		ExposeSessionUser: t.sessionUser.Checked,
 		Hubs:              t.hubs,
@@ -212,7 +253,14 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.secretHint.Importance = widget.WarningImportance
 	t.secretHint.Hide()
 
-	t.discovery = newToggle(u.t("st.discovery"), onToggle)
+	// This PC's discovery identity and the search diagnostics (#95). Both
+	// come from /api/st/hub, which the section already polls.
+	t.machineID = widget.NewLabel(u.t("st.machineid.unknown"))
+	t.copyBtn = widget.NewButtonWithIcon(u.t("st.machineid.copy"), theme.ContentCopyIcon(), func() { u.copyMachineID() })
+	t.copyBtn.Disable() // enabled once the service has told us the id
+	t.search = widget.NewLabel(u.t("st.search.loading"))
+	t.search.Wrapping = fyne.TextWrapWord
+
 	t.session = newToggle(u.t("st.session"), func(on bool) {
 		t.setUserEnabled(on)
 		u.updateSTSaveState()
@@ -228,8 +276,12 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	return container.NewVBox(
 		t.status,
 		t.secretHint,
-		t.discovery,
-		hint(u.t("st.discovery.hint")),
+		// The id label keeps its natural width and the button sits next
+		// to it rather than stretching across the tab.
+		container.NewHBox(t.machineID, t.copyBtn, layout.NewSpacer()),
+		t.search,
+		hint(u.t("st.search.hint")),
+		widget.NewSeparator(),
 		t.session,
 		hint(u.t("st.session.hint")),
 		t.sessionUser,
@@ -286,6 +338,19 @@ func (u *ui) addCurrentHub() {
 	u.updateSTSaveState()
 }
 
+// copyMachineID puts the full machine id on the clipboard — the label
+// only shows the first 8 characters, and the whole value is what a support
+// question or a manual device lookup needs. UI thread only.
+func (u *ui) copyMachineID() {
+	t := u.st
+	if t == nil || t.hub.MachineID == "" {
+		return
+	}
+	u.app.Clipboard().SetContent(t.hub.MachineID)
+	// Without this the button looks inert: nothing else on screen changes.
+	dialog.ShowInformation(u.t("st.machineid.copied"), stMachineIDShort(t.hub.MachineID), u.win)
+}
+
 // updateAddHubButton enables [Add current hub] only while a hub is
 // connected and its IP is not on the list yet. UI thread only.
 func (u *ui) updateAddHubButton() {
@@ -309,7 +374,6 @@ func (u *ui) fillSTSection(cfg Config) {
 	}
 	s := stStateFromConfig(cfg)
 	t.filling = true
-	t.discovery.SetChecked(s.Discovery)
 	t.session.SetChecked(s.ExposeSession)
 	t.sessionUser.SetChecked(s.ExposeSessionUser)
 	t.setUserEnabled(s.ExposeSession)
@@ -374,7 +438,9 @@ func (u *ui) saveSTSection(quiet bool) bool {
 	return true
 }
 
-// loadSTHub refreshes the connection status line. Runs off the UI thread.
+// loadSTHub refreshes the connection status line, this PC's id and the
+// search diagnostics — all three come from the same poll. Runs off the UI
+// thread.
 func (u *ui) loadSTHub() {
 	h, err := u.client.GetSTHub()
 	if err != nil {
@@ -389,6 +455,13 @@ func (u *ui) loadSTHub() {
 		}
 		t.hub = h
 		t.status.SetText(u.stHubLine(h, now))
+		t.machineID.SetText(u.stMachineIDLine(h.MachineID))
+		t.search.SetText(u.stSearchLine(h.SSDP, now))
+		if h.MachineID == "" {
+			t.copyBtn.Disable()
+		} else {
+			t.copyBtn.Enable()
+		}
 		u.updateAddHubButton()
 	})
 }

@@ -6,6 +6,7 @@ package service
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -239,38 +240,61 @@ func TestAddFirewallRuleDeletesThenAdds(t *testing.T) {
 
 // ---- the start-time upgrade path -------------------------------------------
 
-func TestEnsureSSDPFirewallRuleAtStartFollowsDiscovery(t *testing.T) {
+// TestEnsureSSDPFirewallRuleAtStartIsUnconditional guards #95: there is no
+// setting that could suppress the rule any more, and the outcome of every
+// run is cached for the app's search-status line.
+func TestEnsureSSDPFirewallRuleAtStartIsUnconditional(t *testing.T) {
 	prev := getConfig()
-	t.Cleanup(func() { setConfig(prev) })
+	prevOK := ssdpFirewallRuleOK()
+	t.Cleanup(func() {
+		setConfig(prev)
+		ssdpFirewallOK.Store(prevOK)
+	})
+	// An empty smartthings object is what a fresh config.json holds; it
+	// must not keep the rule from being ensured.
+	setConfig(Config{Port: 5001})
 
-	t.Run("discovery on", func(t *testing.T) {
+	t.Run("a missing rule is added", func(t *testing.T) {
 		f := newFakeNetsh()
 		withFakeNetsh(t, f)
-		setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
+		ssdpFirewallOK.Store(false)
 
 		ensureSSDPFirewallRuleAtStart()
-		if got := f.verbs(); len(got) != 2 || got[1] != "add" {
-			t.Fatalf("calls = %v, want show then add", got)
+		add := slices.Index(f.verbs(), "add")
+		if add < 0 {
+			t.Fatalf("no add rule call: %v", f.calls)
+		}
+		if !hasArgs(f.calls[add], "name="+ssdpFirewallRuleName, "protocol=udp", "localport=1900") {
+			t.Fatalf("add rule args = %v", f.calls[add])
+		}
+		if !ssdpFirewallRuleOK() {
+			t.Error("the rule was added but the cached state says it is missing")
 		}
 	})
 
-	t.Run("discovery off", func(t *testing.T) {
-		f := newFakeNetsh()
+	t.Run("an existing rule is left alone", func(t *testing.T) {
+		f := newFakeNetsh(ssdpFirewallRuleName)
 		withFakeNetsh(t, f)
-		setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: false}})
+		ssdpFirewallOK.Store(false)
 
 		ensureSSDPFirewallRuleAtStart()
-		if len(f.calls) != 0 {
-			t.Fatalf("netsh ran with discovery off: %v", f.calls)
+		if got := f.verbs(); len(got) != 1 || got[0] != "show" {
+			t.Fatalf("calls = %v, want a single show", got)
+		}
+		if !ssdpFirewallRuleOK() {
+			t.Error("an existing rule was not reported as present")
 		}
 	})
 
-	t.Run("a netsh failure never panics or blocks", func(t *testing.T) {
+	t.Run("a netsh failure never panics and is reported", func(t *testing.T) {
 		f := newFakeNetsh()
 		f.addErr = errors.New("exit status 1")
 		withFakeNetsh(t, f)
-		setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
+		ssdpFirewallOK.Store(true)
 
 		ensureSSDPFirewallRuleAtStart() // best effort: returns nothing, logs
+		if ssdpFirewallRuleOK() {
+			t.Error("a failed add still reports the rule as present")
+		}
 	})
 }

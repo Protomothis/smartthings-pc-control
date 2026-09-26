@@ -167,15 +167,16 @@
   "service_version": "v1.1.0", "port": 5001, "secret_set": true }
 ```
 
-- 인바운드 **UDP 1900** 방화벽 규칙 *SmartThings PC Control SSDP*는 설치 때 만들고, `smartthings.discovery`가 켜져 있는 한 서비스가 시작할 때마다 다시 확인한다. 제거는 `uninstall`에서만 한다.
+- 인바운드 **UDP 1900** 방화벽 규칙 *SmartThings PC Control SSDP*는 설치 때 만들고, 서비스가 시작할 때마다 조건 없이 다시 확인한다. 제거는 `uninstall`에서만 한다.
+- **응답기는 끌 수 없다(#95).** 장치를 추가할 경로가 검색뿐이므로 서비스가 도는 동안 항상 켜져 있고, 접근 제어는 시크릿과 `allowed_hubs`가 맡는다. 응답한 M-SEARCH의 출처 IP·시각을 메모리에 하나 남기고, 응답기 상태(소켓·방화벽 규칙)와 함께 `GET /api/st/hub`의 `machine_id`·`ssdp: {running, firewall_rule, last_search}`로 내보낸다. 앱은 이것으로 "허브의 검색이 이 PC까지 왔는가"를 보여 준다.
 
 ### 3.7 `config.json`의 `smartthings`
 
-전부 핫 리로드다(저장 즉시 반영, 재시작 불필요).
+전부 핫 리로드다(저장 즉시 반영, 재시작 불필요). SSDP 응답기는 항상 켜져 있으므로
+설정이 없다. 예전의 `discovery` 키는 읽어도 무시하고 다음 저장에서 지운다(#95).
 
 | 키 | 기본 | 뜻 |
 |---|---|---|
-| `discovery` | `true` | SSDP M-SEARCH에 응답하고 UDP 1900 규칙을 유지 |
 | `allowed_hubs` | `[]` | `/st/v1/*`를 쓸 수 있는 허브 IP. 비어 있으면 모두 허용 |
 | `expose_session` | `false` | 잠금 여부·유휴 시간을 status와 푸시에 포함 |
 | `expose_session_user` | `false` | 위가 켜져 있을 때 로그인 사용자 이름까지 포함 |
@@ -279,6 +280,7 @@
 - `machine_id`는 같은데 호스트 이름이 다르면(이미지 복제) 경고를 `pcInfo.message`에 띄운다.
 - `ipAddress` 환경설정이 비어 있고 `followDiscovery`가 켜져 있으면 검색이 알려 온 주소를 따라간다. `unreachable`이 된 장치는 **장치당 5분에 한 번** 표적 검색을 돈다.
 - `config.yml`의 `permissions`에는 `lan`과 `discovery`가 모두 필요하다.
+- 검색은 **PC가 켜져 있고 PC Control이 돌고 있을 때만** 응답을 받는다. 0대가 나왔을 때 PC 쪽에서 볼 곳은 앱 [네트워크] 탭의 검색 상태 줄이고, 그 값은 `GET /api/st/hub`의 `ssdp: {running, firewall_rule, last_search: {ip, at}}`에서 온다(§3.6). 순서는 앱 켜짐 → 방화벽 규칙 → 마지막 검색 요청 시각 → 허브 allow list.
 
 ### 6.6 프로필 이전
 
