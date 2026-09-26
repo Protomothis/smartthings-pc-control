@@ -86,6 +86,10 @@ function state.new(power_state)
     -- (`state.is_transitioning`).
     schedule_seconds = 0,
     schedule_command = nil,
+    -- #93: the PC's own grace period (`grace.seconds`, §3.2), which is how
+    -- close a pending schedule has to be to be that grace rather than something
+    -- the user asked for (`state.grace_limit`).
+    grace_seconds = nil,
   }
 end
 
@@ -98,6 +102,9 @@ local function copy(s)
     schedule_active = s.schedule_active or false,
     schedule_seconds = s.schedule_seconds or 0,
     schedule_command = s.schedule_command,
+    -- Survives every event: the PC's configured grace does not change because
+    -- it shut down, and a state machine step has no new status body to read.
+    grace_seconds = s.grace_seconds,
   }
 end
 
@@ -272,7 +279,8 @@ end
 -- #93: power transitions
 --------------------------------------------------------------------------------
 
--- How long a pending schedule may still be the PC's own grace period.
+-- The fallback for how long a pending schedule may still be the PC's own grace
+-- period, for a service too old to say (see `grace_limit`).
 --
 -- `switch off` (and any `execute` in `default`/`grace` mode) is deferred by the
 -- service for the grace period it is configured with - 60 seconds by default -
@@ -282,6 +290,26 @@ end
 -- and the bound below is what separates it from the three-day schedule a user
 -- set on purpose - that one must keep the whole command list open.
 state.GRACE_SECONDS = 120
+
+--- How close a pending schedule has to be before it counts as the PC leaving.
+--
+-- The service tells us: `grace.seconds` in every status body (§3.2) is the
+-- period this PC is configured with, and it goes up to 30 minutes. Guessing
+-- would be wrong in both directions - a PC with a five-minute grace would look
+-- idle for the first three of them, and a generous fixed bound would swallow
+-- the short schedules a user sets on purpose - so the PC's own number is the
+-- bound, and `GRACE_SECONDS` is only what a service too old to send one gets.
+--
+-- `grace.enabled` is deliberately not consulted: `execute(mode = "grace")`
+-- forces the wait whatever the PC is configured to do by default, so the
+-- length is the useful half of the block and the flag is not.
+function state.grace_limit(device_state)
+  local seconds = tonumber((device_state or {}).grace_seconds)
+  if seconds and seconds > 0 then
+    return math.floor(seconds)
+  end
+  return state.GRACE_SECONDS
+end
 
 -- The commands that take the PC away. A schedule running one of these is a
 -- transition; `lock` and the screen commands are not (and the service refuses
@@ -298,7 +326,7 @@ function state.is_grace(device_state)
     return false
   end
   local seconds = tonumber(device_state.schedule_seconds)
-  if not seconds or seconds > state.GRACE_SECONDS then
+  if not seconds or seconds > state.grace_limit(device_state) then
     return false
   end
   return STOPPING_COMMANDS[tostring(device_state.schedule_command or "")] == true
@@ -308,7 +336,7 @@ end
 --
 -- `shuttingDown` and `waking` are the two states of §6.2 that say "this will be
 -- over in a moment, and nothing else can usefully be asked for until it is".
--- The grace period is the third shape of the same fact (see GRACE_SECONDS);
+-- The grace period is the third shape of the same fact (see `grace_limit`);
 -- a long schedule is NOT one - a PC that shuts down in three days is an
 -- ordinary, fully usable PC.
 function state.is_transitioning(device_state)
@@ -377,20 +405,31 @@ function state.supported_commands(device_state)
   return out
 end
 
---- #93: remember what the last status body said about the pending schedule.
+--- #93: remember what the last status body said about the pending schedule,
+--- and about the grace period that may be what created it.
 --
 -- `schedule_active` has been here since #85 (so `schedule` can say it replaced
 -- something); the countdown and the command come with it now, because that is
--- all the grace period ever shows up as. Mutates and returns `device_state`,
--- which is the freshly copied one `transition` just handed back.
+-- all the grace period ever shows up as, and `grace.seconds` comes with them
+-- because it is what tells the two apart (`grace_limit`). Mutates and returns
+-- `device_state`, which is the freshly copied one `transition` just handed back.
+--
+-- The grace length is only overwritten when the body carries one: a service too
+-- old to send it never will, and a body that arrives without it (a truncated
+-- push payload) should not cost us a number we already learned.
 function state.remember_schedule(device_state, status)
   device_state = device_state or state.new()
-  local schedule = (status or {}).schedule or {}
+  status = status or {}
+  local schedule = status.schedule or {}
   local active = schedule.active == true
   device_state.schedule_active = active
   device_state.schedule_seconds = active
     and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0
   device_state.schedule_command = active and schedule.command or nil
+  local grace = tonumber((status.grace or {}).seconds)
+  if grace and grace > 0 then
+    device_state.grace_seconds = math.floor(grace)
+  end
   return device_state
 end
 

@@ -519,7 +519,7 @@ function poll.once(driver, device, opts)
     local nxt = state.transition(current, "status_ok")
     -- #93: `active` plus the countdown and the command, because the PC's own
     -- grace period reaches the driver as nothing but a schedule about to fire
-    -- (state.GRACE_SECONDS). Before `apply_status`, which reads it back out for
+    -- (state.grace_limit). Before `apply_status`, which reads it back out for
     -- `supportedCommands`.
     state.remember_schedule(nxt, body)
     poll.set_state(device, nxt)

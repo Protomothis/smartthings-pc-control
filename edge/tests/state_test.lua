@@ -493,12 +493,15 @@ end
 -- #93: power transitions
 --------------------------------------------------------------------------------
 
---- A device state with a pending schedule on it.
-local function scheduled(power, command, seconds)
+--- A device state with a pending schedule on it, and optionally the PC's own
+--- grace period (`grace.seconds`, §3.2). Without one, `grace_limit` falls back
+--- to `state.GRACE_SECONDS` - which is what a service too old to send it gets.
+local function scheduled(power, command, seconds, grace)
   local s = state.new(power)
   s.schedule_active = true
   s.schedule_command = command
   s.schedule_seconds = seconds
+  s.grace_seconds = grace
   return s
 end
 
@@ -521,23 +524,53 @@ function T.test_the_grace_period_is_a_transition_and_a_long_schedule_is_not()
   -- all - the service turns it into a schedule and answers `executed: false`.
   -- powerState is still `on`, because the PC is, so that minute is only ever
   -- visible as a schedule about to fire.
-  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60)),
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60, 60)),
     "the 60 s grace after a switch off is a transition (#93)")
-  h.assert_true(state.is_grace(scheduled(state.ON, "restart", 0)))
-  h.assert_true(state.is_grace(scheduled(state.ON, "suspend", state.GRACE_SECONDS)))
+  h.assert_true(state.is_grace(scheduled(state.ON, "restart", 0, 60)))
+  h.assert_true(state.is_grace(scheduled(state.ON, "suspend", 60, 60)),
+    "a schedule exactly at the grace length is that grace")
 
   -- ... and a schedule the user set on purpose is not. A PC that shuts down in
   -- three days is an ordinary, fully usable PC.
-  for _, seconds in ipairs({ state.GRACE_SECONDS + 1, 1800, 259200 }) do
-    h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", seconds)),
-      seconds .. " s away is a schedule, not a transition (#93)")
+  for _, seconds in ipairs({ 61, 240, 1800, 259200 }) do
+    h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", seconds, 60)),
+      seconds .. " s away on a 60 s grace is a schedule, not a transition (#93)")
   end
   -- Nor is a schedule that does not take the PC away, or none at all.
-  h.assert_false(state.is_grace(scheduled(state.ON, "lock", 30)))
-  local inactive = scheduled(state.ON, "shutdown", 30)
+  h.assert_false(state.is_grace(scheduled(state.ON, "lock", 30, 60)))
+  local inactive = scheduled(state.ON, "shutdown", 30, 60)
   inactive.schedule_active = false
   h.assert_false(state.is_grace(inactive))
   h.assert_false(state.is_grace(state.new(state.ON)))
+end
+
+function T.test_the_bound_is_the_pcs_own_grace_period()
+  -- The service says how long its grace is (`grace.seconds`, §3.2, up to 30
+  -- minutes), so the driver does not guess. The same four minutes is the tail
+  -- of a five-minute grace on one PC and a schedule somebody set on another.
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 300)),
+    "four minutes left of a 300 s grace IS the PC leaving (#93)")
+  h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 60)),
+    "four minutes on a 60 s grace is a schedule, not the PC leaving (#93)")
+  -- The ceiling the service allows, and one second past it.
+  h.assert_true(state.is_grace(scheduled(state.ON, "shutdown", 1800, 1800)))
+  h.assert_false(state.is_grace(scheduled(state.ON, "shutdown", 1801, 1800)))
+
+  -- A service too old to send the block falls back to the fixed bound, which
+  -- covers the 60 s default with room to spare.
+  h.assert_equal(state.grace_limit(nil), state.GRACE_SECONDS)
+  h.assert_equal(state.grace_limit(state.new(state.ON)), state.GRACE_SECONDS)
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60)),
+    "without a grace block the fallback still catches the default grace")
+  h.assert_false(state.is_transitioning(
+    scheduled(state.ON, "shutdown", state.GRACE_SECONDS + 1)))
+  -- Nonsense in the block is the same as no block.
+  for _, bogus in ipairs({ 0, -1, "later" }) do
+    h.assert_equal(state.grace_limit({ grace_seconds = bogus }), state.GRACE_SECONDS,
+      "grace.seconds = " .. tostring(bogus))
+  end
+  h.assert_equal(state.grace_limit({ grace_seconds = "300" }), 300,
+    "a number that arrived as a string is still a number")
 end
 
 function T.test_the_busy_value_says_what_is_happening()
@@ -621,14 +654,23 @@ function T.test_apply_status_restricts_the_menu_during_a_transition()
     state.EXECUTE_KEYS)
 end
 
-function T.test_remember_schedule_carries_the_countdown_and_the_command()
+function T.test_remember_schedule_carries_the_countdown_the_command_and_the_grace()
   -- #93: `schedule_active` alone cannot tell the grace period from a schedule
-  -- three days out, so the poll remembers all three.
+  -- three days out, so the poll remembers all four.
   local s = state.remember_schedule(state.new(state.ON), sample_status())
   h.assert_true(s.schedule_active)
   h.assert_equal(s.schedule_seconds, 240)
   h.assert_equal(s.schedule_command, "shutdown")
-  h.assert_false(state.is_transitioning(s), "four minutes away is not a transition")
+  -- The §3.2 sample PC has a five-minute grace, so its four-minutes-left
+  -- shutdown is that grace running, not something anyone typed in.
+  h.assert_equal(s.grace_seconds, 300)
+  h.assert_true(state.is_transitioning(s),
+    "four minutes left of a 300 s grace is the PC leaving (#93)")
+
+  -- The same body on a PC with the default grace is an ordinary schedule.
+  local short = sample_status()
+  short.grace = { enabled = true, seconds = 60 }
+  h.assert_false(state.is_transitioning(state.remember_schedule(state.new(state.ON), short)))
 
   -- An inactive schedule leaves nothing behind for `is_grace` to read.
   local cleared = state.remember_schedule(s, { schedule = { active = false, command = "shutdown" } })
@@ -636,11 +678,18 @@ function T.test_remember_schedule_carries_the_countdown_and_the_command()
   h.assert_equal(cleared.schedule_seconds, 0)
   h.assert_nil(cleared.schedule_command)
   h.assert_false(state.is_transitioning(cleared))
+  h.assert_equal(cleared.grace_seconds, 300,
+    "a body without a grace block must not cost us the number we know")
 
   -- And so does a body with no schedule block at all.
   local empty = state.remember_schedule(state.new(state.ON), {})
   h.assert_false(empty.schedule_active)
   h.assert_equal(empty.schedule_seconds, 0)
+  h.assert_nil(empty.grace_seconds, "nothing was ever learned, so nothing is remembered")
+
+  -- The grace survives the state machine, which has no status body to re-read.
+  local stopping = state.transition(s, "stopping", "shutdown")
+  h.assert_equal(stopping.grace_seconds, 300)
 end
 
 function T.test_cancelling_a_schedule_ends_the_transition()

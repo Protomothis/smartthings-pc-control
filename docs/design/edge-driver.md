@@ -108,6 +108,7 @@
 ```
 
 - 예약이 없으면 `"schedule": {"active": false}`, 실행한 명령이 없으면 `"last_command": null`.
+- `grace.seconds`는 이 PC에 설정된 유예 길이(기본 60초, 최대 30분)다. 드라이버는 이것을 **"곧 실행될 예약 = PC가 떠나는 중"의 상한**으로 쓴다(§6.9).
 - `session`은 옵트인이다. `smartthings.expose_session`이 꺼져 있으면 `{"exposed": false}`뿐이고, 켜져 있어도 세션을 읽을 수 없으면 `locked`가 없다. `idle_seconds`는 트레이 앱의 하트비트가 90초 이내일 때만 실린다.
 
 ### 3.3 `POST /st/v1/command`
@@ -312,9 +313,11 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 **무엇이 전환인가** (`state.is_transitioning`)
 
 - `powerState`가 `shuttingDown` 또는 `waking`.
-- **또는** 유예 중. `switch off`(과 `default`/`grace` 모드의 `execute`)는 서비스가 유예만큼 미뤄 두므로 `executed: false`와 함께 **예약으로 돌아온다**(§3.3). 그동안 `powerState`는 여전히 `on`이고, 전환의 유일한 흔적은 곧 실행될 예약뿐이다. 그래서 **`remaining_seconds ≤ 120`이고 명령이 `shutdown`·`forceshutdown`·`restart`·`suspend`·`hibernate`인 활성 예약**을 전환으로 친다(`state.GRACE_SECONDS`).
-- **사용자가 건 예약은 전환이 아니다.** 3일 뒤 종료가 걸린 PC는 평범하게 쓰는 PC다. 120초 상한이 그 둘을 가른다.
-- `state.remember_schedule`이 `active`·남은 초·명령 셋을 폴링과 푸시에서 함께 기억한다. `schedule_cancelled`는 셋을 모두 지우므로 취소하면 전환도 끝난다.
+- **또는** 유예 중. `switch off`(과 `default`/`grace` 모드의 `execute`)는 서비스가 유예만큼 미뤄 두므로 `executed: false`와 함께 **예약으로 돌아온다**(§3.3). 그동안 `powerState`는 여전히 `on`이고, 전환의 유일한 흔적은 곧 실행될 예약뿐이다. 그래서 **`remaining_seconds ≤ 유예 길이`이고 명령이 `shutdown`·`forceshutdown`·`restart`·`suspend`·`hibernate`인 활성 예약**을 전환으로 친다.
+- **유예 길이는 서비스가 알려 준다.** status의 `grace.seconds`(§3.2, 기본 60초, 최대 30분)가 그대로 상한이다(`state.grace_limit`). 짐작하면 양쪽으로 다 틀린다 — 5분 유예를 건 PC는 앞의 3분 동안 멀쩡해 보이고, 넉넉히 잡은 고정값은 사용자가 일부러 건 짧은 예약까지 삼킨다. **같은 "4분 남음"이 5분 유예를 쓰는 PC에서는 전환이고 60초 유예를 쓰는 PC에서는 예약**이다. `grace.enabled`는 보지 않는다 — `execute(mode: "grace")`는 기본 설정과 무관하게 유예를 강제하므로 쓸모 있는 절반은 길이다.
+- `grace` 블록을 보내지 않는 옛 서비스에만 고정 폴백 `state.GRACE_SECONDS`(120초)를 쓴다. 기본 60초 유예를 여유 있게 덮는 값이다.
+- **사용자가 건 예약은 전환이 아니다.** 3일 뒤 종료가 걸린 PC는 평범하게 쓰는 PC다. 유예 길이 상한이 그 둘을 가른다.
+- `state.remember_schedule`이 `active`·남은 초·명령·유예 길이 넷을 폴링과 푸시에서 함께 기억한다. 유예 길이는 status가 실어 줄 때만 덮어쓴다(끊긴 푸시 본문 때문에 이미 배운 값을 잃지 않는다). `schedule_cancelled`는 예약 셋을 지우므로 취소하면 전환도 끝난다.
 
 **① 목록이 쉬는 값** — `lastAction`이 `none` 대신 `busy*`가 된다.
 

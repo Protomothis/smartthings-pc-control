@@ -679,6 +679,9 @@ local function busy_device(power, schedule)
     s.schedule_active = true
     s.schedule_command = schedule.command
     s.schedule_seconds = schedule.seconds
+    -- The PC's own grace period (§3.2). Left out, `state.grace_limit` falls
+    -- back to `state.GRACE_SECONDS` for a service too old to send one.
+    s.grace_seconds = schedule.grace
   end
   poll.set_state(device, s)
   return device
@@ -787,13 +790,47 @@ end
 function T.test_a_long_schedule_blocks_nothing()
   -- The other half of the rule: a PC that shuts down in three days is an
   -- ordinary, fully usable PC.
-  local device = busy_device(state.ON, { command = "shutdown", seconds = 259200 })
+  local device = busy_device(state.ON, { command = "shutdown", seconds = 259200, grace = 60 })
   local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
       { command = "execute", args = { command = "lock" } })
   end)
   h.assert_equal(#calls.commands, 1, "a three-day schedule must not block a command (#93)")
   h.assert_equal(calls.commands[1].command, "lock")
+end
+
+function T.test_the_same_four_minutes_blocks_on_one_pc_and_not_on_another()
+  -- The bound is the PC's own `grace.seconds` (§3.2), so an identical schedule
+  -- means two different things on two differently configured PCs.
+  local function locks(grace)
+    local device = busy_device(state.ON,
+      { command = "shutdown", seconds = 240, grace = grace })
+    local calls = with_service(nil, function()
+      handlers_for(caps.COMMAND).execute(driver, device,
+        { command = "execute", args = { command = "lock" } })
+    end)
+    return #calls.commands
+  end
+  h.assert_equal(locks(300), 0,
+    "four minutes left of a five-minute grace is the PC leaving (#93)")
+  h.assert_equal(locks(60), 1,
+    "four minutes on a one-minute grace is a schedule the user set (#93)")
+end
+
+function T.test_the_grace_length_is_learned_from_the_status_body()
+  -- End to end through the poll's own glue: `remember_schedule` is what puts
+  -- the service's number where the guard reads it.
+  local device = device_with()
+  local s = state.remember_schedule(state.new(state.ON), {
+    grace = { enabled = true, seconds = 300 },
+    schedule = { active = true, command = "shutdown", remaining_seconds = 240 },
+  })
+  poll.set_state(device, s)
+  h.assert_equal(poll.resting_action(device), state.ACTION_BUSY_OFF)
+  local calls = with_service(nil, function()
+    handlers_for("switch").off(driver, device, { command = "off", args = {} })
+  end)
+  h.assert_equal(#calls.commands, 0, "the guard has to use the PC's own grace (#93)")
 end
 
 function T.test_every_blocked_command_still_answers_its_row()
