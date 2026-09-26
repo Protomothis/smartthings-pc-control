@@ -565,6 +565,11 @@ function poll.remember_identity(device, body)
     device:set_field(discovery.HOSTNAME_FIELD, body.hostname, { persist = true })
     changed = true
   end
+  -- #94: with the identity confirmed, put its first eight characters in the
+  -- device's `model` - once per device, guarded by a persisted field, so a
+  -- device added before #94 stops reading "PC Control" in the app's device
+  -- information screen.
+  discovery.ensure_model(device)
   return changed
 end
 

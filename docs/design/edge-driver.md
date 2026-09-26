@@ -53,7 +53,7 @@
 | `src/state.lua` | status JSON → capability 이벤트 매핑, 전원 상태 머신, 요약 문자열 |
 | `src/poll.lua` | 폴링 타이머, 장치 필드, `emit` 글루 |
 | `src/push.lua` | 허브 TCP 리스너(`/pc/evt`), 구독·갱신 |
-| `src/discovery.lua` | SSDP 검색, 식별·중복 방지, 수동 추가 |
+| `src/discovery.lua` | SSDP 검색, 식별·중복 방지, 모델명의 PC id |
 | `src/wol.lua` | 매직 패킷, 깨우기 시퀀스 |
 | `src/profiles.lua` | 프로필 이름과 장치 이전 |
 | `src/caps.lua` | 커스텀 capability id |
@@ -275,9 +275,12 @@
 
 ### 6.5 검색과 식별
 
+- **장치 추가는 SSDP 검색이 유일한 경로다. 검색 전에 PC와 PC Control 서비스가 켜져 있어야 한다**(#94). 인바운드 UDP 1900이 허브에서 PC로 닿아야 하고, 네트워크 프로필은 개인이어야 한다.
 - [주변 기기 검색]에서 M-SEARCH를 보내고, 응답한 `LOCATION`마다 설명 문서를 받아 `{ip, port, machine_id, hostname, …}`을 만든 뒤 `machine_id`로 병합한다.
-- **`machine_id`가 식별자다.** 이미 그 id를 가진 장치가 있으면 새로 만들지 않고 주소만 갱신한다. 수동으로 추가한 장치도 첫 성공 조회에서 id를 기억하므로 나중에 검색이 같은 PC를 찾아도 중복되지 않는다.
-- 아무도 응답하지 않으면 수동 설정용 장치(`PC Control (set IP in settings)`)를 하나 만든다. 단, IP가 비어 있는 장치가 이미 있으면 만들지 않는다.
+- **`machine_id`가 식별자다.** 이미 그 id를 가진 장치가 있으면 새로 만들지 않고 주소만 갱신한다. `ipAddress`를 손으로 채워 쓰는 장치도 첫 성공 조회에서 id를 기억하므로 나중에 검색이 같은 PC를 찾아도 중복되지 않는다.
+- **장치의 `model`이 PC id를 나른다**(#94): `PC Control · <machine_id 앞 8자>`(예: `PC Control · 58bff996`). 라벨은 이름(`<호스트> 컴퓨터`)이고 모델이 id이므로, 앱의 장치 정보 화면에서 Windows 앱 SmartThings 섹션(#95)과 같은 값을 맞춰 볼 수 있다. #94 이전에 만들어진 장치는 폴링이 `machine_id`를 배우거나 확인할 때(`poll.remember_identity`) `try_update_metadata`로 한 번 갱신하고, 쓴 id를 장치 필드에 persist 해 장치당 한 번만 돈다. 허브가 거부하면 옛 모델명을 그대로 두고 다음 기회에 다시 시도한다.
+- **아무도 응답하지 않으면 아무것도 만들지 않는다**(#94). 예전에는 자리표시 장치(`PC Control (set IP in settings)`)를 만들었지만, 그것은 "PC가 꺼져 있다"를 장치로 굳히는 일이었고 IP가 빈 장치가 하나라도 있으면 다음 검색을 막았으며 다른 기기를 찾는 검색에도 쓸모없는 장치로 끼어들었다. 대신 `discovery_none`(한국어+영어 한 줄)을 info 로그에 남긴다.
+- 검색이 안 될 때 진단 순서: ① PC와 PC Control이 켜져 있는지 → ② 인바운드 UDP 1900 방화벽 규칙 *SmartThings PC Control SSDP*(와 네트워크 프로필 개인) → ③ 앱의 SmartThings 섹션에 찍히는 **'마지막 검색 요청'** 시각 — 허브의 M-SEARCH가 PC에 닿았는지를 말해 준다(#95, 서비스 v1.1.1) → ④ `allowed_hubs` 허브 허용 목록.
 - `machine_id`는 같은데 호스트 이름이 다르면(이미지 복제) 경고를 `pcInfo.message`에 띄운다.
 - `ipAddress` 환경설정이 비어 있고 `followDiscovery`가 켜져 있으면 검색이 알려 온 주소를 따라간다. `unreachable`이 된 장치는 **장치당 5분에 한 번** 표적 검색을 돈다.
 - `config.yml`의 `permissions`에는 `lan`과 `discovery`가 모두 필요하다.

@@ -44,6 +44,8 @@ function T.test_all_required_keys_exist()
     "schedule_replaced", "schedule_cancelled", "schedule_none",
     -- #73: discovery, the device label and the multi-PC warning.
     "discovery_found", "ip_updated", "hostname_mismatch", "pc_label",
+    -- #94: the hint a search that nobody answered leaves in the log.
+    "discovery_none",
     -- #78: the pieces the one-line summaries are built from.
     "conn_ok", "conn_down", "schedule_remaining", "schedule_soon",
     "schedule_idle", "session_locked", "session_unlocked", "session_idle",

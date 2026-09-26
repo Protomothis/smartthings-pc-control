@@ -104,6 +104,16 @@ local STRINGS = {
     ko = "PC %d대를 찾았습니다",
     en = "Found %d PC(s)",
   },
+  -- #94: nobody answered the M-SEARCH. Nothing is created any more, so this
+  -- line in the driver log is the whole explanation - and it is the first
+  -- step of the diagnosis order in edge/README ("검색이 안 될 때"). Written
+  -- in both languages at once: a log line does not follow the `language`
+  -- preference, because it belongs to no device.
+  discovery_none = {
+    ko = "응답한 PC가 없습니다 · PC와 PC Control이 켜져 있고 UDP 1900이 열려 있어야 합니다"
+      .. " (No PC answered · the PC and PC Control must be running and UDP 1900 reachable)",
+    en = "No PC answered · the PC and PC Control must be running and UDP 1900 reachable",
+  },
   ip_updated = {
     ko = "IP 주소를 %s(으)로 변경했습니다",
     en = "IP address updated to %s",
