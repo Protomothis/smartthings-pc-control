@@ -81,6 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # softprops/action-gh-release attaches assets to the tag
+    env:
+      SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+      ST_CHANNEL_ID: ${{ secrets.ST_CHANNEL_ID }}
     # Required repository secrets (Settings -> Secrets and variables -> Actions):
     #
     #   SMARTTHINGS_TOKEN  A SmartThings Personal Access Token created at
@@ -92,7 +95,9 @@ jobs:
     #                      published to, from `smartthings edge:channels`
     #                      (create it once with `edge:channels:create`).
     #
-    # Both are owner-supplied; the driver cannot be published without them.
+    # Both are owner-supplied. Without them the job still builds the zip and
+    # creates the GitHub release; the upload/assign steps are skipped and the
+    # channel is updated by hand with the CLI (edge/README.md "배포").
     steps:
       - uses: actions/checkout@v4
 
@@ -135,11 +140,13 @@ jobs:
 
       # Uploads it and prints the assigned driverId/version as JSON.
       - name: Upload the driver to SmartThings
+        if: ${{ env.SMARTTHINGS_TOKEN != '' && env.ST_CHANNEL_ID != '' }}
         env:
           SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
         run: smartthings edge:drivers:package edge/ --json | tee package-result.json
 
       - name: Assign the driver to the channel
+        if: ${{ env.SMARTTHINGS_TOKEN != '' && env.ST_CHANNEL_ID != '' }}
         env:
           SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
         run: |
@@ -156,6 +163,25 @@ jobs:
       # The zip is what the owner can side-load with `edge:drivers:install`
       # when a channel deploy has to be bypassed; package-result.json records
       # which driverId/version the tag produced.
+      # Release notes = the matching section of edge/CHANGELOG.md plus the
+      # channel invite link, so the GitHub release reads like the driver's own
+      # changelog rather than a commit list.
+      - name: Extract the release notes from edge/CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#edge-v}"
+          awk -v v="$version" '
+            /^## [/ { if (found) exit; if (index($0, "[" v "]") > 0) { found = 1; next } }
+            found { print }
+          ' edge/CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "_edge/CHANGELOG.md has no [$version] section._" > release-notes.md
+          fi
+          printf '
+---
+채널: **Protomothis** — 설치 방법은 [edge/README.md](https://github.com/%s/blob/%s/edge/README.md)
+' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> release-notes.md
+          cat release-notes.md
+
       - name: Attach the package to the release
         uses: softprops/action-gh-release@v2
         with:
@@ -165,4 +191,6 @@ jobs:
           # `edge-v1.1.0-rc1` and friends are channel test builds, not the
           # version users are pointed at.
           prerelease: ${{ contains(github.ref_name, '-rc') }}
-          generate_release_notes: true
+          name: Edge driver ${{ github.ref_name }}
+          body_path: release-notes.md
+          fail_on_unmatched_files: false
