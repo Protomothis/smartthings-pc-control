@@ -100,14 +100,24 @@
   "last_command": { "command": "lock", "origin": "smartthings", "at": "2026-09-22T22:41:07+09:00" },
   "update": { "available": false, "latest": "v1.1.0" },
   "wol": { "ready": true,
-           "adapters": [ { "name": "Ethernet", "mac": "AA:BB:CC:DD:EE:FF",
-                           "wol_enabled": true, "wol_capable": true } ] },
+           "selected": { "name": "이더넷", "mac": "B4-2E-99-45-B4-F5", "ip": "192.168.1.30",
+                         "wol_enabled": true, "wol_capable": true, "source": "auto" },
+           "adapters": [ { "name": "이더넷", "mac": "B4-2E-99-45-B4-F5", "ip": "192.168.1.30",
+                           "wol_enabled": true, "wol_capable": true, "selected": true },
+                         { "name": "Wi-Fi", "mac": "11-22-33-44-55-66", "ip": "192.168.1.31",
+                           "wol_enabled": false, "wol_capable": true, "selected": false } ] },
   "display": "on",
   "session": { "exposed": true, "locked": false, "idle_seconds": 1200, "user": "kim" }
 }
 ```
 
 - 예약이 없으면 `"schedule": {"active": false}`, 실행한 명령이 없으면 `"last_command": null`.
+- `wol.selected`는 **매직 패킷을 보낼 어댑터를 PC가 골라 준 결과**다(#96). 드라이버는 이 MAC을 쓰고, 없으면(옛 서비스) 예전 규칙으로 폴백한다(#97). MAC이 있는 어댑터가 하나도 없을 때만 `null`이다.
+  - `source`는 `manual`(`smartthings.wol_mac`이 이 어댑터를 가리킴) 또는 `auto`.
+  - 자동 규칙: **① 허브의 `/st/v1` 요청이 실제로 들어온 인터페이스를 가진 어댑터** (연결의 로컬 주소를 매 요청 기억해 어댑터의 IPv4 목록과 대조) → ② `wol_enabled` → ③ `wol_capable` → ④ MAC이 있는 첫 어댑터. ②~④에서는 가상 어댑터(`vEthernet` `Hyper-V` `VirtualBox` `VMware` `TAP` `Tailscale` `WireGuard` `Loopback` `Bluetooth`)를 실제 어댑터 뒤로 미룬다 — 실제 어댑터가 하나도 없을 때만 고른다. ①은 증거이므로 가상 어댑터에도 그대로 적용된다.
+  - `wol_mac`이 어떤 어댑터와도 맞지 않으면 자동으로 되돌아가고 로그에 한 번 남긴다.
+- `wol.ready`는 **선택된 어댑터** 기준이다("아무 어댑터나 하나 켜져 있으면 true"가 아니다).
+- `adapters[]`의 `ip`는 그 어댑터의 첫 IPv4(없으면 `""`), `selected`는 위에서 고른 어댑터인지 여부다.
 - `session`은 옵트인이다. `smartthings.expose_session`이 꺼져 있으면 `{"exposed": false}`뿐이고, 켜져 있어도 세션을 읽을 수 없으면 `locked`가 없다. `idle_seconds`는 트레이 앱의 하트비트가 90초 이내일 때만 실린다.
 
 ### 3.3 `POST /st/v1/command`
@@ -167,18 +177,20 @@
   "service_version": "v1.1.0", "port": 5001, "secret_set": true }
 ```
 
-- 인바운드 **UDP 1900** 방화벽 규칙 *SmartThings PC Control SSDP*는 설치 때 만들고, `smartthings.discovery`가 켜져 있는 한 서비스가 시작할 때마다 다시 확인한다. 제거는 `uninstall`에서만 한다.
+- 인바운드 **UDP 1900** 방화벽 규칙 *SmartThings PC Control SSDP*는 설치 때 만들고, 서비스가 시작할 때마다 조건 없이 다시 확인한다. 제거는 `uninstall`에서만 한다.
+- **응답기는 끌 수 없다(#95).** 장치를 추가할 경로가 검색뿐이므로 서비스가 도는 동안 항상 켜져 있고, 접근 제어는 시크릿과 `allowed_hubs`가 맡는다. 응답한 M-SEARCH의 출처 IP·시각을 메모리에 하나 남기고, 응답기 상태(소켓·방화벽 규칙)와 함께 `GET /api/st/hub`의 `machine_id`·`ssdp: {running, firewall_rule, last_search}`로 내보낸다. 앱은 이것으로 "허브의 검색이 이 PC까지 왔는가"를 보여 준다.
 
 ### 3.7 `config.json`의 `smartthings`
 
-전부 핫 리로드다(저장 즉시 반영, 재시작 불필요).
+전부 핫 리로드다(저장 즉시 반영, 재시작 불필요). SSDP 응답기는 항상 켜져 있으므로
+설정이 없다. 예전의 `discovery` 키는 읽어도 무시하고 다음 저장에서 지운다(#95).
 
 | 키 | 기본 | 뜻 |
 |---|---|---|
-| `discovery` | `true` | SSDP M-SEARCH에 응답하고 UDP 1900 규칙을 유지 |
 | `allowed_hubs` | `[]` | `/st/v1/*`를 쓸 수 있는 허브 IP. 비어 있으면 모두 허용 |
 | `expose_session` | `false` | 잠금 여부·유휴 시간을 status와 푸시에 포함 |
 | `expose_session_user` | `false` | 위가 켜져 있을 때 로그인 사용자 이름까지 포함 |
+| `wol_mac` | `""` | WoL 매직 패킷을 보낼 어댑터의 MAC. 비어 있으면 서비스가 자동 선택(§3.2 `wol.selected`). `B4-2E-99-45-B4-F5` / `b4:2e:99:45:b4:f5` / `b42e9945b4f5` 모두 받아 대문자 하이픈 형태로 저장하고, 어느 어댑터와도 맞지 않는 값은 자동으로 되돌린다 |
 
 ## 4. 장치 모델
 
@@ -279,6 +291,7 @@
 - `machine_id`는 같은데 호스트 이름이 다르면(이미지 복제) 경고를 `pcInfo.message`에 띄운다.
 - `ipAddress` 환경설정이 비어 있고 `followDiscovery`가 켜져 있으면 검색이 알려 온 주소를 따라간다. `unreachable`이 된 장치는 **장치당 5분에 한 번** 표적 검색을 돈다.
 - `config.yml`의 `permissions`에는 `lan`과 `discovery`가 모두 필요하다.
+- 검색은 **PC가 켜져 있고 PC Control이 돌고 있을 때만** 응답을 받는다. 0대가 나왔을 때 PC 쪽에서 볼 곳은 앱 [네트워크] 탭의 검색 상태 줄이고, 그 값은 `GET /api/st/hub`의 `ssdp: {running, firewall_rule, last_search: {ip, at}}`에서 온다(§3.6). 순서는 앱 켜짐 → 방화벽 규칙 → 마지막 검색 요청 시각 → 허브 allow list.
 
 ### 6.6 프로필 이전
 

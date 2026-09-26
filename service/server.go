@@ -170,10 +170,12 @@ type TelegramConfig struct {
 // (edge-driver doc §3.7). Hot-reloaded: every /st/v1 request reads the
 // live value, so a save takes effect without a restart.
 type SmartThingsConfig struct {
-	// Discovery answers SSDP M-SEARCH probes (#69). A missing key in an
-	// older config.json keeps the default true, because loadConfig decodes
-	// over defaultConfig.
-	Discovery bool `json:"discovery"`
+	// There is no "discovery" key any more (#95): the SSDP responder is
+	// always on, because adding a device has no other path. An older
+	// config.json that still carries one is read without error (the JSON
+	// decoder ignores unknown keys) and loses the key on the next save;
+	// loadConfig logs that once.
+	//
 	// AllowedHubs restricts /st/v1/* to these source IPs. Empty (the
 	// default) allows any source that knows the secret.
 	AllowedHubs []string `json:"allowed_hubs"`
@@ -182,16 +184,26 @@ type SmartThingsConfig struct {
 	// the user name. Both default to off.
 	ExposeSession     bool `json:"expose_session"`
 	ExposeSessionUser bool `json:"expose_session_user"`
+	// WoLMAC pins the adapter the Edge driver addresses its magic packet
+	// to (#96). Empty — the default — means the service chooses (see
+	// selectWoLAdapter), and so does a value matching no adapter. Stored
+	// in the upper-case dash form the adapter list reports
+	// ("B4-2E-99-45-B4-F5"); withDefaults normalises whatever a client
+	// sends.
+	WoLMAC string `json:"wol_mac"`
 }
 
-// withDefaults normalises the slice field; Discovery cannot be defaulted
-// here (false is a legitimate value) and relies on decoding over defaults.
+// withDefaults normalises the slice field; the bools cannot be defaulted
+// here (false is a legitimate value) and rely on decoding over defaults.
 func (s SmartThingsConfig) withDefaults() SmartThingsConfig {
 	if s.AllowedHubs == nil {
 		s.AllowedHubs = []string{}
 	} else {
 		s.AllowedHubs = slices.Clone(s.AllowedHubs)
 	}
+	// An unparseable MAC is stored as "" rather than kept verbatim: the
+	// value only ever means "this adapter", and nothing it could match.
+	s.WoLMAC = normalizeMAC(s.WoLMAC)
 	return s
 }
 
@@ -210,9 +222,8 @@ var defaultConfig = Config{
 		QuietHours: notify.QuietHours{Start: "22:00", End: "07:00", SecurityBypass: true, Digest: true},
 	},
 	SmartThings: SmartThingsConfig{
-		// A missing "smartthings" object (an older config.json) keeps SSDP
-		// discovery on; everything else stays off/empty.
-		Discovery:   true,
+		// A missing "smartthings" object (an older config.json) leaves
+		// everything off/empty; SSDP needs no key, it is always on (#95).
 		AllowedHubs: []string{},
 	},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
@@ -319,6 +330,10 @@ func loadConfig() Config {
 		logMsg("WARNING: invalid port %d, using default 5001", cfg.Port)
 		cfg.Port = 5001
 	}
+	// A config.json written before #95 still carries smartthings.discovery.
+	// The decoder ignores it (the field is gone) and the next save drops
+	// it; say so once so a user who turned it off is not left wondering.
+	noteLegacyDiscoveryKey(data)
 	// A DPAPI-protected token that this machine cannot decrypt (config.json
 	// copied from another PC) is unusable: blank it so the GUI shows "not
 	// set" and the user re-enters it. The load itself still succeeds.
@@ -329,6 +344,37 @@ func loadConfig() Config {
 		}
 	}
 	return cfg.withDefaults()
+}
+
+// legacyDiscoveryKey reports whether raw config.json data still carries
+// smartthings.discovery, the toggle #95 removed. Parsing is deliberately
+// separate from the Config decode: the key no longer has a field, so the
+// only way to notice it is to look at the document.
+func legacyDiscoveryKey(data []byte) bool {
+	var doc struct {
+		SmartThings struct {
+			Discovery *bool `json:"discovery"`
+		} `json:"smartthings"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return false
+	}
+	return doc.SmartThings.Discovery != nil
+}
+
+// legacyDiscoveryOnce keeps the migration notice to one line per service
+// run: loadConfig also runs from the installer and the CLI.
+var legacyDiscoveryOnce sync.Once
+
+// noteLegacyDiscoveryKey logs the migration notice when data still has the
+// retired key. The value is ignored either way — the responder is always on.
+func noteLegacyDiscoveryKey(data []byte) {
+	if !legacyDiscoveryKey(data) {
+		return
+	}
+	legacyDiscoveryOnce.Do(func() {
+		logMsg("SSDP 검색은 항상 켜져 있습니다 (discovery 설정은 더 이상 쓰지 않습니다)")
+	})
 }
 
 // validatePort checks if a port number is valid (1-65535).
@@ -407,10 +453,10 @@ func configChangedKeys(old, new Config) []string {
 	add("telegram.lang", old.Telegram.Lang != new.Telegram.Lang)
 	add("telegram.pc_name", old.Telegram.PCName != new.Telegram.PCName)
 	add("telegram.quiet_hours", old.Telegram.QuietHours != new.Telegram.QuietHours)
-	add("smartthings.discovery", old.SmartThings.Discovery != new.SmartThings.Discovery)
 	add("smartthings.allowed_hubs", !slices.Equal(old.SmartThings.AllowedHubs, new.SmartThings.AllowedHubs))
 	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
 	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
+	add("smartthings.wol_mac", old.SmartThings.WoLMAC != new.SmartThings.WoLMAC)
 	return keys
 }
 
@@ -446,9 +492,6 @@ func saveConfig(cfg Config) error {
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see telegram_control.go).
 	reconcileTelegramControl()
-	// SSDP discovery follows smartthings.discovery without a restart
-	// (no-op unless the service has started it, see st_ssdp.go).
-	reconcileSSDP()
 	return nil
 }
 

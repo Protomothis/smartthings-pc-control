@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -228,13 +229,63 @@ func TestSTStatusShape(t *testing.T) {
 		t.Fatalf("wol.adapters = %v", wol["adapters"])
 	}
 	a := adapters[0].(map[string]any)
-	for _, key := range []string{"name", "mac", "wol_enabled", "wol_capable"} {
+	for _, key := range []string{"name", "mac", "ip", "wol_enabled", "wol_capable", "selected"} {
 		if _, ok := a[key]; !ok {
 			t.Errorf("adapter is missing %q: %v", key, a)
 		}
 	}
 	if a["mac"] != "AA-BB-CC-DD-EE-FF" || a["wol_enabled"] != true {
 		t.Errorf("adapter = %v", a)
+	}
+	// The only adapter is also the chosen one (#96, §3.2).
+	if a["selected"] != true {
+		t.Errorf("the only adapter is not marked selected: %v", a)
+	}
+	sel, ok := wol["selected"].(map[string]any)
+	if !ok {
+		t.Fatalf("wol.selected = %v, want an object", wol["selected"])
+	}
+	for _, key := range []string{"name", "mac", "ip", "wol_enabled", "wol_capable", "source"} {
+		if _, ok := sel[key]; !ok {
+			t.Errorf("wol.selected is missing %q: %v", key, sel)
+		}
+	}
+	if sel["mac"] != "AA-BB-CC-DD-EE-FF" || sel["name"] != "Ethernet" || sel["source"] != "auto" {
+		t.Errorf("wol.selected = %v", sel)
+	}
+}
+
+// A pinned wol_mac shows up as source "manual" and moves both ready and
+// the selected flag to that adapter, without a restart — the status body
+// reads the config on every call (§3.7).
+func TestSTStatusWoLSelectedManual(t *testing.T) {
+	stSetup(t, Config{Port: 5001})
+	stubWoL(t, WoLStatus{Adapters: []WoLAdapter{
+		{Name: "Ethernet", MacAddress: "AA-BB-CC-DD-EE-FF", Status: "Up", WoLEnabled: true, WoLCapable: true},
+		{Name: "Wi-Fi", MacAddress: "11-22-33-44-55-66", IPs: []string{"192.168.1.9", "fe80::1"}, Status: "Up"},
+	}})
+
+	// Lower case with colons, as a user would paste it from ipconfig.
+	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{WoLMAC: "11:22:33:44:55:66"}.withDefaults()})
+	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
+	wol := got["wol"].(map[string]any)
+	sel := wol["selected"].(map[string]any)
+	if sel["name"] != "Wi-Fi" || sel["mac"] != "11-22-33-44-55-66" || sel["source"] != "manual" {
+		t.Errorf("wol.selected = %v, want the pinned Wi-Fi adapter", sel)
+	}
+	if sel["ip"] != "192.168.1.9" {
+		t.Errorf("wol.selected.ip = %v, want the adapter's first IPv4", sel["ip"])
+	}
+	// ready follows the selected adapter, not "any adapter has WoL on".
+	if wol["ready"] != false {
+		t.Errorf("wol.ready = %v, want false: the pinned adapter has WoL off", wol["ready"])
+	}
+	adapters := wol["adapters"].([]any)
+	if a := adapters[0].(map[string]any); a["selected"] != false {
+		t.Errorf("Ethernet is still marked selected: %v", a)
+	}
+	if a := adapters[1].(map[string]any); a["selected"] != true || a["ip"] != "192.168.1.9" {
+		t.Errorf("Wi-Fi row = %v", a)
 	}
 }
 
@@ -518,6 +569,71 @@ func TestSTHubLastSeen(t *testing.T) {
 	}
 }
 
+// TestSTHubAPIDiagnostics covers the #95 additions: the full machine id and
+// the responder's state, which describe this PC and must therefore be
+// present even before a hub has ever called.
+func TestSTHubAPIDiagnostics(t *testing.T) {
+	stSetup(t, Config{Port: 5001})
+	resetSSDPLastSearch()
+	prevOK := ssdpFirewallRuleOK()
+	ssdpFirewallOK.Store(true)
+	t.Cleanup(func() {
+		resetSSDPLastSearch()
+		ssdpFirewallOK.Store(prevOK)
+	})
+
+	hub := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		handleSTHubAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("/api/st/hub: %d", w.Code)
+		}
+		return stJSON(t, w)
+	}
+
+	got := hub()
+	if id, _ := got["machine_id"].(string); id == "" || id != machineID() {
+		t.Errorf("machine_id = %v, want the full %q", got["machine_id"], machineID())
+	}
+	ssdp, ok := got["ssdp"].(map[string]any)
+	if !ok {
+		t.Fatalf("no ssdp object: %v", got)
+	}
+	if ssdp["running"] != ssdpRunning() {
+		t.Errorf("ssdp.running = %v, want %v", ssdp["running"], ssdpRunning())
+	}
+	if ssdp["firewall_rule"] != true {
+		t.Errorf("ssdp.firewall_rule = %v, want true", ssdp["firewall_rule"])
+	}
+	// No search yet is null, not a zero-time object the app would render
+	// as "1970".
+	if v, present := ssdp["last_search"]; !present || v != nil {
+		t.Errorf("ssdp.last_search = %v, want null", v)
+	}
+
+	noteSSDPSearch("192.168.1.105")
+	ssdp, _ = hub()["ssdp"].(map[string]any)
+	last, ok := ssdp["last_search"].(map[string]any)
+	if !ok {
+		t.Fatalf("last_search after a search = %v", ssdp["last_search"])
+	}
+	if last["ip"] != "192.168.1.105" {
+		t.Errorf("last_search.ip = %v", last["ip"])
+	}
+	at, _ := last["at"].(string)
+	if _, err := time.Parse(time.RFC3339, at); err != nil {
+		t.Errorf("last_search.at = %q: %v", at, err)
+	}
+
+	// The existing fields are untouched by the additions.
+	for _, key := range []string{"connected", "ip", "driver_version", "last_seen"} {
+		if _, present := got[key]; !present {
+			t.Errorf("%s is missing from /api/st/hub", key)
+		}
+	}
+}
+
 func TestDriverVersionOf(t *testing.T) {
 	cases := map[string]string{
 		stDriverAgent + "/1.0.0": "1.0.0",
@@ -565,12 +681,9 @@ func TestTurnScreenOnCommand(t *testing.T) {
 // ---- config (§3.7) ---------------------------------------------------------
 
 func TestSmartThingsConfigDefaults(t *testing.T) {
-	// A config.json that predates v1.1.0 keeps discovery on and the rest off.
+	// A config.json that predates v1.1.0 keeps the smartthings settings off.
 	withConfigFile(t, `{"port": 5001, "secret": "abc"}`)
 	cfg := loadConfig()
-	if !cfg.SmartThings.Discovery {
-		t.Error("discovery must default to true when the key is absent")
-	}
 	if cfg.SmartThings.AllowedHubs == nil || len(cfg.SmartThings.AllowedHubs) != 0 {
 		t.Errorf("allowed_hubs = %v, want []", cfg.SmartThings.AllowedHubs)
 	}
@@ -578,14 +691,56 @@ func TestSmartThingsConfigDefaults(t *testing.T) {
 		t.Error("session exposure must default to off")
 	}
 
-	// An explicit false survives the load.
-	withConfigFile(t, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"]}}`)
+	withConfigFile(t, `{"port": 5001, "smartthings": {"allowed_hubs": ["192.168.1.20"]}}`)
 	cfg = loadConfig()
-	if cfg.SmartThings.Discovery {
-		t.Error("discovery: false was overwritten by the default")
-	}
 	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
 		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
+	}
+}
+
+// TestLegacyDiscoveryKeyIsIgnoredAndDropped is the #95 migration: a
+// config.json still carrying smartthings.discovery loads without an error,
+// the value changes nothing, and the next save writes the key away.
+func TestLegacyDiscoveryKeyIsIgnoredAndDropped(t *testing.T) {
+	configPath := withConfigFile(t, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"], "expose_session": true}}`)
+
+	cfg := loadConfig()
+	// Everything beside the retired key survives the load…
+	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
+		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
+	}
+	if !cfg.SmartThings.ExposeSession {
+		t.Error("expose_session was lost alongside the retired key")
+	}
+	// …and discovery: false cannot stop the responder any more, because
+	// nothing reads it.
+	if !legacyDiscoveryKey([]byte(`{"smartthings":{"discovery":false}}`)) {
+		t.Error("legacyDiscoveryKey missed an explicit false")
+	}
+	for _, doc := range []string{
+		`{"port":5001}`,
+		`{"smartthings":{"allowed_hubs":[]}}`,
+		`not json`,
+	} {
+		if legacyDiscoveryKey([]byte(doc)) {
+			t.Errorf("legacyDiscoveryKey(%s) = true", doc)
+		}
+	}
+
+	prev := getConfig()
+	t.Cleanup(func() { setConfig(prev) })
+	if err := saveConfig(cfg); err != nil {
+		t.Fatalf("saveConfig: %v", err)
+	}
+	saved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDiscoveryKey(saved) {
+		t.Errorf("the save kept smartthings.discovery: %s", saved)
+	}
+	if !strings.Contains(string(saved), `"allowed_hubs"`) {
+		t.Errorf("the save lost allowed_hubs: %s", saved)
 	}
 }
 

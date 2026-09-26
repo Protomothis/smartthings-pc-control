@@ -603,12 +603,56 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 
 // stHubView is GET /api/st/hub: what the GUI SmartThings section (#70)
 // shows about the Edge driver's last contact. "connected" means the hub
-// polled within stHubStale (2× the longest poll interval the driver offers).
+// polled within stHubStale (2× the longest poll interval the driver
+// offers). machine_id and ssdp were added for the search diagnostics
+// (#95): they describe this PC, not the hub, so they are filled in even
+// when no hub has ever called — that is exactly the case the user needs
+// them in.
 type stHubView struct {
-	Connected     bool   `json:"connected"`
-	IP            string `json:"ip"`
-	DriverVersion string `json:"driver_version"`
-	LastSeen      string `json:"last_seen"`
+	Connected     bool       `json:"connected"`
+	IP            string     `json:"ip"`
+	DriverVersion string     `json:"driver_version"`
+	LastSeen      string     `json:"last_seen"`
+	MachineID     string     `json:"machine_id"`
+	SSDP          stSSDPView `json:"ssdp"`
+	// WoL is the adapter choice (#96) the section's dropdown edits. It
+	// rides on this poll rather than on a second endpoint so the whole
+	// section refreshes in one round trip.
+	WoL stHubWoLView `json:"wol"`
+}
+
+// stHubWoLView is what the app needs to draw the WoL adapter dropdown:
+// the adapter in force, the one the automatic rule would choose (the
+// first dropdown entry names it even while a manual MAC overrides it) and
+// the list to choose from. Selected and Auto are null when this PC has no
+// adapter with a MAC.
+type stHubWoLView struct {
+	Selected *stWoLSelected `json:"selected"`
+	Auto     *stWoLSelected `json:"auto"`
+	Adapters []stWoLAdapter `json:"adapters"`
+}
+
+// stSSDPView is the responder's state: whether it holds a socket, whether
+// the inbound UDP 1900 rule was found, and the last M-SEARCH this PC
+// matched (null until one arrives).
+type stSSDPView struct {
+	Running      bool          `json:"running"`
+	FirewallRule bool          `json:"firewall_rule"`
+	LastSearch   *stSearchView `json:"last_search"`
+}
+
+type stSearchView struct {
+	IP string `json:"ip"`
+	At string `json:"at"`
+}
+
+// stSSDPStatus assembles the responder block.
+func stSSDPStatus() stSSDPView {
+	out := stSSDPView{Running: ssdpRunning(), FirewallRule: ssdpFirewallRuleOK()}
+	if s, ok := lastSSDPSearch(); ok {
+		out.LastSearch = &stSearchView{IP: s.IP, At: s.At.Format(time.RFC3339)}
+	}
+	return out
 }
 
 // handleSTHubAPI serves GET /api/st/hub.
@@ -622,17 +666,19 @@ func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	seen, ok := hubLastSeenInfo()
-	if !ok {
-		writeJSON(w, http.StatusOK, stHubView{})
-		return
+	wol, auto := stWoLView(liveCfg.SmartThings)
+	view := stHubView{
+		MachineID: machineID(),
+		SSDP:      stSSDPStatus(),
+		WoL:       stHubWoLView{Selected: wol.Selected, Auto: auto, Adapters: wol.Adapters},
 	}
-	writeJSON(w, http.StatusOK, stHubView{
-		Connected:     time.Since(seen.At) <= stHubStale,
-		IP:            seen.IP,
-		DriverVersion: seen.DriverVersion,
-		LastSeen:      seen.At.Format(time.RFC3339),
-	})
+	if seen, ok := hubLastSeenInfo(); ok {
+		view.Connected = time.Since(seen.At) <= stHubStale
+		view.IP = seen.IP
+		view.DriverVersion = seen.DriverVersion
+		view.LastSeen = seen.At.Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // ---- Telegram helper endpoints (#63) ---------------------------------------
