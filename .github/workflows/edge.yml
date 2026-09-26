@@ -174,16 +174,13 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#edge-v}"
           awk -v v="$version" '
-            /^## [/ { if (found) exit; if (index($0, "[" v "]") > 0) { found = 1; next } }
+            /^## \[/ { if (found) exit; if (index($0, "[" v "]") > 0) { found = 1; next } }
             found { print }
           ' edge/CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
             echo "_edge/CHANGELOG.md has no [$version] section._" > release-notes.md
           fi
-          printf '
----
-채널: **Protomothis** — 설치 방법은 [edge/README.md](https://github.com/%s/blob/%s/edge/README.md)
-' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> release-notes.md
+          printf '\n---\n채널: **Protomothis** — 설치 방법은 [edge/README.md](https://github.com/%s/blob/%s/edge/README.md)\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> release-notes.md
           cat release-notes.md
 
       - name: Attach the package to the release
