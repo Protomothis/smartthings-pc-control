@@ -181,8 +181,22 @@ func stAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		noteHubSeen(from, r.Header.Get("User-Agent"))
+		noteHubLocalIP(localRequestIP(r))
 		next(w, r)
 	}
+}
+
+// localRequestIP is the address on *this* PC that the connection arrived
+// on — http.Server stores it on the request context — which names the NIC
+// the hub can reach us through. Rule ① of the WoL adapter choice (#96)
+// compares it against each adapter's IPv4 list. nil when the server did
+// not record one (a synthetic request in a test, say).
+func localRequestIP(r *http.Request) net.IP {
+	addr, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if addr == nil {
+		return nil
+	}
+	return net.ParseIP(remoteHost(addr.String()))
 }
 
 // stHubAllowed reports whether from matches one of the configured hub
@@ -246,16 +260,34 @@ type stUpdate struct {
 	Latest    string `json:"latest"`
 }
 
+// stWoL is the §3.2 wol block. Selected is the adapter the driver must
+// address its magic packet to (#96, #97); it is null only when this PC has
+// no adapter with a MAC at all, and Ready describes that one adapter
+// rather than "any adapter somewhere".
 type stWoL struct {
 	Ready    bool           `json:"ready"`
+	Selected *stWoLSelected `json:"selected"`
 	Adapters []stWoLAdapter `json:"adapters"`
+}
+
+// stWoLSelected names the chosen adapter and says who chose it:
+// "manual" when smartthings.wol_mac matched it, "auto" otherwise.
+type stWoLSelected struct {
+	Name       string `json:"name"`
+	MAC        string `json:"mac"`
+	IP         string `json:"ip"`
+	WoLEnabled bool   `json:"wol_enabled"`
+	WoLCapable bool   `json:"wol_capable"`
+	Source     string `json:"source"`
 }
 
 type stWoLAdapter struct {
 	Name       string `json:"name"`
 	MAC        string `json:"mac"`
+	IP         string `json:"ip"`
 	WoLEnabled bool   `json:"wol_enabled"`
 	WoLCapable bool   `json:"wol_capable"`
+	Selected   bool   `json:"selected"`
 }
 
 // stSession is the opt-in session block (§3.2). Everything but Exposed is
@@ -283,26 +315,71 @@ var (
 
 const wolCacheTTL = time.Minute
 
-// stWoLStatus returns the (cached) adapter scan mapped to the §3.2 shape.
-func stWoLStatus() stWoL {
+// cachedWoLScan returns the adapter scan, refreshing it at most once per
+// wolCacheTTL.
+func cachedWoLScan() WoLStatus {
 	wolCacheMu.Lock()
+	defer wolCacheMu.Unlock()
 	if wolCachedAt.IsZero() || time.Since(wolCachedAt) > wolCacheTTL {
 		wolCached = stWoLProvider()
 		wolCachedAt = time.Now()
 	}
-	status := wolCached
-	wolCacheMu.Unlock()
+	return wolCached
+}
 
-	out := stWoL{Ready: status.Ready, Adapters: []stWoLAdapter{}}
+// stWoLStatus returns the (cached) adapter scan mapped to the §3.2 shape,
+// with the adapter cfg selects marked. The config is read on every call, so
+// a changed wol_mac takes effect on the next poll without a restart.
+func stWoLStatus(cfg SmartThingsConfig) stWoL {
+	block, _ := stWoLView(cfg)
+	return block
+}
+
+// stWoLView builds the §3.2 wol block and, alongside it, the pick the
+// automatic rule would make whatever wol_mac says. The app's adapter
+// dropdown labels its first entry with that second value ("자동 (이더넷 ·
+// B4-2E-99-45-B4-F5)"), so it has to be computed even while a manual MAC
+// is in force. Both are null when this PC has no adapter with a MAC.
+func stWoLView(cfg SmartThingsConfig) (block stWoL, auto *stWoLSelected) {
+	status := cachedWoLScan()
+	hubIP := lastHubLocalIP()
+
+	sel, haveSel := selectWoLAdapter(status.Adapters, cfg.WoLMAC, hubIP)
+	if autoSel, ok := selectWoLAdapter(status.Adapters, "", hubIP); ok {
+		auto = selectedView(autoSel)
+	}
+
+	block = stWoL{Adapters: []stWoLAdapter{}}
+	if haveSel {
+		block.Selected = selectedView(sel)
+		// §3.2: readiness is about the adapter that will actually be woken,
+		// not about "some adapter, somewhere, has WoL on".
+		block.Ready = sel.WoLEnabled
+	}
 	for _, a := range status.Adapters {
-		out.Adapters = append(out.Adapters, stWoLAdapter{
+		mac := normalizeMAC(a.MacAddress)
+		block.Adapters = append(block.Adapters, stWoLAdapter{
 			Name:       a.Name,
 			MAC:        a.MacAddress,
+			IP:         adapterIPv4(a),
 			WoLEnabled: a.WoLEnabled,
 			WoLCapable: a.WoLCapable,
+			Selected:   haveSel && mac != "" && mac == sel.MAC,
 		})
 	}
-	return out
+	return block, auto
+}
+
+// selectedView is the wire form of a choice.
+func selectedView(s wolSelection) *stWoLSelected {
+	return &stWoLSelected{
+		Name:       s.Name,
+		MAC:        s.MAC,
+		IP:         s.IP,
+		WoLEnabled: s.WoLEnabled,
+		WoLCapable: s.WoLCapable,
+		Source:     s.Source,
+	}
 }
 
 // stScheduleView is getSchedule() under the §3.2 key names. The wire form
@@ -438,7 +515,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		Grace:             stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.graceDuration() / time.Second)},
 		Schedule:          stScheduleView(),
 		Update:            stUpdateInfo(),
-		WoL:               stWoLStatus(),
+		WoL:               stWoLStatus(cfg.SmartThings),
 		Display:           getDisplayState(),
 		Session:           stSessionInfo(cfg.SmartThings),
 	}

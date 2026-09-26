@@ -10,8 +10,11 @@ package service
 // create the device (machine id, hostname, version, port) plus whether a
 // secret is required, and never the secret itself.
 //
-// The responder follows config smartthings.discovery (§3.7) without a
-// restart: saveConfig calls reconcileSSDP after every save.
+// The responder has no switch (#95): discovery is the only way to add the
+// device, so it runs for as long as the service does. Access control to
+// /st/v1/* stays with the secret and smartthings.allowed_hubs (§3.1).
+// Every M-SEARCH this PC matches is recorded (source IP and time) so the
+// app can answer "did the hub's search ever reach me?" (§6.5).
 
 import (
 	"context"
@@ -189,6 +192,47 @@ func ssdpResponseText(localIP net.IP, port int) string {
 	return strings.Join(headers, "\r\n") + "\r\n\r\n"
 }
 
+// ---- last search (#95) -----------------------------------------------------
+
+// ssdpSearch is the last M-SEARCH this PC matched: which address sent it
+// and when. The app shows it as "마지막 검색 요청 192.168.1.105, 12초 전",
+// which is the only evidence a user has that the hub's search reached the
+// PC at all.
+type ssdpSearch struct {
+	IP string
+	At time.Time
+}
+
+var (
+	ssdpLastSearch   ssdpSearch
+	ssdpLastSearchMu sync.RWMutex
+)
+
+// noteSSDPSearch records one M-SEARCH for a target this PC serves. It runs
+// before the per-source rate limit on purpose: a hub repeats each search
+// two or three times in a burst, and the diagnostic answers "when did a
+// search last arrive", not "when did we last put a packet on the wire".
+func noteSSDPSearch(ip string) {
+	ssdpLastSearchMu.Lock()
+	ssdpLastSearch = ssdpSearch{IP: ip, At: time.Now()}
+	ssdpLastSearchMu.Unlock()
+}
+
+// lastSSDPSearch returns the last matched search; ok is false before the
+// first one.
+func lastSSDPSearch() (ssdpSearch, bool) {
+	ssdpLastSearchMu.RLock()
+	defer ssdpLastSearchMu.RUnlock()
+	return ssdpLastSearch, !ssdpLastSearch.At.IsZero()
+}
+
+// resetSSDPLastSearch forgets it (tests).
+func resetSSDPLastSearch() {
+	ssdpLastSearchMu.Lock()
+	ssdpLastSearch = ssdpSearch{}
+	ssdpLastSearchMu.Unlock()
+}
+
 // ---- per-source rate limit -------------------------------------------------
 
 var (
@@ -313,12 +357,10 @@ func firstIPv4(ifi *net.Interface) net.IP {
 
 // ---- lifecycle -------------------------------------------------------------
 
-// ssdpRunner owns the responder goroutines. managed is set between
-// startSSDP and stopSSDP so that saveConfig in the installer or in tests
-// never opens a socket.
+// ssdpRunner owns the responder goroutines: one socket set, opened by
+// startSSDP at service start and closed by stopSSDP at shutdown.
 type ssdpRunner struct {
 	mu      sync.Mutex
-	managed bool
 	running bool
 	cancel  context.CancelFunc
 	done    chan struct{}
@@ -326,41 +368,22 @@ type ssdpRunner struct {
 
 var ssdpR ssdpRunner
 
-// startSSDP enables the lifecycle and starts the responder when the live
-// config asks for it. Called once at service start.
+// startSSDP enables the lifecycle and starts the responder. Called once at
+// service start; starting twice is a no-op, so it is safe to repeat.
 func startSSDP() {
 	ssdpR.mu.Lock()
-	ssdpR.managed = true
-	ssdpR.mu.Unlock()
-	reconcileSSDP()
+	defer ssdpR.mu.Unlock()
+	if ssdpR.running {
+		return
+	}
+	ssdpR.startLocked()
 }
 
 // stopSSDP stops the responder (if any) and disables the lifecycle.
 func stopSSDP() {
 	ssdpR.mu.Lock()
 	defer ssdpR.mu.Unlock()
-	ssdpR.managed = false
 	ssdpR.stopLocked()
-}
-
-// reconcileSSDP starts or stops the responder so it matches
-// smartthings.discovery (§3.7). saveConfig calls it after every save; it is
-// a no-op until startSSDP has run, and safe to call repeatedly.
-func reconcileSSDP() {
-	ssdpR.mu.Lock()
-	defer ssdpR.mu.Unlock()
-	if !ssdpR.managed {
-		return
-	}
-	want := getConfig().SmartThings.Discovery
-	if want == ssdpR.running {
-		return
-	}
-	if !want {
-		ssdpR.stopLocked()
-		return
-	}
-	ssdpR.startLocked()
 }
 
 // ssdpRunning reports whether the responder is listening.
@@ -371,11 +394,12 @@ func ssdpRunning() bool {
 }
 
 // startLocked opens the sockets and serves them. ssdpR.mu is held. A
-// failure leaves running false so the next reconcile retries.
+// failure leaves running false, which the app reports as "검색 응답기
+// 꺼짐" so the user is not left waiting for a search that can never land.
 func (r *ssdpRunner) startLocked() {
 	socks, err := ssdpOpen()
 	if err != nil {
-		logMsg("SSDP: discovery is on but no socket could be opened: %v", err)
+		logMsg("SSDP: no socket could be opened, this PC will not answer searches: %v", err)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -434,7 +458,13 @@ func serveSSDP(ctx context.Context, s *ssdpSocket, wg *sync.WaitGroup) {
 		if !ok {
 			continue
 		}
-		if src == nil || !ssdpAllow(src.IP.String()) {
+		if src == nil {
+			continue
+		}
+		// The packet was for us; record it even if the burst limiter
+		// below drops this particular repeat (#95).
+		noteSSDPSearch(src.IP.String())
+		if !ssdpAllow(src.IP.String()) {
 			continue
 		}
 		wg.Add(1)

@@ -15,32 +15,38 @@ import (
 )
 
 // The SmartThings section of the network tab (issue #70, edge-driver doc
-// §7): the Edge driver's connection state plus the `smartthings` part of
-// the config (§3.7) — SSDP discovery, session exposure and the hub allow
-// list. Saving goes through the shared saveBar flow like the settings and
-// notifications tabs; only the smartthings fields are written over the
-// baseline, so a save here never clobbers another tab's edits.
+// §7): the Edge driver's connection state, this PC's discovery identity
+// and search diagnostics (#95), plus the editable `smartthings` part of
+// the config (§3.7) — session exposure and the hub allow list. Saving goes
+// through the shared saveBar flow like the settings and notifications
+// tabs; only the smartthings fields are written over the baseline, so a
+// save here never clobbers another tab's edits.
+//
+// SSDP itself has no switch any more: adding the device has no other path,
+// so the responder always runs and the section reports on it instead of
+// offering to turn it off.
 
 // --- Pure form model (unit-tested) -----------------------------------------
 
 // stFormState is the section's contents as plain values, independent of
 // widgets, so the config round-trip and the dirty check are testable.
 type stFormState struct {
-	Discovery         bool
 	ExposeSession     bool
 	ExposeSessionUser bool
 	// Hubs is the edited allow list; empty means "any hub".
 	Hubs []string
+	// WoLMAC is the adapter the dropdown picked; empty means automatic.
+	WoLMAC string
 }
 
 // stStateFromConfig is what the section shows for cfg. The hub list is
 // copied so editing it never writes into the baseline.
 func stStateFromConfig(cfg Config) stFormState {
 	return stFormState{
-		Discovery:         cfg.SmartThings.Discovery,
 		ExposeSession:     cfg.SmartThings.ExposeSession,
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		Hubs:              normalizeHubs(cfg.SmartThings.AllowedHubs),
+		WoLMAC:            cfg.SmartThings.WoLMAC,
 	}
 }
 
@@ -90,10 +96,10 @@ func removeHub(hubs []string, ip string) []string {
 func (s stFormState) applyTo(base Config) Config {
 	cfg := base
 	cfg.SmartThings = SmartThingsConfig{
-		Discovery:         s.Discovery,
 		AllowedHubs:       normalizeHubs(s.Hubs),
 		ExposeSession:     s.ExposeSession,
 		ExposeSessionUser: s.effectiveUser(),
+		WoLMAC:            s.WoLMAC,
 	}
 	return cfg
 }
@@ -101,10 +107,103 @@ func (s stFormState) applyTo(base Config) Config {
 // dirty reports whether saving would change base.
 func (s stFormState) dirty(base Config) bool {
 	st := base.SmartThings
-	return s.Discovery != st.Discovery ||
-		s.ExposeSession != st.ExposeSession ||
+	return s.ExposeSession != st.ExposeSession ||
 		s.effectiveUser() != st.ExposeSessionUser ||
+		s.WoLMAC != st.WoLMAC ||
 		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs))
+}
+
+// --- WoL adapter labels (unit-tested) ---------------------------------------
+
+// stWoLStateLabel is the trailing "WoL 켜짐 / 꺼짐 / 미지원" of a dropdown
+// entry. "off" and "not supported" are different problems: the first the
+// user can fix in the adapter's properties, the second they cannot.
+func stWoLStateLabel(l Lang, enabled, capable bool) string {
+	switch {
+	case enabled:
+		return T(l, "st.wol.on")
+	case capable:
+		return T(l, "st.wol.off")
+	}
+	return T(l, "st.wol.na")
+}
+
+// stWoLAutoOption is the dropdown's first entry, "자동 (이더넷 ·
+// B4-2E-99-45-B4-F5)": automatic, with what automatic currently means
+// spelled out so picking it is not a leap of faith.
+func stWoLAutoOption(l Lang, auto *STWoLSelected) string {
+	if auto == nil || auto.MAC == "" {
+		return T(l, "st.wol.auto.none")
+	}
+	return fmt.Sprintf(T(l, "st.wol.auto"), auto.Name, auto.MAC)
+}
+
+// stWoLAdapterOption is one adapter's entry, "이더넷 · B4-2E-99-45-B4-F5 ·
+// WoL 켜짐".
+func stWoLAdapterOption(l Lang, a STWoLAdapter) string {
+	return fmt.Sprintf(T(l, "st.wol.adapter"), a.Name, a.MAC, stWoLStateLabel(l, a.WoLEnabled, a.WoLCapable))
+}
+
+// stWoLOptions builds the dropdown from the service's picture: the labels
+// and, in step with them, the wol_mac each one saves ("" for automatic).
+// mac is the value currently in the form; when it names no adapter — the
+// card was swapped, or config.json was edited by hand — it keeps an entry
+// of its own so the dropdown never shows something other than what is
+// saved.
+func stWoLOptions(l Lang, info STWoLInfo, mac string) (labels, macs []string) {
+	labels = []string{stWoLAutoOption(l, info.Auto)}
+	macs = []string{""}
+	found := false
+	for _, a := range info.Adapters {
+		if a.MAC == "" {
+			continue
+		}
+		if strings.EqualFold(a.MAC, mac) {
+			found = true
+		}
+		labels = append(labels, stWoLAdapterOption(l, a))
+		macs = append(macs, a.MAC)
+	}
+	if mac != "" && !found {
+		labels = append(labels, fmt.Sprintf(T(l, "st.wol.missing"), mac))
+		macs = append(macs, mac)
+	}
+	return labels, macs
+}
+
+// stWoLPick resolves the form's wol_mac against the service's picture, the
+// same way the service does: the adapter it names, or the automatic pick
+// when it is empty or matches nothing. It is what the hint below the
+// dropdown describes, so an unsaved choice is explained straight away.
+func stWoLPick(info STWoLInfo, mac string) *STWoLSelected {
+	if mac != "" {
+		for _, a := range info.Adapters {
+			if strings.EqualFold(a.MAC, mac) {
+				return &STWoLSelected{
+					Name: a.Name, MAC: a.MAC, IP: a.IP,
+					WoLEnabled: a.WoLEnabled, WoLCapable: a.WoLCapable,
+					Source: "manual",
+				}
+			}
+		}
+	}
+	return info.Auto
+}
+
+// stWoLLine is the hint under the dropdown: whether this PC can actually
+// be woken through the chosen adapter, naming it rather than talking about
+// adapters in general.
+func stWoLLine(l Lang, sel *STWoLSelected) string {
+	if sel == nil || sel.MAC == "" {
+		return T(l, "st.wol.none")
+	}
+	switch {
+	case sel.WoLEnabled:
+		return fmt.Sprintf(T(l, "st.wol.ready"), sel.Name)
+	case sel.WoLCapable:
+		return fmt.Sprintf(T(l, "st.wol.notready"), sel.Name)
+	}
+	return fmt.Sprintf(T(l, "st.wol.unsupported"), sel.Name)
 }
 
 // stRelKey maps the age of the last hub contact to the i18n key of its
@@ -152,6 +251,45 @@ func (u *ui) stHubLine(h STHub, now time.Time) string {
 	return fmt.Sprintf(u.t("st.hub.connected"), h.IP, version, u.stRelative(h.LastSeen, now))
 }
 
+// stMachineIDShort is the first 8 characters of the machine id
+// ("58bff996"), which is what the Edge driver shows as the device model
+// and what tells two PCs apart at a glance. A shorter id is used whole;
+// the [복사] button always copies the full value.
+func stMachineIDShort(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// stMachineIDLine is the "이 PC의 ID 58bff996" line. An empty id means the
+// service has not answered yet.
+func (u *ui) stMachineIDLine(id string) string {
+	if id == "" {
+		return u.t("st.machineid.unknown")
+	}
+	return fmt.Sprintf(u.t("st.machineid"), stMachineIDShort(id))
+}
+
+// stSearchLine is the discovery diagnostic: is the responder listening, is
+// the firewall rule there, and did a search ever arrive. A responder that
+// could not open a socket answers nothing, so that case replaces the whole
+// line rather than adding to it — the rest would only be noise.
+func (u *ui) stSearchLine(s STSSDPState, now time.Time) string {
+	if !s.Running {
+		return u.t("st.search.off")
+	}
+	firewall := "st.search.fw.missing"
+	if s.FirewallRule {
+		firewall = "st.search.fw.ok"
+	}
+	last := u.t("st.search.none")
+	if s.LastSearch != nil && s.LastSearch.IP != "" {
+		last = fmt.Sprintf(u.t("st.search.last"), s.LastSearch.IP, u.stRelative(s.LastSearch.At, now))
+	}
+	return strings.Join([]string{u.t("st.search.on"), u.t(firewall), last}, " · ")
+}
+
 // --- Widgets -----------------------------------------------------------------
 
 // stSection holds the section's widgets; rebuilt with the window on a
@@ -159,16 +297,29 @@ func (u *ui) stHubLine(h STHub, now time.Time) string {
 type stSection struct {
 	status      *widget.Label
 	secretHint  *widget.Label
-	discovery   *toggle
+	machineID   *widget.Label
+	copyBtn     *widget.Button
+	search      *widget.Label
 	session     *toggle
 	sessionUser *toggle
+	wolSelect   *widget.Select
+	wolHint     *widget.Label
 	hubBox      *fyne.Container
 	addBtn      *widget.Button
 
 	// hubs is the edited allow list and hub the last /api/st/hub result
-	// (the [Add current hub] button needs both).
+	// (the [Add current hub] button and the [복사] button need both).
 	hubs []string
 	hub  STHub
+
+	// wolMAC is the edited smartthings.wol_mac and wolMACs the value each
+	// dropdown option saves, in step with wolSelect.Options — the labels
+	// are translated prose, so the index is the only reliable link back.
+	// wolLoaded stays false until /api/st/hub has answered once, while the
+	// dropdown shows its placeholder rather than an empty adapter list.
+	wolMAC    string
+	wolMACs   []string
+	wolLoaded bool
 
 	bar *saveBar
 	// filling suppresses the OnChanged cascade while fillSTSection writes
@@ -179,10 +330,10 @@ type stSection struct {
 // state reads the widgets into the pure form model.
 func (t *stSection) state() stFormState {
 	return stFormState{
-		Discovery:         t.discovery.Checked,
 		ExposeSession:     t.session.Checked,
 		ExposeSessionUser: t.sessionUser.Checked,
 		Hubs:              t.hubs,
+		WoLMAC:            t.wolMAC,
 	}
 }
 
@@ -212,13 +363,29 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.secretHint.Importance = widget.WarningImportance
 	t.secretHint.Hide()
 
-	t.discovery = newToggle(u.t("st.discovery"), onToggle)
+	// This PC's discovery identity and the search diagnostics (#95). Both
+	// come from /api/st/hub, which the section already polls.
+	t.machineID = widget.NewLabel(u.t("st.machineid.unknown"))
+	t.copyBtn = widget.NewButtonWithIcon(u.t("st.machineid.copy"), theme.ContentCopyIcon(), func() { u.copyMachineID() })
+	t.copyBtn.Disable() // enabled once the service has told us the id
+	t.search = widget.NewLabel(u.t("st.search.loading"))
+	t.search.Wrapping = fyne.TextWrapWord
+
 	t.session = newToggle(u.t("st.session"), func(on bool) {
 		t.setUserEnabled(on)
 		u.updateSTSaveState()
 	})
 	t.sessionUser = newToggle(u.t("st.session.user"), onToggle)
 	t.sessionUser.Disable()
+
+	// The adapter dropdown (#96). Its options only exist once /api/st/hub
+	// has answered, so it starts as a placeholder; OnChanged is attached
+	// after construction so filling it can never look like a user pick.
+	t.wolSelect = widget.NewSelect(nil, nil)
+	t.wolSelect.PlaceHolder = u.t("st.wol.loading")
+	t.wolSelect.OnChanged = func(string) { u.onWoLAdapterPicked() }
+	t.wolHint = widget.NewLabel(u.t("st.wol.loading"))
+	t.wolHint.Wrapping = fyne.TextWrapWord
 
 	t.hubBox = container.NewVBox()
 	t.addBtn = widget.NewButtonWithIcon(u.t("st.hubs.add"), theme.ContentAddIcon(), func() { u.addCurrentHub() })
@@ -228,12 +395,21 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	return container.NewVBox(
 		t.status,
 		t.secretHint,
-		t.discovery,
-		hint(u.t("st.discovery.hint")),
+		// The id label keeps its natural width and the button sits next
+		// to it rather than stretching across the tab.
+		container.NewHBox(t.machineID, t.copyBtn, layout.NewSpacer()),
+		t.search,
+		hint(u.t("st.search.hint")),
+		widget.NewSeparator(),
 		t.session,
 		hint(u.t("st.session.hint")),
 		t.sessionUser,
 		hint(u.t("st.session.user.hint")),
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle(u.t("st.wol"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		t.wolSelect,
+		t.wolHint,
+		hint(u.t("st.wol.hint")),
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(u.t("st.hubs"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		t.hubBox,
@@ -274,6 +450,59 @@ func (u *ui) renderHubs() {
 	}
 }
 
+// onWoLAdapterPicked records the dropdown's choice as the edited wol_mac.
+// The labels are translated prose, so the selected index — not the text —
+// is what maps back to a MAC. UI thread only.
+func (u *ui) onWoLAdapterPicked() {
+	t := u.st
+	if t == nil || t.filling || t.wolSelect == nil {
+		return
+	}
+	i := t.wolSelect.SelectedIndex()
+	if i < 0 || i >= len(t.wolMACs) {
+		return
+	}
+	t.wolMAC = t.wolMACs[i]
+	u.renderWoLHint()
+	u.updateSTSaveState()
+}
+
+// renderWoLAdapters redraws the dropdown from the last /api/st/hub result,
+// keeping the edited selection. Filling the widget must not look like a
+// user pick, hence the filling guard. UI thread only.
+func (u *ui) renderWoLAdapters() {
+	t := u.st
+	if t == nil || t.wolSelect == nil || !t.wolLoaded {
+		return
+	}
+	labels, macs := stWoLOptions(u.lang, t.hub.WoL, t.wolMAC)
+	was := t.filling
+	t.filling = true
+	t.wolSelect.Options = labels
+	t.wolMACs = macs
+	if i := slices.Index(macs, t.wolMAC); i >= 0 {
+		t.wolSelect.SetSelectedIndex(i)
+	} else {
+		// Cannot happen (stWoLOptions keeps an entry for an unknown MAC),
+		// but a blank dropdown would be worse than falling back to auto.
+		t.wolMAC = ""
+		t.wolSelect.SetSelectedIndex(0)
+	}
+	t.wolSelect.Refresh()
+	t.filling = was
+	u.renderWoLHint()
+}
+
+// renderWoLHint writes the "WoL is off on Ethernet" line for whatever the
+// dropdown currently shows. UI thread only.
+func (u *ui) renderWoLHint() {
+	t := u.st
+	if t == nil || t.wolHint == nil || !t.wolLoaded {
+		return
+	}
+	t.wolHint.SetText(stWoLLine(u.lang, stWoLPick(t.hub.WoL, t.wolMAC)))
+}
+
 // addCurrentHub puts the connected hub's IP on the allow list (dirty until
 // saved). Must be called on the UI thread.
 func (u *ui) addCurrentHub() {
@@ -284,6 +513,19 @@ func (u *ui) addCurrentHub() {
 	t.hubs = addHub(t.hubs, t.hub.IP)
 	u.renderHubs()
 	u.updateSTSaveState()
+}
+
+// copyMachineID puts the full machine id on the clipboard — the label
+// only shows the first 8 characters, and the whole value is what a support
+// question or a manual device lookup needs. UI thread only.
+func (u *ui) copyMachineID() {
+	t := u.st
+	if t == nil || t.hub.MachineID == "" {
+		return
+	}
+	u.app.Clipboard().SetContent(t.hub.MachineID)
+	// Without this the button looks inert: nothing else on screen changes.
+	dialog.ShowInformation(u.t("st.machineid.copied"), stMachineIDShort(t.hub.MachineID), u.win)
 }
 
 // updateAddHubButton enables [Add current hub] only while a hub is
@@ -309,12 +551,13 @@ func (u *ui) fillSTSection(cfg Config) {
 	}
 	s := stStateFromConfig(cfg)
 	t.filling = true
-	t.discovery.SetChecked(s.Discovery)
 	t.session.SetChecked(s.ExposeSession)
 	t.sessionUser.SetChecked(s.ExposeSessionUser)
 	t.setUserEnabled(s.ExposeSession)
 	t.hubs = s.Hubs
+	t.wolMAC = s.WoLMAC
 	u.renderHubs()
+	u.renderWoLAdapters()
 	// The secret lives on the settings tab; this only points at it.
 	if cfg.Secret == "" {
 		t.secretHint.Show()
@@ -374,7 +617,9 @@ func (u *ui) saveSTSection(quiet bool) bool {
 	return true
 }
 
-// loadSTHub refreshes the connection status line. Runs off the UI thread.
+// loadSTHub refreshes the connection status line, this PC's id and the
+// search diagnostics — all three come from the same poll. Runs off the UI
+// thread.
 func (u *ui) loadSTHub() {
 	h, err := u.client.GetSTHub()
 	if err != nil {
@@ -388,7 +633,16 @@ func (u *ui) loadSTHub() {
 			return
 		}
 		t.hub = h
+		t.wolLoaded = true
+		u.renderWoLAdapters()
 		t.status.SetText(u.stHubLine(h, now))
+		t.machineID.SetText(u.stMachineIDLine(h.MachineID))
+		t.search.SetText(u.stSearchLine(h.SSDP, now))
+		if h.MachineID == "" {
+			t.copyBtn.Disable()
+		} else {
+			t.copyBtn.Enable()
+		}
 		u.updateAddHubButton()
 	})
 }

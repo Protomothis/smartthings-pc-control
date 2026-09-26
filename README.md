@@ -101,7 +101,7 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
 
 - **정확한 전원 상태** — 켜짐 / 절전 / 최대절전 / 꺼짐 / 깨우는 중 / 종료 대기를 구분합니다. 서비스가 종료·절전 직전에 허브로 푸시를 보내므로 폴링을 기다리지 않습니다.
 - **유예와 예약이 보입니다** — 남은 시간 카운트다운, 출처(SmartThings · 앱 · 텔레그램), [취소] 버튼, 5분에서 3일(72시간)까지 16개 프리셋 예약. 어디서 취소하든 모든 곳에서 함께 사라집니다.
-- **SSDP 자동 검색** — [기기 추가 → 주변 기기 검색]으로 PC를 찾습니다. IP·포트·호스트 이름이 채워진 채 추가되므로 **시크릿만** 넣으면 됩니다. DHCP로 IP가 바뀌어도 따라갑니다.
+- **SSDP 자동 검색** — [기기 추가 → 주변 기기 검색]으로 PC를 찾습니다. IP·포트·호스트 이름이 채워진 채 추가되므로 **시크릿만** 넣으면 됩니다. DHCP로 IP가 바뀌어도 따라갑니다. 장치를 추가할 방법은 이 검색뿐이므로 응답기는 항상 켜져 있고, 끄는 설정은 없습니다.
 - **조용한 실패 제거** — 시크릿 불일치·연결 불가·버전 비호환·WoL 비활성 어댑터를 상태 줄에 한 줄로 표시합니다.
 - **상세 화면 두 카드** — 위에 상태(전원 상태·마지막 실행·예약 요약·세션·상태·버전), 아래에 조작(명령·예약할 명령·예약 시간). 화면 켜기/끄기도 명령 목록에 있고, 자동화는 `pcExec.execute`·`pcDelay.schedule`을 씁니다.
 - **여러 PC** — MachineGuid로 장치를 구분하므로 허브 하나로 여러 PC를 다뤄도 섞이지 않습니다. 시크릿·MAC은 장치별 설정입니다.
@@ -112,6 +112,34 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
 >
 > SSDP 자동 검색을 쓰려면 PC에서 UDP 1900 인바운드가 열려 있어야 하고(설치 시 자동 추가), 네트워크 프로필이 **개인**이어야 하며, 허브와 PC가 같은 서브넷에 있어야 합니다.
 
+**검색 전제 조건**: [주변 기기 검색]을 누르기 전에 **PC가 켜져 있고 PC Control이 돌고 있어야** 합니다. 꺼져 있거나 절전 중인 PC는 검색에 응답할 수 없습니다.
+
+#### 검색이 안 될 때
+
+앱 [네트워크] 탭의 SmartThings 섹션이 순서대로 답을 줍니다.
+
+1. **앱이 켜져 있는가** — "검색 응답기 켜짐"이어야 합니다. "꺼짐"이면 소켓을 열지 못한 것이므로 [로그] 탭을 확인하세요.
+2. **방화벽 규칙** — "방화벽 규칙 OK"여야 합니다. "없음"이면 서비스를 다시 시작하세요(시작할 때마다 인바운드 UDP 1900 규칙 *SmartThings PC Control SSDP*를 확인·복구합니다).
+3. **마지막 검색 요청 시각** — 앱에서 [주변 기기 검색]을 누른 뒤 이 시각이 갱신되는지 봅니다. 갱신되지 않으면 허브의 M-SEARCH가 PC까지 오지 못한 것입니다(다른 서브넷, 게스트/AP 격리, 네트워크 프로필이 **공용**).
+4. **허브 허용 목록** — 검색은 도착하는데 장치가 만들어지지 않으면 `smartthings.allowed_hubs`에 허브 IP가 빠져 있지 않은지 확인하세요(비어 있으면 모두 허용).
+
+같은 섹션의 **이 PC의 ID**(8자리 축약, [복사]로 전체 값)는 SmartThings 앱의 장치 정보에 `PC Control · <8자리>`로 표시되므로, 여러 PC 중 어느 장치가 어느 PC인지 맞춰 볼 때 씁니다.
+
+#### WoL 어댑터 (v1.1.1)
+
+꺼진 PC를 깨우는 매직 패킷은 **하나의 MAC 주소**로 갑니다. 이더넷과 Wi-Fi가 같이 꽂혀 있거나 Hyper-V·VPN 가상 어댑터가 있으면 엉뚱한 MAC이 뽑힐 수 있어서, 이제 **PC가 직접 고르고** 드라이버는 그 값을 씁니다.
+
+자동 선택은 이 순서입니다.
+
+1. **허브의 요청이 실제로 들어오는 어댑터** — `/st/v1` 요청을 받은 인터페이스의 IP를 기억해 두었다가 어댑터의 IPv4와 맞춰 봅니다. 허브가 닿는 길이 곧 매직 패킷이 오는 길이므로 가장 확실한 근거입니다.
+2. WoL이 **이미 켜진** 어댑터
+3. WoL을 **지원하는** 어댑터
+4. MAC이 있는 첫 어댑터
+
+2~4단계에서는 가상 어댑터(`vEthernet` · Hyper-V · VirtualBox · VMware · TAP · Tailscale · WireGuard · 루프백 · 블루투스)를 실제 랜카드 뒤로 미룹니다. 실제 어댑터가 하나도 없을 때만 가상 어댑터를 고릅니다.
+
+직접 고르려면 앱 [네트워크] 탭 → SmartThings → **WoL 어댑터** 드롭다운에서 어댑터를 선택하세요(첫 항목 `자동 (이더넷 · B4-2E-99-45-B4-F5)`은 지금 자동으로 뽑히는 어댑터를 같이 보여 줍니다). 저장 즉시 반영되며 서비스를 다시 시작할 필요가 없습니다. 고른 어댑터의 WoL이 꺼져 있으면 그 어댑터 이름과 함께 안내가 나옵니다 — 장치 관리자에서 해당 어댑터 속성 → 전원 관리에서 켜세요. 설정 파일에서는 `smartthings.wol_mac`이고, 비우면 다시 자동입니다.
+
 ### 데스크톱 앱 한눈에
 
 | 탭 | 내용 |
@@ -120,7 +148,7 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
 | **명령** | 9개 명령을 이 PC에서 즉시 실행 (전원 명령은 확인 대화상자) |
 | **예약** | 명령 + 프리셋 16종(5분~3일)으로 예약, 큰 카운트다운, 출처 표시, [예약 취소] |
 | **알림** | 텔레그램 연결·제어 허용·받을 알림(카테고리별 체크)·조용한 시간대·상세 수준·PC 이름 |
-| **네트워크** | 어댑터별 WoL 상태·MAC·IP, 외부 IP, **SmartThings**(연결된 허브·자동 검색·세션 노출·허브 허용 목록) |
+| **네트워크** | 어댑터별 WoL 상태·MAC·IP, 외부 IP, **SmartThings**(연결된 허브·이 PC의 ID·검색 상태·세션 노출·**WoL 어댑터** 선택·허브 허용 목록) |
 | **로그** | service.log 실시간 보기, 필터, 자동 새로고침, 파일·폴더 열기 |
 
 - 상단 상태줄: 연결 상태 색 점, 버전, 언어 전환(한국어/English).
@@ -140,10 +168,10 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
   "shutdown_grace": true,
   "grace_seconds": 300,
   "smartthings": {
-    "discovery": true,
     "allowed_hubs": [],
     "expose_session": false,
-    "expose_session_user": false
+    "expose_session_user": false,
+    "wol_mac": ""
   },
   "telegram": {
     "enabled": false,
@@ -172,9 +200,9 @@ v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함�
 | `secret` | 인증 키. 비어 있으면 인증 없음 | "" |
 | `webui_remote` | 브라우저 WebUI 허용 (로컬+LAN, 시크릿 필수, 재시작 필요) | false |
 | `shutdown_grace` / `grace_seconds` | 원격 전원 명령 유예 on/off와 길이(초, 5~3600) | true / 300 |
-| `smartthings.discovery` | Edge 드라이버의 SSDP 자동 검색에 응답 (UDP 1900) | true |
 | `smartthings.allowed_hubs` | `/st/v1`을 쓸 수 있는 허브 IP 목록. 비어 있으면 모두 허용 | [] |
 | `smartthings.expose_session` / `expose_session_user` | 잠금·유휴 시간을 드라이버에 노출, 사용자 이름 포함 | false / false |
+| `smartthings.wol_mac` | WoL 매직 패킷을 받을 어댑터의 MAC. 비어 있으면 서비스가 자동으로 고릅니다(앱 네트워크 탭의 **WoL 어댑터** 드롭다운) | "" |
 | `telegram.enabled` | 텔레그램 알림 발송 | false |
 | `telegram.bot_token` | 봇 토큰. 저장 시 DPAPI 암호화(`dpapi:`), API에는 마스킹(`****1234`)만 노출 | "" |
 | `telegram.chat_id` | 알림을 받을 채팅 | "" |
@@ -298,7 +326,7 @@ v1.1.0 ships a **purpose-built Edge driver** for this service (the `edge/` folde
 
 - **A real power state** — on / sleeping / hibernated / off / waking / shutting down. The service pushes an event to the hub just before it shuts down or sleeps, so the tile does not wait for the next poll.
 - **Grace and schedules are visible** — remaining countdown, origin (SmartThings · app · Telegram), a [Cancel] button and sixteen presets from 5 minutes to 3 days. Cancelling anywhere clears it everywhere.
-- **SSDP discovery** — *Add device → Scan nearby* finds the PC and fills in its IP, port and hostname, so only the **secret** is left to type. The device follows the PC if DHCP moves it.
+- **SSDP discovery** — *Add device → Scan nearby* finds the PC and fills in its IP, port and hostname, so only the **secret** is left to type. The device follows the PC if DHCP moves it. It is the only way to add the device, so the responder is always on and there is no setting to turn it off.
 - **No silent failures** — wrong secret, unreachable PC, incompatible version and Wake-on-LAN-disabled adapters all show up as one status line.
 - **Two cards in the detail view** — status on top (power state, last action, schedule summary, session, status, versions) and controls below (command, what to schedule, when to schedule). Screen on/off is in the command list, and automations use `pcExec.execute` / `pcDelay.schedule`.
 - **Several PCs** — devices are keyed by MachineGuid, so one hub can drive many PCs without mixing them up. Secret and MAC are per-device preferences.
@@ -309,6 +337,34 @@ Installation, preferences, automation examples and troubleshooting are in **[`ed
 >
 > SSDP discovery needs inbound UDP 1900 on the PC (added at install), a **Private** network profile, and hub and PC on the same subnet.
 
+**Before you scan**: the **PC has to be on and PC Control running** when you tap *Scan nearby*. A PC that is off or asleep cannot answer a search.
+
+#### When discovery finds nothing
+
+The SmartThings section of the app's [Network] tab answers this in order.
+
+1. **Is the app running** — it should say "Discovery responder on". "Off" means no socket could be opened; check the [Logs] tab.
+2. **Firewall rule** — it should say "Firewall rule OK". If it says the rule is missing, restart the service (every start checks and restores the inbound UDP 1900 rule *SmartThings PC Control SSDP*).
+3. **Time of the last search** — tap *Scan nearby* and watch whether that time updates. If it does not, the hub's M-SEARCH never reached the PC (different subnet, guest/AP isolation, or a **Public** network profile).
+4. **Hub allow list** — if searches arrive but no device appears, check that the hub's IP is not missing from `smartthings.allowed_hubs` (empty allows any hub).
+
+**This PC's ID** in the same section (first 8 characters, [Copy] for the full value) is what the SmartThings app shows as `PC Control · <8 chars>` in the device info, so it tells you which device is which PC.
+
+#### WoL adapter (v1.1.1)
+
+The magic packet that wakes a sleeping PC goes to **one MAC address**. With Ethernet and Wi-Fi both plugged in, or a Hyper-V / VPN pseudo-adapter in the list, the wrong MAC is easy to pick — so **the PC chooses now** and the driver uses what it says.
+
+Automatic picks, in order:
+
+1. **The adapter the hub's requests actually arrive on** — the service remembers the local address of each `/st/v1` request and matches it against the adapters' IPv4 addresses. The route the hub reaches you by is the route the magic packet will take, so this is evidence rather than a guess.
+2. An adapter that **already has WoL enabled**
+3. An adapter that **supports WoL**
+4. The first adapter with a MAC
+
+In steps 2–4 virtual adapters (`vEthernet`, Hyper-V, VirtualBox, VMware, TAP, Tailscale, WireGuard, loopback, Bluetooth) go behind the real network cards, and are picked only when there is no real adapter at all.
+
+To choose by hand, use the **WoL adapter** dropdown under Network → SmartThings in the app; its first entry, `Automatic (Ethernet · B4-2E-99-45-B4-F5)`, spells out what automatic currently means. The choice applies on save, with no service restart. If the chosen adapter has WoL turned off, the hint below says so by name — turn it on in Device Manager → that adapter → Properties → Power Management. In `config.json` this is `smartthings.wol_mac`; clearing it goes back to automatic.
+
 ### The Desktop App at a Glance
 
 | Tab | Contents |
@@ -317,7 +373,7 @@ Installation, preferences, automation examples and troubleshooting are in **[`ed
 | **Commands** | Run any of the 9 commands on this PC immediately (power commands ask for confirmation) |
 | **Schedule** | Command + one of sixteen presets (5 min – 3 days), large countdown, origin label, [Cancel Schedule] |
 | **Notifications** | Telegram connection, control permission, events to receive (per-category checks), quiet hours, detail level, PC name |
-| **Network** | Per-adapter WoL state, MAC, IPs, external IP, **SmartThings** (connected hub, discovery, session exposure, hub allow list) |
+| **Network** | Per-adapter WoL state, MAC, IPs, external IP, **SmartThings** (connected hub, this PC's ID, search status, session exposure, **WoL adapter** choice, hub allow list) |
 | **Logs** | Live service.log view, filter, auto-refresh, open file/folder |
 
 - Top bar: connection-state dot, version, language switch (한국어/English).
@@ -337,10 +393,10 @@ Installation, preferences, automation examples and troubleshooting are in **[`ed
   "shutdown_grace": true,
   "grace_seconds": 300,
   "smartthings": {
-    "discovery": true,
     "allowed_hubs": [],
     "expose_session": false,
-    "expose_session_user": false
+    "expose_session_user": false,
+    "wol_mac": ""
   },
   "telegram": {
     "enabled": false,
@@ -369,9 +425,9 @@ Installation, preferences, automation examples and troubleshooting are in **[`ed
 | `secret` | Auth key; empty means no auth | "" |
 | `webui_remote` | Allow the browser WebUI (local+LAN, secret required, restart needed) | false |
 | `shutdown_grace` / `grace_seconds` | Grace period for remote power commands on/off and length in seconds (5–3600) | true / 300 |
-| `smartthings.discovery` | Answer the Edge driver's SSDP search (UDP 1900) | true |
 | `smartthings.allowed_hubs` | Hub IPs allowed to use `/st/v1`; empty means any | [] |
 | `smartthings.expose_session` / `expose_session_user` | Expose lock state and idle time to the driver, and include the user name | false / false |
+| `smartthings.wol_mac` | MAC of the adapter the Wake-on-LAN magic packet is addressed to; empty lets the service choose (the **WoL adapter** dropdown on the app's Network tab) | "" |
 | `telegram.enabled` | Send Telegram notifications | false |
 | `telegram.bot_token` | Bot token; DPAPI-encrypted on save (`dpapi:`), the API only exposes a masked form (`****1234`) | "" |
 | `telegram.chat_id` | Chat that receives notifications | "" |

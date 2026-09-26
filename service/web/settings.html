@@ -282,12 +282,6 @@
                     <div class="section-title" data-i18n="smartthings">SmartThings</div>
                     <div class="field">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="stDiscovery" {{if .SmartThings.Discovery}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="stDiscovery">Allow discovery (SSDP)</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                             <input type="checkbox" id="stSession" {{if .SmartThings.ExposeSession}}checked{{end}} onchange="checkChanges()" style="width:auto;">
                             <span data-i18n="stSession">Expose session info (lock, idle)</span>
                         </label>
@@ -297,6 +291,13 @@
                             <input type="checkbox" id="stSessionUser" {{if .SmartThings.ExposeSessionUser}}checked{{end}} onchange="checkChanges()" style="width:auto;">
                             <span data-i18n="stSessionUser">Include user name</span>
                         </label>
+                    </div>
+                    <div class="field">
+                        <label data-i18n="stWolMac">WoL adapter</label>
+                        <!-- Filled by loadSTWoL() from /api/st/hub; the value
+                             saved is the adapter's MAC, empty for automatic. -->
+                        <select id="stWolMac" data-current="{{.SmartThings.WoLMAC}}" onchange="checkChanges()"></select>
+                        <div class="info" data-i18n="stWolMacInfo">Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.</div>
                     </div>
                     <div class="field">
                         <label data-i18n="stHubs">Allowed hubs</label>
@@ -390,9 +391,14 @@
                 webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
                 shutdownGrace: 'Grace period for remote power commands (length is set in the desktop app)',
                 shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
-                smartthings: 'SmartThings', stDiscovery: 'Allow discovery (SSDP)',
+                smartthings: 'SmartThings',
                 stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
                 stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
+                stWolMac: 'WoL adapter',
+                stWolMacInfo: 'Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.',
+                stWolAuto: 'Automatic', stWolAutoNone: 'Automatic (no adapter found)',
+                stWolOn: 'WoL on', stWolOff: 'WoL off', stWolNA: 'WoL not supported',
+                stWolUnknown: 'Adapter not found',
                 telegram: 'Telegram', tgPCName: 'PC name',
                 tgPCNameInfo: 'Shown in the Telegram message header; empty uses the computer name.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
@@ -422,9 +428,14 @@
                 webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
                 shutdownGrace: '원격 전원 명령 유예 (시간은 데스크톱 앱에서 설정)',
                 shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
-                smartthings: 'SmartThings', stDiscovery: '자동 검색(SSDP) 허용',
+                smartthings: 'SmartThings',
                 stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
                 stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
+                stWolMac: 'WoL 어댑터',
+                stWolMacInfo: 'Edge 드라이버가 이 PC를 깨울 때 쓸 어댑터입니다. 자동은 허브가 실제로 이 PC에 닿는 어댑터를 먼저 고릅니다.',
+                stWolAuto: '자동', stWolAutoNone: '자동 (어댑터 없음)',
+                stWolOn: 'WoL 켜짐', stWolOff: 'WoL 꺼짐', stWolNA: 'WoL 미지원',
+                stWolUnknown: '없는 어댑터',
                 telegram: '텔레그램', tgPCName: 'PC 이름',
                 tgPCNameInfo: '알림 머리말에 표시. 비우면 컴퓨터 이름',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
@@ -462,6 +473,7 @@
             localStorage.setItem('lang', currentLang);
             applyLang();
             loadWoL();
+            loadSTWoL();
             loadSchedule();
         }
 
@@ -470,20 +482,22 @@
         const originalSecret = document.getElementById('secret').value;
         const originalRemote = document.getElementById('webuiRemote').checked;
         const originalGrace = document.getElementById('shutdownGrace').checked;
-        const originalStDiscovery = document.getElementById('stDiscovery').checked;
         const originalStSession = document.getElementById('stSession').checked;
         const originalStSessionUser = document.getElementById('stSessionUser').checked;
         const originalStHubs = document.getElementById('stHubs').value;
+        // The dropdown's options arrive with /api/st/hub, so the baseline is
+        // the value the template rendered, not the (still empty) selection.
+        const originalStWolMac = document.getElementById('stWolMac').dataset.current || '';
         const originalTgPCName = document.getElementById('tgPCName').value;
         function checkChanges() {
             const changed = document.getElementById('port').value !== originalPort ||
                             document.getElementById('secret').value !== originalSecret ||
                             document.getElementById('webuiRemote').checked !== originalRemote ||
                             document.getElementById('shutdownGrace').checked !== originalGrace ||
-                            document.getElementById('stDiscovery').checked !== originalStDiscovery ||
                             document.getElementById('stSession').checked !== originalStSession ||
                             document.getElementById('stSessionUser').checked !== originalStSessionUser ||
                             document.getElementById('stHubs').value !== originalStHubs ||
+                            document.getElementById('stWolMac').value !== originalStWolMac ||
                             document.getElementById('tgPCName').value !== originalTgPCName;
             document.getElementById('btnSave').disabled = !changed;
         }
@@ -495,10 +509,10 @@
             // allowed_hubs must travel as an array (never omitted), or the
             // service keeps the stored list and it can never be cleared.
             const smartthings = {
-                discovery: document.getElementById('stDiscovery').checked,
                 expose_session: document.getElementById('stSession').checked,
                 expose_session_user: document.getElementById('stSession').checked && document.getElementById('stSessionUser').checked,
                 allowed_hubs: document.getElementById('stHubs').value.split(',').map(s => s.trim()).filter(s => s !== ''),
+                wol_mac: document.getElementById('stWolMac').value,
             };
             // Only pc_name: the service decodes over the live config, so the
             // bot token, chat id and the rest of telegram{} are left alone.
@@ -609,6 +623,38 @@
                 document.getElementById('wolStatus').textContent = 'Failed to load';
             }
         }
+        // Fills the WoL adapter dropdown from /api/st/hub. The first entry is
+        // "Automatic", labelled with the adapter the service would pick; the
+        // rest are the adapters themselves. A saved MAC that no longer exists
+        // keeps an entry of its own so the selection is never silently lost.
+        async function loadSTWoL() {
+            const sel = document.getElementById('stWolMac');
+            const chosen = sel.value || sel.dataset.current || '';
+            try {
+                const res = await fetch('/api/st/hub', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                const data = await res.json();
+                const wol = data.wol || {};
+                const auto = wol.auto;
+                let html = '<option value="">' +
+                    (auto ? t('stWolAuto') + ' (' + auto.name + ' · ' + auto.mac + ')' : t('stWolAutoNone')) +
+                    '</option>';
+                let found = false;
+                for (const a of (wol.adapters || [])) {
+                    if (!a.mac) continue;
+                    const state = a.wol_enabled ? t('stWolOn') : a.wol_capable ? t('stWolOff') : t('stWolNA');
+                    if (a.mac === chosen) found = true;
+                    html += '<option value="' + a.mac + '">' + a.name + ' · ' + a.mac + ' · ' + state + '</option>';
+                }
+                if (chosen && !found) {
+                    html += '<option value="' + chosen + '">' + t('stWolUnknown') + ' · ' + chosen + '</option>';
+                }
+                sel.innerHTML = html;
+                sel.value = chosen;
+            } catch(e) {
+                // Leave whatever is there; the saved value still round-trips.
+            }
+        }
         async function loadSchedule() {
             try {
                 const res = await fetch('/api/schedule', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
@@ -679,6 +725,7 @@
         applyLang();
         loadLogs();
         loadWoL();
+        loadSTWoL();
         loadSchedule();
         setInterval(loadSchedule, 5000);
         autoRefreshTimer = setInterval(loadLogs, 5000);

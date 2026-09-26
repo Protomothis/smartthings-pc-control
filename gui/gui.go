@@ -1446,11 +1446,26 @@ func (u *ui) loadNetwork() {
 			u.networkBox.Add(wrapped(s.Error))
 			return
 		}
-		if s.Ready {
-			u.networkBox.Add(widget.NewLabelWithStyle("✓ "+u.t("network.wolready"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-		} else {
-			u.networkBox.Add(widget.NewLabelWithStyle("✗ "+u.t("network.wolnotready"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		// The summary is about the adapter WoL will actually use (#96), and
+		// names it, rather than saying "some adapter has WoL on" — which is
+		// no help on a PC with an Ethernet port, Wi-Fi and three pseudo
+		// adapters. The SmartThings section below polls that choice; until
+		// it has, fall back to the old wording.
+		ready, summary := s.Ready, "network.wolready"
+		if !ready {
+			summary = "network.wolnotready"
 		}
+		line := u.t(summary)
+		if u.st != nil && u.st.wolLoaded {
+			sel := stWoLPick(u.st.hub.WoL, u.st.wolMAC)
+			ready = sel != nil && sel.WoLEnabled
+			line = stWoLLine(u.lang, sel)
+		}
+		mark := "✗ "
+		if ready {
+			mark = "✓ "
+		}
+		u.networkBox.Add(widget.NewLabelWithStyle(mark+line, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 		if s.Warning != "" {
 			u.networkBox.Add(wrapped(s.Warning))
 		}
