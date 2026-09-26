@@ -97,7 +97,7 @@ CLI로도 됩니다: `smartthings-pc-control.exe install` (관리자 권한). �
 
 ### SmartThings Edge 드라이버
 
-v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함께 들어 있습니다(`edge/` 폴더). 허브 안에서 로컬로 돌고, 서비스의 `/st/v1` API로 통신합니다. **채널 공개는 실기 테스트를 마친 뒤** 별도로 안내합니다. 그때까지는 기존 PCControl 드라이버를 그대로 쓰면 됩니다.
+v1.1.0에는 이 서비스를 위해 직접 만든 **Edge 드라이버**가 함께 들어 있습니다(`edge/` 폴더). 허브 안에서 로컬로 돌고, 서비스의 `/st/v1` API로 통신합니다. **Protomothis 채널**에서 설치할 수 있습니다: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A> (가입 → 드라이버 설치 → SmartThings 앱의 [주변 기기 검색]). 설치와 사용법은 [edge/README.md](edge/README.md)와 [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-%EB%93%9C%EB%9D%BC%EC%9D%B4%EB%B2%84)에 있습니다. 기존 PCControl 드라이버 경로도 그대로 동작하므로 옮겨 갈 의무는 없습니다.
 
 - **정확한 전원 상태** — 켜짐 / 절전 / 최대절전 / 꺼짐 / 깨우는 중 / 종료 대기를 구분합니다. 서비스가 종료·절전 직전에 허브로 푸시를 보내므로 폴링을 기다리지 않습니다.
 - **유예와 예약이 보입니다** — 남은 시간 카운트다운, 출처(SmartThings · 앱 · 텔레그램), [취소] 버튼, 5분에서 3일(72시간)까지 16개 프리셋 예약. 어디서 취소하든 모든 곳에서 함께 사라집니다.

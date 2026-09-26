@@ -35,7 +35,7 @@ PC의 `/st/v1` API로 이야기한다.
 
 채널 이름은 **Protomothis**다.
 
-> **채널 초대 링크:** `(채널 공개 후 이 자리에 링크를 넣는다)`
+> **채널 초대 링크:** <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
 
 링크를 열고 → [Enroll] → 허브를 선택한다.
 
