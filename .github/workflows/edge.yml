@@ -135,7 +135,8 @@ jobs:
         env:
           # Not strictly needed to build a zip, but the CLI prompts for a login
           # when it has no credentials and a prompt in CI is a 60-minute hang.
-          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+          # A placeholder keeps --build-only offline when the secret is unset.
+          SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN || 'build-only' }}
         run: smartthings edge:drivers:package edge/ --build-only "smartthings-pc-control-${GITHUB_REF_NAME}.zip"
 
       # Uploads it and prints the assigned driverId/version as JSON.
