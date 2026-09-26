@@ -47,7 +47,7 @@ PC의 `/st/v1` API로 이야기한다.
 ### 3. PC 준비
 
 1. 데스크톱 앱 **설정 탭**에서 시크릿을 정하고 [저장].
-2. **네트워크 탭 → SmartThings**에서 *자동 검색(SSDP) 허용*이 켜져 있는지 본다(기본 켬).
+2. **네트워크 탭 → SmartThings**의 **검색 상태**가 `검색 응답기 켜짐 · 방화벽 규칙 OK`인지 본다(SSDP 검색은 항상 켜져 있다).
 3. WoL로 깨울 계획이면 같은 탭의 **WoL 어댑터**에서 어느 랜카드로 깨울지와 그 어댑터의 WoL 상태를 확인한다.
 
 ### 4. 장치 추가
@@ -69,8 +69,8 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 
 1. **PC와 PC Control이 켜져 있는가.** 트레이 아이콘, 또는 `smartthings-pc-control.exe status`.
 2. **인바운드 UDP 1900이 열려 있는가.** 방화벽 규칙 *SmartThings PC Control SSDP*(설치가
-   만든다)와 네트워크 프로필이 **개인**인지. 네트워크 탭에서 *자동 검색(SSDP) 허용*도 켜져
-   있어야 한다.
+   만든다)와 네트워크 프로필이 **개인**인지. 네트워크 탭 → SmartThings의 **검색 상태**가
+   `방화벽 규칙 없음`이면 서비스를 다시 시작한다(시작할 때 규칙을 다시 만든다).
 3. **허브의 검색이 PC까지 닿았는가.** 데스크톱 앱 **네트워크 탭 → SmartThings**의
    **마지막 검색 요청** 시각을 본다(서비스 v1.1.1부터). 검색을 눌렀는데 이 시각이 갱신되지
    않으면 문제는 PC가 아니라 그 사이 네트워크다 — 같은 서브넷인지, Wi-Fi의 AP·클라이언트
@@ -214,7 +214,7 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 담당하고 폴링은 안전망이다.
 
 **서비스 쪽 설정**은 데스크톱 앱 **네트워크 탭 → SmartThings**에 있다: 연결된 허브,
-*자동 검색(SSDP) 허용*, *세션 정보 노출(잠금·유휴)*, *사용자 이름 포함*, 허브 허용 목록.
+이 PC의 ID, 검색 상태, WoL 어댑터, *세션 정보 노출(잠금·유휴)*, *사용자 이름 포함*, 허브 허용 목록. SSDP 검색은 항상 켜져 있어 끄는 설정이 없다.
 
 ## 여러 PC
 
@@ -332,8 +332,9 @@ hub and talks to the PC's `/st/v1` API (service **v1.1.0 or newer**).
 - One device per PC, keyed by Windows MachineGuid, so one hub can drive several PCs.
 
 **Install** — enroll in the channel (link above), install the driver, then *Add device →
-Scan nearby*. Fill in the secret in the device settings. If discovery finds nothing, the
-same scan creates a device for manual setup; enter the IP and the secret.
+Scan nearby* with the PC and PC Control running — the scan is the only way to add a device.
+Fill in the secret in the device settings. If nothing is found, check the Windows app's
+SmartThings section (discovery responder, firewall rule, last search request).
 
 **Screen** — a status card (power state, last action, schedule summary, session, status,
 versions) and a control card (command list, what to schedule, when to schedule).
