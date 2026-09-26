@@ -29,6 +29,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 화면을 다시 만드는 유일한 방법은 장치를 **새 이름의 프로필**로 옮기는 것이다. 그래서 프레젠테이션·번역·capability 목록이 바뀔 때마다 `profiles/pc-vN.yml`(`name: pc.vN`)로 이름 버전을 올린다.
 - 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
 - 이전은 `device:try_update_metadata({ profile = "<새 이름>" })`이다. pcall로 감싸고 장치당 드라이버 구동 1회만 시도한다.
+- **`try_update_metadata({ model = … })`는 클라우드에 닿지 않는다**(2026-09-26 실측, #94). 허브는 오류 없이 받고 `infoChanged`까지 내지만 클라우드 장치 기록의 `deviceModel`은 생성 시 값(`PC Control`)에 머문다. 모델명·제조사처럼 앱의 장치 정보에 보이는 값은 **생성 시점에 정해진다**고 보고, 사후 갱신은 있으면 좋은 정도로만 둔다.
 - `device.profile`은 테이블(`id`, `components`)이지만 `name`이 **항상 있지는 않다.** 생성 시점에 `device:set_field("profile_name", …, {persist = true})`로 저장해 두고 그것을 폴백으로 쓴다.
 - preference `title`의 길이 제한(36자)은 `edge:drivers:package`에서만 드러난다.
 
