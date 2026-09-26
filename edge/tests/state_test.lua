@@ -33,10 +33,19 @@ local function sample_status()
       at = "2026-09-17T23:05:00+09:00",
     },
     update = { available = false, latest = "v1.1.0" },
+    -- #96/#97: the service picks the adapter and says which one in `selected`;
+    -- `adapters[]` carries the same answer as `ip` + `selected` on the row.
+    -- `wol_mac_falls_back_*` below keeps an old-shape body, from a service that
+    -- only lists adapters, so the guess this replaced stays covered.
     wol = {
       ready = true,
+      selected = {
+        name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+        wol_enabled = true, wol_capable = true, source = "auto",
+      },
       adapters = {
-        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = true, wol_capable = true },
+        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+          wol_enabled = true, wol_capable = true, selected = true },
       },
     },
     display = "on",
@@ -391,6 +400,22 @@ function T.test_status_summary_warns_when_wol_is_off()
   h.assert_equal(state.status_summary("unreachable", "en", true), "Not connected · No response")
 end
 
+function T.test_status_summary_names_the_adapter_while_it_fits()
+  -- #97: which NIC to go and open, on the row the user glances at.
+  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷"), "연결됨 · WoL 꺼짐 (이더넷)")
+  -- The row truncates silently, so the name is added only while the line stays
+  -- inside SUMMARY_MAX_CHARS - counted in characters, not in UTF-8 bytes.
+  h.assert_true(#state.status_summary("ok", "ko", true, "이더넷") > state.SUMMARY_MAX_CHARS,
+    "the Korean line is longer than 24 bytes, which is the point of the count")
+  h.assert_equal(state.status_summary("ok", "ko", true, "vEthernet (Default Switch)"),
+    "연결됨 · WoL 꺼짐", "a long adapter name is dropped rather than cut off")
+  -- English is wordier, so the name rarely fits there; `pcInfo.message` says it.
+  h.assert_equal(state.status_summary("ok", "en", true, "Ethernet"), "Connected · WoL off")
+  -- No name, or WoL fine: exactly what the row said before #97.
+  h.assert_equal(state.status_summary("ok", "ko", true, ""), "연결됨 · WoL 꺼짐")
+  h.assert_equal(state.status_summary("ok", "ko", false, "이더넷"), "연결됨")
+end
+
 function T.test_status_summary_never_repeats_the_power_state()
   -- #82: the power word moved out of this line for good; a summary that
   -- carried it again would duplicate the row above it.
@@ -444,6 +469,27 @@ function T.test_the_summary_warns_about_a_wol_that_is_off()
   h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐")
   -- The long sentence, with what to do about it, stays in `message`.
   h.assert_contains(h.event_value(events, caps.STATUS, "message"), "네트워크 탭")
+end
+
+function T.test_the_wol_warning_follows_the_selected_adapter()
+  -- #97: three rows, one answer. The sample PC's Wi-Fi card has WoL on, but
+  -- the service picked the Ethernet one and that is the adapter that matters.
+  local status = sample_status()
+  status.wol.selected.wol_enabled = false
+  status.wol.adapters[2] = { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = true }
+  local events = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(events, caps.STATUS, "wolReady"), false)
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (Ethernet)")
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"),
+    "Ethernet 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+
+  -- And the other way round: `wol.ready` says no, the chosen adapter says yes.
+  status.wol.selected.wol_enabled = true
+  status.wol.ready = false
+  local ok = events_for(status, state.ON, "ko")
+  h.assert_equal(h.event_value(ok, caps.STATUS, "wolReady"), true)
+  h.assert_equal(h.event_value(ok, caps.STATUS, "summary"), "연결됨")
+  h.assert_equal(h.event_value(ok, caps.STATUS, "message"), "")
 end
 
 function T.test_a_quiet_status_has_no_notice_at_all()
@@ -902,8 +948,11 @@ function T.test_apply_status_survives_an_empty_body()
   h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
 end
 
-function T.test_wol_mac_prefers_an_enabled_adapter()
-  local status = {
+-- An old-shape `wol` block: a service that only lists adapters and never says
+-- which one it picked. This is the fixture the fallback below is about, so it
+-- deliberately keeps the pre-#97 shape (no `selected` anywhere).
+local function listed_adapters()
+  return {
     wol = {
       ready = true,
       adapters = {
@@ -912,10 +961,68 @@ function T.test_wol_mac_prefers_an_enabled_adapter()
       },
     },
   }
+end
+
+function T.test_wol_mac_falls_back_to_an_enabled_adapter()
+  -- #97: only when the service named no adapter of its own.
+  local status = listed_adapters()
   h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
   status.wol.adapters[2].wol_enabled = false
   h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66", "falls back to the first mac")
   h.assert_nil(state.wol_mac({}))
+  h.assert_nil(state.wol_selected(listed_adapters()))
+end
+
+function T.test_wol_mac_takes_the_adapter_the_service_selected()
+  -- #96/#97: the PC knows which NIC the hub reaches; the driver's own guess
+  -- ("the first one with WoL on") would take the Wi-Fi card here, which is
+  -- listed first and enabled.
+  local status = listed_adapters()
+  status.wol.adapters[1].wol_enabled = true
+  status.wol.selected = {
+    name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+    wol_enabled = true, wol_capable = true, source = "auto",
+  }
+  h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
+  h.assert_equal(state.wol_adapter(status), "Ethernet")
+  -- Even a selected adapter nothing else would have chosen: `wol_enabled` off
+  -- and last in the list. The service decided; the driver does not argue.
+  status.wol.selected = { name = "Wi-Fi", mac = "99:88:77:66:55:44", wol_enabled = false }
+  h.assert_equal(state.wol_mac(status), "99:88:77:66:55:44")
+  -- A `selected` without a usable MAC is no answer at all: back to the guess.
+  status.wol.selected = { name = "vEthernet", mac = "" }
+  h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66")
+end
+
+function T.test_wol_mac_reads_a_selected_flag_on_the_adapter_row()
+  -- #96 marks the chosen adapter on its row as well. Either spelling answers.
+  local status = listed_adapters()
+  status.wol.adapters[1].selected = true
+  h.assert_equal(state.wol_mac(status), "11:22:33:44:55:66")
+  h.assert_equal(state.wol_adapter(status), "Wi-Fi")
+  -- `wol.selected` is the more specific statement and wins over the flag.
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF" }
+  h.assert_equal(state.wol_mac(status), "AA:BB:CC:DD:EE:FF")
+end
+
+function T.test_wol_off_follows_the_selected_adapter()
+  -- #97: the warning is about the one adapter the packet is sent to. Another
+  -- NIC with WoL on must not hide it, and must not raise a false one either.
+  local status = listed_adapters()
+  h.assert_false(state.wol_off(status), "wol.ready is the answer without a selected")
+  status.wol.ready = false
+  h.assert_true(state.wol_off(status))
+
+  status.wol.ready = true
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = false }
+  h.assert_true(state.wol_off(status), "the chosen adapter has WoL off")
+  status.wol.ready = false
+  status.wol.selected.wol_enabled = true
+  h.assert_false(state.wol_off(status), "the chosen adapter is fine")
+  -- A `selected` that says nothing about WoL leaves `wol.ready` in charge.
+  status.wol.selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF" }
+  h.assert_true(state.wol_off(status))
+  h.assert_true(state.wol_off({}), "nothing known means nothing promised")
 end
 
 --------------------------------------------------------------------------------

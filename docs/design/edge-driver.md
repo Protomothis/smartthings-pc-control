@@ -100,8 +100,10 @@
   "last_command": { "command": "lock", "origin": "smartthings", "at": "2026-09-22T22:41:07+09:00" },
   "update": { "available": false, "latest": "v1.1.0" },
   "wol": { "ready": true,
-           "adapters": [ { "name": "Ethernet", "mac": "AA:BB:CC:DD:EE:FF",
-                           "wol_enabled": true, "wol_capable": true } ] },
+           "selected": { "name": "Ethernet", "mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.20",
+                         "wol_enabled": true, "wol_capable": true, "source": "auto" },
+           "adapters": [ { "name": "Ethernet", "mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.20",
+                           "wol_enabled": true, "wol_capable": true, "selected": true } ] },
   "display": "on",
   "session": { "exposed": true, "locked": false, "idle_seconds": 1200, "user": "kim" }
 }
@@ -110,6 +112,7 @@
 - 예약이 없으면 `"schedule": {"active": false}`, 실행한 명령이 없으면 `"last_command": null`.
 - `grace.seconds`는 이 PC에 설정된 유예 길이(기본 60초, 최대 30분)다. 드라이버는 이것을 **"곧 실행될 예약 = PC가 떠나는 중"의 상한**으로 쓴다(§6.9).
 - `session`은 옵트인이다. `smartthings.expose_session`이 꺼져 있으면 `{"exposed": false}`뿐이고, 켜져 있어도 세션을 읽을 수 없으면 `locked`가 없다. `idle_seconds`는 트레이 앱의 하트비트가 90초 이내일 때만 실린다.
+- **`wol.selected`는 서비스가 고른 WoL 어댑터다**(#96/#97). 랜카드가 여럿일 때 어느 MAC으로 깨울지는 PC가 정한다 — 허브의 요청이 실제로 닿은 인터페이스를 알고 있는 쪽은 PC이기 때문이다. `source`는 `manual`(설정 `smartthings.wol_mac`) 또는 `auto`. `adapters[]`에는 같은 답이 `selected: true`로, 주소가 `ip`로 실린다. 드라이버는 `wol.selected` → `adapters[].selected` 순으로 읽고, 둘 다 없는 옛 서비스면 예전 추측(§6.4)으로 돌아간다.
 
 ### 3.3 `POST /st/v1/command`
 
@@ -270,10 +273,11 @@
 ### 6.4 Wake-on-LAN
 
 - `switch on`과 `execute(wake)`는 같은 시퀀스다: 매직 패킷을 **즉시·2초 뒤·5초 뒤** 세 번, 포트 **7과 9** 양쪽으로 보낸다.
-- MAC은 `macAddress` 환경설정이 우선이고, 비어 있으면 마지막 폴링이 `wol.adapters`에서 배운 WoL 가능 어댑터의 MAC을 쓴다(persist).
+- **MAC은 세 단계로 고른다**(#97): ① `macAddress` 환경설정 — 사용자가 드라이버에 직접 넣은 값이라 무엇도 밀어내지 못한다 ② 마지막 폴링이 기억한 `wol.selected.mac`(없으면 `adapters[].selected`가 가리키는 행) — 서비스가 고른 어댑터다(§3.2) ③ 그것도 없는 옛 서비스면 예전 추측, 즉 `wol.adapters`에서 `wol_enabled`인 첫 어댑터, 아니면 MAC이 있는 첫 어댑터. ②③은 persist 한다: 깨우는 시점은 PC가 꺼져 있는 시점이라 읽을 상태 응답이 없다.
+- **"WoL 꺼짐" 안내는 고른 어댑터 하나를 기준으로 한다**(#97). `wol.selected.wol_enabled`가 답이고, `selected`가 없는 옛 서비스에서만 `wol.ready`를 쓴다. 다른 랜카드에 WoL이 켜져 있다고 경고가 가려지지도, 고른 어댑터가 멀쩡한데 경고가 뜨지도 않는다. `pcInfo.message`는 어댑터 이름을 넣어 "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인"이라고 쓰고, `pcInfo.summary`는 줄이 `state.SUMMARY_MAX_CHARS`(24자) 안에 들어올 때만 "연결됨 · WoL 꺼짐 (이더넷)"까지 쓴다 — 넘치면 이름을 빼고 "연결됨 · WoL 꺼짐"으로 돌아간다(상세 줄은 말없이 잘린다, 플랫폼 노트 "화면 배치").
 - 보내는 주소는 `wolBroadcast`(기본 `255.255.255.255`). 공유기가 막으면 서브넷 브로드캐스트를 넣는다.
 - 상태는 `waking`이 되고 90초 뒤에도 응답이 없으면 직전 상태로 돌아가며 "깨우기 실패"를 `pcInfo.message`에 쓴다. 그 사이 폴링이나 푸시가 성공하면 타임아웃을 취소한다.
-- 어댑터의 WoL이 꺼져 있다는 것을 이미 알고 있으면 패킷은 그대로 보내되 미리 안내를 띄운다.
+- 어댑터의 WoL이 꺼져 있다는 것을 이미 알고 있으면 패킷은 그대로 보내되 미리 안내를 띄운다. 마지막 폴링이 어댑터 이름까지 기억해 두므로(persist) PC가 꺼져 있어도 어느 랜카드를 열어야 하는지 말해 준다.
 
 ### 6.5 검색과 식별
 

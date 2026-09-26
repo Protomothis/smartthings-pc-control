@@ -491,6 +491,19 @@ function state.format_last_command(last, lang)
   return table.concat(parts, " · ")
 end
 
+-- UTF-8 code points, not bytes: a Korean syllable is three bytes, so `#` would
+-- call "연결됨 · WoL 꺼짐" a 22-character string. Continuation bytes are
+-- 10xxxxxx (0x80-0xBF); dropping them leaves one byte per code point.
+local function char_len(s)
+  return #(tostring(s):gsub("[\128-\191]", ""))
+end
+
+--- How long `pcInfo.summary` may get before the row truncates it (#97). The
+--- detail row is narrow and cuts with "…" without saying so (platform notes,
+--- "화면 배치"), so an optional part - today only the WoL adapter's name - is
+--- added only while the whole line stays inside this.
+state.SUMMARY_MAX_CHARS = 24
+
 --- `pcInfo.summary` (#78): the one line that replaced the six raw rows in the
 --- detail view. "Connected" when the PC answers, "Not connected · Secret
 --- mismatch" when it does not.
@@ -504,10 +517,14 @@ end
 -- notices, which are advice rather than status and stay in `pcInfo.message`.
 -- What is left is the connection, plus the one warning that changes what the
 -- switch will do: WoL off on the adapter means `switch on` cannot work.
+--
+-- #97: and the name of the adapter it is off on, when the service named one
+-- and the row can still hold it.
 -- @param connection a `pcInfo.connection` value; nil counts as `ok`
 -- @param lang the resolved `language` preference
 -- @param wol_off true when the PC answers but its adapter has WoL disabled
-function state.status_summary(connection, lang, wol_off)
+-- @param adapter the chosen adapter's name (state.wol_adapter), optional
+function state.status_summary(connection, lang, wol_off, adapter)
   if connection ~= nil and connection ~= "ok" then
     local parts = { i18n.t(lang, "conn_down") }
     local reason = i18n.connection(lang, connection)
@@ -517,7 +534,15 @@ function state.status_summary(connection, lang, wol_off)
     return table.concat(parts, " · ")
   end
   if wol_off == true then
-    return i18n.t(lang, "conn_ok") .. " · " .. i18n.t(lang, "wol_off_short")
+    local ok = i18n.t(lang, "conn_ok")
+    if type(adapter) == "string" and adapter ~= "" then
+      local named = ok .. " · " .. i18n.t(lang, "wol_off_short_on", adapter)
+      if char_len(named) <= state.SUMMARY_MAX_CHARS then
+        return named
+      end
+      -- Too long for the row: `pcInfo.message` carries the name instead.
+    end
+    return ok .. " · " .. i18n.t(lang, "wol_off_short")
   end
   return i18n.t(lang, "conn_ok")
 end
@@ -701,8 +726,14 @@ function state.status_message(status, opts)
   status = status or {}
   local lang = opts.lang
 
-  if (status.wol or {}).ready ~= true then
+  if state.wol_off(status) then
     -- §6.4: we still send the magic packet, but say why it may not work.
+    -- #97: on the adapter the service chose, by name when it gave one - this
+    -- is the line with room for it, and it is the adapter to go and open.
+    local adapter = state.wol_adapter(status)
+    if adapter then
+      return i18n.t(lang, "wol_not_ready_on", adapter)
+    end
     return i18n.t(lang, "wol_not_ready")
   end
   if (status.update or {}).available == true then
@@ -865,13 +896,16 @@ function state.apply_status(device_state, status, opts)
   -- #78: the one row the detail view shows, and only while `active` is true.
   ev(events, caps.SCHEDULE, "summary", state.schedule_summary(schedule, lang))
 
-  local wol = status.wol or {}
   local update = status.update or {}
+  -- #97: one answer for all three rows below - `wolReady`, the summary and the
+  -- message - read off the adapter the service chose when it named one.
+  local wol_off = state.wol_off(status)
+  local wol_adapter = state.wol_adapter(status)
 
   ev(events, caps.STATUS, "connection", "ok")
   ev(events, caps.STATUS, "serviceVersion", status.service_version or "")
   ev(events, caps.STATUS, "updateAvailable", update.available == true)
-  ev(events, caps.STATUS, "wolReady", wol.ready == true)
+  ev(events, caps.STATUS, "wolReady", not wol_off)
   ev(events, caps.STATUS, "lastSeen", opts.now or "")
   -- #85: the bottom row of the bottom card, refreshed on every poll so a
   -- service update shows up without touching the driver. #86: the row itself
@@ -885,7 +919,7 @@ function state.apply_status(device_state, status, opts)
   -- #78/#82/#87: "Connected", or "Connected · WoL off" when the switch cannot
   -- do what the row above it offers. A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
-  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol.ready ~= true))
+  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol_off, wol_adapter))
 
   -- §3.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
@@ -910,9 +944,9 @@ function state.apply_status(device_state, status, opts)
   return events
 end
 
---- The first MAC of a WoL-capable adapter in a status body (§6.4: the
---- `macAddress` preference is auto-filled from it).
-function state.wol_mac(status)
+--- The first MAC of a WoL-capable adapter in a status body (§6.4), used when
+--- the service is too old to have chosen one itself.
+local function first_wol_mac(status)
   local adapters = (status or {}).wol and status.wol.adapters
   if type(adapters) ~= "table" then
     return nil
@@ -927,6 +961,70 @@ function state.wol_mac(status)
     end
   end
   return fallback
+end
+
+--- #96/#97: the adapter the service picked for WoL, or nil when it did not.
+--
+-- The PC knows which NIC the hub actually reaches; the driver was guessing
+-- "the first adapter with WoL on", which lands on a Hyper-V or VPN adapter as
+-- easily as on the real one. So the choice moved to the service and the driver
+-- reads it back: `wol.selected` is the answer, and `adapters[].selected` is the
+-- same answer spelled on the row it belongs to (a service may carry either).
+-- Returns the adapter-shaped table (`name`, `mac`, `ip`, `wol_enabled`,
+-- `wol_capable`, and on `selected` also `source`).
+function state.wol_selected(status)
+  local wol = (status or {}).wol
+  if type(wol) ~= "table" then
+    return nil
+  end
+  if type(wol.selected) == "table" and next(wol.selected) ~= nil then
+    return wol.selected
+  end
+  if type(wol.adapters) == "table" then
+    for _, a in ipairs(wol.adapters) do
+      if type(a) == "table" and a.selected == true then
+        return a
+      end
+    end
+  end
+  return nil
+end
+
+--- The MAC to wake this PC on (§6.4). `wol.selected.mac` when the service chose
+--- one, else the old first-enabled-adapter guess. The `macAddress` preference
+--- still outranks both - that lives in wol.lua, because it is the user's own
+--- value and a status body has no say in it.
+function state.wol_mac(status)
+  local selected = state.wol_selected(status)
+  if selected and type(selected.mac) == "string" and selected.mac ~= "" then
+    return selected.mac
+  end
+  return first_wol_mac(status)
+end
+
+--- The name of the chosen adapter ("이더넷"), or nil.
+function state.wol_adapter(status)
+  local selected = state.wol_selected(status)
+  local name = selected and selected.name
+  if type(name) == "string" and name ~= "" then
+    return name
+  end
+  return nil
+end
+
+--- Is the "WoL is off" warning due? (§6.4)
+--
+-- `wol.ready` is the service's own summary and stays the answer for a service
+-- that has no `selected`. When there is one, its `wol_enabled` is the sharper
+-- fact: it is about the single adapter the packet will actually be sent to, so
+-- another NIC having WoL on does not hide the warning (and does not raise a
+-- false one when the chosen adapter is fine).
+function state.wol_off(status)
+  local selected = state.wol_selected(status)
+  if selected ~= nil and selected.wol_enabled ~= nil then
+    return selected.wol_enabled ~= true
+  end
+  return ((status or {}).wol or {}).ready ~= true
 end
 
 return state

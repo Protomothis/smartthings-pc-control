@@ -60,8 +60,27 @@ local function broken_http(message)
   end
 end
 
+-- §3.2, trimmed to what a poll test reads back. #96/#97: `wol.selected` is the
+-- adapter the service chose for Wake-on-LAN, and `adapters[]` carries the same
+-- answer as `ip` + `selected` on the row; `overrides.wol` replaces the whole
+-- block, which is how the old-shape (adapters only) tests below are written.
 local function status_body(overrides)
-  local body = { protocol = 1, service_version = "v1.1.0", power = "on", secret_set = true }
+  local body = {
+    protocol = 1, service_version = "v1.1.0", power = "on", secret_set = true,
+    wol = {
+      ready = true,
+      selected = {
+        name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+        wol_enabled = true, wol_capable = true, source = "auto",
+      },
+      adapters = {
+        { name = "Wi-Fi", mac = "11:22:33:44:55:66", ip = "192.168.1.31",
+          wol_enabled = true, wol_capable = true, selected = false },
+        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", ip = "192.168.1.20",
+          wol_enabled = true, wol_capable = true, selected = true },
+      },
+    },
+  }
   for k, v in pairs(overrides or {}) do
     body[k] = v
   end
@@ -308,6 +327,50 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
   h.assert_contains(kept, "v1.1.0")
   h.assert_equal(kept:find("업데이트", 1, true), nil,
     "the update half is never remembered - only a live answer can offer one")
+end
+
+function T.test_a_poll_remembers_the_mac_the_service_chose()
+  -- §6.4/#97: the wake happens while the PC is off, so everything it needs is
+  -- persisted on the way past. The Wi-Fi card is listed first and has WoL on -
+  -- the guess this replaced would have taken it - but the service picked the
+  -- Ethernet one, and that is the MAC the magic packet goes to.
+  local d = device()
+  h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, status_body()) } }))
+  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
+  h.assert_equal(d:get_field(poll.WOL_ADAPTER_FIELD), "Ethernet")
+  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), true)
+
+  -- The chosen adapter has WoL off: the warning is about that adapter, even
+  -- though `wol.ready` and the other NIC both say everything is fine.
+  local off = status_body({
+    wol = {
+      ready = true,
+      selected = { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = false },
+      adapters = { { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = true } },
+    },
+  })
+  h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, off) } }))
+  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), false)
+  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
+end
+
+function T.test_a_poll_falls_back_to_the_old_adapter_guess()
+  -- An old-shape body, from a service that only lists adapters (pre-#96): the
+  -- driver picks the first one with WoL on, exactly as it always did.
+  local d = device()
+  local body = status_body({
+    wol = {
+      ready = true,
+      adapters = {
+        { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = false },
+        { name = "Ethernet", mac = "AA:BB:CC:DD:EE:FF", wol_enabled = true },
+      },
+    },
+  })
+  h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, body) } }))
+  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
+  h.assert_nil(d:get_field(poll.WOL_ADAPTER_FIELD), "nothing to name the adapter with")
+  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), true)
 end
 
 function T.test_5xx_is_unreachable()
