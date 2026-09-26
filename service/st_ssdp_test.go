@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -346,44 +347,41 @@ func loopbackSSDP(t *testing.T) *net.UDPAddr {
 	return addr
 }
 
-func TestReconcileSSDPFollowsConfig(t *testing.T) {
-	stSetup(t, Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
+// TestSSDPLifecycleHasNoSwitch guards #95: the responder runs for as long
+// as the service does, and start/stop are idempotent.
+func TestSSDPLifecycleHasNoSwitch(t *testing.T) {
+	// No smartthings settings at all: nothing in the config can suppress
+	// the responder any more.
+	stSetup(t, Config{Port: 5001})
 	loopbackSSDP(t)
 
 	if !ssdpRunning() {
-		t.Fatal("discovery: true must start the responder")
+		t.Fatal("the responder must start with the service")
 	}
-	// Idempotent: reconciling an unchanged config is a no-op, and a second
-	// start must not leak a socket or a goroutine.
-	reconcileSSDP()
+	// A second start must not leak a socket or a goroutine.
 	startSSDP()
 	if !ssdpRunning() {
 		t.Fatal("starting twice stopped the responder")
 	}
 
-	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: false}})
-	reconcileSSDP()
-	if ssdpRunning() {
-		t.Fatal("discovery: false must stop the responder")
-	}
-	reconcileSSDP() // stopping twice is safe
 	stopSSDP()
 	if ssdpRunning() {
 		t.Fatal("still running after stopSSDP")
 	}
+	stopSSDP() // stopping twice is safe
 
-	// And it comes back when the user turns it on again.
-	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
 	startSSDP()
 	if !ssdpRunning() {
 		t.Fatal("the responder did not restart")
 	}
 }
 
-func TestReconcileSSDPIsNoOpUntilStarted(t *testing.T) {
-	stSetup(t, Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
-	// saveConfig runs in the installer and in tests, where no lifecycle is
-	// managed: reconcile must not open a socket there.
+// TestSSDPStartOpensOnlyOnce keeps a repeated start from opening a second
+// socket set (the old reconcile path had the same guarantee).
+func TestSSDPStartOpensOnlyOnce(t *testing.T) {
+	stSetup(t, Config{Port: 5001})
+	loopbackSSDP(t)
+
 	orig := ssdpOpen
 	opened := false
 	ssdpOpen = func() ([]*ssdpSocket, error) {
@@ -392,14 +390,14 @@ func TestReconcileSSDPIsNoOpUntilStarted(t *testing.T) {
 	}
 	t.Cleanup(func() { ssdpOpen = orig })
 
-	reconcileSSDP()
-	if opened || ssdpRunning() {
-		t.Error("reconcileSSDP opened a socket before startSSDP")
+	startSSDP()
+	if opened {
+		t.Error("startSSDP opened a second socket set while already running")
 	}
 }
 
 func TestSSDPResponderAnswersOnLoopback(t *testing.T) {
-	stSetup(t, Config{Port: 5001, SmartThings: SmartThingsConfig{Discovery: true}})
+	stSetup(t, Config{Port: 5001})
 	resetSSDPRateLimit()
 	// No MX jitter, so the reply lands well inside the one-per-second
 	// window the repeat below has to fall foul of.
@@ -480,7 +478,7 @@ func TestServeSSDPStopsWhenTheSocketCloses(t *testing.T) {
 func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	protectConfigFile(t)
 	withLiveConfig(t, Config{Port: 5001, SmartThings: SmartThingsConfig{
-		Discovery: true, AllowedHubs: []string{"192.168.1.20"}, ExposeSession: true,
+		AllowedHubs: []string{"192.168.1.20"}, ExposeSession: true,
 	}})
 
 	// GET hands the GUI every §3.7 key.
@@ -493,8 +491,12 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	if !ok {
 		t.Fatalf("no smartthings object: %s", w.Body.String())
 	}
-	if st["discovery"] != true || st["expose_session"] != true || st["expose_session_user"] != false {
+	if st["expose_session"] != true || st["expose_session_user"] != false {
 		t.Errorf("smartthings = %v", st)
+	}
+	// #95: the retired key is not offered to a client any more.
+	if _, ok := st["discovery"]; ok {
+		t.Errorf("GET still exposes smartthings.discovery: %v", st)
 	}
 	hubs, _ := st["allowed_hubs"].([]any)
 	if len(hubs) != 1 || hubs[0] != "192.168.1.20" {
@@ -502,13 +504,15 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	}
 
 	// POST writes them back and the live config follows without a restart.
+	// The body still carries the retired discovery key, the way an older
+	// WebUI page would send it: it must be ignored, not rejected (#95).
 	w = httptest.NewRecorder()
 	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"smartthings":{"discovery":false,"allowed_hubs":["10.0.0.7"],"expose_session":false,"expose_session_user":true}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST status %d: %s", w.Code, w.Body.String())
 	}
 	got := getConfig().SmartThings
-	if got.Discovery || got.ExposeSession || !got.ExposeSessionUser {
+	if got.ExposeSession || !got.ExposeSessionUser {
 		t.Errorf("live config = %+v", got)
 	}
 	if len(got.AllowedHubs) != 1 || got.AllowedHubs[0] != "10.0.0.7" {
@@ -526,14 +530,97 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	}
 }
 
-// TestConfigChangedKeysCoversDiscovery guards the security event: flipping
-// discovery is a network-visible change and must be listed.
-func TestConfigChangedKeysCoversDiscovery(t *testing.T) {
+// TestConfigChangedKeysCoversAllowedHubs guards the security event: the
+// allow list is what decides who may drive this PC now that discovery has
+// no switch (#95), so a change to it must be listed.
+func TestConfigChangedKeysCoversAllowedHubs(t *testing.T) {
 	old := defaultConfig.withDefaults()
 	updated := old
-	updated.SmartThings.Discovery = !old.SmartThings.Discovery
+	updated.SmartThings.AllowedHubs = []string{"192.168.1.20"}
 	keys := configChangedKeys(old, updated)
-	if len(keys) != 1 || keys[0] != "smartthings.discovery" {
+	if len(keys) != 1 || keys[0] != "smartthings.allowed_hubs" {
 		t.Errorf("keys = %v", keys)
+	}
+	// The retired key can no longer produce an event of its own.
+	if slices.Contains(configChangedKeys(old, old), "smartthings.discovery") {
+		t.Error("smartthings.discovery is still a tracked key")
+	}
+}
+
+// ---- last search bookkeeping (#95) -----------------------------------------
+
+func TestNoteSSDPSearch(t *testing.T) {
+	resetSSDPLastSearch()
+	t.Cleanup(resetSSDPLastSearch)
+
+	if _, ok := lastSSDPSearch(); ok {
+		t.Fatal("a search is reported before any arrived")
+	}
+	noteSSDPSearch("192.168.1.105")
+	got, ok := lastSSDPSearch()
+	if !ok || got.IP != "192.168.1.105" {
+		t.Fatalf("lastSSDPSearch = %+v, ok=%v", got, ok)
+	}
+	if time.Since(got.At) > time.Minute {
+		t.Errorf("last search time = %v", got.At)
+	}
+	// The newest search wins.
+	noteSSDPSearch("10.0.0.2")
+	if got, _ := lastSSDPSearch(); got.IP != "10.0.0.2" {
+		t.Errorf("lastSSDPSearch = %+v, want the newer source", got)
+	}
+}
+
+// TestServeSSDPRecordsTheSearch checks the bookkeeping from the serve loop:
+// a probe for another device leaves it alone, one for this PC records the
+// source, and a burst repeat the rate limit drops still refreshes it.
+func TestServeSSDPRecordsTheSearch(t *testing.T) {
+	stSetup(t, Config{Port: 5001})
+	resetSSDPLastSearch()
+	resetSSDPRateLimit()
+	origRand := ssdpRandFloat
+	ssdpRandFloat = func() float64 { return 0 }
+	t.Cleanup(func() {
+		ssdpRandFloat = origRand
+		resetSSDPLastSearch()
+		resetSSDPRateLimit()
+	})
+	dst := loopbackSSDP(t)
+
+	client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	send := func(st string) {
+		t.Helper()
+		pkt := "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 0\r\nST: " + st + "\r\n\r\n"
+		if _, err := client.WriteToUDP([]byte(pkt), dst); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	send("urn:schemas-upnp-org:device:InternetGatewayDevice:1")
+	// A packet for someone else must never show up as "a search arrived".
+	time.Sleep(100 * time.Millisecond)
+	if s, ok := lastSSDPSearch(); ok {
+		t.Fatalf("another device's search was recorded: %+v", s)
+	}
+
+	send(ssdpDeviceST)
+	send(ssdpDeviceST) // the burst repeat the per-source limiter drops
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if s, ok := lastSSDPSearch(); ok {
+			if s.IP != "127.0.0.1" {
+				t.Errorf("last search = %+v, want 127.0.0.1", s)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the responder never recorded the M-SEARCH")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

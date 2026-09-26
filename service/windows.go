@@ -38,8 +38,8 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// Inbound Telegram commands (#61): polls only while telegram.enabled
 	// and control_enabled are both set; config saves reconcile it.
 	startTelegramControl()
-	// SSDP discovery (#69): answers M-SEARCH while smartthings.discovery
-	// is on; config saves reconcile it.
+	// SSDP discovery (#69): the only way to add the device, so it answers
+	// M-SEARCH for as long as the service runs — there is no setting (#95).
 	startSSDP()
 	// The responder needs inbound UDP 1900; an install made before #69 has
 	// no such rule, so re-check here (#76). Off the startup path: netsh
@@ -122,8 +122,7 @@ func RunConsole() {
 	fmt.Println("Running in console mode. Press Ctrl+C to stop.")
 	// Same start-up order as Execute: the logger and the live config must
 	// exist before the subsystems below read getConfig() (SSDP, Telegram)
-	// or log — otherwise the responder silently sees discovery=false and
-	// its messages are dropped.
+	// or log — otherwise their messages are dropped.
 	initLogger()
 	setConfig(loadConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
@@ -131,6 +130,7 @@ func RunConsole() {
 	defer stopTelegramControl()
 	startSSDP()
 	defer stopSSDP()
+	go ensureSSDPFirewallRuleAtStart()
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)

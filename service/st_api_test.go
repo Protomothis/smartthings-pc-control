@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -518,6 +519,71 @@ func TestSTHubLastSeen(t *testing.T) {
 	}
 }
 
+// TestSTHubAPIDiagnostics covers the #95 additions: the full machine id and
+// the responder's state, which describe this PC and must therefore be
+// present even before a hub has ever called.
+func TestSTHubAPIDiagnostics(t *testing.T) {
+	stSetup(t, Config{Port: 5001})
+	resetSSDPLastSearch()
+	prevOK := ssdpFirewallRuleOK()
+	ssdpFirewallOK.Store(true)
+	t.Cleanup(func() {
+		resetSSDPLastSearch()
+		ssdpFirewallOK.Store(prevOK)
+	})
+
+	hub := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		handleSTHubAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("/api/st/hub: %d", w.Code)
+		}
+		return stJSON(t, w)
+	}
+
+	got := hub()
+	if id, _ := got["machine_id"].(string); id == "" || id != machineID() {
+		t.Errorf("machine_id = %v, want the full %q", got["machine_id"], machineID())
+	}
+	ssdp, ok := got["ssdp"].(map[string]any)
+	if !ok {
+		t.Fatalf("no ssdp object: %v", got)
+	}
+	if ssdp["running"] != ssdpRunning() {
+		t.Errorf("ssdp.running = %v, want %v", ssdp["running"], ssdpRunning())
+	}
+	if ssdp["firewall_rule"] != true {
+		t.Errorf("ssdp.firewall_rule = %v, want true", ssdp["firewall_rule"])
+	}
+	// No search yet is null, not a zero-time object the app would render
+	// as "1970".
+	if v, present := ssdp["last_search"]; !present || v != nil {
+		t.Errorf("ssdp.last_search = %v, want null", v)
+	}
+
+	noteSSDPSearch("192.168.1.105")
+	ssdp, _ = hub()["ssdp"].(map[string]any)
+	last, ok := ssdp["last_search"].(map[string]any)
+	if !ok {
+		t.Fatalf("last_search after a search = %v", ssdp["last_search"])
+	}
+	if last["ip"] != "192.168.1.105" {
+		t.Errorf("last_search.ip = %v", last["ip"])
+	}
+	at, _ := last["at"].(string)
+	if _, err := time.Parse(time.RFC3339, at); err != nil {
+		t.Errorf("last_search.at = %q: %v", at, err)
+	}
+
+	// The existing fields are untouched by the additions.
+	for _, key := range []string{"connected", "ip", "driver_version", "last_seen"} {
+		if _, present := got[key]; !present {
+			t.Errorf("%s is missing from /api/st/hub", key)
+		}
+	}
+}
+
 func TestDriverVersionOf(t *testing.T) {
 	cases := map[string]string{
 		stDriverAgent + "/1.0.0": "1.0.0",
@@ -565,12 +631,9 @@ func TestTurnScreenOnCommand(t *testing.T) {
 // ---- config (§3.7) ---------------------------------------------------------
 
 func TestSmartThingsConfigDefaults(t *testing.T) {
-	// A config.json that predates v1.1.0 keeps discovery on and the rest off.
+	// A config.json that predates v1.1.0 keeps the smartthings settings off.
 	withConfigFile(t, `{"port": 5001, "secret": "abc"}`)
 	cfg := loadConfig()
-	if !cfg.SmartThings.Discovery {
-		t.Error("discovery must default to true when the key is absent")
-	}
 	if cfg.SmartThings.AllowedHubs == nil || len(cfg.SmartThings.AllowedHubs) != 0 {
 		t.Errorf("allowed_hubs = %v, want []", cfg.SmartThings.AllowedHubs)
 	}
@@ -578,14 +641,56 @@ func TestSmartThingsConfigDefaults(t *testing.T) {
 		t.Error("session exposure must default to off")
 	}
 
-	// An explicit false survives the load.
-	withConfigFile(t, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"]}}`)
+	withConfigFile(t, `{"port": 5001, "smartthings": {"allowed_hubs": ["192.168.1.20"]}}`)
 	cfg = loadConfig()
-	if cfg.SmartThings.Discovery {
-		t.Error("discovery: false was overwritten by the default")
-	}
 	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
 		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
+	}
+}
+
+// TestLegacyDiscoveryKeyIsIgnoredAndDropped is the #95 migration: a
+// config.json still carrying smartthings.discovery loads without an error,
+// the value changes nothing, and the next save writes the key away.
+func TestLegacyDiscoveryKeyIsIgnoredAndDropped(t *testing.T) {
+	configPath := withConfigFile(t, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"], "expose_session": true}}`)
+
+	cfg := loadConfig()
+	// Everything beside the retired key survives the load…
+	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
+		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
+	}
+	if !cfg.SmartThings.ExposeSession {
+		t.Error("expose_session was lost alongside the retired key")
+	}
+	// …and discovery: false cannot stop the responder any more, because
+	// nothing reads it.
+	if !legacyDiscoveryKey([]byte(`{"smartthings":{"discovery":false}}`)) {
+		t.Error("legacyDiscoveryKey missed an explicit false")
+	}
+	for _, doc := range []string{
+		`{"port":5001}`,
+		`{"smartthings":{"allowed_hubs":[]}}`,
+		`not json`,
+	} {
+		if legacyDiscoveryKey([]byte(doc)) {
+			t.Errorf("legacyDiscoveryKey(%s) = true", doc)
+		}
+	}
+
+	prev := getConfig()
+	t.Cleanup(func() { setConfig(prev) })
+	if err := saveConfig(cfg); err != nil {
+		t.Fatalf("saveConfig: %v", err)
+	}
+	saved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDiscoveryKey(saved) {
+		t.Errorf("the save kept smartthings.discovery: %s", saved)
+	}
+	if !strings.Contains(string(saved), `"allowed_hubs"`) {
+		t.Errorf("the save lost allowed_hubs: %s", saved)
 	}
 }
 

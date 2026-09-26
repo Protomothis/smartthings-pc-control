@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"sync/atomic"
 )
 
 // netshRunner runs one netsh invocation and returns its combined output.
@@ -72,10 +73,32 @@ func deleteFirewallRule(name string) error {
 	return nil
 }
 
+// ssdpFirewallOK caches the last answer about ssdpFirewallRuleName. The
+// app polls GET /api/st/hub every few seconds for the search-status line
+// and must not make each poll shell out to netsh, so the rule is queried
+// at service start (and whenever it is ensured) and the answer kept here.
+// False before the first check, which is also what a PC with no rule
+// looks like — the honest reading either way is "not confirmed".
+var ssdpFirewallOK atomic.Bool
+
+// ssdpFirewallRuleOK reports the cached answer (#95).
+func ssdpFirewallRuleOK() bool { return ssdpFirewallOK.Load() }
+
+// checkSSDPFirewallRule asks the firewall whether the rule is there and
+// refreshes the cache.
+func checkSSDPFirewallRule() bool {
+	ok := firewallRuleExists(ssdpFirewallRuleName)
+	ssdpFirewallOK.Store(ok)
+	return ok
+}
+
 // ensureSSDPFirewallRule opens inbound UDP 1900 for the discovery
-// responder.
+// responder. A nil error means the rule is in place afterwards, whether it
+// was added now or already there.
 func ensureSSDPFirewallRule() error {
-	return ensureFirewallRule(ssdpFirewallRuleName, firewallProtoUDP, ssdpPort)
+	err := ensureFirewallRule(ssdpFirewallRuleName, firewallProtoUDP, ssdpPort)
+	ssdpFirewallOK.Store(err == nil)
+	return err
 }
 
 // removeSSDPFirewallRule drops the UDP 1900 rule (uninstall only).
@@ -85,20 +108,22 @@ func removeSSDPFirewallRule() error {
 
 // ensureSSDPFirewallRuleAtStart is the upgrade path: a PC installed before
 // #69 has no UDP rule, and reinstalling to get one is a poor answer. The
-// service re-checks at every start while discovery is on.
-//
-// Deliberate simplification: turning discovery off later leaves the rule in
-// place. Only uninstall removes it.
+// service re-checks at every start, unconditionally (#95) — there is no
+// setting that could turn discovery off any more. Only uninstall removes
+// the rule.
 //
 // Best effort throughout — a failure (no admin rights, firewall service
 // disabled) is logged and startup continues; the responder still works on
-// networks where nothing blocks it.
+// networks where nothing blocks it. Either way the outcome is cached for
+// the app's search-status line.
 func ensureSSDPFirewallRuleAtStart() {
-	if !getConfig().SmartThings.Discovery {
+	if checkSSDPFirewallRule() {
 		return
 	}
 	if err := ensureSSDPFirewallRule(); err != nil {
 		logMsg("SSDP: could not ensure firewall rule %q (discovery may be blocked): %v",
 			ssdpFirewallRuleName, err)
+		return
 	}
+	logMsg("SSDP: firewall rule %q added (inbound UDP %d)", ssdpFirewallRuleName, ssdpPort)
 }
