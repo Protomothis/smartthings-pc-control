@@ -1,26 +1,28 @@
-# Main device profile, version 1 (design doc §4, §7).
+# Main device profile - what new devices are created with (design doc §4, §7).
+# `src/profiles.lua` is the single source of truth for the name; a device is
+# moved here from an older profile on its first `init`.
 #
-# Superseded by pc-v2.yml and kept only because devices created before #79
-# still reference it: a device's screen definition is frozen at creation time,
-# so the driver moves those devices to pc.v2 on their first init (§6.6,
-# src/profiles.lua). New devices are never created with this profile.
+# The capability ORDER below is the reading order on screen: the app collects
+# every state-only row into one card and every interactive row into a second
+# one, and follows this list inside each card. `pcVersion` is last so the
+# version row sits at the bottom. It is also a capability of its own because
+# two state rows of one capability are drawn side by side and truncated
+# (platform notes "화면 배치").
 #
-# The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
-# tools/apply-namespace.js rewrites both.
+# The `numbersystem53811` namespace is the one SmartThings assigned to the
+# owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
+# with `NAMESPACE` in src/caps.lua - tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in
-# parentheses (#78): the SmartThings app shows profile preferences in whatever
-# the driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v1
+# parentheses: the SmartThings app shows profile preferences in whatever the
+# driver wrote, with no per-locale variant, and this project is Korean-first.
+name: pc.v16
 components:
   - id: main
     capabilities:
       - id: switch
         version: 1
       - id: refresh
-        version: 1
-      - id: healthCheck
         version: 1
       - id: numbersystem53811.pcpower
         version: 1
@@ -31,6 +33,8 @@ components:
       - id: numbersystem53811.pcuser
         version: 1
       - id: numbersystem53811.pcinfo
+        version: 1
+      - id: numbersystem53811.pcversion
         version: 1
     categories:
       - name: Others
@@ -120,7 +124,7 @@ preferences:
       default: shutdown
   - name: buttonMode
     title: 버튼 실행 방식 (Button mode)
-    description: "상세 화면의 명령 버튼을 누를 때 유예를 따를지 여부. 유예를 따르면 트레이 토스트에서 취소할 수 있습니다. 자동화의 명령 실행은 자기 모드를 따로 가집니다. / Grace handling for the detail-view buttons."
+    description: "상세 화면 명령 목록에서 명령을 고를 때 유예를 따를지 여부. 유예를 따르면 트레이 토스트에서 취소할 수 있습니다. 자동화의 명령 실행은 자기 모드를 따로 가집니다. / Grace handling for the detail-view command list."
     required: true
     preferenceType: enumeration
     definition:

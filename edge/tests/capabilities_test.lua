@@ -417,6 +417,18 @@ local PRESET_LIST = {
   "360", "480", "720", "1440", "2880", "4320", "0",
 }
 
+-- #91: the whole `minutes` vocabulary, as the definition declares it - the
+-- no-op the 예약 시간 row rests on, the Cancel entry, then the presets shortest
+-- first. It is a string enum because the value a dismissed list sends skips the
+-- presentation's `argumentType` conversion (platform notes
+-- "상세 화면(detailView) 위젯"), so every key the app can send has to be a member
+-- of it, spelled exactly as the presentation spells it.
+local MINUTES_ENUM = {
+  "-1", "0",
+  "5", "10", "15", "30", "45", "60", "90", "120", "180", "240",
+  "360", "480", "720", "1440", "2880", "4320",
+}
+
 local EXPECTED_COMMANDS = {
   power_state = {},
   command = {
@@ -508,17 +520,20 @@ function T.test_command_enums_match_the_service()
 
   -- §3.3: the service caps a schedule at 4320 minutes (three days, #89).
   -- schedule(minutes, command?): minutes first so a one-argument list works.
+  --
+  -- #91, measured on the phone: the argument is a STRING enum, not an integer.
+  -- The value a dismissed list sends does not go through the presentation's
+  -- `argumentType` conversion - `schedule("-1")` went out against
+  -- `minutes: integer` and the cloud answered 422 (`string found, integer
+  -- expected`) before the hub ever saw it. The enum is the whole vocabulary the
+  -- app can send: the no-op, the Cancel entry and the sixteen presets.
   local minutes = definition("schedule").commands.schedule.arguments[1].schema
-  h.assert_equal(minutes.type, "integer")
-  -- #85, measured on the phone: the cloud validates command arguments against
-  -- the definition and never forwards a rejected one, so the list's `취소`
-  -- entry (minutes = 0) failed with "system error" while the minimum was 1.
-  -- #88: and it starts at -1, the no-op a dismissed picker sends. The row rests
-  -- on `minutesPick` = "-1", and a value the row can show has to be a value the
-  -- command accepts (platform notes "상세 화면(detailView) 위젯").
-  h.assert_equal(minutes.minimum, -1, "minutes = -1 is what a dismissed picker sends (#88)")
-  h.assert_equal(minutes.maximum, 4320, "#89: the presets reach three days")
-  -- ... and the countdown the driver emits has to fit the same span.
+  h.assert_equal(minutes.type, "string",
+    "a list argument has to be a string - a dismissed picker skips argumentType (#91)")
+  h.assert_deep_equal(minutes.enum, MINUTES_ENUM)
+  h.assert_nil(minutes.minimum, "a string enum has no range (#91)")
+  h.assert_nil(minutes.maximum)
+  -- ... and the countdown the driver emits has to fit the longest preset.
   local remaining = definition("schedule").attributes.remainingSeconds
     .schema.properties.value
   h.assert_equal(remaining.maximum, 4320 * 60,
@@ -882,14 +897,34 @@ end
 -- integer argument may only rest on integers inside the argument's range, and
 -- the resting value has to be a no-op (-1, by the convention this driver keeps
 -- for the same reason `execute` rests on `none`).
-function T.test_an_integer_argument_list_rests_on_a_number_in_its_range()
+--
+-- #91 keeps the rule and changes the type it applies to. The argument is a
+-- string enum now (see `test_an_argument_a_list_sends_is_never_a_number`), so
+-- "a list of numbers" is recognised by its VALUES rather than by
+-- `schema.type`, and membership of the enum replaces the range check.
+local function numeric_values(schema)
+  if schema.type == "integer" or schema.type == "number" then
+    return true
+  end
+  if type(schema.enum) ~= "table" or #schema.enum == 0 then
+    return false
+  end
+  for _, value in ipairs(schema.enum) do
+    if tonumber(value) == nil then
+      return false
+    end
+  end
+  return true
+end
+
+function T.test_a_numeric_argument_list_rests_on_a_number_that_does_nothing()
   local checked = 0
   for key, id in pairs(caps.ids) do
     for i, item in ipairs(presentation(key).detailView or {}) do
       if item.displayType == "list" then
         local command = (definition(key).commands or {})[item.list.command.name] or {}
         local schema = ((command.arguments or {})[1] or {}).schema or {}
-        if schema.type == "integer" or schema.type == "number" then
+        if numeric_values(schema) then
           local where = string.format("%s detailView[%d] (%s)", id, i, item.list.command.name)
           -- Every value the row can be left showing: the declared alternatives
           -- and, because the app reads the attribute rather than the
@@ -913,15 +948,13 @@ function T.test_an_integer_argument_list_rests_on_a_number_in_its_range()
               where, tostring(value), item.list.command.name))
             h.assert_true(number == math.floor(number),
               where .. " rests on " .. tostring(value) .. ", which is not an integer")
-            h.assert_true(number >= (schema.minimum or -math.huge), string.format(
-              "%s rests on %s, below the argument's minimum (%s)",
-              where, tostring(value), tostring(schema.minimum)))
-            h.assert_true(number <= (schema.maximum or math.huge), string.format(
-              "%s rests on %s, above the argument's maximum (%s)",
-              where, tostring(value), tostring(schema.maximum)))
-            -- ... and inside the range is not enough: the value the row rests
-            -- on is sent for real, so it has to do nothing. 0 already means
-            -- "cancel the schedule", hence the negative no-op.
+            h.assert_nil(argument_error(schema, value), string.format(
+              "%s rests on %s, which %s() does not accept - a dismissed list "
+              .. "sends the row's current value (#88, #91)",
+              where, tostring(value), item.list.command.name))
+            -- ... and being an accepted argument is not enough: the value the
+            -- row rests on is sent for real, so it has to do nothing. 0 already
+            -- means "cancel the schedule", hence the negative no-op.
             h.assert_true(number < 0, string.format(
               "%s rests on %s, which would %s() something the user never asked for "
               .. "(the no-op is -1)", where, tostring(value), item.list.command.name))
@@ -931,7 +964,63 @@ function T.test_an_integer_argument_list_rests_on_a_number_in_its_range()
       end
     end
   end
-  h.assert_true(checked > 0, "the 예약 시간 row is a list of integers; none was checked")
+  h.assert_true(checked > 0, "the 예약 시간 row is a list of numbers; none was checked")
+end
+
+-- #91, measured on the phone (2026-09-26): the hole #88 left open. A dismissed
+-- picker really does send the row's current value - but that path does NOT go
+-- through the presentation's `argumentType` conversion, so the value leaves as
+-- a STRING even when the list declares `"argumentType": "integer"`:
+--
+--   schedule(-1)    -> Command executed successfully (the hub received it)
+--   schedule("-1")  -> 422 commands[0].arguments[0]: string found, integer expected
+--
+-- Picking an entry works, because a picked key IS converted. So an argument a
+-- list can send has to be defined as a string (an enum of the keys), and the
+-- driver reads the number back out of it with `tonumber`.
+function T.test_an_argument_a_list_sends_is_never_a_number()
+  local checked = 0
+
+  local function check(schema, where)
+    h.assert_true(schema.type == "string", string.format(
+      "%s is defined as %s; a value a list sends skips argumentType and arrives "
+      .. "as a string (#91)", where, tostring(schema.type)))
+    h.assert_true(type(schema.enum) == "table" and #schema.enum > 0,
+      where .. " is a string with no enum, so nothing constrains what it sends")
+    checked = checked + 1
+  end
+
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "list" then
+        local command = (definition(key).commands or {})[item.list.command.name] or {}
+        check(((command.arguments or {})[1] or {}).schema or {},
+          string.format("%s detailView[%d] %s(arg 1)", id, i, item.list.command.name))
+      end
+    end
+    -- platform notes "automation 프레젠테이션": the same for every argument an
+    -- automation action picks from a list.
+    for i, action in ipairs((presentation(key).automation or {}).actions or {}) do
+      local multi = action.multiArgCommand
+      if multi then
+        local command = (definition(key).commands or {})[multi.command] or {}
+        for _, argument in ipairs(multi.arguments or {}) do
+          if #(((argument.list or {}).alternatives) or {}) > 0 then
+            local schema
+            for _, declared in ipairs(command.arguments or {}) do
+              if declared.name == argument.name then
+                schema = declared.schema
+              end
+            end
+            check(schema or {}, string.format("%s automation.actions[%d] %s(%s)",
+              id, i, multi.command, tostring(argument.name)))
+          end
+        end
+      end
+    end
+  end
+
+  h.assert_true(checked >= 5, "far too few list arguments were checked: " .. checked)
 end
 
 function T.test_the_driver_never_leaves_a_flash_timer_behind()
@@ -967,8 +1056,11 @@ function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary
   h.assert_equal(item.list.command.name, "schedule")
   local minutes, states = list_keys(item)
   h.assert_deep_equal(minutes, PRESET_LIST)
-  h.assert_equal(item.list.command.argumentType, "integer",
-    "a list of integer arguments needs argumentType (platform notes '상세 화면(detailView) 위젯')")
+  -- #91: no `argumentType`. It only converts the key the user PICKS; the value
+  -- that goes out when the list is closed without a pick skips it and leaves as
+  -- a string, so the argument is a string enum and nothing needs converting.
+  h.assert_nil(item.list.command.argumentType,
+    "a list argument is a string enum now, so argumentType is gone (#91)")
   -- #88: the row rests on `minutesPick`, not on `status`. A dismissed picker
   -- sends the row's current value as the argument, and "idle"/"scheduled" is
   -- not a number the cloud will forward - that was the network-error popup.
@@ -982,29 +1074,40 @@ function T.test_the_schedule_detail_view_is_the_plan_the_presets_and_the_summary
   h.assert_contains(detail[3].state.label, "summary.value")
 end
 
-function T.test_every_schedule_preset_is_inside_the_definitions_range()
+function T.test_every_schedule_preset_is_a_member_of_the_definitions_enum()
   -- #85, measured on the phone: the cloud checks a command's arguments against
   -- the definition and answers "system error" without ever reaching the hub.
   -- The `취소` entry sent `minutes = 0` against `minimum: 1` and died there.
+  -- #91: the definition is an enum now, so "inside the range" is "in the list".
   local schema = definition("schedule").commands.schedule.arguments[1].schema
   local presets = select(1, list_keys(presentation("schedule").detailView[2]))
   h.assert_true(#presets > 0, "the schedule row has no presets")
-  local zero = false
+  local zero, largest = false, 0
   for _, key in ipairs(presets) do
     local minutes = tonumber(key)
     h.assert_true(minutes ~= nil, "the preset " .. tostring(key) .. " is not a number")
-    h.assert_true(minutes >= schema.minimum,
-      string.format("the preset %s is below minutes' minimum (%s)", key, tostring(schema.minimum)))
-    h.assert_true(minutes <= schema.maximum,
-      string.format("the preset %s is above minutes' maximum (%s)", key, tostring(schema.maximum)))
+    h.assert_nil(argument_error(schema, key),
+      string.format("the preset %s is not one of minutes' values", key))
     zero = zero or minutes == 0
+    largest = math.max(largest, minutes)
   end
   h.assert_true(zero, "the schedule row has no Cancel entry (minutes = 0)")
-  -- #89: and the top of the list is the top of the range - a maximum no preset
-  -- reaches is a promise the screen never keeps.
-  h.assert_equal(schema.maximum, 4320, "the ceiling is three days (#89)")
-  h.assert_true(tonumber(presets[#presets - 1]) == schema.maximum,
-    "the last delay before Cancel must be the definition's maximum")
+  -- #89: and the top of the list is the top of the definition - a value the
+  -- definition allows and no preset reaches is a promise the screen never keeps.
+  h.assert_equal(largest, 4320, "the ceiling is three days (#89)")
+  h.assert_true(tonumber(presets[#presets - 1]) == largest,
+    "the last delay before Cancel must be the longest one the definition allows")
+  -- #91: and the definition holds exactly the presets plus the no-op the row
+  -- rests on. Anything else is a value the app has no way to send.
+  local allowed = {}
+  for _, value in ipairs(schema.enum) do
+    allowed[value] = true
+  end
+  for _, key in ipairs(presets) do
+    allowed[key] = nil
+  end
+  allowed[state.MINUTES_PICK] = nil
+  h.assert_deep_equal(allowed, {}, "minutes accepts values no list can send (#91)")
 end
 
 function T.test_the_info_detail_view_is_only_the_summary()

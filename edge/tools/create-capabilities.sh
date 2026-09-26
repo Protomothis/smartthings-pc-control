@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Order matters only for readability; the capabilities are independent.
-CAPABILITIES=(pcPower pcExec pcDelay pcUser pcInfo pcVersion)
+CAPABILITIES=(pcPower pcExec pcDefer pcUser pcInfo pcVersion)
 
 if ! command -v smartthings >/dev/null 2>&1; then
   echo "error: the 'smartthings' CLI is not on PATH." >&2

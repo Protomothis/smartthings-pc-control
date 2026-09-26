@@ -263,7 +263,7 @@ end
 
 function T.test_a_scheduled_execute_still_goes_to_the_service()
   -- `minutes > 0` schedules instead of executing (§3.3); what is pending is
-  -- the pcDelay row's business.
+  -- the pcDefer row's business.
   local device = device_with()
   local calls = with_service(nil, function()
     handlers_for(caps.COMMAND).execute(driver, device,
@@ -344,7 +344,7 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
 end
 
 function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
-  -- #85: pcPlan/pcRun became pcDelay/pcExec, so on the hub every attribute
+  -- #85: pcPlan/pcRun became pcCountdown/pcExec, so on the hub every attribute
   -- of the new ids starts out unset - but the driver's own persisted fields
   -- survive the migration and would otherwise say "already painted".
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
@@ -359,7 +359,7 @@ function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
 end
 
 --------------------------------------------------------------------------------
--- pcDelay.setPlanCommand: what a schedule runs (#84, moved in #85)
+-- pcDefer.setPlanCommand: what a schedule runs (#84, moved in #85)
 --------------------------------------------------------------------------------
 
 function T.test_set_plan_command_persists_and_emits()
@@ -427,7 +427,7 @@ function T.test_an_explicit_schedule_command_still_wins()
 end
 
 --------------------------------------------------------------------------------
--- pcDelay: the cancel entry of the preset list (#82, valid argument since #85)
+-- pcDefer: the cancel entry of the preset list (#82, valid argument since #85)
 --------------------------------------------------------------------------------
 
 function T.test_schedule_zero_cancels()
@@ -451,7 +451,7 @@ function T.test_schedule_zero_as_a_string_cancels_too()
 end
 
 --------------------------------------------------------------------------------
--- pcDelay: the 예약 시간 row rests on a no-op delay (#88)
+-- pcDefer: the 예약 시간 row rests on a no-op delay (#88)
 --------------------------------------------------------------------------------
 
 --- Every `minutesPick` event a device was told, with its options.
@@ -499,15 +499,85 @@ function T.test_a_dismissed_delay_picker_as_a_string_does_nothing_too()
   h.assert_equal(calls2.cancels, 0)
 end
 
+--------------------------------------------------------------------------------
+-- pcDefer: every delay the app sends is a string (#91)
+--------------------------------------------------------------------------------
+
+-- #91, measured on the phone (2026-09-26): the value a dismissed list sends is
+-- not "a string on some firmwares" - it is ALWAYS a string, because closing the
+-- list skips the presentation's `argumentType` conversion. `schedule(-1)`
+-- reached the hub and `schedule("-1")` came back 422 from the cloud, so the
+-- definition says `minutes` is a string enum and these are the arguments the
+-- driver actually receives now.
+function T.test_the_delay_row_takes_every_value_as_a_string()
+  -- The dismissed picker: the row's resting value, verbatim off the wire.
+  local device = device_with()
+  local calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = "-1" } })
+  end)
+  h.assert_equal(#calls.commands, 0, '"-1" may not schedule anything')
+  h.assert_equal(calls.cancels, 0, '... and may not cancel anything either')
+  h.assert_equal(calls.polls, 1, "the tiles are refreshed instead")
+  local picks = minutes_picks(device)
+  h.assert_equal(#picks, 1, "the delay row is answered once (#88)")
+  h.assert_equal(picks[1].value, state.MINUTES_PICK)
+  h.assert_true((picks[1].options or {}).state_change == true,
+    "the re-emit has to be forced or the app spins (#86)")
+
+  -- The Cancel entry.
+  local cancelling = device_with()
+  local cancel_calls = with_service({ cancelled = true }, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, cancelling,
+      { command = "schedule", args = { minutes = "0" } })
+  end)
+  h.assert_equal(cancel_calls.cancels, 1, '"0" is the list\'s Cancel entry')
+  h.assert_equal(#cancel_calls.commands, 0)
+
+  -- A picked preset.
+  local scheduling = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+  local schedule_calls = with_service(nil, function()
+    handlers_for(caps.SCHEDULE).schedule(driver, scheduling,
+      { command = "schedule", args = { minutes = "30" } })
+  end)
+  h.assert_equal(#schedule_calls.commands, 1, '"30" schedules')
+  h.assert_equal(schedule_calls.commands[1].minutes, 30,
+    "the driver reads the number back out of the key it was sent")
+  h.assert_equal(schedule_calls.commands[1].command, "shutdown")
+  h.assert_equal(cancel_calls.cancels, 1)
+end
+
+function T.test_a_delay_the_definition_does_not_allow_is_a_no_op()
+  -- Nothing outside the enum can reach the hub any more - the cloud rejects it
+  -- first - but a device on an older profile, or a routine written against one,
+  -- can still send something else. It may not be read as a schedule.
+  for _, minutes in ipairs({ "idle", "", "nonsense" }) do
+    local device = device_with()
+    local calls = with_service(nil, function()
+      handlers_for(caps.SCHEDULE).schedule(driver, device,
+        { command = "schedule", args = { minutes = minutes } })
+    end)
+    h.assert_equal(#calls.commands, 0,
+      string.format('schedule(%q) may not schedule anything', minutes))
+    h.assert_equal(calls.cancels, 0)
+    h.assert_equal(#minutes_picks(device), 1, "the row is still answered")
+  end
+end
+
 function T.test_every_schedule_answers_the_delay_row_with_the_resting_value()
   -- #86's rule on #88's row: `minutesPick` has one value, so the attribute the
   -- app is waiting on never changes and the platform drops an unforced event -
   -- the spinner then runs out into an error. Every `schedule`, no-op included,
   -- answers it with a forced re-emit of "-1".
+  -- #91: the strings are what the app really sends; the numbers are what an
+  -- automation written against an older definition still carries.
   local cases = {
     ["schedule(-1)"] = -1,
     ["schedule(0)"] = 0,
     ["schedule(30)"] = 30,
+    ['schedule("-1")'] = "-1",
+    ['schedule("0")'] = "0",
+    ['schedule("30")'] = "30",
   }
   for name, minutes in pairs(cases) do
     local device = device_with()

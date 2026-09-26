@@ -21,6 +21,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v16`으로 이전된 뒤 `smartthings capabilities:delete numbersystem53811.pcdelay`.
 
 ## 프로필과 화면 생성
 
@@ -37,10 +38,18 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - detailView의 `list`는 `{"command": {"name": …, "alternatives": […]}, "state": {"value": "<attr>.value", "alternatives": […]}}` 형식이다. `state`를 넣으면 `state.alternatives`가 **필수**다.
 - 두 목록의 `key` 집합은 서로 달라도 된다(명령 쪽은 인자 enum, 상태 쪽은 속성 enum).
 - **`list.state`가 bool 속성이면 목록이 아예 그려지지 않는다.** 라벨 옆이 "-"이고 꺾쇠도 없어 눌러도 열리지 않는다. `state`는 반드시 문자열 enum 속성이어야 한다.
-- 인자가 정수인 `list`에는 `"argumentType": "integer"`가 필요하다. 없으면 문자열 키가 그대로 나가 서비스가 거부한다.
+- `"argumentType": "integer"`는 **고른 키에만** 적용된다. 사용자가 목록에서 값을 고르면 키가 정수로 변환돼 나가지만, 목록을 그냥 닫을 때 나가는 현재 값은 이 변환을 거치지 않는다.
+- **그래서 `list`가 보내는 인자는 정수가 아니라 문자열 enum으로 정의해야 한다**(2026-09-26 실측, #91). 정의가 `minutes: integer`인 채로 목록을 고르지 않고 닫으면 문자열이 그대로 나가 클라우드가 422로 막는다 — 앱에는 "네트워크 또는 서버 오류" 팝업만 뜬다.
+
+  ```
+  schedule(-1)   → Command executed successfully (허브 수신)
+  schedule("-1") → 422 commands[0].arguments[0]: string found, integer expected
+  ```
+
+  인자를 키 문자열 enum(`"-1"` `"0"` `"5"`…`"4320"`)으로 정의하고 프레젠테이션에서 `argumentType`을 빼면 두 경로가 같은 값을 보낸다. 숫자가 필요하면 드라이버가 `tonumber`로 되읽는다.
 - **인자 검증은 클라우드가 정의를 보고 한다.** `alternatives[].key`가 인자 스키마(enum 집합, `minimum`..`maximum`)를 벗어나면 명령이 **허브에 닿지도 못하고** "시스템 오류" 팝업만 뜬다 — 드라이버 로그에는 아무것도 남지 않는다.
 - **목록을 고르지 않고 닫으면 그 줄의 현재 state 값이 그대로 명령 인자로 나간다.** 그래서 ⑴ `state.alternatives`의 키 집합은 명령 첫 인자 enum의 부분집합이어야 하고, ⑵ 줄이 쉬는 값은 무해한 무동작이어야 한다.
-- **정수 인자 list 의 state 도 범위 안의 정수여야 함(-1 무동작 관례)** — 닫을 때 나가는 현재 값에는 예외가 없다. `status`("idle")에 묶인 예약 시간 목록은 `schedule(minutes: "idle")`을 보내 "네트워크 오류"로 끝났다. 정수 인자를 받는 줄은 `minimum`을 무동작 값까지 내리고(`-1`), 그 값 하나만 가지는 enum 속성에 묶는다.
+- **숫자를 고르는 list 의 state 도 인자가 받아들이는 값이어야 함(`"-1"` 무동작 관례)** — 닫을 때 나가는 현재 값에는 예외가 없다. `status`("idle")에 묶인 예약 시간 목록은 `schedule(minutes: "idle")`을 보내 "네트워크 오류"로 끝났다. 줄이 쉬는 값 하나만 가지는 enum 속성(`minutesPick` = `"-1"`)에 묶고, 그 값을 인자 enum에도 넣는다.
 - **값이 바뀌지 않는 명령은 회전 표시 뒤 오류로 끝난다.** 앱은 명령을 보낸 뒤 그 줄이 묶인 속성의 이벤트를 기다리는데, 값이 같으면 플랫폼이 이벤트를 버린다. 명령의 응답으로 나가는 emit은 `device:emit_event(cap.attr(value, { state_change = true }))`로 강제한다. 폴링이 스스로 내는 갱신은 강제하지 않는다.
 - **한 번도 emit 되지 않은 속성은 "-"이고, 값이 빈 문자열인 줄도 "-"다.** 앱이 "상태를 모두 보고하지 않았다"고 안내한다. 모든 `state` 줄은 해당 사항이 없을 때도 문구를 가져야 한다.
 - **`visibleCondition`은 무시된다.** API는 받아 주지만 휴대폰이 반영하지 않는다. 모든 줄은 해당 사항이 없을 때도 혼자 읽혀야 한다.

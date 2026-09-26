@@ -1,10 +1,6 @@
 # Changelog
 
-## [Unreleased]
-
-### Edge 드라이버
-
-- 버전 줄이 PC가 꺼져 있어도 마지막으로 확인한 서비스 버전을 그대로 보여 줍니다. `v?`는 한 번도 응답받지 못한 PC에만 쓰입니다 (#92)
+Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
 ## [v1.1.0] - 2026-09-22
 
