@@ -43,7 +43,7 @@ local function device_init(driver, device)
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
-  -- pcExec and pcDelay unset, which reads as "-" and keeps the app saying
+  -- pcExec and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   if poll.ensure_rows(device) then
     -- First run on this generation of rows: forced rows + forced poll, now
@@ -71,7 +71,7 @@ local function device_added(driver, device)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
-  -- #85: and the same goes for every other pcExec / pcDelay attribute,
+  -- #85: and the same goes for every other pcExec / pcDefer attribute,
   -- including the "command to schedule" row, whose default is the `offAction`
   -- preference.
   poll.ensure_rows(device)
@@ -228,7 +228,7 @@ local function handle_execute(driver, device, cmd)
     args.mode or button_mode(device), args.minutes or 0)
 end
 
---- pcDelay.setPlanCommand(command): what a schedule without a command of
+--- pcDefer.setPlanCommand(command): what a schedule without a command of
 --- its own runs (#84; moved onto the schedule capability in #85).
 --
 -- The detail view's schedule list can only pick the minutes (one argument per
@@ -248,18 +248,18 @@ local function handle_set_plan_command(_driver, device, cmd)
   poll.emit_plan_command(device, args.command, true)
 end
 
---- The command `pcDelay.schedule` runs when it carries none of its own:
+--- The command `pcDefer.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
 --- then the `offAction` preference, else shutdown (§3.3).
 local function schedule_command(device, requested)
   return state.plan_command_for(requested, poll.plan_command(device))
 end
 
---- pcDelay.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
+--- pcDefer.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
 --- `{"cancelled": false}` when there was nothing to cancel.
 local handle_cancel
 
---- pcDelay.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
+--- pcDefer.schedule(minutes, command?): same endpoint, minutes > 0 (§3.3).
 --- `command` is optional (SmartThings list presentations send one argument);
 --- see schedule_command for the fallback. An existing schedule is replaced by
 --- the service, which is worth saying.
@@ -281,6 +281,16 @@ local handle_cancel
 --- cloud rejected with a network-error popup. Whatever the argument turns out
 --- to be, the row is answered first with a forced re-emit of "-1" - it never
 --- changes value, so an unforced event is dropped and the app spins (#86).
+---
+--- #91, measured on the phone: the dismissed picker's value is not merely "a
+--- string on some firmwares" - it is ALWAYS a string. Closing the list bypasses
+--- the presentation's `argumentType` conversion, so `schedule("-1")` went out
+--- against a definition that said `minutes: integer` and the cloud answered
+--- 422 (`string found, integer expected`) - the network-error popup again. The
+--- argument is a string enum now (`"-1"`, `"0"`, and the sixteen presets), so
+--- every value the app can send is valid on arrival. Nothing changes here: the
+--- `tonumber` below has always read the string keys, and it still accepts the
+--- integers an older profile's automation may carry.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
   poll.answer_minutes_pick(device)
@@ -336,7 +346,7 @@ local capability_handlers = {
 }
 
 -- Command names are literals: they are what `capabilities/pcExec.json` and
--- `capabilities/pcDelay.json` declare, and the generated capability object
+-- `capabilities/pcDefer.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then
   local handlers = { execute = handle_execute }

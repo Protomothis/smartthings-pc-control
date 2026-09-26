@@ -21,7 +21,7 @@ state.WAKING = "waking"
 state.SHUTTING_DOWN = "shuttingDown"
 state.UNKNOWN = "unknown"
 
--- pcDelay.status enum (§4, #83): the string twin of `active`.
+-- pcDefer.status enum (§4, #83): the string twin of `active`.
 state.IDLE = "idle"
 -- Placeholder for automation-only string attributes that have nothing to say
 -- (the app never shows them; "" would be stored as null by the cloud).
@@ -34,10 +34,19 @@ state.SCHEDULED = "scheduled"
 -- on something `schedule(minutes: integer)` accepts. It rested on `status`
 -- ("idle"/"scheduled"), which the cloud rejected before the hub ever saw it -
 -- the "네트워크 오류" popup of #88. `minutesPick` is a one-value enum holding the
--- string "-1", and `minimum: -1` makes that a valid, harmless argument.
+-- string "-1", and the argument has to accept that value as a harmless no-op.
+--
+-- #91: it was not enough to widen the range to `minimum: -1`. The value a
+-- dismissed list sends skips the presentation's `argumentType` conversion and
+-- leaves as the STRING "-1", which the cloud rejects against `integer` with a
+-- 422 - so `minutes` is a string enum now (`pcDelay` -> `pcDefer`). The driver
+-- keeps reading it as a number: `MINUTES_NONE` is what `tonumber` makes of the
+-- resting value, and `MINUTES_PICK` is what goes over the wire.
 state.MINUTES_NONE = -1
 -- The attribute value is a string: the phone sends a list key, and an enum
 -- attribute is a string attribute (a list bound to a number does not render).
+-- #91: the `minutes` argument is a string enum for the same reason, and this
+-- is a member of it.
 state.MINUTES_PICK = "-1"
 
 -- "switch" is not a custom capability, so it is referenced by its plain id.
@@ -67,7 +76,7 @@ function state.new(power_state)
     last_stopping_reason = nil,
     -- powerState to fall back to when a wake attempt times out
     wake_from = nil,
-    -- last polled `schedule.active`, so `pcDelay.schedule` can say whether
+    -- last polled `schedule.active`, so `pcDefer.schedule` can say whether
     -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
   }
@@ -206,7 +215,7 @@ function state.is_action(value)
 end
 
 --------------------------------------------------------------------------------
--- pcDelay.planCommand (#84, moved off the command capability in #85)
+-- pcDefer.planCommand (#84, moved off the command capability in #85)
 --------------------------------------------------------------------------------
 
 -- What the service can schedule (§3.3). `lock` and the screen commands are not
@@ -216,7 +225,7 @@ state.PLAN_COMMANDS = { "shutdown", "restart", "suspend", "hibernate" }
 -- What a device schedules when nothing else says otherwise.
 state.PLAN_DEFAULT = "shutdown"
 
---- True when `value` is a command `pcDelay.schedule` may carry.
+--- True when `value` is a command `pcDefer.schedule` may carry.
 function state.is_plan_command(value)
   for _, command in ipairs(state.PLAN_COMMANDS) do
     if command == value then
@@ -352,11 +361,11 @@ function state.versions(service_version, lang, update)
   return text
 end
 
---- `pcDelay.summary` (#78, reworded in #87): "Shut down · in 4 min", or
+--- `pcDefer.summary` (#78, reworded in #87): "Shut down · in 4 min", or
 --- "None" when nothing is scheduled.
 --
 -- #87: the origin left the line. Who asked for the shutdown is in
--- `pcDelay.origin` and in `pcExec.lastCommand`; on the summary row it
+-- `pcDefer.origin` and in `pcExec.lastCommand`; on the summary row it
 -- pushed the minutes - the one number the row exists for - off the end.
 --- #89: how far away a schedule is, in the largest unit that fits.
 --
@@ -540,7 +549,7 @@ function state.attributes_used()
   return ATTRIBUTES
 end
 
---- #85: the resting value of every pcExec / pcDelay attribute that a
+--- #85: the resting value of every pcExec / pcDefer attribute that a
 --- status body does not carry on its own (plus the `pcInfo.versions` row, which
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.

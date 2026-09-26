@@ -30,6 +30,11 @@
 # and once every profile that referenced the old id is deployed and no device
 # is on it any more, `smartthings capabilities:delete <old id>`.
 #
+# Still to delete from the account after this driver version is deployed and
+# every device has been migrated to `pc.v16` (#91):
+#
+#   smartthings capabilities:delete numbersystem53811.pcdelay
+#
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
 #   - authenticated (CLI 2.x has no `login`; the first command opens a browser),
@@ -39,7 +44,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcExec pcDelay pcUser pcInfo pcVersion)
+CAPABILITIES=(pcPower pcExec pcDefer pcUser pcInfo pcVersion)
 VERSION=1
 TAGS=(ko en)
 

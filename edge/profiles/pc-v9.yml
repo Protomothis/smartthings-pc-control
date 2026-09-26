@@ -19,7 +19,7 @@ components:
         version: 1
       - id: numbersystem53811.pcexec
         version: 1
-      - id: numbersystem53811.pcdelay
+      - id: numbersystem53811.pcdefer
         version: 1
       - id: numbersystem53811.pcuser
         version: 1

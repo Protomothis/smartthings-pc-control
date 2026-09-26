@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcdelay",
+  "id": "numbersystem53811.pcdefer",
   "version": 1,
   "status": "proposed",
-  "name": "pcDelay",
+  "name": "pcDefer",
   "ephemeral": false,
   "attributes": {
     "summary": {
@@ -172,9 +172,27 @@
           "name": "minutes",
           "optional": false,
           "schema": {
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 4320
+            "type": "string",
+            "enum": [
+              "-1",
+              "0",
+              "5",
+              "10",
+              "15",
+              "30",
+              "45",
+              "60",
+              "90",
+              "120",
+              "180",
+              "240",
+              "360",
+              "480",
+              "720",
+              "1440",
+              "2880",
+              "4320"
+            ]
           }
         },
         {

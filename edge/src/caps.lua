@@ -44,7 +44,14 @@ caps.COMMAND = NAMESPACE .. ".pcexec"
 -- `schedule(minutes)` accepts up to 4320 and `remainingSeconds` up to 259200 -
 -- a range is part of the definition and the hub caches definitions by id
 -- (platform notes "허브의 정의 캐시"), so `pcPlanner` became `pcDelay`.
-caps.SCHEDULE = NAMESPACE .. ".pcdelay"
+-- #91: and once more, for the last remaining hole in #88's fix. The phone does
+-- send the row's current value when the list is closed without a pick, but that
+-- path does NOT go through the presentation's `argumentType: "integer"`
+-- conversion: the argument leaves as the STRING "-1", and the cloud rejects it
+-- against `minutes: integer` with a 422 before the hub sees it (platform notes
+-- "상세 화면(detailView) 위젯"). A list argument therefore has to be defined as a
+-- string enum, which is a definition change: `pcDelay` became `pcDefer`.
+caps.SCHEDULE = NAMESPACE .. ".pcdefer"
 -- #85: the definition gained a `versions` attribute (the row that says which
 -- service, driver and screen template a device is actually running), so by the
 -- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant

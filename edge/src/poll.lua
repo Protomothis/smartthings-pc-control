@@ -18,7 +18,7 @@ poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
 -- #82: the last `pcExec.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
--- #84: the `pcDelay.planCommand` the user picked for the schedule row.
+-- #84: the `pcDefer.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
 -- #85: which generation of capability ids this device's rows were painted for.
 -- A renamed capability (pcRun -> pcExec, pcPlan -> pcPlanner) starts with
@@ -32,7 +32,11 @@ poll.ROWS_FIELD = "rows_painted"
 -- #89 bumps it again: `pcPlanner` became `pcDelay` (the preset list now reaches
 -- three days, and a wider `minutes` range is a definition change), so the whole
 -- schedule card is unset once more on every device this driver migrates.
-poll.ROWS_VERSION = "89b"
+-- #91 bumps it once more: `pcDelay` became `pcDefer` (`schedule(minutes)` is a
+-- string enum now, because the value a dismissed list sends skips the
+-- presentation's `argumentType` conversion), so the schedule card starts out
+-- unset again on every migrated device.
+poll.ROWS_VERSION = "91a"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -241,9 +245,9 @@ function poll.ensure_action(device)
   return true
 end
 
---- Emit `pcDelay.planCommand` and remember it (#84, moved in #85).
+--- Emit `pcDefer.planCommand` and remember it (#84, moved in #85).
 --
--- The command a `pcDelay.schedule` without an explicit command runs. It is
+-- The command a `pcDefer.schedule` without an explicit command runs. It is
 -- the user's own choice, made on the detail view, so it is persisted rather
 -- than derived from a status body. An unschedulable value is coerced (§3.3).
 --
@@ -298,7 +302,7 @@ function poll.ensure_plan_command(device)
   return true
 end
 
---- #85: paint every pcExec and pcDelay attribute once, so no row of either
+--- #85: paint every pcExec and pcDefer attribute once, so no row of either
 --- card reads "-" and the app stops saying the device has not reported all of
 --- its state.
 --
