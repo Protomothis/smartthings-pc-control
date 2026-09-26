@@ -50,6 +50,10 @@ poll.SERVICE_VERSION_FIELD = "service_version"
 -- this driver migrates.
 poll.ROWS_VERSION = "93a"
 poll.WOL_READY_FIELD = "wol_ready"
+-- #97: the name of the adapter the service chose for WoL, so the message the
+-- wake sequence writes can name it while the PC is off and there is no status
+-- body to read (state.wol_adapter).
+poll.WOL_ADAPTER_FIELD = "wol_adapter"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
 poll.MIN_SERVICE_VERSION = "1.1.0"
@@ -582,9 +586,10 @@ function poll.once(driver, device, opts)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"
     wol.cancel_wake(driver, device)
-    -- §6.4: remember the WoL-capable adapter's MAC. A driver cannot write its
-    -- own preferences, so this is kept as a field and used when `macAddress`
-    -- is left empty.
+    -- §6.4: remember the MAC to wake this PC on - `wol.selected.mac` when the
+    -- service chose an adapter (#97), else the WoL-capable adapter we guessed.
+    -- A driver cannot write its own preferences, so this is kept as a field and
+    -- used when `macAddress` is left empty.
     local mac = state.wol_mac(body)
     if mac then
       -- Persisted: the MAC must survive a hub or driver restart while the PC
@@ -592,8 +597,17 @@ function poll.once(driver, device, opts)
       device:set_field(poll.MAC_FIELD, mac, { persist = true })
     end
     -- §6.4: remembered so `switch on` can say "WoL is off on the adapter"
-    -- right away instead of at the next poll.
-    device:set_field(poll.WOL_READY_FIELD, ((body or {}).wol or {}).ready == true)
+    -- right away instead of at the next poll. #97: about the chosen adapter,
+    -- and with its name, so the warning points at the NIC to go and open.
+    device:set_field(poll.WOL_READY_FIELD, not state.wol_off(body))
+    local adapter = state.wol_adapter(body)
+    if adapter then
+      -- Persisted for the same reason as the MAC: the wake happens while the
+      -- PC is off, which is exactly when no status body is available. Only
+      -- written when there is a name, so a service too old to send one leaves
+      -- the last known name rather than a blank.
+      device:set_field(poll.WOL_ADAPTER_FIELD, adapter, { persist = true })
+    end
     -- §6.5: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
     poll.remember_identity(device, body)

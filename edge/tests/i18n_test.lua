@@ -27,6 +27,13 @@ function T.test_formats_arguments()
   h.assert_equal(i18n.t("ko", "incompatible_service", "1.1.0"), "서비스 v1.1.0 이상 필요")
   h.assert_equal(i18n.t("en", "incompatible_service", "1.1.0"), "Requires service v1.1.0 or newer")
   h.assert_contains(i18n.t("en", "wol_bad_mac", "zz:zz"), "zz:zz")
+  -- #97: the adapter name is the one argument both WoL warnings take.
+  h.assert_equal(i18n.t("ko", "wol_not_ready_on", "이더넷"),
+    "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+  h.assert_equal(i18n.t("en", "wol_not_ready_on", "Ethernet"),
+    "Wake-on-LAN is off on Ethernet · check the Network tab")
+  h.assert_equal(i18n.t("ko", "wol_off_short_on", "이더넷"), "WoL 꺼짐 (이더넷)")
+  h.assert_equal(i18n.t("en", "wol_off_short_on", "Ethernet"), "WoL off (Ethernet)")
 end
 
 function T.test_unknown_key_returns_the_key()
@@ -58,6 +65,8 @@ function T.test_all_required_keys_exist()
     "versions", "version_unknown", "versions_update", "versions_update_plain",
     -- #93: the note a command held back by a power transition leaves behind.
     "busy_off", "busy_restart", "busy_wake", "busy_sleep", "busy_hibernate",
+    -- #97: the same two WoL warnings, naming the adapter the service chose.
+    "wol_not_ready_on", "wol_off_short_on",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)

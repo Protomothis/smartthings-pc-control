@@ -22,6 +22,14 @@ local STRINGS = {
     ko = "PC의 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
     en = "Wake-on-LAN is off on the PC's adapter · check the Network tab",
   },
+  -- #97: the same sentence, but naming the adapter the service picked
+  -- (`status.wol.selected.name`). With several NICs "the PC's adapter" does not
+  -- say which one to open, and the PC's own WoL dropdown (#96) names it too.
+  -- A service too old to name one still gets `wol_not_ready`.
+  wol_not_ready_on = {
+    ko = "%s 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
+    en = "Wake-on-LAN is off on %s · check the Network tab",
+  },
   wol_no_mac = {
     ko = "MAC 주소를 설정하세요",
     en = "Set the MAC address in settings",
@@ -190,6 +198,12 @@ local STRINGS = {
   -- "an update is out") were dropped from the row in #87: neither is something
   -- to act on at a glance, and both stay in `pcInfo.message`.
   wol_off_short = { ko = "WoL 꺼짐", en = "WoL off" },
+
+  -- #97: the same warning with the chosen adapter's name, used only while the
+  -- whole row still fits in `state.SUMMARY_MAX_CHARS`. The row is narrow and
+  -- truncates silently (platform notes, "화면 배치"), so a long adapter name
+  -- drops back to `wol_off_short` and the name is read in `pcInfo.message`.
+  wol_off_short_on = { ko = "WoL 꺼짐 (%s)", en = "WoL off (%s)" },
 
   -- #87: the `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0". The screen
   -- (profile) name left it: it answered a question only the author asks, and
