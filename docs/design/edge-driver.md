@@ -425,5 +425,5 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-v2`~`pc-v16` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다.
 2. **capability 이름 확정** — `pcPower` `pcRemote` `pcDefer` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
 3. **버전** — `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치를 검증한다).
-4. **채널** — 개발용 버전을 정리하고 초대 링크를 README/Wiki의 자리표시자에 기입한다.
+4. **채널** — 채널 이름은 `Protomothis`(id `53831a53-…`, 드라이버 id는 그대로). 개발용 버전을 정리하고 초대 링크를 README/Wiki의 자리표시자에 기입한다.
 5. **서비스** — v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서로 올린다.
