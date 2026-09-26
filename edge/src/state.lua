@@ -79,6 +79,13 @@ function state.new(power_state)
     -- last polled `schedule.active`, so `pcDefer.schedule` can say whether
     -- it replaced an existing schedule (§3.3) without asking the service twice
     schedule_active = false,
+    -- #93: and how long it still has to run, plus what it will run. A PC that
+    -- was switched off with a grace period looks exactly like a schedule a
+    -- minute away - it IS one, made by the service - and that minute is a power
+    -- transition the command list has to show as "in progress"
+    -- (`state.is_transitioning`).
+    schedule_seconds = 0,
+    schedule_command = nil,
   }
 end
 
@@ -89,6 +96,8 @@ local function copy(s)
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
     schedule_active = s.schedule_active or false,
+    schedule_seconds = s.schedule_seconds or 0,
+    schedule_command = s.schedule_command,
   }
 end
 
@@ -162,6 +171,10 @@ function state.transition(s, event, arg)
     end
   elseif event == "schedule_cancelled" then
     nxt.schedule_active = false
+    -- #93: and with it the grace period the command list was showing as "in
+    -- progress" - `is_transitioning` reads these two.
+    nxt.schedule_seconds = 0
+    nxt.schedule_command = nil
     -- §6.2: cancelling the grace period on the PC must bring the switch back on.
     if cur == state.SHUTTING_DOWN then
       nxt.power_state = state.ON
@@ -186,7 +199,7 @@ local function hhmm(iso)
 end
 
 --------------------------------------------------------------------------------
--- pcExec.lastAction (#82, #84, renamed #85)
+-- pcRemote.lastAction (#82, #84, renamed #85 and #93)
 --------------------------------------------------------------------------------
 
 -- The value the detail-view list rests on. #84: it is also a valid `execute`
@@ -195,13 +208,44 @@ end
 -- shows has to be harmless.
 state.ACTION_NONE = "none"
 
+-- #93: the values the list rests on WHILE the PC is in a power transition. The
+-- app has no disabled or loading row, so this is how close we get: the row says
+-- "종료 진행 중…" instead of "명령 선택…", and the driver refuses the commands
+-- that would pile up behind the one already running (init.lua `is_blocked`).
+-- Each one is an `execute` argument too, and just as harmless as `none` - the
+-- row is resting on it, so a dismissed list sends it back.
+state.ACTION_BUSY_OFF = "busyOff"
+state.ACTION_BUSY_RESTART = "busyRestart"
+state.ACTION_BUSY_WAKE = "busyWake"
+state.ACTION_BUSY_SLEEP = "busySleep"
+state.ACTION_BUSY_HIBERNATE = "busyHibernate"
+
+state.BUSY_ACTIONS = {
+  state.ACTION_BUSY_OFF, state.ACTION_BUSY_RESTART, state.ACTION_BUSY_WAKE,
+  state.ACTION_BUSY_SLEEP, state.ACTION_BUSY_HIBERNATE,
+}
+
+-- What the list offers, top to bottom (#82): service command names plus `wake`,
+-- which is the WoL sequence rather than a service command. `forceshutdown` is
+-- deliberately absent - an irreversible command stays in automations - and
+-- neither `none` nor the busy values are menu entries: they are what the row
+-- rests on. #93: this is also what `supportedCommands` carries when the PC is
+-- not going anywhere.
+state.EXECUTE_KEYS = {
+  "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
+  "turnscreenoff", "turnscreenon",
+}
+
 -- Every `lastAction` value. #84 made this the same set as the `execute`
 -- `command` enum - service command names (§3.3) plus `none` and `wake` - so
--- that whatever the row holds is an argument `execute` accepts.
--- capabilities_test.lua checks this against the enum in pcExec.json.
+-- that whatever the row holds is an argument `execute` accepts. #93 appends the
+-- five busy values for the same reason.
+-- capabilities_test.lua checks this against the enum in pcRemote.json, in this
+-- order.
 state.ACTIONS = {
   "none", "wake", "shutdown", "forceshutdown", "restart", "hibernate",
   "suspend", "lock", "turnscreenoff", "turnscreenon",
+  "busyOff", "busyRestart", "busyWake", "busySleep", "busyHibernate",
 }
 
 --- True when `value` is a `lastAction` enum value.
@@ -212,6 +256,142 @@ function state.is_action(value)
     end
   end
   return false
+end
+
+--- #93: true when `value` is one of the five "in progress" resting values.
+function state.is_busy_action(value)
+  for _, action in ipairs(state.BUSY_ACTIONS) do
+    if action == value then
+      return true
+    end
+  end
+  return false
+end
+
+--------------------------------------------------------------------------------
+-- #93: power transitions
+--------------------------------------------------------------------------------
+
+-- How long a pending schedule may still be the PC's own grace period.
+--
+-- `switch off` (and any `execute` in `default`/`grace` mode) is deferred by the
+-- service for the grace period it is configured with - 60 seconds by default -
+-- and that wait reaches the driver as an ORDINARY schedule: `executed: false`
+-- and a `schedule` block (§3.3). powerState is still `on`, because the PC is.
+-- So "the PC is on its way out" is only visible as a schedule about to fire,
+-- and the bound below is what separates it from the three-day schedule a user
+-- set on purpose - that one must keep the whole command list open.
+state.GRACE_SECONDS = 120
+
+-- The commands that take the PC away. A schedule running one of these is a
+-- transition; `lock` and the screen commands are not (and the service refuses
+-- to schedule them anyway).
+local STOPPING_COMMANDS = {
+  shutdown = true, forceshutdown = true, restart = true,
+  suspend = true, hibernate = true,
+}
+
+--- True when the last polled schedule is the PC's own grace period (see above).
+function state.is_grace(device_state)
+  device_state = device_state or {}
+  if device_state.schedule_active ~= true then
+    return false
+  end
+  local seconds = tonumber(device_state.schedule_seconds)
+  if not seconds or seconds > state.GRACE_SECONDS then
+    return false
+  end
+  return STOPPING_COMMANDS[tostring(device_state.schedule_command or "")] == true
+end
+
+--- #93: true while the PC is going away or coming up.
+--
+-- `shuttingDown` and `waking` are the two states of §6.2 that say "this will be
+-- over in a moment, and nothing else can usefully be asked for until it is".
+-- The grace period is the third shape of the same fact (see GRACE_SECONDS);
+-- a long schedule is NOT one - a PC that shuts down in three days is an
+-- ordinary, fully usable PC.
+function state.is_transitioning(device_state)
+  device_state = device_state or {}
+  local power = device_state.power_state
+  if power == state.SHUTTING_DOWN or power == state.WAKING then
+    return true
+  end
+  return state.is_grace(device_state)
+end
+
+-- The command that is under way -> the value the list rests on.
+local BUSY_FOR_COMMAND = {
+  restart = state.ACTION_BUSY_RESTART,
+  suspend = state.ACTION_BUSY_SLEEP,
+  hibernate = state.ACTION_BUSY_HIBERNATE,
+  shutdown = state.ACTION_BUSY_OFF,
+  forceshutdown = state.ACTION_BUSY_OFF,
+}
+
+--- #93: which busy value a transition shows.
+--
+-- `waking` is unambiguous. Going away, the wording comes from what is actually
+-- happening: the `reason` of the `power.stopping` push (the only source that
+-- knows sleep from hibernation, §3.5) first, then the command the pending grace
+-- period is going to run. Anything else - an `unknown` reason, a PC that went
+-- quiet on its own - reads as "종료 진행 중", which is what the user sees happen.
+function state.busy_action(device_state)
+  device_state = device_state or {}
+  if device_state.power_state == state.WAKING then
+    return state.ACTION_BUSY_WAKE
+  end
+  return BUSY_FOR_COMMAND[tostring(device_state.last_stopping_reason or "")]
+    or BUSY_FOR_COMMAND[tostring(device_state.schedule_command or "")]
+    or state.ACTION_BUSY_OFF
+end
+
+--- #93: the value `lastAction` rests on right now - `busyX` while the PC is in
+--- a transition, `none` the rest of the time.
+function state.resting_action(device_state)
+  if state.is_transitioning(device_state) then
+    return state.busy_action(device_state)
+  end
+  return state.ACTION_NONE
+end
+
+--- #93: `pcRemote.supportedCommands`, the experiment of the issue.
+--
+-- The detail-view list binds `supportedValues` to this attribute, so what is in
+-- here is what the menu offers. Normally that is the whole menu; during a
+-- transition it is the one busy value the row is resting on, which is not a
+-- menu entry at all - the hoped-for effect is a list with nothing to pick.
+-- Whether the app honours it is "실측 대기" (platform notes); the driver guard
+-- of init.lua is what actually enforces the rule either way.
+--
+-- NOT an empty array: the community reports that an empty `supportedValues`
+-- makes the app fall back to the full list rather than to none.
+function state.supported_commands(device_state)
+  if state.is_transitioning(device_state) then
+    return { state.busy_action(device_state) }
+  end
+  local out = {}
+  for i, key in ipairs(state.EXECUTE_KEYS) do
+    out[i] = key
+  end
+  return out
+end
+
+--- #93: remember what the last status body said about the pending schedule.
+--
+-- `schedule_active` has been here since #85 (so `schedule` can say it replaced
+-- something); the countdown and the command come with it now, because that is
+-- all the grace period ever shows up as. Mutates and returns `device_state`,
+-- which is the freshly copied one `transition` just handed back.
+function state.remember_schedule(device_state, status)
+  device_state = device_state or state.new()
+  local schedule = (status or {}).schedule or {}
+  local active = schedule.active == true
+  device_state.schedule_active = active
+  device_state.schedule_seconds = active
+    and math.floor(tonumber(schedule.remaining_seconds) or 0) or 0
+  device_state.schedule_command = active and schedule.command or nil
+  return device_state
 end
 
 --------------------------------------------------------------------------------
@@ -250,7 +430,7 @@ function state.plan_command_for(...)
   return state.PLAN_DEFAULT
 end
 
---- Format `pcExec.lastCommand` as "Shut down · SmartThings · 23:05" (§4).
+--- Format `pcRemote.lastCommand` as "Shut down · SmartThings · 23:05" (§4).
 --- #84: this is the row that says what ran; `lastAction` stays on `none`.
 --
 -- #86: a PC that has run nothing yet gets a sentence, not an empty string. The
@@ -368,7 +548,7 @@ end
 --- "None" when nothing is scheduled.
 --
 -- #87: the origin left the line. Who asked for the shutdown is in
--- `pcDefer.origin` and in `pcExec.lastCommand`; on the summary row it
+-- `pcDefer.origin` and in `pcRemote.lastCommand`; on the summary row it
 -- pushed the minutes - the one number the row exists for - off the end.
 --- #89: how far away a schedule is, in the largest unit that fits.
 --
@@ -524,7 +704,11 @@ end
 local ATTRIBUTES = {
   [state.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
-  [caps.COMMAND] = { lastCommand = true, lastAction = true },
+  -- #93: `supportedCommands` is derived from the power state rather than from
+  -- the body, exactly like `lastAction`'s resting value - but unlike it, it is
+  -- part of every `apply_status`, because the menu has to reopen by itself the
+  -- moment the transition ends.
+  [caps.COMMAND] = { lastCommand = true, lastAction = true, supportedCommands = true },
   [caps.SCHEDULE] = {
     active = true, status = true, command = true, remainingSeconds = true,
     executeAt = true, origin = true, summary = true, planCommand = true,
@@ -552,7 +736,7 @@ function state.attributes_used()
   return ATTRIBUTES
 end
 
---- #85: the resting value of every pcExec / pcDefer attribute that a
+--- #85: the resting value of every pcRemote / pcDefer attribute that a
 --- status body does not carry on its own (plus the `pcInfo.versions` row, which
 --- says something useful even before the first poll), for a device that has
 --- never been polled successfully.
@@ -572,6 +756,11 @@ function state.initial_rows(lang, service_version)
   local events = {}
   -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (platform notes "상세 화면(detailView) 위젯").
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
+  -- #93: a device that has never been polled is not transitioning, so its menu
+  -- is the whole menu. An attribute that was never emitted is the app's "not
+  -- all of the state has been reported", and a `supportedValues` that was never
+  -- emitted could take the list away entirely.
+  ev(events, caps.COMMAND, "supportedCommands", state.supported_commands(nil))
   ev(events, caps.SCHEDULE, "active", false)
   ev(events, caps.SCHEDULE, "status", state.IDLE)
   -- Never "": the cloud records an empty string as null (platform notes).
@@ -615,6 +804,10 @@ function state.apply_status(device_state, status, opts)
   ev(events, caps.POWER_STATE, "powerState", power)
 
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(status.last_command, lang))
+  -- #93: which entries of the command list are worth offering. `device_state`
+  -- already carries the pending schedule (`state.remember_schedule`, called by
+  -- the poll before this), so the grace period is visible here too.
+  ev(events, caps.COMMAND, "supportedCommands", state.supported_commands(device_state))
 
   local schedule = status.schedule or {}
   local active = schedule.active == true

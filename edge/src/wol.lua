@@ -157,6 +157,9 @@ function wol.wake(driver, device, deps)
     local nxt = devices.transition(st, "wake_timeout")
     devices.set_state(device, nxt)
     devices.emit_power(device, nxt)
+    -- #93: the wake is over, however it ended, so the command list stops saying
+    -- "켜는 중…" and opens again.
+    devices.ensure_action(device)
     devices.emit_message(device, i18n.t(lang, "wake_failed"))
   end, "wol-timeout")
   device:set_field("wake_timer", timer)

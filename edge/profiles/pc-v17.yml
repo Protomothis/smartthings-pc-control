@@ -1,20 +1,22 @@
-# Main device profile (design doc §4, §7).
+# Main device profile - what new devices are created with (design doc §4, §7).
+# `src/profiles.lua` is the single source of truth for the name; a device is
+# moved here from an older profile on its first `init`.
 #
-# v11 (#84): pcAction became pcRun (new definition -> new capability id, platform notes "허브의 정의 캐시").
-# Closing the command list without picking anything sends the row's CURRENT
-# value as the argument (measured on the phone 2026-09-22), so every value
-# `lastAction` can hold is now a valid `execute` argument, `none` included, and
-# `none` is the no-op the row rests on. The definition also gained
-# `planCommand` / `setPlanCommand`, so the user picks WHAT a schedule runs.
+# The capability ORDER below is the reading order on screen: the app collects
+# every state-only row into one card and every interactive row into a second
+# one, and follows this list inside each card. `pcVersion` is last so the
+# version row sits at the bottom. It is also a capability of its own because
+# two state rows of one capability are drawn side by side and truncated
+# (platform notes "화면 배치").
 #
-# The `numbersystem53811` namespace is the one SmartThings assigned to the owner
-# account (platform notes "capability id와 네임스페이스"). Keep it in sync with `NAMESPACE` in src/caps.lua -
-# tools/apply-namespace.js rewrites both.
+# The `numbersystem53811` namespace is the one SmartThings assigned to the
+# owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
+# with `NAMESPACE` in src/caps.lua - tools/apply-namespace.js rewrites both.
 #
 # Preference titles and descriptions are Korean first with the English term in
-# parentheses (#78): the SmartThings app shows profile preferences in whatever
-# the driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v11
+# parentheses: the SmartThings app shows profile preferences in whatever the
+# driver wrote, with no per-locale variant, and this project is Korean-first.
+name: pc.v17
 components:
   - id: main
     capabilities:
@@ -31,6 +33,8 @@ components:
       - id: numbersystem53811.pcuser
         version: 1
       - id: numbersystem53811.pcinfo
+        version: 1
+      - id: numbersystem53811.pcversion
         version: 1
     categories:
       - name: Others

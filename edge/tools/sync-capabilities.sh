@@ -31,9 +31,10 @@
 # is on it any more, `smartthings capabilities:delete <old id>`.
 #
 # Still to delete from the account after this driver version is deployed and
-# every device has been migrated to `pc.v16` (#91):
+# every device has been migrated to `pc.v17` (#91, #93):
 #
 #   smartthings capabilities:delete numbersystem53811.pcdelay
+#   smartthings capabilities:delete numbersystem53811.pcexec
 #
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
@@ -44,7 +45,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcExec pcDefer pcUser pcInfo pcVersion)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion)
 VERSION=1
 TAGS=(ko en)
 

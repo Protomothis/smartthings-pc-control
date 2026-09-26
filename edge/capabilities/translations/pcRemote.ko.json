@@ -35,9 +35,27 @@
           },
           "turnscreenon": {
             "label": "화면 켜기"
+          },
+          "busyOff": {
+            "label": "종료 진행 중…"
+          },
+          "busyRestart": {
+            "label": "재시작 진행 중…"
+          },
+          "busyWake": {
+            "label": "켜는 중…"
+          },
+          "busySleep": {
+            "label": "절전 진행 중…"
+          },
+          "busyHibernate": {
+            "label": "최대 절전 진행 중…"
           }
         }
       }
+    },
+    "supportedCommands": {
+      "label": "고를 수 있는 명령"
     },
     "lastCommand": {
       "label": "마지막 실행"

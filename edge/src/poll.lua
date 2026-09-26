@@ -16,7 +16,7 @@ poll.STATE_FIELD = "pc_state"
 poll.TIMER_FIELD = "poll_timer"
 poll.START_TIMER_FIELD = "poll_start_timer"
 poll.MAC_FIELD = "wol_mac"
--- #82: the last `pcExec.lastAction` value emitted for this device.
+-- #82: the last `pcRemote.lastAction` value emitted for this device.
 poll.ACTION_FIELD = "last_action"
 -- #84: the `pcDefer.planCommand` the user picked for the schedule row.
 poll.PLAN_FIELD = "plan_command"
@@ -39,7 +39,11 @@ poll.SERVICE_VERSION_FIELD = "service_version"
 -- string enum now, because the value a dismissed list sends skips the
 -- presentation's `argumentType` conversion), so the schedule card starts out
 -- unset again on every migrated device.
-poll.ROWS_VERSION = "91a"
+-- #93 bumps it once more: `pcExec` became `pcRemote` (five busy `lastAction`
+-- values and the new `supportedCommands` attribute), so the whole command card
+-- - the new `supportedValues` row included - starts out unset on every device
+-- this driver migrates.
+poll.ROWS_VERSION = "93a"
 poll.WOL_READY_FIELD = "wol_ready"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
@@ -166,17 +170,40 @@ function poll.emit(device, events)
 end
 
 --- Emit `switch` + `powerState` for a runtime state (§6.2).
-function poll.emit_power(device, s)
+-- #93: `force` for the emit that answers a `switch off` the driver refused to
+-- forward. The switch is derived from the power state and a PC that is already
+-- shutting down still reads "on", so without `state_change` the toggle the user
+-- just flipped would keep its spinner and then fail (platform notes
+-- "상세 화면(detailView) 위젯").
+function poll.emit_power(device, s, force)
   local power = (s or {}).power_state or state.UNKNOWN
   poll.emit(device, {
-    { cap = state.CAP_SWITCH, attr = "switch", value = state.switch_for(power) },
-    { cap = caps.POWER_STATE, attr = "powerState", value = power },
+    { cap = state.CAP_SWITCH, attr = "switch", value = state.switch_for(power),
+      force = force == true },
+    { cap = caps.POWER_STATE, attr = "powerState", value = power,
+      force = force == true },
   })
 end
 
 --- Emit only `pcInfo.message`.
 function poll.emit_message(device, message)
   poll.emit(device, { { cap = caps.STATUS, attr = "message", value = message or "" } })
+end
+
+--- #93: a one-off notice on both pcInfo rows, as the answer to a command the
+--- driver refused to forward ("종료 진행 중 · 끝난 뒤 다시 시도").
+--
+-- `message` is the sentence row and `summary` is the line the user is already
+-- looking at, so the notice goes on both - the point of it is to be seen at the
+-- moment the command does nothing. Forced, like every emit that answers a
+-- command (platform notes "상세 화면(detailView) 위젯"). Neither row is repainted
+-- here afterwards: the next poll (at most `pollInterval` away, and immediately
+-- after the transition ends) writes the normal wording back.
+function poll.emit_note(device, note)
+  poll.emit(device, {
+    { cap = caps.STATUS, attr = "message", value = note or "", force = true },
+    { cap = caps.STATUS, attr = "summary", value = note or "", force = true },
+  })
 end
 
 --- Emit `pcInfo.connection` + `pcInfo.message` + `pcInfo.summary` (#78).
@@ -236,7 +263,7 @@ function poll.remember_service_version(device, body)
   return true
 end
 
---- Emit `pcExec.lastAction` and remember it (#82, #84).
+--- Emit `pcRemote.lastAction` and remember it (#82, #84).
 --
 -- #84: the only value this is ever called with is `none`. Closing the detail
 -- view's command list without picking anything sends the row's CURRENT value
@@ -260,26 +287,46 @@ function poll.emit_action(device, action, force)
   return value
 end
 
+--- #93: the value the command list should be resting on right now.
+--
+-- `none` ("명령 선택…") normally, and one of the five `busyX` values while the
+-- PC is shutting down, going to sleep or coming up (state.is_transitioning).
+-- The app has no disabled row, so this is how the list says "in progress".
+function poll.resting_action(device)
+  return state.resting_action(poll.get_state(device))
+end
+
 --- #86: answer an `execute` on the row the app is watching.
 --
 -- The command list rests on `none` whatever is picked (#84), so the attribute
 -- it is bound to never changes and the app's spinner would run out into an
 -- error. A forced re-emit of the resting value ends it.
+-- #93: which resting value that is depends on the power state - a command that
+-- arrives mid-transition is answered with `busyX`, not with `none`.
 function poll.answer_action(device)
-  local seen
-  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
-  return poll.emit_action(device, seen, true)
+  return poll.emit_action(device, poll.resting_action(device), true)
 end
 
---- Paint `lastAction` as `none` on a device that has never been told one, so
---- the detail-view list reads "-" nowhere (#82). Does nothing afterwards.
+--- Keep `lastAction` on the value the row rests on (#82, #84, #93).
+--
+-- Originally: paint `none` once on a device that has never been told one, so
+-- the detail-view list reads "-" nowhere. Since #93 the resting value moves -
+-- `none` while the PC is idle, `busyX` while it is in a transition - so this
+-- runs on every poll instead of only on the first one. A value that changed
+-- goes out as an ordinary update; one that did not is forced, because the
+-- platform drops an unchanged event and the row has to keep saying "in
+-- progress" for as long as the transition lasts.
+-- Returns true when something was emitted.
 function poll.ensure_action(device)
   local seen
   pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
-  if type(seen) == "string" and seen ~= "" then
+  local resting = poll.resting_action(device)
+  if seen == resting and resting == state.ACTION_NONE then
+    -- The quiet case, which is nearly every poll: the row already rests on
+    -- `none` and nothing is waiting for an answer.
     return false
   end
-  poll.emit_action(device, state.ACTION_NONE)
+  poll.emit_action(device, resting, seen == resting)
   return true
 end
 
@@ -340,7 +387,7 @@ function poll.ensure_plan_command(device)
   return true
 end
 
---- #85: paint every pcExec and pcDefer attribute once, so no row of either
+--- #85: paint every pcRemote and pcDefer attribute once, so no row of either
 --- card reads "-" and the app stops saying the device has not reported all of
 --- its state.
 --
@@ -382,9 +429,9 @@ end
 --- the cloud starts the new profile with empty states, and the hub would
 --- otherwise drop the re-emit of values it considers unchanged.
 function poll.repaint(device)
-  local seen
-  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
-  poll.emit_action(device, seen, true)
+  -- #93: the resting value, not the remembered one - a repaint in the middle of
+  -- a transition has to leave the row saying "in progress".
+  poll.emit_action(device, poll.resting_action(device), true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
   -- #92: a repaint of a device that has answered before keeps its version on
   -- the row; only one that never answered falls back to "v?".
@@ -470,7 +517,11 @@ function poll.once(driver, device, opts)
 
   if ok then
     local nxt = state.transition(current, "status_ok")
-    nxt.schedule_active = ((body or {}).schedule or {}).active == true
+    -- #93: `active` plus the countdown and the command, because the PC's own
+    -- grace period reaches the driver as nothing but a schedule about to fire
+    -- (state.GRACE_SECONDS). Before `apply_status`, which reads it back out for
+    -- `supportedCommands`.
+    state.remember_schedule(nxt, body)
     poll.set_state(device, nxt)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"
@@ -545,6 +596,11 @@ function poll.once(driver, device, opts)
   end
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
+  -- #93: a PC that is waking, or one that has already gone, answers nothing -
+  -- so this is the path the command list's resting value has to be kept on
+  -- while a transition is running, and the one that hands it back to `none`
+  -- when `waking` gives up and becomes `off`.
+  poll.ensure_action(device)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
   return false, kind
 end

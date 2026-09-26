@@ -35,9 +35,27 @@
           },
           "turnscreenon": {
             "label": "Screen on"
+          },
+          "busyOff": {
+            "label": "Shutting down…"
+          },
+          "busyRestart": {
+            "label": "Restarting…"
+          },
+          "busyWake": {
+            "label": "Waking…"
+          },
+          "busySleep": {
+            "label": "Going to sleep…"
+          },
+          "busyHibernate": {
+            "label": "Hibernating…"
           }
         }
       }
+    },
+    "supportedCommands": {
+      "label": "Available commands"
     },
     "lastCommand": {
       "label": "Last run"
