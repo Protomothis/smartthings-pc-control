@@ -17,7 +17,7 @@ components:
         version: 1
       - id: numbersystem53811.pcpower
         version: 1
-      - id: numbersystem53811.pcexec
+      - id: numbersystem53811.pcremote
         version: 1
       - id: numbersystem53811.pcdefer
         version: 1

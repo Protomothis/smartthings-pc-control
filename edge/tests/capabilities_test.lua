@@ -400,11 +400,26 @@ local REMOTE_BUTTONS = {
 -- (§3.3), because that is what `execute(command)` takes; `wake` is the WoL
 -- sequence and `forceshutdown` is deliberately absent — an irreversible
 -- command stays in automations only. #84 keeps the menu as it was: `none` is
--- in the enum so a dismissed picker is valid, not so it can be picked.
+-- in the enum so a dismissed picker is valid, not so it can be picked. #93 adds
+-- the five busy values for the same reason and keeps them off the menu too.
 local ACTION_LIST = {
   "wake", "suspend", "hibernate", "restart", "shutdown", "lock",
   "turnscreenoff", "turnscreenon",
 }
+
+-- #93: the whole `lastAction` / `execute(command)` vocabulary, in the order the
+-- definition declares it — the no-op the row rests on when nothing is
+-- happening, the eight commands plus `forceshutdown`, and the five values the
+-- row rests on while the PC is in a power transition.
+local ACTION_ENUM = {
+  "none", "wake", "shutdown", "forceshutdown", "restart", "hibernate",
+  "suspend", "lock", "turnscreenoff", "turnscreenon",
+  "busyOff", "busyRestart", "busyWake", "busySleep", "busyHibernate",
+}
+
+-- #93: and the five on their own, which is what `supportedCommands` restricts
+-- the menu to while a transition is running.
+local BUSY_LIST = { "busyOff", "busyRestart", "busyWake", "busySleep", "busyHibernate" }
 
 -- #84: what the "command to schedule" row offers, and the `planCommand` enum.
 local PLAN_LIST = { "shutdown", "restart", "suspend", "hibernate" }
@@ -489,11 +504,17 @@ function T.test_command_enums_match_the_service()
   for _, name in ipairs(execute) do
     seen[name] = true
   end
-  for _, name in ipairs({ "none", "wake", "shutdown", "forceshutdown", "restart",
-      "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
-    h.assert_true(seen[name] == true, "pcExec.execute is missing " .. name)
+  for _, name in ipairs(ACTION_ENUM) do
+    h.assert_true(seen[name] == true, "pcRemote.execute is missing " .. name)
   end
-  h.assert_equal(#execute, 10)
+  h.assert_equal(#execute, #ACTION_ENUM)
+  h.assert_deep_equal(execute, ACTION_ENUM, "the execute vocabulary, in order")
+  -- #93: the five busy values are arguments, so a dismissed list that was left
+  -- on one of them is valid - but they are not menu entries.
+  for _, name in ipairs(BUSY_LIST) do
+    h.assert_true(seen[name] == true, "the busy resting value " .. name
+      .. " is not an execute argument, so a dismissed list would fail (#93)")
+  end
   for _, name in ipairs(ACTION_LIST) do
     h.assert_true(seen[name] == true,
       "the detail-view list offers " .. name .. ", which execute does not accept")
@@ -763,6 +784,62 @@ function T.test_the_action_detail_view_is_the_list_and_the_last_run()
   h.assert_equal(detail[2].displayType, "state")
   h.assert_equal(detail[2].label, "{{i18n.attributes.lastCommand.label}}")
   h.assert_contains(detail[2].state.label, "lastCommand.value")
+end
+
+function T.test_the_busy_values_are_resting_values_and_not_menu_entries()
+  -- #93: the app has no disabled or loading row, so the list says "진행 중…" by
+  -- resting on a value of its own. That value has to be (a) something the row
+  -- can show, (b) something `execute` accepts - a dismissed list sends it back
+  -- - and (c) NOT something the user can pick, or the menu would offer five
+  -- entries that do nothing.
+  local item = presentation("command").detailView[1]
+  local commands, states = list_keys(item)
+  for _, busy in ipairs(BUSY_LIST) do
+    local on_menu, on_row = false, false
+    for _, key in ipairs(commands) do
+      on_menu = on_menu or key == busy
+    end
+    for _, key in ipairs(states) do
+      on_row = on_row or key == busy
+    end
+    h.assert_false(on_menu, busy .. " is a menu entry, but it does nothing (#93)")
+    h.assert_true(on_row, busy .. " is missing from the row's alternatives (#93)")
+  end
+  h.assert_deep_equal(state.BUSY_ACTIONS, BUSY_LIST, "state.BUSY_ACTIONS")
+  h.assert_deep_equal(commands, state.EXECUTE_KEYS,
+    "the menu and state.EXECUTE_KEYS are the same list (#93)")
+end
+
+function T.test_the_command_list_reads_its_menu_from_supported_commands()
+  -- #93, the experiment: `supportedValues` names a string-array attribute the
+  -- driver fills with the keys the menu should offer. While the PC is in a
+  -- transition that is the one busy value the row rests on - which is not a
+  -- menu entry - so the hope is a list with nothing to pick. Whether the phone
+  -- honours it is 실측 대기 (platform notes); the driver guard of init.lua is
+  -- what enforces the rule either way.
+  local item = presentation("command").detailView[1]
+  h.assert_equal(item.list.command.supportedValues, "supportedCommands.value")
+
+  local spec = definition("command").attributes.supportedCommands
+  h.assert_true(spec ~= nil, "pcRemote must define supportedCommands (#93)")
+  local value = spec.schema.properties.value
+  h.assert_equal(value.type, "array")
+  h.assert_equal((value.items or {}).type, "string")
+  h.assert_true(state.attributes_used()[caps.ids.command].supportedCommands == true,
+    "the driver has to emit supportedCommands, or the list has no menu at all")
+end
+
+function T.test_the_automation_action_is_left_alone()
+  -- #93: `supportedValues` is a detail-view experiment. A routine is written
+  -- once and runs later, so restricting its picker to whatever the PC happens
+  -- to be doing right now would be wrong even if it worked.
+  for i, action in ipairs((presentation("command").automation or {}).actions or {}) do
+    for _, argument in ipairs((action.multiArgCommand or {}).arguments or {}) do
+      h.assert_nil((argument.list or {}).supportedValues, string.format(
+        "command automation.actions[%d] %s restricts its picker (#93)",
+        i, tostring(argument.name)))
+    end
+  end
 end
 
 -- #84, measured on the phone (2026-09-22): closing a detailView `list` without

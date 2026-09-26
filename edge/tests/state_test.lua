@@ -64,6 +64,10 @@ local function golden(lang)
     { cap = caps.POWER_STATE, attr = "powerState", value = "on" },
     { cap = caps.COMMAND, attr = "lastCommand",
       value = en and "Shut down · SmartThings · 23:05" or "종료 · SmartThings · 23:05" },
+    -- #93: which entries the command list is allowed to offer. The sample PC is
+    -- on and its schedule is four minutes away, so that is the whole menu; a PC
+    -- in a transition gets the one busy value instead (see the tests below).
+    { cap = caps.COMMAND, attr = "supportedCommands", value = state.EXECUTE_KEYS },
     { cap = caps.SCHEDULE, attr = "active", value = true },
     -- #83: the same fact as an enum, because a list cannot read a boolean.
     { cap = caps.SCHEDULE, attr = "status", value = "scheduled" },
@@ -332,6 +336,9 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
   local events = state.initial_rows("ko")
   for _, case in ipairs({
     { caps.COMMAND, "lastCommand" },
+    -- #93: the menu the list reads through `supportedValues`. A device that has
+    -- never been polled is not transitioning, so it gets the whole menu.
+    { caps.COMMAND, "supportedCommands" },
     { caps.SCHEDULE, "active" }, { caps.SCHEDULE, "status" },
     { caps.SCHEDULE, "command" }, { caps.SCHEDULE, "remainingSeconds" },
     { caps.SCHEDULE, "executeAt" }, { caps.SCHEDULE, "origin" },
@@ -346,6 +353,8 @@ function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
   h.assert_equal(h.event_value(events, caps.VERSION, "versions"), state.versions(nil, "ko"))
   -- #86: and no painted row is an empty string - that is drawn as "-" too.
   h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "없음 (None)")
+  h.assert_deep_equal(h.event_value(events, caps.COMMAND, "supportedCommands"),
+    state.EXECUTE_KEYS)
 end
 
 function T.test_the_initial_rows_keep_a_remembered_service_version()
@@ -443,7 +452,7 @@ function T.test_a_quiet_status_has_no_notice_at_all()
 end
 
 --------------------------------------------------------------------------------
--- pcExec.lastAction (#82, #84)
+-- pcRemote.lastAction (#82, #84, #93)
 --------------------------------------------------------------------------------
 
 function T.test_the_action_values_are_the_service_command_names()
@@ -454,8 +463,16 @@ function T.test_the_action_values_are_the_service_command_names()
       "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon" }) do
     h.assert_true(state.is_action(value), value .. " is not a lastAction value")
   end
-  h.assert_equal(#state.ACTIONS, 10)
+  -- #93: plus the five the row rests on during a transition, which are
+  -- arguments for exactly the same reason.
+  for _, value in ipairs(state.BUSY_ACTIONS) do
+    h.assert_true(state.is_action(value), value .. " is not a lastAction value")
+    h.assert_true(state.is_busy_action(value))
+  end
+  h.assert_equal(#state.ACTIONS, 15)
   h.assert_equal(state.ACTION_NONE, "none")
+  h.assert_false(state.is_busy_action(state.ACTION_NONE),
+    "`none` is the idle resting value, not a busy one")
   h.assert_nil(state.action_for, "#84 removed the service-command mapping")
 end
 
@@ -466,6 +483,227 @@ function T.test_is_action_rejects_anything_outside_the_enum()
   end
   h.assert_false(state.is_action(nil))
   h.assert_false(state.is_action(42))
+  for _, bogus in ipairs({ "busy", "busyoff", "busyLock" }) do
+    h.assert_false(state.is_action(bogus), tostring(bogus) .. " must not pass")
+    h.assert_false(state.is_busy_action(bogus))
+  end
+end
+
+--------------------------------------------------------------------------------
+-- #93: power transitions
+--------------------------------------------------------------------------------
+
+--- A device state with a pending schedule on it, and optionally the PC's own
+--- grace period (`grace.seconds`, §3.2). Without one, `grace_limit` falls back
+--- to `state.GRACE_SECONDS` - which is what a service too old to send it gets.
+local function scheduled(power, command, seconds, grace)
+  local s = state.new(power)
+  s.schedule_active = true
+  s.schedule_command = command
+  s.schedule_seconds = seconds
+  s.grace_seconds = grace
+  return s
+end
+
+function T.test_shutting_down_and_waking_are_transitions()
+  -- The two states of §6.2 that mean "this is over in a moment, and nothing
+  -- else can usefully be asked for until it is".
+  h.assert_true(state.is_transitioning(state.new(state.SHUTTING_DOWN)))
+  h.assert_true(state.is_transitioning(state.new(state.WAKING)))
+  for _, power in ipairs({ state.ON, state.OFF, state.SLEEPING,
+      state.HIBERNATED, state.UNKNOWN }) do
+    h.assert_false(state.is_transitioning(state.new(power)),
+      power .. " is a settled state, not a transition")
+  end
+  h.assert_false(state.is_transitioning(nil))
+  h.assert_false(state.is_transitioning({}))
+end
+
+function T.test_the_grace_period_is_a_transition_and_a_long_schedule_is_not()
+  -- §3.3: a `switch off` that follows the PC's grace period is not executed at
+  -- all - the service turns it into a schedule and answers `executed: false`.
+  -- powerState is still `on`, because the PC is, so that minute is only ever
+  -- visible as a schedule about to fire.
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60, 60)),
+    "the 60 s grace after a switch off is a transition (#93)")
+  h.assert_true(state.is_grace(scheduled(state.ON, "restart", 0, 60)))
+  h.assert_true(state.is_grace(scheduled(state.ON, "suspend", 60, 60)),
+    "a schedule exactly at the grace length is that grace")
+
+  -- ... and a schedule the user set on purpose is not. A PC that shuts down in
+  -- three days is an ordinary, fully usable PC.
+  for _, seconds in ipairs({ 61, 240, 1800, 259200 }) do
+    h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", seconds, 60)),
+      seconds .. " s away on a 60 s grace is a schedule, not a transition (#93)")
+  end
+  -- Nor is a schedule that does not take the PC away, or none at all.
+  h.assert_false(state.is_grace(scheduled(state.ON, "lock", 30, 60)))
+  local inactive = scheduled(state.ON, "shutdown", 30, 60)
+  inactive.schedule_active = false
+  h.assert_false(state.is_grace(inactive))
+  h.assert_false(state.is_grace(state.new(state.ON)))
+end
+
+function T.test_the_bound_is_the_pcs_own_grace_period()
+  -- The service says how long its grace is (`grace.seconds`, §3.2, up to 30
+  -- minutes), so the driver does not guess. The same four minutes is the tail
+  -- of a five-minute grace on one PC and a schedule somebody set on another.
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 300)),
+    "four minutes left of a 300 s grace IS the PC leaving (#93)")
+  h.assert_false(state.is_transitioning(scheduled(state.ON, "shutdown", 240, 60)),
+    "four minutes on a 60 s grace is a schedule, not the PC leaving (#93)")
+  -- The ceiling the service allows, and one second past it.
+  h.assert_true(state.is_grace(scheduled(state.ON, "shutdown", 1800, 1800)))
+  h.assert_false(state.is_grace(scheduled(state.ON, "shutdown", 1801, 1800)))
+
+  -- A service too old to send the block falls back to the fixed bound, which
+  -- covers the 60 s default with room to spare.
+  h.assert_equal(state.grace_limit(nil), state.GRACE_SECONDS)
+  h.assert_equal(state.grace_limit(state.new(state.ON)), state.GRACE_SECONDS)
+  h.assert_true(state.is_transitioning(scheduled(state.ON, "shutdown", 60)),
+    "without a grace block the fallback still catches the default grace")
+  h.assert_false(state.is_transitioning(
+    scheduled(state.ON, "shutdown", state.GRACE_SECONDS + 1)))
+  -- Nonsense in the block is the same as no block.
+  for _, bogus in ipairs({ 0, -1, "later" }) do
+    h.assert_equal(state.grace_limit({ grace_seconds = bogus }), state.GRACE_SECONDS,
+      "grace.seconds = " .. tostring(bogus))
+  end
+  h.assert_equal(state.grace_limit({ grace_seconds = "300" }), 300,
+    "a number that arrived as a string is still a number")
+end
+
+function T.test_the_busy_value_says_what_is_happening()
+  -- `waking` is unambiguous; going away, the wording comes from the reason of
+  -- the `power.stopping` push, which is the only source that knows sleep from
+  -- hibernation (§3.5).
+  h.assert_equal(state.busy_action(state.new(state.WAKING)), state.ACTION_BUSY_WAKE)
+  local cases = {
+    shutdown = state.ACTION_BUSY_OFF,
+    forceshutdown = state.ACTION_BUSY_OFF,
+    restart = state.ACTION_BUSY_RESTART,
+    suspend = state.ACTION_BUSY_SLEEP,
+    hibernate = state.ACTION_BUSY_HIBERNATE,
+  }
+  for reason, expected in pairs(cases) do
+    local s = state.transition(state.new(state.ON), "stopping", reason)
+    h.assert_equal(state.busy_action(s), expected, "stopping(" .. reason .. ")")
+  end
+  -- An `unknown` reason, or a PC that went quiet on its own, reads as "종료
+  -- 진행 중" - which is what the user sees happen.
+  h.assert_equal(state.busy_action(state.transition(state.new(state.ON), "stopping", "unknown")),
+    state.ACTION_BUSY_OFF)
+  h.assert_equal(state.busy_action(state.new(state.SHUTTING_DOWN)), state.ACTION_BUSY_OFF)
+
+  -- The grace period has no reason yet, so the pending command is the word.
+  for command, expected in pairs(cases) do
+    h.assert_equal(state.busy_action(scheduled(state.ON, command, 60)), expected,
+      "the grace period running " .. command)
+  end
+
+  -- `waking` wins over a stopping reason left over from before the wake.
+  local waking = state.transition(state.transition(state.new(state.ON), "stopping", "suspend"),
+    "switch_on")
+  h.assert_equal(waking.power_state, state.WAKING)
+  h.assert_equal(state.busy_action(waking), state.ACTION_BUSY_WAKE)
+end
+
+function T.test_the_resting_action_is_none_unless_something_is_happening()
+  h.assert_equal(state.resting_action(state.new(state.ON)), state.ACTION_NONE)
+  h.assert_equal(state.resting_action(nil), state.ACTION_NONE)
+  h.assert_equal(state.resting_action(state.new(state.SHUTTING_DOWN)), state.ACTION_BUSY_OFF)
+  h.assert_equal(state.resting_action(state.new(state.WAKING)), state.ACTION_BUSY_WAKE)
+  h.assert_equal(state.resting_action(scheduled(state.ON, "hibernate", 45)),
+    state.ACTION_BUSY_HIBERNATE)
+  -- ... and back to `none` the moment the transition ends.
+  h.assert_equal(state.resting_action(state.transition(state.new(state.SHUTTING_DOWN), "status_ok")),
+    state.ACTION_NONE)
+end
+
+function T.test_supported_commands_is_the_menu_or_the_one_busy_value()
+  -- #93, the experiment: the detail-view list reads its menu from this
+  -- attribute. Idle, it is the whole menu; mid-transition it is the one busy
+  -- value the row rests on, which is not a menu entry at all.
+  h.assert_deep_equal(state.supported_commands(state.new(state.ON)), state.EXECUTE_KEYS)
+  h.assert_deep_equal(state.supported_commands(nil), state.EXECUTE_KEYS)
+  h.assert_deep_equal(state.supported_commands(state.new(state.SHUTTING_DOWN)),
+    { state.ACTION_BUSY_OFF })
+  h.assert_deep_equal(state.supported_commands(state.new(state.WAKING)),
+    { state.ACTION_BUSY_WAKE })
+  h.assert_deep_equal(state.supported_commands(scheduled(state.ON, "restart", 60)),
+    { state.ACTION_BUSY_RESTART })
+  -- Never empty: an empty `supportedValues` is reported to make the app fall
+  -- back to the full list rather than to none.
+  for _, s in ipairs({ state.new(state.ON), state.new(state.WAKING) }) do
+    h.assert_true(#state.supported_commands(s) > 0, "supportedCommands is empty")
+  end
+  -- A copy, so a caller cannot edit the constant out from under the next one.
+  local list = state.supported_commands(state.new(state.ON))
+  list[1] = "nonsense"
+  h.assert_deep_equal(state.supported_commands(state.new(state.ON)), state.EXECUTE_KEYS)
+end
+
+function T.test_apply_status_restricts_the_menu_during_a_transition()
+  local shutting = state.new(state.SHUTTING_DOWN)
+  local events = state.apply_status(shutting, sample_status(), { now = NOW, lang = "en" })
+  h.assert_deep_equal(h.event_value(events, caps.COMMAND, "supportedCommands"),
+    { state.ACTION_BUSY_OFF })
+  -- ... and hands the whole menu back when the PC is up again.
+  h.assert_deep_equal(
+    h.event_value(events_for(sample_status()), caps.COMMAND, "supportedCommands"),
+    state.EXECUTE_KEYS)
+end
+
+function T.test_remember_schedule_carries_the_countdown_the_command_and_the_grace()
+  -- #93: `schedule_active` alone cannot tell the grace period from a schedule
+  -- three days out, so the poll remembers all four.
+  local s = state.remember_schedule(state.new(state.ON), sample_status())
+  h.assert_true(s.schedule_active)
+  h.assert_equal(s.schedule_seconds, 240)
+  h.assert_equal(s.schedule_command, "shutdown")
+  -- The §3.2 sample PC has a five-minute grace, so its four-minutes-left
+  -- shutdown is that grace running, not something anyone typed in.
+  h.assert_equal(s.grace_seconds, 300)
+  h.assert_true(state.is_transitioning(s),
+    "four minutes left of a 300 s grace is the PC leaving (#93)")
+
+  -- The same body on a PC with the default grace is an ordinary schedule.
+  local short = sample_status()
+  short.grace = { enabled = true, seconds = 60 }
+  h.assert_false(state.is_transitioning(state.remember_schedule(state.new(state.ON), short)))
+
+  -- An inactive schedule leaves nothing behind for `is_grace` to read.
+  local cleared = state.remember_schedule(s, { schedule = { active = false, command = "shutdown" } })
+  h.assert_false(cleared.schedule_active)
+  h.assert_equal(cleared.schedule_seconds, 0)
+  h.assert_nil(cleared.schedule_command)
+  h.assert_false(state.is_transitioning(cleared))
+  h.assert_equal(cleared.grace_seconds, 300,
+    "a body without a grace block must not cost us the number we know")
+
+  -- And so does a body with no schedule block at all.
+  local empty = state.remember_schedule(state.new(state.ON), {})
+  h.assert_false(empty.schedule_active)
+  h.assert_equal(empty.schedule_seconds, 0)
+  h.assert_nil(empty.grace_seconds, "nothing was ever learned, so nothing is remembered")
+
+  -- The grace survives the state machine, which has no status body to re-read.
+  local stopping = state.transition(s, "stopping", "shutdown")
+  h.assert_equal(stopping.grace_seconds, 300)
+end
+
+function T.test_cancelling_a_schedule_ends_the_transition()
+  -- §6.2 already brings the switch back on; #93 needs the grace period to stop
+  -- reading as a transition as well, or the command list would stay "in
+  -- progress" until the next poll.
+  local grace = scheduled(state.SHUTTING_DOWN, "shutdown", 30)
+  h.assert_true(state.is_transitioning(grace))
+  local cancelled = state.transition(grace, "schedule_cancelled")
+  h.assert_equal(cancelled.power_state, state.ON)
+  h.assert_false(cancelled.schedule_active)
+  h.assert_equal(cancelled.schedule_seconds, 0)
+  h.assert_nil(cancelled.schedule_command)
+  h.assert_false(state.is_transitioning(cancelled))
 end
 
 --------------------------------------------------------------------------------
@@ -559,7 +797,7 @@ function T.test_remaining_text_is_the_unit_ladder_on_its_own()
 end
 
 function T.test_schedule_summary_drops_the_origin()
-  -- #87: who asked is in `pcDefer.origin` and `pcExec.lastCommand`; on the
+  -- #87: who asked is in `pcDefer.origin` and `pcRemote.lastCommand`; on the
   -- summary row it pushed the minutes off the end of the line.
   for _, origin in ipairs({ "smartthings", "ui", "telegram", "remote" }) do
     local summary = state.schedule_summary({

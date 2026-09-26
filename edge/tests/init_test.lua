@@ -157,7 +157,11 @@ function T.test_every_no_argument_command_sends_its_service_command()
 end
 
 function T.test_no_command_ever_paints_an_action()
-  -- The invariant #84 rests on, over every path that used to flash a value.
+  -- The invariant #84 rests on, over every path that used to flash a value: the
+  -- row never shows what was just run - `lastCommand` does that - it only ever
+  -- shows what it is resting on. #93 gave it a second resting value for the
+  -- time a transition is running, so `wake` and `switch on` leave it on
+  -- `busyWake`; neither is the command that ran.
   local handlers = handlers_for(caps.COMMAND)
   local cases = {
     function(device) handlers.lock(driver, device, { command = "lock", args = {} }) end,
@@ -181,8 +185,9 @@ function T.test_no_command_ever_paints_an_action()
     driver.timers = {}
     with_service(nil, function() run(device) end)
     for _, value in ipairs(all_actions(device)) do
-      h.assert_equal(value, state.ACTION_NONE,
-        string.format("case %d emitted lastAction = %s", i, tostring(value)))
+      h.assert_true(value == state.ACTION_NONE or state.is_busy_action(value),
+        string.format("case %d emitted lastAction = %s, which is neither resting "
+          .. "value (#84, #93)", i, tostring(value)))
     end
     for _, timer in ipairs(driver.timers) do
       h.assert_true(timer.name ~= "action-reset",
@@ -657,6 +662,323 @@ function T.test_schedule_and_cancel_answer_the_rows_the_list_is_bound_to()
         name .. " does not answer the " .. attr .. " row (#86)")
     end
   end
+end
+
+--------------------------------------------------------------------------------
+-- #93: nothing else goes out while the PC is in a power transition
+--------------------------------------------------------------------------------
+
+local i18n = require "i18n"
+
+--- A device sitting in `power` (and, with `schedule`, in the PC's own grace
+--- period - which is all a `switch off` with a grace really is).
+local function busy_device(power, schedule)
+  local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
+  local s = state.new(power)
+  if schedule then
+    s.schedule_active = true
+    s.schedule_command = schedule.command
+    s.schedule_seconds = schedule.seconds
+    -- The PC's own grace period (§3.2). Left out, `state.grace_limit` falls
+    -- back to `state.GRACE_SECONDS` for a service too old to send one.
+    s.grace_seconds = schedule.grace
+  end
+  poll.set_state(device, s)
+  return device
+end
+
+--- The last `pcInfo.message` / `pcInfo.summary` a device was told.
+local function note_of(device)
+  local emitted = h.emitted(device)
+  return h.event_value(emitted, caps.STATUS, "message"),
+    h.event_value(emitted, caps.STATUS, "summary")
+end
+
+-- Every command the guard holds back, and the row each one has to answer.
+local BLOCKED = {
+  ['execute("shutdown")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "shutdown" } })
+  end,
+  ['execute("restart")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "restart" } })
+  end,
+  ['execute("suspend")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "suspend" } })
+  end,
+  ['execute("forceshutdown")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "forceshutdown", mode = "immediate" } })
+  end,
+  -- The PC is leaving or not up yet, so it cannot lock or drive its screen
+  -- either - these are held back for the same reason, not as power commands.
+  ['execute("lock")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "lock" } })
+  end,
+  ['execute("turnscreenoff")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "turnscreenoff" } })
+  end,
+  ['execute("turnscreenon")'] = function(device)
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "turnscreenon" } })
+  end,
+  -- The no-argument commands an older profile's buttons and a scene still send.
+  ["shutdown()"] = function(device)
+    handlers_for(caps.COMMAND).shutdown(driver, device, { command = "shutdown", args = {} })
+  end,
+  ["lock()"] = function(device)
+    handlers_for(caps.COMMAND).lock(driver, device, { command = "lock", args = {} })
+  end,
+  ["switch off"] = function(device)
+    handlers_for("switch").off(driver, device, { command = "off", args = {} })
+  end,
+  ["schedule(30)"] = function(device)
+    handlers_for(caps.SCHEDULE).schedule(driver, device,
+      { command = "schedule", args = { minutes = "30" } })
+  end,
+  ["setPlanCommand(restart)"] = function(device)
+    handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
+      { command = "setPlanCommand", args = { command = "restart" } })
+  end,
+}
+
+function T.test_nothing_reaches_the_service_while_the_pc_is_shutting_down()
+  for name, run in pairs(BLOCKED) do
+    local device = busy_device(state.SHUTTING_DOWN)
+    local calls = with_service(nil, function() run(device) end)
+    h.assert_equal(#calls.commands, 0, name .. " reached the service mid-shutdown (#93)")
+    h.assert_equal(calls.cancels, 0, name .. " cancelled something")
+    h.assert_equal(calls.wakes, 0, name .. " woke the PC")
+    h.assert_equal(calls.polls, 0, name .. " polled instead of answering")
+
+    -- ... and the user is told why, on both status rows, until the next poll.
+    local message, summary = note_of(device)
+    local expected = i18n.busy(nil, state.ACTION_BUSY_OFF)
+    h.assert_equal(message, expected, name .. " left no note in pcInfo.message")
+    h.assert_equal(summary, expected, name .. " left no note in pcInfo.summary")
+  end
+end
+
+function T.test_nothing_reaches_the_service_while_the_pc_is_waking()
+  for name, run in pairs(BLOCKED) do
+    local device = busy_device(state.WAKING)
+    local calls = with_service(nil, function() run(device) end)
+    h.assert_equal(#calls.commands, 0, name .. " reached the service while waking (#93)")
+    h.assert_equal(calls.cancels, 0)
+    h.assert_equal(calls.polls, 0)
+    h.assert_equal(select(2, note_of(device)), i18n.busy(nil, state.ACTION_BUSY_WAKE), name)
+  end
+end
+
+function T.test_nothing_reaches_the_service_during_the_grace_period()
+  -- §3.3: a `switch off` that follows the PC's grace is not executed - it comes
+  -- back as a schedule a minute away, with powerState still `on`. That minute
+  -- is a transition too (state.GRACE_SECONDS).
+  for name, run in pairs(BLOCKED) do
+    local device = busy_device(state.ON, { command = "restart", seconds = 60 })
+    local calls = with_service(nil, function() run(device) end)
+    h.assert_equal(#calls.commands, 0, name .. " reached the service mid-grace (#93)")
+    h.assert_equal(calls.cancels, 0)
+    h.assert_equal(select(1, note_of(device)), i18n.busy(nil, state.ACTION_BUSY_RESTART), name)
+  end
+end
+
+function T.test_a_long_schedule_blocks_nothing()
+  -- The other half of the rule: a PC that shuts down in three days is an
+  -- ordinary, fully usable PC.
+  local device = busy_device(state.ON, { command = "shutdown", seconds = 259200, grace = 60 })
+  local calls = with_service(nil, function()
+    handlers_for(caps.COMMAND).execute(driver, device,
+      { command = "execute", args = { command = "lock" } })
+  end)
+  h.assert_equal(#calls.commands, 1, "a three-day schedule must not block a command (#93)")
+  h.assert_equal(calls.commands[1].command, "lock")
+end
+
+function T.test_the_same_four_minutes_blocks_on_one_pc_and_not_on_another()
+  -- The bound is the PC's own `grace.seconds` (§3.2), so an identical schedule
+  -- means two different things on two differently configured PCs.
+  local function locks(grace)
+    local device = busy_device(state.ON,
+      { command = "shutdown", seconds = 240, grace = grace })
+    local calls = with_service(nil, function()
+      handlers_for(caps.COMMAND).execute(driver, device,
+        { command = "execute", args = { command = "lock" } })
+    end)
+    return #calls.commands
+  end
+  h.assert_equal(locks(300), 0,
+    "four minutes left of a five-minute grace is the PC leaving (#93)")
+  h.assert_equal(locks(60), 1,
+    "four minutes on a one-minute grace is a schedule the user set (#93)")
+end
+
+function T.test_the_grace_length_is_learned_from_the_status_body()
+  -- End to end through the poll's own glue: `remember_schedule` is what puts
+  -- the service's number where the guard reads it.
+  local device = device_with()
+  local s = state.remember_schedule(state.new(state.ON), {
+    grace = { enabled = true, seconds = 300 },
+    schedule = { active = true, command = "shutdown", remaining_seconds = 240 },
+  })
+  poll.set_state(device, s)
+  h.assert_equal(poll.resting_action(device), state.ACTION_BUSY_OFF)
+  local calls = with_service(nil, function()
+    handlers_for("switch").off(driver, device, { command = "off", args = {} })
+  end)
+  h.assert_equal(#calls.commands, 0, "the guard has to use the PC's own grace (#93)")
+end
+
+function T.test_every_blocked_command_still_answers_its_row()
+  -- #86's rule, which the guard must not break: the app is waiting for an event
+  -- on the row the command came from, and without one the spinner runs out into
+  -- an error. A refused command answers the row with a forced re-emit of the
+  -- value it already shows.
+  local function rows(run)
+    local device = busy_device(state.SHUTTING_DOWN)
+    with_service(nil, function() run(device) end)
+    return h.emitted(device)
+  end
+
+  -- The command list: the busy resting value, forced.
+  local emitted = rows(BLOCKED['execute("shutdown")'])
+  h.assert_equal(h.event_value(emitted, caps.COMMAND, "lastAction"), state.ACTION_BUSY_OFF)
+  h.assert_true(h.event_forced(emitted, caps.COMMAND, "lastAction"))
+
+  -- The switch: still "on" while `shuttingDown` (§6.2), so the toggle springs
+  -- back - and forced, or the app would never see an unchanged value.
+  emitted = rows(BLOCKED["switch off"])
+  h.assert_equal(h.event_value(emitted, "switch", "switch"), "on")
+  h.assert_true(h.event_forced(emitted, "switch", "switch"),
+    "a refused switch off must force the re-emit (#86)")
+
+  -- The delay row: `answer_minutes_pick` runs before the guard.
+  emitted = rows(BLOCKED["schedule(30)"])
+  h.assert_equal(h.event_value(emitted, caps.SCHEDULE, "minutesPick"), state.MINUTES_PICK)
+  h.assert_true(h.event_forced(emitted, caps.SCHEDULE, "minutesPick"))
+
+  -- The "command to schedule" row: the value it already holds, not the new one.
+  local device = busy_device(state.SHUTTING_DOWN)
+  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+  with_service(nil, function() BLOCKED["setPlanCommand(restart)"](device) end)
+  h.assert_equal(plan_command(device), "suspend",
+    "a refused setPlanCommand must not change the choice (#93)")
+  h.assert_equal(device:get_field(poll.PLAN_FIELD), "suspend")
+  h.assert_true(h.event_forced(h.emitted(device), caps.SCHEDULE, "planCommand"))
+end
+
+function T.test_cancelling_is_always_allowed()
+  -- The one thing that can still help mid-transition, in its three shapes.
+  for _, power in ipairs({ state.SHUTTING_DOWN, state.WAKING }) do
+    local device = busy_device(power, { command = "shutdown", seconds = 60 })
+    local calls = with_service({ cancelled = true }, function()
+      handlers_for(caps.SCHEDULE).cancel(driver, device, { command = "cancel", args = {} })
+    end)
+    h.assert_equal(calls.cancels, 1, "cancel() must survive a transition (#93)")
+
+    local zero = busy_device(power, { command = "shutdown", seconds = 60 })
+    local zero_calls = with_service({ cancelled = true }, function()
+      handlers_for(caps.SCHEDULE).schedule(driver, zero,
+        { command = "schedule", args = { minutes = "0" } })
+    end)
+    h.assert_equal(zero_calls.cancels, 1, 'schedule("0") must survive a transition')
+
+    -- ... and the dismissed picker is still the no-op it always was.
+    local dismissed = busy_device(power, { command = "shutdown", seconds = 60 })
+    local dismissed_calls = with_service(nil, function()
+      handlers_for(caps.SCHEDULE).schedule(driver, dismissed,
+        { command = "schedule", args = { minutes = state.MINUTES_PICK } })
+    end)
+    h.assert_equal(dismissed_calls.cancels, 0)
+    h.assert_equal(#dismissed_calls.commands, 0)
+    h.assert_equal(dismissed_calls.polls, 1, "a dismissed picker still refreshes the tiles")
+  end
+end
+
+function T.test_refresh_and_waking_the_pc_are_always_allowed()
+  for _, power in ipairs({ state.SHUTTING_DOWN, state.WAKING }) do
+    -- `refresh`: asking what is going on is what the user does next.
+    local device = busy_device(power)
+    local calls = with_service(nil, function()
+      handlers_for("refresh").refresh(driver, device, { command = "refresh", args = {} })
+    end)
+    h.assert_equal(calls.polls, 1, "refresh must survive a transition (#93)")
+
+    -- `switch on` and `execute(wake)` are the same WoL sequence, and re-sending
+    -- a magic packet is free. During `shuttingDown` it also keeps the "switch
+    -- on cancels the grace" behaviour of §6.2 intact.
+    local switched = busy_device(power)
+    local switch_calls = with_service(nil, function()
+      handlers_for("switch").on(driver, switched, { command = "on", args = {} })
+    end)
+    h.assert_equal(switch_calls.wakes, 1, "switch on must survive a transition (#93)")
+    h.assert_equal(h.event_value(h.emitted(switched), caps.POWER_STATE, "powerState"),
+      state.WAKING)
+
+    local woken = busy_device(power)
+    local wake_calls = with_service(nil, function()
+      handlers_for(caps.COMMAND).execute(driver, woken,
+        { command = "execute", args = { command = "wake" } })
+    end)
+    h.assert_equal(wake_calls.wakes, 1, 'execute("wake") must survive a transition (#93)')
+    h.assert_equal(#wake_calls.commands, 0)
+  end
+end
+
+function T.test_a_dismissed_command_list_is_a_no_op_at_its_busy_value_too()
+  -- #84's rule, at the value the row rests on during a transition: closing the
+  -- list sends the row's CURRENT value, which is `busyOff` and not `none`, so
+  -- `execute("busyOff")` has to be exactly as harmless.
+  for _, busy in ipairs(state.BUSY_ACTIONS) do
+    local device = busy_device(state.SHUTTING_DOWN)
+    local calls = with_service(nil, function()
+      handlers_for(caps.COMMAND).execute(driver, device,
+        { command = "execute", args = { command = busy } })
+    end)
+    h.assert_equal(#calls.commands, 0, busy .. " must not reach the service")
+    h.assert_equal(calls.wakes, 0, busy .. " must not wake the PC either")
+    h.assert_equal(calls.polls, 1, busy .. " refreshes the tiles, as `none` does")
+    -- The row is answered, and with the busy value - not with `none`.
+    local emitted = h.emitted(device)
+    h.assert_equal(h.event_value(emitted, caps.COMMAND, "lastAction"), state.ACTION_BUSY_OFF)
+    h.assert_true(h.event_forced(emitted, caps.COMMAND, "lastAction"))
+    -- ... and it is not the refusal path, so no note is left behind.
+    h.assert_nil(h.event_value(emitted, caps.STATUS, "message"),
+      busy .. " left a refusal note, but it refused nothing")
+  end
+end
+
+function T.test_the_command_row_rests_on_busy_and_comes_back_to_none()
+  -- The lifecycle of the resting value, which is what the user reads.
+  local device = busy_device(state.ON)
+  h.assert_equal(poll.resting_action(device), state.ACTION_NONE)
+
+  -- Into a transition: the poll's own upkeep moves the row.
+  poll.set_state(device, state.transition(poll.get_state(device), "stopping", "restart"))
+  h.assert_equal(poll.resting_action(device), state.ACTION_BUSY_RESTART)
+  h.assert_true(poll.ensure_action(device), "the row has to be moved to busyRestart")
+  h.assert_equal(last_action(device), state.ACTION_BUSY_RESTART)
+
+  -- ... and stays there, forced, because an unchanged event is dropped and the
+  -- row has to keep saying "in progress".
+  device.emitted = {}
+  h.assert_true(poll.ensure_action(device), "the busy value is re-emitted")
+  h.assert_equal(last_action(device), state.ACTION_BUSY_RESTART)
+  h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"),
+    "an unchanged busy re-emit has to be forced (#86)")
+
+  -- Out of it: back to `none`, and then quiet again.
+  poll.set_state(device, state.transition(poll.get_state(device), "status_ok"))
+  device.emitted = {}
+  h.assert_true(poll.ensure_action(device), "the row has to come back to `none`")
+  h.assert_equal(last_action(device), state.ACTION_NONE)
+  device.emitted = {}
+  h.assert_false(poll.ensure_action(device), "an idle row is left alone")
+  h.assert_equal(#device.emitted, 0)
 end
 
 function T.test_a_preset_still_schedules()

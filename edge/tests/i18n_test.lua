@@ -56,10 +56,34 @@ function T.test_all_required_keys_exist()
     -- status row still carries, and the two halves of the version row.
     "session_off", "wol_off_short",
     "versions", "version_unknown", "versions_update", "versions_update_plain",
+    -- #93: the note a command held back by a power transition leaves behind.
+    "busy_off", "busy_restart", "busy_wake", "busy_sleep", "busy_hibernate",
   }
   for _, key in ipairs(required) do
     h.assert_true(i18n.has(key), "missing string " .. key)
   end
+end
+
+function T.test_every_busy_value_has_a_try_again_note()
+  -- #93: the sentence a refused command leaves on `pcInfo.message` and
+  -- `pcInfo.summary`. Every busy `lastAction` value needs one, or the user gets
+  -- a command that silently does nothing.
+  local state = require "state"
+  for _, action in ipairs(state.BUSY_ACTIONS) do
+    for _, lang in ipairs({ "ko", "en" }) do
+      local note = i18n.busy(lang, action)
+      h.assert_true(type(note) == "string" and note ~= "",
+        action .. " has no " .. lang .. " note")
+      h.assert_contains(note, "·")
+    end
+  end
+  h.assert_contains(i18n.busy("ko", "busyOff"), "종료 진행 중")
+  h.assert_contains(i18n.busy("en", "busyWake"), "Waking")
+  -- Anything that is not a busy value has nothing to say.
+  for _, bogus in ipairs({ "none", "shutdown", "", "busy" }) do
+    h.assert_equal(i18n.busy("ko", bogus), "")
+  end
+  h.assert_equal(i18n.busy("ko", nil), "")
 end
 
 function T.test_every_service_command_has_a_display_name()

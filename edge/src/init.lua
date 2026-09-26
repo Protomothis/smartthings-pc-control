@@ -43,7 +43,7 @@ local function device_init(driver, device)
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
-  -- pcExec and pcDefer unset, which reads as "-" and keeps the app saying
+  -- pcRemote and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   if poll.ensure_rows(device) then
     -- First run on this generation of rows: forced rows + forced poll, now
@@ -71,7 +71,7 @@ local function device_added(driver, device)
   poll.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
-  -- #85: and the same goes for every other pcExec / pcDefer attribute,
+  -- #85: and the same goes for every other pcRemote / pcDefer attribute,
   -- including the "command to schedule" row, whose default is the `offAction`
   -- preference.
   poll.ensure_rows(device)
@@ -118,16 +118,73 @@ local function report_error(device, kind, body)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
 end
 
+--------------------------------------------------------------------------------
+-- #93: the transition guard
+--------------------------------------------------------------------------------
+
+--- The busy value of the transition this device is in, or nil when it is in
+--- none. Every handler that would move the PC's power asks this first.
+--
+-- While the PC is shutting down, going to sleep or coming up there is nothing
+-- useful a second power command can do: it either races the one already running
+-- or lands on a PC that is not there any more. The app has no way to grey a row
+-- out (platform notes "상세 화면(detailView) 위젯"), so the list says "진행 중…"
+-- (poll.resting_action) and the driver is what actually holds the commands back.
+local function transition_of(device)
+  local s = poll.get_state(device)
+  if not state.is_transitioning(s) then
+    return nil
+  end
+  return state.busy_action(s)
+end
+
+--- Answer a command the transition swallowed.
+--
+-- Two things have to happen, and neither of them is sending anything to the PC.
+-- The row the app is watching gets a forced re-emit of its resting value, or
+-- the spinner runs out into "네트워크 또는 서버 오류" (#86); and both pcInfo rows
+-- say why nothing happened, until the next poll writes the normal wording back
+-- (the same one-off-notice shape `opts.note` has in `poll.once`).
+-- @param answer a function that re-emits the row this command arrived on
+local function refuse(device, busy_action, answer)
+  if answer then
+    answer(device)
+  end
+  poll.emit_note(device, i18n.busy(poll.lang(device), busy_action))
+  log.info(string.format("command held back on %s: %s",
+    tostring(device.id), tostring(busy_action)))
+end
+
 --- switch.on: WoL sequence, device goes to `waking` (§6.2/§6.4).
+-- #93: allowed during a transition, both of them on purpose. While `waking`,
+-- re-sending the magic packet is free; while `shuttingDown`, this is the "switch
+-- on cancels the grace period" path of §6.2, which is the one thing a user in
+-- front of a PC that is about to go away actually wants.
 local function handle_switch_on(driver, device)
   local nxt = state.transition(poll.get_state(device), "switch_on")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
+  -- The PC is now `waking`, so the command list says "켜는 중…" straight away
+  -- rather than at the next poll - and the polls that follow will fail until
+  -- the PC is up, so this is the only place that can move it.
+  poll.ensure_action(device)
   wol.wake(driver, device)
 end
 
 --- switch.off: the configured off action with the service's own grace handling.
+--
+-- #93: not while the PC is already on its way out or coming up. The toggle is a
+-- standard capability and cannot be greyed out, so the off it just sent is
+-- answered by re-emitting the switch value the power state implies - which is
+-- still "on" during `shuttingDown`, so the toggle springs back - and the reason
+-- goes on the status rows.
 local function handle_switch_off(driver, device)
+  local busy_action = transition_of(device)
+  if busy_action then
+    return refuse(device, busy_action, function(d)
+      poll.emit_power(d, poll.get_state(d), true)
+    end)
+  end
   local prefs = device.preferences or {}
   local command = prefs.offAction or "shutdown"
   local ok, body, kind = client.command(device, command, "default", 0)
@@ -192,13 +249,27 @@ end
 -- re-emit of its resting value. The row never changes value (it rests on
 -- `none`), so without that the app keeps a spinner up until it fails with an
 -- error - measured on the phone 2026-09-22 (platform notes "상세 화면(detailView) 위젯").
+--
+-- #93: `busyOff` and its four siblings take exactly the `none` path. They are
+-- what the row rests on during a transition, so they are what a dismissed list
+-- sends then, and they have to be as harmless as `none` is the rest of the
+-- time. Everything else - `lock` and the screen commands included, because a PC
+-- that is leaving or not up yet cannot do those either - is held back until the
+-- transition is over. `wake` is the one exception: it is the WoL sequence, the
+-- same thing `switch on` does, and re-sending a magic packet is free.
 local function run_command(driver, device, service_command, mode, minutes)
   poll.answer_action(device)
-  if service_command == nil or service_command == "" or service_command == state.ACTION_NONE then
+  if service_command == nil or service_command == "" or service_command == state.ACTION_NONE
+      or state.is_busy_action(service_command) then
     return poll.once(driver, device)
   end
   if service_command == "wake" then
     return handle_switch_on(driver, device)
+  end
+  local busy_action = transition_of(device)
+  if busy_action then
+    -- The command row was already answered by `answer_action` above.
+    return refuse(device, busy_action)
   end
   minutes = math.floor(tonumber(minutes) or 0)
   local ok, body, kind = client.command(device, service_command, mode, minutes)
@@ -216,7 +287,7 @@ local function button_handler(service_command)
   end
 end
 
---- pcExec.execute(command, mode, minutes) — capabilities/pcExec.json.
+--- pcRemote.execute(command, mode, minutes) — capabilities/pcRemote.json.
 --- `minutes > 0` turns the same endpoint into a schedule (§3.3).
 --
 --- The detail-view list (#82) sends `command` alone: the mode then follows the
@@ -243,8 +314,20 @@ end
 -- #86: emitted with `state_change = true`. Re-picking the value the row already
 -- shows (restart -> restart) changes nothing, and the app then spins until it
 -- gives up with an error (platform notes "상세 화면(detailView) 위젯").
+--
+-- #93: and not while the PC is in a transition. Nothing goes to the service
+-- here - the choice is a device field - but the row belongs to the schedule
+-- that is about to run, and letting the user re-aim it mid-shutdown is the same
+-- kind of "the app took it but nothing happened" the guard exists to avoid. The
+-- row is answered with the value it already holds.
 local function handle_set_plan_command(_driver, device, cmd)
   local args = (cmd or {}).args or {}
+  local busy_action = transition_of(device)
+  if busy_action then
+    return refuse(device, busy_action, function(d)
+      poll.emit_plan_command(d, poll.plan_command(d), true)
+    end)
+  end
   poll.emit_plan_command(device, args.command, true)
 end
 
@@ -302,6 +385,13 @@ local function handle_schedule(driver, device, cmd)
   if minutes == 0 then
     return handle_cancel(driver, device)
   end
+  -- #93: cancelling (above) stays open during a transition - it is the one
+  -- thing that can still help - but setting a NEW schedule does not. The delay
+  -- row has already been answered by `answer_minutes_pick`.
+  local busy_action = transition_of(device)
+  if busy_action then
+    return refuse(device, busy_action)
+  end
   local had_schedule = poll.get_state(device).schedule_active == true
   local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", minutes)
   if not ok then
@@ -345,7 +435,7 @@ local capability_handlers = {
   },
 }
 
--- Command names are literals: they are what `capabilities/pcExec.json` and
+-- Command names are literals: they are what `capabilities/pcRemote.json` and
 -- `capabilities/pcDefer.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
 if custom.command then

@@ -1,5 +1,5 @@
 -- ko/en strings for the human-readable *attribute values* the app shows
--- (`pcInfo.message`, `pcExec.lastCommand`, `pcDefer.origin`).
+-- (`pcInfo.message`, `pcRemote.lastCommand`, `pcDefer.origin`).
 --
 -- Design doc §6.8: profile/presentation labels stay English; only these string
 -- attributes follow the `language` preference. `auto` resolves to `ko` because
@@ -83,6 +83,32 @@ local STRINGS = {
   update_available_plain = {
     ko = "서비스 업데이트 사용 가능",
     en = "A service update is available",
+  },
+
+  -- #93: what a command that arrived during a power transition is answered
+  -- with. It goes into `pcInfo.message` AND `pcInfo.summary` - the message row
+  -- is a sentence the user may never scroll to, and the summary is the line
+  -- they are already looking at - and the next poll puts the normal wording
+  -- back. Short, because the summary row is truncated on the phone.
+  busy_off = {
+    ko = "종료 진행 중 · 끝난 뒤 다시 시도",
+    en = "Shutting down · try again after",
+  },
+  busy_restart = {
+    ko = "재시작 진행 중 · 끝난 뒤 다시 시도",
+    en = "Restarting · try again after",
+  },
+  busy_wake = {
+    ko = "켜는 중 · 끝난 뒤 다시 시도",
+    en = "Waking · try again after",
+  },
+  busy_sleep = {
+    ko = "절전 진행 중 · 끝난 뒤 다시 시도",
+    en = "Going to sleep · try again after",
+  },
+  busy_hibernate = {
+    ko = "최대 절전 진행 중 · 끝난 뒤 다시 시도",
+    en = "Hibernating · try again after",
   },
 
   -- command outcomes (§3.3/§3.4)
@@ -178,7 +204,7 @@ local STRINGS = {
   versions_update = { ko = "업데이트 v%s", en = "Update v%s" },
   versions_update_plain = { ko = "업데이트 있음", en = "Update available" },
 
-  -- #86: `pcExec.lastCommand` before the PC has run anything. An empty string
+  -- #86: `pcRemote.lastCommand` before the PC has run anything. An empty string
   -- is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault rather than as "nothing has
   -- happened yet", so the row always carries a sentence.
   last_command_none = { ko = "없음 (None)", en = "None" },
@@ -267,6 +293,26 @@ function i18n.command(lang, command)
     return i18n.t(lang, key)
   end
   return tostring(command)
+end
+
+-- #93: `lastAction` busy value -> the note key above. The enum values are
+-- camelCase because they are what the app reads; the string keys are not.
+local BUSY_NOTES = {
+  busyOff = "busy_off",
+  busyRestart = "busy_restart",
+  busyWake = "busy_wake",
+  busySleep = "busy_sleep",
+  busyHibernate = "busy_hibernate",
+}
+
+--- #93: the "try again after" note for a busy `lastAction` value, or "" for
+--- anything that is not one (so a caller can test it like any other notice).
+function i18n.busy(lang, action)
+  local key = BUSY_NOTES[tostring(action or "")]
+  if not key then
+    return ""
+  end
+  return i18n.t(lang, key)
 end
 
 --- Localised label for a `pcPower.powerState` value (#78 summaries).
