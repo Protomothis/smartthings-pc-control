@@ -329,6 +329,35 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
     "the update half is never remembered - only a live answer can offer one")
 end
 
+function T.test_the_last_seen_time_survives_a_failed_poll()
+  -- #102: a successful poll remembers when (persisted, poll.LAST_SEEN_FIELD),
+  -- and the failures after it read it back instead of overwriting it.
+  local d = device({ language = "ko" })
+  local now = 3000000
+  local clock = function() return now end
+
+  -- Never seen: the row keeps its old words.
+  poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } })
+  h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결 안 됨 · 응답 없음")
+  h.assert_nil(poll.last_seen(d), "a failed poll is not a sighting")
+
+  d.emitted = {}
+  h.assert_true(poll.once(nil, d, {
+    deps = { http = fake_http(200, status_body({ uptime_seconds = 266400 })), now = clock },
+  }))
+  h.assert_equal(d:get_field(poll.LAST_SEEN_FIELD), 3000000)
+  h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결됨 · 3일 2시간")
+
+  for _, minutes in ipairs({ 5, 12 }) do
+    now = 3000000 + minutes * 60
+    d.emitted = {}
+    h.assert_false(poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } }))
+    h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"),
+      string.format("응답 없음 · 마지막 확인 %d분 전", minutes))
+    h.assert_equal(poll.last_seen(d), 3000000, "the failure leaves the time alone")
+  end
+end
+
 function T.test_a_poll_remembers_the_mac_the_service_chose()
   -- §6.4/#97: the wake happens while the PC is off, so everything it needs is
   -- persisted on the way past. The Wi-Fi card is listed first and has WoL on -

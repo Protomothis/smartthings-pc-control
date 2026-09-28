@@ -100,9 +100,9 @@ local function golden(lang)
     { cap = caps.STATUS, attr = "versions", value = state.versions("v1.1.0", lang) },
     { cap = caps.STATUS, attr = "message", value = "" },
     -- #87: the connection alone. The version moved to the row below, and the
-    -- advice notices are `message`'s job.
+    -- advice notices are `message`'s job. #102: plus the uptime (12345 s).
     { cap = caps.STATUS, attr = "summary",
-      value = en and "Connected" or "연결됨" },
+      value = en and "Connected · 3h 25m" or "연결됨 · 3시간 25분" },
     -- #78: emitted either way, so the session row can be hidden again.
     { cap = caps.SESSION, attr = "exposed", value = true },
     { cap = caps.SESSION, attr = "locked", value = true },
@@ -432,6 +432,129 @@ function T.test_status_summary_never_repeats_the_power_state()
     h.assert_equal(summary:find(connection, 1, true), nil,
       connection .. " has no short Korean label")
   end
+  -- #102: nor do the uptime and last-seen lines bring it back.
+  for _, summary in ipairs({
+    state.status_summary("ok", "ko", false, nil, { uptime_seconds = 266400 }),
+    state.status_summary("unreachable", "ko", nil, nil, { seen_ago = 720 }),
+  }) do
+    for _, power in ipairs({ state.ON, state.SLEEPING, state.OFF, state.WAKING }) do
+      h.assert_equal(summary:find(i18n.power("ko", power), 1, true), nil,
+        summary .. " repeats " .. power)
+    end
+  end
+end
+
+--------------------------------------------------------------------------------
+-- #102: uptime and last seen on the summary line
+--------------------------------------------------------------------------------
+
+-- Code points, as state.lua counts them for SUMMARY_MAX_CHARS.
+local function chars(s)
+  return #(s:gsub("[\128-\191]", ""))
+end
+
+function T.test_uptime_reads_in_the_largest_units_that_fit()
+  -- Under a minute there is nothing worth saying ("0분" reads like a fault).
+  h.assert_nil(state.uptime_text(nil, "ko"))
+  h.assert_nil(state.uptime_text("soon", "ko"))
+  h.assert_nil(state.uptime_text(0, "ko"))
+  h.assert_nil(state.uptime_text(59, "ko"))
+  -- Minutes under an hour.
+  h.assert_equal(state.uptime_text(60, "ko"), "1분")
+  h.assert_equal(state.uptime_text(3599, "ko"), "59분")
+  h.assert_equal(state.uptime_text(720, "en"), "12m")
+  -- Hours and minutes under a day; a round hour loses its "0분".
+  h.assert_equal(state.uptime_text(3600, "ko"), "1시간")
+  h.assert_equal(state.uptime_text(7500, "ko"), "2시간 5분")
+  h.assert_equal(state.uptime_text(7500, "en"), "2h 5m")
+  h.assert_equal(state.uptime_text(86399, "ko"), "23시간 59분")
+  -- Days and hours from a day on; the minutes are noise at that distance.
+  h.assert_equal(state.uptime_text(86400, "ko"), "1일")
+  h.assert_equal(state.uptime_text(86400, "en"), "1d")
+  h.assert_equal(state.uptime_text(266400, "ko"), "3일 2시간")
+  h.assert_equal(state.uptime_text(266400 + 1799, "en"), "3d 2h")
+end
+
+function T.test_last_seen_reads_in_one_unit()
+  h.assert_nil(state.ago_text(nil, "ko"), "never seen has no age")
+  h.assert_nil(state.ago_text(-5, "ko"), "a clock that went backwards has no honest age")
+  -- Never "0분 전": on this line the PC is not answering.
+  h.assert_equal(state.ago_text(0, "ko"), "1분 전")
+  h.assert_equal(state.ago_text(119, "ko"), "1분 전")
+  h.assert_equal(state.ago_text(720, "ko"), "12분 전")
+  h.assert_equal(state.ago_text(720, "en"), "12m ago")
+  h.assert_equal(state.ago_text(3599, "ko"), "59분 전")
+  h.assert_equal(state.ago_text(3600, "ko"), "1시간 전")
+  h.assert_equal(state.ago_text(86399, "en"), "23h ago")
+  h.assert_equal(state.ago_text(86400, "ko"), "1일 전")
+  h.assert_equal(state.ago_text(3 * 86400 + 7200, "en"), "3d ago")
+end
+
+function T.test_the_connected_summary_carries_the_uptime()
+  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 266400 }),
+    "연결됨 · 3일 2시간")
+  h.assert_equal(state.status_summary("ok", "en", false, nil, { uptime_seconds = 266400 }),
+    "Connected · 3d 2h")
+  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 7500 }),
+    "연결됨 · 2시간 5분")
+  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 30 }),
+    "연결됨", "a PC up for seconds says nothing about it")
+  h.assert_equal(state.status_summary("ok", "ko", false, nil, {}), "연결됨")
+end
+
+function T.test_the_summary_drops_the_uptime_before_the_adapter_name()
+  -- WoL first (it changes what the switch does), then the adapter's name, then
+  -- the uptime - and a line that is too long loses them in the reverse order.
+  local long_up = { uptime_seconds = 266400 } -- "3일 2시간"
+  local short_up = { uptime_seconds = 300 }   -- "5분"
+  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷", short_up),
+    "연결됨 · WoL 꺼짐 (이더넷) · 5분", "everything fits")
+  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷", long_up),
+    "연결됨 · WoL 꺼짐 (이더넷)", "the uptime goes first")
+  h.assert_equal(state.status_summary("ok", "ko", true, "vEthernet (Default Switch)", long_up),
+    "연결됨 · WoL 꺼짐", "then the name")
+  h.assert_equal(state.status_summary("ok", "ko", true, nil, long_up),
+    "연결됨 · WoL 꺼짐 · 3일 2시간", "no name: the uptime has room")
+  h.assert_equal(state.status_summary("ok", "en", true, nil, long_up), "Connected · WoL off",
+    "English runs out of room sooner")
+
+  for _, lang in ipairs({ "ko", "en" }) do
+    for _, adapter in ipairs({ false, "이더넷", "Ethernet", "vEthernet (Default Switch)" }) do
+      for _, up in ipairs({ 0, 300, 7500, 86399, 266400, 99 * 86400 }) do
+        local line = state.status_summary("ok", lang, true, adapter or nil, { uptime_seconds = up })
+        h.assert_true(chars(line) <= state.SUMMARY_MAX_CHARS,
+          string.format("%q is %d characters", line, chars(line)))
+        h.assert_contains(line, i18n.t(lang, "wol_off_short"), "the warning is never dropped")
+      end
+    end
+  end
+end
+
+function T.test_an_unreachable_pc_says_when_it_was_last_seen()
+  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, { seen_ago = 720 }),
+    "응답 없음 · 마지막 확인 12분 전")
+  h.assert_equal(state.status_summary("unreachable", "en", nil, nil, { seen_ago = 720 }),
+    "No reply · seen 12m ago")
+  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, { seen_ago = 3 * 86400 }),
+    "응답 없음 · 마지막 확인 3일 전")
+  -- Never seen: the words it had before #102.
+  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, {}), "연결 안 됨 · 응답 없음")
+  h.assert_equal(state.status_summary("unreachable", "en"), "Not connected · No response")
+  -- A line the budget cannot hold falls back rather than being cut off.
+  h.assert_equal(state.status_summary("unreachable", "en", nil, nil, { seen_ago = 1000 * 86400 }),
+    "Not connected · No response")
+  -- The PC that answers wrongly keeps its reason; "last seen" is not its point.
+  h.assert_equal(state.status_summary("unauthorized", "ko", nil, nil, { seen_ago = 720 }),
+    "연결 안 됨 · 시크릿 불일치")
+  h.assert_equal(state.status_summary("incompatible", "en", nil, nil, { seen_ago = 720 }),
+    "Not connected · Version mismatch")
+  for _, lang in ipairs({ "ko", "en" }) do
+    for _, ago in ipairs({ 0, 59, 3599, 86399, 99 * 86400 }) do
+      local line = state.status_summary("unreachable", lang, nil, nil, { seen_ago = ago })
+      h.assert_true(chars(line) <= state.SUMMARY_MAX_CHARS,
+        string.format("%q is %d characters", line, chars(line)))
+    end
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -445,14 +568,14 @@ function T.test_the_advice_notices_are_message_only()
   local status = sample_status()
   status.secret_set = false
   local events = events_for(status, state.ON, "ko")
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨")
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · 3시간 25분")
   h.assert_equal(h.event_value(events, caps.STATUS, "message"),
     "시크릿이 설정되지 않았습니다 · 설정을 권장합니다")
 
   status = sample_status()
   status.update = { available = true, latest = "v1.2.0" }
   events = events_for(status, state.ON, "en")
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "Connected")
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "Connected · 3h 25m")
   h.assert_equal(h.event_value(events, caps.STATUS, "message"),
     "Service update v1.2.0 available")
   -- The update is on the version row instead, where a version belongs.
@@ -466,7 +589,8 @@ function T.test_the_summary_warns_about_a_wol_that_is_off()
   local status = sample_status()
   status.wol = { ready = false, adapters = {} }
   local events = events_for(status, state.ON, "ko")
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐")
+  -- #102: the uptime still fits behind the warning.
+  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 · 3시간 25분")
   -- The long sentence, with what to do about it, stays in `message`.
   h.assert_contains(h.event_value(events, caps.STATUS, "message"), "네트워크 탭")
 end
@@ -479,6 +603,8 @@ function T.test_the_wol_warning_follows_the_selected_adapter()
   status.wol.adapters[2] = { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = true }
   local events = events_for(status, state.ON, "ko")
   h.assert_equal(h.event_value(events, caps.STATUS, "wolReady"), false)
+  -- #102: "… (Ethernet) · 3시간 25분" would be 33 characters, so the uptime
+  -- goes and the adapter's name stays.
   h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (Ethernet)")
   h.assert_equal(h.event_value(events, caps.STATUS, "message"),
     "Ethernet 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
@@ -488,13 +614,18 @@ function T.test_the_wol_warning_follows_the_selected_adapter()
   status.wol.ready = false
   local ok = events_for(status, state.ON, "ko")
   h.assert_equal(h.event_value(ok, caps.STATUS, "wolReady"), true)
-  h.assert_equal(h.event_value(ok, caps.STATUS, "summary"), "연결됨")
+  h.assert_equal(h.event_value(ok, caps.STATUS, "summary"), "연결됨 · 3시간 25분")
   h.assert_equal(h.event_value(ok, caps.STATUS, "message"), "")
 end
 
 function T.test_a_quiet_status_has_no_notice_at_all()
+  -- #102: the uptime is not a notice; without one the line is still just that.
   h.assert_equal(h.event_value(events_for(sample_status()), caps.STATUS, "summary"),
-    "Connected")
+    "Connected · 3h 25m")
+  local status = sample_status()
+  status.uptime_seconds = nil
+  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "summary"), "Connected",
+    "a service that sends no uptime gets the line it had before #102")
 end
 
 --------------------------------------------------------------------------------

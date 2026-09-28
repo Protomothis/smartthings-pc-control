@@ -459,6 +459,10 @@ function push.apply_to_device(driver, device, payload, deps)
       pcall(function() wol.cancel_wake(driver, device) end)
     end
   end
+  -- #102: any push is the PC speaking, and `power.stopping` is often the last
+  -- thing it says before it goes - so it counts as "마지막 확인" as much as a
+  -- successful poll does.
+  pcall(function() poll.remember_last_seen(device, deps) end)
 
   if events then
     poll.emit(device, events)

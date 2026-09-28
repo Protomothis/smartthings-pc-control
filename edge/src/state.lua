@@ -500,9 +500,74 @@ end
 
 --- How long `pcInfo.summary` may get before the row truncates it (#97). The
 --- detail row is narrow and cuts with "…" without saying so (platform notes,
---- "화면 배치"), so an optional part - today only the WoL adapter's name - is
---- added only while the whole line stays inside this.
+--- "화면 배치"), so an optional part - the WoL adapter's name (#97), the uptime
+--- and the last-seen time (#102) - is added only while the whole line stays
+--- inside this.
 state.SUMMARY_MAX_CHARS = 24
+
+--- #102: how long the PC has been up, for the connected summary: "5분",
+--- "2시간 5분", "3일 2시간" / "5m", "2h 5m", "3d 2h". Nil under a minute (and
+--- for anything that is not a number): "0분" reads like a fault, and a PC that
+--- has just booted is told well enough by the line having changed at all.
+--
+-- The same ladder as `remaining_text` (#89), minus its "후": minutes under an
+-- hour, hours and minutes under a day, days and hours from there - the minutes
+-- of a three-day uptime are noise on a row the phone truncates.
+function state.uptime_text(seconds, lang)
+  seconds = tonumber(seconds)
+  if not seconds or seconds < 60 then
+    return nil
+  end
+  local minutes = math.floor(seconds / 60)
+  if minutes < 60 then
+    return i18n.t(lang, "uptime_m", minutes)
+  end
+  if minutes < 1440 then
+    local hours, rest = math.floor(minutes / 60), minutes % 60
+    if rest == 0 then
+      return i18n.t(lang, "uptime_h", hours)
+    end
+    return i18n.t(lang, "uptime_hm", hours, rest)
+  end
+  local days = math.floor(minutes / 1440)
+  local hours = math.floor((minutes % 1440) / 60)
+  if hours == 0 then
+    return i18n.t(lang, "uptime_d", days)
+  end
+  return i18n.t(lang, "uptime_dh", days, hours)
+end
+
+--- #102: how long ago the PC last answered, in the single largest unit:
+--- "12분 전", "3시간 전", "2일 전" / "12m ago", "3h ago", "2d ago". Under a
+--- minute is still "1분 전" - "0분 전" would read as "it is answering", and on
+--- this line it is not.
+-- Nil for a missing or negative age: a hub clock that jumped backwards has no
+-- honest answer, so the row falls back to the words it had before #102.
+function state.ago_text(seconds, lang)
+  seconds = tonumber(seconds)
+  if not seconds or seconds < 0 then
+    return nil
+  end
+  local minutes = math.max(1, math.floor(seconds / 60))
+  if minutes < 60 then
+    return i18n.t(lang, "ago_m", minutes)
+  end
+  if minutes < 1440 then
+    return i18n.t(lang, "ago_h", math.floor(minutes / 60))
+  end
+  return i18n.t(lang, "ago_d", math.floor(minutes / 1440))
+end
+
+-- The first candidate line that fits in SUMMARY_MAX_CHARS, else the last one -
+-- every caller ends its list with the short form, which always fits.
+local function first_fitting(candidates)
+  for _, line in ipairs(candidates) do
+    if char_len(line) <= state.SUMMARY_MAX_CHARS then
+      return line
+    end
+  end
+  return candidates[#candidates]
+end
 
 --- `pcInfo.summary` (#78): the one line that replaced the six raw rows in the
 --- detail view. "Connected" when the PC answers, "Not connected · Secret
@@ -520,31 +585,72 @@ state.SUMMARY_MAX_CHARS = 24
 --
 -- #97: and the name of the adapter it is off on, when the service named one
 -- and the row can still hold it.
+--
+-- #102: and a number that says the line is alive. Connected, it is the uptime:
+-- "연결됨 · 3일 2시간". Not answering (`unreachable`) with a successful poll on
+-- record, it is when that was: "응답 없음 · 마지막 확인 12분 전" - the one thing
+-- a user looking at a PC that is off wants to know is when it was last there.
+-- Still no power word (#82): "꺼짐" is the pcPower row's. The other failures
+-- (secret, version) keep their words - that PC is answering, just not in a way
+-- the driver can use, so "last seen" is beside the point - and so does a PC
+-- that has never answered at all.
+--
+-- Priority inside SUMMARY_MAX_CHARS: the WoL warning (it changes what the
+-- switch does), then the adapter's name, then the uptime. A line that is too
+-- long drops the uptime first and the name second; "연결됨 · WoL 꺼짐" always
+-- fits.
 -- @param connection a `pcInfo.connection` value; nil counts as `ok`
 -- @param lang the resolved `language` preference
 -- @param wol_off true when the PC answers but its adapter has WoL disabled
 -- @param adapter the chosen adapter's name (state.wol_adapter), optional
-function state.status_summary(connection, lang, wol_off, adapter)
+-- @param extra #102, optional: `uptime_seconds` (from the status body) for the
+--   connected line, `seen_ago` (seconds since the last successful poll, nil
+--   when there never was one) for the unreachable one
+function state.status_summary(connection, lang, wol_off, adapter, extra)
+  extra = extra or {}
   if connection ~= nil and connection ~= "ok" then
     local parts = { i18n.t(lang, "conn_down") }
     local reason = i18n.connection(lang, connection)
     if reason ~= "" then
       parts[#parts + 1] = reason
     end
-    return table.concat(parts, " · ")
+    local plain = table.concat(parts, " · ")
+    if connection == "unreachable" then
+      local ago = state.ago_text(extra.seen_ago, lang)
+      if ago then
+        return first_fitting({ i18n.t(lang, "conn_seen", ago), plain })
+      end
+    end
+    return plain
+  end
+
+  local ok = i18n.t(lang, "conn_ok")
+  local uptime = state.uptime_text(extra.uptime_seconds, lang)
+  local candidates = {}
+  local function add(...)
+    candidates[#candidates + 1] = table.concat({ ok, ... }, " · ")
   end
   if wol_off == true then
-    local ok = i18n.t(lang, "conn_ok")
+    local warnings = {}
     if type(adapter) == "string" and adapter ~= "" then
-      local named = ok .. " · " .. i18n.t(lang, "wol_off_short_on", adapter)
-      if char_len(named) <= state.SUMMARY_MAX_CHARS then
-        return named
-      end
       -- Too long for the row: `pcInfo.message` carries the name instead.
+      warnings[#warnings + 1] = i18n.t(lang, "wol_off_short_on", adapter)
     end
-    return ok .. " · " .. i18n.t(lang, "wol_off_short")
+    warnings[#warnings + 1] = i18n.t(lang, "wol_off_short")
+    -- The uptime goes before the name, the name before the warning itself.
+    if uptime then
+      add(warnings[1], uptime)
+    end
+    for _, warning in ipairs(warnings) do
+      add(warning)
+    end
+  else
+    if uptime then
+      add(uptime)
+    end
+    add()
   end
-  return i18n.t(lang, "conn_ok")
+  return first_fitting(candidates)
 end
 
 -- The "v" a release tag and `status.service_version` carry ("v1.1.0"). The row
@@ -919,7 +1025,9 @@ function state.apply_status(device_state, status, opts)
   -- #78/#82/#87: "Connected", or "Connected · WoL off" when the switch cannot
   -- do what the row above it offers. A successful status is always `ok` here;
   -- the failure wording comes from poll.emit_connection.
-  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol_off, wol_adapter))
+  -- #102: plus the uptime, while the line has room for it.
+  ev(events, caps.STATUS, "summary", state.status_summary("ok", lang, wol_off, wol_adapter,
+    { uptime_seconds = status.uptime_seconds }))
 
   -- §3.2: the session block is opt-in. `exposed` is emitted either way so the
   -- detail view can hide the session row again when the user opts out; the
