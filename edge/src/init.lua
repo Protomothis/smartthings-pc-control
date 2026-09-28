@@ -42,13 +42,18 @@ local function device_init(driver, device)
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   profiles.ensure(device)
+  -- #100: the `iconStyle` preference changed but the driver restarted before
+  -- the switch to that style's profile landed (or the hub refused it then).
+  local switched = profiles.apply_style(device)
   -- #85: a migration onto the new capability ids leaves every attribute of
   -- pcRemote and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
-  if poll.ensure_rows(device) then
-    -- First run on this generation of rows: forced rows + forced poll, now
-    -- and again shortly, so attributes that never change (updateAvailable)
-    -- and rows the cloud dropped while applying the profile are filled in.
+  local fresh_rows = poll.ensure_rows(device)
+  if fresh_rows or switched then
+    -- First run on this generation of rows, or a new profile whose cloud
+    -- record starts empty: forced rows + forced poll, now and again shortly,
+    -- so attributes that never change (updateAvailable) and rows the cloud
+    -- dropped while applying the profile are filled in.
     poll.repaint_soon(driver, device)
   end
   -- §6.3: one listener per driver, opened on the first device that needs it.
@@ -91,8 +96,14 @@ local function device_info_changed(driver, device, _event, _args)
   -- Preferences are already updated on `device` here; restarting the timer
   -- picks up a new pollInterval and a poll picks up a new IP/secret/port.
   log.info("preferences changed for " .. device.id)
-  -- infoChanged also fires when a profile migration has landed: the cloud's
-  -- record of the new profile is empty until every row is sent again.
+  -- #100: a new `iconStyle` moves the device onto the profile with that
+  -- category (the icon). The switch fires infoChanged once more; by then
+  -- `apply_style` remembers the profile it asked for and does nothing, so
+  -- there is exactly one `try_update_metadata` per change.
+  profiles.apply_style(device)
+  -- infoChanged also fires when a profile migration (or the switch above) has
+  -- landed: the cloud's record of the new profile is empty until every row is
+  -- sent again, so the repaint below runs either way.
   poll.start(driver, device)
   poll.repaint_soon(driver, device)
 end

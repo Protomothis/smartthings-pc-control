@@ -307,6 +307,9 @@
 - 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
 - `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다.
 - 이전 직후에는 capability id가 바뀌었을 수 있어 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`)를 보고 전 줄을 한 번 다시 칠한다.
+- **아이콘 변형(#100)**: 카테고리는 프로필마다 하나로 고정이라, 환경설정 `iconStyle`(§7)의 값마다 pc.yml과 `name:`·카테고리만 다른 프로필을 둔다 — `pc.v1`(Others)과 `pc-<style>.v1`(파일 `profiles/pc-<style>.yml`). 전부 "현재"(`profiles.CURRENT`)이므로 `ensure`는 옮기지 않는다. 변형 동기화는 `capabilities_test`가 줄 단위로 검사한다.
+- 스타일 전환은 `profiles.apply_style`이 `infoChanged`에서(값이 바뀌었을 때) 그리고 `init`에서(전환 전에 드라이버가 재시작된 경우) `try_update_metadata({ profile = … })`로 한다. 새 프로필은 클라우드 기록이 비어 시작하므로 `poll.repaint_soon`으로 다시 칠한다. 전환이 다시 `infoChanged`를 내므로, 이번 구동에서 옮긴 이름을 기억해 `name_of` 대신 쓰고(허브가 `device.profile.name`을 늦게 바꿔도 되풀이하지 않는다), 거절된 대상은 같은 구동에서 다시 요청하지 않는다. `iconStyle`이 없는 장치와 현재 이름이 아닌 장치는 건드리지 않고, 모르는 값은 `others`로 본다.
+- **버전을 올릴 때는 변형 전부를 함께 올린다.** `pc.v2`와 함께 `pc-<style>.v2` 전부, `PC`·`VARIANTS`를 새 이름으로, v1 이름 전부를 `KNOWN`에. `migration_for`는 옛 이름에서 스타일을 읽어(`pc-<style>.vN`) 같은 스타일의 새 버전으로 옮긴다.
 
 ### 6.7 여러 PC
 
@@ -404,6 +407,24 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 | `offAction` | enum | `shutdown` | 스위치를 끌 때 보낼 명령 |
 | `buttonMode` | enum | `default` | 명령 목록의 유예 처리: 설정된 유예 따름 / 즉시 |
 | `language` | enum | `auto` | 문구 언어(auto = 한국어) |
+| `iconStyle` | enum | `others` | 장치 아이콘(카테고리). 값마다 카테고리만 다른 프로필로 갈아탄다(#100, §6.6) |
+
+`iconStyle`의 값과 프로필·카테고리:
+
+| 값 | 프로필 | 카테고리 |
+|---|---|---|
+| `others` | `pc.v1` | Others |
+| `monitor` | `pc-monitor.v1` | SmartMonitor |
+| `switch` | `pc-switch.v1` | Switch |
+| `plug` | `pc-plug.v1` | SmartPlug |
+| `tv` | `pc-tv.v1` | Television |
+| `projector` | `pc-projector.v1` | Projector |
+| `network` | `pc-network.v1` | Networking |
+| `hub` | `pc-hub.v1` | Hub |
+| `theater` | `pc-theater.v1` | HomeTheater |
+| `remote` | `pc-remote.v1` | RemoteController |
+
+`Others`는 앱에서 아이콘 선택이 막히고 `Computer` 카테고리는 API가 거부하므로, 아이콘을 바꾸는 길은 카테고리를 바꾸는 것뿐이다. 각 카테고리의 실제 아이콘과 앱의 아이콘 선택 가능 여부는 Dev 채널에서 실측해 후보를 확정한다(#100).
 
 Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국어 (English)"로 병기한다.
 
