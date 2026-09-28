@@ -96,10 +96,14 @@ type ui struct {
 	version string
 
 	connected atomic.Bool
-	quit      chan struct{}
+	// login is a loginState (login.go): keeps a single login dialog up
+	// and stops connTick from re-prompting over it (#98).
+	login atomic.Int32
+	quit  chan struct{}
 
 	// Widgets the background pollers update. Rebuilt on language change.
 	status      *widget.Label
+	loginBtn    *widget.Button // shown only while the login is deferred
 	statusDot   *canvas.Circle // connection indicator next to the status text
 	portEntry   *widget.Entry
 	secretEntry *widget.Entry
@@ -565,6 +569,16 @@ func (u *ui) rebuild() {
 		langSelect.SetSelected("English")
 	}
 
+	// Shown after the user cancels the login dialog (or a lockout): the
+	// only way back into the dialog, so no timer re-opens it (#98).
+	u.loginBtn = widget.NewButtonWithIcon(u.t("login.ok"), theme.LoginIcon(), func() {
+		u.promptLogin(func() { go u.initialLoad() })
+	})
+	u.loginBtn.Importance = widget.HighImportance
+	if u.loginState() != loginDeferred {
+		u.loginBtn.Hide()
+	}
+
 	versionLabel := widget.NewLabel(u.version)
 	versionLabel.Importance = widget.LowImportance
 	// GridWrap pins the circle to 10×10 (a bare canvas object has no
@@ -572,7 +586,7 @@ func (u *ui) rebuild() {
 	dot := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), u.statusDot))
 	// The status label is the Border's centre object so it takes whatever
 	// width is left (and truncates) instead of dictating the window width.
-	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(versionLabel, langSelect), u.status)
+	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, versionLabel, langSelect), u.status)
 
 	// Order matters: tabSettings / tabNotify in savebar.go index into this.
 	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.logs")}
@@ -741,6 +755,7 @@ func (u *ui) saveSettings(quiet bool) bool {
 	// the service, and any unsaved notify-tab edits stay dirty against the
 	// new baseline instead of being lost.
 	cfg := *u.cfgBaseline
+	oldSecret := cfg.Secret
 	cfg.Port = port
 	cfg.Secret = u.secretEntry.Text
 	cfg.WebUIRemote = u.remoteCheck.Checked
@@ -755,8 +770,18 @@ func (u *ui) saveSettings(quiet bool) bool {
 	u.cfgBaseline = &cfg
 	u.updateSaveState()
 	u.updateNotifySaveState()
+	// A new secret (notably the first one) leaves this client without a
+	// valid session; log in with it now rather than letting the next poll
+	// hit a 401 and pop the login dialog (#98). Only prompt if that fails.
+	var reloginErr error
+	if shouldReloginAfterSave(oldSecret, cfg.Secret) {
+		reloginErr = u.client.Login(cfg.Secret)
+	}
 	if !quiet {
 		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+	}
+	if reloginErr != nil {
+		u.promptLogin(func() { go u.initialLoad() })
 	}
 	return true
 }
@@ -1175,7 +1200,13 @@ func (u *ui) initialLoad() {
 	cfg, err := u.client.GetConfig()
 	fyne.Do(func() {
 		if errors.Is(err, errUnauthorized) {
-			u.promptLogin(func() { go u.initialLoad() })
+			u.connected.Store(false)
+			u.setStatus(u.t("login.required"))
+			u.setConn(connPending)
+			u.applyConnected(false)
+			if shouldPromptLogin(u.loginState()) {
+				u.promptLogin(func() { go u.initialLoad() })
+			}
 			return
 		}
 		if err != nil {
@@ -1249,7 +1280,9 @@ func (u *ui) pollLoop() {
 				u.loadSchedule()
 			}
 		case <-connTick.C:
-			if !u.connected.Load() {
+			// Not while the login dialog is up or an attempt is in
+			// flight: a 401 would only race the dialog (#98).
+			if shouldAutoLoad(u.connected.Load(), u.loginState()) {
 				go u.initialLoad()
 			}
 		case <-idleTick.C:
@@ -1507,27 +1540,4 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 			u.applyConnected(false)
 		})
 	}
-}
-
-// promptLogin shows a password dialog and calls onSuccess after a valid login.
-func (u *ui) promptLogin(onSuccess func()) {
-	secretEntry := widget.NewPasswordEntry()
-	items := []*widget.FormItem{widget.NewFormItem(u.t("login.secret"), secretEntry)}
-	dialog.ShowForm(u.t("login.title"), u.t("login.ok"), u.t("login.cancel"), items, func(ok bool) {
-		if !ok {
-			return
-		}
-		secret := secretEntry.Text
-		go func() {
-			err := u.client.Login(secret)
-			fyne.Do(func() {
-				if err != nil {
-					dialog.ShowError(err, u.win)
-					u.promptLogin(onSuccess)
-					return
-				}
-				onSuccess()
-			})
-		}()
-	}, u.win)
 }
