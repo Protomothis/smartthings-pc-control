@@ -303,7 +303,8 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   local version = (caps.VERSION:gsub("^.*%.", ""))
   local info = (caps.STATUS:gsub("^.*%.", ""))
   for name, text in pairs(profile_files) do
-    if profile_name(text) ~= profiles.current() then
+    -- #100: the icon variants are current, and checked against pc.yml below.
+    if not profiles.is_current(profile_name(text)) then
       local order = capability_order(text)
       h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
       local carries_version = false
@@ -327,6 +328,102 @@ function T.test_no_two_profile_files_share_a_name()
       "profiles/" .. name .. " and profiles/" .. tostring(seen[declared_name])
       .. " both declare " .. tostring(declared_name))
     seen[declared_name] = name
+  end
+end
+
+--------------------------------------------------------------------------------
+-- #100: the icon variants of pc.yml
+--------------------------------------------------------------------------------
+
+--- `text` from its `name:` line on, with the name and the (single) category
+--- replaced by placeholders: what has to be identical across the variants.
+--- The header comment above `name:` is free to differ.
+local function variant_body(text)
+  -- A Windows checkout carries CRLF; the comparison is about content.
+  text = (text or ""):gsub("\r\n", "\n")
+  local body = text:match("\n(name:.*)$") or (text or ""):match("^(name:.*)$") or ""
+  body = body:gsub("^name:[^\n]*", "name: <name>", 1)
+  body = body:gsub("(\n    categories:\n      %- name: )[^\n]*", "%1<category>", 1)
+  return body
+end
+
+--- The category a profile file declares.
+local function profile_category(text)
+  return ((text or ""):gsub("\r\n", "\n")):match("\n    categories:\n      %- name: ([%w]+)")
+end
+
+--- The option keys of one enumeration preference in `text`, in file order,
+--- and its default.
+local function enum_options(text, preference)
+  text = (text or ""):gsub("\r\n", "\n")
+  local block = (text or ""):match("\n  %- name: " .. preference .. "\n(.-)\n  %- name: ")
+    or (text or ""):match("\n  %- name: " .. preference .. "\n(.*)$")
+  local keys = {}
+  for key in (block or ""):match("\n      options:\n(.-)\n      default:"):gmatch("        \"?([%w]+)\"?: ") do
+    keys[#keys + 1] = key
+  end
+  return keys, (block or ""):match("\n      default: \"?([%w]+)\"?")
+end
+
+function T.test_every_icon_variant_is_pc_yml_with_another_name_and_category()
+  -- The variants exist only to carry a different category (the icon). Any
+  -- other difference - a preference added to pc.yml and not copied over, a
+  -- capability order changed in one file - would give the same PC a different
+  -- screen or settings depending on the icon it wears.
+  local profiles = require "profiles"
+  local _, base = profile_file_for(profiles.PC)
+  h.assert_true(base ~= nil, "no profile file declares " .. profiles.PC)
+  local expected = variant_body(base)
+  h.assert_contains(expected, "name: <name>")
+  h.assert_contains(expected, "- name: <category>")
+  for style, variant in pairs(profiles.VARIANTS) do
+    local file, text = profile_file_for(variant)
+    h.assert_true(text ~= nil, "no profile file declares " .. variant .. " (iconStyle " .. style .. ")")
+    h.assert_equal(file, "pc-" .. style .. ".yml", "the file of " .. variant)
+    h.assert_true(variant_body(text) == expected,
+      "profiles/" .. file .. " differs from pc.yml in more than name and category - copy pc.yml over it")
+  end
+end
+
+function T.test_every_icon_style_has_a_profile_with_its_category()
+  local profiles = require "profiles"
+  local _, base = profile_file_for(profiles.PC)
+  local options, default = enum_options(base, "iconStyle")
+  -- The preference lists exactly the styles profiles.lua knows, in its order.
+  h.assert_deep_equal(options, profiles.STYLES)
+  h.assert_equal(default, profiles.DEFAULT_STYLE)
+  h.assert_equal(profiles.for_style(profiles.DEFAULT_STYLE), profiles.PC)
+  for _, style in ipairs(options) do
+    local target = profiles.for_style(style)
+    h.assert_true(style == profiles.DEFAULT_STYLE or target ~= profiles.PC,
+      "iconStyle " .. style .. " has no variant in profiles.VARIANTS")
+    local file, text = profile_file_for(target)
+    h.assert_true(text ~= nil, "iconStyle " .. style .. " asks for " .. target .. ", which no file declares")
+    h.assert_equal(profile_category(text), profiles.CATEGORIES[style],
+      "the category of profiles/" .. tostring(file))
+  end
+  -- And the other way round: no variant nobody can pick.
+  local listed = {}
+  for _, style in ipairs(options) do
+    listed[style] = true
+  end
+  for style in pairs(profiles.VARIANTS) do
+    h.assert_true(listed[style] == true, "profiles.VARIANTS has " .. style .. ", which pc.yml does not offer")
+  end
+end
+
+function T.test_every_profile_file_is_current_or_known()
+  -- A file that is neither a current profile nor an older one this driver
+  -- knows is a variant somebody forgot to register in profiles.lua.
+  local profiles = require "profiles"
+  local known = {}
+  for _, name in ipairs(profiles.KNOWN) do
+    known[name] = true
+  end
+  for file, text in pairs(profile_files) do
+    local declared = profile_name(text)
+    h.assert_true(profiles.is_current(declared) or known[declared] == true,
+      "profiles/" .. file .. " declares " .. tostring(declared) .. ", which profiles.lua does not know")
   end
 end
 
@@ -641,8 +738,31 @@ function T.test_the_dashboard_state_is_the_power_state()
   -- it comes from the standard `switch` capability, not from ours.
   local dashboard = presentation("power_state").dashboard
   h.assert_equal(#dashboard.states, 1)
-  h.assert_contains(dashboard.states[1].label, "powerState.value")
+  h.assert_equal(dashboard.states[1].label, "{{powerState.value}}")
   h.assert_equal(#dashboard.actions, 0, "the switch capability supplies the action")
+
+  -- #101: the tile's words, one per powerState value - a value without an
+  -- alternative would show the raw enum key on the tile - and the same words
+  -- the detail row uses, so the tile and the row never disagree.
+  local keys = {}
+  for _, alt in ipairs(dashboard.states[1].alternatives or {}) do
+    h.assert_nil(keys[alt.key], "duplicate dashboard alternative " .. tostring(alt.key))
+    keys[alt.key] = alt.value
+  end
+  local detail = {}
+  for _, item in ipairs(presentation("power_state").detailView) do
+    if item.displayType == "state" then
+      for _, alt in ipairs(item.state.alternatives) do
+        detail[alt.key] = alt.value
+      end
+    end
+  end
+  local enum = definition("power_state").attributes.powerState.schema.properties.value.enum
+  h.assert_equal(#dashboard.states[1].alternatives, #enum, "one alternative per enum value")
+  for _, value in ipairs(enum) do
+    h.assert_true(keys[value] ~= nil, "the dashboard has no words for " .. value)
+    h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
+  end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,

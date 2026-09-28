@@ -1,34 +1,7 @@
-# Main device profile - what new devices are created with (design doc §4, §7).
-# `src/profiles.lua` is the single source of truth for the name.
-#
-# #90: the first channel release starts at `pc.v1`. The pc.v2…pc.v17 files of
-# the development phase are gone - no released device ever sat on them. When a
-# future presentation change needs a new screen, add `profiles/pc-v2.yml` with
-# `name: pc.v2`, keep this file for the devices still on it, and `profiles.lua`
-# moves them over on their first `init` (§6.6).
-#
-# #100: the `iconStyle` preference picks the device's category, and with it the
-# icon the app draws. A category is fixed per profile, so every style has a
-# profile of its own - `pc-<style>.yml` (`name: pc-<style>.v1`) - and those
-# files are this one with only `name:` and the category changed. Edit this file
-# first, then copy the change into every variant; tests/capabilities_test.lua
-# fails while any of them differs. A version bump bumps all of them together.
-#
-# The capability ORDER below is the reading order on screen: the app collects
-# every state-only row into one card and every interactive row into a second
-# one, and follows this list inside each card. `pcVersion` is last so the
-# version row sits at the bottom. It is also a capability of its own because
-# two state rows of one capability are drawn side by side and truncated
-# (platform notes "화면 배치").
-#
-# The `numbersystem53811` namespace is the one SmartThings assigned to the
-# owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
-# with `NAMESPACE` in src/caps.lua - tools/apply-namespace.js rewrites both.
-#
-# Preference titles and descriptions are Korean first with the English term in
-# parentheses: the SmartThings app shows profile preferences in whatever the
-# driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v1
+# Generated variant of pc.yml for iconStyle `theater` (#100): identical to it
+# except `name:` and the category. Keep in sync with pc.yml -
+# tests/capabilities_test.lua fails while the two differ.
+name: pc-theater.v1
 components:
   - id: main
     capabilities:
@@ -49,7 +22,7 @@ components:
       - id: numbersystem53811.pcversion
         version: 1
     categories:
-      - name: Others
+      - name: HomeTheater
 preferences:
   - name: ipAddress
     title: PC IP 주소 (IP address)

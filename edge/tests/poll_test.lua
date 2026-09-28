@@ -201,6 +201,53 @@ function T.test_the_version_row_keeps_the_last_version_the_pc_reported()
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "versions"), kept)
 end
 
+function T.test_last_seen_is_written_at_most_once_a_minute()
+  -- #102: the row counts whole minutes, and a persisted field is a hub write.
+  local device = h.fake_device({})
+  local now = 1000000
+  local deps = { now = function() return now end }
+  h.assert_nil(poll.last_seen(device), "nothing before the first answer")
+
+  h.assert_true(poll.remember_last_seen(device, deps))
+  h.assert_equal(device:get_field(poll.LAST_SEEN_FIELD), 1000000)
+  now = now + poll.LAST_SEEN_STEP - 1
+  h.assert_false(poll.remember_last_seen(device, deps), "a 10 s poll does not write every time")
+  h.assert_equal(poll.last_seen(device), 1000000)
+  now = 1000000 + poll.LAST_SEEN_STEP
+  h.assert_true(poll.remember_last_seen(device, deps))
+  h.assert_equal(poll.last_seen(device), now)
+
+  -- A hub clock that was set back is not left pointing into the future.
+  now = 500
+  h.assert_true(poll.remember_last_seen(device, deps))
+  h.assert_equal(poll.last_seen(device), 500)
+end
+
+function T.test_a_failed_poll_says_when_the_pc_was_last_seen()
+  -- #102: the remembered time reaches the summary row; never seen keeps the
+  -- words the row had before.
+  local caps = require "caps"
+  local device = h.fake_device({ language = "ko" })
+  local now = 2000000
+  local deps = { now = function() return now end }
+
+  poll.emit_connection(device, "unreachable", "응답 없음", deps)
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"), "연결 안 됨 · 응답 없음")
+
+  poll.remember_last_seen(device, deps)
+  now = now + 12 * 60
+  device.emitted = {}
+  poll.emit_connection(device, "unreachable", "응답 없음", deps)
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"),
+    "응답 없음 · 마지막 확인 12분 전")
+
+  device.preferences.language = "en"
+  device.emitted = {}
+  poll.emit_connection(device, "unauthorized", "Secret does not match", deps)
+  h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"),
+    "Not connected · Secret mismatch", "only `unreachable` says when")
+end
+
 function T.test_emit_passes_the_state_change_option_through()
   -- #86: an event whose value equals the current one is dropped by the
   -- platform, and the app - waiting for exactly that attribute - spins until it

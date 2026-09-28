@@ -33,6 +33,14 @@ poll.ROWS_FIELD = "rows_painted"
 -- #92: the last `service_version` a successful poll saw. Persisted, because the
 -- whole point is to still know it after the hub restarts while the PC is off.
 poll.SERVICE_VERSION_FIELD = "service_version"
+-- #102: when the PC last answered a poll, in epoch seconds (`poll.clock`).
+-- Persisted for the same reason as the version: "마지막 확인 12분 전" is read
+-- while the PC is off, which is when a hub restart would otherwise forget it.
+poll.LAST_SEEN_FIELD = "last_seen"
+-- #102: how stale the stored time may get before a successful poll writes it
+-- again. The row only ever says whole minutes, and a persisted field is a hub
+-- write, so a 10-second poll interval does not become six writes a minute.
+poll.LAST_SEEN_STEP = 60
 -- The generation stamp itself. #90: it starts fresh at the first channel
 -- release, because no device outside development ever carried an older one -
 -- every device installed from the channel paints its rows once on `added` and
@@ -81,6 +89,13 @@ end
 --- date is never interesting for a value that is at most a few minutes old.
 function poll.now()
   return os.date("%H:%M:%S")
+end
+
+--- #102: epoch seconds for the last-seen bookkeeping. `deps.now` wins when a
+--- caller passes one (the same injection discovery.lua and push.lua take), so
+--- tests never read the real clock.
+function poll.clock(deps)
+  return ((deps or {}).now or os.time)()
 end
 
 function poll.lang(device)
@@ -218,14 +233,20 @@ end
 -- `state.versions` falls back to "v?" only for a PC that never answered.
 -- The update suffix is deliberately not remembered: whether a newer service is
 -- out is something only a live answer can claim.
-function poll.emit_connection(device, connection, message)
+-- #102: the summary says when the PC last answered ("응답 없음 · 마지막 확인
+-- 12분 전"), from the time `remember_last_seen` kept; a PC that never answered
+-- keeps "연결 안 됨 · 응답 없음".
+-- @param deps optional; `deps.now` replaces the clock (poll.clock)
+function poll.emit_connection(device, connection, message, deps)
   local lang = poll.lang(device)
   local versions = state.versions(poll.last_service_version(device), lang)
+  local seen = poll.last_seen(device)
+  local seen_ago = seen and (poll.clock(deps) - seen) or nil
   poll.emit(device, {
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, lang) },
+      value = state.status_summary(connection, lang, nil, nil, { seen_ago = seen_ago }) },
     -- #86: the row lives on its own capability now; pcInfo keeps the attribute
     -- (and the emit) because its definition cannot change without a rename.
     { cap = caps.VERSION, attr = "versions", value = versions },
@@ -258,6 +279,36 @@ function poll.remember_service_version(device, body)
   end
   pcall(function()
     device:set_field(poll.SERVICE_VERSION_FIELD, version, { persist = true })
+  end)
+  return true
+end
+
+--- When the PC last answered (#102), in epoch seconds, or nil when this device
+--- never has.
+function poll.last_seen(device)
+  local seen
+  pcall(function() seen = device:get_field(poll.LAST_SEEN_FIELD) end)
+  seen = tonumber(seen)
+  if seen and seen > 0 then
+    return seen
+  end
+  return nil
+end
+
+--- Remember that the PC answered just now (#102). Returns true when the field
+--- was written.
+--
+-- Only once the stored time is `LAST_SEEN_STEP` old (or in the future - a hub
+-- clock that was set back): the row counts in whole minutes, and every write of
+-- a persisted field is a hub write.
+function poll.remember_last_seen(device, deps)
+  local now = poll.clock(deps)
+  local seen = poll.last_seen(device)
+  if seen and now >= seen and now - seen < poll.LAST_SEEN_STEP then
+    return false
+  end
+  pcall(function()
+    device:set_field(poll.LAST_SEEN_FIELD, now, { persist = true })
   end)
   return true
 end
@@ -555,7 +606,7 @@ function poll.once(driver, device, opts)
 
   if not client.device_base_url(device) then
     -- Freshly added device: nothing to poll until the user fills in the IP.
-    poll.emit_connection(device, "unreachable", i18n.t(lang, "no_ip"))
+    poll.emit_connection(device, "unreachable", i18n.t(lang, "no_ip"), opts.deps)
     -- Never offline: the driver on the hub is what acts, and SmartThings
     -- greys out an offline device, which would take Wake-on-LAN away exactly
     -- when it is needed. "PC off" is powerState/switch, not health.
@@ -604,6 +655,8 @@ function poll.once(driver, device, opts)
     -- #92: and the version, so the row survives the PC being switched off.
     -- Before `ensure_rows`, which repaints that very row.
     poll.remember_service_version(device, body)
+    -- #102: and when, so the failure path can say "마지막 확인 12분 전".
+    poll.remember_last_seen(device, opts.deps)
     -- #82/#84/#85: no status body carries `lastAction` or `planCommand`, and a
     -- migrated device has emitted nothing at all under the new capability ids,
     -- so the resting values go out first and the status body overwrites the
@@ -661,7 +714,7 @@ function poll.once(driver, device, opts)
   -- while a transition is running, and the one that hands it back to `none`
   -- when `waking` gives up and becomes `off`.
   poll.ensure_action(device)
-  poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
+  poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
   return false, kind
 end
 
