@@ -641,8 +641,31 @@ function T.test_the_dashboard_state_is_the_power_state()
   -- it comes from the standard `switch` capability, not from ours.
   local dashboard = presentation("power_state").dashboard
   h.assert_equal(#dashboard.states, 1)
-  h.assert_contains(dashboard.states[1].label, "powerState.value")
+  h.assert_equal(dashboard.states[1].label, "{{powerState.value}}")
   h.assert_equal(#dashboard.actions, 0, "the switch capability supplies the action")
+
+  -- #101: the tile's words, one per powerState value - a value without an
+  -- alternative would show the raw enum key on the tile - and the same words
+  -- the detail row uses, so the tile and the row never disagree.
+  local keys = {}
+  for _, alt in ipairs(dashboard.states[1].alternatives or {}) do
+    h.assert_nil(keys[alt.key], "duplicate dashboard alternative " .. tostring(alt.key))
+    keys[alt.key] = alt.value
+  end
+  local detail = {}
+  for _, item in ipairs(presentation("power_state").detailView) do
+    if item.displayType == "state" then
+      for _, alt in ipairs(item.state.alternatives) do
+        detail[alt.key] = alt.value
+      end
+    end
+  end
+  local enum = definition("power_state").attributes.powerState.schema.properties.value.enum
+  h.assert_equal(#dashboard.states[1].alternatives, #enum, "one alternative per enum value")
+  for _, value in ipairs(enum) do
+    h.assert_true(keys[value] ~= nil, "the dashboard has no words for " .. value)
+    h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
+  end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,

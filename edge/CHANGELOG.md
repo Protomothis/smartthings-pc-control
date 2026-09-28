@@ -2,6 +2,10 @@
 
 허브 안에서 도는 Edge 드라이버(`edge/`)의 변경 이력입니다. 드라이버는 Windows 앱과 버전이 따로 돌고(`src/driver_version.lua`, 태그 `edge-vX.Y.Z`), 사용자는 GitHub 릴리스가 아니라 SmartThings 채널을 통해 자동으로 업데이트를 받습니다. Windows 서비스·트레이 앱의 이력은 [../CHANGELOG.md](../CHANGELOG.md)에 있습니다.
 
+## [Unreleased]
+
+- 대시보드 타일이 전원 상태를 `절전 (Sleeping)`·`종료 대기 (Shutting down)`처럼 문구로 보여 주도록, 타일 문구를 상세 화면의 전원 상태 줄과 같은 일곱 값으로 고정했습니다. 토글은 그대로 스위치입니다. 기존 장치의 타일에 실제로 뜨는지는 Dev 채널 실측 대기입니다 (#101)
+
 ## [1.0.0] - 2026-09-26
 
 **첫 공개 버전입니다.** 커스텀 capability 여섯 — `pcPower`(전원 상태) · `pcRemote`(명령 실행) · `pcDefer`(예약) · `pcUser`(세션, 옵트인) · `pcInfo`(연결·업데이트·WoL·안내) · `pcVersion`(버전 줄) — 으로 상세 화면을 그리며, 프로필은 `pc.v1`입니다.
