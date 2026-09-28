@@ -64,7 +64,7 @@
 
 - [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정)
 - [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) · 개발자용 [`edge/README.md`](edge/README.md)
-- [텔레그램 알림 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램-알림-설정) · [텔레그램에서 PC 제어](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램에서-PC-제어)
+- [텔레그램](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램)
 - [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ)
 - 참고: [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스) · [CLI와 API 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/CLI와-API-레퍼런스) · [CHANGELOG](CHANGELOG.md) · [edge/CHANGELOG](edge/CHANGELOG.md)
 
@@ -113,7 +113,7 @@ Create a bot with [@BotFather](https://t.me/BotFather), paste the token on the *
 
 ### Docs
 
-The [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki) has the guides ([English overview](https://github.com/Protomothis/smartthings-pc-control/wiki/Home-EN); most pages are Korean): [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정) (install), [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Edge driver), [텔레그램 알림 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램-알림-설정) (Telegram), [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ) (troubleshooting). Driver developers: [`edge/README.md`](edge/README.md).
+The [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki) has the guides ([English overview](https://github.com/Protomothis/smartthings-pc-control/wiki/Home-EN); most pages are Korean): [설치와 첫 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/설치와-첫-설정) (install), [SmartThings Edge 드라이버](https://github.com/Protomothis/smartthings-pc-control/wiki/SmartThings-Edge-드라이버) (Edge driver), [텔레그램 알림 설정](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램) (Telegram), [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ) (troubleshooting). Driver developers: [`edge/README.md`](edge/README.md).
 
 ### Development
 
