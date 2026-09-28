@@ -111,20 +111,33 @@ func (c *Client) Login(secret string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			Message string `json:"message"`
-		}
-		json.NewDecoder(resp.Body).Decode(&e)
-		if e.Message != "" {
-			return fmt.Errorf("%s", e.Message)
-		}
-		return fmt.Errorf("login failed (HTTP %d)", resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return errLoginInvalid
+	case http.StatusTooManyRequests:
+		// service/webui.go locks an address out for 60 s after 5 failures.
+		return errLoginLimited
 	}
-	return nil
+	var e struct {
+		Message string `json:"message"`
+	}
+	json.NewDecoder(resp.Body).Decode(&e)
+	if e.Message != "" {
+		return fmt.Errorf("%s", e.Message)
+	}
+	return fmt.Errorf("login failed (HTTP %d)", resp.StatusCode)
 }
 
 var errUnauthorized = fmt.Errorf("unauthorized")
+
+// Login outcomes the dialog words itself (#98): a wrong secret, and the
+// service's rate-limit lockout.
+var (
+	errLoginInvalid = fmt.Errorf("invalid secret")
+	errLoginLimited = fmt.Errorf("too many login attempts")
+)
 
 // GetConfig fetches the current service config. Returns errUnauthorized
 // when a login is required first.
