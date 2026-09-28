@@ -205,6 +205,23 @@ local STRINGS = {
   -- drops back to `wol_off_short` and the name is read in `pcInfo.message`.
   wol_off_short_on = { ko = "WoL 꺼짐 (%s)", en = "WoL off (%s)" },
 
+  -- #102: the connected line's uptime (state.uptime_text), "연결됨 · 3일 2시간".
+  -- Short units in English because the whole line has 24 characters.
+  uptime_m = { ko = "%d분", en = "%dm" },
+  uptime_h = { ko = "%d시간", en = "%dh" },
+  uptime_hm = { ko = "%d시간 %d분", en = "%dh %dm" },
+  uptime_d = { ko = "%d일", en = "%dd" },
+  uptime_dh = { ko = "%d일 %d시간", en = "%dd %dh" },
+  -- #102: the unreachable line once a poll has succeeded before,
+  -- "응답 없음 · 마지막 확인 12분 전". It replaces "연결 안 됨 · 응답 없음" rather
+  -- than extending it, which would not fit; English says "No reply" instead of
+  -- `conn_short_unreachable`'s "No response" for the same reason
+  -- ("No reply · seen 12m ago" is 23 characters).
+  conn_seen = { ko = "응답 없음 · 마지막 확인 %s", en = "No reply · seen %s" },
+  ago_m = { ko = "%d분 전", en = "%dm ago" },
+  ago_h = { ko = "%d시간 전", en = "%dh ago" },
+  ago_d = { ko = "%d일 전", en = "%dd ago" },
+
   -- #87: the `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0". The screen
   -- (profile) name left it: it answered a question only the author asks, and
   -- it pushed the two numbers that matter off the end of a narrow row.
