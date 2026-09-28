@@ -206,6 +206,13 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 | 스위치 끄기 동작 | 스위치를 끌 때 보낼 명령 | 종료 |
 | 버튼 실행 방식 | 명령 목록이 PC의 유예를 따를지, 즉시 실행할지. 자동화의 `execute`는 자기 `mode`를 따로 가진다 | 설정된 유예 따름 |
 | 문구 언어 | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 한국어다 | 자동 (한국어) |
+| 아이콘 | 앱에 보이는 장치 아이콘(카테고리): 기타 · 모니터 · 스위치 · 플러그 · TV · 프로젝터 · 네트워크 · 허브 · 홈시어터 · 리모컨. 바꾸면 드라이버가 장치를 카테고리만 다른 프로필로 옮긴다. 화면·설정·자동화는 그대로이고 **다시 추가할 필요가 없다** | 기타 |
+
+**아이콘 설정이 따로 있는 이유**: 앱은 장치 아이콘을 프로필의 카테고리로 정하는데,
+이 드라이버의 기본 카테고리인 `Others`(기타)는 앱에서 아이콘을 고를 수 없고 `Computer`
+카테고리는 SmartThings가 받아 주지 않는다. 그래서 카테고리마다 같은 화면의 프로필을 하나씩
+두고(`pc-monitor.v1` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
+드라이버가 곧 전부 다시 채운다.
 
 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지한다. 푸시가 즉시 반영을
 담당하고 폴링은 안전망이다.
@@ -248,7 +255,7 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
   src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               pc-vN.yml — 현재는 pc.yml (pc.v1)
+  profiles/               pc-vN.yml — 현재는 pc.yml (pc.v1)과 아이콘 변형 pc-<style>.yml (pc-<style>.v1)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
   tools/                  테스트 러너와 배포 스크립트
@@ -302,6 +309,7 @@ npm test
 2. 옛 프로필 파일은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
 3. `src/profiles.lua`의 `PC`와 `KNOWN`만 고치면 `init`/`added`가 기존 장치를 옮긴다.
 4. capability id가 바뀌었다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
+5. **아이콘 변형(`pc-<style>.yml`)은 pc.yml과 `name:`·카테고리 한 줄만 다르다.** pc.yml을 고치면 변형 전부에 같은 변경을 옮기고(테스트가 한 줄이라도 다르면 실패한다), 버전을 올릴 때는 변형도 전부 함께 올린다 — `PC`와 `VARIANTS`를 새 이름으로, 옛 이름 전부를 `KNOWN`에. 이전은 스타일을 유지한다(`pc-monitor.v1` → `pc-monitor.v2`).
 
 ### 패키징
 
@@ -336,7 +344,9 @@ SmartThings section (discovery responder, firewall rule, last search request).
 **Screen** — a status card (power state, last action, schedule summary, session, status,
 versions) and a control card (command list, what to schedule, when to schedule).
 Preference labels are Korean with the English term in parentheses; Edge has no per-locale
-preference variants.
+preference variants. The *Icon* preference picks the device category (the icon the app
+draws, which it does not let you change for `Others`); the driver moves the device onto a
+profile that differs only in its category, no re-add needed.
 
 **Develop** — `npm test` runs the Lua 5.3 suite under fengari. `tools/apply-namespace.js`
 rewrites the capability namespace, `tools/sync-capabilities.sh` uploads definitions,
