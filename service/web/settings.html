@@ -304,6 +304,13 @@
                         <input type="text" id="stHubs" value="{{.AllowedHubs}}" placeholder="192.168.1.20, 192.168.1.21" oninput="checkChanges()">
                         <div class="info" data-i18n="stHubsInfo">Comma separated. Empty = any hub allowed.</div>
                     </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="activityEnabled" {{if .ActivityEnabled}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="activity">Detect running apps</span>
+                        </label>
+                        <div class="info" data-i18n="activityInfo">Reports only the programs on the watch list, as their kind and label. Edit the list in the desktop app.</div>
+                    </div>
                     <div class="section-title" data-i18n="telegram">Telegram</div>
                     <div class="field">
                         <label data-i18n="tgPCName">PC name</label>
@@ -399,6 +406,8 @@
                 stWolAuto: 'Automatic', stWolAutoNone: 'Automatic (no adapter found)',
                 stWolOn: 'WoL on', stWolOff: 'WoL off', stWolNA: 'WoL not supported',
                 stWolUnknown: 'Adapter not found',
+                activity: 'Detect running apps',
+                activityInfo: 'Reports only the programs on the watch list, as their kind and label. Edit the list in the desktop app.',
                 telegram: 'Telegram', tgPCName: 'PC name',
                 tgPCNameInfo: 'Shown in the Telegram message header; empty uses the computer name.',
                 save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
@@ -436,6 +445,8 @@
                 stWolAuto: '자동', stWolAutoNone: '자동 (어댑터 없음)',
                 stWolOn: 'WoL 켜짐', stWolOff: 'WoL 꺼짐', stWolNA: 'WoL 미지원',
                 stWolUnknown: '없는 어댑터',
+                activity: '실행 중 앱 감지',
+                activityInfo: '감시 목록에 있는 프로그램만 종류와 라벨로 알립니다. 목록은 데스크톱 앱에서 편집합니다.',
                 telegram: '텔레그램', tgPCName: 'PC 이름',
                 tgPCNameInfo: '알림 머리말에 표시. 비우면 컴퓨터 이름',
                 save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
@@ -489,6 +500,7 @@
         // the value the template rendered, not the (still empty) selection.
         const originalStWolMac = document.getElementById('stWolMac').dataset.current || '';
         const originalTgPCName = document.getElementById('tgPCName').value;
+        const originalActivity = document.getElementById('activityEnabled').checked;
         function checkChanges() {
             const changed = document.getElementById('port').value !== originalPort ||
                             document.getElementById('secret').value !== originalSecret ||
@@ -498,7 +510,8 @@
                             document.getElementById('stSessionUser').checked !== originalStSessionUser ||
                             document.getElementById('stHubs').value !== originalStHubs ||
                             document.getElementById('stWolMac').value !== originalStWolMac ||
-                            document.getElementById('tgPCName').value !== originalTgPCName;
+                            document.getElementById('tgPCName').value !== originalTgPCName ||
+                            document.getElementById('activityEnabled').checked !== originalActivity;
             document.getElementById('btnSave').disabled = !changed;
         }
         async function saveConfig() {
@@ -517,8 +530,11 @@
             // Only pc_name: the service decodes over the live config, so the
             // bot token, chat id and the rest of telegram{} are left alone.
             const telegram = {pc_name: document.getElementById('tgPCName').value.trim()};
+            // Only the switch: without a watch key the service keeps the
+            // list the desktop app edited.
+            const activity = {enabled: document.getElementById('activityEnabled').checked};
             try {
-                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram})});
+                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram, activity})});
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, data.status === 'error' ? 'error' : 'success');

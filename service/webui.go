@@ -296,9 +296,13 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			// pc_name falls back to.
 			PCName   string
 			Hostname string
+			// ActivityEnabled is the running-app detection switch (#110);
+			// the watch list itself is edited in the desktop app, whose
+			// picker reads the process list this page must not see.
+			ActivityEnabled bool
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
-			liveCfg.Telegram.PCName, hostname()})
+			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)
@@ -315,6 +319,10 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 
 	// API: battery for the app's status bar (#112, see battery.go)
 	mux.HandleFunc("/api/battery", handleBatteryAPI)
+
+	// API: running program names for the app's watch-list picker (#110,
+	// see activity.go); loopback callers only.
+	mux.HandleFunc("/api/processes", handleProcessesAPI)
 
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
@@ -578,6 +586,10 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		// normalizeConfig applies the token rules: ""/masked keep, "-" clears.
 		newCfg = normalizeConfig(newCfg, liveCfg)
 		if msg := validateGraceSeconds(newCfg.GraceSeconds); msg != "" {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if msg := validateActivity(newCfg.Activity); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}

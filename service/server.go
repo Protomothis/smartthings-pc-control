@@ -149,6 +149,9 @@ type Config struct {
 	// Awake holds the keep-awake defaults (#111, see awake.go). The on/off
 	// state itself is not configuration and is never saved.
 	Awake AwakeConfig `json:"awake"`
+	// Activity is the opt-in running-app detection (media-notify doc §11,
+	// #110). Hot-reloaded: the scanner reads it on every tick.
+	Activity ActivityConfig `json:"activity"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
@@ -231,6 +234,8 @@ var defaultConfig = Config{
 	},
 	// A missing "awake" object keeps these (0 would mean "until turned off").
 	Awake: AwakeConfig{DefaultMinutes: awakeDefaultMinutes},
+	// Running-app detection is opt-in (§11): off, with an empty list.
+	Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -242,6 +247,7 @@ func (c Config) withDefaults() Config {
 	c.SmartThings = c.SmartThings.withDefaults()
 	c.Awake = c.Awake.withDefaults()
 	c.Notify = c.Notify.WithDefaults()
+	c.Activity = c.Activity.withDefaults()
 	return c
 }
 
@@ -278,6 +284,7 @@ func (c Config) forUpdate() Config {
 	c.Notify = nil
 	c.Telegram.AllowedChatIDs = nil
 	c.SmartThings.AllowedHubs = nil
+	c.Activity.Watch = nil
 	return c
 }
 
@@ -349,6 +356,9 @@ func loadConfig() Config {
 			cfg.Telegram.BotToken = ""
 		}
 	}
+	// A hand-edited watch list keeps its valid entries; the rest are
+	// dropped with a log line each rather than failing the whole load.
+	cfg.Activity = sanitizeActivity(cfg.Activity)
 	return cfg.withDefaults()
 }
 
@@ -434,6 +444,9 @@ func normalizeConfig(cfg Config, current Config) Config {
 	if cfg.Notify == nil {
 		cfg.Notify = current.Notify
 	}
+	if cfg.Activity.Watch == nil {
+		cfg.Activity.Watch = current.Activity.Watch
+	}
 	return cfg.withDefaults()
 }
 
@@ -463,6 +476,9 @@ func configChangedKeys(old, new Config) []string {
 	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
 	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
 	add("smartthings.wol_mac", old.SmartThings.WoLMAC != new.SmartThings.WoLMAC)
+	// What the hub learns about running programs is privacy-relevant too.
+	add("activity.enabled", old.Activity.Enabled != new.Activity.Enabled)
+	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
 	return keys
 }
 
@@ -498,6 +514,9 @@ func saveConfig(cfg Config) error {
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see telegram_control.go).
 	reconcileTelegramControl()
+	// The activity scanner looks again right away instead of on its next
+	// tick (a no-op while it is not running).
+	kickActivityScan()
 	return nil
 }
 

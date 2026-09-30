@@ -281,6 +281,9 @@ func startupHooks(stop <-chan struct{}) {
 	startAwake(stop)
 	// Battery (#112): first reading now, then every minute.
 	startBatteryMonitor(stop)
+	// Running-app detection (#110): reads activity.enabled on every tick
+	// and does not look at processes while it is off.
+	go watchActivity(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP
