@@ -234,6 +234,16 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
   파일 경로·URL·썸네일은 보내지 않는다. 크롬 등 브라우저는 탭 제목(유튜브 영상 제목)이 제목으로 오므로 옵트인 설명에 적는다.
 - **제어:** `play`/`pause`는 이제 구분된다(TryPlayAsync/TryPauseAsync). `playpause`는 토글, `stop`/`next`/`prev`는 해당 메서드.
 - **API:** status `media` 블록, features += "nowplaying"(옵트인일 때), 푸시 `media.changed`. 텔레그램 `/np`, `/status` 한 줄.
+- (#117 구현) WinRT는 새 의존성 없이 vtable을 직접 부른다(`useraction/winrt.go`). 비동기 결과는 완료 델리게이트 대신
+  `IAsyncInfo.Status`를 5ms 간격으로 확인하고, `RequestAsync` 1.5초 · 나머지 1초에서 끊는다. `pause`는 재생 중이 아니면
+  아무것도 보내지 않는다(앱이 거절해 키로 넘어가면 토글 키가 오히려 재생을 시작하므로). 앱이 거절(`false`)하거나 호출이 실패하면 키로 넘어간다.
+  세션 답은 `{"ok":true,"media":"pause","via":"session","status":"paused","app":"Spotify"}`, 조회는 `user-action media info` →
+  `{"ok":true,"media":{"status","title","artist","album","app"}}`. `app`은 AUMID를 표시 이름으로 바꾼 것(Spotify · Chrome · Edge ·
+  Firefox · VLC · foobar2000 …, 기본 앱은 표시 언어에 따라 `미디어 플레이어`/`Media Player`, 모르면 AUMID 끝부분).
+- (#117 구현) status `media`는 늘 있고 `status`만은 `media.enabled`면 온다. 세션이 없거나, 로그인한 사용자가 없거나, 90초 넘게
+  새 표본이 없으면(트레이 앱이 없음) `none`. 옵트인이 꺼져 있으면 저장할 때도 보여 줄 때도 곡 정보를 뺀다. 미디어 명령 뒤에는 답의
+  상태를 바로 저장하고(같은 앱이면 곡 정보 유지) 1.2초 뒤 `media info`로 다시 읽는다. 트레이는 3초마다 오디오·미디어를 읽어 바뀐 블록만
+  하트비트로 보낸다(30초 하트비트는 전부). 앱의 미디어 카드는 새 로컬 API `GET/POST /api/media`를 쓴다.
 - **드라이버:** 표준 `audioTrackData`(title/artist/album)와 `mediaPlayback.playbackStatus`. 미디어 묶음을 main에 둘지 컴포넌트 `media`로
   분리할지는 Dev 채널에서 둘 다 그려 보고 정한다(실측 대기).
 
@@ -243,6 +253,8 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
   - 미디어 카드: 첫 줄 재생 정보 `▶ 제목 — 아티스트 · Spotify`(옵트인 꺼짐이면 `재생 중` / `일시정지`만, 세션 없으면 `재생 중인 미디어 없음`),
     둘째 줄 ⏮ ⏯ ⏭, 셋째 줄 🔈 볼륨 슬라이더(0–100, 놓을 때 전송) + 음소거 토글 + 현재 장치 이름.
   - 긴 제목은 한 줄로 자르고 전체는 툴팁.
+    (#117 구현) Fyne 2.8에는 툴팁이 없어, 잘렸을 때만 전체 문구를 바로 아래 작은 글씨로 보여 준다. 일반 → 전원 → 미디어 →
+    잠들지 않기 순이고, "즉시 실행" 안내는 전원 카드 안으로 옮겼다.
 - **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / 소리내어 읽기 + 음성 / [테스트 알림].
 - **SmartThings 상세 화면** — 상태 카드와 조작 카드 뒤에 미디어 묶음: 곡 정보 → 재생/일시정지·이전/다음 → 볼륨 슬라이더 → 음소거.
   그 뒤 프리셋(목록 + 이름 줄), 활동, PC 알림 입력, 잠들지 않기·배터리 컴포넌트.
