@@ -32,6 +32,7 @@
 - **잠들지 않기** — 정한 시간(기본 1시간, 최대 24시간 또는 끌 때까지) 동안 자동 절전을 막습니다. 직접 보낸 종료·절전은 그대로 실행됩니다. 기본 시간은 `config.json`의 `awake.default_minutes`(0 = 끌 때까지), 화면까지 켜 두려면 `awake.keep_display: true`.
 - **노트북 배터리** — 배터리가 있는 PC는 잔량과 충전 상태를 SmartThings · 텔레그램 `/status` · 앱 상태 줄에 보고합니다.
 - **실행 중 앱 감지(선택)** — 감시 목록에 넣은 프로그램이 실행 중이면 `게임 중 · Steam`처럼 종류와 라벨을 SmartThings · 텔레그램 `/status`에 알립니다. 기본은 꺼짐이고, 앱의 네트워크 탭 SmartThings 섹션에서 켜고 목록을 편집합니다(실행 중인 프로그램에서 고르기 지원). `config.json`에서는 `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process`는 경로 없는 `.exe` 파일 이름(대소문자 무시), `label`은 30자 이하, `kind`는 `game` · `stream` · `media` · `work` · `other`, 최대 20개입니다.
+- **볼륨 · 음소거 · 미디어** — 기본 재생 장치의 볼륨(0–100, 올리기/내리기 기본 5)과 음소거를 바꾸고 현재 값을 보고하며, 재생/일시정지 · 정지 · 다음/이전 곡 키를 보냅니다. 로그인한 사용자가 있을 때만 동작합니다(없으면 `409 no_user_session`). Windows에는 재생/일시정지 토글 키 하나뿐이라 `play`와 `pause`는 둘 다 그 키를 보냅니다. `/st/v1/command`의 `volume`(value 0–100) · `volumeup`/`volumedown`(value 1–100, 기본 5) · `mute` · `unmute` · `play` · `pause` · `playpause` · `stop` · `next` · `prev`. 끄려면 `config.json`의 `media.enabled: false`(기본 켬, 앱 설정 탭에도 있음).
 - **텔레그램** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다(선택).
 - **데스크톱 앱** — 설정 · 명령 · 예약 · 알림 · 네트워크 · 로그 탭, 트레이 상주, 한국어/English.
 - **서명된 자동 업데이트** — Ed25519 서명 매니페스트로 검증한 릴리스만 설치하고, 실패하면 롤백합니다.
@@ -60,6 +61,8 @@
 ### 텔레그램 (선택)
 
 [@BotFather](https://t.me/BotFather)로 봇을 만들고, 앱 **알림 탭**에 토큰을 넣은 뒤 [Chat ID 찾기]로 채팅을 고릅니다. 알림과 명령 제어는 각각 따로 켭니다. 포트 개방이나 웹훅은 필요 없고, **봇 하나에 PC 하나**를 씁니다(같은 토큰을 공유하면 한 PC만 명령을 받습니다).
+
+볼륨과 미디어 명령은 `/vol`(현재 값: `볼륨 30% · 음소거 꺼짐 · 스피커`) · `/vol 30` · `/vol +10` · `/vol -10` · `/mute` · `/unmute` · `/play` · `/pause` · `/stop` · `/next` · `/prev`입니다. 알림 일시 중지는 `/quiet 30m|2h|off`로 옮겼고, `/mute 2h`처럼 시간을 붙이면 예전처럼 알림을 멈춥니다.
 
 ### 문서
 
@@ -102,6 +105,7 @@ A single exe that runs as a Windows service (always on, no login needed) and a t
 - **Wake-on-LAN** to the adapter the PC picks, **scheduling** with 16 presets up to 3 days (with cancel), and a command list that knows when the PC is mid-transition.
 - **Keep awake** — hold off idle sleep for a while (1 hour by default, up to 24 hours or until turned off); shutdown and sleep you ask for still happen. `awake.default_minutes` (0 = until turned off) and `awake.keep_display` in `config.json`. Laptops also report their **battery** level and charging state.
 - **Running-app detection (opt-in)** — when a program on your watch list runs, the hub and Telegram `/status` see its kind and your label ("Gaming · Steam"). Off by default; turn it on and edit the list in the app's network tab (with a picker of running programs). In `config.json`: `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process` is a bare `.exe` file name (case-insensitive), `label` up to 30 characters, `kind` one of `game`, `stream`, `media`, `work`, `other`, at most 20 entries.
+- **Volume, mute and media keys** — set and report the default playback device's volume (0–100, up/down by 5 by default) and mute, and send play/pause, stop, next and previous. Needs a logged-in user (`409 no_user_session` otherwise). Windows has a single play/pause toggle, so `play` and `pause` both send it. `/st/v1/command`: `volume` (value 0–100), `volumeup`/`volumedown` (value 1–100, default 5), `mute`, `unmute`, `play`, `pause`, `playpause`, `stop`, `next`, `prev`. Turn it off with `media.enabled: false` in `config.json` (on by default; also on the app's Settings tab).
 - **Telegram** notifications and bot commands (optional), a **desktop app** in Korean/English, and **signed auto-update** (Ed25519 manifest, rollback on failure).
 
 ### Install
@@ -115,6 +119,8 @@ The driver needs service **v1.1.0+**; **v1.1.1** is recommended (discovery statu
 ### Telegram (optional)
 
 Create a bot with [@BotFather](https://t.me/BotFather), paste the token on the **Notifications** tab and use [Find Chat ID]. Notifications and control are enabled separately. No open ports or webhooks; use **one bot per PC**.
+
+Volume and media: `/vol` (current: `Volume 30% · mute off · Speakers`), `/vol 30`, `/vol +10`, `/vol -10`, `/mute`, `/unmute`, `/play`, `/pause`, `/stop`, `/next`, `/prev`. Pausing notifications moved to `/quiet 30m|2h|off`; `/mute 2h` with a duration still pauses them.
 
 ### Docs
 

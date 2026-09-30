@@ -128,6 +128,8 @@ type ui struct {
 	st          *stSection
 	svcBox      *fyne.Container
 	remoteCheck *toggle
+	// mediaCheck is media.enabled (#104): volume and media-key commands.
+	mediaCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -664,6 +666,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry.OnChanged = onEdit
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
+	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
 
@@ -701,6 +704,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		hint(u.t("settings.grace.hint")),
 		u.remoteCheck,
 		hint(u.t("settings.remote.hint")),
+		u.mediaCheck,
+		hint(u.t("settings.media.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -769,6 +774,7 @@ func (u *ui) saveSettings(quiet bool) bool {
 	cfg.Port = port
 	cfg.Secret = u.secretEntry.Text
 	cfg.WebUIRemote = u.remoteCheck.Checked
+	cfg.Media.Enabled = u.mediaCheck.Checked
 	cfg.ShutdownGrace = graceOn
 	cfg.GraceSeconds = graceSec
 	msg, err := u.client.SaveConfig(cfg)
@@ -803,6 +809,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.portEntry.SetText(strconv.Itoa(cfg.Port))
 	u.secretEntry.SetText(cfg.Secret)
 	u.remoteCheck.SetChecked(cfg.WebUIRemote)
+	u.mediaCheck.SetChecked(cfg.Media.Enabled)
 	u.setGraceSelection(cfg)
 	u.updateSaveState()
 }
@@ -869,6 +876,7 @@ func (u *ui) settingsDirty() bool {
 	return strings.TrimSpace(u.portEntry.Text) != strconv.Itoa(b.Port) ||
 		u.secretEntry.Text != b.Secret ||
 		u.remoteCheck.Checked != b.WebUIRemote ||
+		u.mediaCheck.Checked != b.Media.Enabled ||
 		graceOn != b.ShutdownGrace ||
 		(graceOn && graceSec != b.GraceSeconds)
 }
@@ -1240,6 +1248,7 @@ func (u *ui) initialLoad() {
 		u.portEntry.SetText(strconv.Itoa(cfg.Port))
 		u.secretEntry.SetText(cfg.Secret)
 		u.remoteCheck.SetChecked(cfg.WebUIRemote)
+		u.mediaCheck.SetChecked(cfg.Media.Enabled)
 		u.setGraceSelection(cfg)
 		u.updateSaveState()
 		u.fillNotifyTab(cfg)

@@ -6,79 +6,128 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
-var (
-	modWtsapi32              = syscall.NewLazyDLL("wtsapi32.dll")
-	modKernel32              = syscall.NewLazyDLL("kernel32.dll")
-	procWTSQueryUserToken    = modWtsapi32.NewProc("WTSQueryUserToken")
-	procProcessIdToSessionId = modKernel32.NewProc("ProcessIdToSessionId")
-)
+// modWtsapi32 also serves st_session.go's WTSQuerySessionInformationW.
+var modWtsapi32 = syscall.NewLazyDLL("wtsapi32.dll")
 
-// errNoUserSession means nobody is logged in interactively: there is no
-// explorer.exe, or the session it runs in has no user token (#103). Callers
-// test for it with errors.Is and answer 409 no_user_session.
+// errNoUserSession means nobody is logged in interactively: neither the
+// console session nor any other active session has a user token (#103).
+// Callers test for it with errors.Is and answer 409 no_user_session.
 var errNoUserSession = errors.New("no_user_session")
 
 // errorNoToken is ERROR_NO_TOKEN, what WTSQueryUserToken returns for a
-// session nobody is logged into (a disconnected or logging-off session).
-const errorNoToken = syscall.Errno(1008)
+// session nobody is logged into (the logon screen, a logging-off session).
+const errorNoToken = windows.ERROR_NO_TOKEN
+
+// noConsoleSession is what WTSGetActiveConsoleSessionId returns while the
+// console is between sessions (attaching or detaching).
+const noConsoleSession = 0xFFFFFFFF
+
+// wtsSession is the part of one WTSEnumerateSessions row the lookup uses.
+type wtsSession struct {
+	ID    uint32
+	State uint32 // windows.WTSActive, WTSConnected, WTSDisconnected, ...
+}
+
+// The WTS calls behind findUserSession, replaced by the tests. They need
+// SE_TCB_NAME for WTSQueryUserToken, which LocalSystem — the service — has.
+var (
+	wtsActiveConsoleSession = windows.WTSGetActiveConsoleSessionId
+	wtsQueryUserToken       = func(session uint32) (windows.Token, error) {
+		var t windows.Token
+		err := windows.WTSQueryUserToken(session, &t)
+		return t, err
+	}
+	wtsEnumerateSessions = enumerateWTSSessions
+)
+
+// enumerateWTSSessions lists the sessions on this machine.
+func enumerateWTSSessions() ([]wtsSession, error) {
+	var info *windows.WTS_SESSION_INFO
+	var n uint32
+	if err := windows.WTSEnumerateSessions(0, 0, 1, &info, &n); err != nil {
+		return nil, err
+	}
+	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(info)))
+	out := make([]wtsSession, 0, n)
+	for _, s := range unsafe.Slice(info, n) {
+		out = append(out, wtsSession{ID: s.SessionID, State: s.State})
+	}
+	return out, nil
+}
+
+// findUserSession returns the interactive user's session and a primary
+// token for them; the caller closes the token. The console session comes
+// first — it is the one with the monitor and the speakers — then any other
+// active session (an RDP login). A session "has a user" when
+// WTSQueryUserToken gives a token for it; the logon screen answers
+// ERROR_NO_TOKEN.
+//
+// Nobody logged in is errNoUserSession. Any other WTS failure (a missing
+// privilege, say) is returned as itself so it is not mistaken for an
+// empty machine.
+//
+// This replaced a PowerShell `Get-Process explorer` lookup (#104): that
+// cost most of a second per call, a third of runUserAction's 3s budget,
+// and also missed a user whose shell had crashed.
+func findUserSession() (uint32, syscall.Token, error) {
+	var firstErr error
+	try := func(id uint32) (syscall.Token, bool) {
+		tok, err := wtsQueryUserToken(id)
+		if err == nil {
+			return syscall.Token(tok), true
+		}
+		if !errors.Is(err, errorNoToken) && firstErr == nil {
+			firstErr = fmt.Errorf("WTSQueryUserToken(session %d): %w", id, err)
+		}
+		return 0, false
+	}
+
+	console := wtsActiveConsoleSession()
+	if console != noConsoleSession {
+		if tok, ok := try(console); ok {
+			return console, tok, nil
+		}
+	}
+	sessions, err := wtsEnumerateSessions()
+	if err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("WTSEnumerateSessions: %w", err)
+	}
+	for _, s := range sessions {
+		// Session 0 is the services' own; it never has an interactive user.
+		if s.State != windows.WTSActive || s.ID == 0 || s.ID == console {
+			continue
+		}
+		if tok, ok := try(s.ID); ok {
+			return s.ID, tok, nil
+		}
+	}
+	if firstErr != nil {
+		return 0, 0, firstErr
+	}
+	return 0, 0, fmt.Errorf("%w: no session has a logged-in user", errNoUserSession)
+}
 
 // userSessionWaitDelay bounds how long a waited-for user-session command
 // may keep its output pipes open after it exited or was killed — a
 // grandchild that inherited them must not keep CombinedOutput blocked.
 const userSessionWaitDelay = 500 * time.Millisecond
 
-// getActiveUserSessionID finds the session ID of the logged-in user
-// by looking for explorer.exe processes.
+// getActiveUserSessionID returns the session ID of the logged-in user (see
+// findUserSession); errNoUserSession when there is none.
 func getActiveUserSessionID() (uint32, error) {
-	return getActiveUserSessionIDContext(context.Background())
-}
-
-// getActiveUserSessionIDContext is getActiveUserSessionID bounded by ctx,
-// so a caller with a deadline (runUserAction) is not held up by a slow
-// PowerShell start. No explorer.exe is reported as errNoUserSession.
-func getActiveUserSessionIDContext(ctx context.Context) (uint32, error) {
-	// Use PowerShell to get explorer.exe session IDs
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
-		"(Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId")
-	output, err := cmd.CombinedOutput()
+	id, tok, err := findUserSession()
 	if err != nil {
-		return 0, fmt.Errorf("failed to find explorer.exe: %v", err)
+		return 0, err
 	}
-
-	sidStr := strings.TrimSpace(string(output))
-	if sidStr == "" {
-		return 0, fmt.Errorf("%w: no explorer.exe process found", errNoUserSession)
-	}
-
-	sid, err := strconv.ParseUint(sidStr, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid session id %q: %v", sidStr, err)
-	}
-
-	return uint32(sid), nil
-}
-
-// getUserToken returns a token handle for the user logged into the given session.
-func getUserToken(sessionID uint32) (syscall.Token, error) {
-	var token syscall.Token
-	r1, _, err := procWTSQueryUserToken.Call(
-		uintptr(sessionID),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if r1 == 0 {
-		if errors.Is(err, errorNoToken) {
-			return 0, fmt.Errorf("%w: session %d has no user token", errNoUserSession, sessionID)
-		}
-		return 0, fmt.Errorf("WTSQueryUserToken failed (session %d): %v", sessionID, err)
-	}
-	return token, nil
+	tok.Close()
+	return id, nil
 }
 
 // userSessionCommand builds an exec.Cmd that runs under the active user's
@@ -87,14 +136,12 @@ func getUserToken(sessionID uint32) (syscall.Token, error) {
 // is killed when ctx is done (exec.CommandContext), and the error wraps
 // errNoUserSession when nobody is logged in.
 func userSessionCommand(ctx context.Context, name string, args ...string) (*exec.Cmd, syscall.Token, error) {
-	sessionID, err := getActiveUserSessionIDContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	_, token, err := findUserSession()
 	if err != nil {
 		return nil, 0, fmt.Errorf("get session: %w", err)
-	}
-
-	token, err := getUserToken(sessionID)
-	if err != nil {
-		return nil, 0, fmt.Errorf("get user token (session %d): %w", sessionID, err)
 	}
 
 	cmd := exec.CommandContext(ctx, name, args...)

@@ -49,6 +49,8 @@ var messages = map[string]map[Lang]string{
 	"settings.remote":            {LangKo: "WebUI 브라우저 접속 허용 (로컬+LAN)", LangEn: "Allow browser WebUI access (local+LAN)"},
 	"settings.remote.hint":       {LangKo: "시크릿 필요, 서비스 재시작 후 적용", LangEn: "Requires a secret; applies after a service restart"},
 	"settings.remote.needsecret": {LangKo: "브라우저 접속을 켜려면 시크릿을 먼저 설정하세요", LangEn: "Set a secret before enabling browser access"},
+	"settings.media":             {LangKo: "원격 볼륨·미디어 제어 허용", LangEn: "Allow remote volume and media control"},
+	"settings.media.hint":        {LangKo: "SmartThings·텔레그램에서 볼륨·음소거와 재생/일시정지·다음 곡 등을 보냅니다. 로그인한 사용자가 있을 때만 동작합니다.", LangEn: "Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in."},
 	"settings.grace":             {LangKo: "원격 명령 유예", LangEn: "Remote grace"},
 	"settings.grace.off":         {LangKo: "사용 안 함 (즉시 실행)", LangEn: "Off (run immediately)"},
 	"settings.grace.hint":        {LangKo: "SmartThings의 종료/재시작/절전/최대절전 명령을 이 시간 뒤에 실행하며, 대기 중 알림·트레이·예약 탭에서 취소할 수 있습니다. 강제 종료와 이 앱의 명령은 항상 즉시 실행됩니다.", LangEn: "Remote shutdown/restart/suspend/hibernate wait this long and can be cancelled from the toast, tray menu or Schedule tab. Force shutdown and this app's commands run immediately."},

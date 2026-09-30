@@ -93,6 +93,11 @@ type localConfig struct {
 	SmartThings struct {
 		ExposeSession bool `json:"expose_session"`
 	} `json:"smartthings"`
+	// Media gates the heartbeat's audio block (#104). A pointer because a
+	// missing key means on, the service's default.
+	Media struct {
+		Enabled *bool `json:"enabled"`
+	} `json:"media"`
 }
 
 // readLocalConfig parses config.json next to the exe; zero values when
@@ -118,6 +123,13 @@ func localSecret() string { return readLocalConfig().Secret }
 // session block (smartthings.expose_session, edge-driver doc §3.2). A
 // missing key means off, matching the service's default.
 func localExposeSession() bool { return readLocalConfig().SmartThings.ExposeSession }
+
+// localMediaEnabled reports media.enabled (#104); a missing key (or no
+// config.json at all) means on, matching the service's default.
+func localMediaEnabled() bool {
+	on := readLocalConfig().Media.Enabled
+	return on == nil || *on
+}
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
 // 1, matching service/webui.go), defaulting to 5002 when config.json has
