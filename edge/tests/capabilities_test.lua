@@ -279,15 +279,29 @@ function T.test_the_version_capability_is_last_in_the_current_profile()
   -- version row sits at the bottom of the screen only if its capability is the
   -- last entry. #86 made that capability `pcVersion` (two state rows of one
   -- capability are drawn as two narrow columns), with `pcInfo` right above it.
+  -- #107: "last" among the edge-v1.0 capabilities. The v1.2.0 ones follow it
+  -- (media-notify.md §15 "UI 구성"), and every one of them comes after it.
   local profiles = require "profiles"
   local name, text = profile_file_for(profiles.current())
   h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
   local order = capability_order(text)
   h.assert_true(#order > 1, "profiles/" .. tostring(name) .. " lists no custom capability")
-  h.assert_equal(order[#order], (caps.VERSION:gsub("^.*%.", "")),
-    "profiles/" .. tostring(name) .. " must list the version capability last (#86)")
-  h.assert_equal(order[#order - 1], (caps.STATUS:gsub("^.*%.", "")),
+  local version = (caps.VERSION:gsub("^.*%.", ""))
+  local at
+  for i, id in ipairs(order) do
+    if id == version then
+      at = i
+    end
+  end
+  h.assert_true(at ~= nil, "profiles/" .. tostring(name) .. " does not list the version capability")
+  h.assert_equal(order[at - 1], (caps.STATUS:gsub("^.*%.", "")),
     "the info card belongs directly above the version card (#86)")
+  local v1 = {
+    pcpower = true, pcremote = true, pcdefer = true, pcuser = true, pcinfo = true,
+  }
+  for i = at + 1, #order do
+    h.assert_nil(v1[order[i]], order[i] .. " is listed after the version capability (#86)")
+  end
 end
 
 function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
@@ -365,23 +379,29 @@ local function enum_options(text, preference)
   return keys, (block or ""):match("\n      default: \"?([%w]+)\"?")
 end
 
-function T.test_every_icon_variant_is_pc_yml_with_another_name_and_category()
+function T.test_every_frozen_v1_icon_variant_is_pc_yml_with_another_name_and_category()
   -- The variants exist only to carry a different category (the icon). Any
   -- other difference - a preference added to pc.yml and not copied over, a
   -- capability order changed in one file - would give the same PC a different
   -- screen or settings depending on the icon it wears.
+  -- #107: the v1 files are frozen now (their v2 successors are generated and
+  -- checked by profilegen_test.lua), and this keeps them that way.
   local profiles = require "profiles"
-  local _, base = profile_file_for(profiles.PC)
-  h.assert_true(base ~= nil, "no profile file declares " .. profiles.PC)
+  local file_v1, base = profile_file_for("pc.v1")
+  h.assert_equal(file_v1, "pc.yml", "pc.v1 stays in profiles/pc.yml")
   local expected = variant_body(base)
   h.assert_contains(expected, "name: <name>")
   h.assert_contains(expected, "- name: <category>")
-  for style, variant in pairs(profiles.VARIANTS) do
-    local file, text = profile_file_for(variant)
-    h.assert_true(text ~= nil, "no profile file declares " .. variant .. " (iconStyle " .. style .. ")")
-    h.assert_equal(file, "pc-" .. style .. ".yml", "the file of " .. variant)
-    h.assert_true(variant_body(text) == expected,
-      "profiles/" .. file .. " differs from pc.yml in more than name and category - copy pc.yml over it")
+  for _, style in ipairs(profiles.STYLES) do
+    if style ~= profiles.DEFAULT_STYLE then
+      local variant = "pc-" .. style .. ".v1"
+      local file, text = profile_file_for(variant)
+      h.assert_true(text ~= nil, "no profile file declares " .. variant .. " (iconStyle " .. style .. ")")
+      h.assert_equal(file, "pc-" .. style .. ".yml", "the file of " .. variant)
+      h.assert_true(variant_body(text) == expected,
+        "profiles/" .. file .. " differs from pc.yml in more than name and category")
+      h.assert_equal(profile_category(text), profiles.CATEGORIES[style], "the category of " .. file)
+    end
   end
 end
 

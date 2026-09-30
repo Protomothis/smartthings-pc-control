@@ -191,12 +191,12 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
   - 텔레그램 `/status`와 앱 상단 상태 줄은 배터리가 있을 때만 한 줄을 더한다. 앱은 `GET /api/battery`를 1분마다 읽는다.
 - **드라이버:** 표준 `battery`·`powerSource`. 데스크톱에 빈 줄이 생기지 않도록 **배터리가 있을 때만** 컴포넌트 `battery`가 있는
   프로필 변형(`pc-<style>-battery.v2`)으로 옮긴다. 아이콘 10종 × 배터리 유무 = 20개 프로필은 손으로 관리하지 않고
-  `tools/gen-profiles.js`가 `profiles/pc.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교).
+  `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교). 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이고, `profiles/pc.yml`은 v1 장치가 쓰는 고정 파일로 남는다(edge-driver.md §6.6).
 - 루틴 예: "배터리 20% 이하면 충전기 플러그 켜기".
 
 ## 14. 프로필 pc.v2 구성
 
-- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioVolume, audioMute, mediaPlayback, mediaTrackControl, pcPreset, pcActivity, (pcNotify)
+- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcActivity, (pcNotify) — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
 - 이름: `pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`. `pc*.v1`은 `KNOWN`으로 자동 이전.
@@ -225,3 +225,12 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 - **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / 소리내어 읽기 + 음성 / [테스트 알림].
 - **SmartThings 상세 화면** — 상태 카드와 조작 카드 뒤에 미디어 묶음: 곡 정보 → 재생/일시정지·이전/다음 → 볼륨 슬라이더 → 음소거.
   그 뒤 프리셋(목록 + 이름 줄), 활동, PC 알림 입력, 잠들지 않기·배터리 컴포넌트.
+
+## 16. 드라이버 1.1.0 Dev 채널 실측 대기
+
+드라이버가 정해 둔 가정 중 기기에서만 확인할 수 있는 것. 확인되면 결과를 `edge-platform-notes.md`로 옮기고 여기서 지운다.
+
+1. **미디어 묶음 모양(#107)** — `mediaPlayback`·`mediaTrackControl`·`audioVolume`·`audioMute`가 상세 화면에 어떻게 그려지는지, 우리 상태·조작 카드와 섞이는지 따로 그려지는지, 대시보드 타일이 바뀌는지.
+2. **재생 상태를 보고하지 않을 때(#107)** — `playbackStatus`를 한 번도 내보내지 않으면 재생 줄이 "-"인지, 앱이 "상태를 모두 보고하지 않았다"고 하는지, 재생/일시정지를 누르면 회전 표시 뒤 오류로 끝나는지. 그렇다면 `features.PLAYBACK_RESTING = "stopped"` 한 줄로 쉬는 값을 켠다(명령마다 그 값을 강제로 내보낸다).
+3. **읽은 적 없는 볼륨(#107)** — 옛 서비스나 로그인 전 PC에서는 `volume`·`mute`를 내보내지 않는다. 슬라이더가 비어 보이는 모양과 "모두 보고하지 않음" 안내가 뜨는지.
+4. **음성 비서(선택, #107)** — SmartThings에 연결된 음성 비서가 이 장치의 볼륨을 인식하는지.

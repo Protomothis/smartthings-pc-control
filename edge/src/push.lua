@@ -11,6 +11,7 @@
 
 local client = require "client"
 local discovery = require "discovery"
+local features = require "features"
 local state = require "state"
 
 local push = {}
@@ -161,6 +162,9 @@ function push.apply(device_state, payload, opts)
   -- period a `switch off` starts is only ever visible as a pending schedule,
   -- and `apply_status` reads it back out for `supportedCommands`.
   state.remember_schedule(nxt, status)
+  -- #107: `audio.changed` and its siblings carry the same status document, so
+  -- what the command handlers check is kept current by pushes too.
+  features.remember(nxt, status)
   return nxt, state.apply_status(nxt, status, opts), event
 end
 

@@ -1,24 +1,33 @@
-# FROZEN: `pc.v1`, the profile edge-v1.0.x created devices with (design doc §6.6).
-# #107 replaced it with `pc.v2` and its variants, which are generated from
-# tools/profile-template.yml. This file and the nine `pc-<style>.yml` (#100) stay
-# in the package, unchanged, for the devices that have not been moved yet -
-# `profiles.lua` moves each of them on its first `init`. Do not edit them.
+# The ONE hand-written device profile (design doc §6.6, media-notify.md §14).
 #
-# #90: the first channel release starts at `pc.v1`. The pc.v2…pc.v17 files of
-# the development phase are gone - no released device ever sat on them.
+# tools/gen-profiles.js turns this file into the twenty current profiles in
+# profiles/: every `iconStyle` value (#100, the category the app draws the icon
+# from) with and without the battery component (#116). Edit this file, run
 #
-# #100: the `iconStyle` preference picks the device's category, and with it the
-# icon the app draws. A category is fixed per profile, so every style has a
-# profile of its own - `pc-<style>.yml` (`name: pc-<style>.v1`) - and those
-# files are this one with only `name:` and the category changed;
-# tests/capabilities_test.lua still holds them to this file.
+#   bun tools/gen-profiles.js          (or: node tools/gen-profiles.js)
+#
+# and commit the regenerated files with it; tests/profilegen_test.lua fails
+# while a file in profiles/ differs from what this template makes. The
+# placeholders are filled per profile:
+#
+#   __NAME__       the profile name - pc.v2, pc-tv.v2, pc-battery.v2, pc-tv-battery.v2
+#   __CATEGORY__   the main component's category (profiles.CATEGORIES)
+#   @battery-begin … @battery-end
+#                  kept only in the -battery profiles; the marker lines go
+#
+# This file lives in tools/, not in profiles/, on purpose: the packager takes
+# every YAML file in profiles/ as a profile, and a template there would be a
+# twenty-first one with a placeholder for a name. The v1 files (pc.yml and
+# pc-<style>.yml) stay in profiles/, frozen, for the devices not yet migrated.
 #
 # The capability ORDER below is the reading order on screen: the app collects
-# every state-only row into one card and every interactive row into a second
-# one, and follows this list inside each card. `pcVersion` is last so the
-# version row sits at the bottom. It is also a capability of its own because
-# two state rows of one capability are drawn side by side and truncated
-# (platform notes "화면 배치").
+# every state-only row of our own capabilities into one card and every
+# interactive row into a second one, and follows this list inside each card.
+# `pcVersion` closes the edge-v1.0 set, with `pcInfo` right above it, so the
+# version row ends the status card. The v1.2.0 capabilities follow it, in the
+# order of media-notify.md §15 "UI 구성": the media group first, then the rest.
+# It is also why `pcVersion` is a capability of its own: two state rows of one
+# capability are drawn side by side and truncated (platform notes "화면 배치").
 #
 # The `numbersystem53811` namespace is the one SmartThings assigned to the
 # owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
@@ -27,7 +36,7 @@
 # Preference titles and descriptions are Korean first with the English term in
 # parentheses: the SmartThings app shows profile preferences in whatever the
 # driver wrote, with no per-locale variant, and this project is Korean-first.
-name: pc.v1
+name: __NAME__
 components:
   - id: main
     capabilities:
@@ -47,8 +56,27 @@ components:
         version: 1
       - id: numbersystem53811.pcversion
         version: 1
+      # #107: the media group - play/pause, previous/next, the volume slider
+      # and the mute toggle. Standard capabilities, drawn by the app itself.
+      - id: mediaPlayback
+        version: 1
+      - id: mediaTrackControl
+        version: 1
+      - id: audioVolume
+        version: 1
+      - id: audioMute
+        version: 1
     categories:
-      - name: Others
+      - name: __CATEGORY__
+# @battery-begin
+  - id: battery
+    label: 배터리
+    capabilities:
+      - id: battery
+        version: 1
+      - id: powerSource
+        version: 1
+# @battery-end
 preferences:
   - name: ipAddress
     title: PC IP 주소 (IP address)

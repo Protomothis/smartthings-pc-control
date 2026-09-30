@@ -110,6 +110,11 @@ local function golden(lang)
     { cap = caps.SESSION, attr = "user", value = "kim" },
     { cap = caps.SESSION, attr = "summary",
       value = en and "Locked · 20 min · kim" or "잠김 · 20분 · kim" },
+    -- #107: the media rows' constant attributes. The sample is a v1.1.0 body
+    -- without an `audio` block, so there is no volume or mute to report.
+    { cap = "mediaPlayback", attr = "supportedPlaybackCommands", value = { "play", "pause", "stop" } },
+    { cap = "mediaTrackControl", attr = "supportedTrackControlCommands",
+      value = { "nextTrack", "previousTrack" } },
   }
 end
 

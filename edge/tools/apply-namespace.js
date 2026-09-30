@@ -96,7 +96,9 @@ function currentNamespace() {
 
 /** Every file that may mention the namespace: sources, profiles, capability JSON, docs. */
 function targetFiles() {
-  const files = [CAPS_LUA, path.join(ROOT, 'README.md')];
+  // #107: the profile template too, or the next gen-profiles run would write
+  // the old namespace back into every generated profile.
+  const files = [CAPS_LUA, path.join(ROOT, 'README.md'), path.join(ROOT, 'tools', 'profile-template.yml')];
   for (const dir of ['profiles', 'capabilities']) {
     const abs = path.join(ROOT, dir);
     let names;

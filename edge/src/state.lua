@@ -8,6 +8,7 @@
 -- hub.
 
 local caps = require "caps"
+local features = require "features"
 local i18n = require "i18n"
 
 local state = {}
@@ -90,6 +91,10 @@ function state.new(power_state)
     -- close a pending schedule has to be to be that grace rather than something
     -- the user asked for (`state.grace_limit`).
     grace_seconds = nil,
+    -- #107: what the last status said about the v1.2.0 features - which ones
+    -- the PC offers and whether a user session is there (features.remember).
+    -- nil until a status has been read in this driver run.
+    extras = nil,
   }
 end
 
@@ -105,6 +110,10 @@ local function copy(s)
     -- Survives every event: the PC's configured grace does not change because
     -- it shut down, and a state machine step has no new status body to read.
     grace_seconds = s.grace_seconds,
+    -- #107: the same for what the PC offers. A power transition does not
+    -- change which features the service has, and it is replaced as a whole
+    -- whenever a status body arrives, so sharing the table is safe.
+    extras = s.extras,
   }
 end
 
@@ -905,6 +914,13 @@ local ATTRIBUTES = {
   -- #86: the version row, moved onto a capability of its own so that it is not
   -- drawn in a narrow half-width column next to `pcInfo.summary`.
   [caps.VERSION] = { versions = true },
+  -- #107: the standard capabilities of the v1.2.0 rows (features.lua). Their
+  -- definitions are the platform's, so capabilities_test does not check them
+  -- against a JSON file; they are listed so this stays "everything emitted".
+  [features.CAP_VOLUME] = { volume = true },
+  [features.CAP_MUTE] = { mute = true },
+  [features.CAP_PLAYBACK] = { supportedPlaybackCommands = true, playbackStatus = true },
+  [features.CAP_TRACK] = { supportedTrackControlCommands = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.
@@ -957,6 +973,10 @@ function state.initial_rows(lang, service_version)
   local versions = state.versions(service_version, lang)
   ev(events, caps.VERSION, "versions", versions)
   ev(events, caps.STATUS, "versions", versions)
+  -- #107: the rows of the v1.2.0 capabilities that have a resting value.
+  for _, e in ipairs(features.initial_rows(lang)) do
+    events[#events + 1] = e
+  end
   return events
 end
 
@@ -1048,6 +1068,11 @@ function state.apply_status(device_state, status, opts)
   -- #87: `session_summary` reads `exposed` itself and says "Off" when the
   -- block is not exposed, so the row always has a word.
   ev(events, caps.SESSION, "summary", state.session_summary(session, lang))
+
+  -- #107: volume, mute and the media rows (features.lua).
+  for _, e in ipairs(features.apply_status(status, opts)) do
+    events[#events + 1] = e
+  end
 
   return events
 end

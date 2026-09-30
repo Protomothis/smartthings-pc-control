@@ -7,6 +7,7 @@
 
 local caps = require "caps"
 local client = require "client"
+local features = require "features"
 local i18n = require "i18n"
 local state = require "state"
 
@@ -46,7 +47,10 @@ poll.LAST_SEEN_STEP = 60
 -- every device installed from the channel paints its rows once on `added` and
 -- then matches. Bump it (to "2", "3", …) whenever a capability id changes or a
 -- new one is added, so `ensure_rows` repaints every already-installed device.
-poll.ROWS_VERSION = "1"
+-- #107: "2" - the move to `pc.v2` brings new capabilities whose rows start
+-- unset (the standard audio/media ones now, pcPreset/pcActivity and the
+-- awake/battery components with the rest of edge-v1.1.0).
+poll.ROWS_VERSION = "2"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status
@@ -143,44 +147,97 @@ function poll.force_all(events)
   return events
 end
 
---- Mark the events whose `<cap>.<attr>` is in `keys` as forced (#86).
+--- The key `force_rows` matches an event record by: `<cap>.<attr>` on the main
+--- component, `<component>/<cap>.<attr>` on any other (#107 - the `awake`
+--- component's switch is not the main switch).
+function poll.row_key(e)
+  local key = tostring(e.cap) .. "." .. tostring(e.attr)
+  if e.component ~= nil and e.component ~= "main" then
+    return tostring(e.component) .. "/" .. key
+  end
+  return key
+end
+
+--- Mark the events whose row key (`poll.row_key`) is in `keys` as forced (#86).
 -- Returns the same list, so it can wrap a call.
 function poll.force_rows(events, keys)
   if type(keys) ~= "table" then
     return events
   end
   for _, e in ipairs(events or {}) do
-    if keys[tostring(e.cap) .. "." .. tostring(e.attr)] then
+    if keys[poll.row_key(e)] then
       e.force = true
     end
   end
   return events
 end
 
---- Emit a list of `{ cap, attr, value, force? }` records.
+--- #107: the component object `device` has for `id`, or nil when its profile
+--- has no such component.
+--
+-- `device.profile.components` is keyed by component id on the hub; a list of
+-- `{ id = … }` (the shape some tests build) is searched as well. nil is the
+-- normal answer for a device that is still on a profile without the
+-- component - a v1 profile before its migration, or a desktop's profile for a
+-- battery row - and the event is then skipped rather than emitted into a
+-- component the hub would reject.
+function poll.component(device, id)
+  local components = (((device or {}).profile) or {}).components
+  if type(components) ~= "table" then
+    return nil
+  end
+  if type(components[id]) == "table" then
+    return components[id]
+  end
+  for _, component in ipairs(components) do
+    if type(component) == "table" and component.id == id then
+      return component
+    end
+  end
+  return nil
+end
+
+--- Emit a list of `{ cap, attr, value, force?, component? }` records.
 -- `force` marks an emit that answers a command from the app: it goes out with
 -- `{ state_change = true }` so the platform delivers it even when the value did
 -- not change. Ordinary poll updates stay unforced.
+-- #107: `component` names a component other than `main` (`awake`, `battery`).
+-- Such an event goes out with `emit_component_event`, and only when the
+-- device's profile has that component.
 function poll.emit(device, events)
   local log = logger()
   for _, e in ipairs(events or {}) do
     local cap = capability_for(e.cap)
     local attr = cap and cap[e.attr]
-    if attr then
+    local component
+    if e.component ~= nil and e.component ~= "main" then
+      component = poll.component(device, e.component)
+    end
+    if not attr then
+      log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
+    elseif e.component ~= nil and e.component ~= "main" and not component then
+      log.debug(string.format("component %s not in the profile, %s.%s skipped",
+        tostring(e.component), tostring(e.cap), tostring(e.attr)))
+    else
       local ok, err = pcall(function()
-        if e.force then
-          device:emit_event(attr(e.value, poll.FORCE))
+        local event = e.force and attr(e.value, poll.FORCE) or attr(e.value)
+        if component then
+          device:emit_component_event(component, event)
         else
-          device:emit_event(attr(e.value))
+          device:emit_event(event)
         end
       end)
       if not ok then
-        log.warn(string.format("emit %s.%s failed: %s", tostring(e.cap), tostring(e.attr), tostring(err)))
+        log.warn(string.format("emit %s failed: %s", poll.row_key(e), tostring(err)))
       end
-    else
-      log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
     end
   end
+end
+
+--- #107: what the last status said about the v1.2.0 features
+--- (`features.remember`), or nil when no status has been read in this run.
+function poll.extras(device)
+  return poll.get_state(device).extras
 end
 
 --- Emit `switch` + `powerState` for a runtime state (§6.2).
@@ -623,6 +680,8 @@ function poll.once(driver, device, opts)
     -- (state.grace_limit). Before `apply_status`, which reads it back out for
     -- `supportedCommands`.
     state.remember_schedule(nxt, body)
+    -- #107: and which v1.2.0 features the PC offers, for the command handlers.
+    features.remember(nxt, body)
     poll.set_state(device, nxt)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"

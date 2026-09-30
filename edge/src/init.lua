@@ -11,6 +11,7 @@ local log = require "log"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
+local features = require "features"
 local i18n = require "i18n"
 local poll = require "poll"
 local profiles = require "profiles"
@@ -41,7 +42,8 @@ local function device_init(driver, device)
   end
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
-  profiles.ensure(device)
+  -- #107: pc*.v1 -> pc*.v2, with the style kept.
+  local migrated = profiles.ensure(device)
   -- #100: the `iconStyle` preference changed but the driver restarted before
   -- the switch to that style's profile landed (or the hub refused it then).
   local switched = profiles.apply_style(device)
@@ -49,7 +51,7 @@ local function device_init(driver, device)
   -- pcRemote and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   local fresh_rows = poll.ensure_rows(device)
-  if fresh_rows or switched then
+  if fresh_rows or switched or migrated then
     -- First run on this generation of rows, or a new profile whose cloud
     -- record starts empty: forced rows + forced poll, now and again shortly,
     -- so attributes that never change (updateAvailable) and rows the cloud
@@ -436,6 +438,136 @@ function handle_cancel(driver, device)
   })
 end
 
+--------------------------------------------------------------------------------
+-- #107: the v1.2.0 commands (volume, mute, media keys, …)
+--------------------------------------------------------------------------------
+
+--- Run one v1.2.0 command (media-notify.md §3, §5).
+--
+-- Unlike the power commands these need something the PC may not have: a
+-- service new enough to know them (`status.features`), the feature itself, and
+-- for audio and media a logged-in user. The last status already said which
+-- (`features.remember`), so a command that cannot work is not sent at all -
+-- the row it came from is answered with its current value (a spinner that
+-- never gets an event ends in an error, platform notes "상세 화면(detailView)
+-- 위젯") and both pcInfo rows say why, until the next poll writes them back.
+-- A command the service refuses (`409 no_user_session`, `403 media_disabled`)
+-- is answered the same way; any other failure is `report_error`'s.
+--
+-- Nothing here is held back by a power transition (#93): a volume change on a
+-- PC that is about to shut down does no harm, and one on a PC that is still
+-- waking fails as unreachable like any other request.
+-- @param answer re-emits, forced, the row the command arrived on
+-- @param rows the row keys (`poll.row_key`) the poll after a success answers
+local function run_feature(driver, device, service_command, value, answer, rows)
+  local lang = poll.lang(device)
+  if poll.extras(device) == nil then
+    -- Nothing read in this driver run yet (the hub has just restarted): ask
+    -- once, rather than calling a v1.2.0 PC too old.
+    poll.once(driver, device)
+  end
+  local refusal = features.refusal(poll.extras(device), service_command)
+  if refusal then
+    if answer then
+      answer(device)
+    end
+    poll.emit_note(device, i18n.t(lang, refusal))
+    log.info(string.format("%s not sent on %s: %s", tostring(service_command),
+      tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.action(device, service_command, value)
+  if not ok then
+    if answer then
+      answer(device)
+    end
+    local note = features.error_note(kind, body)
+    if note then
+      poll.emit_note(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  poll.once(driver, device, { force = rows })
+  return true
+end
+
+-- The rows a successful command is answered on: the poll that follows it emits
+-- them forced, so the spinner ends even when the value did not change (volume
+-- already at 100, mute pressed on a muted PC).
+local AUDIO_ROWS = {
+  [features.CAP_VOLUME .. ".volume"] = true,
+  [features.CAP_MUTE .. ".mute"] = true,
+}
+local MEDIA_ROWS = {
+  [features.CAP_PLAYBACK .. ".supportedPlaybackCommands"] = true,
+  [features.CAP_PLAYBACK .. ".playbackStatus"] = true,
+  [features.CAP_TRACK .. ".supportedTrackControlCommands"] = true,
+}
+
+-- What a refused command is answered with: the value the row already had.
+local function answer_volume(device)
+  local audio = (poll.extras(device) or {}).audio or {}
+  if audio.volume ~= nil then
+    poll.emit(device, { { cap = features.CAP_VOLUME, attr = "volume", value = audio.volume, force = true } })
+  end
+end
+
+local function answer_mute(device)
+  local audio = (poll.extras(device) or {}).audio or {}
+  if audio.muted ~= nil then
+    poll.emit(device, { { cap = features.CAP_MUTE, attr = "mute",
+      value = audio.muted and "muted" or "unmuted", force = true } })
+  end
+end
+
+-- The media rows have no state of their own (features.PLAYBACK_RESTING), so
+-- the constant attributes are what answers.
+local function answer_media(device)
+  poll.emit(device, poll.force_all(features.media_events()))
+end
+
+local function audio_command(service_command, answer)
+  return function(driver, device)
+    return run_feature(driver, device, service_command, nil, answer, AUDIO_ROWS)
+  end
+end
+
+local function media_command(service_command)
+  return function(driver, device)
+    return run_feature(driver, device, service_command, nil, answer_media, MEDIA_ROWS)
+  end
+end
+
+--- audioVolume.setVolume(volume): the slider. 0-100, rounded.
+local function handle_set_volume(driver, device, cmd)
+  local volume = features.volume_of({ volume = ((cmd or {}).args or {}).volume })
+  if volume == nil then
+    return answer_volume(device)
+  end
+  return run_feature(driver, device, "volume", volume, answer_volume, AUDIO_ROWS)
+end
+
+--- audioMute.setMute(state): the routine action's "muted"/"unmuted".
+local function handle_set_mute(driver, device, cmd)
+  local wanted = ((cmd or {}).args or {}).state
+  local service_command = wanted == "muted" and "mute" or "unmute"
+  return run_feature(driver, device, service_command, nil, answer_mute, AUDIO_ROWS)
+end
+
+-- mediaPlayback.setPlaybackStatus(status) -> the media key that asks for it.
+local PLAYBACK_FOR_STATUS = { playing = "play", paused = "pause", stopped = "stop" }
+
+local function handle_set_playback_status(driver, device, cmd)
+  local wanted = ((cmd or {}).args or {}).status
+  local service_command = PLAYBACK_FOR_STATUS[tostring(wanted or "")]
+  if not service_command then
+    return answer_media(device)
+  end
+  return run_feature(driver, device, service_command, nil, answer_media, MEDIA_ROWS)
+end
+
 local capability_handlers = {
   [capabilities.switch.ID] = {
     [capabilities.switch.commands.on.NAME] = handle_switch_on,
@@ -443,6 +575,28 @@ local capability_handlers = {
   },
   [capabilities.refresh.ID] = {
     [capabilities.refresh.commands.refresh.NAME] = handle_refresh,
+  },
+  -- #107: standard capabilities, so their ids and command names are the
+  -- platform's own and resolve on every hub.
+  [capabilities.audioVolume.ID] = {
+    [capabilities.audioVolume.commands.setVolume.NAME] = handle_set_volume,
+    [capabilities.audioVolume.commands.volumeUp.NAME] = audio_command("volumeup", answer_volume),
+    [capabilities.audioVolume.commands.volumeDown.NAME] = audio_command("volumedown", answer_volume),
+  },
+  [capabilities.audioMute.ID] = {
+    [capabilities.audioMute.commands.mute.NAME] = audio_command("mute", answer_mute),
+    [capabilities.audioMute.commands.unmute.NAME] = audio_command("unmute", answer_mute),
+    [capabilities.audioMute.commands.setMute.NAME] = handle_set_mute,
+  },
+  [capabilities.mediaPlayback.ID] = {
+    [capabilities.mediaPlayback.commands.play.NAME] = media_command("play"),
+    [capabilities.mediaPlayback.commands.pause.NAME] = media_command("pause"),
+    [capabilities.mediaPlayback.commands.stop.NAME] = media_command("stop"),
+    [capabilities.mediaPlayback.commands.setPlaybackStatus.NAME] = handle_set_playback_status,
+  },
+  [capabilities.mediaTrackControl.ID] = {
+    [capabilities.mediaTrackControl.commands.nextTrack.NAME] = media_command("next"),
+    [capabilities.mediaTrackControl.commands.previousTrack.NAME] = media_command("prev"),
   },
 }
 

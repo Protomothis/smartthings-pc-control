@@ -129,6 +129,13 @@ function client.classify(code)
     -- A service older than v1.1.0 has no /st/v1 routes at all.
     return "incompatible"
   end
+  if code == 409 then
+    -- #107: the service is up and understood the command, but it needs a
+    -- logged-in user and there is none (`no_user_session`, media-notify.md
+    -- §2). Not a connection problem - before v1.2.0 no endpoint answered 409,
+    -- and it used to fall through to `unreachable` below.
+    return "conflict"
+  end
   if code == 429 then
     -- Rate limited (§3.1): the service is up, authenticated and healthy, it just
     -- refused this one request. Nothing about the PC changed, so the caller
@@ -234,6 +241,19 @@ function client.command(device, cmd, mode, minutes, deps)
       minutes = math.floor(tonumber(minutes) or 0),
     },
   }, deps)
+end
+
+--- #107: `POST /st/v1/command` for the v1.2.0 commands (media-notify.md §3):
+--- `{ command, value? }`. `value` is left out when nil - the service reads a
+--- missing key as "use the default" (`volumeup` steps by 5, `awake` runs for
+--- `awake.default_minutes`), which is not the same as 0. No `mode` and no
+--- `minutes`: these commands run at once and are never scheduled.
+function client.action(device, cmd, value, deps)
+  local body = { command = cmd }
+  if value ~= nil then
+    body.value = math.floor(tonumber(value) or 0)
+  end
+  return client.request(device, { method = "POST", path = "/command", body = body }, deps)
 end
 
 --- `DELETE /st/v1/schedule` (§3.4).

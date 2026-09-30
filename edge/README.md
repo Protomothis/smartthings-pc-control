@@ -99,9 +99,19 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 | 예약할 명령 | 시간만 고르는 예약이 무엇을 실행할지: 종료 · 재시작 · 절전 · 최대 절전 |
 | 예약 시간 | 5 · 10 · 15 · 30 · 45분, 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12시간, 1 · 2 · 3일, 그리고 **취소**. 목록 자체는 `시간 선택…`에 머문다 |
 
+그 아래가 **미디어 묶음**이다(드라이버 1.1, 서비스 v1.2.0 필요). SmartThings 표준
+capability라 모양은 앱이 정한다.
+
+| 미디어 | 하는 일 |
+|---|---|
+| 재생 | 재생 · 일시정지 · 정지 (`mediaPlayback`) |
+| 곡 이동 | 이전 곡 · 다음 곡 (`mediaTrackControl`) |
+| 볼륨 | 0–100 슬라이더와 올리기·내리기 (`audioVolume`). PC의 기본 재생 장치 기준 |
+| 음소거 | 켜기 · 끄기 (`audioMute`) |
+
 **프로필 이름이 중요한 이유**: 장치의 화면은 **추가한 시점의 정의로 굳는다.** "왜 아직
 옛날 화면이지?"의 답은 대개 장치가 아직 옛 프로필(`pc.vN`)에 있다는 것이다. 드라이버가
-첫 `init`에서 현재 프로필(`pc.v1`)로 옮긴다.
+첫 `init`에서 현재 프로필(`pc.v2`, 아이콘 설정에 따라 `pc-<style>.v2`)로 옮긴다.
 
 ## 사용
 
@@ -146,6 +156,22 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 > 쓸 수 있고 명령 목록도 그대로 열린다. 막히는 것은 **PC에 설정된 유예 길이 안에**
 > 실행될 예약, 즉 방금 누른 끄기가 유예를 기다리는 동안뿐이다. 유예를 5분으로 잡아
 > 두었다면 그 5분이, 기본값 5분이라면 그 5분이 해당한다.
+
+### 볼륨·미디어
+
+볼륨 슬라이더와 음소거, 재생·일시정지·정지와 이전·다음 곡은 **PC에 로그인한 사용자의
+세션에서** 동작한다(기본 재생 장치의 볼륨, 미디어 키). 그래서 다음 경우에는 명령을 PC로
+보내지 않고 상태 줄에 이유를 띄운다. 다음 상태 조회가 원래 문구로 되돌린다.
+
+| 상태 줄 | 뜻 |
+|---|---|
+| `서비스 v1.2.0 필요` | PC Control 서비스가 v1.2.0보다 오래됐다 |
+| `사용자 없음` | PC에 로그인한 사용자가 없다(로그인 화면, 재부팅 직후) |
+| `미디어 제어 꺼짐` | 데스크톱 앱 설정에서 미디어 제어를 껐다 |
+| `이 PC에서 지원 안 함` | 서비스가 이 기능을 제공하지 않는다고 알려 왔다 |
+
+볼륨은 키보드로 바꿔도 트레이 앱이 30초마다 알려 주므로 슬라이더가 따라온다. 지금 무엇이
+재생 중인지(재생 상태)는 아직 보고하지 않는다 — 버튼만 동작한다.
 
 ### 예약
 
@@ -211,7 +237,7 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 **아이콘 설정이 따로 있는 이유**: 앱은 장치 아이콘을 프로필의 카테고리로 정하는데,
 이 드라이버의 기본 카테고리인 `Others`(기타)는 앱에서 아이콘을 고를 수 없고 `Computer`
 카테고리는 SmartThings가 받아 주지 않는다. 그래서 카테고리마다 같은 화면의 프로필을 하나씩
-두고(`pc-monitor.v1` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
+두고(`pc-monitor.v2` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
 드라이버가 곧 전부 다시 채운다.
 
 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지한다. 푸시가 즉시 반영을
@@ -255,10 +281,10 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
   src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               pc-vN.yml — 현재는 pc.yml (pc.v1)과 아이콘 변형 pc-<style>.yml (pc-<style>.v1)
+  profiles/               현재 프로필 20개 pc*-v2.yml(생성물)과 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
-  tools/                  테스트 러너와 배포 스크립트
+  tools/                  테스트 러너, 프로필 생성기와 템플릿, 배포 스크립트
 ```
 
 ### 테스트
@@ -305,11 +331,18 @@ npm test
 장치의 화면은 **생성 시점의 프레젠테이션으로 굳는다.** 같은 이름의 프로필을 다시
 패키징하면 preference 변경만 반영되고 화면은 그대로다. 그래서:
 
-1. 프레젠테이션이나 capability 목록을 바꾸면 `profiles/pc-vN.yml`(`name: pc.vN`)을 새로 만든다.
-2. 옛 프로필 파일은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
-3. `src/profiles.lua`의 `PC`와 `KNOWN`만 고치면 `init`/`added`가 기존 장치를 옮긴다.
-4. capability id가 바뀌었다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
-5. **아이콘 변형(`pc-<style>.yml`)은 pc.yml과 `name:`·카테고리 한 줄만 다르다.** pc.yml을 고치면 변형 전부에 같은 변경을 옮기고(테스트가 한 줄이라도 다르면 실패한다), 버전을 올릴 때는 변형도 전부 함께 올린다 — `PC`와 `VARIANTS`를 새 이름으로, 옛 이름 전부를 `KNOWN`에. 이전은 스타일을 유지한다(`pc-monitor.v1` → `pc-monitor.v2`).
+1. **현재 프로필은 손으로 쓰지 않는다.** 아이콘 10종 × 배터리 유무 = 20개(`pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`, 파일은 `profiles/pc*-v2.yml`)를 `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 만든다. 템플릿을 고치고 다시 생성해 함께 커밋한다:
+
+   ```bash
+   bun tools/gen-profiles.js          # node 도 된다
+   bun tools/gen-profiles.js --check  # 어긋난 파일이 있으면 종료 코드 1
+   ```
+
+   `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
+2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
+3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다. `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v2`).
+4. capability id가 바뀌거나 새로 생겼다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
+5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다.
 
 ### 패키징
 
@@ -342,7 +375,9 @@ Fill in the secret in the device settings. If nothing is found, check the Window
 SmartThings section (discovery responder, firewall rule, last search request).
 
 **Screen** — a status card (power state, last action, schedule summary, session, status,
-versions) and a control card (command list, what to schedule, when to schedule).
+versions) and a control card (command list, what to schedule, when to schedule), then the
+media group on standard capabilities (play/pause/stop, previous/next, volume slider, mute;
+service v1.2.0, a signed-in user).
 Preference labels are Korean with the English term in parentheses; Edge has no per-locale
 preference variants. The *Icon* preference picks the device category (the icon the app
 draws, which it does not let you change for `Others`); the driver moves the device onto a
@@ -350,8 +385,9 @@ profile that differs only in its category, no re-add needed.
 
 **Develop** — `npm test` runs the Lua 5.3 suite under fengari. `tools/apply-namespace.js`
 rewrites the capability namespace, `tools/sync-capabilities.sh` uploads definitions,
-presentations and translations. A presentation change needs a new profile name
-(`profiles/pc-vN.yml`); a definition change needs a new capability id. The design contract
+presentations and translations. The twenty current profiles are generated from
+`tools/profile-template.yml` by `tools/gen-profiles.js` (a test fails while they differ). A
+presentation change needs a new profile name; a definition change needs a new capability id. The design contract
 is in [`../docs/design/edge-driver.md`](../docs/design/edge-driver.md) and the measured
 platform behaviour in
 [`../docs/design/edge-platform-notes.md`](../docs/design/edge-platform-notes.md).

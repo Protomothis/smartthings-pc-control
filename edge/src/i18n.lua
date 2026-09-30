@@ -119,6 +119,27 @@ local STRINGS = {
     en = "Hibernating · try again after",
   },
 
+  -- #107: why a v1.2.0 command (volume, media keys, …) was not sent, or what
+  -- the service said about it (features.refusal / features.error_note). Like
+  -- the busy notes above they go on `pcInfo.message` and `pcInfo.summary` until
+  -- the next poll, so they are short enough for the summary row.
+  needs_service = {
+    ko = "서비스 v1.2.0 필요",
+    en = "Requires service v1.2.0",
+  },
+  feature_missing = {
+    ko = "이 PC에서 지원 안 함",
+    en = "Not supported on this PC",
+  },
+  no_user = {
+    ko = "사용자 없음",
+    en = "No user signed in",
+  },
+  media_disabled = {
+    ko = "미디어 제어 꺼짐",
+    en = "Media control is off",
+  },
+
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {
     ko = "기존 예약을 새 예약으로 대체했습니다",
