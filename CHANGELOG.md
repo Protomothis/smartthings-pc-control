@@ -2,6 +2,12 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 내부
+
+- 사용자 세션 액션 채널을 만들었습니다. 서비스가 같은 exe의 숨은 하위 명령 `user-action`(audio · media · notify · preset)을 로그인한 사용자의 세션에서 셸 없이 실행하고, stdout 마지막 줄의 JSON(`{"ok":true,...}` / `{"ok":false,"error":"bad_args|unsupported|failed",...}`)을 읽습니다. 3초 안에 답이 없으면 종료시키고, 로그인한 사용자가 없으면 `no_user_session`으로 구분합니다. 트레이 하트비트는 선택 항목 `audio: {volume, muted, device}`를 받아 시각과 함께 보관합니다(더 새 값만 덮어씀). 실제 볼륨·미디어·알림·프리셋 동작은 #104 · #105 · #106 · #109에서 붙이며, 그 전까지 모든 동작은 `unsupported`로 답합니다 (#103)
+
 ## [v1.1.2] - 2026-09-28
 
 ### 데스크톱 앱

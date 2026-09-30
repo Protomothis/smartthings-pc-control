@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 const (
@@ -29,8 +31,9 @@ const (
 	// status block reports "unknown" — which is what a stopped tray app,
 	// a logged-off user or a suspended machine look like.
 	idleHeartbeatTTL = 90 * time.Second
-	// idleHeartbeatMaxBody caps the body; it is one integer.
-	idleHeartbeatMaxBody = 1 << 10
+	// idleHeartbeatMaxBody caps the body: one integer and, since #103, an
+	// audio block whose device name is at most 128 characters.
+	idleHeartbeatMaxBody = 4 << 10
 	// idleHeartbeatMax is a sanity bound (a year) on the reported value.
 	idleHeartbeatMax = int64(365 * 24 * 60 * 60)
 )
@@ -74,9 +77,13 @@ func resetIdleHeartbeat() {
 	idleBeatMu.Unlock()
 }
 
-// idleHeartbeatRequest is the body of POST /api/session/heartbeat.
+// idleHeartbeatRequest is the body of POST /api/session/heartbeat. Both
+// parts are optional and stored independently: idle_seconds follows the
+// expose_session opt-in on the tray side, while audio (#103) is the default
+// playback device's state, which the audio commands need either way.
 type idleHeartbeatRequest struct {
-	IdleSeconds int64 `json:"idle_seconds"`
+	IdleSeconds *int64            `json:"idle_seconds"`
+	Audio       *useraction.Audio `json:"audio"`
 }
 
 // handleSessionHeartbeat serves POST /api/session/heartbeat. The sample is
@@ -102,10 +109,23 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if body.IdleSeconds < 0 || body.IdleSeconds > idleHeartbeatMax {
+	if body.IdleSeconds != nil && (*body.IdleSeconds < 0 || *body.IdleSeconds > idleHeartbeatMax) {
 		writeAPIError(w, http.StatusBadRequest, "idle_seconds out of range")
 		return
 	}
-	noteIdleHeartbeat(body.IdleSeconds)
+	if body.Audio != nil {
+		if err := body.Audio.Validate(); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "audio: "+err.Error())
+			return
+		}
+	}
+	// Validate everything before storing anything: a rejected body leaves
+	// both samples as they were.
+	if body.IdleSeconds != nil {
+		noteIdleHeartbeat(*body.IdleSeconds)
+	}
+	if body.Audio != nil {
+		noteAudioSample(*body.Audio, audioNow())
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
