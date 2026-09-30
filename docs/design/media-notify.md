@@ -1,7 +1,7 @@
-# 설계: 오디오·미디어 제어와 PC 알림 (v1.2.0 / Edge 1.1.0)
+# 설계: 미디어·알림·프리셋·활동·잠들지 않기·배터리 (v1.2.0 / Edge 1.1.0)
 
-전원만 다루던 PC Control에 **볼륨·음소거**, **미디어 제어**, **PC에 알림 띄우기**를 더한다.
-세 기능 모두 SmartThings 앱·루틴·텔레그램에서 쓸 수 있어야 한다.
+전원만 다루던 PC Control에 일곱 가지를 한 번에 더한다: **볼륨·음소거**, **미디어 제어**, **PC에 알림 띄우기**,
+**프리셋 실행**, **실행 중 앱 감지**, **잠들지 않기**, **노트북 배터리**. 모두 SmartThings 앱·루틴·텔레그램에서 쓸 수 있어야 한다.
 
 ## 1. 목표와 범위
 
@@ -11,8 +11,11 @@
 | 음소거 | 켜기/끄기, 현재 상태 | `/mute`, `/unmute` | |
 | 미디어 | 재생/일시정지/정지, 다음/이전 곡 | `/play` `/pause` `/next` `/prev` | 미디어 키 전송. 재생 상태는 1차에서 보고하지 않음 |
 | PC 알림 | 루틴 동작 "PC에 알림"(문구) | `/say 문구` | 토스트 기본, 소리내어 읽기는 설정으로 켬 |
+| 프리셋 실행 | 목록에서 슬롯 선택, 슬롯 이름 목록 줄 | `/presets`, `/run 이름` | PC 앱에 등록한 것만 실행 (§10) |
+| 앱 감지 | 활동 줄 "게임 중 · Steam", 루틴 조건 "활동이 게임" | `/status`에 포함 | 옵트인, 감시 목록의 라벨만 보고 (§11) |
+| 잠들지 않기 | 별도 컴포넌트의 스위치 | `/awake [분|off]` | 자동 절전만 막음, 시간 제한 (§12) |
+| 노트북 배터리 | 잔량·전원 공급원 (배터리 있는 PC만) | `/status`에 포함 | 표준 `battery`·`powerSource` (§13) |
 
-**범위 밖(2차 후보, 별도 마일스톤):** 프리셋 실행, 실행 중 앱 감지, 잠들지 않기, 노트북 배터리.
 **보류:** CPU·GPU 온도(믿을 만한 공개 API 없음), 화면 밝기(외장 모니터 DDC/CI 불안정).
 
 ## 2. 아키텍처: 세션 0과 사용자 세션
@@ -111,9 +114,57 @@
 ## 9. 순서
 
 1. 서비스 기반: `user-action` 하위 명령과 결과 수집, 하트비트 `audio` 블록 (#103)
-2. 서비스 기능: 오디오 (#104), 미디어 (#105), PC 알림 (#106) + 텔레그램
-3. 데스크톱 앱: 미디어·알림 섹션 (#106에 포함)
-4. 드라이버: 표준 capability와 pc.v2 (#107), PC 알림 동작 (#108), 세션 없음·옛 서비스 표시 (#107에 포함)
+2. 서비스 기능(병렬): 오디오 (#104), 미디어 (#105), PC 알림 (#106), 프리셋 (#109), 앱 감지 (#110), 잠들지 않기 (#111), 배터리 (#112)
+3. 데스크톱 앱: 미디어·알림 섹션(#106), 프리셋 편집기(#109), 감시 목록(#110), 잠들지 않기 토글(#111)
+4. 드라이버: 프로필 생성기와 pc.v2(#107), PC 알림(#108), 프리셋(#113), 활동(#114), 잠들지 않기 컴포넌트(#115), 배터리 변형(#116)
 5. Dev 채널 실측 → 수정 → v1.2.0 릴리스 → 공개 채널 edge-v1.1.0
 
 드라이버는 서비스 v1.2.0이 먼저 나가야 의미가 있으므로 **앱 릴리스 → 드라이버 공개** 순서로 낸다.
+
+## 10. 프리셋 실행
+
+PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 **슬롯 번호만** 보내고, 무엇을 실행할지는 PC에만 있다.
+
+- **설정:** `presets: [{ "slot": 1–10, "name": "게임 모드", "type": "program"|"url"|"script", "path": "…", "args": ["…"] }]`.
+  - `program`: exe를 인자 배열 그대로 실행(셸 없음). `url`: 기본 브라우저로 연다(http/https만). `script`: `.ps1`/`.bat`/`.cmd` 파일 경로를 고정 인터프리터로 실행.
+  - 모두 **사용자 세션에서** 실행한다(SYSTEM 권한으로 실행하지 않는다). 사용자가 없으면 `no_user_session`.
+- **API:** status `presets: [{slot, name}]`, `features`에 "presets". command `preset`(value = 슬롯 번호). 실행 결과(시작 성공/실패)는 `last_command`에 남긴다.
+- **텔레그램:** `/presets`(목록), `/run 이름|번호`.
+- **데스크톱 앱:** 명령 탭에 프리셋 목록과 [실행], 설정에 편집기(이름·종류·경로·인자·[찾아보기]·[테스트]).
+- **드라이버 제약:** SmartThings 목록 항목은 프레젠테이션에 고정된다. 그래서 목록은 "프리셋 1 (Preset 1)"…"프리셋 10" 슬롯이고,
+  비어 있는 슬롯은 `supportedValues`로 숨긴다(실측 대기). 슬롯 이름은 별도 줄 "1 게임 모드 · 2 방송 시작 …"으로 보여 준다.
+  무동작 쉬는 값 `none`(목록 닫기 대비, 플랫폼 노트). 커스텀 capability `pcPreset`: `run(slot)`, `lastPreset`, `names`, `supportedSlots`.
+- **보안:** 원격에서 경로·인자를 받지 않는다. 슬롯 번호 외 입력은 거부. 설정 변경 알림(보안 카테고리)에 프리셋 변경 포함.
+
+## 11. 실행 중 앱 감지 (옵트인)
+
+- **설정:** `activity: { "enabled": false, "watch": [{ "process": "steam.exe", "label": "Steam", "kind": "game"|"work"|"media"|"stream"|"other" }] }`, 최대 20개.
+- 서비스가 10초마다 프로세스 목록(세션 무관)을 훑어 감시 목록과 **대소문자 무시 파일 이름 일치**만 본다. 목록에 없는 프로세스 이름은 어디에도 보내지 않는다.
+- **API:** status `activity: { enabled, kind: "game"|…|"none", labels: ["Steam"] }`. 여러 개가 켜져 있으면 kind 우선순위 game > stream > media > work > other.
+  바뀌면 푸시 `activity.changed`.
+- **드라이버:** 커스텀 `pcActivity` — `activity` enum(루틴 조건용), `summary` "게임 중 · Steam" / "없음" / 옵트인 꺼짐이면 "꺼짐".
+- **데스크톱 앱:** 설정의 감시 목록 편집기(실행 중 프로세스에서 고르기 지원).
+
+## 12. 잠들지 않기
+
+- 서비스가 `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)`를 전용 고루틴에서 잡는다. **자동(유휴) 절전만** 막고
+  사용자·원격의 종료·절전 명령은 막지 않는다. 화면 끄기는 막지 않는다(옵션 `keep_display`, 기본 끔).
+- 기간: 1시간 기본, 설정 `awake.default_minutes`(0 = 끌 때까지). 서비스 재시작 시 남은 시간을 이어받지 않는다(안전 쪽).
+- **API:** status `awake: { on, until }`, command `awake`(value 분, 0 = 무기한) / `awakeoff`. 푸시 `awake.changed`.
+- **텔레그램:** `/awake [분]`, `/awake off`. 데스크톱 앱: 명령 탭 토글과 남은 시간.
+- **드라이버:** 컴포넌트 `awake`에 표준 `switch`. 켜면 환경설정 `awakeMinutes`(기본 60) 동안. 표준 스위치라 루틴 동작·조건에 그대로 쓴다.
+
+## 13. 노트북 배터리
+
+- 서비스가 `GetSystemPowerStatus`로 `battery: { present, percent, charging, ac }`를 status에 싣는다(60초 주기로 충분).
+- **드라이버:** 표준 `battery`·`powerSource`. 데스크톱에 빈 줄이 생기지 않도록 **배터리가 있을 때만** 컴포넌트 `battery`가 있는
+  프로필 변형(`pc-<style>-battery.v2`)으로 옮긴다. 아이콘 10종 × 배터리 유무 = 20개 프로필은 손으로 관리하지 않고
+  `tools/gen-profiles.js`가 `profiles/pc.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교).
+- 루틴 예: "배터리 20% 이하면 충전기 플러그 켜기".
+
+## 14. 프로필 pc.v2 구성
+
+- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioVolume, audioMute, mediaPlayback, mediaTrackControl, pcPreset, pcActivity, (pcNotify)
+- awake: switch
+- battery(배터리 변형만): battery, powerSource
+- 이름: `pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`. `pc*.v1`은 `KNOWN`으로 자동 이전.
