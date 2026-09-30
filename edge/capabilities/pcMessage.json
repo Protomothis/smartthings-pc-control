@@ -1,0 +1,36 @@
+{
+  "id": "numbersystem53811.pcmessage",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcMessage",
+  "ephemeral": false,
+  "attributes": {},
+  "commands": {
+    "send": {
+      "name": "send",
+      "arguments": [
+        {
+          "name": "text",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      ]
+    },
+    "speak": {
+      "name": "speak",
+      "arguments": [
+        {
+          "name": "text",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      ]
+    }
+  }
+}

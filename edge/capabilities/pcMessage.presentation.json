@@ -1,0 +1,51 @@
+{
+  "id": "numbersystem53811.pcmessage",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.commands.send.label}}",
+      "displayType": "textField",
+      "textField": {
+        "command": "send",
+        "argumentType": "string",
+        "range": [1, 200]
+      }
+    },
+    {
+      "label": "{{i18n.commands.speak.label}}",
+      "displayType": "textField",
+      "textField": {
+        "command": "speak",
+        "argumentType": "string",
+        "range": [1, 200]
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": [
+      {
+        "label": "{{i18n.commands.send.label}}",
+        "displayType": "textField",
+        "textField": {
+          "command": "send",
+          "argumentType": "string",
+          "range": [1, 200]
+        }
+      },
+      {
+        "label": "{{i18n.commands.speak.label}}",
+        "displayType": "textField",
+        "textField": {
+          "command": "speak",
+          "argumentType": "string",
+          "range": [1, 200]
+        }
+      }
+    ]
+  }
+}

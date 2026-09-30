@@ -222,10 +222,48 @@ function T.test_the_media_group_is_in_main_by_default_in_its_order()
   for k, id in ipairs(MEDIA_GROUP) do
     h.assert_equal(main[at + k], id, "media group position " .. k)
   end
-  h.assert_deep_equal({ main[at + 6], main[at + 7], main[at + 8], main[at + 9] }, {
-    "numbersystem53811.pcpreset", "numbersystem53811.pcactivity", "notification", "speechSynthesis",
+  -- pcMessage takes the place the standard notification pair had (pc.v2), and
+  -- closes main.
+  h.assert_deep_equal({ main[at + 6], main[at + 7], main[at + 8] }, {
+    "numbersystem53811.pcpreset", "numbersystem53811.pcactivity", "numbersystem53811.pcmessage",
   })
+  h.assert_equal(#main, at + 8, "pcMessage is the last capability of main")
   h.assert_nil(render("others", false):find("\n  - id: media\n", 1, true), "no media component by default")
+end
+
+function T.test_no_current_profile_carries_the_standard_notification_pair()
+  -- pcMessage: the app labels `notification` "텍스트 표시" and
+  -- `speechSynthesis` "음성 합성", and a device configuration cannot override
+  -- that (platform notes "표준 capability"). Both rows would sit next to ours.
+  for _, battery in ipairs({ false, true }) do
+    for _, style in ipairs(profiles.STYLES) do
+      for _, media_component in ipairs({ false, true }) do
+        local text = render(style, battery, media_component)
+        local name = profiles.for_style(style, battery)
+        h.assert_nil(text:find("\n      - id: notification\n", 1, true), name .. " still lists notification")
+        h.assert_nil(text:find("\n      - id: speechSynthesis\n", 1, true), name .. " still lists speechSynthesis")
+        h.assert_contains(text, "\n      - id: numbersystem53811.pcmessage\n")
+      end
+    end
+  end
+end
+
+function T.test_the_frozen_v2_profiles_are_still_shipped_with_the_standard_pair()
+  -- The reviewer's device and every other edge-v1.1.0 device sits on one of
+  -- these until its first init moves it; the files must stay as they shipped.
+  local count = 0
+  for _, battery in ipairs({ false, true }) do
+    for _, style in ipairs(profiles.STYLES) do
+      local name = profiles.name_for(style, battery, 2)
+      local text = lf(read(edge_dir .. "/profiles/" .. file_name(name)))
+      h.assert_contains(text, "\nname: " .. name .. "\n", "profiles/" .. file_name(name))
+      h.assert_contains(text, "\n      - id: notification\n")
+      h.assert_contains(text, "\n      - id: speechSynthesis\n")
+      h.assert_nil(text:find("pcmessage", 1, true), name .. " must not grow pcMessage")
+      count = count + 1
+    end
+  end
+  h.assert_equal(count, 20)
 end
 
 function T.test_the_alternative_layout_moves_the_media_group_into_a_component()

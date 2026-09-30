@@ -51,7 +51,11 @@ poll.LAST_SEEN_STEP = 60
 -- #107: "2" - the move to `pc.v2` brings new capabilities whose rows start
 -- unset (the standard audio/media ones now, pcPreset/pcActivity and the
 -- awake/battery components with the rest of edge-v1.1.0).
-poll.ROWS_VERSION = "2"
+-- "3" - the move to `pc.v3` (pcMessage in place of the standard notification
+-- pair). pcMessage itself has no attribute to paint, but a device on its new
+-- profile starts with an empty cloud record, and the rule is one generation per
+-- capability set, so every row goes out once more.
+poll.ROWS_VERSION = "3"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status

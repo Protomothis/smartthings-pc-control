@@ -42,7 +42,8 @@ local function device_init(driver, device)
   end
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
-  -- #107: pc*.v1 -> pc*.v2, with the style kept.
+  -- #107: pc*.v1 -> pc*.v2, with the style kept; pcMessage: pc*.v2 -> pc*.v3,
+  -- with the style and the battery half kept.
   local migrated = profiles.ensure(device)
   -- #100: the `iconStyle` preference changed but the driver restarted before
   -- the switch to that style's profile landed (or the hub refused it then).
@@ -624,14 +625,17 @@ end
 -- #108: PC notifications
 --------------------------------------------------------------------------------
 
---- `POST /st/v1/notify` for `notification.deviceNotification(notification)`
---- and `speechSynthesis.speak(phrase)` (`speak = true`).
+--- `POST /st/v1/notify` for `pcMessage.send(text)` and `pcMessage.speak(text)`
+--- (`speak = true`) - and for the standard `notification.deviceNotification`
+--- and `speechSynthesis.speak` of the v2 profiles.
 --
--- Both capabilities are standard and have no attributes, so there is no row to
--- answer; a note goes to `pcInfo.message` only - a routine may send several a
+-- None of these capabilities has an attribute, so there is no row to answer;
+-- the outcome goes to `pcInfo.message` only - a routine may send several a
 -- minute, and the summary row is the one the user reads the PC's state from.
--- Gated like the other v1.2.0 commands (`features "notify"`), and the text is
--- cleaned and cut to the service's 200 characters before it goes out.
+-- A text that went out says so there ("PC에 메시지를 보냈습니다" / "PC에서
+-- 읽었습니다"), a refused one says why. Gated like the other v1.2.0 commands
+-- (`features "notify"`), and the text is cleaned and cut to the service's 200
+-- characters before it goes out.
 local function send_notification(driver, device, text, speak)
   local lang = poll.lang(device)
   local cleaned = features.notify_text(text)
@@ -658,9 +662,21 @@ local function send_notification(driver, device, text, speak)
     report_error(device, kind, body)
     return false
   end
+  poll.emit_message(device, i18n.t(lang, speak and "notify_spoken" or "notify_sent"))
   return true
 end
 
+--- `pcMessage.send(text)` / `pcMessage.speak(text)`.
+local function handle_message_send(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).text, false)
+end
+
+local function handle_message_speak(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).text, true)
+end
+
+--- The standard pair of the v2 profiles (their argument names are the
+--- platform's).
 local function handle_device_notification(driver, device, cmd)
   return send_notification(driver, device, ((cmd or {}).args or {}).notification, false)
 end
@@ -767,6 +783,12 @@ local function add_standard(id, handlers)
   return true
 end
 
+-- The screen uses `pcMessage` since pc.v3 (registered with the other custom
+-- capabilities below). These two stay registered for a device still on a v2
+-- profile: `profiles.ensure` moves every v2 device on its first init, but a
+-- hub that refuses the move leaves it on v2 for the whole driver run, and its
+-- text rows and routines still send the standard commands. Two guarded
+-- lookups and two table entries keep such a device working meanwhile.
 add_standard("notification", { deviceNotification = handle_device_notification })
 add_standard("speechSynthesis", { speak = handle_speak })
 
@@ -782,6 +804,12 @@ if custom.command then
 end
 if custom.preset then
   capability_handlers[custom.preset.ID] = { run = handle_preset_run }
+end
+if custom.message then
+  capability_handlers[custom.message.ID] = {
+    send = handle_message_send,
+    speak = handle_message_speak,
+  }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

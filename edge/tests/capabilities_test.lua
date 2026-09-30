@@ -311,23 +311,38 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   -- card last from #86 on - which is when the version row got a capability of
   -- its own. A file is read for which of the two it carries rather than by its
   -- number, so a version bump does not have to be spelled out here.
-  -- #90 reset the numbering, so at v1.0.0 there is no older file and this
-  -- loop runs empty; it guards the files a future `pc.v2` leaves behind.
+  -- #90 reset the numbering, so at v1.0.0 there was no older file; now the ten
+  -- v1 files and (since pcMessage made pc.v3) the twenty v2 files are frozen.
   local profiles = require "profiles"
   local version = (caps.VERSION:gsub("^.*%.", ""))
   local info = (caps.STATUS:gsub("^.*%.", ""))
+  local EDGE_V10 = {
+    pcpower = true, pcremote = true, pcdefer = true, pcuser = true, pcinfo = true,
+  }
   for name, text in pairs(profile_files) do
     -- #100: the icon variants are current, and checked against pc.yml below.
     if not profiles.is_current(profile_name(text)) then
       local order = capability_order(text)
       h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
-      local carries_version = false
-      for _, id in ipairs(order) do
-        carries_version = carries_version or id == version
+      local at
+      for i, id in ipairs(order) do
+        if id == version then
+          at = i
+        end
       end
-      local last = carries_version and version or info
-      h.assert_equal(order[#order], last,
-        "profiles/" .. name .. " must keep the card it shipped with last (#85, #86)")
+      if at == nil then
+        h.assert_equal(order[#order], info,
+          "profiles/" .. name .. " must keep the card it shipped with last (#85)")
+      else
+        -- #107: from v2 on the v1.2.0 capabilities follow the version card, so
+        -- "last" means last of the edge-v1.0 set, with the info card above it.
+        h.assert_equal(order[at - 1], info,
+          "profiles/" .. name .. " must keep the info card above the version card (#86)")
+        for i = at + 1, #order do
+          h.assert_nil(EDGE_V10[order[i]],
+            "profiles/" .. name .. " lists " .. order[i] .. " after the version card (#86)")
+        end
+      end
     end
   end
 end
@@ -581,6 +596,8 @@ local EXPECTED_COMMANDS = {
   preset = { run = { "slot" } },
   -- #114: a condition, nothing to command.
   activity = {},
+  -- #108/pcMessage: one text argument each, the same name for both.
+  message = { send = { "text" }, speak = { "text" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -788,7 +805,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "message" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -1484,6 +1501,77 @@ function T.test_no_automation_action_uses_a_push_button()
   end
 end
 
+--------------------------------------------------------------------------------
+-- textField rows (#108, pcMessage)
+--------------------------------------------------------------------------------
+
+--- Every `textField` widget of every presentation, detail view and automation
+--- actions alike.
+local function text_fields()
+  local fields = {}
+  for key, id in pairs(caps.ids) do
+    local doc = presentation(key)
+    for i, item in ipairs(doc.detailView or {}) do
+      if item.displayType == "textField" then
+        fields[#fields + 1] = { key = key, item = item, where = string.format("%s detailView[%d]", id, i) }
+      end
+    end
+    for i, item in ipairs((doc.automation or {}).actions or {}) do
+      if item.displayType == "textField" then
+        fields[#fields + 1] = { key = key, item = item,
+          where = string.format("%s automation.actions[%d]", id, i) }
+      end
+    end
+  end
+  return fields
+end
+
+function T.test_every_text_field_sends_one_bounded_string_argument()
+  -- The standard `notification` shape (platform notes "표준 capability"):
+  -- `{command, argumentType: "string"}`, and the command takes one string.
+  -- The range is the argument's length, from 1 (the service refuses an empty
+  -- text) to the definition's `maxLength`, so the field cannot accept what the
+  -- cloud would then reject.
+  local fields = text_fields()
+  h.assert_true(#fields >= 4, "pcMessage has two text fields in each place: " .. #fields)
+  for _, field in ipairs(fields) do
+    local text_field = field.item.textField or {}
+    local command = ((definition(field.key).commands or {})[text_field.command or ""]) or nil
+    h.assert_true(command ~= nil, field.where .. " runs " .. tostring(text_field.command) .. ", which is not defined")
+    h.assert_equal(text_field.argumentType, "string", field.where .. " argumentType")
+    h.assert_equal(#(command.arguments or {}), 1, field.where .. ": a text field fills exactly one argument")
+    local schema = command.arguments[1].schema or {}
+    h.assert_equal(schema.type, "string", field.where .. " argument type")
+    h.assert_true(type(schema.maxLength) == "number", field.where .. " argument has no maxLength")
+    h.assert_deep_equal(text_field.range, { 1, schema.maxLength }, field.where .. " range")
+    h.assert_equal(field.item.label, "{{i18n.commands." .. text_field.command .. ".label}}",
+      field.where .. " label comes from the translation of its command")
+  end
+end
+
+function T.test_pc_message_is_two_text_fields_and_nothing_else()
+  local detail = presentation("message").detailView
+  h.assert_equal(#detail, 2, "send, speak")
+  h.assert_equal(detail[1].textField.command, "send")
+  h.assert_equal(detail[2].textField.command, "speak")
+  local actions = presentation("message").automation.actions
+  h.assert_equal(#actions, 2, "the same two in a routine")
+  h.assert_equal(actions[1].textField.command, "send")
+  h.assert_equal(actions[2].textField.command, "speak")
+  h.assert_equal(#presentation("message").automation.conditions, 0, "nothing to react to")
+  h.assert_equal(#presentation("message").dashboard.actions, 0)
+  -- No attribute: nothing to show, so nothing the driver would have to paint -
+  -- and nothing that could read "-" (the standard `notification` has none
+  -- either).
+  h.assert_nil(next(definition("message").attributes or {}), "pcMessage defines no attribute")
+  -- The service's limit, once, for both commands.
+  local features = require "features"
+  for _, name in ipairs({ "send", "speak" }) do
+    h.assert_equal(definition("message").commands[name].arguments[1].schema.maxLength,
+      features.NOTIFY_MAX_CHARS, name .. "(text) maxLength")
+  end
+end
+
 -- Attributes that are still defined and emitted but no longer have a row of
 -- their own in the detail view (#78): the summaries replaced them.
 -- #82 put `active` back on screen as the value of the schedule list; #83 moved
@@ -1751,6 +1839,26 @@ function T.test_the_versions_row_has_a_label_in_both_languages()
   end
   h.assert_equal(translation("version", "ko").label, "PC 버전")
   h.assert_equal(translation("version", "en").label, "PC version")
+end
+
+function T.test_pc_message_reads_as_ours_in_both_languages()
+  -- The whole point of the capability: the words on the phone, instead of the
+  -- app's "텍스트 표시" / "음성 합성" for the standard pair.
+  local ko, en = translation("message", "ko"), translation("message", "en")
+  h.assert_equal(ko.commands.send.label, "PC에 메시지 보내기")
+  h.assert_equal(ko.commands.speak.label, "PC에서 소리내어 읽기")
+  h.assert_equal(en.commands.send.label, "Send a message to the PC")
+  h.assert_equal(en.commands.speak.label, "Read aloud on the PC")
+  for _, doc in ipairs({ ko, en }) do
+    h.assert_true(type(doc.description) == "string" and doc.description ~= "", doc.tag .. " description")
+    for _, name in ipairs({ "send", "speak" }) do
+      h.assert_true(type(doc.commands[name].description) == "string" and doc.commands[name].description ~= "",
+        doc.tag .. " " .. name .. " description")
+      local argument = doc.commands[name].arguments.text
+      h.assert_true(type(argument.description) == "string" and argument.description ~= "",
+        doc.tag .. " " .. name .. "(text) description")
+    end
+  end
 end
 
 function T.test_the_korean_translation_is_actually_korean()
