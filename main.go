@@ -10,6 +10,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 	"github.com/Protomothis/smartthings-pc-control/service"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 var Version = "dev"
@@ -98,6 +99,12 @@ func main() {
 		if len(os.Args) > 2 {
 			gui.HandleToastAction(os.Args[2])
 		}
+
+	case "user-action":
+		// Hidden: launched by the service in the logged-in user's session
+		// (#103) with a fixed argument vector. Prints exactly one JSON line
+		// and exits 0/1; see useraction/useraction.go.
+		os.Exit(useraction.Main(os.Args[2:], os.Stdout))
 
 	case "update-apply":
 		// Hidden: launched elevated by the GUI's self-updater as

@@ -44,6 +44,23 @@
   (go-ole 계열). PowerShell + C# Add-Type는 호출마다 1초 가까이 걸려 슬라이더에 부적합하다.
   미디어 키는 `SendInput`(VK_MEDIA_*), 토스트는 기존 go-toast, 음성은 SAPI `SpVoice`.
 
+### user-action 확정 문법 (#103)
+
+위 목록에서 `notify --voice`와 `preset`이 늘었고 오류 모양을 정했다. 구현은 `useraction/`.
+
+- `audio get` · `audio set <0-100>` · `audio step <-100..100>`(`+5`·`-5`·`5`) · `audio mute <on|off|toggle>`
+- `media <playpause|play|pause|stop|next|prev>`
+- `notify --title <t> --text <t> [--speak] [--voice <name>]` — 값은 다음 인자를 그대로 받는다(`--`로 시작해도 문구).
+  `--text` 1–200자, 제목 100자, 제어 문자는 거절(서비스가 먼저 지운다).
+- `preset --type <program|url|script> --path <p> [--arg <a>]...` — `url`은 http/https만·`--arg` 없음,
+  `script`는 `.ps1`/`.bat`/`.cmd`만, `--arg` 최대 32개.
+- 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).
+  코드는 `bad_args` · `unsupported`(처리기가 없거나 이 PC에서 못 함) · `failed`.
+- 기능 이슈는 `useraction.Register(action, handler)`로 처리기를 붙인다. 붙기 전에는 `unsupported`.
+- 서비스는 `runUserAction`으로 부른다: 같은 파서로 먼저 검사(잘못된 인자는 프로세스를 띄우지 않음),
+  3초 제한(넘으면 자식 종료), 출력의 **마지막 비지 않은 줄**을 JSON으로 읽는다. 결과에 `audio`가 있으면 저장값을 갱신한다.
+- 하트비트 본문의 `idle_seconds`와 `audio`는 각각 선택이다. `audio`가 범위를 벗어나면 본문 전체를 400으로 거절한다.
+
 ## 3. 서비스 API 추가 (`/st/v1`, protocol 1 유지)
 
 - **status**에 추가:
