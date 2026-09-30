@@ -16,10 +16,10 @@
  * and without the `battery` component (#116 - a desktop must not carry an
  * empty battery card). Names and files:
  *
- *   pc.v2            profiles/pc-v2.yml             others, no battery
- *   pc-tv.v2         profiles/pc-tv-v2.yml          tv, no battery
- *   pc-battery.v2    profiles/pc-battery-v2.yml     others, battery
- *   pc-tv-battery.v2 profiles/pc-tv-battery-v2.yml  tv, battery
+ *   pc.v3            profiles/pc-v3.yml             others, no battery
+ *   pc-tv.v3         profiles/pc-tv-v3.yml          tv, no battery
+ *   pc-battery.v3    profiles/pc-battery-v3.yml     others, battery
+ *   pc-tv-battery.v3 profiles/pc-tv-battery-v3.yml  tv, battery
  *
  * The rules are deliberately small, because tests/profilegen_test.lua applies
  * the same ones in Lua and compares the result with the files on disk:
@@ -48,10 +48,12 @@ const EDGE = path.resolve(__dirname, '..');
 const TEMPLATE = path.join(EDGE, 'tools', 'profile-template.yml');
 const OUT_DIR = path.join(EDGE, 'profiles');
 
-// The profile generation. A future screen change bumps this AND the name in
+// The profile generation. A screen change bumps this AND the name in
 // src/profiles.lua (`profiles.VERSION`); the files of the old generation then
 // stay in profiles/ untouched, for the devices that have not moved yet.
-const VERSION = 2;
+// 3: pcMessage replaced the standard notification/speechSynthesis pair; the
+// twenty -v2.yml files are frozen now.
+const VERSION = 3;
 
 const DEFAULT_STYLE = 'others';
 
@@ -76,7 +78,7 @@ function profileName(style, battery) {
   return name + '.v' + VERSION;
 }
 
-// pc.v2 -> pc-v2.yml, pc-tv-battery.v2 -> pc-tv-battery-v2.yml
+// pc.v3 -> pc-v3.yml, pc-tv-battery.v3 -> pc-tv-battery-v3.yml
 function fileName(name) {
   return name.replace(/\.v(\d+)$/, '-v$1') + '.yml';
 }

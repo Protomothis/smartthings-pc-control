@@ -39,10 +39,19 @@ features.AWAKE_MAX_MINUTES = 1440
 
 -- #108: a toast (or a spoken sentence) on the PC, `POST /st/v1/notify`.
 features.NOTIFY = "notify"
+-- Our own `pcMessage` (`send(text)`, `speak(text)`) since the standard
+-- capabilities showed Samsung's labels ("텍스트 표시", "음성 합성") that a
+-- device configuration cannot override (platform notes "표준 capability").
+features.CAP_MESSAGE = caps.MESSAGE
+-- The standard pair of the v2 profiles. No current profile lists them; the
+-- driver still answers them for a device whose move to v3 the hub refused
+-- (init.lua `add_standard`).
 features.CAP_NOTIFICATION = "notification"
 features.CAP_SPEECH = "speechSynthesis"
--- The service takes 1-200 characters (§3); the capabilities allow 255
--- (`notification`) and 1000 (`speechSynthesis`), so the driver cuts first.
+-- The service takes 1-200 characters (§3). `pcMessage` declares the same 200
+-- (`maxLength`, so the cloud stops a longer text before the hub), the legacy
+-- standard pair allows 255 (`notification`) and 1000 (`speechSynthesis`) - and
+-- the driver cuts either way, after cleaning.
 features.NOTIFY_MAX_CHARS = 200
 
 -- #116: the laptop battery, on a component only the `-battery` profiles have.

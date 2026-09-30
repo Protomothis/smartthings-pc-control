@@ -37,6 +37,14 @@
 -- on disk differs from what the template makes. `apply_style` keeps the
 -- battery half of the name, `apply_battery` (#116) keeps the style half.
 --
+-- `pc.v3`: the standard `notification` / `speechSynthesis` rows gave way to our
+-- own `pcMessage` ("PC에 메시지 보내기" / "PC에서 소리내어 읽기" - the app
+-- labels a standard capability in Samsung's words and a device configuration
+-- cannot override them). A different capability list is a different screen,
+-- so every name moved to v3; the twenty v2 names went into `KNOWN` after the
+-- ten v1 ones, their files stay in the package, frozen, and a v2 device lands
+-- on the v3 of the same style and the same battery half.
+--
 -- Everything here is pure except `remember`, `ensure`, `apply_style`,
 -- `apply_battery` and `remove_legacy_child`, which touch the device, and all of
 -- them are guarded: a hub that refuses `try_update_metadata` or
@@ -44,8 +52,8 @@
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v2`, …).
-profiles.VERSION = 2
+-- The profile generation every current name carries (`pc.v3`, …).
+profiles.VERSION = 3
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -72,7 +80,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v2`, `pc-tv.v2`, `pc-battery.v2`, `pc-tv-battery.v2`.
+--- `pc.v3`, `pc-tv.v3`, `pc-battery.v3`, `pc-tv-battery.v3`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -85,7 +93,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v2` once its status says so (#116).
+-- moves to `pc-battery.v3` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -115,14 +123,17 @@ end
 -- Every profile name this driver has ever shipped, oldest first. A name that
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone. #107: the ten v1 names (the default and the nine
--- icon variants of #100) and then the twenty current ones.
+-- icon variants of #100), then the twenty v2 names (every style with and
+-- without the battery, #116) and then the twenty current ones.
 profiles.KNOWN = {}
 for _, style in ipairs(profiles.STYLES) do
   profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, false, 1)
 end
-for _, battery in ipairs({ false, true }) do
-  for _, style in ipairs(profiles.STYLES) do
-    profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, battery)
+for version = 2, profiles.VERSION do
+  for _, battery in ipairs({ false, true }) do
+    for _, style in ipairs(profiles.STYLES) do
+      profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, battery, version)
+    end
   end
 end
 
@@ -234,10 +245,14 @@ end
 -- #100), not a name this driver ever used (foreign device, or a version from
 -- the future), and no name at all. A `pc-display.vN` name is not ours to
 -- migrate either: #81 removed that series, and such a device is deleted
--- instead (`is_legacy_child`). A known older name keeps its style.
+-- instead (`is_legacy_child`). A known older name keeps its style, and a
+-- `-battery` name (v2 on) keeps its battery half.
 -- @param battery #107: whether the target is the battery variant. The v1 names
 --   never had one, so the caller says, and "no" until a status has said
---   otherwise.
+--   otherwise. A v2 `-battery` name already says "yes" and goes to a battery
+--   profile whatever the caller passes: the device got there on two statuses
+--   that agreed (#116), which is better evidence than a field a single odd
+--   status may not have written.
 function profiles.migration_for(device_profile_name, battery)
   if type(device_profile_name) ~= "string" or device_profile_name == "" then
     return nil
@@ -247,7 +262,9 @@ function profiles.migration_for(device_profile_name, battery)
   end
   for _, known in ipairs(profiles.known()) do
     if device_profile_name == known then
-      return profiles.for_style(style_in_name(device_profile_name), battery == true)
+      local on_battery = battery == true
+        or device_profile_name:match("%-battery%.v%d+$") ~= nil
+      return profiles.for_style(style_in_name(device_profile_name), on_battery)
     end
   end
   return nil
@@ -371,10 +388,11 @@ function profiles.ensure(device)
   attempted[key] = true
 
   local name = profiles.name_of(device)
-  -- #107: a v1 device lands on the v2 profile of its style. Whether it has a
-  -- battery is only known once a status has said so (#116: `BATTERY_FIELD`,
-  -- which a v1 device never wrote), so it lands on the plain one and the
-  -- first statuses move a laptop on (`apply_battery`).
+  -- #107: a v1 device lands on the current profile of its style. Whether it
+  -- has a battery is only known once a status has said so (#116:
+  -- `BATTERY_FIELD`, which a v1 device never wrote), so it lands on the plain
+  -- one and the first statuses move a laptop on (`apply_battery`). A v2 device
+  -- keeps its battery half (`migration_for`).
   local target = profiles.migration_for(name, profiles.has_battery(device))
   if not target then
     -- Nothing to do, but keep the field in step with reality when the device
@@ -396,7 +414,7 @@ function profiles.ensure(device)
   profiles.remember(device, target)
   -- #107: from here on this run reads the new name, whatever the hub still
   -- reports on `device.profile` - an icon switch right after a migration must
-  -- start from the v2 name, not from the v1 one it would refuse to touch.
+  -- start from the new name, not from the old one it would refuse to touch.
   switched[key] = target
   logger().info(string.format("migrated %s to %s", tostring(device.id), target))
   return target
