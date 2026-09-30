@@ -119,7 +119,9 @@ func runUserAction(ctx context.Context, args ...string) (UserActionResult, error
 		if err := res.Audio.Validate(); err != nil {
 			logMsg("user-action %s: ignoring audio in reply: %v", args[0], err)
 		} else {
-			noteAudioSample(*res.Audio, audioNow())
+			// Stamped with the completion time: the child read the device
+			// just before it answered.
+			recordAudioSample(*res.Audio, audioNow())
 		}
 	}
 	return res, nil

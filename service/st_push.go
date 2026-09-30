@@ -390,7 +390,7 @@ func stPushEventType(ev notify.Event, cfg SmartThingsConfig) (string, bool) {
 	// activity.changed (#110) is not gated on activity.enabled: switching
 	// it off is itself a change the hub has to hear about, and the event
 	// carries kinds and labels only, never a process name.
-	case "display", "awake", "battery", "activity":
+	case "display", "awake", "battery", "activity", "audio":
 		if ev.Kind == "changed" {
 			return ev.Key(), true
 		}

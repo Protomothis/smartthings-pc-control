@@ -255,11 +255,14 @@ type stStatusResponse struct {
 	Battery batteryInfo `json:"battery"`
 	// Activity is the opt-in running-app block (#110, §11).
 	Activity stActivity `json:"activity"`
+	// Audio is the default playback device's last known state (#104, §3).
+	Audio stAudio `json:"audio"`
 }
 
 // stFeatures lists what this service supports right now. Some entries
 // depend on the machine (a battery) rather than on the version, and some
-// on an opt-in: "activity" is listed only while activity.enabled is on.
+// on a setting: "activity" is listed only while activity.enabled is on,
+// the media entries only while media.enabled is.
 func stFeatures(b batteryInfo, cfg Config) []string {
 	features := []string{"awake"}
 	if b.Present {
@@ -268,6 +271,7 @@ func stFeatures(b batteryInfo, cfg Config) []string {
 	if cfg.Activity.Enabled {
 		features = append(features, "activity")
 	}
+	features = append(features, mediaFeatures(cfg)...)
 	return features
 }
 
@@ -550,6 +554,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		Awake:             currentAwake().View().wire(),
 		Battery:           bat,
 		Activity:          stActivityStatus(cfg),
+		Audio:             stAudioStatus(cfg),
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{
@@ -579,6 +584,8 @@ type stCommandResponse struct {
 	Schedule map[string]any `json:"schedule"`
 	// Awake is the new keep-awake state, on the awake/awakeoff replies only.
 	Awake *stAwake `json:"awake,omitempty"`
+	// Audio is the audio state after a volume/mute command (#104).
+	Audio *stAudio `json:"audio,omitempty"`
 }
 
 // handleSTAwake runs the keep-awake commands (#111, §12):
@@ -643,6 +650,10 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	switch name {
 	case "awake", "awakeoff":
 		handleSTAwake(w, name, body, from)
+		return
+	}
+	if isMediaCommand(name) {
+		handleSTMedia(w, r, name, body, from)
 		return
 	}
 	cmd, ok := Commands[name]

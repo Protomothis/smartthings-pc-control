@@ -82,8 +82,40 @@ func resetIdleHeartbeat() {
 // expose_session opt-in on the tray side, while audio (#103) is the default
 // playback device's state, which the audio commands need either way.
 type idleHeartbeatRequest struct {
-	IdleSeconds *int64            `json:"idle_seconds"`
-	Audio       *useraction.Audio `json:"audio"`
+	IdleSeconds *int64          `json:"idle_seconds"`
+	Audio       *heartbeatAudio `json:"audio"`
+}
+
+// heartbeatAudio is the heartbeat's audio block: the sample and, since
+// #104, when the tray app took it (RFC3339). The newer-wins guard of the
+// audio store compares sample times, so a heartbeat read just before a
+// volume command but delivered just after it cannot undo the command's
+// result. A tray app without sampled_at gets the receive time.
+type heartbeatAudio struct {
+	useraction.Audio
+	SampledAt string `json:"sampled_at,omitempty"`
+}
+
+// heartbeatClockSkew is how far in the future a sampled_at may lie. Tray
+// app and service share one clock, so anything later is a bogus value,
+// and storing it would make every real sample look older until then.
+const heartbeatClockSkew = 5 * time.Second
+
+// sampleTime is when the audio block was taken: sampled_at, clamped to
+// the receive time when it is in the future, or the receive time when it
+// is absent. ok is false for a value that is not RFC3339.
+func (a heartbeatAudio) sampleTime(received time.Time) (time.Time, bool) {
+	if a.SampledAt == "" {
+		return received, true
+	}
+	at, err := time.Parse(time.RFC3339Nano, a.SampledAt)
+	if err != nil {
+		return time.Time{}, false
+	}
+	if at.After(received.Add(heartbeatClockSkew)) {
+		return received, true
+	}
+	return at, true
 }
 
 // handleSessionHeartbeat serves POST /api/session/heartbeat. The sample is
@@ -113,11 +145,18 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "idle_seconds out of range")
 		return
 	}
+	var audioAt time.Time
 	if body.Audio != nil {
 		if err := body.Audio.Validate(); err != nil {
 			writeAPIError(w, http.StatusBadRequest, "audio: "+err.Error())
 			return
 		}
+		at, ok := body.Audio.sampleTime(audioNow())
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, "audio: sampled_at is not RFC3339")
+			return
+		}
+		audioAt = at
 	}
 	// Validate everything before storing anything: a rejected body leaves
 	// both samples as they were.
@@ -125,7 +164,7 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		noteIdleHeartbeat(*body.IdleSeconds)
 	}
 	if body.Audio != nil {
-		noteAudioSample(*body.Audio, audioNow())
+		recordAudioSample(body.Audio.Audio, audioAt)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

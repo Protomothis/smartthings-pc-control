@@ -279,6 +279,13 @@
                         </label>
                         <div class="info" data-i18n="shutdownGraceInfo">Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.</div>
                     </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="mediaEnabled" {{if .MediaEnabled}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="mediaEnabled">Allow remote volume and media control</span>
+                        </label>
+                        <div class="info" data-i18n="mediaEnabledInfo">Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.</div>
+                    </div>
                     <div class="section-title" data-i18n="smartthings">SmartThings</div>
                     <div class="field">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -398,6 +405,8 @@
                 webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
                 shutdownGrace: 'Grace period for remote power commands (length is set in the desktop app)',
                 shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
+                mediaEnabled: 'Allow remote volume and media control',
+                mediaEnabledInfo: 'Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.',
                 smartthings: 'SmartThings',
                 stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
                 stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
@@ -437,6 +446,8 @@
                 webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
                 shutdownGrace: '원격 전원 명령 유예 (시간은 데스크톱 앱에서 설정)',
                 shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
+                mediaEnabled: '원격 볼륨·미디어 제어 허용',
+                mediaEnabledInfo: 'SmartThings·텔레그램에서 볼륨·음소거와 재생/일시정지·다음 곡 등을 보냅니다. 로그인한 사용자가 있을 때만 동작합니다.',
                 smartthings: 'SmartThings',
                 stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
                 stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
@@ -493,6 +504,7 @@
         const originalSecret = document.getElementById('secret').value;
         const originalRemote = document.getElementById('webuiRemote').checked;
         const originalGrace = document.getElementById('shutdownGrace').checked;
+        const originalMedia = document.getElementById('mediaEnabled').checked;
         const originalStSession = document.getElementById('stSession').checked;
         const originalStSessionUser = document.getElementById('stSessionUser').checked;
         const originalStHubs = document.getElementById('stHubs').value;
@@ -506,6 +518,7 @@
                             document.getElementById('secret').value !== originalSecret ||
                             document.getElementById('webuiRemote').checked !== originalRemote ||
                             document.getElementById('shutdownGrace').checked !== originalGrace ||
+                            document.getElementById('mediaEnabled').checked !== originalMedia ||
                             document.getElementById('stSession').checked !== originalStSession ||
                             document.getElementById('stSessionUser').checked !== originalStSessionUser ||
                             document.getElementById('stHubs').value !== originalStHubs ||
@@ -533,8 +546,9 @@
             // Only the switch: without a watch key the service keeps the
             // list the desktop app edited.
             const activity = {enabled: document.getElementById('activityEnabled').checked};
+            const media = {enabled: document.getElementById('mediaEnabled').checked};
             try {
-                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram, activity})});
+                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram, activity, media})});
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 const data = await res.json();
                 showStatus(data.message, data.status === 'error' ? 'error' : 'success');

@@ -71,6 +71,7 @@ func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko", PCName: "MY<PC>"}})
 	stubTrayLauncher(t, nil)
 	stubCommand(t, "lock")
+	stubMediaRun(t, UserActionResult{}, errNoUserSession) // /unmute never reaches a real session
 	defer cancelSchedule()
 	var h telegramControl
 
@@ -302,7 +303,7 @@ func TestTelegramMuteUnmute(t *testing.T) {
 		t.Errorf("mute without bus = %q", html)
 	}
 	captureNotifications(t)
-	if _, _, err := h.HandleCommand(context.Background(), "42", "mute", nil); err != nil {
+	if _, _, err := h.HandleCommand(context.Background(), "42", "quiet", nil); err != nil {
 		t.Errorf("mute usage should not be an error: %v", err)
 	}
 	if _, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"soon"}); err == nil {
@@ -318,11 +319,11 @@ func TestTelegramMuteUnmute(t *testing.T) {
 	if html, _, _ := h.HandleCommand(context.Background(), "42", "status", nil); !strings.Contains(html, "알림 일시 중지") {
 		t.Errorf("status should show the mute:\n%s", html)
 	}
-	if html, _, _ := h.HandleCommand(context.Background(), "42", "unmute", nil); !strings.HasPrefix(tgBody(html), "🔔") {
+	if html, _, _ := h.HandleCommand(context.Background(), "42", "quiet", []string{"off"}); !strings.HasPrefix(tgBody(html), "🔔") {
 		t.Errorf("unmute = %q", html)
 	}
 	if !currentBus().MutedUntil().IsZero() {
-		t.Error("still muted after /unmute")
+		t.Error("still muted after /quiet off")
 	}
 }
 
@@ -493,7 +494,7 @@ func TestTelegramAllowedChatIDsFallsBackToChatID(t *testing.T) {
 func TestTelegramBotCommandsFollowLang(t *testing.T) {
 	ko := telegramBotCommands("ko")
 	en := telegramBotCommands("en")
-	if len(ko) != 15 || len(en) != len(ko) {
+	if len(ko) != 17 || len(en) != len(ko) {
 		t.Fatalf("command count ko=%d en=%d", len(ko), len(en))
 	}
 	if ko[0].Command != "status" || ko[0].Description != "상태" || en[0].Description != "Status" {

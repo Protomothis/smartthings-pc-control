@@ -30,6 +30,13 @@ type Config struct {
 	// Activity is the opt-in running-app detection (#110), edited in the
 	// network tab's SmartThings section.
 	Activity ActivityConfig `json:"activity"`
+	// Media is the "media" object (#104): volume and media-key commands.
+	Media MediaConfig `json:"media"`
+}
+
+// MediaConfig mirrors service.MediaConfig; the settings tab edits it.
+type MediaConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ActivityConfig mirrors service.ActivityConfig (media-notify doc §11).
@@ -356,13 +363,32 @@ func (c *Client) RunningProcesses() ([]string, error) {
 	return r.Processes, nil
 }
 
-// SessionHeartbeat reports the interactive session's idle time to the
-// service (#77). Only this app can measure it, and the service publishes
-// the newest sample in the /st/v1/status session block for 90s; after that
-// it reports null, so a missed post degrades to "unknown" rather than to a
-// wrong number.
-func (c *Client) SessionHeartbeat(idleSeconds int64) error {
-	resp, err := c.do("POST", "/api/session/heartbeat", map[string]int64{"idle_seconds": idleSeconds})
+// Heartbeat is the body of POST /api/session/heartbeat. Both parts are
+// optional; a nil one is left out.
+type Heartbeat struct {
+	// IdleSeconds is the interactive session's idle time (#77).
+	IdleSeconds *int64 `json:"idle_seconds,omitempty"`
+	// Audio is the default playback device's state (#104).
+	Audio *HeartbeatAudio `json:"audio,omitempty"`
+}
+
+// HeartbeatAudio is the heartbeat's audio block. SampledAt (RFC3339) is
+// when it was read: the service keeps whichever of this and a command
+// result is newer by that time, not by arrival.
+type HeartbeatAudio struct {
+	Volume    int    `json:"volume"`
+	Muted     bool   `json:"muted"`
+	Device    string `json:"device"`
+	SampledAt string `json:"sampled_at"`
+}
+
+// SessionHeartbeat reports what only this app can measure (#77, #104): the
+// session's idle time, which the service publishes in the /st/v1/status
+// session block for 90s (after that it reports null, so a missed post
+// degrades to "unknown" rather than to a wrong number), and the volume the
+// user may have changed with the keyboard.
+func (c *Client) SessionHeartbeat(body Heartbeat) error {
+	resp, err := c.do("POST", "/api/session/heartbeat", body)
 	if err != nil {
 		return err
 	}

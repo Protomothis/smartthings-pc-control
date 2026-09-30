@@ -300,9 +300,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			// the watch list itself is edited in the desktop app, whose
 			// picker reads the process list this page must not see.
 			ActivityEnabled bool
+			// MediaEnabled is media.enabled (#104).
+			MediaEnabled bool
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
-			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled})
+			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled, liveCfg.Media.Enabled})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)

@@ -105,8 +105,9 @@ var tgTexts = map[string][2]string{
 			"/cancel – 예약·유예 취소\n" +
 			"/now – 예약·유예 즉시 실행\n" +
 			"/awake [분|off] – 잠들지 않기 (자동 절전 막기, 0 = 끌 때까지)\n" +
-			"/mute 30m|2h – 알림 일시 중지\n" +
-			"/unmute – 알림 재개\n" +
+			"/vol [0-100|+n|-n] – PC 볼륨 (값을 빼면 현재 볼륨)\n" +
+			"/mute · /unmute – PC 음소거 켜기·끄기\n" +
+			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
 			"/status – status\n" +
@@ -118,8 +119,9 @@ var tgTexts = map[string][2]string{
 			"/cancel – cancel the schedule/grace period\n" +
 			"/now – run the schedule/grace command now\n" +
 			"/awake [minutes|off] – keep awake (hold off idle sleep, 0 = until turned off)\n" +
-			"/mute 30m|2h – pause notifications\n" +
-			"/unmute – resume notifications\n" +
+			"/vol [0-100|+n|-n] – PC volume (no value: the current volume)\n" +
+			"/mute · /unmute – mute or unmute the PC\n" +
+			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/help – this list",
 	},
 	"unknown_command": {"알 수 없는 명령: <code>%s</code>", "Unknown command: <code>%s</code>"},
@@ -134,7 +136,7 @@ var tgTexts = map[string][2]string{
 	"cancelled":       {"✅ 취소됨: %s", "✅ Cancelled: %s"},
 	"no_schedule":     {"활성 예약 없음", "No active schedule"},
 	"run_now":         {"✅ 지금 실행: %s", "✅ Running now: %s"},
-	"mute_usage":      {"사용법: <code>/mute 30m</code> 또는 <code>/mute 2h</code>", "Usage: <code>/mute 30m</code> or <code>/mute 2h</code>"},
+	"mute_usage":      {"사용법: <code>/quiet 30m</code>, <code>/quiet 2h</code> 또는 <code>/quiet off</code>", "Usage: <code>/quiet 30m</code>, <code>/quiet 2h</code> or <code>/quiet off</code>"},
 	"muted":           {"🔕 %s까지 알림 일시 중지", "🔕 Notifications paused until %s"},
 	"unmuted":         {"🔔 알림 재개", "🔔 Notifications resumed"},
 	"notify_off":      {"알림 파이프라인이 꺼져 있습니다", "The notification pipeline is not running"},
@@ -185,6 +187,15 @@ var tgTexts = map[string][2]string{
 	"awake_already_off": {"잠들지 않기는 이미 꺼져 있습니다", "Keep awake is already off"},
 	"awake_usage":       {"사용법: <code>/awake</code> (기본 시간), <code>/awake 90</code> (분, 0 = 끌 때까지, 최대 1440), <code>/awake off</code>", "Usage: <code>/awake</code> (default period), <code>/awake 90</code> (minutes, 0 = until turned off, at most 1440), <code>/awake off</code>"},
 	"awake_failed":      {"잠들지 않기 실패: %s", "Keep awake failed: %s"},
+	// volume and mute (#104)
+	"vol_state":         {"볼륨 %d%% · 음소거 %s", "Volume %d%% · mute %s"},
+	"vol_usage":         {"사용법: <code>/vol</code> (현재 볼륨), <code>/vol 30</code> (0–100), <code>/vol +10</code>, <code>/vol -10</code>", "Usage: <code>/vol</code> (current volume), <code>/vol 30</code> (0–100), <code>/vol +10</code>, <code>/vol -10</code>"},
+	"media_disabled":    {"미디어 제어가 꺼져 있습니다 (설정 <code>media.enabled</code>)", "Media control is turned off (setting <code>media.enabled</code>)"},
+	"media_no_user":     {"로그인한 사용자가 없어 실행할 수 없습니다", "Nobody is logged in to this PC"},
+	"media_unsupported": {"이 PC에서는 할 수 없습니다: %s", "Not possible on this PC: %s"},
+	"media_timeout":     {"PC가 3초 안에 답하지 않았습니다", "The PC did not answer within 3 seconds"},
+	"media_failed":      {"실패: %s", "Failed: %s"},
+	"quiet_still":       {"🔕 알림은 %s까지 일시 중지 중입니다 — <code>/quiet off</code>로 재개", "🔕 Notifications stay paused until %s — <code>/quiet off</code> resumes them"},
 	// battery (#112)
 	"st_battery":          {"배터리", "Battery"},
 	"st_battery_charging": {"충전 중", "charging"},
@@ -420,7 +431,7 @@ func (c telegramControl) HandleCommand(ctx context.Context, chatID string, cmd s
 	return tgWithHeader(h), kb, err
 }
 
-func (c telegramControl) handleCommand(_ context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
+func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
 	switch cmd {
 	case "help", "start":
 		return tgText("help"), nil, nil
@@ -453,16 +464,28 @@ func (c telegramControl) handleCommand(_ context.Context, chatID string, cmd str
 		return tgText("no_schedule"), nil, nil
 	case "awake":
 		return c.awake(args)
+	case "vol":
+		return tgVolume(ctx, args)
 	case "mute":
-		return c.mute(args)
-	case "unmute":
-		b := currentBus()
-		if b == nil {
-			return tgText("notify_off"), nil, nil
+		// /mute 30m is what paused notifications before #104; a duration
+		// still does, a bare /mute mutes the PC.
+		if len(args) > 0 {
+			return c.mute(args)
 		}
-		b.Unmute()
-		logMsg("Telegram: notifications unmuted")
-		return tgText("unmuted"), nil, nil
+		return tgMediaCommand(ctx, "mute", nil)
+	case "unmute":
+		return tgMediaCommand(ctx, "unmute", nil)
+	case "quiet":
+		if len(args) > 0 && strings.EqualFold(args[0], "off") {
+			b := currentBus()
+			if b == nil {
+				return tgText("notify_off"), nil, nil
+			}
+			b.Unmute()
+			logMsg("Telegram: notifications unmuted")
+			return tgText("unmuted"), nil, nil
+		}
+		return c.mute(args)
 	}
 	return tgText("unknown_command", html.EscapeString("/"+cmd)) + "\n\n" + tgText("help"), nil, nil
 }
@@ -968,8 +991,10 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "cancel", Description: pick("예약·유예 취소", "Cancel schedule")},
 		{Command: "now", Description: pick("예약·유예 즉시 실행", "Run schedule now")},
 		{Command: "awake", Description: pick("잠들지 않기 [분|off]", "Keep awake [minutes|off]")},
-		{Command: "mute", Description: pick("알림 일시 중지 (30m, 2h)", "Pause notifications (30m, 2h)")},
-		{Command: "unmute", Description: pick("알림 재개", "Resume notifications")},
+		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},
+		{Command: "mute", Description: pick("PC 음소거", "Mute the PC")},
+		{Command: "unmute", Description: pick("PC 음소거 해제", "Unmute the PC")},
+		{Command: "quiet", Description: pick("알림 일시 중지 (30m, 2h, off)", "Pause notifications (30m, 2h, off)")},
 		{Command: "help", Description: pick("도움말", "Help")},
 	}
 }
