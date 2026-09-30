@@ -185,6 +185,11 @@ var tgTexts = map[string][2]string{
 	"awake_already_off": {"잠들지 않기는 이미 꺼져 있습니다", "Keep awake is already off"},
 	"awake_usage":       {"사용법: <code>/awake</code> (기본 시간), <code>/awake 90</code> (분, 0 = 끌 때까지, 최대 1440), <code>/awake off</code>", "Usage: <code>/awake</code> (default period), <code>/awake 90</code> (minutes, 0 = until turned off, at most 1440), <code>/awake off</code>"},
 	"awake_failed":      {"잠들지 않기 실패: %s", "Keep awake failed: %s"},
+	// battery (#112)
+	"st_battery":          {"배터리", "Battery"},
+	"st_battery_charging": {"충전 중", "charging"},
+	"st_battery_ac":       {"전원 연결됨", "plugged in"},
+	"st_battery_unknown":  {"잔량 알 수 없음", "level unknown"},
 	// command and origin labels
 	"cmd_shutdown":       {"종료", "Shut down"},
 	"cmd_restart":        {"재시작", "Restart"},
@@ -566,6 +571,22 @@ func tgAwakeStatus(v awakeView, now time.Time) string {
 	return tgText("st_on") + " · " + tgAwakeSpan(v, now)
 }
 
+// tgBatteryStatus is the /status value: "80% · 충전 중", "100% · 전원 연결됨"
+// or, on battery, just "80%".
+func tgBatteryStatus(b batteryInfo) string {
+	level := tgText("st_battery_unknown")
+	if b.Percent >= 0 {
+		level = strconv.Itoa(b.Percent) + "%"
+	}
+	switch {
+	case b.Charging:
+		return level + " · " + tgText("st_battery_charging")
+	case b.AC:
+		return level + " · " + tgText("st_battery_ac")
+	}
+	return level
+}
+
 func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, error) {
 	if len(args) == 0 {
 		return tgText("mute_usage"), nil, nil
@@ -755,6 +776,10 @@ func tgStatusText() string {
 
 	ctl := currentAwake()
 	fmt.Fprintf(&b, "\n%s: %s", tgText("st_awake"), tgAwakeStatus(ctl.View(), ctl.now()))
+	// A desktop has no battery, and no line for one.
+	if bat := battery.info(); bat.Present {
+		fmt.Fprintf(&b, "\n%s: %s", tgText("st_battery"), tgBatteryStatus(bat))
+	}
 
 	if bus := currentBus(); bus != nil {
 		if until := bus.MutedUntil(); !until.IsZero() {

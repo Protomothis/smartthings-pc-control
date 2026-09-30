@@ -451,6 +451,35 @@ func (c *Client) SetAwake(minutes int) (Awake, error) {
 // AwakeOff lets the PC sleep on its idle timer again.
 func (c *Client) AwakeOff() (Awake, error) { return c.awakeCall("DELETE", nil) }
 
+// Battery mirrors GET /api/battery (#112). Percent is -1 when Windows does
+// not know it; Present is false on a desktop.
+type Battery struct {
+	Present  bool `json:"present"`
+	Percent  int  `json:"percent"`
+	Charging bool `json:"charging"`
+	AC       bool `json:"ac"`
+}
+
+// GetBattery returns the service's newest battery reading. An older service
+// (no such route) reads as no battery.
+func (c *Client) GetBattery() (Battery, error) {
+	var b Battery
+	resp, err := c.do("GET", "/api/battery", nil)
+	if err != nil {
+		return b, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return b, json.NewDecoder(resp.Body).Decode(&b)
+	case http.StatusUnauthorized:
+		return b, errUnauthorized
+	case http.StatusNotFound, http.StatusForbidden:
+		return b, nil
+	}
+	return b, fmt.Errorf("HTTP %d", resp.StatusCode)
+}
+
 // RestartService asks the service to restart itself.
 func (c *Client) RestartService() error {
 	resp, err := c.do("POST", "/api/restart-service", nil)

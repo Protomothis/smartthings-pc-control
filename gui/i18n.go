@@ -296,6 +296,11 @@ var messages = map[string]map[Lang]string{
 	"awake.tomorrow":    {LangKo: "내일 %s", LangEn: "tomorrow %s"},
 	"awake.hint":        {LangKo: "자동(유휴) 절전만 막습니다. 직접 누르거나 원격으로 보낸 종료·절전은 그대로 실행되고, 서비스가 다시 시작되면 꺼집니다.", LangEn: "Holds off idle sleep only. Shutdown and sleep you ask for — here or remotely — still happen, and a service restart turns it off."},
 	"awake.unsupported": {LangKo: "잠들지 않기는 서비스 v1.2.0 이상이 필요합니다", LangEn: "Keep awake needs service v1.2.0 or later"},
+	// Battery label in the status bar (#112).
+	"battery.label":    {LangKo: "배터리 %s", LangEn: "Battery %s"},
+	"battery.charging": {LangKo: "충전 중", LangEn: "charging"},
+	"battery.ac":       {LangKo: "전원 연결됨", LangEn: "plugged in"},
+	"battery.unknown":  {LangKo: "잔량 알 수 없음", LangEn: "level unknown"},
 }
 
 // T returns the message for key in the given language.

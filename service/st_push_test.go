@@ -456,6 +456,7 @@ func TestSTPushEventSelection(t *testing.T) {
 		{"system", "update_available", hidden, true},
 		{"display", "changed", hidden, true},
 		{"awake", "changed", hidden, true},
+		{"battery", "changed", hidden, true},
 		{"session", "locked", exposed, true},
 		{"session", "unlocked", exposed, true},
 		{"session", "locked", hidden, false},

@@ -279,6 +279,8 @@ func startupHooks(stop <-chan struct{}) {
 	// Keep-awake (#111): the wall-clock expiry check; the request itself
 	// is released when stop closes (and by Execute before that).
 	startAwake(stop)
+	// Battery (#112): first reading now, then every minute.
+	startBatteryMonitor(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP

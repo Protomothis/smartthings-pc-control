@@ -162,6 +162,10 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
 ## 13. 노트북 배터리
 
 - 서비스가 `GetSystemPowerStatus`로 `battery: { present, percent, charging, ac }`를 status에 싣는다(60초 주기로 충분).
+  - `percent`는 0–100, 모르면 -1. `BatteryFlag` 128(시스템 배터리 없음)이면 `present=false`. 255(알 수 없음)는 잔량을 알면 있는 것으로 본다.
+    `charging`은 플래그 비트 8, `ac`는 `ACLineStatus` 1. 배터리가 없으면 percent -1·charging false로 고정.
+  - 바뀌면 푸시 `battery.changed`(첫 읽기는 변화로 치지 않음). `features`에 "battery"는 `present`일 때만.
+  - 텔레그램 `/status`와 앱 상단 상태 줄은 배터리가 있을 때만 한 줄을 더한다. 앱은 `GET /api/battery`를 1분마다 읽는다.
 - **드라이버:** 표준 `battery`·`powerSource`. 데스크톱에 빈 줄이 생기지 않도록 **배터리가 있을 때만** 컴포넌트 `battery`가 있는
   프로필 변형(`pc-<style>-battery.v2`)으로 옮긴다. 아이콘 10종 × 배터리 유무 = 20개 프로필은 손으로 관리하지 않고
   `tools/gen-profiles.js`가 `profiles/pc.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교).

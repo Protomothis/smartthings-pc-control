@@ -40,7 +40,7 @@ func emit(cat, kind string, fields map[string]string, actions ...notify.Action) 
 }
 
 // emitDevice reports a device-state change (display.changed,
-// session.locked/unlocked, awake.changed) to the bus taps only — the SmartThings push
+// session.locked/unlocked, awake.changed, battery.changed) to the bus taps only — the SmartThings push
 // sink in practice. Device state is not a notification (edge-driver doc
 // §3.5), so it never reaches Telegram and has no catalogue entry.
 func emitDevice(cat, kind string, fields map[string]string) {

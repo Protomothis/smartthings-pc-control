@@ -11,14 +11,18 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - `/st/v1/status`에 `features`(이 서비스가 지원하는 v1.2.0 기능 목록, 지금은 `["awake"]`)와 `awake: {on, until}`을 더했습니다. `until`은 RFC3339이고, 꺼져 있거나 끌 때까지 켠 경우 `""`입니다 (#111)
 - `POST /st/v1/command`에 `awake`(`value` = 분, 0 = 끌 때까지, 없으면 `default_minutes`, 최대 1440)와 `awakeoff`를 더했습니다. 유예·예약을 거치지 않고 바로 적용되며, 응답에 새 `awake` 상태가 실립니다. 바뀔 때마다 푸시 `awake.changed`를 보냅니다 (#111)
 - 앱용 로컬 API `GET/POST/DELETE /api/awake` (#111)
+- **노트북 배터리.** 서비스가 60초마다 `GetSystemPowerStatus`를 읽어 `/st/v1/status`에 `battery: {present, percent, charging, ac}`를 싣습니다. `percent`는 0–100, 모르면 `-1`. 배터리가 없는 PC(`BatteryFlag` 128)는 `present: false`이고, 배터리가 있을 때만 `features`에 `"battery"`가 붙습니다. 값이 바뀌면 푸시 `battery.changed`를 보냅니다 (#112)
+- 앱용 로컬 API `GET /api/battery` (#112)
 
 ### 데스크톱 앱
 
 - 명령 탭에 **잠들지 않기** 토글과 시간 선택(30분 · 1시간 · 2시간 · 4시간 · 끌 때까지), 남은 시간(`42분 남음 · 14:30까지`)을 더했습니다. 켜진 동안 시간을 바꾸면 지금부터 새로 셉니다. SmartThings나 텔레그램에서 바꾼 상태도 10초 안에 따라갑니다 (#111)
+- 배터리가 있는 PC에서는 상단 상태 줄에 `배터리 80% · 충전 중`(전원만 연결되어 있으면 `전원 연결됨`)을 보여 줍니다. 데스크톱에서는 나타나지 않습니다 (#112)
 
 ### 텔레그램
 
 - `/awake [분]`, `/awake off`. 분을 빼면 `default_minutes`, 0이면 끌 때까지입니다. `/status`에 `잠들지 않기: 켜짐 · 14:30까지` 줄이 붙습니다 (#111)
+- 배터리가 있는 PC의 `/status`에 `배터리: 80% · 충전 중` 줄이 붙습니다 (#112)
 
 ## [v1.1.2] - 2026-09-28
 

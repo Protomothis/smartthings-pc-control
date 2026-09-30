@@ -249,12 +249,19 @@ type stStatusResponse struct {
 	Features []string `json:"features"`
 	// Awake is the keep-awake state (#111, §12).
 	Awake stAwake `json:"awake"`
+	// Battery is the newest GetSystemPowerStatus reading (#112, §13). A
+	// desktop reports present=false, and "battery" is then left out of
+	// Features so the driver keeps the profile without a battery.
+	Battery batteryInfo `json:"battery"`
 }
 
 // stFeatures lists what this service supports right now. Some entries
 // depend on the machine (a battery) rather than on the version.
-func stFeatures() []string {
+func stFeatures(b batteryInfo) []string {
 	features := []string{"awake"}
+	if b.Present {
+		features = append(features, "battery")
+	}
 	return features
 }
 
@@ -513,6 +520,7 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 // buildSTStatus assembles the §3.2 status document for cfg. Push bodies
 // carry the very same object (§3.5), so the driver never needs a diff.
 func buildSTStatus(cfg Config) stStatusResponse {
+	bat := battery.info()
 	resp := stStatusResponse{
 		Protocol:       stProtocol,
 		ServiceVersion: Version,
@@ -532,8 +540,9 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		WoL:               stWoLStatus(cfg.SmartThings),
 		Display:           getDisplayState(),
 		Session:           stSessionInfo(cfg.SmartThings),
-		Features:          stFeatures(),
+		Features:          stFeatures(bat),
 		Awake:             currentAwake().View().wire(),
+		Battery:           bat,
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{
