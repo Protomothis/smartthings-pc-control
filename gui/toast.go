@@ -97,6 +97,9 @@ type localConfig struct {
 	// missing key means on, the service's default.
 	Media struct {
 		Enabled *bool `json:"enabled"`
+		// NowPlaying is the opt-in for the track in the media block
+		// (#117); missing means off.
+		NowPlaying bool `json:"now_playing"`
 	} `json:"media"`
 }
 
@@ -130,6 +133,10 @@ func localMediaEnabled() bool {
 	on := readLocalConfig().Media.Enabled
 	return on == nil || *on
 }
+
+// localNowPlaying reports the media.now_playing opt-in (#117): whether the
+// heartbeat's media block may carry the track and the app.
+func localNowPlaying() bool { return readLocalConfig().Media.NowPlaying }
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
 // 1, matching service/webui.go), defaulting to 5002 when config.json has

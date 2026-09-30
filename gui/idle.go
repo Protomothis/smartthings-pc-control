@@ -1,15 +1,19 @@
 package gui
 
-// Session heartbeat (#77, #104). The service runs in session 0 and cannot
-// measure how long the user has been away — WTSINFOEXW.LastInputTime is
-// pinned near logon on Windows 10/11 console sessions — nor see the volume
-// the user just changed with the keyboard. This app does run in the
-// interactive session, so every 30s it samples GetLastInputInfo and the
-// default playback device and posts both to the service, which publishes
-// them in GET /st/v1/status.
+// Session heartbeat (#77, #104, #117). The service runs in session 0 and
+// cannot measure how long the user has been away — WTSINFOEXW.LastInputTime
+// is pinned near logon on Windows 10/11 console sessions — nor see the
+// volume the user just changed with the keyboard, nor what is playing. This
+// app does run in the interactive session, so every 30s it samples
+// GetLastInputInfo, the default playback device and the system media
+// session and posts them to the service, which publishes them in GET
+// /st/v1/status. Between those posts it looks at the audio and the media
+// session every 3s and posts just the part that changed, so a new track or
+// a volume key reaches the hub and the media card within seconds.
 
 import (
 	"errors"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -23,6 +27,10 @@ import (
 // be lost (a suspended machine, a restarting service) before the hub sees
 // null.
 const idleHeartbeatInterval = 30 * time.Second
+
+// mediaWatchInterval is how often the audio and the media session are
+// checked for a change between heartbeats (#117).
+const mediaWatchInterval = 3 * time.Second
 
 var (
 	modUser32            = windows.NewLazySystemDLL("user32.dll")
@@ -67,7 +75,11 @@ var (
 	// heartbeatAudio is the same getter `user-action audio get` uses, run
 	// in-process: this app already is in the user's session.
 	heartbeatAudio = useraction.ReadAudio
-	heartbeatNow   = time.Now
+	// heartbeatNowPlaying reads the system media session in-process
+	// (#117), and heartbeatShareNowPlaying is the media.now_playing opt-in.
+	heartbeatNowPlaying      = useraction.ReadNowPlaying
+	heartbeatShareNowPlaying = localNowPlaying
+	heartbeatNow             = time.Now
 )
 
 // buildHeartbeat samples what the switches allow; ok is false when there
@@ -86,19 +98,87 @@ func buildHeartbeat() (Heartbeat, bool) {
 			hb.IdleSeconds = &idle
 		}
 	}
-	if heartbeatMediaEnabled() {
-		// A PC without a playback device (or a Core Audio hiccup) simply
-		// sends no audio block; the service keeps its last value.
-		if a, err := heartbeatAudio(); err == nil {
-			hb.Audio = &HeartbeatAudio{
-				Volume:    a.Volume,
-				Muted:     a.Muted,
-				Device:    a.Device,
-				SampledAt: heartbeatNow().Format(time.RFC3339Nano),
-			}
-		}
+	hb.Audio, hb.Media = sampleMediaBlocks()
+	return hb, hb.IdleSeconds != nil || hb.Audio != nil || hb.Media != nil
+}
+
+// sampleMediaBlocks reads the audio and media blocks media.enabled allows.
+// A PC without a playback device (or a Core Audio hiccup) simply sends no
+// audio block, and one without the media session API no media block; the
+// service keeps its last value.
+func sampleMediaBlocks() (*HeartbeatAudio, *HeartbeatMedia) {
+	if !heartbeatMediaEnabled() {
+		return nil, nil
 	}
-	return hb, hb.IdleSeconds != nil || hb.Audio != nil
+	at := heartbeatNow().Format(time.RFC3339Nano)
+	var audio *HeartbeatAudio
+	if a, err := heartbeatAudio(); err == nil {
+		audio = &HeartbeatAudio{Volume: a.Volume, Muted: a.Muted, Device: a.Device, SampledAt: at}
+	}
+	var media *HeartbeatMedia
+	if np, err := heartbeatNowPlaying(); err == nil {
+		media = heartbeatMediaBlock(np, heartbeatShareNowPlaying(), at)
+	}
+	return audio, media
+}
+
+// heartbeatMediaBlock is the media block for np: the status always (it is
+// what the play/pause buttons follow), the track and the app only with the
+// media.now_playing opt-in. Nothing else — no file path, URL or artwork —
+// is ever read, let alone sent.
+func heartbeatMediaBlock(np useraction.NowPlaying, share bool, sampledAt string) *HeartbeatMedia {
+	if !share {
+		np = np.StatusOnly()
+	}
+	return &HeartbeatMedia{Status: np.Status, Title: np.Title, Artist: np.Artist, Album: np.Album, App: np.App, SampledAt: sampledAt}
+}
+
+// heartbeatSent remembers the audio and media blocks last delivered, so the
+// 3s check posts only what changed. Both tickers update it.
+type heartbeatSent struct {
+	mu    sync.Mutex
+	audio *HeartbeatAudio
+	media *HeartbeatMedia
+}
+
+// changes returns the blocks that differ from the ones last sent (the
+// sample time aside); ok is false when nothing changed.
+func (s *heartbeatSent) changes(audio *HeartbeatAudio, media *HeartbeatMedia) (Heartbeat, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var hb Heartbeat
+	if audio != nil && !sameAudioBlock(audio, s.audio) {
+		hb.Audio = audio
+	}
+	if media != nil && !sameMediaBlock(media, s.media) {
+		hb.Media = media
+	}
+	return hb, hb.Audio != nil || hb.Media != nil
+}
+
+// delivered records what a successful post carried.
+func (s *heartbeatSent) delivered(hb Heartbeat) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if hb.Audio != nil {
+		s.audio = hb.Audio
+	}
+	if hb.Media != nil {
+		s.media = hb.Media
+	}
+}
+
+func sameAudioBlock(a, b *HeartbeatAudio) bool {
+	return b != nil && a.Volume == b.Volume && a.Muted == b.Muted && a.Device == b.Device
+}
+
+func sameMediaBlock(a, b *HeartbeatMedia) bool {
+	if b == nil {
+		return false
+	}
+	x, y := *a, *b
+	x.SampledAt, y.SampledAt = "", ""
+	return x == y
 }
 
 // sendIdleHeartbeat posts one heartbeat, or does nothing at all.
@@ -111,14 +191,32 @@ func (u *ui) sendIdleHeartbeat() {
 	if !ok {
 		return
 	}
-	err := u.client.SessionHeartbeat(hb)
-	if !errors.Is(err, errUnauthorized) {
+	u.postHeartbeat(hb)
+}
+
+// watchMediaChanges is the 3s check (#117): sample the audio and the media
+// session and post only the blocks that changed since the last delivery.
+func (u *ui) watchMediaChanges() {
+	hb, ok := u.hbSent.changes(sampleMediaBlocks())
+	if !ok {
 		return
 	}
-	// A secret is configured and this client has no session yet (the user
-	// never opened the window, or the service restarted). config.json holds
-	// the secret, so log in the way the toast handler does and retry once.
-	if secret := localSecret(); secret != "" && u.client.Login(secret) == nil {
-		u.client.SessionHeartbeat(hb)
+	u.postHeartbeat(hb)
+}
+
+// postHeartbeat delivers hb and records what arrived.
+func (u *ui) postHeartbeat(hb Heartbeat) {
+	err := u.client.SessionHeartbeat(hb)
+	if errors.Is(err, errUnauthorized) {
+		// A secret is configured and this client has no session yet (the
+		// user never opened the window, or the service restarted).
+		// config.json holds the secret, so log in the way the toast handler
+		// does and retry once.
+		if secret := localSecret(); secret != "" && u.client.Login(secret) == nil {
+			err = u.client.SessionHeartbeat(hb)
+		}
+	}
+	if err == nil {
+		u.hbSent.delivered(hb)
 	}
 }

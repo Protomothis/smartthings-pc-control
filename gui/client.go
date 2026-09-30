@@ -37,6 +37,8 @@ type Config struct {
 // MediaConfig mirrors service.MediaConfig; the settings tab edits it.
 type MediaConfig struct {
 	Enabled bool `json:"enabled"`
+	// NowPlaying is the opt-in to share title/artist/album/app (#117).
+	NowPlaying bool `json:"now_playing"`
 }
 
 // ActivityConfig mirrors service.ActivityConfig (media-notify doc §11).
@@ -370,6 +372,19 @@ type Heartbeat struct {
 	IdleSeconds *int64 `json:"idle_seconds,omitempty"`
 	// Audio is the default playback device's state (#104).
 	Audio *HeartbeatAudio `json:"audio,omitempty"`
+	// Media is the system media session (#117).
+	Media *HeartbeatMedia `json:"media,omitempty"`
+}
+
+// HeartbeatMedia is the heartbeat's media block: the status always, the
+// track and the app only with the media.now_playing opt-in.
+type HeartbeatMedia struct {
+	Status    string `json:"status"`
+	Title     string `json:"title,omitempty"`
+	Artist    string `json:"artist,omitempty"`
+	Album     string `json:"album,omitempty"`
+	App       string `json:"app,omitempty"`
+	SampledAt string `json:"sampled_at"`
 }
 
 // HeartbeatAudio is the heartbeat's audio block. SampledAt (RFC3339) is
@@ -694,4 +709,99 @@ func (c *Client) TelegramChats(token string) ([]TelegramChat, error) {
 		return nil, err
 	}
 	return r.Chats, nil
+}
+
+// --- Media card (#117) ---
+
+// MediaState mirrors /api/media: the two switches, whether anyone is
+// logged in, and the audio and media blocks as /st/v1/status has them.
+type MediaState struct {
+	Enabled    bool       `json:"enabled"`
+	NowPlaying bool       `json:"now_playing"`
+	Session    bool       `json:"session"`
+	Audio      MediaAudio `json:"audio"`
+	Media      MediaInfo  `json:"media"`
+}
+
+// MediaAudio is the status audio block; the pointers are nil while
+// Available is false.
+type MediaAudio struct {
+	Available bool    `json:"available"`
+	Volume    *int    `json:"volume"`
+	Muted     *bool   `json:"muted"`
+	Device    *string `json:"device"`
+}
+
+// MediaInfo is the status media block. Status is playing, paused, stopped
+// or none; the text fields are empty without the opt-in.
+type MediaInfo struct {
+	Status string `json:"status"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Album  string `json:"album"`
+	App    string `json:"app"`
+}
+
+// errMediaUnsupported is what an older service answers /api/media with.
+var errMediaUnsupported = fmt.Errorf("the media card needs service v1.2.0")
+
+// mediaCommandError is a refused media command: Code is the service's
+// error code (media_disabled, no_user_session, unsupported, failed,
+// timeout, or a range message), Message its detail.
+type mediaCommandError struct {
+	Code    string
+	Message string
+}
+
+func (e *mediaCommandError) Error() string {
+	if e.Message == "" {
+		return e.Code
+	}
+	return e.Code + ": " + e.Message
+}
+
+// mediaCall does one /api/media request and decodes the state it returns.
+func (c *Client) mediaCall(method string, body any) (MediaState, error) {
+	var m MediaState
+	resp, err := c.do(method, "/api/media", body)
+	if err != nil {
+		return m, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return m, json.NewDecoder(resp.Body).Decode(&m)
+	case http.StatusUnauthorized:
+		return m, errUnauthorized
+	case http.StatusNotFound:
+		return m, errMediaUnsupported
+	}
+	var r struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	json.NewDecoder(resp.Body).Decode(&r)
+	switch {
+	case r.Error != "":
+		return m, &mediaCommandError{Code: r.Error, Message: r.Message}
+	case resp.StatusCode == http.StatusForbidden:
+		// Not our JSON: the settings page an older service falls back to.
+		return m, errMediaUnsupported
+	case r.Message != "":
+		return m, &mediaCommandError{Code: r.Message}
+	}
+	return m, fmt.Errorf("media: HTTP %d", resp.StatusCode)
+}
+
+// GetMedia returns the media card's state.
+func (c *Client) GetMedia() (MediaState, error) { return c.mediaCall("GET", nil) }
+
+// MediaCommand runs one volume, mute or media command (the /st/v1 names)
+// and returns the state after it. value is nil for the commands without one.
+func (c *Client) MediaCommand(command string, value *int) (MediaState, error) {
+	body := map[string]any{"command": command}
+	if value != nil {
+		body["value"] = *value
+	}
+	return c.mediaCall("POST", body)
 }

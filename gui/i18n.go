@@ -333,6 +333,21 @@ var messages = map[string]map[Lang]string{
 	"activity.err.label":   {LangKo: "%s: 라벨은 %d자 이하로 입력하세요", LangEn: "%s: the label must be at most %d characters"},
 	"activity.err.kind":    {LangKo: "%s: 종류를 고르세요", LangEn: "%s: choose a kind"},
 	"activity.err.dup":     {LangKo: "%s이(가) 감시 목록에 두 번 있습니다", LangEn: "%s is on the watch list twice"},
+	// now playing and the media card (#117)
+	"settings.nowplaying":      {LangKo: "재생 정보 공유", LangEn: "Share what is playing"},
+	"settings.nowplaying.hint": {LangKo: "재생 중인 미디어의 제목·아티스트·앨범·앱 이름을 SmartThings와 텔레그램에 보냅니다. 브라우저는 탭 제목(유튜브 영상 제목 등)이 제목으로 갑니다. 끄면 재생 중/일시정지 여부만 보냅니다.", LangEn: "Sends the title, artist, album and app of the playing media to SmartThings and Telegram. Browsers report the tab title (a YouTube video's title, say). Off: only playing/paused is shared."},
+	"media.title":              {LangKo: "미디어", LangEn: "Media"},
+	"media.none":               {LangKo: "재생 중인 미디어 없음", LangEn: "Nothing is playing"},
+	"media.playing":            {LangKo: "재생 중", LangEn: "Playing"},
+	"media.paused":             {LangKo: "일시정지", LangEn: "Paused"},
+	"media.stopped":            {LangKo: "정지", LangEn: "Stopped"},
+	"media.audio.waiting":      {LangKo: "볼륨 정보를 기다리는 중…", LangEn: "Waiting for the volume…"},
+	"media.reason.old":         {LangKo: "미디어 카드는 서비스 v1.2.0 이상이 필요합니다", LangEn: "The media card needs service v1.2.0 or later"},
+	"media.reason.disabled":    {LangKo: "설정 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 쓸 수 있습니다", LangEn: "Turn on 'Allow remote volume and media control' in Settings to use this"},
+	"media.reason.nouser":      {LangKo: "로그인한 사용자가 없어 쓸 수 없습니다", LangEn: "Nobody is logged in to this PC"},
+	"media.err.timeout":        {LangKo: "PC가 3초 안에 답하지 않았습니다", LangEn: "The PC did not answer within 3 seconds"},
+	"media.err.unsupported":    {LangKo: "이 PC에서는 할 수 없습니다: %s", LangEn: "Not possible on this PC: %s"},
+	"media.err.failed":         {LangKo: "실패: %v", LangEn: "Failed: %v"},
 }
 
 // T returns the message for key in the given language.
