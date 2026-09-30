@@ -238,7 +238,7 @@
 
 - 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
 - **볼륨·음소거는 읽은 값이 있을 때만** 내보낸다(`audio.available` 참, 또는 `updated_at`이 있음). 서비스가 한 번도 재지 않은 0으로 슬라이더를 끌어내리지 않는다.
-- **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없으면 옛 서비스 → "서비스 v1.2.0 필요", 키는 있는데 기능이 없으면 "이 PC에서 지원 안 함", `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐"(`features.error_note`). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
+- **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없으면 옛 서비스 → "서비스 v1.2.0 필요", 키는 있는데 기능이 없으면 "이 PC에서 지원 안 함" — 단 `audio`·`media`는 서비스가 `media.enabled`일 때만 싣으므로(#104/#105) "미디어 제어 꺼짐" — , `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐", `501 unsupported` → "이 PC에서 지원 안 함", `502 failed`·`504 timeout` → "PC에서 실행 실패"(`features.error_note`, 본문의 `error` 코드로 가른다 — `client.classify`는 5xx를 `unreachable`로 보므로 그보다 먼저). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
 - 막힌 명령은 그 줄의 현재 값을 강제로 다시 내보내고(회전 표시 뒤 오류 방지), `pcInfo.message`·`summary`에 이유를 띄운다(§6.9의 `emit_note`와 같은 모양). 성공하면 바로 폴링하면서 그 줄들을 강제로 내보낸다(`poll.once(..., {force = rows})`).
 - 이번 구동에서 아직 status를 읽지 못했으면(허브 재시작 직후) 명령 전에 한 번 폴링한다. 그래도 모르면 "PC에 연결할 수 없습니다".
 - 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.

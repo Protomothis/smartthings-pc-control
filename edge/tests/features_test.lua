@@ -136,9 +136,14 @@ function T.test_refusal_says_why_a_command_cannot_go_out()
   h.assert_equal(features.refusal(old, "volume"), "needs_service")
   h.assert_equal(features.refusal(old, "next"), "needs_service")
 
+  -- Service #104/#105: "audio"/"media" are listed only while media.enabled is
+  -- on, so a v1.2.0 service without them has the setting off.
   local no_media = features.remember(state.new(), status_v12({ features = { "audio" } })).extras
-  h.assert_equal(features.refusal(no_media, "pause"), "feature_missing")
+  h.assert_equal(features.refusal(no_media, "pause"), "media_disabled")
   h.assert_nil(features.refusal(no_media, "mute"))
+  local media_off = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
+  h.assert_equal(features.refusal(media_off, "volume"), "media_disabled")
+  h.assert_equal(features.refusal(media_off, "preset"), "feature_missing")
 
   local nobody = features.remember(state.new(),
     status_v12({ audio = { available = false, volume = 0, muted = false } })).extras
@@ -156,6 +161,20 @@ function T.test_error_note_reads_the_services_codes()
   -- A 403 without a code is the hub allow-list, which report_error explains.
   h.assert_nil(features.error_note("forbidden", { error = "forbidden" }))
   h.assert_nil(features.error_note("unreachable", nil))
+  -- Service #104/#105: the PC answered, the action did not work.
+  h.assert_equal(features.error_note("unreachable", { error = "unsupported", message = "no device" }),
+    "feature_missing")
+  h.assert_equal(features.error_note("unreachable", { error = "failed" }), "action_failed")
+  h.assert_equal(features.error_note("unreachable", { error = "timeout" }), "action_failed")
+end
+
+function T.test_a_failed_action_on_the_pc_is_not_an_unreachable_pc()
+  local device = device_with(status_v12())
+  with_service({ ok = false, kind = "unreachable", body = { error = "failed", message = "COM" } }, function()
+    handlers_for("audioVolume").volumeUp(driver, device, { args = {} })
+  end)
+  h.assert_equal(info_summary(device), "PC에서 실행 실패")
+  h.assert_nil(h.event_value(h.emitted(device), caps.STATUS, "connection"))
 end
 
 function T.test_a_409_is_not_an_unreachable_pc()

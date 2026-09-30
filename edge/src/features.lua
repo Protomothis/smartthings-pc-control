@@ -194,6 +194,12 @@ function features.refusal(extras, service_command, feature)
     return "needs_service"
   end
   if not features.has(extras, feature) then
+    -- A v1.2.0 service lists "audio" and "media" only while `media.enabled`
+    -- is on (service #104/#105), so for those two a missing entry IS the
+    -- setting.
+    if feature == features.AUDIO or feature == features.MEDIA then
+      return "media_disabled"
+    end
     return "feature_missing"
   end
   if NEEDS_USER[feature] and ((extras.audio or {}).available == false) then
@@ -219,6 +225,16 @@ function features.error_note(kind, body)
   end
   if code == "notify_disabled" then
     return "notify_disabled"
+  end
+  -- Service #104/#105: the action ran in the user's session and did not work.
+  -- `501 unsupported` (no playback device), `502 failed`, `504 timeout` - the
+  -- PC answered, so none of them is an unreachable PC, which is what
+  -- `client.classify` would make of a 5xx.
+  if code == "unsupported" then
+    return "feature_missing"
+  end
+  if code == "failed" or code == "timeout" then
+    return "action_failed"
   end
   return nil
 end

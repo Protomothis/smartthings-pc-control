@@ -139,6 +139,12 @@ local STRINGS = {
     ko = "미디어 제어 꺼짐",
     en = "Media control is off",
   },
+  -- The PC answered, but the action in the user's session did not work
+  -- (`502 failed`, `504 timeout`).
+  action_failed = {
+    ko = "PC에서 실행 실패",
+    en = "Failed on the PC",
+  },
   -- #108: why a PC notification did not go out. `pcInfo.message` only: a
   -- routine may send several a minute and the summary row is the user's.
   notify_disabled = {
