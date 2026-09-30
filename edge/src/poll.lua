@@ -9,6 +9,7 @@ local caps = require "caps"
 local client = require "client"
 local features = require "features"
 local i18n = require "i18n"
+local profiles = require "profiles"
 local state = require "state"
 
 local poll = {}
@@ -660,6 +661,24 @@ function poll.repaint_soon(driver, device)
   end
 end
 
+--- #116: follow `status.battery.present` onto the plain or the `-battery`
+--- profile (`profiles.apply_battery`, which waits for two statuses that
+--- agree). Called after every status a poll or a push applied. A switch is
+--- repainted like an icon switch, one second later so the poll or push that
+--- got us here finishes first instead of nesting a second request in it.
+-- Returns the new profile name, or nil.
+function poll.follow_battery(driver, device, status)
+  local moved = profiles.apply_battery(device, features.battery_present(status))
+  if moved and driver then
+    pcall(function()
+      driver:call_with_delay(1, function()
+        poll.repaint_soon(driver, device)
+      end, "battery-profile")
+    end)
+  end
+  return moved
+end
+
 --- Repaint every row with forced events: after a profile change (`infoChanged`)
 --- the cloud starts the new profile with empty states, and the hub would
 --- otherwise drop the re-emit of values it considers unchanged.
@@ -826,6 +845,8 @@ function poll.once(driver, device, opts)
     poll.ensure_plan_command(device)
     -- #113: a preset that just ran shows for a moment, then the list rests.
     poll.ensure_preset(device, opts.deps)
+    -- #116: a laptop moves to the profile with the battery card, and back.
+    poll.follow_battery(driver, device, body)
     pcall(function() device:online() end)
     -- §6.3: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.

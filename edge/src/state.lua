@@ -926,6 +926,9 @@ local ATTRIBUTES = {
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
   -- #114
   [caps.ACTIVITY] = { activity = true, summary = true },
+  -- #116: standard, on the `battery` component.
+  [features.CAP_BATTERY] = { battery = true },
+  [features.CAP_POWER_SOURCE] = { powerSource = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.

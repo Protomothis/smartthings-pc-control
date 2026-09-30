@@ -471,6 +471,8 @@ function push.apply_to_device(driver, device, payload, deps)
   if events then
     poll.emit(device, events)
     pcall(function() device:online() end)
+    -- #116: `battery.changed` and every other push carry the battery block.
+    pcall(function() poll.follow_battery(driver, device, payload.status) end)
   else
     poll.emit_power(device, nxt)
   end

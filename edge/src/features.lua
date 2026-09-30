@@ -35,6 +35,12 @@ features.CAP_SWITCH = "switch"
 features.AWAKE_DEFAULT_MINUTES = 60
 features.AWAKE_MAX_MINUTES = 1440
 
+-- #116: the laptop battery, on a component only the `-battery` profiles have.
+features.BATTERY = "battery"
+features.BATTERY_COMPONENT = "battery"
+features.CAP_BATTERY = "battery"
+features.CAP_POWER_SOURCE = "powerSource"
+
 -- Standard capability ids.
 features.CAP_VOLUME = "audioVolume"
 features.CAP_MUTE = "audioMute"
@@ -504,6 +510,40 @@ function features.awake_events(status)
   return events
 end
 
+--------------------------------------------------------------------------------
+-- #116: battery
+--------------------------------------------------------------------------------
+
+--- True when the status says this PC has a battery (§13). An older service
+--- has no block, which reads as "no battery" - the plain profile.
+function features.battery_present(status)
+  local battery = (status or {}).battery
+  return type(battery) == "table" and battery.present == true
+end
+
+--- #116: `battery.battery` (percent, left out while the service does not know
+--- it: -1) and `powerSource.powerSource` ("mains" on AC, else "battery") on the
+--- `battery` component. Nothing at all for a PC without a battery - its
+--- profile has no such component, and a desktop must not grow an empty card.
+function features.battery_events(status)
+  local events = {}
+  if not features.battery_present(status) then
+    return events
+  end
+  local battery = status.battery
+  local percent = tonumber(battery.percent)
+  if percent and percent >= 0 then
+    percent = math.floor(percent + 0.5)
+    if percent > 100 then
+      percent = 100
+    end
+    ev(events, features.CAP_BATTERY, "battery", percent, features.BATTERY_COMPONENT)
+  end
+  ev(events, features.CAP_POWER_SOURCE, "powerSource", battery.ac == true and "mains" or "battery",
+    features.BATTERY_COMPONENT)
+  return events
+end
+
 local function append(into, list)
   for _, e in ipairs(list) do
     into[#into + 1] = e
@@ -521,6 +561,7 @@ function features.apply_status(status, opts)
   append(events, features.preset_events(status, lang))
   append(events, features.activity_events(status, lang))
   append(events, features.awake_events(status))
+  append(events, features.battery_events(status))
   return events
 end
 
