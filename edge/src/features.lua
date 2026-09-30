@@ -177,6 +177,10 @@ function features.remember(device_state, status)
     awake_on = features.awake_on(status),
     -- #118: and what the play/pause row does.
     playback = features.playback_status(status),
+    -- The body itself, so a repaint (poll.repaint) paints these rows with
+    -- what the PC last said instead of the never-polled defaults - a forced
+    -- "off" on the keep-awake switch would fire every routine that watches it.
+    last_status = status,
   }
   return device_state
 end

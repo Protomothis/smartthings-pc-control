@@ -696,6 +696,23 @@ function T.test_an_old_service_springs_the_awake_toggle_back()
   h.assert_equal(info_summary(device), "서비스 v1.2.0 필요")
 end
 
+function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
+  -- An icon switch or a preference change repaints every row forced. Painting
+  -- the keep-awake switch with its never-polled "off" would fire every routine
+  -- that watches it, so a repaint uses what the PC last said.
+  local device = device_with(status_v12({ awake = { on = true },
+    activity = { enabled = true, kind = "game", labels = { "Steam" } } }))
+  poll.repaint(device)
+  local emitted = h.emitted(device)
+  h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "on")
+  h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
+  h.assert_equal(h.last_value(emitted, nil, caps.ACTIVITY, "activity"), "game")
+  -- A device nothing has been read for gets the resting defaults.
+  local fresh = device_with(nil)
+  poll.repaint(fresh)
+  h.assert_equal(h.last_value(h.emitted(fresh), "awake", "switch", "switch"), "off")
+end
+
 function T.test_an_awake_push_moves_the_switch_at_once()
   local push = require "push"
   local status = status_v12({ awake = { on = true, ["until"] = "2026-09-30T12:00:00+09:00" } })

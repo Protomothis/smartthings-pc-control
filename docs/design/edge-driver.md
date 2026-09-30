@@ -492,6 +492,8 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - **Go** — `st_api_test.go`(인증·허용 목록·명령 모드·예약·취소·status 스키마), `st_push_test.go`(구독 검증·TTL·연속 실패 제거·`power.stopping` 동기 전송), `st_ssdp_test.go`(M-SEARCH 파싱·응답·레이트 리밋), `firewall_test.go`.
 - **Lua** — `edge/tests/run.lua`가 전 모듈을 돈다. 상태 머신 전이, status→이벤트 매핑, 오류 분류, 푸시 본문 파싱과 갱신 타이밍, WoL 패킷 바이트, 검색 판정, 프로필 이전, i18n.
   `capabilities_test.lua`는 **정의·프레젠테이션·드라이버가 서로 맞는지**를 지킨다: emit 하는 속성이 정의에 있는지, 목록의 키가 인자 스키마를 통과하는지, `state`가 bool에 묶이지 않았는지, 값 라벨이 병기인지, 상태 줄이 빈 문자열로 나가지 않는지.
+  `profilegen_test.lua`(#107)는 생성기 규칙을 Lua로 돌려 `profiles/pc*-v2.yml`과 비교하고, `features_test.lua`(#107~#118)는 v1.2.0 기능의 status → 이벤트, 명령 매핑, 가드와 오류 문구, 컴포넌트 배선, 배터리 프로필 이동을 본다.
+- **다시 칠하기**(`poll.repaint`)는 v1.2.0 줄을 이번 구동에서 마지막으로 읽은 status(`extras.last_status`)로 칠한다. 한 번도 읽지 못했을 때만 쉬는 기본값(잠들지 않기 `off`, 활동 `none` …)이다 — 강제로 나가는 `off`는 그 스위치를 조건으로 쓰는 루틴을 돌린다.
 - 실행: `cd edge && npm test`(CI) 또는 `bun tools/lua.js tests/run.lua`. 문법 검사는 `tests/syntax.lua`.
 - 실기 검증: 채널에 올린 뒤 허브에서 검색·스위치·명령·예약·취소·푸시·프로필 이전을 확인한다.
 

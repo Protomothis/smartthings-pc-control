@@ -700,8 +700,10 @@ function poll.repaint(device)
   poll.answer_preset(device)
   -- #92: a repaint of a device that has answered before keeps its version on
   -- the row; only one that never answered falls back to "v?".
+  -- #107: and the v1.2.0 rows from the last status, when there was one.
   poll.emit(device, poll.force_all(
-    state.initial_rows(poll.lang(device), poll.last_service_version(device))))
+    state.initial_rows(poll.lang(device), poll.last_service_version(device),
+      (poll.extras(device) or {}).last_status)))
 end
 
 --- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil

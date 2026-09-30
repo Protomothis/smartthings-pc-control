@@ -954,7 +954,10 @@ end
 -- `emit_action` / `emit_plan_command`, which also persist the choice.
 -- @param service_version #92: the last version a successful poll saw
 --   (`poll.last_service_version`), or nil for a device that never answered one.
-function state.initial_rows(lang, service_version)
+-- @param last_status #107: the last status body this driver run read
+--   (`extras.last_status`), or nil. With one, the v1.2.0 rows are painted from
+--   it rather than from their never-polled defaults.
+function state.initial_rows(lang, service_version, last_status)
   local events = {}
   -- #86: "없음 (None)", never "": an empty `state` row reads as "-" (platform notes "상세 화면(detailView) 위젯").
   ev(events, caps.COMMAND, "lastCommand", state.format_last_command(nil, lang))
@@ -983,8 +986,15 @@ function state.initial_rows(lang, service_version)
   local versions = state.versions(service_version, lang)
   ev(events, caps.VERSION, "versions", versions)
   ev(events, caps.STATUS, "versions", versions)
-  -- #107: the rows of the v1.2.0 capabilities that have a resting value.
-  for _, e in ipairs(features.initial_rows(lang)) do
+  -- #107: the rows of the v1.2.0 capabilities that have a resting value - or,
+  -- once a status has been read, what that status said.
+  local extra_rows
+  if type(last_status) == "table" then
+    extra_rows = features.apply_status(last_status, { lang = lang })
+  else
+    extra_rows = features.initial_rows(lang)
+  end
+  for _, e in ipairs(extra_rows) do
     events[#events + 1] = e
   end
   return events
