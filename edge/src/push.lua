@@ -479,6 +479,8 @@ function push.apply_to_device(driver, device, payload, deps)
   -- value right here rather than at the next poll - and back to `none` the same
   -- way once the PC answers again.
   pcall(function() poll.ensure_action(device) end)
+  -- #113: and the preset list the same way.
+  pcall(function() poll.ensure_preset(device, deps) end)
 
   return true
 end

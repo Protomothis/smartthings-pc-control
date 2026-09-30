@@ -380,6 +380,152 @@ function T.test_the_english_notes()
 end
 
 --------------------------------------------------------------------------------
+-- #113: presets
+--------------------------------------------------------------------------------
+
+local function with_presets(list)
+  return status_v12({ presets = list })
+end
+
+local PRESETS = {
+  { slot = 2, name = "방송 시작" },
+  { slot = 1, name = "게임 모드" },
+  { slot = 11, name = "out of range" },
+  { slot = 1, name = "duplicate" },
+  { name = "no slot" },
+  { slot = 5, name = "" },
+}
+
+function T.test_presets_are_read_by_slot_and_malformed_ones_dropped()
+  local presets = features.presets_of(with_presets(PRESETS))
+  h.assert_deep_equal(presets, {
+    { slot = 1, name = "게임 모드" }, { slot = 2, name = "방송 시작" }, { slot = 5, name = "" },
+  })
+  h.assert_deep_equal(features.presets_of({}), {})
+end
+
+function T.test_the_names_row_lists_the_presets_by_slot()
+  h.assert_equal(features.preset_names(with_presets(PRESETS), "ko"), "1 게임 모드 · 2 방송 시작 · 5 이름 없음")
+  h.assert_equal(features.preset_names(with_presets({}), "ko"), "없음")
+  h.assert_equal(features.preset_names(with_presets({}), "en"), "None")
+  h.assert_equal(features.preset_names({ service_version = "v1.1.0" }, "ko"), "서비스 v1.2.0 필요")
+end
+
+function T.test_a_long_names_row_is_cut_on_a_character()
+  local list = {}
+  for slot = 1, 10 do
+    list[#list + 1] = { slot = slot, name = string.rep("가", 30) }
+  end
+  local text = features.preset_names(with_presets(list), "ko")
+  local count = select(2, text:gsub("[\1-\127\194-\244][\128-\191]*", ""))
+  h.assert_equal(count, features.NAMES_MAX_CHARS)
+  h.assert_equal(text:sub(-3), "…")
+  h.assert_equal(features.truncate("짧다", 5), "짧다")
+  h.assert_equal(features.truncate("abcdef", 4), "abc…")
+end
+
+function T.test_supported_slots_is_never_empty()
+  h.assert_deep_equal(features.supported_slots(with_presets(PRESETS)), { "1", "2", "5" })
+  h.assert_deep_equal(features.supported_slots(with_presets({})), { "none" })
+  h.assert_deep_equal(features.supported_slots({}), { "none" })
+end
+
+function T.test_the_initial_rows_rest_the_preset_list()
+  local initial = state.initial_rows("ko")
+  h.assert_equal(h.event_value(initial, caps.PRESET, "names"), "없음")
+  h.assert_deep_equal(h.event_value(initial, caps.PRESET, "supportedSlots"), { "none" })
+end
+
+local function last_preset(device)
+  return h.last_value(h.emitted(device), nil, caps.PRESET, "lastPreset")
+end
+
+function T.test_a_dismissed_preset_list_does_nothing()
+  local device = device_with(with_presets(PRESETS))
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "none" } })
+  end)
+  h.assert_equal(#calls.actions, 0)
+  h.assert_equal(last_preset(device), "none")
+  h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"),
+    "the dismissed list is answered forced, or the app spins (#86)")
+end
+
+function T.test_running_a_preset_sends_its_slot_and_shows_it()
+  local device = device_with(with_presets(PRESETS))
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
+  end)
+  h.assert_deep_equal(calls.actions, { { command = "preset", value = 2 } })
+  h.assert_equal(calls.polls, 1)
+  h.assert_equal(last_preset(device), "2")
+  h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
+  h.assert_equal(poll.shown_preset(device), "2")
+end
+
+function T.test_a_dismissed_list_resting_on_the_preset_that_just_ran_does_not_run_it_again()
+  local device = device_with(with_presets(PRESETS))
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "1" } })
+    -- The row now rests on "1"; closing the list sends it back.
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "1" } })
+  end)
+  h.assert_equal(#calls.actions, 1, "the second run(1) is the dismissed picker")
+  -- Another slot is a real pick.
+  calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
+  end)
+  h.assert_equal(#calls.actions, 1)
+end
+
+function T.test_an_empty_slot_is_not_sent()
+  local device = device_with(with_presets(PRESETS))
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "7" } })
+  end)
+  h.assert_equal(#calls.actions, 0)
+  h.assert_equal(info_summary(device), "프리셋 7 비어 있음")
+  h.assert_equal(last_preset(device), "none")
+end
+
+function T.test_a_preset_on_an_old_service_or_without_a_user()
+  local old = device_with({ service_version = "v1.1.0" })
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, old, { args = { slot = "1" } })
+  end)
+  h.assert_equal(#calls.actions, 0)
+  h.assert_equal(info_summary(old), "서비스 v1.2.0 필요")
+
+  local nobody = device_with(with_presets(PRESETS))
+  with_service({ ok = false, kind = "conflict", body = { error = "no_user_session" } }, function()
+    handlers_for(caps.PRESET).run(driver, nobody, { args = { slot = "1" } })
+  end)
+  h.assert_equal(info_summary(nobody), "사용자 없음")
+  h.assert_equal(last_preset(nobody), "none", "a preset that did not start is not shown as started")
+end
+
+function T.test_the_preset_row_returns_to_none_after_the_hold()
+  local device = device_with(with_presets(PRESETS))
+  local now = 1000
+  local deps = { now = function() return now end }
+  poll.emit_preset(device, "3", true, deps)
+  device.emitted = {}
+  -- The poll right after the command: still showing it.
+  now = 1002
+  h.assert_false(poll.ensure_preset(device, deps))
+  h.assert_equal(#device.emitted, 0)
+  -- The next scheduled poll: back to "none", forced, and once more after.
+  now = 1030
+  h.assert_true(poll.ensure_preset(device, deps))
+  h.assert_equal(last_preset(device), "none")
+  h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
+  h.assert_true(poll.ensure_preset(device, deps), "the one repeat")
+  h.assert_equal(#device.emitted, 2)
+  h.assert_false(poll.ensure_preset(device, deps), "and then nothing")
+  h.assert_equal(#device.emitted, 2)
+end
+
+--------------------------------------------------------------------------------
 -- components (#107: the emit glue)
 --------------------------------------------------------------------------------
 

@@ -72,6 +72,10 @@ caps.SESSION = NAMESPACE .. ".pcuser"
 -- definition cannot change without another rename (platform notes "허브의 정의 캐시"), and an attribute
 -- that is never emitted makes the app say the state was not fully reported.
 caps.VERSION = NAMESPACE .. ".pcversion"
+-- #113: the presets the PC's own app defines (media-notify.md §10). A new
+-- capability, not a change to an existing one, so there is no cache to fight
+-- (platform notes "허브의 정의 캐시") - the account owner creates it once.
+caps.PRESET = NAMESPACE .. ".pcpreset"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -81,6 +85,7 @@ caps.ids = {
   status = caps.STATUS,
   session = caps.SESSION,
   version = caps.VERSION,
+  preset = caps.PRESET,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

@@ -1,0 +1,62 @@
+{
+  "tag": "ko",
+  "label": "PC 프리셋",
+  "attributes": {
+    "lastPreset": {
+      "label": "프리셋",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "프리셋 1"
+          },
+          "2": {
+            "label": "프리셋 2"
+          },
+          "3": {
+            "label": "프리셋 3"
+          },
+          "4": {
+            "label": "프리셋 4"
+          },
+          "5": {
+            "label": "프리셋 5"
+          },
+          "6": {
+            "label": "프리셋 6"
+          },
+          "7": {
+            "label": "프리셋 7"
+          },
+          "8": {
+            "label": "프리셋 8"
+          },
+          "9": {
+            "label": "프리셋 9"
+          },
+          "10": {
+            "label": "프리셋 10"
+          },
+          "none": {
+            "label": "프리셋 선택…"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "프리셋 목록"
+    },
+    "supportedSlots": {
+      "label": "고를 수 있는 슬롯"
+    }
+  },
+  "commands": {
+    "run": {
+      "label": "프리셋 실행",
+      "arguments": {
+        "slot": {
+          "label": "슬롯"
+        }
+      }
+    }
+  }
+}

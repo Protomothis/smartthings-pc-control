@@ -12,6 +12,9 @@
 -- standard capability has no definition cache problem (platform notes "허브의
 -- 정의 캐시") and brings the app's own slider, toggle and buttons.
 
+local caps = require "caps"
+local i18n = require "i18n"
+
 local features = {}
 
 -- The names `status.features` carries (media-notify.md §3). An older service
@@ -19,6 +22,7 @@ local features = {}
 -- "this PC does not offer it".
 features.AUDIO = "audio"
 features.MEDIA = "media"
+features.PRESETS = "presets"
 
 -- Standard capability ids.
 features.CAP_VOLUME = "audioVolume"
@@ -46,7 +50,15 @@ features.COMMAND_FEATURE = {
   mute = features.AUDIO, unmute = features.AUDIO,
   play = features.MEDIA, pause = features.MEDIA, playpause = features.MEDIA,
   stop = features.MEDIA, next = features.MEDIA, prev = features.MEDIA,
+  preset = features.PRESETS,
 }
+
+-- #113: the slots a preset list can offer, and the value it rests on. Strings,
+-- because the list's argument is a string enum (platform notes "상세
+-- 화면(detailView) 위젯": a dismissed list sends the row's current value
+-- without the presentation's integer conversion).
+features.PRESET_NONE = "none"
+features.PRESET_SLOTS = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }
 
 -- Features that act in the logged-in user's session (§2). `audio.available`
 -- is the service's word on whether there is one.
@@ -102,6 +114,10 @@ function features.remember(device_state, status)
   if type(audio.muted) == "boolean" then
     muted = audio.muted
   end
+  local slots = {}
+  for _, preset in ipairs(features.presets_of(status)) do
+    slots[tostring(preset.slot)] = true
+  end
   device_state.extras = {
     features = features.parse(status),
     audio = {
@@ -109,6 +125,9 @@ function features.remember(device_state, status)
       volume = features.volume_of(audio),
       muted = muted,
     },
+    -- #113: which slots the PC has a preset in, so a routine that runs an
+    -- empty one is told so instead of being sent to the service.
+    preset_slots = slots,
   }
   return device_state
 end
@@ -241,6 +260,106 @@ function features.media_events()
   return events
 end
 
+--------------------------------------------------------------------------------
+-- #113: presets
+--------------------------------------------------------------------------------
+
+--- UTF-8 code points of `text`, at most `max` of them; a cut string ends in
+--- "…" (which counts). Used wherever a row or the service has a length limit.
+function features.truncate(text, max)
+  text = tostring(text or "")
+  local points = {}
+  -- A lead byte and its continuation bytes. NUL never reaches here: every
+  -- caller has stripped control characters, and no status string carries one.
+  for point in text:gmatch("[\1-\127\194-\244][\128-\191]*") do
+    points[#points + 1] = point
+  end
+  if #points <= max then
+    return text
+  end
+  return table.concat(points, "", 1, math.max(0, max - 1)) .. "…"
+end
+
+--- `status.presets` as a list of `{ slot = 1..10, name = "…" }`, by slot, with
+--- anything malformed left out. The service sends only slot and name - what a
+--- preset runs stays on the PC (media-notify.md §10).
+function features.presets_of(status)
+  local out, seen = {}, {}
+  local list = (status or {}).presets
+  if type(list) ~= "table" then
+    return out
+  end
+  for _, preset in ipairs(list) do
+    local slot = type(preset) == "table" and tonumber(preset.slot) or nil
+    if slot and slot == math.floor(slot) and slot >= 1 and slot <= 10 and not seen[slot] then
+      seen[slot] = true
+      local name = type(preset.name) == "string" and preset.name or ""
+      out[#out + 1] = { slot = math.floor(slot), name = name }
+    end
+  end
+  table.sort(out, function(a, b) return a.slot < b.slot end)
+  return out
+end
+
+-- The names row is one line the phone truncates anyway; the definition allows
+-- 255 characters and this stays well inside it.
+features.NAMES_MAX_CHARS = 200
+
+--- `pcPreset.names`: "1 게임 모드 · 2 방송 시작", or "없음" when the PC has no
+--- preset. A service older than v1.2.0 gets "서비스 v1.2.0 필요" - the row is
+--- there on every v2 screen and has to say why it is empty. Never "": an empty
+--- state row reads "-" (platform notes "상세 화면(detailView) 위젯").
+function features.preset_names(status, lang)
+  if features.parse(status) == false then
+    return i18n.t(lang, "needs_service")
+  end
+  local parts = {}
+  for _, preset in ipairs(features.presets_of(status)) do
+    local name = preset.name ~= "" and preset.name or i18n.t(lang, "preset_unnamed")
+    parts[#parts + 1] = tostring(preset.slot) .. " " .. name
+  end
+  if #parts == 0 then
+    return i18n.t(lang, "presets_none")
+  end
+  return features.truncate(table.concat(parts, " · "), features.NAMES_MAX_CHARS)
+end
+
+--- `pcPreset.supportedSlots`: the slots the list may offer (#93's
+--- `supportedValues` experiment, platform notes). Never empty - the community
+--- reports that an empty array brings the whole list back - so a PC without a
+--- preset gets `none`, which is not a menu entry: the hoped-for effect is a
+--- list with nothing to pick.
+function features.supported_slots(status)
+  local out = {}
+  for _, preset in ipairs(features.presets_of(status)) do
+    out[#out + 1] = tostring(preset.slot)
+  end
+  if #out == 0 then
+    out[1] = features.PRESET_NONE
+  end
+  return out
+end
+
+--- True when `slot` is a key of the preset list ("1".."10").
+function features.is_preset_slot(slot)
+  for _, key in ipairs(features.PRESET_SLOTS) do
+    if key == slot then
+      return true
+    end
+  end
+  return false
+end
+
+--- #113: the preset rows a status body carries. `lastPreset` is not one of
+--- them - it is the list's resting value, and poll.lua owns it like
+--- `lastAction` (poll.ensure_preset).
+function features.preset_events(status, lang)
+  local events = {}
+  ev(events, caps.PRESET, "names", features.preset_names(status, lang))
+  ev(events, caps.PRESET, "supportedSlots", features.supported_slots(status))
+  return events
+end
+
 local function append(into, list)
   for _, e in ipairs(list) do
     into[#into + 1] = e
@@ -251,17 +370,21 @@ end
 --- Every v1.2.0 row a status body paints. Called by state.apply_status.
 -- @param opts `lang`
 function features.apply_status(status, opts)
-  local _ = opts
+  local lang = (opts or {}).lang
   local events = {}
   append(events, features.audio_events(status))
   append(events, features.media_events())
+  append(events, features.preset_events(status, lang))
   return events
 end
 
 --- Every v1.2.0 row a device that has never been polled paints (state.initial_rows).
 function features.initial_rows(lang)
-  local _ = lang
-  return features.media_events()
+  local events = features.media_events()
+  -- #113: before the first status there is no list of presets to show.
+  ev(events, caps.PRESET, "names", i18n.t(lang, "presets_none"))
+  ev(events, caps.PRESET, "supportedSlots", { features.PRESET_NONE })
+  return events
 end
 
 return features

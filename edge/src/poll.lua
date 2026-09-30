@@ -484,6 +484,87 @@ function poll.owe_action_repeat(device, value)
   return value
 end
 
+--------------------------------------------------------------------------------
+-- #113: pcPreset.lastPreset
+--------------------------------------------------------------------------------
+
+-- What the preset list shows right now ("none", or the slot that just ran),
+-- when it started showing a slot (epoch seconds), and whether one forced
+-- repeat of the return to "none" is owed - the same two rules as `lastAction`
+-- (`ensure_action`, platform notes "강제 이벤트 연발").
+poll.PRESET_FIELD = "last_preset"
+poll.PRESET_AT_FIELD = "last_preset_at"
+poll.PRESET_CONFIRM_FIELD = "last_preset_confirm"
+-- How long the row says "프리셋 3 실행함" before a poll puts it back on "none".
+-- Longer than the poll that follows a command takes to answer, shorter than
+-- the shortest poll interval (10 s), so the flash lasts until the next
+-- scheduled poll.
+poll.PRESET_HOLD_SECONDS = 5
+
+--- The value the preset list shows now.
+function poll.shown_preset(device)
+  local shown
+  pcall(function() shown = device:get_field(poll.PRESET_FIELD) end)
+  if shown == features.PRESET_NONE or features.is_preset_slot(shown) then
+    return shown
+  end
+  return features.PRESET_NONE
+end
+
+--- Emit `pcPreset.lastPreset` and remember it. Not persisted: a driver that
+--- restarts repaints the row on "none", which is where it belongs.
+function poll.emit_preset(device, value, force, deps)
+  if not features.is_preset_slot(value) then
+    value = features.PRESET_NONE
+  end
+  pcall(function()
+    device:set_field(poll.PRESET_FIELD, value)
+    device:set_field(poll.PRESET_AT_FIELD, value ~= features.PRESET_NONE and poll.clock(deps) or nil)
+  end)
+  poll.emit(device, {
+    { cap = caps.PRESET, attr = "lastPreset", value = value, force = force == true },
+  })
+  return value
+end
+
+--- Answer a `run` on the row the app is watching: the value it shows, forced.
+function poll.answer_preset(device)
+  pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+  local shown = poll.shown_preset(device)
+  poll.emit(device, {
+    { cap = caps.PRESET, attr = "lastPreset", value = shown, force = true },
+  })
+  return shown
+end
+
+--- Put the preset list back on "none" once the slot it shows has been shown
+--- for `PRESET_HOLD_SECONDS` (#113). Called from every poll and push, like
+--- `ensure_action`: the change goes out forced and once more on the next call,
+--- and nothing is sent while the value stays where it is.
+-- Returns true when something was emitted.
+function poll.ensure_preset(device, deps)
+  local shown = poll.shown_preset(device)
+  if shown ~= features.PRESET_NONE then
+    local at
+    pcall(function() at = device:get_field(poll.PRESET_AT_FIELD) end)
+    at = tonumber(at)
+    if at and poll.clock(deps) - at < poll.PRESET_HOLD_SECONDS and poll.clock(deps) >= at then
+      return false
+    end
+    poll.emit_preset(device, features.PRESET_NONE, true, deps)
+    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, true) end)
+    return true
+  end
+  local owed
+  pcall(function() owed = device:get_field(poll.PRESET_CONFIRM_FIELD) end)
+  if owed then
+    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+    poll.emit_preset(device, features.PRESET_NONE, true, deps)
+    return true
+  end
+  return false
+end
+
 --- Emit `pcDefer.planCommand` and remember it (#84, moved in #85).
 --
 -- The command a `pcDefer.schedule` without an explicit command runs. It is
@@ -591,6 +672,8 @@ function poll.repaint(device)
   poll.owe_action_repeat(device, nil)
   poll.emit_action(device, poll.resting_action(device), true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
+  -- #113: the preset list's resting value, like `lastAction` above.
+  poll.answer_preset(device)
   -- #92: a repaint of a device that has answered before keeps its version on
   -- the row; only one that never answered falls back to "v?".
   poll.emit(device, poll.force_all(
@@ -741,6 +824,8 @@ function poll.once(driver, device, opts)
     poll.emit(device, events)
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
+    -- #113: a preset that just ran shows for a moment, then the list rests.
+    poll.ensure_preset(device, opts.deps)
     pcall(function() device:online() end)
     -- §6.3: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.
@@ -773,6 +858,7 @@ function poll.once(driver, device, opts)
   -- while a transition is running, and the one that hands it back to `none`
   -- when `waking` gives up and becomes `off`.
   poll.ensure_action(device)
+  poll.ensure_preset(device, opts.deps)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
   return false, kind
 end

@@ -577,6 +577,8 @@ local EXPECTED_COMMANDS = {
   session = {},
   -- #86: a read-only card; the version row has nothing to command.
   version = {},
+  -- #113: one list argument, the slot as a string enum.
+  preset = { run = { "slot" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -784,7 +786,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end

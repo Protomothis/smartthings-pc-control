@@ -568,6 +568,58 @@ local function handle_set_playback_status(driver, device, cmd)
   return run_feature(driver, device, service_command, nil, answer_media, MEDIA_ROWS)
 end
 
+--- #113: pcPreset.run(slot) — `/st/v1/command {command:"preset", value:N}`.
+--
+-- The list rests on "none" (platform notes "상세 화면(detailView) 위젯": a
+-- dismissed list sends the row's current value), so `run("none")` is the
+-- dismissed picker and does nothing but answer the row.
+--
+-- A preset that ran shows as "프리셋 3 실행함" until the next poll at least
+-- `poll.PRESET_HOLD_SECONDS` later puts the row back on "none"
+-- (`poll.ensure_preset`, the `lastAction` rules). During that moment the row
+-- rests on "3", so a dismissed list sends `run("3")` - which must not start
+-- the preset a second time. A `run` of the very slot the row is showing is
+-- therefore the same no-op as `none`. Picking the same preset again on purpose
+-- works as soon as the row is back on "프리셋 선택…".
+local function handle_preset_run(driver, device, cmd)
+  local slot = tostring((((cmd or {}).args or {}).slot) or features.PRESET_NONE)
+  if slot == features.PRESET_NONE or not features.is_preset_slot(slot)
+      or slot == poll.shown_preset(device) then
+    return poll.answer_preset(device)
+  end
+  local lang = poll.lang(device)
+  if poll.extras(device) == nil then
+    poll.once(driver, device)
+  end
+  local extras = poll.extras(device)
+  local refusal = features.refusal(extras, "preset")
+  if not refusal and features.has(extras, features.PRESETS)
+      and not ((extras or {}).preset_slots or {})[slot] then
+    refusal = "preset_empty"
+  end
+  if refusal then
+    poll.answer_preset(device)
+    poll.emit_note(device, i18n.t(lang, refusal, slot))
+    log.info(string.format("preset %s not sent on %s: %s", slot, tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.action(device, "preset", tonumber(slot))
+  if not ok then
+    poll.answer_preset(device)
+    local note = features.error_note(kind, body)
+    if note then
+      poll.emit_note(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  -- The row the app is watching changes value, forced as every answer is.
+  poll.emit_preset(device, slot, true)
+  poll.once(driver, device)
+  return true
+end
+
 local capability_handlers = {
   [capabilities.switch.ID] = {
     [capabilities.switch.commands.on.NAME] = handle_switch_on,
@@ -609,6 +661,9 @@ if custom.command then
     handlers[name] = button_handler(service_command)
   end
   capability_handlers[custom.command.ID] = handlers
+end
+if custom.preset then
+  capability_handlers[custom.preset.ID] = { run = handle_preset_run }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

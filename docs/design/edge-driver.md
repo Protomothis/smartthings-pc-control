@@ -229,12 +229,15 @@
 | `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
 
+| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
+
 - 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
 - **볼륨·음소거는 읽은 값이 있을 때만** 내보낸다(`audio.available` 참, 또는 `updated_at`이 있음). 서비스가 한 번도 재지 않은 0으로 슬라이더를 끌어내리지 않는다.
 - **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없으면 옛 서비스 → "서비스 v1.2.0 필요", 키는 있는데 기능이 없으면 "이 PC에서 지원 안 함", `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐"(`features.error_note`). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
 - 막힌 명령은 그 줄의 현재 값을 강제로 다시 내보내고(회전 표시 뒤 오류 방지), `pcInfo.message`·`summary`에 이유를 띄운다(§6.9의 `emit_note`와 같은 모양). 성공하면 바로 폴링하면서 그 줄들을 강제로 내보낸다(`poll.once(..., {force = rows})`).
 - 이번 구동에서 아직 status를 읽지 못했으면(허브 재시작 직후) 명령 전에 한 번 폴링한다. 그래도 모르면 "PC에 연결할 수 없습니다".
 - 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.
+- **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, 실측 대기). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `poll.PRESET_HOLD_SECONDS`(5초)가 지난 첫 폴링·푸시가 `none`으로 되돌린다 — 바뀔 때 강제 한 번 + 다음 호출에 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
 
 ## 5. 화면 구성
 
@@ -262,6 +265,7 @@
 | 예약 시간 | `pcDefer.schedule` 목록(#89: 5·10·15·30·45분, 1·1.5·2·3·4·6·8·12시간, 1·2·3일, 그리고 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
 
 | 미디어 묶음 (#107, 표준) | 재생·일시정지·정지 → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글 |
+| 프리셋 (#113) | `pcPreset.run` 목록(등록된 슬롯만, `supportedSlots`). 쉬는 값 "프리셋 선택… (Pick a preset)", 실행 직후 잠깐 "프리셋 3 실행함 (Preset 3 started)". 상태 카드에 이름 줄 `pcPreset.names` |
 
 - 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 edge-v1.0 capability의 맨 끝이고, v1.2.0 capability는 그 뒤에 media-notify.md §15 "UI 구성" 순서로 온다(미디어 묶음 → 나머지). 표준 capability의 줄이 우리 상태·조작 카드에 섞이는지, 따로 그려지는지는 실측 대기다(media-notify.md §16).
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.

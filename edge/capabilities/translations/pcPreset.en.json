@@ -1,0 +1,62 @@
+{
+  "tag": "en",
+  "label": "PC presets",
+  "attributes": {
+    "lastPreset": {
+      "label": "Preset",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "Preset 1"
+          },
+          "2": {
+            "label": "Preset 2"
+          },
+          "3": {
+            "label": "Preset 3"
+          },
+          "4": {
+            "label": "Preset 4"
+          },
+          "5": {
+            "label": "Preset 5"
+          },
+          "6": {
+            "label": "Preset 6"
+          },
+          "7": {
+            "label": "Preset 7"
+          },
+          "8": {
+            "label": "Preset 8"
+          },
+          "9": {
+            "label": "Preset 9"
+          },
+          "10": {
+            "label": "Preset 10"
+          },
+          "none": {
+            "label": "Pick a preset"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "Presets"
+    },
+    "supportedSlots": {
+      "label": "Available slots"
+    }
+  },
+  "commands": {
+    "run": {
+      "label": "Run preset",
+      "arguments": {
+        "slot": {
+          "label": "Slot"
+        }
+      }
+    }
+  }
+}

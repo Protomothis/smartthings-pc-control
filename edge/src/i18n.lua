@@ -139,6 +139,15 @@ local STRINGS = {
     ko = "미디어 제어 꺼짐",
     en = "Media control is off",
   },
+  -- #113: a routine (or a stale list) asked for a slot the PC has no preset in.
+  preset_empty = {
+    ko = "프리셋 %s 비어 있음",
+    en = "Preset %s is empty",
+  },
+  -- #113: the `pcPreset.names` row. "1 게임 모드 · 2 방송 시작"; a preset the
+  -- PC's app saved without a name still gets a word.
+  presets_none = { ko = "없음", en = "None" },
+  preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {

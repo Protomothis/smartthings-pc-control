@@ -115,6 +115,10 @@ local function golden(lang)
     { cap = "mediaPlayback", attr = "supportedPlaybackCommands", value = { "play", "pause", "stop" } },
     { cap = "mediaTrackControl", attr = "supportedTrackControlCommands",
       value = { "nextTrack", "previousTrack" } },
+    -- #113: a v1.1.0 service has no presets to name, and says why.
+    { cap = caps.PRESET, attr = "names",
+      value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
+    { cap = caps.PRESET, attr = "supportedSlots", value = { "none" } },
   }
 end
 
