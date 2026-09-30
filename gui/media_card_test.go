@@ -36,6 +36,28 @@ func TestMediaLineText(t *testing.T) {
 	}
 }
 
+func TestMediaLines(t *testing.T) {
+	ko := &ui{lang: LangKo}
+	cases := []struct {
+		m         MediaInfo
+		share     bool
+		main, sub string
+	}{
+		{MediaInfo{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", App: "Spotify"}, true, "Hype Boy", "NewJeans · Spotify"},
+		{MediaInfo{Status: "paused", Title: "Ditto"}, true, "Ditto", ""},
+		{MediaInfo{Status: "playing", Title: "Lo-fi mix", App: "Chrome"}, true, "Lo-fi mix", "Chrome"},
+		{MediaInfo{Status: "playing", Artist: "NewJeans", App: "Chrome"}, true, "NewJeans", "Chrome"},
+		{MediaInfo{Status: "playing", App: "VLC"}, true, "재생 중", "VLC"},
+		{MediaInfo{Status: "playing", Title: "stale", App: "Spotify"}, false, "재생 중", ""},
+		{MediaInfo{Status: "none"}, true, "재생 중인 미디어 없음", ""},
+	}
+	for _, c := range cases {
+		if m, s := ko.mediaLines(c.m, c.share); m != c.main || s != c.sub {
+			t.Errorf("mediaLines(%+v, %v) = %q, %q; want %q, %q", c.m, c.share, m, s, c.main, c.sub)
+		}
+	}
+}
+
 func TestMediaToggleCommand(t *testing.T) {
 	for status, want := range map[string]string{
 		"playing": "pause", "paused": "play", "stopped": "play", "none": "playpause", "": "playpause",

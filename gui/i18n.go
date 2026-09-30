@@ -192,7 +192,7 @@ var messages = map[string]map[Lang]string{
 	"notify.control.allowed":               {LangKo: "허용 Chat ID", LangEn: "Allowed Chat IDs"},
 	"notify.control.allowed.hint":          {LangKo: "쉼표로 구분. 비워 두면 위의 Chat ID만 허용됩니다.", LangEn: "Comma separated. Empty means only the Chat ID above."},
 	"notify.control.warn":                  {LangKo: "허용 목록의 채팅에서 전원 명령을 내릴 수 있습니다. 봇 토큰을 안전하게 보관하세요.", LangEn: "Chats on the allow list can issue power commands. Keep the bot token safe."},
-	"notify.control.hint":                  {LangKo: "명령: /status 상태 · /menu 버튼 메뉴 · /lock 잠금 · /shutdown [분] 종료(분 없으면 확인 후 즉시) · /cancel 예약 취소 · /mute 2h 알림 일시 중지 · /help", LangEn: "Commands: /status · /menu buttons · /lock · /shutdown [min] (no minutes: confirm, then immediately) · /cancel active schedule · /mute 2h pause alerts · /help"},
+	"notify.control.hint":                  {LangKo: "주요 명령: /status 상태 · /menu 버튼 메뉴 · /shutdown [분] 종료 · /cancel 예약 취소 · /vol [값] 볼륨 · /mute 음소거 · /np 재생 정보 · /say 문구 PC에 알림 · /run 프리셋 · /awake 잠들지 않기 · /quiet 2h 알림 일시 중지 · /help 전체 목록", LangEn: "Main commands: /status · /menu buttons · /shutdown [min] · /cancel schedule · /vol [level] · /mute · /np now playing · /say text to the PC · /run preset · /awake · /quiet 2h pause alerts · /help for all"},
 	"notify.events":                        {LangKo: "받을 알림", LangEn: "Notifications to receive"},
 	"notify.all.on":                        {LangKo: "모두 켬", LangEn: "All on"},
 	"notify.all.off":                       {LangKo: "모두 끔", LangEn: "All off"},
@@ -291,6 +291,7 @@ var messages = map[string]map[Lang]string{
 	"st.secret.hint":       {LangKo: "SmartThings 연동에는 시크릿 설정을 권장합니다 (설정 탭)", LangEn: "Setting a secret is recommended for SmartThings (Settings tab)"},
 	// Keep-awake on the command tab (#111).
 	"awake.toggle":      {LangKo: "잠들지 않기", LangEn: "Keep awake"},
+	"awake.use":         {LangKo: "사용", LangEn: "On"},
 	"awake.forever":     {LangKo: "끌 때까지", LangEn: "Until turned off"},
 	"awake.off":         {LangKo: "꺼짐 — 평소 절전 설정을 따릅니다", LangEn: "Off — the PC sleeps on its usual idle timer"},
 	"awake.left":        {LangKo: "%s 남음 · %s까지", LangEn: "%s left · until %s"},

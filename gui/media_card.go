@@ -3,9 +3,9 @@ package gui
 // The command tab's media card (#117, media-notify.md §15 "UI 구성"):
 //
 //	미디어
-//	[▶] Hype Boy — NewJeans · Spotify               one line, cut with …
-//	    Hype Boy (Official MV) — NewJeans · Chrome  full text, only when cut
-//	              [⏮]  [⏸]  [⏭]
+//	[▶] Hype Boy                                    title, bold, cut with …
+//	    NewJeans · Spotify                          artist · app, small
+//	              [⏮]  [⏸]  [⏭]                    one row, centred
 //	[🔊] ─────────●───────────────  42%
 //	     스피커 (Realtek(R) Audio)
 //	     설정 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 …   (only when disabled)
@@ -49,8 +49,8 @@ const (
 // mediaCard is the card's widgets and the last state they show.
 type mediaCard struct {
 	icon    *widget.Icon
-	line    *widget.Label // now playing, one line
-	full    *widget.Label // the whole line when it does not fit
+	line    *widget.Label // title (or the state), one line
+	sub     *widget.Label // "artist · app", hidden when empty
 	prev    *widget.Button
 	play    *widget.Button
 	next    *widget.Button
@@ -140,6 +140,41 @@ func (u *ui) mediaLineText(m MediaInfo, share bool) string {
 	return text
 }
 
+// mediaLines splits the now-playing text for the card: the title on the
+// first line, "artist · app" under it. Without a title the artist (or the
+// state) moves up; without the opt-in only the state is shown.
+func (u *ui) mediaLines(m MediaInfo, share bool) (string, string) {
+	switch m.Status {
+	case mediaPlaying, mediaPaused, mediaStopped:
+	default:
+		return u.t("media.none"), ""
+	}
+	state := u.t("media." + m.Status)
+	if !share {
+		return state, ""
+	}
+	join := func(parts ...string) string {
+		out := ""
+		for _, p := range parts {
+			if p == "" {
+				continue
+			}
+			if out != "" {
+				out += " · "
+			}
+			out += p
+		}
+		return out
+	}
+	switch {
+	case m.Title != "":
+		return m.Title, join(m.Artist, m.App)
+	case m.Artist != "":
+		return m.Artist, m.App
+	}
+	return state, m.App
+}
+
 // mediaLevelText is the volume value next to the slider, "—" while unknown.
 func mediaLevelText(a MediaAudio) string {
 	if !a.Available || a.Volume == nil {
@@ -201,11 +236,11 @@ func (u *ui) buildMediaCard() fyne.CanvasObject {
 	u.media = c
 
 	c.icon = widget.NewIcon(theme.MediaMusicIcon())
-	c.line = widget.NewLabel(u.t("media.none"))
+	c.line = widget.NewLabelWithStyle(u.t("media.none"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	c.line.Truncation = fyne.TextTruncateEllipsis
-	c.full = smallLabel()
-	c.full.Wrapping = fyne.TextWrapWord
-	c.full.Hide()
+	c.sub = smallLabel()
+	c.sub.Truncation = fyne.TextTruncateEllipsis
+	c.sub.Hide()
 
 	c.prev = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), func() { u.sendMediaCommand("prev", nil) })
 	c.play = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
@@ -250,8 +285,12 @@ func (u *ui) buildMediaCard() fyne.CanvasObject {
 	indent := canvas.NewRectangle(color.Transparent)
 	indent.SetMinSize(fyne.NewSize(c.mute.MinSize().Width, 0))
 
-	nowPlaying := container.NewBorder(nil, nil, c.icon, nil, c.line)
-	transport := container.NewCenter(container.NewGridWrap(mediaButtonSize, c.prev, c.play, c.next))
+	nowPlaying := container.NewBorder(nil, nil, c.icon, nil, container.NewVBox(c.line, c.sub))
+	// One fixed-size cell per button in an HBox: a GridWrap inside Center
+	// is laid out at its own MinSize, which is one cell wide, so the three
+	// buttons stacked vertically (rc2).
+	cell := func(b *widget.Button) fyne.CanvasObject { return container.NewGridWrap(mediaButtonSize, b) }
+	transport := container.NewCenter(container.NewHBox(cell(c.prev), cell(c.play), cell(c.next)))
 	levelBox := container.NewGridWrap(fyne.NewSize(56, c.slider.MinSize().Height), c.level)
 	volume := container.NewBorder(nil, nil, c.mute, levelBox, c.slider)
 
@@ -266,7 +305,6 @@ func (u *ui) buildMediaCard() fyne.CanvasObject {
 	}
 	return section(u.t("media.title"), container.NewVBox(
 		nowPlaying,
-		c.full,
 		transport,
 		volume,
 		container.NewBorder(nil, nil, indent, nil, c.device),
@@ -332,9 +370,15 @@ func (u *ui) applyMedia(m MediaState, err error) {
 
 	status := m.Media.Status
 	c.icon.SetResource(mediaStatusIcon(status))
-	c.lineTxt = u.mediaLineText(m.Media, m.NowPlaying)
-	c.line.SetText(c.lineTxt)
-	u.fitMediaLine()
+	title, sub := u.mediaLines(m.Media, m.NowPlaying)
+	c.lineTxt = title
+	c.line.SetText(title)
+	c.sub.SetText(sub)
+	if sub == "" {
+		c.sub.Hide()
+	} else {
+		c.sub.Show()
+	}
 	c.play.SetIcon(mediaPlayButtonIcon(status))
 
 	muted := m.Audio.Muted != nil && *m.Audio.Muted
@@ -375,21 +419,6 @@ func (u *ui) applyMedia(m MediaState, err error) {
 	}
 	setEnabled(c.mute, usable && m.Audio.Available)
 	setEnabled(c.slider, usable && m.Audio.Available)
-}
-
-// fitMediaLine shows the full now-playing text under the line when the line
-// had to cut it. The width is the one of the last layout, so a resized
-// window catches up on the next poll.
-func (u *ui) fitMediaLine() {
-	c := u.media
-	avail := c.line.Size().Width - 2*theme.InnerPadding()
-	need := fyne.MeasureText(c.lineTxt, theme.TextSize(), c.line.TextStyle).Width
-	if avail > 0 && need > avail {
-		c.full.SetText(c.lineTxt)
-		c.full.Show()
-		return
-	}
-	c.full.Hide()
 }
 
 // setEnabled enables or disables any disableable widget.

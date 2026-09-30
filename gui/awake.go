@@ -101,7 +101,7 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 	})
 	row.sel.SetSelectedIndex(awakePresetIndex(defaultAwakePreset))
 
-	row.toggle = newToggle(u.t("awake.toggle"), func(on bool) {
+	row.toggle = newToggle(u.t("awake.use"), func(on bool) {
 		if row.syncing {
 			return
 		}
@@ -111,10 +111,12 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 	row.status.Importance = widget.LowImportance
 	row.status.Truncation = fyne.TextTruncateEllipsis
 
-	return container.NewVBox(
+	// A titled card like 일반 / 전원 / 미디어 / 프리셋; the title names the
+	// feature, so the toggle itself only says "사용".
+	return section(u.t("awake.toggle"), container.NewVBox(
 		container.NewBorder(nil, nil, container.NewHBox(row.toggle, row.sel), nil, row.status),
 		hint(u.t("awake.hint")),
-	)
+	))
 }
 
 // selectedAwakeMinutes is the duration the select shows.

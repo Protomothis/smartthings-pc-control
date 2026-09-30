@@ -926,13 +926,28 @@ func (u *ui) updateSaveState() {
 	u.markTab(tabSettings, dirty)
 }
 
+// syncBackground makes background() run its work inline. Tests set it:
+// Fyne's test driver runs fyne.Do on the calling goroutine instead of the UI
+// thread, so work a build starts in the background would race that build.
+var syncBackground = false
+
+// background runs slow work a build kicks off (service state, installed
+// voices) off the UI thread; the work hands its result back with fyne.Do.
+func background(f func()) {
+	if syncBackground {
+		f()
+		return
+	}
+	go f()
+}
+
 // refreshSvcBox re-queries the Windows service state and redraws the
 // management section.
 func (u *ui) refreshSvcBox() {
-	go func() {
+	background(func() {
 		state := queryServiceState()
 		fyne.Do(func() { u.fillSvcBox(state) })
-	}()
+	})
 }
 
 func (u *ui) fillSvcBox(state svcState) {

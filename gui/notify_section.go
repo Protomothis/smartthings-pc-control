@@ -174,7 +174,7 @@ func (u *ui) fillNotifySection(cfg Config) {
 // voices and refreshes the select. The service never lists them: it runs
 // in session 0, where the user's voices are not what would speak.
 func (u *ui) loadVoices() {
-	go func() {
+	background(func() {
 		voices, err := sapi.Voices()
 		fyne.Do(func() {
 			n := u.pcNotify
@@ -188,7 +188,7 @@ func (u *ui) loadVoices() {
 			u.setVoiceOptions(u.notifySectionState().Voice)
 			u.updateSaveState()
 		})
-	}()
+	})
 }
 
 // setVoiceOptions rebuilds the select around the installed voices with
