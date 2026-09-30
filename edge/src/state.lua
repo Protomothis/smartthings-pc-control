@@ -924,6 +924,8 @@ local ATTRIBUTES = {
   -- #113: `lastPreset` is the list's resting value (poll.ensure_preset), the
   -- other two come with every status.
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
+  -- #114
+  [caps.ACTIVITY] = { activity = true, summary = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.

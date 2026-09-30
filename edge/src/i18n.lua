@@ -149,6 +149,17 @@ local STRINGS = {
   presets_none = { ko = "없음", en = "None" },
   preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
+  -- #114: the `pcActivity.summary` row, "게임 중 · Steam". The word says what
+  -- kind of thing runs (the watch list's `kind`), the labels which ones.
+  activity_off = { ko = "꺼짐", en = "Off" },
+  activity_none = { ko = "없음", en = "None" },
+  activity_game = { ko = "게임 중", en = "Gaming" },
+  activity_work = { ko = "작업 중", en = "Working" },
+  activity_media = { ko = "감상 중", en = "Watching" },
+  activity_stream = { ko = "방송 중", en = "Streaming" },
+  activity_other = { ko = "실행 중", en = "Running" },
+  activity_more = { ko = "%s 외 %d", en = "%s +%d" },
+
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {
     ko = "기존 예약을 새 예약으로 대체했습니다",

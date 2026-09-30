@@ -526,6 +526,75 @@ function T.test_the_preset_row_returns_to_none_after_the_hold()
 end
 
 --------------------------------------------------------------------------------
+-- #114: activity
+--------------------------------------------------------------------------------
+
+local function with_activity(block, list)
+  local status = status_v12({ activity = block })
+  if list then
+    status.features = list
+  end
+  return status
+end
+
+function T.test_activity_reads_the_kind_and_the_labels()
+  local status = with_activity({ enabled = true, kind = "game", labels = { "Steam" } })
+  local events = features.activity_events(status, "ko")
+  h.assert_equal(h.event_value(events, caps.ACTIVITY, "activity"), "game")
+  h.assert_equal(h.event_value(events, caps.ACTIVITY, "summary"), "게임 중 · Steam")
+  h.assert_equal(features.activity_summary(status, "en"), "Gaming · Steam")
+end
+
+function T.test_nothing_running_is_none_and_the_opt_in_off_is_off()
+  local idle = with_activity({ enabled = true, kind = "none", labels = {} })
+  h.assert_equal(features.activity_kind(idle), "none")
+  h.assert_equal(features.activity_summary(idle, "ko"), "없음")
+  -- The service lists "activity" only while the opt-in is on (#110).
+  local off = with_activity({ enabled = false, kind = "none", labels = {} },
+    { "audio", "media", "awake" })
+  h.assert_equal(features.activity_kind(off), "none")
+  h.assert_equal(features.activity_summary(off, "ko"), "꺼짐")
+  -- A block that claims to be on without the feature is not trusted either.
+  local stray = with_activity({ enabled = true, kind = "game", labels = { "Steam" } }, { "audio" })
+  h.assert_equal(features.activity_summary(stray, "ko"), "꺼짐")
+  h.assert_equal(features.activity_summary({ service_version = "v1.1.0" }, "ko"), "꺼짐")
+end
+
+function T.test_an_unknown_kind_is_other()
+  local status = with_activity({ enabled = true, kind = "vr", labels = { "SteamVR" } })
+  h.assert_equal(features.activity_kind(status), "other")
+  h.assert_equal(features.activity_summary(status, "ko"), "실행 중 · SteamVR")
+end
+
+function T.test_a_long_activity_line_drops_labels_until_it_fits()
+  local many = with_activity({ enabled = true, kind = "work",
+    labels = { "VS Code", "Figma", "Slack" } })
+  h.assert_equal(features.activity_summary(many, "ko"), "작업 중 · VS Code 외 2")
+  -- 25 code points with the one label: the word alone.
+  local long = with_activity({ enabled = true, kind = "work", labels = { "Visual Studio Code" } })
+  h.assert_equal(features.activity_summary(long, "ko"), "작업 중")
+  local two = with_activity({ enabled = true, kind = "stream", labels = { "OBS", "Discord" } })
+  h.assert_equal(features.activity_summary(two, "ko"), "방송 중 · OBS, Discord")
+  local huge = with_activity({ enabled = true, kind = "media",
+    labels = { string.rep("가", 40), "VLC" } })
+  h.assert_equal(features.activity_summary(huge, "ko"), "감상 중")
+  local fits = with_activity({ enabled = true, kind = "game",
+    labels = { "Steam", "Battle.net", "Epic Games" } })
+  h.assert_equal(features.activity_summary(fits, "en"), "Gaming · Steam +2")
+end
+
+function T.test_an_activity_push_repaints_at_once()
+  -- activity.changed carries the whole status like every push (#110), so it
+  -- goes through the same apply_status as a poll.
+  local push = require "push"
+  local status = with_activity({ enabled = true, kind = "game", labels = { "Steam" } })
+  local _, events = push.apply(state.new(state.ON),
+    { type = "activity.changed", status = status }, { lang = "ko" })
+  h.assert_equal(h.event_value(events, caps.ACTIVITY, "activity"), "game")
+  h.assert_equal(h.event_value(events, caps.ACTIVITY, "summary"), "게임 중 · Steam")
+end
+
+--------------------------------------------------------------------------------
 -- components (#107: the emit glue)
 --------------------------------------------------------------------------------
 

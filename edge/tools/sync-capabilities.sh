@@ -45,7 +45,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity)
 VERSION=1
 TAGS=(ko en)
 

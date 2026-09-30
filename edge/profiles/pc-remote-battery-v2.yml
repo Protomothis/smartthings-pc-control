@@ -35,6 +35,9 @@ components:
       # #113: the preset list and the names row.
       - id: numbersystem53811.pcpreset
         version: 1
+      # #114: what runs on the PC (the opt-in watch list).
+      - id: numbersystem53811.pcactivity
+        version: 1
     categories:
       - name: RemoteController
   - id: battery

@@ -23,6 +23,8 @@ local features = {}
 features.AUDIO = "audio"
 features.MEDIA = "media"
 features.PRESETS = "presets"
+-- #114: listed only while the PC's opt-in is on (service #110).
+features.ACTIVITY = "activity"
 
 -- Standard capability ids.
 features.CAP_VOLUME = "audioVolume"
@@ -360,6 +362,99 @@ function features.preset_events(status, lang)
   return events
 end
 
+--------------------------------------------------------------------------------
+-- #114: activity
+--------------------------------------------------------------------------------
+
+-- `pcActivity.activity`, the routine condition ("활동이 게임"). `none` when
+-- nothing on the watch list runs and when the opt-in is off.
+features.ACTIVITY_KINDS = { "none", "game", "work", "media", "stream", "other" }
+
+-- The summary row, like `pcInfo.summary`, is cut by the phone without a word
+-- (platform notes "화면 배치"), so it is built to fit this many code points.
+features.ACTIVITY_MAX_CHARS = 24
+
+local function char_len(s)
+  return #(tostring(s):gsub("[\128-\191]", ""))
+end
+
+local function is_kind(kind)
+  for _, k in ipairs(features.ACTIVITY_KINDS) do
+    if k == kind then
+      return true
+    end
+  end
+  return false
+end
+
+--- True when the status says the watch list is on: the block says so and
+--- the service lists the feature (it does only while the opt-in is on). An
+--- older service has neither.
+function features.activity_enabled(status)
+  local block = (status or {}).activity
+  if type(block) ~= "table" or block.enabled ~= true then
+    return false
+  end
+  return features.has({ features = features.parse(status) }, features.ACTIVITY)
+end
+
+--- The `activity` enum value of a status body. A kind this driver does not
+--- know (a newer service) is `other` rather than dropped: something IS running.
+function features.activity_kind(status)
+  if not features.activity_enabled(status) then
+    return "none"
+  end
+  local kind = tostring(((status or {}).activity or {}).kind or "none")
+  if is_kind(kind) then
+    return kind
+  end
+  return "other"
+end
+
+--- `pcActivity.summary`: "게임 중 · Steam", "없음" when nothing on the watch
+--- list runs, "꺼짐" when the opt-in is off (or the service is too old to have
+--- one). Labels are dropped from the end until the line fits: all of them,
+--- then the first with "외 N", then the first alone, then the word alone.
+function features.activity_summary(status, lang)
+  if not features.activity_enabled(status) then
+    return i18n.t(lang, "activity_off")
+  end
+  local kind = features.activity_kind(status)
+  if kind == "none" then
+    return i18n.t(lang, "activity_none")
+  end
+  local word = i18n.t(lang, "activity_" .. kind)
+  local labels = {}
+  for _, label in ipairs(((status or {}).activity or {}).labels or {}) do
+    if type(label) == "string" and label ~= "" then
+      labels[#labels + 1] = label
+    end
+  end
+  local candidates = {}
+  if #labels > 0 then
+    candidates[#candidates + 1] = word .. " · " .. table.concat(labels, ", ")
+    if #labels > 1 then
+      candidates[#candidates + 1] = word .. " · " .. i18n.t(lang, "activity_more", labels[1], #labels - 1)
+    end
+    candidates[#candidates + 1] = word .. " · " .. labels[1]
+  end
+  candidates[#candidates + 1] = word
+  for _, line in ipairs(candidates) do
+    if char_len(line) <= features.ACTIVITY_MAX_CHARS then
+      return line
+    end
+  end
+  return word
+end
+
+--- #114: the activity rows of a status body.
+function features.activity_events(status, lang)
+  local events = {}
+  ev(events, caps.ACTIVITY, "activity", features.activity_kind(status))
+  ev(events, caps.ACTIVITY, "summary", features.activity_summary(status, lang))
+  return events
+end
+
 local function append(into, list)
   for _, e in ipairs(list) do
     into[#into + 1] = e
@@ -375,6 +470,7 @@ function features.apply_status(status, opts)
   append(events, features.audio_events(status))
   append(events, features.media_events())
   append(events, features.preset_events(status, lang))
+  append(events, features.activity_events(status, lang))
   return events
 end
 
@@ -384,6 +480,9 @@ function features.initial_rows(lang)
   -- #113: before the first status there is no list of presets to show.
   ev(events, caps.PRESET, "names", i18n.t(lang, "presets_none"))
   ev(events, caps.PRESET, "supportedSlots", { features.PRESET_NONE })
+  -- #114: nothing known yet, which reads as "nothing running".
+  ev(events, caps.ACTIVITY, "activity", "none")
+  ev(events, caps.ACTIVITY, "summary", i18n.t(lang, "activity_none"))
   return events
 end
 

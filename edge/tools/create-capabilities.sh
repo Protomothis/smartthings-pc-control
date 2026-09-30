@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Order matters only for readability; the capabilities are independent.
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity)
 
 # Names on the command line create only those - how a capability added after
 # the first run reaches an account that already has the rest (edge-v1.1.0:
