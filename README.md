@@ -31,6 +31,7 @@
 - **전환 중 보호** — PC가 꺼지거나 켜지는 동안에는 명령 목록이 `종료 진행 중…`처럼 바뀌고 명령을 보내지 않습니다.
 - **잠들지 않기** — 정한 시간(기본 1시간, 최대 24시간 또는 끌 때까지) 동안 자동 절전을 막습니다. 직접 보낸 종료·절전은 그대로 실행됩니다. 기본 시간은 `config.json`의 `awake.default_minutes`(0 = 끌 때까지), 화면까지 켜 두려면 `awake.keep_display: true`.
 - **노트북 배터리** — 배터리가 있는 PC는 잔량과 충전 상태를 SmartThings · 텔레그램 `/status` · 앱 상태 줄에 보고합니다.
+- **실행 중 앱 감지(선택)** — 감시 목록에 넣은 프로그램이 실행 중이면 `게임 중 · Steam`처럼 종류와 라벨을 SmartThings · 텔레그램 `/status`에 알립니다. 기본은 꺼짐이고, 앱의 네트워크 탭 SmartThings 섹션에서 켜고 목록을 편집합니다(실행 중인 프로그램에서 고르기 지원). `config.json`에서는 `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process`는 경로 없는 `.exe` 파일 이름(대소문자 무시), `label`은 30자 이하, `kind`는 `game` · `stream` · `media` · `work` · `other`, 최대 20개입니다.
 - **텔레그램** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다(선택).
 - **데스크톱 앱** — 설정 · 명령 · 예약 · 알림 · 네트워크 · 로그 탭, 트레이 상주, 한국어/English.
 - **서명된 자동 업데이트** — Ed25519 서명 매니페스트로 검증한 릴리스만 설치하고, 실패하면 롤백합니다.
@@ -84,7 +85,7 @@ CI는 push와 PR마다 vet · test · 빌드(`ci.yml`)와 `edge/**` 변경의 Lu
 
 ### 보안
 
-SmartThings 명령은 포트 5001에서 받고, 드라이버는 시크릿을 URL이 아니라 `X-PC-Secret` 헤더로 보냅니다. 시크릿이 비어 있으면 LAN의 누구나 PC를 제어할 수 있으니 꼭 정하세요. `smartthings.allowed_hubs`에 허브 IP를 넣으면 그 허브만 드라이버 API를 쓸 수 있습니다(비어 있으면 모두 허용). 앱이 쓰는 로컬 API는 `127.0.0.1:5002`에만 열리고, 브라우저 WebUI는 시크릿을 정한 뒤 직접 켰을 때만 LAN에 열립니다. 텔레그램 봇 토큰은 DPAPI로 암호화해 저장합니다. 자동 업데이트는 내장 공개키로 Ed25519 매니페스트 서명과 exe의 SHA-256을 확인한 뒤에만 설치합니다. 예전 형식의 `/{secret}/{command}` 경로도 호환을 위해 남아 있습니다.
+SmartThings 명령은 포트 5001에서 받고, 드라이버는 시크릿을 URL이 아니라 `X-PC-Secret` 헤더로 보냅니다. 시크릿이 비어 있으면 LAN의 누구나 PC를 제어할 수 있으니 꼭 정하세요. `smartthings.allowed_hubs`에 허브 IP를 넣으면 그 허브만 드라이버 API를 쓸 수 있습니다(비어 있으면 모두 허용). 앱이 쓰는 로컬 API는 `127.0.0.1:5002`에만 열리고, 브라우저 WebUI는 시크릿을 정한 뒤 직접 켰을 때만 LAN에 열립니다. 텔레그램 봇 토큰은 DPAPI로 암호화해 저장합니다. 실행 중 앱 감지는 켰을 때만 10초마다 프로세스 이름을 감시 목록과 비교하고, 밖으로 나가는 것은 일치한 항목의 종류와 라벨뿐입니다 — 목록에 없는 프로그램 이름은 저장하지도, 로그에 남기지도, 보내지도 않습니다. 목록 편집기의 "실행 중인 프로그램에서 고르기"가 쓰는 이름 목록(`/api/processes`)은 이 PC(루프백)에서 로그인한 앱에만 답합니다. 자동 업데이트는 내장 공개키로 Ed25519 매니페스트 서명과 exe의 SHA-256을 확인한 뒤에만 설치합니다. 예전 형식의 `/{secret}/{command}` 경로도 호환을 위해 남아 있습니다.
 
 지원 환경: Windows 10 · 11(데스크톱 앱은 OpenGL 2.0 필요).
 
@@ -100,6 +101,7 @@ A single exe that runs as a Windows service (always on, no login needed) and a t
 - **Real power state** in the SmartThings app: on, sleeping, hibernated, off, waking, shutting down, pushed to the hub right before the PC goes down.
 - **Wake-on-LAN** to the adapter the PC picks, **scheduling** with 16 presets up to 3 days (with cancel), and a command list that knows when the PC is mid-transition.
 - **Keep awake** — hold off idle sleep for a while (1 hour by default, up to 24 hours or until turned off); shutdown and sleep you ask for still happen. `awake.default_minutes` (0 = until turned off) and `awake.keep_display` in `config.json`. Laptops also report their **battery** level and charging state.
+- **Running-app detection (opt-in)** — when a program on your watch list runs, the hub and Telegram `/status` see its kind and your label ("Gaming · Steam"). Off by default; turn it on and edit the list in the app's network tab (with a picker of running programs). In `config.json`: `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process` is a bare `.exe` file name (case-insensitive), `label` up to 30 characters, `kind` one of `game`, `stream`, `media`, `work`, `other`, at most 20 entries.
 - **Telegram** notifications and bot commands (optional), a **desktop app** in Korean/English, and **signed auto-update** (Ed25519 manifest, rollback on failure).
 
 ### Install
@@ -124,7 +126,7 @@ CGO and MinGW-w64 gcc are required (Fyne GUI). `go vet ./... && go test ./...` a
 
 ### Security
 
-The driver sends the secret in the `X-PC-Secret` header, never in the URL; an empty secret lets anyone on the LAN control the PC. `smartthings.allowed_hubs` restricts the driver API to listed hub IPs (empty allows any). The app's local API binds to `127.0.0.1:5002`; the browser WebUI opens to the LAN only when you enable it with a secret set. The bot token is DPAPI-encrypted, and updates install only after the Ed25519 manifest signature and the exe's SHA-256 check out.
+The driver sends the secret in the `X-PC-Secret` header, never in the URL; an empty secret lets anyone on the LAN control the PC. `smartthings.allowed_hubs` restricts the driver API to listed hub IPs (empty allows any). The app's local API binds to `127.0.0.1:5002`; the browser WebUI opens to the LAN only when you enable it with a secret set. The bot token is DPAPI-encrypted. Running-app detection, when on, compares process names with the watch list every 10 seconds and sends only the matching entries' kinds and labels; names of programs not on the list are never stored, logged or sent. The name list behind the app's picker (`/api/processes`) answers the signed-in app on this PC (loopback) only. Updates install only after the Ed25519 manifest signature and the exe's SHA-256 check out.
 
 ---
 

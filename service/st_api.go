@@ -253,14 +253,20 @@ type stStatusResponse struct {
 	// desktop reports present=false, and "battery" is then left out of
 	// Features so the driver keeps the profile without a battery.
 	Battery batteryInfo `json:"battery"`
+	// Activity is the opt-in running-app block (#110, §11).
+	Activity stActivity `json:"activity"`
 }
 
 // stFeatures lists what this service supports right now. Some entries
-// depend on the machine (a battery) rather than on the version.
-func stFeatures(b batteryInfo) []string {
+// depend on the machine (a battery) rather than on the version, and some
+// on an opt-in: "activity" is listed only while activity.enabled is on.
+func stFeatures(b batteryInfo, cfg Config) []string {
 	features := []string{"awake"}
 	if b.Present {
 		features = append(features, "battery")
+	}
+	if cfg.Activity.Enabled {
+		features = append(features, "activity")
 	}
 	return features
 }
@@ -540,9 +546,10 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		WoL:               stWoLStatus(cfg.SmartThings),
 		Display:           getDisplayState(),
 		Session:           stSessionInfo(cfg.SmartThings),
-		Features:          stFeatures(bat),
+		Features:          stFeatures(bat, cfg),
 		Awake:             currentAwake().View().wire(),
 		Battery:           bat,
+		Activity:          stActivityStatus(cfg),
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{

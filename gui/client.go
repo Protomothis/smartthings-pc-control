@@ -27,6 +27,25 @@ type Config struct {
 	Notify   map[string]map[string]bool `json:"notify"`
 	// SmartThings is the "smartthings" object (edge-driver doc §3.7).
 	SmartThings SmartThingsConfig `json:"smartthings"`
+	// Activity is the opt-in running-app detection (#110), edited in the
+	// network tab's SmartThings section.
+	Activity ActivityConfig `json:"activity"`
+}
+
+// ActivityConfig mirrors service.ActivityConfig (media-notify doc §11).
+// Watch must travel as [] rather than null when emptied: the service reads
+// a missing/null list as "keep the stored one".
+type ActivityConfig struct {
+	Enabled bool            `json:"enabled"`
+	Watch   []ActivityWatch `json:"watch"`
+}
+
+// ActivityWatch is one watched program: a file name ("steam.exe"), the
+// label reported instead of it, and its kind (game/stream/media/work/other).
+type ActivityWatch struct {
+	Process string `json:"process"`
+	Label   string `json:"label"`
+	Kind    string `json:"kind"`
 }
 
 // SmartThingsConfig mirrors service.SmartThingsConfig. The widgets that
@@ -311,6 +330,30 @@ func (c *Client) GetSTHub() (STHub, error) {
 		return h, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return h, json.NewDecoder(resp.Body).Decode(&h)
+}
+
+// RunningProcesses returns the unique .exe names running on this PC, for
+// the watch-list picker (#110). The service answers loopback callers only;
+// the list is shown in the picker dialog and kept nowhere.
+func (c *Client) RunningProcesses() ([]string, error) {
+	resp, err := c.do("GET", "/api/processes", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var r struct {
+		Processes []string `json:"processes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+	return r.Processes, nil
 }
 
 // SessionHeartbeat reports the interactive session's idle time to the

@@ -37,6 +37,10 @@ type stFormState struct {
 	Hubs []string
 	// WoLMAC is the adapter the dropdown picked; empty means automatic.
 	WoLMAC string
+	// Activity is the running-app detection toggle and watch list (#110,
+	// activity_section.go). It is a top-level config key, not part of
+	// smartthings, but it is edited and saved with this section.
+	Activity ActivityConfig
 }
 
 // stStateFromConfig is what the section shows for cfg. The hub list is
@@ -47,6 +51,7 @@ func stStateFromConfig(cfg Config) stFormState {
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		Hubs:              normalizeHubs(cfg.SmartThings.AllowedHubs),
 		WoLMAC:            cfg.SmartThings.WoLMAC,
+		Activity:          cloneActivity(cfg.Activity),
 	}
 }
 
@@ -101,6 +106,7 @@ func (s stFormState) applyTo(base Config) Config {
 		ExposeSessionUser: s.effectiveUser(),
 		WoLMAC:            s.WoLMAC,
 	}
+	cfg.Activity = normalizeActivity(s.Activity)
 	return cfg
 }
 
@@ -110,7 +116,8 @@ func (s stFormState) dirty(base Config) bool {
 	return s.ExposeSession != st.ExposeSession ||
 		s.effectiveUser() != st.ExposeSessionUser ||
 		s.WoLMAC != st.WoLMAC ||
-		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs))
+		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs)) ||
+		!activityEqual(s.Activity, base.Activity)
 }
 
 // --- WoL adapter labels (unit-tested) ---------------------------------------
@@ -321,6 +328,9 @@ type stSection struct {
 	wolMACs   []string
 	wolLoaded bool
 
+	// activity is the running-app detection editor (#110).
+	activity activityBox
+
 	bar *saveBar
 	// filling suppresses the OnChanged cascade while fillSTSection writes
 	// the widgets; the dirty state is evaluated once at the end.
@@ -334,6 +344,7 @@ func (t *stSection) state() stFormState {
 		ExposeSessionUser: t.sessionUser.Checked,
 		Hubs:              t.hubs,
 		WoLMAC:            t.wolMAC,
+		Activity:          t.activity.form(),
 	}
 }
 
@@ -391,6 +402,7 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.addBtn = widget.NewButtonWithIcon(u.t("st.hubs.add"), theme.ContentAddIcon(), func() { u.addCurrentHub() })
 	t.addBtn.Disable() // enabled by updateAddHubButton once a hub is known
 	u.renderHubs()
+	activityBox := u.buildActivityBox()
 
 	return container.NewVBox(
 		t.status,
@@ -405,6 +417,8 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 		hint(u.t("st.session.hint")),
 		t.sessionUser,
 		hint(u.t("st.session.user.hint")),
+		widget.NewSeparator(),
+		activityBox,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(u.t("st.wol"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		t.wolSelect,
@@ -556,6 +570,7 @@ func (u *ui) fillSTSection(cfg Config) {
 	t.setUserEnabled(s.ExposeSession)
 	t.hubs = s.Hubs
 	t.wolMAC = s.WoLMAC
+	u.fillActivityBox(s.Activity)
 	u.renderHubs()
 	u.renderWoLAdapters()
 	// The secret lives on the settings tab; this only points at it.
@@ -597,6 +612,12 @@ func (u *ui) updateSTSaveState() {
 func (u *ui) saveSTSection(quiet bool) bool {
 	t := u.st
 	if t == nil || u.cfgBaseline == nil {
+		return false
+	}
+	// The watch list is checked here first so the reason comes in the
+	// app's language; the service checks it again.
+	if problem := activityProblem(u.lang, t.state().Activity); problem != "" {
+		dialog.ShowError(fmt.Errorf("%s", problem), u.win)
 		return false
 	}
 	cfg := t.state().applyTo(*u.cfgBaseline)
