@@ -104,6 +104,7 @@ var tgTexts = map[string][2]string{
 			"/sleep /hibernate /restart /shutdown [분] – 확인 후 즉시 실행, 분을 주면 예약\n" +
 			"/cancel – 예약·유예 취소\n" +
 			"/now – 예약·유예 즉시 실행\n" +
+			"/awake [분|off] – 잠들지 않기 (자동 절전 막기, 0 = 끌 때까지)\n" +
 			"/mute 30m|2h – 알림 일시 중지\n" +
 			"/unmute – 알림 재개\n" +
 			"/help – 이 목록",
@@ -116,6 +117,7 @@ var tgTexts = map[string][2]string{
 			"/sleep /hibernate /restart /shutdown [minutes] – confirm then run now, or schedule with minutes\n" +
 			"/cancel – cancel the schedule/grace period\n" +
 			"/now – run the schedule/grace command now\n" +
+			"/awake [minutes|off] – keep awake (hold off idle sleep, 0 = until turned off)\n" +
 			"/mute 30m|2h – pause notifications\n" +
 			"/unmute – resume notifications\n" +
 			"/help – this list",
@@ -172,6 +174,17 @@ var tgTexts = map[string][2]string{
 	"st_remote":    {"마지막 원격 명령", "Last remote command"},
 	"st_muted":     {"알림 일시 중지", "Notifications paused"},
 	"st_until":     {"%s까지", "until %s"},
+	// keep-awake (#111)
+	"st_awake":          {"잠들지 않기", "Keep awake"},
+	"st_on":             {"켜짐", "on"},
+	"st_off":            {"꺼짐", "off"},
+	"st_awake_forever":  {"끌 때까지", "until turned off"},
+	"st_tomorrow":       {"내일 %s", "tomorrow %s"},
+	"awake_on":          {"☕ 잠들지 않기 켜짐 · %s", "☕ Keep awake on · %s"},
+	"awake_off":         {"💤 잠들지 않기 꺼짐 — 자동 절전 설정을 다시 따릅니다", "💤 Keep awake off — the PC may sleep on its idle timer again"},
+	"awake_already_off": {"잠들지 않기는 이미 꺼져 있습니다", "Keep awake is already off"},
+	"awake_usage":       {"사용법: <code>/awake</code> (기본 시간), <code>/awake 90</code> (분, 0 = 끌 때까지, 최대 1440), <code>/awake off</code>", "Usage: <code>/awake</code> (default period), <code>/awake 90</code> (minutes, 0 = until turned off, at most 1440), <code>/awake off</code>"},
+	"awake_failed":      {"잠들지 않기 실패: %s", "Keep awake failed: %s"},
 	// command and origin labels
 	"cmd_shutdown":       {"종료", "Shut down"},
 	"cmd_restart":        {"재시작", "Restart"},
@@ -426,6 +439,8 @@ func (c telegramControl) handleCommand(_ context.Context, chatID string, cmd str
 			return tgText("run_now", tgCommandLabel(name)), nil, nil
 		}
 		return tgText("no_schedule"), nil, nil
+	case "awake":
+		return c.awake(args)
 	case "mute":
 		return c.mute(args)
 	case "unmute":
@@ -484,6 +499,71 @@ func tgDelay(d time.Duration) string {
 		}
 		return fmt.Sprintf("%d일", minutes/1440)
 	}
+}
+
+// parseAwakeArg reads the /awake argument: none is the configured default,
+// "off" turns keep-awake off, a number is minutes (0 = until turned off, at
+// most awakeMaxMinutes).
+func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
+	if len(args) == 0 {
+		return awakeMinutesOrDefault(nil), false, true
+	}
+	arg := strings.ToLower(strings.TrimSpace(args[0]))
+	if arg == "off" {
+		return 0, true, true
+	}
+	n, err := strconv.Atoi(arg)
+	if err != nil || !validAwakeMinutes(n) {
+		return 0, false, false
+	}
+	return n, false, true
+}
+
+// awake handles /awake [minutes|off] (#111).
+func (telegramControl) awake(args []string) (string, *telegram.InlineKeyboard, error) {
+	minutes, off, ok := parseAwakeArg(args)
+	if !ok {
+		return tgText("awake_usage"), nil, fmt.Errorf("invalid /awake argument %q", args[0])
+	}
+	ctl := currentAwake()
+	if off {
+		_, wasOn, err := ctl.TurnOff()
+		if err != nil {
+			return tgText("awake_failed", html.EscapeString(err.Error())), nil, err
+		}
+		if !wasOn {
+			return tgText("awake_already_off"), nil, nil
+		}
+		logMsg("Telegram: keep-awake off")
+		return tgText("awake_off"), nil, nil
+	}
+	v, err := ctl.TurnOn(minutes)
+	if err != nil {
+		return tgText("awake_failed", html.EscapeString(err.Error())), nil, err
+	}
+	logMsg("Telegram: keep-awake on (%d min)", minutes)
+	return tgText("awake_on", tgAwakeSpan(v, ctl.now())), nil, nil
+}
+
+// tgAwakeSpan is how long keep-awake lasts: "14:30까지", "내일 09:10까지"
+// (a period reaches a day at most) or "끌 때까지".
+func tgAwakeSpan(v awakeView, now time.Time) string {
+	if v.Until.IsZero() {
+		return tgText("st_awake_forever")
+	}
+	at := v.Until.Format("15:04")
+	if y, m, d := v.Until.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
+		at = tgText("st_tomorrow", at)
+	}
+	return tgText("st_until", at)
+}
+
+// tgAwakeStatus is the /status value: "켜짐 · 14:30까지" or "꺼짐".
+func tgAwakeStatus(v awakeView, now time.Time) string {
+	if !v.On {
+		return tgText("st_off")
+	}
+	return tgText("st_on") + " · " + tgAwakeSpan(v, now)
 }
 
 func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, error) {
@@ -673,6 +753,9 @@ func tgStatusText() string {
 		fmt.Fprintf(&b, "%s: %s", tgText("st_remote"), tgText("st_none"))
 	}
 
+	ctl := currentAwake()
+	fmt.Fprintf(&b, "\n%s: %s", tgText("st_awake"), tgAwakeStatus(ctl.View(), ctl.now()))
+
 	if bus := currentBus(); bus != nil {
 		if until := bus.MutedUntil(); !until.IsZero() {
 			fmt.Fprintf(&b, "\n%s: %s", tgText("st_muted"), tgText("st_until", until.Format("15:04")))
@@ -835,6 +918,7 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "shutdown", Description: pick("종료 [분]", "Shut down [minutes]")},
 		{Command: "cancel", Description: pick("예약·유예 취소", "Cancel schedule")},
 		{Command: "now", Description: pick("예약·유예 즉시 실행", "Run schedule now")},
+		{Command: "awake", Description: pick("잠들지 않기 [분|off]", "Keep awake [minutes|off]")},
 		{Command: "mute", Description: pick("알림 일시 중지 (30m, 2h)", "Pause notifications (30m, 2h)")},
 		{Command: "unmute", Description: pick("알림 재개", "Resume notifications")},
 		{Command: "help", Description: pick("도움말", "Help")},

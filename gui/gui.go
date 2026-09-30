@@ -115,6 +115,8 @@ type ui struct {
 	schedBig       *widget.RichText
 	scheduleLabel  *widget.Label
 	schedCancelBtn *widget.Button
+	// Command tab: the keep-awake row (#111, awake.go).
+	awake *awakeRow
 	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
 	// SmartThings hub list changes) and the SmartThings section (#70).
 	networkBox  *fyne.Container
@@ -1011,6 +1013,8 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
+		u.buildAwakeRow(),
+		widget.NewSeparator(),
 		section(u.t("cmd.group.power"), container.NewGridWrap(cmdButtonSize, power...)),
 		widget.NewSeparator(),
 		note,
@@ -1237,6 +1241,7 @@ func (u *ui) initialLoad() {
 		u.loadLogs()
 		u.loadSchedule()
 		u.loadSTHub()
+		u.loadAwake()
 	}
 }
 
@@ -1257,6 +1262,8 @@ func (u *ui) pollLoop() {
 	connTick := time.NewTicker(5 * time.Second)
 	updateTick := time.NewTicker(24 * time.Hour)
 	idleTick := time.NewTicker(idleHeartbeatInterval)
+	awakeTick := time.NewTicker(awakePollInterval)
+	defer awakeTick.Stop()
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
@@ -1278,6 +1285,10 @@ func (u *ui) pollLoop() {
 		case <-schedTick.C:
 			if u.connected.Load() {
 				u.loadSchedule()
+			}
+		case <-awakeTick.C:
+			if u.connected.Load() {
+				go u.loadAwake()
 			}
 		case <-connTick.C:
 			// Not while the login dialog is up or an attempt is in

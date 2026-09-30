@@ -287,6 +287,15 @@ var messages = map[string]map[Lang]string{
 	"st.hubs.empty":        {LangKo: "허용 목록이 비어 있습니다", LangEn: "The allow list is empty"},
 	"st.hubs.hint":         {LangKo: "비어 있으면 모든 허브 허용", LangEn: "Empty = any hub allowed"},
 	"st.secret.hint":       {LangKo: "SmartThings 연동에는 시크릿 설정을 권장합니다 (설정 탭)", LangEn: "Setting a secret is recommended for SmartThings (Settings tab)"},
+	// Keep-awake on the command tab (#111).
+	"awake.toggle":      {LangKo: "잠들지 않기", LangEn: "Keep awake"},
+	"awake.forever":     {LangKo: "끌 때까지", LangEn: "Until turned off"},
+	"awake.off":         {LangKo: "꺼짐 — 평소 절전 설정을 따릅니다", LangEn: "Off — the PC sleeps on its usual idle timer"},
+	"awake.left":        {LangKo: "%s 남음 · %s까지", LangEn: "%s left · until %s"},
+	"awake.on.forever":  {LangKo: "켜짐 · 끌 때까지", LangEn: "On · until turned off"},
+	"awake.tomorrow":    {LangKo: "내일 %s", LangEn: "tomorrow %s"},
+	"awake.hint":        {LangKo: "자동(유휴) 절전만 막습니다. 직접 누르거나 원격으로 보낸 종료·절전은 그대로 실행되고, 서비스가 다시 시작되면 꺼집니다.", LangEn: "Holds off idle sleep only. Shutdown and sleep you ask for — here or remotely — still happen, and a service restart turns it off."},
+	"awake.unsupported": {LangKo: "잠들지 않기는 서비스 v1.2.0 이상이 필요합니다", LangEn: "Keep awake needs service v1.2.0 or later"},
 }
 
 // T returns the message for key in the given language.

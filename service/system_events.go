@@ -276,6 +276,9 @@ func startupHooks(stop <-chan struct{}) {
 	// smartthings.expose_session on every tick and costs nothing while
 	// the option is off.
 	go watchSessionLock(stop)
+	// Keep-awake (#111): the wall-clock expiry check; the request itself
+	// is released when stop closes (and by Execute before that).
+	startAwake(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP

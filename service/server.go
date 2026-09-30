@@ -146,6 +146,9 @@ type Config struct {
 	// Notify says which Category.Kind events are sent. Missing entries
 	// mean the catalogue default; loadConfig/saveConfig store the full map.
 	Notify notify.Config `json:"notify"`
+	// Awake holds the keep-awake defaults (#111, see awake.go). The on/off
+	// state itself is not configuration and is never saved.
+	Awake AwakeConfig `json:"awake"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
@@ -226,6 +229,8 @@ var defaultConfig = Config{
 		// everything off/empty; SSDP needs no key, it is always on (#95).
 		AllowedHubs: []string{},
 	},
+	// A missing "awake" object keeps these (0 would mean "until turned off").
+	Awake: AwakeConfig{DefaultMinutes: awakeDefaultMinutes},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -235,6 +240,7 @@ var defaultConfig = Config{
 func (c Config) withDefaults() Config {
 	c.Telegram = c.Telegram.withDefaults()
 	c.SmartThings = c.SmartThings.withDefaults()
+	c.Awake = c.Awake.withDefaults()
 	c.Notify = c.Notify.WithDefaults()
 	return c
 }

@@ -151,6 +151,11 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
   사용자·원격의 종료·절전 명령은 막지 않는다. 화면 끄기는 막지 않는다(옵션 `keep_display`, 기본 끔).
 - 기간: 1시간 기본, 설정 `awake.default_minutes`(0 = 끌 때까지). 서비스 재시작 시 남은 시간을 이어받지 않는다(안전 쪽).
 - **API:** status `awake: { on, until }`, command `awake`(value 분, 0 = 무기한) / `awakeoff`. 푸시 `awake.changed`.
+  - `until`은 RFC3339, 꺼져 있거나 무기한이면 `""`. `features`에 "awake".
+  - `value`는 0–1440, 키가 없으면 `default_minutes`. `minutes`(예약)는 받지 않는다(400). 유예·예약·`last_command`·텔레그램 알림과 무관.
+  - 켜져 있는 동안 다시 `awake`를 보내면 지금부터 새 기간(연장·단축 모두 이 방법).
+  - 만료 타이머는 단조 시계라 수동 절전 동안 멈추므로, 30초마다와 status를 읽을 때 벽시계로도 만료를 확인한다.
+  - 데스크톱 앱은 `GET/POST {minutes}/DELETE /api/awake`(WebUI 포트, 세션·CSRF)를 쓴다.
 - **텔레그램:** `/awake [분]`, `/awake off`. 데스크톱 앱: 명령 탭 토글과 남은 시간.
 - **드라이버:** 컴포넌트 `awake`에 표준 `switch`. 켜면 환경설정 `awakeMinutes`(기본 60) 동안. 표준 스위치라 루틴 동작·조건에 그대로 쓴다.
 

@@ -2,6 +2,24 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 서비스
+
+- **잠들지 않기.** 정한 시간 동안 PC가 자동(유휴) 절전에 들어가지 않게 합니다. 서비스가 전용 스레드에서 `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)`를 잡고, 시간이 끝나거나 끄거나 서비스가 멈추면 `ES_CONTINUOUS`로 놓습니다. 직접 누르거나 원격으로 보낸 종료·재시작·절전·최대 절전은 막지 않습니다. 서비스를 다시 시작하면 꺼진 상태로 시작합니다(남은 시간을 이어받지 않음) (#111)
+- 새 설정 `awake: { default_minutes: 60, keep_display: false }`. `default_minutes`는 시간을 주지 않은 요청이 쓰는 길이(0 = 끌 때까지, 최대 1440), `keep_display`를 켜면 화면도 켜 둡니다(`ES_DISPLAY_REQUIRED`). 저장 즉시 반영됩니다 (#111)
+- `/st/v1/status`에 `features`(이 서비스가 지원하는 v1.2.0 기능 목록, 지금은 `["awake"]`)와 `awake: {on, until}`을 더했습니다. `until`은 RFC3339이고, 꺼져 있거나 끌 때까지 켠 경우 `""`입니다 (#111)
+- `POST /st/v1/command`에 `awake`(`value` = 분, 0 = 끌 때까지, 없으면 `default_minutes`, 최대 1440)와 `awakeoff`를 더했습니다. 유예·예약을 거치지 않고 바로 적용되며, 응답에 새 `awake` 상태가 실립니다. 바뀔 때마다 푸시 `awake.changed`를 보냅니다 (#111)
+- 앱용 로컬 API `GET/POST/DELETE /api/awake` (#111)
+
+### 데스크톱 앱
+
+- 명령 탭에 **잠들지 않기** 토글과 시간 선택(30분 · 1시간 · 2시간 · 4시간 · 끌 때까지), 남은 시간(`42분 남음 · 14:30까지`)을 더했습니다. 켜진 동안 시간을 바꾸면 지금부터 새로 셉니다. SmartThings나 텔레그램에서 바꾼 상태도 10초 안에 따라갑니다 (#111)
+
+### 텔레그램
+
+- `/awake [분]`, `/awake off`. 분을 빼면 `default_minutes`, 0이면 끌 때까지입니다. `/status`에 `잠들지 않기: 켜짐 · 14:30까지` 줄이 붙습니다 (#111)
+
 ## [v1.1.2] - 2026-09-28
 
 ### 데스크톱 앱
