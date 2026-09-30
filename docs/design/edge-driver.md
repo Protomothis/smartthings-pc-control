@@ -231,6 +231,7 @@
 
 | `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
 | `pcActivity` (커스텀 `numbersystem53811.pcactivity`, #114) | main | `activity` enum `none` `game` `work` `media` `stream` `other` ← `activity.kind`(모르는 kind는 `other`), `summary` string "게임 중 · Steam" / "없음" / 옵트인 꺼짐·옛 서비스 "꺼짐" | – (루틴 조건 전용) |
+| `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
 
 - 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
 - **볼륨·음소거는 읽은 값이 있을 때만** 내보낸다(`audio.available` 참, 또는 `updated_at`이 있음). 서비스가 한 번도 재지 않은 0으로 슬라이더를 끌어내리지 않는다.
@@ -240,6 +241,7 @@
 - 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.
 - **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, 실측 대기). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `poll.PRESET_HOLD_SECONDS`(5초)가 지난 첫 폴링·푸시가 `none`으로 되돌린다 — 바뀔 때 강제 한 번 + 다음 호출에 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
 - **활동(#114)**: 켜져 있다는 판단은 `activity.enabled`와 `features`의 `"activity"` 둘 다다(서비스는 옵트인이 켜져 있을 때만 기능을 싣는다, #110). 요약은 24자(코드 포인트) 안에서 라벨을 뒤에서부터 줄인다 — 전부 → "첫 라벨 외 N"("+N") → 첫 라벨 → 낱말만. 푸시 `activity.changed`도 전체 status를 싣고 오므로 폴링과 같은 `apply_status`로 바로 반영된다.
+- **잠들지 않기(#115)**: 표준 `switch`가 두 컴포넌트에 있으므로 핸들러는 `command.component`로 가른다 — `main`(또는 없음)은 전원(§6.2), `awake`는 `awake`/`awakeoff`. 기능 가드는 `"awake"`이고 사용자 세션은 필요 없다. 켜져 있는 동안 다시 켜면 지금부터 새 기간이다(§12). 막힌 명령은 토글을 마지막 status의 값으로 강제로 되돌린다. 전원 전환 가드(§6.9)는 적용하지 않는다 — 전원을 움직이지 않는다. 푸시 `awake.changed`로 바로 반영된다.
 
 ## 5. 화면 구성
 
@@ -269,6 +271,7 @@
 | 미디어 묶음 (#107, 표준) | 재생·일시정지·정지 → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글 |
 | 프리셋 (#113) | `pcPreset.run` 목록(등록된 슬롯만, `supportedSlots`). 쉬는 값 "프리셋 선택… (Pick a preset)", 실행 직후 잠깐 "프리셋 3 실행함 (Preset 3 started)". 상태 카드에 이름 줄 `pcPreset.names` |
 | 활동 (#114) | 상태 줄 `pcActivity.summary` 하나. 루틴 조건 "활동이 게임" |
+| 잠들지 않기 (#115) | 컴포넌트 `awake`의 표준 스위치 토글. 루틴 동작·조건에 그대로 쓴다 |
 
 - 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 edge-v1.0 capability의 맨 끝이고, v1.2.0 capability는 그 뒤에 media-notify.md §15 "UI 구성" 순서로 온다(미디어 묶음 → 나머지). 표준 capability의 줄이 우리 상태·조작 카드에 섞이는지, 따로 그려지는지는 실측 대기다(media-notify.md §16).
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
@@ -446,6 +449,7 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 | `buttonMode` | enum | `default` | 명령 목록의 유예 처리: 설정된 유예 따름 / 즉시 |
 | `language` | enum | `auto` | 문구 언어(auto = 한국어) |
 | `iconStyle` | enum | `others` | 장치 아이콘(카테고리). 값마다 카테고리만 다른 프로필로 갈아탄다(#100, §6.6) |
+| `awakeMinutes` | integer 0–1440 | `60` | 잠들지 않기 스위치를 켰을 때의 기간(분). 0 = 끌 때까지(#115) |
 
 `iconStyle`의 값과 프로필·카테고리(배터리 변형은 이름의 `.v2` 앞에 `-battery`, 기본 스타일은 `pc-battery.v2`):
 

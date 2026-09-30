@@ -25,6 +25,15 @@ features.MEDIA = "media"
 features.PRESETS = "presets"
 -- #114: listed only while the PC's opt-in is on (service #110).
 features.ACTIVITY = "activity"
+-- #115: keep-awake, always listed by a v1.2.0 service.
+features.AWAKE = "awake"
+
+-- #115: the component the keep-awake switch lives on, and its row key.
+features.AWAKE_COMPONENT = "awake"
+features.CAP_SWITCH = "switch"
+-- The `awakeMinutes` preference: default and the service's bounds (§12).
+features.AWAKE_DEFAULT_MINUTES = 60
+features.AWAKE_MAX_MINUTES = 1440
 
 -- Standard capability ids.
 features.CAP_VOLUME = "audioVolume"
@@ -53,6 +62,7 @@ features.COMMAND_FEATURE = {
   play = features.MEDIA, pause = features.MEDIA, playpause = features.MEDIA,
   stop = features.MEDIA, next = features.MEDIA, prev = features.MEDIA,
   preset = features.PRESETS,
+  awake = features.AWAKE, awakeoff = features.AWAKE,
 }
 
 -- #113: the slots a preset list can offer, and the value it rests on. Strings,
@@ -130,6 +140,9 @@ function features.remember(device_state, status)
     -- #113: which slots the PC has a preset in, so a routine that runs an
     -- empty one is told so instead of being sent to the service.
     preset_slots = slots,
+    -- #115: what the keep-awake switch should spring back to when a command
+    -- is not sent.
+    awake_on = features.awake_on(status),
   }
   return device_state
 end
@@ -455,6 +468,42 @@ function features.activity_events(status, lang)
   return events
 end
 
+--------------------------------------------------------------------------------
+-- #115: keep-awake
+--------------------------------------------------------------------------------
+
+--- True when the status says keep-awake is on. A service without the block
+--- (older than v1.2.0) cannot keep the PC awake, so that is "off" too.
+function features.awake_on(status)
+  local awake = (status or {}).awake
+  return type(awake) == "table" and awake.on == true
+end
+
+--- The minutes an `awake` command asks for: the `awakeMinutes` preference,
+--- 0 (until switched off) to 1440, default 60.
+function features.awake_minutes(preferences)
+  local minutes = tonumber((preferences or {}).awakeMinutes)
+  if not minutes then
+    return features.AWAKE_DEFAULT_MINUTES
+  end
+  minutes = math.floor(minutes)
+  if minutes < 0 then
+    return 0
+  end
+  if minutes > features.AWAKE_MAX_MINUTES then
+    return features.AWAKE_MAX_MINUTES
+  end
+  return minutes
+end
+
+--- #115: the `awake` component's switch.
+function features.awake_events(status)
+  local events = {}
+  ev(events, features.CAP_SWITCH, "switch", features.awake_on(status) and "on" or "off",
+    features.AWAKE_COMPONENT)
+  return events
+end
+
 local function append(into, list)
   for _, e in ipairs(list) do
     into[#into + 1] = e
@@ -471,6 +520,7 @@ function features.apply_status(status, opts)
   append(events, features.media_events())
   append(events, features.preset_events(status, lang))
   append(events, features.activity_events(status, lang))
+  append(events, features.awake_events(status))
   return events
 end
 
@@ -483,6 +533,9 @@ function features.initial_rows(lang)
   -- #114: nothing known yet, which reads as "nothing running".
   ev(events, caps.ACTIVITY, "activity", "none")
   ev(events, caps.ACTIVITY, "summary", i18n.t(lang, "activity_none"))
+  -- #115: a service that has just started has keep-awake off (it does not
+  -- carry the period over a restart, §12), so "off" is the honest default.
+  ev(events, features.CAP_SWITCH, "switch", "off", features.AWAKE_COMPONENT)
   return events
 end
 

@@ -168,10 +168,23 @@ end
 --- True when `cap.attr` was emitted with `{ state_change = true }` (#86), false
 --- when it was emitted plainly, nil when it was not emitted at all.
 -- The last emit wins, which is the one the app sees last.
+-- #107: main-component records only, like `event_value`; `component_forced`
+-- asks about another component.
 function h.event_forced(events, cap, attr)
+  return h.component_forced(events, nil, cap, attr)
+end
+
+function h.component_forced(events, component, cap, attr)
+  if component == "main" then
+    component = nil
+  end
   local forced
   for _, e in ipairs(events or {}) do
-    if e.cap == cap and e.attr == attr then
+    local c = e.component
+    if c == "main" then
+      c = nil
+    end
+    if e.cap == cap and e.attr == attr and c == component then
       forced = (e.options or {}).state_change == true
     end
   end

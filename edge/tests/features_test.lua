@@ -595,6 +595,103 @@ function T.test_an_activity_push_repaints_at_once()
 end
 
 --------------------------------------------------------------------------------
+-- #115: keep-awake
+--------------------------------------------------------------------------------
+
+function T.test_the_awake_switch_follows_the_status_on_its_component()
+  local on = features.awake_events(status_v12({ awake = { on = true, until_ = "" } }))
+  h.assert_equal(h.component_value(on, "awake", "switch", "switch"), "on")
+  h.assert_nil(h.event_value(on, "switch", "switch"), "not the main switch")
+  local off = features.awake_events(status_v12({ awake = { on = false, ["until"] = "" } }))
+  h.assert_equal(h.component_value(off, "awake", "switch", "switch"), "off")
+  h.assert_equal(h.component_value(features.awake_events({}), "awake", "switch", "switch"), "off",
+    "an old service cannot keep the PC awake")
+  h.assert_equal(h.component_value(state.initial_rows("ko"), "awake", "switch", "switch"), "off")
+end
+
+function T.test_awake_minutes_come_from_the_preference()
+  h.assert_equal(features.awake_minutes({}), 60)
+  h.assert_equal(features.awake_minutes({ awakeMinutes = 0 }), 0, "0 = until switched off")
+  h.assert_equal(features.awake_minutes({ awakeMinutes = 90 }), 90)
+  h.assert_equal(features.awake_minutes({ awakeMinutes = 5000 }), 1440)
+  h.assert_equal(features.awake_minutes({ awakeMinutes = -3 }), 0)
+end
+
+local function switch_command(name, component)
+  return { capability = "switch", command = name, component = component, args = {} }
+end
+
+function T.test_the_awake_switch_sends_awake_and_awakeoff()
+  local device = device_with(status_v12({ awake = { on = false } }))
+  device.preferences.awakeMinutes = 30
+  local calls = with_service(nil, function()
+    handlers_for("switch").on(driver, device, switch_command("on", "awake"))
+    handlers_for("switch").off(driver, device, switch_command("off", "awake"))
+  end)
+  h.assert_deep_equal(calls.actions, {
+    { command = "awake", value = 30 }, { command = "awakeoff" },
+  })
+  h.assert_equal(calls.polls, 2)
+  h.assert_true(calls.poll_opts[1].force["awake/switch.switch"] == true,
+    "the poll after it answers the awake row")
+  -- The PC's power was not touched: no wake, no shutdown.
+  h.assert_equal(poll.get_state(device).power_state, state.ON)
+end
+
+function T.test_the_default_period_is_sent_as_sixty_minutes()
+  local device = device_with(status_v12({ awake = { on = false } }))
+  local calls = with_service(nil, function()
+    handlers_for("switch").on(driver, device, switch_command("on", "awake"))
+  end)
+  h.assert_deep_equal(calls.actions, { { command = "awake", value = 60 } })
+end
+
+function T.test_the_main_switch_off_is_still_the_power_command()
+  -- The same capability handler serves both components.
+  local device = device_with(status_v12())
+  local sent = {}
+  local original = client.command
+  client.command = function(_, command) sent[#sent + 1] = command; return true, {}, nil end
+  local ok, err = pcall(function()
+    with_service(nil, function()
+      handlers_for("switch").off(driver, device, switch_command("off", "main"))
+      handlers_for("switch").off(driver, device, switch_command("off", nil))
+    end)
+  end)
+  client.command = original
+  if not ok then
+    error(err, 0)
+  end
+  h.assert_deep_equal(sent, { "shutdown", "shutdown" })
+end
+
+function T.test_an_old_service_springs_the_awake_toggle_back()
+  local device = device_with({ service_version = "v1.1.0" })
+  local calls = with_service(nil, function()
+    handlers_for("switch").on(driver, device, switch_command("on", "awake"))
+  end)
+  h.assert_equal(#calls.actions, 0)
+  local emitted = h.emitted(device)
+  h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "off")
+  h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
+  h.assert_equal(info_summary(device), "서비스 v1.2.0 필요")
+end
+
+function T.test_an_awake_push_moves_the_switch_at_once()
+  local push = require "push"
+  local status = status_v12({ awake = { on = true, ["until"] = "2026-09-30T12:00:00+09:00" } })
+  local nxt, events = push.apply(state.new(state.ON), { type = "awake.changed", status = status }, {})
+  h.assert_equal(h.component_value(events, "awake", "switch", "switch"), "on")
+  h.assert_true(nxt.extras.awake_on)
+  -- ... and the glue puts it on the awake component of the device.
+  local device = h.fake_device({})
+  poll.emit(device, events)
+  h.assert_equal(h.component_value(h.emitted(device), "awake", "switch", "switch"), "on")
+  h.assert_equal(h.event_value(h.emitted(device), "switch", "switch"), "on",
+    "the main switch comes from the power state (on)")
+end
+
+--------------------------------------------------------------------------------
 -- components (#107: the emit glue)
 --------------------------------------------------------------------------------
 

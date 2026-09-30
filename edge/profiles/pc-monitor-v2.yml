@@ -40,6 +40,14 @@ components:
         version: 1
     categories:
       - name: SmartMonitor
+  # #115: keep-awake. A standard switch of its own, so a routine can use it as
+  # an action and as a condition like any other switch; it cannot be the main
+  # component's, which is the PC's power.
+  - id: awake
+    label: 잠들지 않기
+    capabilities:
+      - id: switch
+        version: 1
 preferences:
   - name: ipAddress
     title: PC IP 주소 (IP address)
@@ -163,3 +171,12 @@ preferences:
         theater: 홈시어터 (Home theater)
         remote: 리모컨 (Remote)
       default: others
+  - name: awakeMinutes
+    title: 잠들지 않기 시간 (Keep-awake min)
+    description: "잠들지 않기 스위치를 켰을 때 PC가 자동(유휴) 절전하지 않는 시간(분, 최대 1440). 0이면 끌 때까지. 사용자나 원격의 절전·종료 명령은 막지 않습니다. / Minutes the keep-awake switch holds off idle sleep; 0 = until switched off."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 0
+      maximum: 1440
+      default: 60

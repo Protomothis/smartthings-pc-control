@@ -620,10 +620,61 @@ local function handle_preset_run(driver, device, cmd)
   return true
 end
 
+--------------------------------------------------------------------------------
+-- #115: the `awake` component's switch
+--------------------------------------------------------------------------------
+
+local AWAKE_ROWS = {
+  [features.AWAKE_COMPONENT .. "/" .. features.CAP_SWITCH .. ".switch"] = true,
+}
+
+--- Spring the keep-awake toggle back to what the PC last said.
+local function answer_awake(device)
+  local on = (poll.extras(device) or {}).awake_on == true
+  poll.emit(device, { {
+    cap = features.CAP_SWITCH, attr = "switch", value = on and "on" or "off",
+    component = features.AWAKE_COMPONENT, force = true,
+  } })
+end
+
+--- switch.on on `awake`: keep the PC from idle sleep for `awakeMinutes`
+--- (0 = until switched off). Sent again while it is on, it starts a new period
+--- from now (§12). Not held back by a power transition - it does not move the
+--- PC's power, and on a PC that is going away it simply fails.
+local function handle_awake_on(driver, device)
+  return run_feature(driver, device, "awake", features.awake_minutes(device.preferences),
+    answer_awake, AWAKE_ROWS)
+end
+
+local function handle_awake_off(driver, device)
+  return run_feature(driver, device, "awakeoff", nil, answer_awake, AWAKE_ROWS)
+end
+
+--- The standard `switch` is on two components now: `main` is the PC's power,
+--- `awake` is keep-awake. The hub hands both to the same capability handler,
+--- with `command.component` saying which.
+local function is_awake(cmd)
+  return type(cmd) == "table" and cmd.component == features.AWAKE_COMPONENT
+end
+
+local function handle_any_switch_on(driver, device, cmd)
+  if is_awake(cmd) then
+    return handle_awake_on(driver, device)
+  end
+  return handle_switch_on(driver, device)
+end
+
+local function handle_any_switch_off(driver, device, cmd)
+  if is_awake(cmd) then
+    return handle_awake_off(driver, device)
+  end
+  return handle_switch_off(driver, device)
+end
+
 local capability_handlers = {
   [capabilities.switch.ID] = {
-    [capabilities.switch.commands.on.NAME] = handle_switch_on,
-    [capabilities.switch.commands.off.NAME] = handle_switch_off,
+    [capabilities.switch.commands.on.NAME] = handle_any_switch_on,
+    [capabilities.switch.commands.off.NAME] = handle_any_switch_off,
   },
   [capabilities.refresh.ID] = {
     [capabilities.refresh.commands.refresh.NAME] = handle_refresh,

@@ -122,6 +122,9 @@ local function golden(lang)
     -- #114: no watch list on a v1.1.0 service.
     { cap = caps.ACTIVITY, attr = "activity", value = "none" },
     { cap = caps.ACTIVITY, attr = "summary", value = en and "Off" or "꺼짐" },
+    -- #115: the keep-awake switch, on its own component. A v1.1.0 service
+    -- cannot keep the PC awake.
+    { cap = state.CAP_SWITCH, attr = "switch", value = "off", component = "awake" },
   }
 end
 
