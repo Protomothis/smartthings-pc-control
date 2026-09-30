@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 )
 
 func TestToastXMLEscapesEverything(t *testing.T) {
@@ -85,12 +87,57 @@ func TestEncodedCommandRoundTrip(t *testing.T) {
 	}
 }
 
-// stubNotify replaces the toast, the voice lookup and the speaker.
+// stubNotify replaces the toast, the voice lookup and the speaker, and
+// makes the Start menu shortcut check a no-op (stubShortcut overrides it).
 func stubNotify(t *testing.T, toast func(string, string) (string, error), resolve func(string) (string, bool, error), speaker func(string, string) error) {
 	t.Helper()
-	st, rv, sp := showToast, resolveVoice, startSpeaker
+	st, rv, sp, es := showToast, resolveVoice, startSpeaker, ensureShortcut
 	showToast, resolveVoice, startSpeaker = toast, resolve, speaker
-	t.Cleanup(func() { showToast, resolveVoice, startSpeaker = st, rv, sp })
+	ensureShortcut = func() error { return nil }
+	t.Cleanup(func() { showToast, resolveVoice, startSpeaker, ensureShortcut = st, rv, sp, es })
+}
+
+// stubShortcut replaces the Start menu shortcut check; call after
+// stubNotify.
+func stubShortcut(f func() error) { ensureShortcut = f }
+
+func TestToastAppIDIsTheShortcutAUMID(t *testing.T) {
+	if ToastAppID != appid.AUMID {
+		t.Errorf("ToastAppID = %q, want the shortcut's AUMID %q", ToastAppID, appid.AUMID)
+	}
+}
+
+func TestHandleNotifyShortcut(t *testing.T) {
+	var order []string
+	stubNotify(t,
+		func(string, string) (string, error) { order = append(order, "toast"); return "shown", nil },
+		nil, nil)
+	stubShortcut(func() error { order = append(order, "shortcut"); return nil })
+	out, err := handleNotify(Request{Text: "x"})
+	if err != nil || !reflect.DeepEqual(out, map[string]any{"toast": "shown"}) {
+		t.Fatalf("shortcut ok: %v, %v", out, err)
+	}
+	if !reflect.DeepEqual(order, []string{"shortcut", "toast"}) {
+		t.Errorf("order %q: the shortcut must exist before the toast", order)
+	}
+
+	// A shortcut that cannot be made does not stop the toast.
+	shown := false
+	stubNotify(t,
+		func(string, string) (string, error) { shown = true; return "pending", nil },
+		nil, nil)
+	stubShortcut(func() error { return errors.New("start menu shortcut: access denied") })
+	out, err = handleNotify(Request{Text: "x"})
+	if err != nil || !shown || out["toast"] != "pending" || out["shortcut"] != "failed: start menu shortcut: access denied" {
+		t.Errorf("shortcut failed: %v, %v, shown %v", out, err, shown)
+	}
+
+	// Both failing: the action fails and says both.
+	stubNotify(t, func(string, string) (string, error) { return "", errors.New("toast: no notifier") }, nil, nil)
+	stubShortcut(func() error { return errors.New("access denied") })
+	if _, err := handleNotify(Request{Text: "x"}); err == nil || !strings.Contains(err.Error(), "access denied") {
+		t.Errorf("both failed: %v", err)
+	}
 }
 
 func TestHandleNotify(t *testing.T) {

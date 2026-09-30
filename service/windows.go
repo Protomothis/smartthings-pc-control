@@ -11,6 +11,8 @@ import (
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 )
 
 const serviceName = "RemoteShutdownService"
@@ -276,6 +278,10 @@ func Uninstall() error {
 	}
 	removeWebUIFirewallRule() // best-effort; only exists when webui_remote was enabled
 	removeSSDPFirewallRule()  // best-effort; only exists on installs from #76 on
+	// Best effort: the Start menu shortcut that gives toasts their AUMID
+	// (internal/appid). This removes the elevated account's own one; the
+	// desktop app's uninstall button also removes its user's afterwards.
+	appid.RemoveToastShortcut()
 
 	return nil
 }
