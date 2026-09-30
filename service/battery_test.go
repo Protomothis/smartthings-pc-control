@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,8 +156,8 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	if !ok || bat["present"] != false || bat["percent"] != float64(-1) || bat["charging"] != false || bat["ac"] != true {
 		t.Errorf("desktop battery = %v", got["battery"])
 	}
-	if features := got["features"].([]any); len(features) != 1 || features[0] != "awake" {
-		t.Errorf("desktop features = %v, want [awake]", features)
+	if features := fmt.Sprint(got["features"]); features != "[awake notify presets]" {
+		t.Errorf("desktop features = %v, want [awake notify presets]", features)
 	}
 
 	// Laptop: "battery" joins features.
@@ -169,9 +170,8 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	if bat["present"] != true || bat["percent"] != float64(80) || bat["charging"] != true || bat["ac"] != true {
 		t.Errorf("laptop battery = %v", bat)
 	}
-	features := got["features"].([]any)
-	if len(features) != 2 || features[0] != "awake" || features[1] != "battery" {
-		t.Errorf("laptop features = %v, want [awake battery]", features)
+	if features := fmt.Sprint(got["features"]); features != "[awake battery notify presets]" {
+		t.Errorf("laptop features = %v, want [awake battery notify presets]", features)
 	}
 }
 

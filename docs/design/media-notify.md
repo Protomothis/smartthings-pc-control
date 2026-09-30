@@ -43,7 +43,10 @@
 - **구현 선택:** Core Audio는 COM(`IMMDeviceEnumerator` → `IAudioEndpointVolume`)을 Go에서 직접 부른다
   (go-ole 계열). PowerShell + C# Add-Type는 호출마다 1초 가까이 걸려 슬라이더에 부적합하다.
   (#104 구현: go-ole 없이 `useraction/coreaudio.go`가 필요한 vtable 슬롯 몇 개를 `syscall.SyscallN`으로 직접 부른다. 새 의존성 없음.)
-  미디어 키는 `SendInput`(VK_MEDIA_*), 토스트는 기존 go-toast, 음성은 SAPI `SpVoice`.
+  미디어 키는 `SendInput`(VK_MEDIA_*), 음성은 SAPI `SpVoice`(go-ole, `internal/sapi`).
+  토스트는 go-toast를 **쓰지 않는다**(#106): go-toast는 제목·문구를 PowerShell 큰따옴표 here-string에 그대로
+  넣어 `$(…)`가 실행된다. 대신 토스트 XML을 Go에서 이스케이프해 환경 변수로 고정 스크립트(`-EncodedCommand`)에 넘긴다.
+  AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 고정 문구 토스트는 지금처럼 go-toast.
 
 ### user-action 확정 문법 (#103)
 
@@ -55,6 +58,11 @@
   `--text` 1–200자, 제목 100자, 제어 문자는 거절(서비스가 먼저 지운다).
 - `preset --type <program|url|script> --path <p> [--arg <a>]...` — `url`은 http/https만·`--arg` 없음,
   `script`는 `.ps1`/`.bat`/`.cmd`만, `--arg` 최대 32개.
+- `speak --text <t> [--voice <name>]` (#106, 내부용) — `notify --speak`가 토스트를 띄운 뒤 분리해서 띄우는 읽기 프로세스.
+  200자를 읽는 데 3초 제한보다 훨씬 오래 걸리므로 notify는 음성만 정하고(`voice_used`, `voice_found`) 곧바로 답한다.
+  읽기 프로세스는 이름 있는 뮤텍스로 줄을 서서 차례로 읽는다. 서비스는 이 동작을 만들지 않는다.
+- 사용자 세션의 자식은 서비스(SYSTEM)의 환경 변수를 물려받는다. 프리셋이 띄우는 프로그램에는
+  `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경을 준다(#109).
 - 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).
   코드는 `bad_args` · `unsupported`(처리기가 없거나 이 PC에서 못 함) · `failed`.
 - 기능 이슈는 `useraction.Register(action, handler)`로 처리기를 붙인다. 붙기 전에는 `unsupported`.
@@ -87,6 +95,10 @@
 - **notify**(`POST /st/v1/notify`): `{ "title"?: string, "text": string, "speak"?: bool }`.
   - `text` 1–200자, 제목 기본값은 "SmartThings". 제어 문자 제거.
   - 출처 IP별 분당 10회. 설정에서 끄면 `403 notify_disabled`.
+  - 구현(#106): 넘으면 `429 rate_limited` + `Retry-After`(초), 문구 규칙 위반은 `400 bad_text`, 사용자 없음 `409 no_user_session`,
+    시간 초과 `504 timeout`. 줄바꿈·탭은 공백으로, 제어 문자와 방향 제어 문자(U+202A–202E, U+2066–2069 등)는 지운다.
+    응답 `{ok:true, toast:"shown"|"pending", spoken, voice_used?, voice_found?}`. `speak`는 `notify_pc.speak`가 켜져 있을 때만.
+    오류 본문은 `{error: <code>, message}`. `features`의 "notify"는 설정과 무관하게 붙는다(media와 다름): 드라이버가 보내고 403을 "PC 알림 꺼짐"으로 보여 준다.
 - 푸시(`/pc/evt`)에 `audio.changed` 이벤트를 더한다.
   - (#104) 명령 결과든 하트비트든 저장된 값(볼륨·음소거·장치)이 바뀌면 보낸다. 서비스 시작 뒤 첫 값은 변화로 치지 않는다.
     `data`는 `{volume, muted, device}`(문자열).
@@ -101,7 +113,9 @@
 - `media.enabled`: 볼륨·미디어 명령 허용(기본 켬).
 - `notify_pc.enabled`: 외부에서 PC 화면에 알림을 띄우는 것 허용(기본 켬). `speak`: 소리내어 읽기(기본 끔).
   `voice`: SAPI 음성 이름, 비우면 시스템 기본(한국어 음성은 Windows 언어 팩에 따라 없을 수 있음).
-- 데스크톱 앱: 새 **미디어·알림** 섹션(설정 탭 또는 네트워크 탭 SmartThings 섹션 아래), 테스트 버튼 포함.
+- 데스크톱 앱: **설정 탭의 미디어·알림** 섹션(#106) — 맨 위에 `media.enabled`·`media.now_playing`(#104·#117이 서비스 설정에 두었던 것을 옮김),
+  그 아래 PC 알림 허용 · 소리내어 읽기 · 음성 · [테스트 알림]. 설정 탭의 저장 막대를 같이 쓴다. 음성 목록은 앱이 사용자 세션에서
+  SAPI로 직접 읽는다(서비스는 세션 0이라 사용자의 음성을 볼 수 없다).
 
 ## 5. Edge 드라이버 (1.1.0)
 
@@ -171,13 +185,23 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
 - **설정:** `presets: [{ "slot": 1–10, "name": "게임 모드", "type": "program"|"url"|"script", "path": "…", "args": ["…"] }]`.
   - `program`: exe를 인자 배열 그대로 실행(셸 없음). `url`: 기본 브라우저로 연다(http/https만). `script`: `.ps1`/`.bat`/`.cmd` 파일 경로를 고정 인터프리터로 실행.
   - 모두 **사용자 세션에서** 실행한다(SYSTEM 권한으로 실행하지 않는다). 사용자가 없으면 `no_user_session`.
-- **API:** status `presets: [{slot, name}]`, `features`에 "presets". command `preset`(value = 슬롯 번호). 실행 결과(시작 성공/실패)는 `last_command`에 남긴다.
+  - 구현(#109): `program`은 절대 경로의 `.exe`/`.com`만(`.bat`을 CreateProcess에 주면 cmd.exe가 제 규칙으로 읽으므로
+    배치 파일은 `script`로). `.ps1`은 `%SystemRoot%\…\powershell.exe -NoProfile -ExecutionPolicy Bypass -File`,
+    `.bat`/`.cmd`는 `%SystemRoot%\System32\cmd.exe /d /v:off /s /c ""<path>" "<arg>"…"` — 모든 부분을 따옴표로 감싸고
+    따옴표 안에서도 해석되는 `"`와 `%`는 경로·인자에서 거절한다. 나머지는 `syscall.EscapeArg`. 작업 폴더는 파일의 폴더.
+  - 저장할 때 규칙에 어긋나면 400, 손으로 고친 `config.json`은 그 항목만 무시하고 로그를 남긴다.
+- **API:** status `presets: [{slot, name}]`, `features`에 "presets"(프리셋이 없어도 — 드라이버가 옛 서비스와 빈 슬롯을 가른다). command `preset`(value = 슬롯 번호, 없으면 400,
+  없는 슬롯은 `404 no_such_preset`). `last_command`에 `preset: {slot, name}`과 `result`("started" 또는 오류 코드).
+  응답은 `{accepted, executed, schedule, preset: {slot, name, started}}`. 실행은 `remote.received`로도 알린다.
 - **텔레그램:** `/presets`(목록), `/run 이름|번호`.
-- **데스크톱 앱:** 명령 탭에 프리셋 목록과 [실행], 설정에 편집기(이름·종류·경로·인자·[찾아보기]·[테스트]).
+- **데스크톱 앱:** 명령 탭에 프리셋 목록과 [실행], 새 **프리셋** 탭(네트워크와 로그 사이)에 편집기(슬롯·이름·종류·경로·인자·[찾아보기]·[테스트]).
+  설정 탭의 한 섹션이 아니라 탭인 것은 행 최대 10개 × 3줄이 서비스 설정을 밀어내기 때문이다.
+  로컬 API `POST /api/presets/run {slot}`(저장된 것), `POST /api/presets/test {preset}`(저장 전 행).
 - **드라이버 제약:** SmartThings 목록 항목은 프레젠테이션에 고정된다. 그래서 목록은 "프리셋 1 (Preset 1)"…"프리셋 10" 슬롯이고,
   비어 있는 슬롯은 `supportedValues`로 숨긴다(실측 대기). 슬롯 이름은 별도 줄 "1 게임 모드 · 2 방송 시작 …"으로 보여 준다.
   무동작 쉬는 값 `none`(목록 닫기 대비, 플랫폼 노트). 커스텀 capability `pcPreset`: `run(slot)`, `lastPreset`, `names`, `supportedSlots`.
-- **보안:** 원격에서 경로·인자를 받지 않는다. 슬롯 번호 외 입력은 거부. 설정 변경 알림(보안 카테고리)에 프리셋 변경 포함.
+- **보안:** 원격에서 경로·인자를 받지 않는다. 슬롯 번호 외 입력은 거부. 설정 변경 알림(보안 카테고리)에 프리셋 변경 포함
+  — 키는 `presets[1,3]`처럼 바뀐 슬롯 번호만, 경로·인자는 싣지 않는다.
 
 ## 11. 실행 중 앱 감지 (옵트인)
 

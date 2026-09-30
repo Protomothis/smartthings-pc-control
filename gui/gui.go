@@ -125,6 +125,13 @@ type ui struct {
 	lastMediaErr error
 	mediaLoaded  bool
 	hbSent       heartbeatSent
+	// Command tab: the [실행] buttons of the saved presets (#109) and the
+	// line shown when there are none; the presets tab (presets_tab.go) and
+	// the settings tab's PC-notification switches (notify_section.go, #106).
+	presetButtons *fyne.Container
+	presetEmpty   *widget.Label
+	presets       *presetsTab
+	pcNotify      *notifySection
 	// Status bar battery label (#112, battery.go), hidden without a
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
@@ -609,14 +616,15 @@ func (u *ui) rebuild() {
 	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel, langSelect), u.status)
 
 	// Order matters: tabSettings / tabNotify in savebar.go index into this.
-	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.logs")}
+	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.presets"), u.t("tab.logs")}
 	u.tabs = container.NewAppTabs(
 		container.NewTabItemWithIcon(u.tabTitles[0], theme.SettingsIcon(), u.buildSettingsTab()),
 		container.NewTabItemWithIcon(u.tabTitles[1], theme.MediaPlayIcon(), u.buildCommandsTab()),
 		container.NewTabItemWithIcon(u.tabTitles[2], theme.HistoryIcon(), u.buildScheduleTab()),
 		container.NewTabItemWithIcon(u.tabTitles[3], theme.MailSendIcon(), u.buildNotifyTab()),
 		container.NewTabItemWithIcon(u.tabTitles[4], theme.ComputerIcon(), u.buildNetworkTab()),
-		container.NewTabItemWithIcon(u.tabTitles[5], theme.ListIcon(), u.buildLogsTab()),
+		container.NewTabItemWithIcon(u.tabTitles[5], theme.GridIcon(), u.buildPresetsTab()),
+		container.NewTabItemWithIcon(u.tabTitles[6], theme.ListIcon(), u.buildLogsTab()),
 	)
 	u.curTab = 0
 	u.tabs.OnSelected = u.onTabSelected
@@ -715,10 +723,13 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		hint(u.t("settings.grace.hint")),
 		u.remoteCheck,
 		hint(u.t("settings.remote.hint")),
-		u.mediaCheck,
-		hint(u.t("settings.media.hint")),
-		u.nowPlayingCheck,
-		hint(u.t("settings.nowplaying.hint")),
+	)
+	// The media switches (media.enabled #104, media.now_playing #117) head
+	// the 미디어·알림 section, above the PC notification ones (#106,
+	// notify_section.go).
+	mediaNotifyBody := u.buildMediaNotifySection(
+		u.mediaCheck, hint(u.t("settings.media.hint")),
+		u.nowPlayingCheck, hint(u.t("settings.nowplaying.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -742,6 +753,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.settingsExtra = container.NewVBox(
 		widget.NewSeparator(),
 		section(u.t("settings.service"), settingsBody),
+		widget.NewSeparator(),
+		section(u.t("settings.medianotify"), mediaNotifyBody),
 		widget.NewSeparator(),
 		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
 		widget.NewSeparator(),
@@ -789,6 +802,9 @@ func (u *ui) saveSettings(quiet bool) bool {
 	cfg.WebUIRemote = u.remoteCheck.Checked
 	cfg.Media.Enabled = u.mediaCheck.Checked
 	cfg.Media.NowPlaying = u.nowPlayingCheck.Checked
+	if u.pcNotify != nil {
+		u.notifySectionState().applyTo(&cfg) // the 미디어·알림 section (#106)
+	}
 	cfg.ShutdownGrace = graceOn
 	cfg.GraceSeconds = graceSec
 	msg, err := u.client.SaveConfig(cfg)
@@ -826,6 +842,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.mediaCheck.SetChecked(cfg.Media.Enabled)
 	u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
 	u.setGraceSelection(cfg)
+	u.fillNotifySection(cfg)
 	u.updateSaveState()
 }
 
@@ -894,7 +911,8 @@ func (u *ui) settingsDirty() bool {
 		u.mediaCheck.Checked != b.Media.Enabled ||
 		u.nowPlayingCheck.Checked != b.Media.NowPlaying ||
 		graceOn != b.ShutdownGrace ||
-		(graceOn && graceSec != b.GraceSeconds)
+		(graceOn && graceSec != b.GraceSeconds) ||
+		u.notifySectionDirty(*b)
 }
 
 // updateSaveState enables Save, the pulsing indicator and the tab marker
@@ -1043,7 +1061,7 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	note.Importance = widget.LowImportance
 
 	// Cards: general, power (with the note on what "immediately" means),
-	// media (#117), keep-awake.
+	// media (#117), keep-awake, presets (#109).
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
@@ -1052,6 +1070,8 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 		u.buildMediaCard(),
 		widget.NewSeparator(),
 		u.buildAwakeRow(),
+		widget.NewSeparator(),
+		u.buildPresetButtons(),
 	)))
 }
 
@@ -1269,9 +1289,11 @@ func (u *ui) initialLoad() {
 		u.mediaCheck.SetChecked(cfg.Media.Enabled)
 		u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
 		u.setGraceSelection(cfg)
+		u.fillNotifySection(cfg)
 		u.updateSaveState()
 		u.fillNotifyTab(cfg)
 		u.fillSTSection(cfg)
+		u.fillPresetsTab(cfg)
 	})
 	if err == nil {
 		u.loadLogs()
