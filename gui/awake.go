@@ -91,7 +91,9 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 		labels[i] = u.awakePresetLabel(m)
 	}
 	row.sel = widget.NewSelect(labels, func(string) {
-		if row.syncing || !row.toggle.Checked {
+		// The select fires OnChanged from SetSelectedIndex below, before the
+		// toggle exists; a nil toggle is "not on", so there is nothing to send.
+		if row.syncing || row.toggle == nil || !row.toggle.Checked {
 			return
 		}
 		// A new duration while on starts a new period from now.
