@@ -12,8 +12,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Unsaved-changes handling shared by the Settings, Notifications and
-// Network (SmartThings section) tabs:
+// Unsaved-changes handling shared by the Settings, Notifications, Network
+// (SmartThings section) and Presets tabs:
 // a fixed footer with a pulsing "unsaved changes" indicator and the Save
 // button (so Save is always visible, however long the tab scrolls), a "•"
 // marker on the tab title, and a Save / Discard / Keep editing prompt when
@@ -24,11 +24,13 @@ const (
 	tabSettings = 0
 	tabNotify   = 3
 	tabNetwork  = 4
+	// tabPresets is the preset editor (#109).
+	tabPresets = 5
 )
 
 // formTabs are the tabs with a save bar, in tab order — the set consulted
 // when the window is closed with edits pending.
-var formTabs = []int{tabSettings, tabNotify, tabNetwork}
+var formTabs = []int{tabSettings, tabNotify, tabNetwork, tabPresets}
 
 // saveBar is the footer under a form tab.
 type saveBar struct {
@@ -118,6 +120,8 @@ func (u *ui) tabDirty(index int) bool {
 		return u.notifyDirty()
 	case tabNetwork:
 		return u.stDirty()
+	case tabPresets:
+		return u.presetsDirty()
 	}
 	return false
 }
@@ -132,6 +136,8 @@ func (u *ui) saveTab(index int) bool {
 		return u.saveNotifyTab(true)
 	case tabNetwork:
 		return u.saveSTSection(true)
+	case tabPresets:
+		return u.savePresetsTab(true)
 	}
 	return true
 }
@@ -148,6 +154,8 @@ func (u *ui) discardTab(index int) {
 		u.fillNotifyTab(*u.cfgBaseline)
 	case tabNetwork:
 		u.fillSTSection(*u.cfgBaseline)
+	case tabPresets:
+		u.fillPresetsTab(*u.cfgBaseline)
 	}
 }
 

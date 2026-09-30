@@ -32,6 +32,18 @@ type Config struct {
 	Activity ActivityConfig `json:"activity"`
 	// Media is the "media" object (#104): volume and media-key commands.
 	Media MediaConfig `json:"media"`
+	// NotifyPC is the "notify_pc" object (#106); Presets the "presets"
+	// list (#109): the settings tab's 미디어·알림 section (notify_section.go)
+	// and the presets tab (presets_tab.go) edit them.
+	NotifyPC NotifyPCConfig `json:"notify_pc"`
+	Presets  []Preset       `json:"presets"`
+}
+
+// NotifyPCConfig mirrors service.NotifyPCConfig.
+type NotifyPCConfig struct {
+	Enabled bool   `json:"enabled"`
+	Speak   bool   `json:"speak"`
+	Voice   string `json:"voice"`
 }
 
 // MediaConfig mirrors service.MediaConfig; the settings tab edits it.
@@ -55,6 +67,16 @@ type ActivityWatch struct {
 	Process string `json:"process"`
 	Label   string `json:"label"`
 	Kind    string `json:"kind"`
+}
+
+// Preset mirrors service.Preset: one slot SmartThings and Telegram can
+// run by number.
+type Preset struct {
+	Slot int      `json:"slot"`
+	Name string   `json:"name"`
+	Type string   `json:"type"` // program | url | script
+	Path string   `json:"path"`
+	Args []string `json:"args,omitempty"`
 }
 
 // SmartThingsConfig mirrors service.SmartThingsConfig. The widgets that
