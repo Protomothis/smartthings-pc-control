@@ -42,6 +42,7 @@
   status의 `audio.available=false`로 알린다. 드라이버는 요약 줄에 "사용자 없음"을 쓴다.
 - **구현 선택:** Core Audio는 COM(`IMMDeviceEnumerator` → `IAudioEndpointVolume`)을 Go에서 직접 부른다
   (go-ole 계열). PowerShell + C# Add-Type는 호출마다 1초 가까이 걸려 슬라이더에 부적합하다.
+  (#104 구현: go-ole 없이 `useraction/coreaudio.go`가 필요한 vtable 슬롯 몇 개를 `syscall.SyscallN`으로 직접 부른다. 새 의존성 없음.)
   미디어 키는 `SendInput`(VK_MEDIA_*), 토스트는 기존 go-toast, 음성은 SAPI `SpVoice`.
 
 ### user-action 확정 문법 (#103)
@@ -60,6 +61,12 @@
 - 서비스는 `runUserAction`으로 부른다: 같은 파서로 먼저 검사(잘못된 인자는 프로세스를 띄우지 않음),
   3초 제한(넘으면 자식 종료), 출력의 **마지막 비지 않은 줄**을 JSON으로 읽는다. 결과에 `audio`가 있으면 저장값을 갱신한다.
 - 하트비트 본문의 `idle_seconds`와 `audio`는 각각 선택이다. `audio`가 범위를 벗어나면 본문 전체를 400으로 거절한다.
+- (#104) 트레이는 `audio`에 `sampled_at`(RFC3339, 읽은 시각)을 싣고, 저장값의 "더 새 값만" 비교는 받은 시각이 아니라
+  이 시각으로 한다(명령 결과는 완료 시각). 없으면 받은 시각, 미래 값은 받은 시각으로 자르고, 형식이 틀리면 400.
+  트레이는 `expose_session`과 무관하게 `media.enabled`가 켜져 있으면 `audio`를 보낸다(같은 Core Audio 코드를 프로세스 안에서 부름).
+- (#104) 사용자 세션 찾기는 PowerShell `Get-Process explorer` 대신 `WTSGetActiveConsoleSessionId` →
+  `WTSQueryUserToken`, 콘솔에 사용자가 없으면 `WTSEnumerateSessions`의 활성 세션(RDP)을 본다. 토큰이 없는 세션만
+  "사용자 없음"이고, 권한 부족 같은 다른 실패는 그대로 오류로 올린다.
 
 ## 3. 서비스 API 추가 (`/st/v1`, protocol 1 유지)
 
@@ -70,10 +77,19 @@
   - `volume`(value 0–100), `volumeup`/`volumedown`(value 기본 5), `mute`/`unmute`
   - `play`/`pause`/`playpause`/`stop`/`next`/`prev`
   - 유예·예약과 무관하게 **즉시 실행**. 텔레그램 알림은 기본 끔(볼륨 조절마다 알림이 오면 소음).
+  - (#104·#105 구현) `volumeup`/`volumedown`의 value는 1–100, `volume`은 value 필수. `minutes`를 주면 400, `mode`는 무시.
+    `last_command`에 남기지 않는다. 볼륨 변경은 음소거를 건드리지 않는다. 오류: `403 media_disabled`, `409 no_user_session`,
+    `400`(범위), `501 unsupported`(재생 장치 없음), `502 failed`, `504 timeout`. 볼륨·음소거 응답에는 바뀐 `audio` 블록이 실린다.
+  - `audio.available`은 사용자 세션이 없거나, 서비스 시작 뒤 값이 아직 없거나, `media.enabled`가 꺼져 있으면 false이고 나머지 키는 없다.
+    `features`의 "audio"·"media"는 `media.enabled`일 때만.
+  - (#105) `user-action media`는 백엔드 목록(`mediaBackends`)을 차례로 시도해 처음 처리한 쪽이 이긴다. 지금은 SendInput 미디어 키
+    하나뿐이고, #117의 WinRT 세션 관리자는 그 앞에 붙어 세션이 없거나 실패하면 키로 넘긴다. 답은 `{"ok":true,"media":"next","via":"keys"}`.
 - **notify**(`POST /st/v1/notify`): `{ "title"?: string, "text": string, "speak"?: bool }`.
   - `text` 1–200자, 제목 기본값은 "SmartThings". 제어 문자 제거.
   - 출처 IP별 분당 10회. 설정에서 끄면 `403 notify_disabled`.
 - 푸시(`/pc/evt`)에 `audio.changed` 이벤트를 더한다.
+  - (#104) 명령 결과든 하트비트든 저장된 값(볼륨·음소거·장치)이 바뀌면 보낸다. 서비스 시작 뒤 첫 값은 변화로 치지 않는다.
+    `data`는 `{volume, muted, device}`(문자열).
 
 ## 4. 설정 (config.json)
 
@@ -109,6 +125,11 @@
 
 `/vol [0-100|+n|-n]`, `/mute`, `/unmute`, `/play`, `/pause`, `/next`, `/prev`, `/say 문구`.
 `/vol`만 치면 현재 볼륨과 음소거 상태를 답한다. `/say`는 `notify_pc.enabled`를 따른다.
+
+- (#104 구현) `/mute`·`/unmute`는 원래 알림 일시 중지(v1.0)였다. 이제 인자 없는 `/mute`와 `/unmute`는 PC 음소거이고,
+  알림 일시 중지는 `/quiet 30m|2h|off`로 옮겼다. `/mute 30m`처럼 시간을 붙이면 예전대로 알림을 멈춘다. 알림이 멈춘 동안
+  `/unmute`는 음소거만 풀고 "`/quiet off`로 재개" 안내를 덧붙인다. `/stop`도 있다. 답은 `볼륨 30% · 음소거 꺼짐 · 스피커`,
+  미디어 키는 `⏯ 재생/일시정지 키를 보냈습니다`.
 
 ## 7. 보안
 

@@ -152,6 +152,10 @@ type Config struct {
 	// Activity is the opt-in running-app detection (media-notify doc §11,
 	// #110). Hot-reloaded: the scanner reads it on every tick.
 	Activity ActivityConfig `json:"activity"`
+	// Media gates the volume and media-key commands (#104, #105, see
+	// media.go) on every path: /st/v1/command, Telegram and the audio
+	// block of the status.
+	Media MediaConfig `json:"media"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
@@ -236,6 +240,8 @@ var defaultConfig = Config{
 	Awake: AwakeConfig{DefaultMinutes: awakeDefaultMinutes},
 	// Running-app detection is opt-in (§11): off, with an empty list.
 	Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
+	// A missing "media" object keeps volume and media keys on (§4).
+	Media: MediaConfig{Enabled: true},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -479,6 +485,7 @@ func configChangedKeys(old, new Config) []string {
 	// What the hub learns about running programs is privacy-relevant too.
 	add("activity.enabled", old.Activity.Enabled != new.Activity.Enabled)
 	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
+	add("media.enabled", old.Media.Enabled != new.Media.Enabled)
 	return keys
 }
 
