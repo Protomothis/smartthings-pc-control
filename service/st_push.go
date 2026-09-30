@@ -387,7 +387,7 @@ func stPushEventType(ev notify.Event, cfg SmartThingsConfig) (string, bool) {
 		case "updated", "update_available":
 			return ev.Key(), true
 		}
-	case "display":
+	case "display", "awake", "battery":
 		if ev.Kind == "changed" {
 			return ev.Key(), true
 		}

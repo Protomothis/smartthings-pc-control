@@ -242,6 +242,27 @@ type stStatusResponse struct {
 	WoL               stWoL          `json:"wol"`
 	Display           string         `json:"display"`
 	Session           stSession      `json:"session"`
+	// Features names the v1.2.0 additions this service offers
+	// (docs/design/media-notify.md §3); the driver checks it before it
+	// shows or sends anything that needs them. An older service has no
+	// key at all. Always an array, never null.
+	Features []string `json:"features"`
+	// Awake is the keep-awake state (#111, §12).
+	Awake stAwake `json:"awake"`
+	// Battery is the newest GetSystemPowerStatus reading (#112, §13). A
+	// desktop reports present=false, and "battery" is then left out of
+	// Features so the driver keeps the profile without a battery.
+	Battery batteryInfo `json:"battery"`
+}
+
+// stFeatures lists what this service supports right now. Some entries
+// depend on the machine (a battery) rather than on the version.
+func stFeatures(b batteryInfo) []string {
+	features := []string{"awake"}
+	if b.Present {
+		features = append(features, "battery")
+	}
+	return features
 }
 
 type stGrace struct {
@@ -499,6 +520,7 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 // buildSTStatus assembles the §3.2 status document for cfg. Push bodies
 // carry the very same object (§3.5), so the driver never needs a diff.
 func buildSTStatus(cfg Config) stStatusResponse {
+	bat := battery.info()
 	resp := stStatusResponse{
 		Protocol:       stProtocol,
 		ServiceVersion: Version,
@@ -518,6 +540,9 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		WoL:               stWoLStatus(cfg.SmartThings),
 		Display:           getDisplayState(),
 		Session:           stSessionInfo(cfg.SmartThings),
+		Features:          stFeatures(bat),
+		Awake:             currentAwake().View().wire(),
+		Battery:           bat,
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{
@@ -535,12 +560,62 @@ type stCommandRequest struct {
 	Command string `json:"command"`
 	Mode    string `json:"mode"`    // "default" | "immediate" | "grace"
 	Minutes int    `json:"minutes"` // > 0 schedules instead of running
+	// Value is the argument of the v1.2.0 commands that take one
+	// (media-notify.md §3): the period in minutes for awake. nil when the
+	// key is absent, which is not the same as 0.
+	Value *int `json:"value"`
 }
 
 type stCommandResponse struct {
 	Accepted bool           `json:"accepted"`
 	Executed bool           `json:"executed"`
 	Schedule map[string]any `json:"schedule"`
+	// Awake is the new keep-awake state, on the awake/awakeoff replies only.
+	Awake *stAwake `json:"awake,omitempty"`
+}
+
+// handleSTAwake runs the keep-awake commands (#111, §12):
+//
+//	awake     value = minutes, 0 = until turned off, absent = awake.default_minutes
+//	awakeoff  value ignored
+//
+// They are not registry commands: they take an argument, never go through
+// the grace period or a schedule, and are no power command, so neither
+// last_command nor a Telegram notification records them. The hub hears
+// about the change through the awake.changed push.
+func handleSTAwake(w http.ResponseWriter, name string, body stCommandRequest, from string) {
+	if body.Minutes != 0 {
+		stError(w, http.StatusBadRequest, "minutes does not apply to "+name+"; use value")
+		return
+	}
+	ctl := currentAwake()
+	var (
+		view awakeView
+		err  error
+	)
+	if name == "awakeoff" {
+		view, _, err = ctl.TurnOff()
+	} else {
+		minutes := awakeMinutesOrDefault(body.Value)
+		if !validAwakeMinutes(minutes) {
+			stError(w, http.StatusBadRequest, fmt.Sprintf("value must be between 0 and %d", awakeMaxMinutes))
+			return
+		}
+		view, err = ctl.TurnOn(minutes)
+	}
+	if err != nil {
+		logMsg("ST API: %s from %s failed: %v", name, from, err)
+		stError(w, http.StatusInternalServerError, "keep-awake failed")
+		return
+	}
+	logMsg("ST API: %s from %s", name, from)
+	wire := view.wire()
+	writeJSON(w, http.StatusOK, stCommandResponse{
+		Accepted: true,
+		Executed: true,
+		Schedule: stScheduleView(),
+		Awake:    &wire,
+	})
 }
 
 // handleSTCommand serves POST /st/v1/command. It goes through the same
@@ -558,6 +633,11 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	from := remoteHost(r.RemoteAddr)
 	name := strings.ToLower(strings.TrimSpace(body.Command))
+	switch name {
+	case "awake", "awakeoff":
+		handleSTAwake(w, name, body, from)
+		return
+	}
 	cmd, ok := Commands[name]
 	if !ok {
 		logMsg("ST API: unknown command from %s", from)

@@ -310,6 +310,12 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	// API: idle-time heartbeat from the tray app (#77, see st_idle.go)
 	mux.HandleFunc("/api/session/heartbeat", handleSessionHeartbeat)
 
+	// API: keep-awake toggle on the app's command tab (#111, see awake.go)
+	mux.HandleFunc("/api/awake", handleAwakeAPI)
+
+	// API: battery for the app's status bar (#112, see battery.go)
+	mux.HandleFunc("/api/battery", handleBatteryAPI)
+
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
 	mux.HandleFunc("/api/telegram/me", handleTelegramMe)

@@ -115,6 +115,12 @@ type ui struct {
 	schedBig       *widget.RichText
 	scheduleLabel  *widget.Label
 	schedCancelBtn *widget.Button
+	// Command tab: the keep-awake row (#111, awake.go).
+	awake *awakeRow
+	// Status bar battery label (#112, battery.go), hidden without a
+	// battery; lastBattery survives a rebuild so the label comes back at once.
+	batteryLabel *widget.Label
+	lastBattery  Battery
 	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
 	// SmartThings hub list changes) and the SmartThings section (#70).
 	networkBox  *fyne.Container
@@ -581,12 +587,14 @@ func (u *ui) rebuild() {
 
 	versionLabel := widget.NewLabel(u.version)
 	versionLabel.Importance = widget.LowImportance
+	u.batteryLabel = widget.NewLabel("")
+	u.applyBattery(u.lastBattery)
 	// GridWrap pins the circle to 10×10 (a bare canvas object has no
 	// minimum size); Center keeps it on the text baseline.
 	dot := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), u.statusDot))
 	// The status label is the Border's centre object so it takes whatever
 	// width is left (and truncates) instead of dictating the window width.
-	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, versionLabel, langSelect), u.status)
+	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel, langSelect), u.status)
 
 	// Order matters: tabSettings / tabNotify in savebar.go index into this.
 	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.logs")}
@@ -619,6 +627,8 @@ func (u *ui) applyConnected(on bool) {
 		}
 	}
 	if !on {
+		// The battery reading comes from the service; without it, say nothing.
+		u.applyBattery(Battery{})
 		// Forced switch: no unsaved-changes prompt (the service is gone).
 		u.switching = true
 		u.tabs.SelectIndex(0)
@@ -1011,6 +1021,8 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
+		u.buildAwakeRow(),
+		widget.NewSeparator(),
 		section(u.t("cmd.group.power"), container.NewGridWrap(cmdButtonSize, power...)),
 		widget.NewSeparator(),
 		note,
@@ -1237,6 +1249,8 @@ func (u *ui) initialLoad() {
 		u.loadLogs()
 		u.loadSchedule()
 		u.loadSTHub()
+		u.loadAwake()
+		u.loadBattery()
 	}
 }
 
@@ -1257,6 +1271,10 @@ func (u *ui) pollLoop() {
 	connTick := time.NewTicker(5 * time.Second)
 	updateTick := time.NewTicker(24 * time.Hour)
 	idleTick := time.NewTicker(idleHeartbeatInterval)
+	awakeTick := time.NewTicker(awakePollInterval)
+	defer awakeTick.Stop()
+	batteryTick := time.NewTicker(batteryPollInterval)
+	defer batteryTick.Stop()
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
@@ -1278,6 +1296,14 @@ func (u *ui) pollLoop() {
 		case <-schedTick.C:
 			if u.connected.Load() {
 				u.loadSchedule()
+			}
+		case <-awakeTick.C:
+			if u.connected.Load() {
+				go u.loadAwake()
+			}
+		case <-batteryTick.C:
+			if u.connected.Load() {
+				go u.loadBattery()
 			}
 		case <-connTick.C:
 			// Not while the login dialog is up or an attempt is in

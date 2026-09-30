@@ -84,6 +84,10 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// remote command already answered.
 			emit("power", "stopping", map[string]string{"reason": stopReason(c.Cmd == svc.Shutdown)})
 			close(s.stop)
+			// Keep-awake (#111) is released here, synchronously, rather
+			// than left to the goroutine watching s.stop: the process may
+			// be gone before that goroutine runs.
+			currentAwake().Shutdown()
 			stopTelegramControl()
 			stopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes

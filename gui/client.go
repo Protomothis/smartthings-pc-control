@@ -404,6 +404,82 @@ func (c *Client) CancelSchedule(by string) error {
 	return nil
 }
 
+// Awake mirrors /api/awake (#111): the keep-awake state. Until is RFC3339,
+// or "" while off and while on until turned off; RemainingSeconds is 0 then.
+type Awake struct {
+	On               bool   `json:"on"`
+	Until            string `json:"until"`
+	RemainingSeconds int    `json:"remaining_seconds"`
+	DefaultMinutes   int    `json:"default_minutes"`
+	KeepDisplay      bool   `json:"keep_display"`
+}
+
+// errAwakeUnsupported is what an older service answers /api/awake with
+// (the WebUI mux sends unknown paths to the settings page, a 404 or 403).
+var errAwakeUnsupported = fmt.Errorf("keep-awake needs service v1.2.0")
+
+// awakeCall does one /api/awake request and decodes the state it returns.
+func (c *Client) awakeCall(method string, body any) (Awake, error) {
+	var a Awake
+	resp, err := c.do(method, "/api/awake", body)
+	if err != nil {
+		return a, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return a, errUnauthorized
+	case http.StatusNotFound, http.StatusForbidden:
+		return a, errAwakeUnsupported
+	default:
+		var r apiStatus
+		json.NewDecoder(resp.Body).Decode(&r)
+		return a, r.err(resp, "keep-awake failed")
+	}
+	return a, json.NewDecoder(resp.Body).Decode(&a)
+}
+
+// GetAwake returns the keep-awake state.
+func (c *Client) GetAwake() (Awake, error) { return c.awakeCall("GET", nil) }
+
+// SetAwake keeps the PC awake for minutes (0 = until turned off).
+func (c *Client) SetAwake(minutes int) (Awake, error) {
+	return c.awakeCall("POST", map[string]int{"minutes": minutes})
+}
+
+// AwakeOff lets the PC sleep on its idle timer again.
+func (c *Client) AwakeOff() (Awake, error) { return c.awakeCall("DELETE", nil) }
+
+// Battery mirrors GET /api/battery (#112). Percent is -1 when Windows does
+// not know it; Present is false on a desktop.
+type Battery struct {
+	Present  bool `json:"present"`
+	Percent  int  `json:"percent"`
+	Charging bool `json:"charging"`
+	AC       bool `json:"ac"`
+}
+
+// GetBattery returns the service's newest battery reading. An older service
+// (no such route) reads as no battery.
+func (c *Client) GetBattery() (Battery, error) {
+	var b Battery
+	resp, err := c.do("GET", "/api/battery", nil)
+	if err != nil {
+		return b, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return b, json.NewDecoder(resp.Body).Decode(&b)
+	case http.StatusUnauthorized:
+		return b, errUnauthorized
+	case http.StatusNotFound, http.StatusForbidden:
+		return b, nil
+	}
+	return b, fmt.Errorf("HTTP %d", resp.StatusCode)
+}
+
 // RestartService asks the service to restart itself.
 func (c *Client) RestartService() error {
 	resp, err := c.do("POST", "/api/restart-service", nil)

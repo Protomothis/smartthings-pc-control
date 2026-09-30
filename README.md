@@ -29,6 +29,8 @@
 - **Wake-on-LAN** — 스위치를 켜면 PC가 고른 어댑터의 MAC으로 매직 패킷을 보냅니다.
 - **예약** — 5분부터 3일까지 프리셋 16개, 취소 포함. SmartThings · 앱 · 텔레그램 어디서 건 예약이든 모든 곳에 같이 보입니다.
 - **전환 중 보호** — PC가 꺼지거나 켜지는 동안에는 명령 목록이 `종료 진행 중…`처럼 바뀌고 명령을 보내지 않습니다.
+- **잠들지 않기** — 정한 시간(기본 1시간, 최대 24시간 또는 끌 때까지) 동안 자동 절전을 막습니다. 직접 보낸 종료·절전은 그대로 실행됩니다. 기본 시간은 `config.json`의 `awake.default_minutes`(0 = 끌 때까지), 화면까지 켜 두려면 `awake.keep_display: true`.
+- **노트북 배터리** — 배터리가 있는 PC는 잔량과 충전 상태를 SmartThings · 텔레그램 `/status` · 앱 상태 줄에 보고합니다.
 - **텔레그램** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다(선택).
 - **데스크톱 앱** — 설정 · 명령 · 예약 · 알림 · 네트워크 · 로그 탭, 트레이 상주, 한국어/English.
 - **서명된 자동 업데이트** — Ed25519 서명 매니페스트로 검증한 릴리스만 설치하고, 실패하면 롤백합니다.
@@ -97,6 +99,7 @@ A single exe that runs as a Windows service (always on, no login needed) and a t
 - **Power commands** — shutdown, restart, sleep, hibernate, lock, screen off/on, force shutdown. Remote power commands wait out a grace period (5 min by default) and can be cancelled anywhere.
 - **Real power state** in the SmartThings app: on, sleeping, hibernated, off, waking, shutting down, pushed to the hub right before the PC goes down.
 - **Wake-on-LAN** to the adapter the PC picks, **scheduling** with 16 presets up to 3 days (with cancel), and a command list that knows when the PC is mid-transition.
+- **Keep awake** — hold off idle sleep for a while (1 hour by default, up to 24 hours or until turned off); shutdown and sleep you ask for still happen. `awake.default_minutes` (0 = until turned off) and `awake.keep_display` in `config.json`. Laptops also report their **battery** level and charging state.
 - **Telegram** notifications and bot commands (optional), a **desktop app** in Korean/English, and **signed auto-update** (Ed25519 manifest, rollback on failure).
 
 ### Install
