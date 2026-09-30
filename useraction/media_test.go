@@ -69,6 +69,17 @@ func TestMediaHandlerBlocked(t *testing.T) {
 	}
 }
 
+// The session backend (#117) comes first and the keys last.
+func TestMediaBackendsDefaultOrder(t *testing.T) {
+	var names []string
+	for _, b := range mediaBackends {
+		names = append(names, b.name)
+	}
+	if !reflect.DeepEqual(names, []string{"session", "keys"}) {
+		t.Errorf("mediaBackends = %v, want [session keys]", names)
+	}
+}
+
 // A backend in front of the keys (the WinRT session manager of #117) wins
 // when it handles the verb and falls back to the keys when it does not or
 // fails.
@@ -76,20 +87,21 @@ func TestMediaBackendOrder(t *testing.T) {
 	calls := withFakeSendInput(t, ^uint32(0), nil)
 	saved := mediaBackends
 	t.Cleanup(func() { mediaBackends = saved })
+	keys := saved[len(saved)-1:]
 
 	var result struct {
 		handled bool
 		err     error
 	}
 	var got []string
-	session := mediaBackend{name: "session", send: func(verb string) (bool, error) {
+	session := mediaBackend{name: "session", send: func(verb string) (bool, map[string]any, error) {
 		got = append(got, verb)
-		return result.handled, result.err
+		return result.handled, map[string]any{"status": "paused", "app": "Spotify"}, result.err
 	}}
-	mediaBackends = append([]mediaBackend{session}, saved...)
+	mediaBackends = append([]mediaBackend{session}, keys...)
 
 	result.handled = true
-	if _, line, code := runMain(t, "media", "pause"); code != 0 || line != `{"ok":true,"media":"pause","via":"session"}` {
+	if _, line, code := runMain(t, "media", "pause"); code != 0 || line != `{"ok":true,"app":"Spotify","media":"pause","status":"paused","via":"session"}` {
 		t.Errorf("session handles: exit %d, %s", code, line)
 	}
 	if len(*calls) != 0 {

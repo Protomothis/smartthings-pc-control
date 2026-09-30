@@ -12,6 +12,7 @@
 //	user-action audio step <-100..100>
 //	user-action audio mute <on|off|toggle>
 //	user-action media <playpause|play|pause|stop|next|prev>
+//	user-action media info
 //	user-action notify --title <t> --text <t> [--speak] [--voice <name>]
 //	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
 //
@@ -99,8 +100,8 @@ func (a Audio) Validate() error {
 type Request struct {
 	Action string // ActionAudio, ActionMedia, ActionNotify or ActionPreset
 
-	// Verb is the audio verb (get, set, step, mute) or the media key
-	// (playpause, play, pause, stop, next, prev).
+	// Verb is the audio verb (get, set, step, mute), the media key
+	// (playpause, play, pause, stop, next, prev) or MediaInfo.
 	Verb string
 	// Value is the audio set level (0..100) or step (-100..100).
 	Value int
@@ -289,7 +290,11 @@ var MediaKeys = []string{"playpause", "play", "pause", "stop", "next", "prev"}
 func parseMedia(args []string) (Request, error) {
 	req := Request{Action: ActionMedia}
 	if len(args) != 1 {
-		return req, badArgs("usage: media <%s>", strings.Join(MediaKeys, "|"))
+		return req, badArgs("usage: media <%s|%s>", strings.Join(MediaKeys, "|"), MediaInfo)
+	}
+	if args[0] == MediaInfo {
+		req.Verb = MediaInfo
+		return req, nil
 	}
 	for _, k := range MediaKeys {
 		if args[0] == k {
