@@ -232,6 +232,13 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 	if out.SpeakError != "" {
 		logMsg("PC notify (%s): not read aloud: %s", source, out.SpeakError)
 	}
+	// Without the Start menu shortcut the toast only reaches the
+	// notification center, no banner (internal/appid).
+	if raw, ok := res.Fields["shortcut"]; ok {
+		var s string
+		json.Unmarshal(raw, &s)
+		logMsg("PC notify (%s): start menu shortcut %s", source, s)
+	}
 	return out, nil
 }
 

@@ -32,13 +32,16 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 	"github.com/Protomothis/smartthings-pc-control/internal/sapi"
 )
 
-// ToastAppID is the application name a toast is shown under. It must stay
-// equal to the tray app's windowTitle (gui/singleinstance.go), which its
-// go-toast notifications use, so both land in one Action Center group.
-const ToastAppID = "SmartThings PC Control"
+// ToastAppID is the AppUserModelID a toast is shown under: the one the
+// Start menu shortcut carries (internal/appid), which the tray app's
+// go-toast notifications use too, so both land in one group. Without that
+// shortcut Windows files the toast in the notification center but never
+// shows its banner.
+const ToastAppID = appid.AUMID
 
 // Environment variables the fixed toast script reads.
 const (
@@ -155,6 +158,13 @@ var showToast = func(title, text string) (string, error) {
 	}
 }
 
+// ensureShortcut creates or repairs the Start menu shortcut that carries
+// ToastAppID. Replaced by the tests.
+var ensureShortcut = func() error {
+	_, err := appid.EnsureToastShortcut()
+	return err
+}
+
 // resolveVoice is sapi.Resolve, replaced by the tests.
 var resolveVoice = sapi.Resolve
 
@@ -184,17 +194,29 @@ func speakerArgs(text, voice string) []string {
 
 // handleNotify shows the toast and, with --speak, starts reading the text.
 //
+// The Start menu shortcut is checked first: this child may be the first
+// thing of the app to run in the session (the tray app, which makes it
+// too, need not be running). When it cannot be made the toast is still
+// sent, and the reply carries shortcut: "failed: …".
+//
 // Reply fields: toast ("shown" or "pending"); with --speak also spoken
 // (the reader was started), voice_used (the voice it reads with) and
 // voice_found (false when --voice matched no installed voice and the
 // system default is used). A speech failure does not fail the toast that
 // was already shown: spoken is false and speak_error says why.
 func handleNotify(req Request) (map[string]any, error) {
+	shortcutErr := ensureShortcut()
 	state, err := showToast(req.Title, req.Text)
 	if err != nil {
+		if shortcutErr != nil {
+			return nil, Failed("%v (shortcut: %v)", err, shortcutErr)
+		}
 		return nil, Failed("%v", err)
 	}
 	out := map[string]any{"toast": state}
+	if shortcutErr != nil {
+		out["shortcut"] = "failed: " + shortcutErr.Error()
+	}
 	if !req.Speak {
 		return out, nil
 	}

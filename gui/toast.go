@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-toast/toast"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 )
 
 // protocolScheme is the custom URI scheme the toast action buttons launch.
@@ -38,13 +40,19 @@ func registerToastProtocol() {
 	cmd.SetStringValue("", fmt.Sprintf(`"%s" toast "%%1"`, exe))
 }
 
-// showGraceToast pops a Windows toast with Run now / Cancel buttons for the
-// scheduled command. title and message are already localised (they differ
-// by origin, see #54). Returns an error so the caller can fall back to a
-// plain Fyne notification.
-func showGraceToast(lang Lang, title, message string) error {
-	n := toast.Notification{
-		AppID:   windowTitle,
+// ensureToastShortcut creates or repairs the Start menu shortcut whose
+// AUMID lets toasts show as banners (internal/appid). Called on every GUI
+// start, off the UI thread; cheap (a read) when the shortcut is right.
+// Best effort like registerToastProtocol: the GUI has no console to report
+// to, and without the shortcut toasts still reach the notification center.
+func ensureToastShortcut() { appid.EnsureToastShortcut() }
+
+// graceToast is the grace-period toast: Run now / Cancel buttons, shown
+// under the Start menu shortcut's AUMID (with any other app ID Windows
+// keeps it out of sight in the notification center).
+func graceToast(lang Lang, title, message string) toast.Notification {
+	return toast.Notification{
+		AppID:   appid.AUMID,
 		Title:   title,
 		Message: message,
 		Actions: []toast.Action{
@@ -52,6 +60,14 @@ func showGraceToast(lang Lang, title, message string) error {
 			{Type: "protocol", Label: T(lang, "toast.cancel"), Arguments: protocolScheme + "://cancel"},
 		},
 	}
+}
+
+// showGraceToast pops a Windows toast with Run now / Cancel buttons for the
+// scheduled command. title and message are already localised (they differ
+// by origin, see #54). Returns an error so the caller can fall back to a
+// plain Fyne notification.
+func showGraceToast(lang Lang, title, message string) error {
+	n := graceToast(lang, title, message)
 	return n.Push()
 }
 

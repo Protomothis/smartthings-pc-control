@@ -24,6 +24,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 	"github.com/Protomothis/smartthings-pc-control/internal/release"
 )
 
@@ -222,6 +223,9 @@ func Run(version string, minimized bool) {
 	}
 
 	registerToastProtocol()
+	// Toasts show as banners only under the AUMID of a Start menu
+	// shortcut; made or repaired (exe moved) on every start.
+	go ensureToastShortcut()
 	// Default on: the grace-period toast only appears while the tray app
 	// is running. Rewritten every start so it tracks the current exe path.
 	if a.Preferences().BoolWithFallback("autostart", true) {
@@ -1006,7 +1010,19 @@ func (u *ui) fillSvcBox(state svcState) {
 			if !ok {
 				return
 			}
-			elevated(func() error { return runElevatedSelfWait("uninstall") })
+			elevated(func() error {
+				if err := runElevatedSelfWait("uninstall"); err != nil {
+					return err
+				}
+				// The Start menu shortcut is this user's (the elevated
+				// child may run as another admin), so it goes here, once
+				// the service is really gone. Best effort; the next tray
+				// start makes it again.
+				if queryServiceState() == svcNotInstalled {
+					appid.RemoveToastShortcut()
+				}
+				return nil
+			})
 		}, u.win)
 	})
 
