@@ -78,7 +78,8 @@ var userActionExe = os.Executable
 // returned result), errUserActionOutput (no reply line), or a start error.
 //
 // A reply carrying "audio" also updates the audio store, so a command's
-// result is visible in status before the next tray heartbeat.
+// result is visible in status before the next tray heartbeat; a `media
+// info` reply updates the now-playing store the same way (#117).
 func runUserAction(ctx context.Context, args ...string) (UserActionResult, error) {
 	if _, err := useraction.Parse(args); err != nil {
 		var ue *useraction.Error
@@ -123,6 +124,9 @@ func runUserAction(ctx context.Context, args ...string) (UserActionResult, error
 			// just before it answered.
 			recordAudioSample(*res.Audio, audioNow())
 		}
+	}
+	if np, ok := res.nowPlaying(); ok {
+		recordMediaSample(np, audioNow())
 	}
 	return res, nil
 }

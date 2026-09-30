@@ -302,9 +302,12 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			ActivityEnabled bool
 			// MediaEnabled is media.enabled (#104).
 			MediaEnabled bool
+			// NowPlaying is the media.now_playing opt-in (#117).
+			NowPlaying bool
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
-			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled, liveCfg.Media.Enabled})
+			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled, liveCfg.Media.Enabled,
+			liveCfg.Media.NowPlaying})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)
@@ -321,6 +324,9 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 
 	// API: battery for the app's status bar (#112, see battery.go)
 	mux.HandleFunc("/api/battery", handleBatteryAPI)
+
+	// API: the command tab's media card (#117, see nowplaying.go)
+	mux.HandleFunc("/api/media", handleMediaAPI)
 
 	// API: running program names for the app's watch-list picker (#110,
 	// see activity.go); loopback callers only.

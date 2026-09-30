@@ -31,9 +31,10 @@ const (
 	// status block reports "unknown" — which is what a stopped tray app,
 	// a logged-off user or a suspended machine look like.
 	idleHeartbeatTTL = 90 * time.Second
-	// idleHeartbeatMaxBody caps the body: one integer and, since #103, an
-	// audio block whose device name is at most 128 characters.
-	idleHeartbeatMaxBody = 4 << 10
+	// idleHeartbeatMaxBody caps the body: one integer, since #103 an audio
+	// block whose device name is at most 128 characters, and since #117 a
+	// media block of four short texts (at most ~2.6 KB of UTF-8).
+	idleHeartbeatMaxBody = 8 << 10
 	// idleHeartbeatMax is a sanity bound (a year) on the reported value.
 	idleHeartbeatMax = int64(365 * 24 * 60 * 60)
 )
@@ -84,6 +85,21 @@ func resetIdleHeartbeat() {
 type idleHeartbeatRequest struct {
 	IdleSeconds *int64          `json:"idle_seconds"`
 	Audio       *heartbeatAudio `json:"audio"`
+	// Media is the system media session (#117). The tray app sends it
+	// every 3s when it changes, as a body with only this block.
+	Media *heartbeatMedia `json:"media"`
+}
+
+// heartbeatMedia is the heartbeat's media block, with the same sampled_at
+// rule as the audio block. The tray app leaves the track out while the
+// media.now_playing opt-in is off; the store drops it anyway.
+type heartbeatMedia struct {
+	useraction.NowPlaying
+	SampledAt string `json:"sampled_at,omitempty"`
+}
+
+func (m heartbeatMedia) sampleTime(received time.Time) (time.Time, bool) {
+	return heartbeatSampleTime(m.SampledAt, received)
 }
 
 // heartbeatAudio is the heartbeat's audio block: the sample and, since
@@ -105,10 +121,15 @@ const heartbeatClockSkew = 5 * time.Second
 // the receive time when it is in the future, or the receive time when it
 // is absent. ok is false for a value that is not RFC3339.
 func (a heartbeatAudio) sampleTime(received time.Time) (time.Time, bool) {
-	if a.SampledAt == "" {
+	return heartbeatSampleTime(a.SampledAt, received)
+}
+
+// heartbeatSampleTime is sampleTime for any block's sampled_at.
+func heartbeatSampleTime(sampledAt string, received time.Time) (time.Time, bool) {
+	if sampledAt == "" {
 		return received, true
 	}
-	at, err := time.Parse(time.RFC3339Nano, a.SampledAt)
+	at, err := time.Parse(time.RFC3339Nano, sampledAt)
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -158,13 +179,29 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		audioAt = at
 	}
+	var mediaAt time.Time
+	if body.Media != nil {
+		if err := body.Media.Validate(); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "media: "+err.Error())
+			return
+		}
+		at, ok := body.Media.sampleTime(audioNow())
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, "media: sampled_at is not RFC3339")
+			return
+		}
+		mediaAt = at
+	}
 	// Validate everything before storing anything: a rejected body leaves
-	// both samples as they were.
+	// every sample as it was.
 	if body.IdleSeconds != nil {
 		noteIdleHeartbeat(*body.IdleSeconds)
 	}
 	if body.Audio != nil {
 		recordAudioSample(body.Audio.Audio, audioAt)
+	}
+	if body.Media != nil {
+		recordMediaSample(body.Media.NowPlaying, mediaAt)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -486,6 +486,7 @@ func configChangedKeys(old, new Config) []string {
 	add("activity.enabled", old.Activity.Enabled != new.Activity.Enabled)
 	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
 	add("media.enabled", old.Media.Enabled != new.Media.Enabled)
+	add("media.now_playing", old.Media.NowPlaying != new.Media.NowPlaying)
 	return keys
 }
 

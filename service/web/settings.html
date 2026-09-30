@@ -286,6 +286,13 @@
                         </label>
                         <div class="info" data-i18n="mediaEnabledInfo">Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.</div>
                     </div>
+                    <div class="field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="nowPlaying" {{if .NowPlaying}}checked{{end}} onchange="checkChanges()" style="width:auto;">
+                            <span data-i18n="nowPlaying">Share what is playing</span>
+                        </label>
+                        <div class="info" data-i18n="nowPlayingInfo">Sends the title, artist, album and app of the playing media to SmartThings and Telegram. Browsers report the tab title (a YouTube video's title, say). Off: only playing/paused is shared.</div>
+                    </div>
                     <div class="section-title" data-i18n="smartthings">SmartThings</div>
                     <div class="field">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -407,6 +414,8 @@
                 shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
                 mediaEnabled: 'Allow remote volume and media control',
                 mediaEnabledInfo: 'Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.',
+                nowPlaying: 'Share what is playing',
+                nowPlayingInfo: 'Sends the title, artist, album and app of the playing media to SmartThings and Telegram. Browsers report the tab title (a YouTube video\'s title, say). Off: only playing/paused is shared.',
                 smartthings: 'SmartThings',
                 stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
                 stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
@@ -448,6 +457,8 @@
                 shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
                 mediaEnabled: '원격 볼륨·미디어 제어 허용',
                 mediaEnabledInfo: 'SmartThings·텔레그램에서 볼륨·음소거와 재생/일시정지·다음 곡 등을 보냅니다. 로그인한 사용자가 있을 때만 동작합니다.',
+                nowPlaying: '재생 정보 공유',
+                nowPlayingInfo: '재생 중인 미디어의 제목·아티스트·앨범·앱 이름을 SmartThings와 텔레그램에 보냅니다. 브라우저는 탭 제목(유튜브 영상 제목 등)이 제목으로 갑니다. 끄면 재생 중/일시정지 여부만 보냅니다.',
                 smartthings: 'SmartThings',
                 stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
                 stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
@@ -505,6 +516,7 @@
         const originalRemote = document.getElementById('webuiRemote').checked;
         const originalGrace = document.getElementById('shutdownGrace').checked;
         const originalMedia = document.getElementById('mediaEnabled').checked;
+        const originalNowPlaying = document.getElementById('nowPlaying').checked;
         const originalStSession = document.getElementById('stSession').checked;
         const originalStSessionUser = document.getElementById('stSessionUser').checked;
         const originalStHubs = document.getElementById('stHubs').value;
@@ -519,6 +531,7 @@
                             document.getElementById('webuiRemote').checked !== originalRemote ||
                             document.getElementById('shutdownGrace').checked !== originalGrace ||
                             document.getElementById('mediaEnabled').checked !== originalMedia ||
+                            document.getElementById('nowPlaying').checked !== originalNowPlaying ||
                             document.getElementById('stSession').checked !== originalStSession ||
                             document.getElementById('stSessionUser').checked !== originalStSessionUser ||
                             document.getElementById('stHubs').value !== originalStHubs ||
@@ -546,7 +559,7 @@
             // Only the switch: without a watch key the service keeps the
             // list the desktop app edited.
             const activity = {enabled: document.getElementById('activityEnabled').checked};
-            const media = {enabled: document.getElementById('mediaEnabled').checked};
+            const media = {enabled: document.getElementById('mediaEnabled').checked, now_playing: document.getElementById('nowPlaying').checked};
             try {
                 const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram, activity, media})});
                 if (res.status === 401) { window.location.href = '/login'; return; }

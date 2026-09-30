@@ -30,6 +30,10 @@ import (
 type MediaConfig struct {
 	// Enabled allows the volume, mute and media-key commands. Default on.
 	Enabled bool `json:"enabled"`
+	// NowPlaying (#117) shares the title, artist, album and app of the
+	// playing media in status, pushes and Telegram. Opt-in, default off;
+	// the playback status alone follows Enabled (nowplaying.go).
+	NowPlaying bool `json:"now_playing"`
 }
 
 // defaultVolumeStep is volumeup/volumedown without a value (§3), and the
@@ -74,7 +78,7 @@ func isMediaCommand(name string) bool {
 //	volumedown  value 1–100, default 5
 //	mute        audio mute on      (value ignored)
 //	unmute      audio mute off
-//	play…prev   media <key>        (play and pause both send play/pause)
+//	play…prev   media <key>        (the session tells play from pause, #117)
 func mediaCommandArgs(name string, value *int) ([]string, error) {
 	switch name {
 	case "volume":
@@ -123,7 +127,14 @@ func runMediaCommand(ctx context.Context, name string, value *int) (UserActionRe
 	if err != nil {
 		return UserActionResult{}, err
 	}
-	return runUserActionFn(ctx, args...)
+	res, err := runUserActionFn(ctx, args...)
+	if err == nil && !mediaCommandKinds[name] {
+		// A media key changes what plays: show the new state at once and
+		// read the session again once the player has caught up (#117).
+		noteMediaCommand(res)
+		scheduleMediaRefresh()
+	}
+	return res, err
 }
 
 // readAudioNow asks the user session for the current state (`audio get`),
@@ -187,10 +198,14 @@ func stAudioView(s audioSample) stAudio {
 	}
 }
 
-// mediaFeatures are the §3 features entries media.enabled turns on.
+// mediaFeatures are the §3 features entries media.enabled turns on, plus
+// "nowplaying" with the media.now_playing opt-in (#117).
 func mediaFeatures(cfg Config) []string {
 	if !cfg.Media.Enabled {
 		return nil
+	}
+	if cfg.Media.NowPlaying {
+		return []string{"audio", "media", "nowplaying"}
 	}
 	return []string{"audio", "media"}
 }
