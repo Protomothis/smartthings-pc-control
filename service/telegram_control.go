@@ -108,6 +108,7 @@ var tgTexts = map[string][2]string{
 			"/vol [0-100|+n|-n] – PC 볼륨 (값을 빼면 현재 볼륨)\n" +
 			"/mute · /unmute – PC 음소거 켜기·끄기\n" +
 			"/play /pause /stop /next /prev – 미디어 재생 제어\n" +
+			"/np – 지금 재생 중인 미디어\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
@@ -123,6 +124,7 @@ var tgTexts = map[string][2]string{
 			"/vol [0-100|+n|-n] – PC volume (no value: the current volume)\n" +
 			"/mute · /unmute – mute or unmute the PC\n" +
 			"/play /pause /stop /next /prev – media playback\n" +
+			"/np – what is playing now\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/help – this list",
 	},
@@ -202,6 +204,18 @@ var tgTexts = map[string][2]string{
 	"media_unsupported": {"이 PC에서는 할 수 없습니다: %s", "Not possible on this PC: %s"},
 	"media_timeout":     {"PC가 3초 안에 답하지 않았습니다", "The PC did not answer within 3 seconds"},
 	"media_failed":      {"실패: %s", "Failed: %s"},
+	// now playing (#117)
+	"np_none":           {"재생 중인 미디어 없음", "Nothing is playing"},
+	"np_playing":        {"재생 중", "Playing"},
+	"np_paused":         {"일시정지", "Paused"},
+	"np_stopped":        {"정지", "Stopped"},
+	"np_private":        {"(재생 정보 공유가 꺼져 있습니다)", "(sharing what is playing is turned off)"},
+	"st_media":          {"미디어", "Media"},
+	"media_done_play":   {"▶ 재생했습니다", "▶ Playing"},
+	"media_done_pause":  {"⏸ 일시정지했습니다", "⏸ Paused"},
+	"media_done_stop":   {"⏹ 정지했습니다", "⏹ Stopped"},
+	"media_done_next":   {"⏭ 다음 곡으로 넘겼습니다", "⏭ Skipped to the next track"},
+	"media_done_prev":   {"⏮ 이전 곡으로 돌아갔습니다", "⏮ Back to the previous track"},
 	"quiet_still":       {"🔕 알림은 %s까지 일시 중지 중입니다 — <code>/quiet off</code>로 재개", "🔕 Notifications stay paused until %s — <code>/quiet off</code> resumes them"},
 	// battery (#112)
 	"st_battery":          {"배터리", "Battery"},
@@ -484,6 +498,8 @@ func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd s
 		return tgMediaCommand(ctx, "unmute", nil)
 	case "play", "pause", "stop", "next", "prev":
 		return tgMediaCommand(ctx, cmd, nil)
+	case "np":
+		return tgNowPlaying(ctx)
 	case "quiet":
 		if len(args) > 0 && strings.EqualFold(args[0], "off") {
 			b := currentBus()
@@ -822,6 +838,11 @@ func tgStatusText() string {
 	if line := tgActivityLine(stActivityStatus(getConfig())); line != "" {
 		b.WriteString("\n" + line)
 	}
+	if cfg := getConfig(); cfg.Media.Enabled {
+		if line := tgMediaLine(stMediaStatus(cfg), cfg.Media.NowPlaying); line != "" {
+			b.WriteString("\n" + line)
+		}
+	}
 
 	if bus := currentBus(); bus != nil {
 		if until := bus.MutedUntil(); !until.IsZero() {
@@ -1003,11 +1024,12 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},
 		{Command: "mute", Description: pick("PC 음소거", "Mute the PC")},
 		{Command: "unmute", Description: pick("PC 음소거 해제", "Unmute the PC")},
-		{Command: "play", Description: pick("재생/일시정지", "Play/pause")},
-		{Command: "pause", Description: pick("재생/일시정지", "Play/pause")},
+		{Command: "play", Description: pick("재생", "Play")},
+		{Command: "pause", Description: pick("일시정지", "Pause")},
 		{Command: "next", Description: pick("다음 곡", "Next track")},
 		{Command: "prev", Description: pick("이전 곡", "Previous track")},
 		{Command: "stop", Description: pick("정지", "Stop")},
+		{Command: "np", Description: pick("지금 재생 중", "Now playing")},
 		{Command: "quiet", Description: pick("알림 일시 중지 (30m, 2h, off)", "Pause notifications (30m, 2h, off)")},
 		{Command: "help", Description: pick("도움말", "Help")},
 	}

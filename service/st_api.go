@@ -257,6 +257,9 @@ type stStatusResponse struct {
 	Activity stActivity `json:"activity"`
 	// Audio is the default playback device's last known state (#104, §3).
 	Audio stAudio `json:"audio"`
+	// Media is the system media session (#117, §15): the status, and the
+	// track with the media.now_playing opt-in.
+	Media stMedia `json:"media"`
 }
 
 // stFeatures lists what this service supports right now. Some entries
@@ -555,6 +558,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		Battery:           bat,
 		Activity:          stActivityStatus(cfg),
 		Audio:             stAudioStatus(cfg),
+		Media:             stMediaStatus(cfg),
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{

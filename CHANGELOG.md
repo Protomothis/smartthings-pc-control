@@ -24,6 +24,10 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 로그인한 사용자 세션을 PowerShell `Get-Process explorer` 대신 WTS API(`WTSGetActiveConsoleSessionId` → `WTSQueryUserToken`, 없으면 `WTSEnumerateSessions`의 활성 세션)로 찾습니다. 호출마다 1초 가까이 걸리던 것이 사라져 `user-action`이 3초 제한 안에 넉넉히 들어오고, 원격 데스크톱으로만 로그인한 경우도 찾습니다 (#104)
 - 트레이 하트비트의 `audio`에 `sampled_at`(RFC3339)을 받습니다. 저장값은 받은 시각이 아니라 읽은 시각으로 비교하므로, 명령 직전에 읽고 직후에 도착한 하트비트가 명령 결과를 되돌리지 않습니다 (#104)
 - **미디어 제어.** `POST /st/v1/command`에 `playpause` · `play` · `pause` · `stop` · `next` · `prev`를 더했습니다. 사용자 세션에서 `SendInput`으로 미디어 키(VK_MEDIA_PLAY_PAUSE · STOP · NEXT_TRACK · PREV_TRACK)를 눌렀다 뗍니다. Windows에는 재생/일시정지 토글 키 하나뿐이고 재생 상태를 알 수 없어 `play`와 `pause`는 둘 다 재생/일시정지 키를 보냅니다. `features`에 `"media"`가 붙고, 볼륨과 같은 409/403 규칙을 따릅니다 (#105)
+- **재생 정보와 앱 단위 재생 제어.** 미디어 명령이 이제 Windows 미디어 세션(WinRT `GlobalSystemMediaTransportControlsSessionManager`, Windows 10 1809+)의 현재 세션에 직접 `TryPlayAsync`·`TryPauseAsync`·`TryTogglePlayPauseAsync`·`TryStopAsync`·`TrySkipNextAsync`·`TrySkipPreviousAsync`를 보냅니다. 그래서 `play`와 `pause`가 구분되고, 재생 중이 아닐 때의 `pause`는 아무것도 하지 않습니다. 세션이 없거나 앱이 거절하거나 호출이 실패하면 예전처럼 미디어 키로 넘어갑니다. `user-action` 답에 `via: "session"|"keys"`와(세션일 때) 명령 뒤 상태·앱 이름이 실립니다. WinRT는 새 의존성 없이 vtable을 직접 호출합니다 (#117)
+- `/st/v1/status`에 `media: {status, title, artist, album, app, updated_at}`를 더했습니다. `status`는 `playing`·`paused`·`stopped`·`none`이고 `media.enabled`면 늘 옵니다(세션이 없거나, 로그인한 사용자가 없거나, 90초 넘게 새 값이 없으면 `none`). 제목·아티스트·앨범·앱은 옵트인 `media.now_playing`일 때만, 앱이 알려 준 것만 옵니다. 파일 경로·URL·썸네일은 읽지도 보내지도 않습니다. 옵트인이면 `features`에 `"nowplaying"`이 붙고, 저장된 값이 바뀌면 푸시 `media.changed`를 보냅니다(텔레그램 알림은 없음). 미디어 명령 뒤에는 결과 상태를 바로 반영하고 1.2초 뒤 세션을 다시 읽습니다 (#117)
+- 새 설정 `media.now_playing`(기본 꺼짐). WebUI 설정 페이지와 앱 설정 탭에서 바꿀 수 있고, 바꾸면 설정 변경 알림에 `media.now_playing`이 나옵니다 (#117)
+- 트레이 하트비트가 선택 항목 `media: {status, title?, artist?, album?, app?, sampled_at}`을 받습니다(오디오와 같이 더 새 `sampled_at`만 덮어씀). 앱용 로컬 API `GET/POST /api/media`(미디어 카드의 상태와 명령) (#117)
 
 ### 데스크톱 앱
 
@@ -33,6 +37,8 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 브라우저 WebUI 설정에도 **실행 중 앱 감지** 스위치를 더했습니다(목록 편집은 앱에서) (#110)
 - 트레이 앱이 30초마다 기본 재생 장치의 볼륨·음소거·장치 이름을 서비스에 알립니다(읽은 시각 포함). 세션 정보 노출 설정과는 따로, `media.enabled`를 따릅니다. 키보드로 바꾼 볼륨도 SmartThings에 30초 안에 반영됩니다 (#104)
 - 설정 탭에 **원격 볼륨·미디어 제어 허용** 체크를 더했습니다(`media.enabled`) (#104)
+- 명령 탭에 **미디어** 카드를 더했습니다(전원 → 미디어 → 잠들지 않기 순). 첫 줄은 재생 정보(`▶ 제목 — 아티스트 · Spotify`, 공유를 끄면 `재생 중`/`일시정지`, 세션이 없으면 `재생 중인 미디어 없음`)로 길면 한 줄로 자르고 전체를 아래 작은 글씨로 보여 줍니다. 그 아래 ⏮ ⏯ ⏭ 버튼, 음소거 토글 · 볼륨 슬라이더(놓을 때 전송) · 값 · 장치 이름이 옵니다. 창이 보이는 동안 3초마다 새로 읽고, 미디어 제어가 꺼져 있거나 로그인한 사용자가 없거나 서비스가 옛 버전이면 이유 한 줄과 함께 비활성입니다 (#117)
+- 트레이 앱이 3초마다 볼륨과 미디어 세션을 확인해 바뀐 부분만 바로 보냅니다(30초 하트비트는 그대로). 곡 정보는 **재생 정보 공유**(`media.now_playing`)를 켰을 때만 보냅니다. 설정 탭에 이 체크를 더했습니다 (#117)
 
 ### 텔레그램
 
@@ -42,6 +48,8 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - `/vol`(현재 값: `볼륨 30% · 음소거 꺼짐 · 스피커`), `/vol 30`, `/vol +10`, `/vol -10`, `/mute`, `/unmute`. 볼륨 명령은 알림을 만들지 않습니다 (#104)
 - **바뀜:** `/mute`·`/unmute`는 이제 PC 음소거입니다. 알림 일시 중지는 `/quiet 30m|2h`와 `/quiet off`로 옮겼고, `/mute 30m`처럼 시간을 붙이면 예전처럼 알림을 멈춥니다. 알림이 멈춘 동안 `/unmute`는 음소거만 풀고 `/quiet off` 안내를 덧붙입니다 (#104)
 - `/play` `/pause` `/stop` `/next` `/prev` — 미디어 키를 보내고 `⏭ 다음 곡 키를 보냈습니다`처럼 답합니다 (#105)
+- `/np` — 지금 재생 중인 미디어: `▶ 제목 — 아티스트 · Spotify`, `⏸ …`, `재생 중인 미디어 없음`. 재생 정보 공유를 끄면 `▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)`. 무언가 재생 중이면 `/status`에 `미디어: ▶ …` 줄이 붙습니다 (#117)
+- `/play` `/pause` 등이 세션으로 처리되면 무엇을 했는지 답합니다: `⏸ 일시정지했습니다 · Spotify`, `⏭ 다음 곡으로 넘겼습니다`(앱 이름은 공유를 켰을 때만). 키로 넘어간 경우는 예전 문구 그대로입니다 (#117)
 
 ### 내부
 

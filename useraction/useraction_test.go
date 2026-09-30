@@ -32,6 +32,7 @@ func TestParseValid(t *testing.T) {
 		{[]string{"media", "stop"}, Request{Action: "media", Verb: "stop"}},
 		{[]string{"media", "next"}, Request{Action: "media", Verb: "next"}},
 		{[]string{"media", "prev"}, Request{Action: "media", Verb: "prev"}},
+		{[]string{"media", "info"}, Request{Action: "media", Verb: "info"}},
 		{[]string{"notify", "--title", "SmartThings", "--text", "빨래 끝"},
 			Request{Action: "notify", Title: "SmartThings", Text: "빨래 끝"}},
 		{[]string{"notify", "--text", "hi", "--title", "", "--speak"},
@@ -107,6 +108,8 @@ func TestParseInvalid(t *testing.T) {
 		{"media", "PLAY"},
 		{"media", "rewind"},
 		{"media", "play", "pause"},
+		{"media", "info", "now"},
+		{"media", "INFO"},
 		// notify
 		{"notify"},
 		{"notify", "--text", "hi"},

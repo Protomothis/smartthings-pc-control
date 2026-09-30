@@ -7,6 +7,7 @@ package service
 //	/vol +10 | -10  step it (1–100)
 //	/mute /unmute   PC mute on/off
 //	/play /pause /stop /next /prev
+//	/np             what is playing (#117): "▶ 제목 — 아티스트 · Spotify"
 //
 // They follow media.enabled and answer "nobody is logged in" the way /st/v1
 // answers 409. None of them raises a notification (§3).
@@ -72,8 +73,9 @@ func tgVolume(ctx context.Context, args []string) (string, *telegram.InlineKeybo
 }
 
 // tgMediaCommand runs one command from mediaCommandKinds and words the
-// result: the audio state after a volume or mute command, "⏯ 재생/일시정지
-// 키를 보냈습니다" after a media key.
+// result: the audio state after a volume or mute command, what the media
+// session did after a media command ("⏸ 일시정지했습니다 · Spotify"), or
+// "⏯ 재생/일시정지 키를 보냈습니다" when only the media key could be pressed.
 func tgMediaCommand(ctx context.Context, name string, value *int) (string, *telegram.InlineKeyboard, error) {
 	res, err := runMediaCommand(ctx, name, value)
 	if err != nil {
@@ -81,7 +83,7 @@ func tgMediaCommand(ctx context.Context, name string, value *int) (string, *tele
 	}
 	logMsg("Telegram: %s", name)
 	if !mediaCommandKinds[name] {
-		return tgText("media_sent", tgMediaLabel(name)), nil, nil
+		return tgMediaResult(name, res, getConfig().Media.NowPlaying), nil, nil
 	}
 	if res.Audio == nil {
 		return tgMediaError(fmt.Errorf("%w: no audio block", errUserActionOutput))
@@ -145,4 +147,104 @@ func tgMediaError(err error) (string, *telegram.InlineKeyboard, error) {
 	}
 	// Start errors can carry paths and child output; those stay in the log.
 	return tgText("media_failed", "user-action"), nil, err
+}
+
+// tgMediaResult words a media command's reply. The session backend says
+// which state it left the session in, so play, pause and the toggle read
+// as what happened; the app name follows with the media.now_playing
+// opt-in. The key path only knows that a key was pressed.
+func tgMediaResult(name string, res UserActionResult, share bool) string {
+	status := res.replyString("status")
+	if res.replyString("via") != "session" || !useraction.ValidMediaStatus(status) {
+		return tgText("media_sent", tgMediaLabel(name))
+	}
+	var key string
+	switch name {
+	case "next", "prev":
+		key = "media_done_" + name
+	default: // play, pause, playpause, stop: by the state reached
+		switch status {
+		case useraction.MediaPlaying:
+			key = "media_done_play"
+		case useraction.MediaPaused:
+			key = "media_done_pause"
+		default:
+			key = "media_done_stop"
+		}
+	}
+	reply := tgText(key)
+	if app := res.replyString("app"); share && app != "" {
+		reply += " · " + html.EscapeString(app)
+	}
+	return reply
+}
+
+// tgNowPlaying handles /np: the session as the user session sees it now,
+// not the stored sample, so it also works without the tray app.
+func tgNowPlaying(ctx context.Context) (string, *telegram.InlineKeyboard, error) {
+	np, err := readNowPlayingNow(ctx)
+	if err != nil {
+		return tgMediaError(err)
+	}
+	return tgNowPlayingText(np, getConfig().Media.NowPlaying), nil, nil
+}
+
+// tgMediaGlyph is the status symbol of the /np and /status lines.
+func tgMediaGlyph(status string) string {
+	switch status {
+	case useraction.MediaPlaying:
+		return "▶"
+	case useraction.MediaPaused:
+		return "⏸"
+	}
+	return "⏹"
+}
+
+// tgNowPlayingText is "▶ 제목 — 아티스트 · Spotify", "⏸ …", or "재생 중인
+// 미디어 없음". Without the opt-in only the state is told, with a note on
+// why: "▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)".
+func tgNowPlayingText(np useraction.NowPlaying, share bool) string {
+	if np.Status == useraction.MediaNone || !useraction.ValidMediaStatus(np.Status) {
+		return tgText("np_none")
+	}
+	state := tgText("np_" + np.Status)
+	if !share {
+		return tgMediaGlyph(np.Status) + " " + state + " " + tgText("np_private")
+	}
+	return tgMediaGlyph(np.Status) + " " + tgTrackText(np, state)
+}
+
+// tgTrackText is "제목 — 아티스트 · 앱" with whatever parts are known;
+// fallback stands in for a missing title and artist.
+func tgTrackText(np useraction.NowPlaying, fallback string) string {
+	var track string
+	switch {
+	case np.Title != "" && np.Artist != "":
+		track = html.EscapeString(np.Title) + " — " + html.EscapeString(np.Artist)
+	case np.Title != "":
+		track = html.EscapeString(np.Title)
+	case np.Artist != "":
+		track = html.EscapeString(np.Artist)
+	default:
+		track = fallback
+	}
+	if np.App != "" {
+		track += " · " + html.EscapeString(np.App)
+	}
+	return track
+}
+
+// tgMediaLine is the /status "미디어: ▶ 제목 — 아티스트 · Spotify" line, or ""
+// unless something is playing — like the activity line, an idle PC needs
+// no line saying so. It reads the stored sample (/status runs nothing in
+// the user session).
+func tgMediaLine(m stMedia, share bool) string {
+	if m.Status != useraction.MediaPlaying {
+		return ""
+	}
+	text := tgText("np_playing")
+	if share {
+		text = tgTrackText(useraction.NowPlaying{Status: m.Status, Title: m.Title, Artist: m.Artist, App: m.App}, text)
+	}
+	return tgText("st_media") + ": " + tgMediaGlyph(m.Status) + " " + text
 }

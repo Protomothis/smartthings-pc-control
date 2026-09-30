@@ -117,6 +117,14 @@ type ui struct {
 	schedCancelBtn *widget.Button
 	// Command tab: the keep-awake row (#111, awake.go).
 	awake *awakeRow
+	// Command tab: the media card (#117, media_card.go). lastMedia (and
+	// whether it was ever loaded) survives a rebuild so the card comes
+	// back at once; hbSent is what the tray's 3s check last delivered.
+	media        *mediaCard
+	lastMedia    MediaState
+	lastMediaErr error
+	mediaLoaded  bool
+	hbSent       heartbeatSent
 	// Status bar battery label (#112, battery.go), hidden without a
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
@@ -130,6 +138,8 @@ type ui struct {
 	remoteCheck *toggle
 	// mediaCheck is media.enabled (#104): volume and media-key commands.
 	mediaCheck *toggle
+	// nowPlayingCheck is the media.now_playing opt-in (#117).
+	nowPlayingCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -667,6 +677,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
+	u.nowPlayingCheck = newToggle(u.t("settings.nowplaying"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
 
@@ -706,6 +717,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		hint(u.t("settings.remote.hint")),
 		u.mediaCheck,
 		hint(u.t("settings.media.hint")),
+		u.nowPlayingCheck,
+		hint(u.t("settings.nowplaying.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -775,6 +788,7 @@ func (u *ui) saveSettings(quiet bool) bool {
 	cfg.Secret = u.secretEntry.Text
 	cfg.WebUIRemote = u.remoteCheck.Checked
 	cfg.Media.Enabled = u.mediaCheck.Checked
+	cfg.Media.NowPlaying = u.nowPlayingCheck.Checked
 	cfg.ShutdownGrace = graceOn
 	cfg.GraceSeconds = graceSec
 	msg, err := u.client.SaveConfig(cfg)
@@ -810,6 +824,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.secretEntry.SetText(cfg.Secret)
 	u.remoteCheck.SetChecked(cfg.WebUIRemote)
 	u.mediaCheck.SetChecked(cfg.Media.Enabled)
+	u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
 	u.setGraceSelection(cfg)
 	u.updateSaveState()
 }
@@ -877,6 +892,7 @@ func (u *ui) settingsDirty() bool {
 		u.secretEntry.Text != b.Secret ||
 		u.remoteCheck.Checked != b.WebUIRemote ||
 		u.mediaCheck.Checked != b.Media.Enabled ||
+		u.nowPlayingCheck.Checked != b.Media.NowPlaying ||
 		graceOn != b.ShutdownGrace ||
 		(graceOn && graceSec != b.GraceSeconds)
 }
@@ -1026,14 +1042,16 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	note.Wrapping = fyne.TextWrapWord
 	note.Importance = widget.LowImportance
 
+	// Cards: general, power (with the note on what "immediately" means),
+	// media (#117), keep-awake.
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
+		section(u.t("cmd.group.power"), container.NewVBox(container.NewGridWrap(cmdButtonSize, power...), note)),
+		widget.NewSeparator(),
+		u.buildMediaCard(),
+		widget.NewSeparator(),
 		u.buildAwakeRow(),
-		widget.NewSeparator(),
-		section(u.t("cmd.group.power"), container.NewGridWrap(cmdButtonSize, power...)),
-		widget.NewSeparator(),
-		note,
 	)))
 }
 
@@ -1249,6 +1267,7 @@ func (u *ui) initialLoad() {
 		u.secretEntry.SetText(cfg.Secret)
 		u.remoteCheck.SetChecked(cfg.WebUIRemote)
 		u.mediaCheck.SetChecked(cfg.Media.Enabled)
+		u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
 		u.setGraceSelection(cfg)
 		u.updateSaveState()
 		u.fillNotifyTab(cfg)
@@ -1260,6 +1279,7 @@ func (u *ui) initialLoad() {
 		u.loadSTHub()
 		u.loadAwake()
 		u.loadBattery()
+		u.loadMedia()
 	}
 }
 
@@ -1284,6 +1304,8 @@ func (u *ui) pollLoop() {
 	defer awakeTick.Stop()
 	batteryTick := time.NewTicker(batteryPollInterval)
 	defer batteryTick.Stop()
+	mediaTick := time.NewTicker(mediaWatchInterval)
+	defer mediaTick.Stop()
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
@@ -1314,6 +1336,11 @@ func (u *ui) pollLoop() {
 			if u.connected.Load() {
 				go u.loadBattery()
 			}
+		case <-mediaTick.C:
+			// Like the heartbeat, not gated on u.connected: the change
+			// check keeps the service current while the window is closed;
+			// mediaTick refreshes the card only while it is on screen.
+			go u.mediaTick()
 		case <-connTick.C:
 			// Not while the login dialog is up or an attempt is in
 			// flight: a 401 would only race the dialog (#98).
