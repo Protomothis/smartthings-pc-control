@@ -1,8 +1,8 @@
 package service
 
-// Volume and mute (#104; docs/design/media-notify.md
+// Volume, mute and media keys (#104, #105; docs/design/media-notify.md
 // §3, §6). All of them only mean something in the logged-in user's
-// session, so each command becomes one `user-action audio …` run
+// session, so each command becomes one `user-action audio|media …` run
 // there (useraction.go); the reply's audio block updates the store in
 // audio_state.go, which pushes audio.changed.
 //
@@ -46,13 +46,19 @@ type errMediaValue struct{ msg string }
 func (e *errMediaValue) Error() string { return e.msg }
 
 // mediaCommandKinds are the /st/v1 command names, true for the audio ones
-// (their reply carries the new audio state).
+// (their reply carries the new audio state), false for the media keys.
 var mediaCommandKinds = map[string]bool{
 	"volume":     true,
 	"volumeup":   true,
 	"volumedown": true,
 	"mute":       true,
 	"unmute":     true,
+	"playpause":  false,
+	"play":       false,
+	"pause":      false,
+	"stop":       false,
+	"next":       false,
+	"prev":       false,
 }
 
 // isMediaCommand reports whether name is one of mediaCommandKinds.
@@ -68,6 +74,7 @@ func isMediaCommand(name string) bool {
 //	volumedown  value 1–100, default 5
 //	mute        audio mute on      (value ignored)
 //	unmute      audio mute off
+//	play…prev   media <key>        (play and pause both send play/pause)
 func mediaCommandArgs(name string, value *int) ([]string, error) {
 	switch name {
 	case "volume":
@@ -95,6 +102,8 @@ func mediaCommandArgs(name string, value *int) ([]string, error) {
 		return []string{"audio", "mute", "on"}, nil
 	case "unmute":
 		return []string{"audio", "mute", "off"}, nil
+	case "playpause", "play", "pause", "stop", "next", "prev":
+		return []string{"media", name}, nil
 	}
 	return nil, fmt.Errorf("not a media command: %q", name)
 }
@@ -183,7 +192,7 @@ func mediaFeatures(cfg Config) []string {
 	if !cfg.Media.Enabled {
 		return nil
 	}
-	return []string{"audio"}
+	return []string{"audio", "media"}
 }
 
 // handleSTMedia runs one volume, mute or media-key command from

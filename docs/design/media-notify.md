@@ -77,11 +77,13 @@
   - `volume`(value 0–100), `volumeup`/`volumedown`(value 기본 5), `mute`/`unmute`
   - `play`/`pause`/`playpause`/`stop`/`next`/`prev`
   - 유예·예약과 무관하게 **즉시 실행**. 텔레그램 알림은 기본 끔(볼륨 조절마다 알림이 오면 소음).
-  - (#104 구현) `volumeup`/`volumedown`의 value는 1–100, `volume`은 value 필수. `minutes`를 주면 400, `mode`는 무시.
+  - (#104·#105 구현) `volumeup`/`volumedown`의 value는 1–100, `volume`은 value 필수. `minutes`를 주면 400, `mode`는 무시.
     `last_command`에 남기지 않는다. 볼륨 변경은 음소거를 건드리지 않는다. 오류: `403 media_disabled`, `409 no_user_session`,
     `400`(범위), `501 unsupported`(재생 장치 없음), `502 failed`, `504 timeout`. 볼륨·음소거 응답에는 바뀐 `audio` 블록이 실린다.
   - `audio.available`은 사용자 세션이 없거나, 서비스 시작 뒤 값이 아직 없거나, `media.enabled`가 꺼져 있으면 false이고 나머지 키는 없다.
     `features`의 "audio"·"media"는 `media.enabled`일 때만.
+  - (#105) `user-action media`는 백엔드 목록(`mediaBackends`)을 차례로 시도해 처음 처리한 쪽이 이긴다. 지금은 SendInput 미디어 키
+    하나뿐이고, #117의 WinRT 세션 관리자는 그 앞에 붙어 세션이 없거나 실패하면 키로 넘긴다. 답은 `{"ok":true,"media":"next","via":"keys"}`.
 - **notify**(`POST /st/v1/notify`): `{ "title"?: string, "text": string, "speak"?: bool }`.
   - `text` 1–200자, 제목 기본값은 "SmartThings". 제어 문자 제거.
   - 출처 IP별 분당 10회. 설정에서 끄면 `403 notify_disabled`.
@@ -126,7 +128,8 @@
 
 - (#104 구현) `/mute`·`/unmute`는 원래 알림 일시 중지(v1.0)였다. 이제 인자 없는 `/mute`와 `/unmute`는 PC 음소거이고,
   알림 일시 중지는 `/quiet 30m|2h|off`로 옮겼다. `/mute 30m`처럼 시간을 붙이면 예전대로 알림을 멈춘다. 알림이 멈춘 동안
-  `/unmute`는 음소거만 풀고 "`/quiet off`로 재개" 안내를 덧붙인다. 답은 `볼륨 30% · 음소거 꺼짐 · 스피커`.
+  `/unmute`는 음소거만 풀고 "`/quiet off`로 재개" 안내를 덧붙인다. `/stop`도 있다. 답은 `볼륨 30% · 음소거 꺼짐 · 스피커`,
+  미디어 키는 `⏯ 재생/일시정지 키를 보냈습니다`.
 
 ## 7. 보안
 

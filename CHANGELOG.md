@@ -23,6 +23,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 새 설정 `media: { enabled: true }`. 끄면 볼륨·미디어 명령을 모두 거절하고 트레이도 볼륨을 보고하지 않습니다. WebUI 설정 페이지와 앱 설정 탭에서 바꿀 수 있고, 바꾸면 설정 변경 알림에 `media.enabled`가 나옵니다 (#104)
 - 로그인한 사용자 세션을 PowerShell `Get-Process explorer` 대신 WTS API(`WTSGetActiveConsoleSessionId` → `WTSQueryUserToken`, 없으면 `WTSEnumerateSessions`의 활성 세션)로 찾습니다. 호출마다 1초 가까이 걸리던 것이 사라져 `user-action`이 3초 제한 안에 넉넉히 들어오고, 원격 데스크톱으로만 로그인한 경우도 찾습니다 (#104)
 - 트레이 하트비트의 `audio`에 `sampled_at`(RFC3339)을 받습니다. 저장값은 받은 시각이 아니라 읽은 시각으로 비교하므로, 명령 직전에 읽고 직후에 도착한 하트비트가 명령 결과를 되돌리지 않습니다 (#104)
+- **미디어 제어.** `POST /st/v1/command`에 `playpause` · `play` · `pause` · `stop` · `next` · `prev`를 더했습니다. 사용자 세션에서 `SendInput`으로 미디어 키(VK_MEDIA_PLAY_PAUSE · STOP · NEXT_TRACK · PREV_TRACK)를 눌렀다 뗍니다. Windows에는 재생/일시정지 토글 키 하나뿐이고 재생 상태를 알 수 없어 `play`와 `pause`는 둘 다 재생/일시정지 키를 보냅니다. `features`에 `"media"`가 붙고, 볼륨과 같은 409/403 규칙을 따릅니다 (#105)
 
 ### 데스크톱 앱
 
@@ -40,6 +41,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 실행 중 앱 감지를 켜 두었고 감시 중인 프로그램이 실행 중이면 `/status`에 `활동: 게임 중 · Steam` 줄이 붙습니다 (#110)
 - `/vol`(현재 값: `볼륨 30% · 음소거 꺼짐 · 스피커`), `/vol 30`, `/vol +10`, `/vol -10`, `/mute`, `/unmute`. 볼륨 명령은 알림을 만들지 않습니다 (#104)
 - **바뀜:** `/mute`·`/unmute`는 이제 PC 음소거입니다. 알림 일시 중지는 `/quiet 30m|2h`와 `/quiet off`로 옮겼고, `/mute 30m`처럼 시간을 붙이면 예전처럼 알림을 멈춥니다. 알림이 멈춘 동안 `/unmute`는 음소거만 풀고 `/quiet off` 안내를 덧붙입니다 (#104)
+- `/play` `/pause` `/stop` `/next` `/prev` — 미디어 키를 보내고 `⏭ 다음 곡 키를 보냈습니다`처럼 답합니다 (#105)
 
 ### 내부
 

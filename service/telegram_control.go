@@ -107,6 +107,7 @@ var tgTexts = map[string][2]string{
 			"/awake [분|off] – 잠들지 않기 (자동 절전 막기, 0 = 끌 때까지)\n" +
 			"/vol [0-100|+n|-n] – PC 볼륨 (값을 빼면 현재 볼륨)\n" +
 			"/mute · /unmute – PC 음소거 켜기·끄기\n" +
+			"/play /pause /stop /next /prev – 미디어 재생 제어\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
@@ -121,6 +122,7 @@ var tgTexts = map[string][2]string{
 			"/awake [minutes|off] – keep awake (hold off idle sleep, 0 = until turned off)\n" +
 			"/vol [0-100|+n|-n] – PC volume (no value: the current volume)\n" +
 			"/mute · /unmute – mute or unmute the PC\n" +
+			"/play /pause /stop /next /prev – media playback\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/help – this list",
 	},
@@ -187,9 +189,14 @@ var tgTexts = map[string][2]string{
 	"awake_already_off": {"잠들지 않기는 이미 꺼져 있습니다", "Keep awake is already off"},
 	"awake_usage":       {"사용법: <code>/awake</code> (기본 시간), <code>/awake 90</code> (분, 0 = 끌 때까지, 최대 1440), <code>/awake off</code>", "Usage: <code>/awake</code> (default period), <code>/awake 90</code> (minutes, 0 = until turned off, at most 1440), <code>/awake off</code>"},
 	"awake_failed":      {"잠들지 않기 실패: %s", "Keep awake failed: %s"},
-	// volume and mute (#104)
+	// volume and media keys (#104, #105)
 	"vol_state":         {"볼륨 %d%% · 음소거 %s", "Volume %d%% · mute %s"},
 	"vol_usage":         {"사용법: <code>/vol</code> (현재 볼륨), <code>/vol 30</code> (0–100), <code>/vol +10</code>, <code>/vol -10</code>", "Usage: <code>/vol</code> (current volume), <code>/vol 30</code> (0–100), <code>/vol +10</code>, <code>/vol -10</code>"},
+	"media_sent":        {"%s 키를 보냈습니다", "Sent %s"},
+	"media_playpause":   {"⏯ 재생/일시정지", "⏯ play/pause"},
+	"media_stop":        {"⏹ 정지", "⏹ stop"},
+	"media_next":        {"⏭ 다음 곡", "⏭ next track"},
+	"media_prev":        {"⏮ 이전 곡", "⏮ previous track"},
 	"media_disabled":    {"미디어 제어가 꺼져 있습니다 (설정 <code>media.enabled</code>)", "Media control is turned off (setting <code>media.enabled</code>)"},
 	"media_no_user":     {"로그인한 사용자가 없어 실행할 수 없습니다", "Nobody is logged in to this PC"},
 	"media_unsupported": {"이 PC에서는 할 수 없습니다: %s", "Not possible on this PC: %s"},
@@ -475,6 +482,8 @@ func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd s
 		return tgMediaCommand(ctx, "mute", nil)
 	case "unmute":
 		return tgMediaCommand(ctx, "unmute", nil)
+	case "play", "pause", "stop", "next", "prev":
+		return tgMediaCommand(ctx, cmd, nil)
 	case "quiet":
 		if len(args) > 0 && strings.EqualFold(args[0], "off") {
 			b := currentBus()
@@ -994,6 +1003,11 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},
 		{Command: "mute", Description: pick("PC 음소거", "Mute the PC")},
 		{Command: "unmute", Description: pick("PC 음소거 해제", "Unmute the PC")},
+		{Command: "play", Description: pick("재생/일시정지", "Play/pause")},
+		{Command: "pause", Description: pick("재생/일시정지", "Play/pause")},
+		{Command: "next", Description: pick("다음 곡", "Next track")},
+		{Command: "prev", Description: pick("이전 곡", "Previous track")},
+		{Command: "stop", Description: pick("정지", "Stop")},
 		{Command: "quiet", Description: pick("알림 일시 중지 (30m, 2h, off)", "Pause notifications (30m, 2h, off)")},
 		{Command: "help", Description: pick("도움말", "Help")},
 	}

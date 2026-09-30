@@ -1,11 +1,12 @@
 package service
 
-// Telegram volume commands (#104; media-notify.md §6):
+// Telegram volume and media commands (#104, #105; media-notify.md §6):
 //
 //	/vol            current volume: "볼륨 30% · 음소거 꺼짐 · 스피커"
 //	/vol 30         set the level (0–100)
 //	/vol +10 | -10  step it (1–100)
 //	/mute /unmute   PC mute on/off
+//	/play /pause /stop /next /prev
 //
 // They follow media.enabled and answer "nobody is logged in" the way /st/v1
 // answers 409. None of them raises a notification (§3).
@@ -71,13 +72,17 @@ func tgVolume(ctx context.Context, args []string) (string, *telegram.InlineKeybo
 }
 
 // tgMediaCommand runs one command from mediaCommandKinds and words the
-// result: the audio state after the change.
+// result: the audio state after a volume or mute command, "⏯ 재생/일시정지
+// 키를 보냈습니다" after a media key.
 func tgMediaCommand(ctx context.Context, name string, value *int) (string, *telegram.InlineKeyboard, error) {
 	res, err := runMediaCommand(ctx, name, value)
 	if err != nil {
 		return tgMediaError(err)
 	}
 	logMsg("Telegram: %s", name)
+	if !mediaCommandKinds[name] {
+		return tgText("media_sent", tgMediaLabel(name)), nil, nil
+	}
 	if res.Audio == nil {
 		return tgMediaError(fmt.Errorf("%w: no audio block", errUserActionOutput))
 	}
@@ -106,6 +111,16 @@ func tgAudioState(a useraction.Audio) string {
 		s += " · " + html.EscapeString(a.Device)
 	}
 	return s
+}
+
+// tgMediaLabel names a media key; play and pause send the play/pause
+// toggle, so they are worded as what was actually pressed.
+func tgMediaLabel(name string) string {
+	switch name {
+	case "play", "pause":
+		name = "playpause"
+	}
+	return tgText("media_" + name)
 }
 
 // tgMediaError words a runMediaCommand failure. Only real failures are

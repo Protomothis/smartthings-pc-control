@@ -494,7 +494,7 @@ func TestTelegramAllowedChatIDsFallsBackToChatID(t *testing.T) {
 func TestTelegramBotCommandsFollowLang(t *testing.T) {
 	ko := telegramBotCommands("ko")
 	en := telegramBotCommands("en")
-	if len(ko) != 17 || len(en) != len(ko) {
+	if len(ko) != 22 || len(en) != len(ko) {
 		t.Fatalf("command count ko=%d en=%d", len(ko), len(en))
 	}
 	if ko[0].Command != "status" || ko[0].Description != "상태" || en[0].Description != "Status" {

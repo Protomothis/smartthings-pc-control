@@ -37,6 +37,12 @@ func TestMediaCommandArgs(t *testing.T) {
 		{"mute", nil, []string{"audio", "mute", "on"}},
 		// mute and unmute take no value; one sent anyway is ignored.
 		{"unmute", intp(7), []string{"audio", "mute", "off"}},
+		{"playpause", nil, []string{"media", "playpause"}},
+		{"play", nil, []string{"media", "play"}},
+		{"pause", nil, []string{"media", "pause"}},
+		{"stop", nil, []string{"media", "stop"}},
+		{"next", nil, []string{"media", "next"}},
+		{"prev", nil, []string{"media", "prev"}},
 	}
 	for _, c := range ok {
 		got, err := mediaCommandArgs(c.name, c.value)
@@ -153,7 +159,7 @@ func TestSTVolumeCommand(t *testing.T) {
 		t.Errorf("last remote changed to %+v", lr)
 	}
 
-	// Up/down with and without a value; mute.
+	// Up/down with and without a value; mute; media keys.
 	for _, tc := range []struct {
 		body string
 		want []string
@@ -162,6 +168,8 @@ func TestSTVolumeCommand(t *testing.T) {
 		{`{"command":"volumedown","value":10}`, []string{"audio", "step", "-10"}},
 		{`{"command":"MUTE"}`, []string{"audio", "mute", "on"}},
 		{`{"command":"unmute","mode":"grace"}`, []string{"audio", "mute", "off"}},
+		{`{"command":"next"}`, []string{"media", "next"}},
+		{`{"command":"play"}`, []string{"media", "play"}},
 	} {
 		n := len(run.Calls())
 		if w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", tc.body); w.Code != http.StatusOK {
@@ -171,6 +179,11 @@ func TestSTVolumeCommand(t *testing.T) {
 		if calls := run.Calls(); len(calls) != n+1 || !reflect.DeepEqual(calls[n], tc.want) {
 			t.Errorf("%s: calls = %q, want %q last", tc.body, calls, tc.want)
 		}
+	}
+	// A media key's reply has no audio block.
+	run.res = UserActionResult{OK: true}
+	if got := stJSON(t, stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"stop"}`)); got["audio"] != nil {
+		t.Errorf("stop reply carries audio: %v", got)
 	}
 }
 
@@ -185,7 +198,9 @@ func TestSTMediaCommandErrors(t *testing.T) {
 		ran    bool
 	}{
 		{"disabled", Config{Port: 5001}, nil, `{"command":"volume","value":30}`, http.StatusForbidden, "media_disabled", false},
+		{"disabled media key", Config{Port: 5001}, nil, `{"command":"playpause"}`, http.StatusForbidden, "media_disabled", false},
 		{"no user", mediaOn(), fmt.Errorf("get session: %w", errNoUserSession), `{"command":"mute"}`, http.StatusConflict, "no_user_session", true},
+		{"no user media", mediaOn(), errNoUserSession, `{"command":"next"}`, http.StatusConflict, "no_user_session", true},
 		{"volume without value", mediaOn(), nil, `{"command":"volume"}`, http.StatusBadRequest, "", false},
 		{"volume too high", mediaOn(), nil, `{"command":"volume","value":101}`, http.StatusBadRequest, "", false},
 		{"volume negative", mediaOn(), nil, `{"command":"volume","value":-1}`, http.StatusBadRequest, "", false},
@@ -195,7 +210,7 @@ func TestSTMediaCommandErrors(t *testing.T) {
 		{"no device", mediaOn(), &userActionError{Code: useraction.CodeUnsupported, Message: "no default playback device"},
 			`{"command":"volume","value":1}`, http.StatusNotImplemented, "unsupported", true},
 		{"failed", mediaOn(), &userActionError{Code: useraction.CodeFailed, Message: "SendInput inserted 0 of 2 events"},
-			`{"command":"mute"}`, http.StatusBadGateway, "failed", true},
+			`{"command":"next"}`, http.StatusBadGateway, "failed", true},
 		{"timeout", mediaOn(), fmt.Errorf("%w after 3s", errUserActionTimeout), `{"command":"mute"}`, http.StatusGatewayTimeout, "timeout", true},
 		{"start error", mediaOn(), errors.New(`exec: C:\PC Control\x.exe: access denied`), `{"command":"mute"}`, http.StatusBadGateway, "failed", true},
 	}
@@ -240,8 +255,8 @@ func TestSTStatusAudioBlock(t *testing.T) {
 	if a["available"] != false || len(a) != 1 {
 		t.Errorf("audio before any sample = %v, want only available:false", a)
 	}
-	if !containsAll(features, "awake", "audio") {
-		t.Errorf("features = %v, want awake, audio", features)
+	if !containsAll(features, "awake", "audio", "media") {
+		t.Errorf("features = %v, want awake, audio, media", features)
 	}
 
 	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.Local)
@@ -266,7 +281,7 @@ func TestSTStatusAudioBlock(t *testing.T) {
 		t.Errorf("audio while disabled = %v", a)
 	}
 	for _, f := range features {
-		if f == "audio" {
+		if f == "audio" || f == "media" {
 			t.Errorf("features while disabled = %v", features)
 		}
 	}
@@ -506,6 +521,20 @@ func TestTelegramVolumeCommands(t *testing.T) {
 		t.Error("/vol loud ran user-action")
 	}
 
+	// Media keys.
+	run.res = UserActionResult{OK: true}
+	for cmd, want := range map[string]string{
+		"play": "⏯ 재생/일시정지 키를 보냈습니다", "pause": "⏯ 재생/일시정지 키를 보냈습니다",
+		"next": "⏭ 다음 곡 키를 보냈습니다", "prev": "⏮ 이전 곡 키를 보냈습니다", "stop": "⏹ 정지 키를 보냈습니다",
+	} {
+		if body, err := do(cmd); err != nil || body != want {
+			t.Errorf("/%s = %q, %v; want %q", cmd, body, err, want)
+		}
+		if calls := run.Calls(); !reflect.DeepEqual(calls[len(calls)-1], []string{"media", cmd}) {
+			t.Errorf("/%s ran %q", cmd, calls[len(calls)-1])
+		}
+	}
+
 	// Nobody logged in; media off.
 	run.err = fmt.Errorf("get session: %w", errNoUserSession)
 	if body, err := do("vol"); err != nil || body != "로그인한 사용자가 없어 실행할 수 없습니다" {
@@ -518,7 +547,7 @@ func TestTelegramVolumeCommands(t *testing.T) {
 	run.err = nil
 	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
 	n = len(run.Calls())
-	for _, cmd := range []string{"vol", "mute", "unmute"} {
+	for _, cmd := range []string{"vol", "mute", "unmute", "play", "next"} {
 		if body, _ := do(cmd); !strings.Contains(body, "media.enabled") {
 			t.Errorf("/%s while disabled = %q", cmd, body)
 		}
