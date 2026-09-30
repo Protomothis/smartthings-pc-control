@@ -304,10 +304,13 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			MediaEnabled bool
 			// NowPlaying is the media.now_playing opt-in (#117).
 			NowPlaying bool
+			// NotifyPC mirrors the app's PC-notification switches (#106); the
+			// voice is chosen in the app.
+			NotifyPC NotifyPCConfig
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
 			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled, liveCfg.Media.Enabled,
-			liveCfg.Media.NowPlaying})
+			liveCfg.Media.NowPlaying, liveCfg.NotifyPC})
 	})
 
 	// API: Get/update config (token masking rules: design doc §10)
@@ -331,6 +334,9 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	// API: running program names for the app's watch-list picker (#110,
 	// see activity.go); loopback callers only.
 	mux.HandleFunc("/api/processes", handleProcessesAPI)
+
+	// API: the app's [테스트 알림] (#106, pc_notify.go)
+	mux.HandleFunc("/api/notify/test", handleNotifyTestAPI)
 
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
@@ -598,6 +604,12 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if msg := validateActivity(newCfg.Activity); msg != "" {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		// #106: a voice name the subcommand would refuse is rejected here
+		// rather than on use.
+		if msg := validateNotifyPC(newCfg.NotifyPC); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}

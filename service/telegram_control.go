@@ -110,6 +110,7 @@ var tgTexts = map[string][2]string{
 			"/play /pause /stop /next /prev – 미디어 재생 제어\n" +
 			"/np – 지금 재생 중인 미디어\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
+			"/say 문구 – PC 화면에 알림 띄우기\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
 			"/status – status\n" +
@@ -126,6 +127,7 @@ var tgTexts = map[string][2]string{
 			"/play /pause /stop /next /prev – media playback\n" +
 			"/np – what is playing now\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
+			"/say text – show a notification on the PC\n" +
 			"/help – this list",
 	},
 	"unknown_command": {"알 수 없는 명령: <code>%s</code>", "Unknown command: <code>%s</code>"},
@@ -487,6 +489,8 @@ func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd s
 		return c.awake(args)
 	case "vol":
 		return tgVolume(ctx, args)
+	case "say":
+		return c.say(chatID, args)
 	case "mute":
 		// /mute 30m is what paused notifications before #104; a duration
 		// still does, a bare /mute mutes the PC.
@@ -1020,6 +1024,7 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "shutdown", Description: pick("종료 [분]", "Shut down [minutes]")},
 		{Command: "cancel", Description: pick("예약·유예 취소", "Cancel schedule")},
 		{Command: "now", Description: pick("예약·유예 즉시 실행", "Run schedule now")},
+		{Command: "say", Description: pick("PC에 알림 띄우기", "Show a notification on the PC")},
 		{Command: "awake", Description: pick("잠들지 않기 [분|off]", "Keep awake [minutes|off]")},
 		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},
 		{Command: "mute", Description: pick("PC 음소거", "Mute the PC")},

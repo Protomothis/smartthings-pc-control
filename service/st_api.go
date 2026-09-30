@@ -275,6 +275,10 @@ func stFeatures(b batteryInfo, cfg Config) []string {
 		features = append(features, "activity")
 	}
 	features = append(features, mediaFeatures(cfg)...)
+	// Unlike media, "notify" (#106) is listed whatever notify_pc.enabled
+	// says: the driver sends and shows the 403 notify_disabled as "PC 알림
+	// 꺼짐", where a missing feature would read as "not supported".
+	features = append(features, "notify")
 	return features
 }
 
@@ -757,6 +761,8 @@ func stHandler() http.Handler {
 	mux.HandleFunc("/st/v1/status", stAuth(handleSTStatus))
 	mux.HandleFunc("/st/v1/command", stAuth(handleSTCommand))
 	mux.HandleFunc("/st/v1/schedule", stAuth(handleSTSchedule))
+	// PC notification (#106, pc_notify.go)
+	mux.HandleFunc("/st/v1/notify", stAuth(handleSTNotify))
 	registerSTDescriptionRoute(mux) // #69, unauthenticated (see st_ssdp.go)
 	registerSTPushRoutes(mux)       // /st/v1/subscribe (§3.5, #68)
 	// Anything else under /st/v1 is a 404 rather than falling through to

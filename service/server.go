@@ -156,6 +156,9 @@ type Config struct {
 	// media.go) on every path: /st/v1/command, Telegram and the audio
 	// block of the status.
 	Media MediaConfig `json:"media"`
+	// NotifyPC controls PC notifications from SmartThings and Telegram (#106,
+	// pc_notify.go).
+	NotifyPC NotifyPCConfig `json:"notify_pc"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
@@ -242,6 +245,8 @@ var defaultConfig = Config{
 	Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 	// A missing "media" object keeps volume and media keys on (§4).
 	Media: MediaConfig{Enabled: true},
+	// A missing "notify_pc" object keeps notifications on, speech off (§4).
+	NotifyPC: NotifyPCConfig{Enabled: true},
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -487,6 +492,9 @@ func configChangedKeys(old, new Config) []string {
 	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
 	add("media.enabled", old.Media.Enabled != new.Media.Enabled)
 	add("media.now_playing", old.Media.NowPlaying != new.Media.NowPlaying)
+	// PC notifications let the network act in the user's session (#106).
+	add("notify_pc.enabled", old.NotifyPC.Enabled != new.NotifyPC.Enabled)
+	add("notify_pc.speak", old.NotifyPC.Speak != new.NotifyPC.Speak)
 	return keys
 }
 

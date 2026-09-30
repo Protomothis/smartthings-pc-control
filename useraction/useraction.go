@@ -15,6 +15,12 @@
 //	user-action media info
 //	user-action notify --title <t> --text <t> [--speak] [--voice <name>]
 //	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
+//	user-action speak --text <t> [--voice <name>]
+//
+// speak is internal to notify (#106): the service never builds it. A
+// notify with --speak shows its toast, answers at once and leaves the
+// reading to a detached `speak` child, because reading 200 characters aloud
+// takes far longer than the service's 3 s budget for one user-action run.
 //
 // Output is exactly one line on stdout, and the exit code follows it:
 //
@@ -58,6 +64,8 @@ const (
 	ActionMedia  = "media"
 	ActionNotify = "notify"
 	ActionPreset = "preset"
+	// ActionSpeak is the detached reader a notify --speak starts (#106).
+	ActionSpeak = "speak"
 )
 
 // Validation limits. The service applies its own (stricter or equal)
@@ -158,7 +166,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionSpeak:
 		return true
 	}
 	return false
@@ -213,6 +221,8 @@ func Parse(args []string) (Request, error) {
 		return parseNotify(rest)
 	case ActionPreset:
 		return parsePreset(rest)
+	case ActionSpeak:
+		return parseSpeak(rest)
 	default:
 		return Request{}, badArgs("unknown action %q", action)
 	}
@@ -373,6 +383,39 @@ func parseNotify(args []string) (Request, error) {
 		if hasControl(c.v) {
 			return req, badArgs("notify: %s contains control characters", c.name)
 		}
+	}
+	return req, nil
+}
+
+// parseSpeak reads `speak --text <t> [--voice <name>]` with the limits of
+// notify.
+func parseSpeak(args []string) (Request, error) {
+	req := Request{Action: ActionSpeak}
+	flags, err := flagSet{
+		valued: map[string]bool{"--text": true, "--voice": true},
+	}.parse(args)
+	if err != nil {
+		return req, err
+	}
+	text, ok := flags["--text"]
+	if !ok {
+		return req, badArgs("usage: speak --text <t> [--voice <name>]")
+	}
+	req.Text = text[0]
+	if v, ok := flags["--voice"]; ok {
+		req.Voice = v[0]
+		if strings.TrimSpace(req.Voice) == "" {
+			return req, badArgs("speak: --voice is empty")
+		}
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		return req, badArgs("speak: --text is empty")
+	}
+	if utf8.RuneCountInString(req.Text) > MaxTextRunes || hasControl(req.Text) {
+		return req, badArgs("speak: --text is too long or contains control characters")
+	}
+	if utf8.RuneCountInString(req.Voice) > MaxVoiceRunes || hasControl(req.Voice) {
+		return req, badArgs("speak: --voice is too long or contains control characters")
 	}
 	return req, nil
 }
