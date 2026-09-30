@@ -259,8 +259,12 @@ function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
     declared[declared_name] = name
   end
   for _, known in ipairs(profiles.KNOWN) do
-    h.assert_true(declared[known] ~= nil,
-      "src/profiles.lua knows " .. known .. ", but no profile file declares it")
+    if profiles.is_shipped(known) then
+      h.assert_true(declared[known] ~= nil,
+        "src/profiles.lua knows " .. known .. ", but no profile file declares it")
+    else
+      h.assert_nil(declared[known], known .. " is an unshipped generation but a file declares it")
+    end
   end
   h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
 end
@@ -1881,6 +1885,28 @@ function T.test_the_korean_translation_is_actually_korean()
     walk(doc)
     h.assert_true(hangul, id .. " ko translation has no Hangul in it")
   end
+end
+
+
+function T.test_the_package_stays_under_the_upload_limit()
+  -- SmartThings rejects a driver whose files add up to more than 655360
+  -- bytes (uncompressed; measured 2026-09-30 when fifty profiles - v1, v2
+  -- and v3 of every icon/battery variant - reached 666 KB). Only published
+  -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS).
+  local root = tests_dir .. "/.."
+  local total = 0
+  local function add(path)
+    local text = host and host.readfile and host.readfile(path)
+    h.assert_true(type(text) == "string", "could not read " .. path)
+    total = total + #text
+  end
+  add(root .. "/config.yml")
+  for _, name in ipairs(list_yml()) do add(profiles_dir .. "/" .. name) end
+  local src = {}
+  if host and host.listdir then src = host.listdir(root .. "/src") end
+  h.assert_true(#src > 0, "could not list src/")
+  for _, name in ipairs(src) do add(root .. "/src/" .. name) end
+  h.assert_true(total < 600000, "package is " .. total .. " bytes; the upload limit is 655360")
 end
 
 return T

@@ -248,22 +248,22 @@ function T.test_no_current_profile_carries_the_standard_notification_pair()
   end
 end
 
-function T.test_the_frozen_v2_profiles_are_still_shipped_with_the_standard_pair()
-  -- The reviewer's device and every other edge-v1.1.0 device sits on one of
-  -- these until its first init moves it; the files must stay as they shipped.
-  local count = 0
+function T.test_the_unreleased_v2_generation_is_not_packaged()
+  -- v2 existed only on the Dev channel; its files were dropped to stay under
+  -- the 655360-byte upload limit (profiles.UNSHIPPED_VERSIONS). Its names stay
+  -- in KNOWN so a development device on v2 still migrates to v3.
   for _, battery in ipairs({ false, true }) do
     for _, style in ipairs(profiles.STYLES) do
       local name = profiles.name_for(style, battery, 2)
-      local text = lf(read(edge_dir .. "/profiles/" .. file_name(name)))
-      h.assert_contains(text, "\nname: " .. name .. "\n", "profiles/" .. file_name(name))
-      h.assert_contains(text, "\n      - id: notification\n")
-      h.assert_contains(text, "\n      - id: speechSynthesis\n")
-      h.assert_nil(text:find("pcmessage", 1, true), name .. " must not grow pcMessage")
-      count = count + 1
+      h.assert_false(profiles.is_shipped(name), name)
+      local on_disk = false
+      for _, f in ipairs(list(edge_dir .. "/profiles")) do
+        if f == file_name(name) then on_disk = true end
+      end
+      h.assert_false(on_disk, file_name(name) .. " must not be packaged")
+      h.assert_true(profiles.migration_for(name, battery) ~= nil, name .. " must still migrate")
     end
   end
-  h.assert_equal(count, 20)
 end
 
 function T.test_the_alternative_layout_moves_the_media_group_into_a_component()

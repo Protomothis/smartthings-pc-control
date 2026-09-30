@@ -137,6 +137,20 @@ for version = 2, profiles.VERSION do
   end
 end
 
+-- Generations that were never published on the public channel and are not
+-- in the package. Their names stay in KNOWN so a development device still on
+-- one migrates, but the files are dropped: SmartThings refuses a driver whose
+-- files add up to more than 655360 bytes, and each generation of twenty
+-- profiles is about 165 KB (measured 2026-09-30 when v1+v2+v3 reached 666 KB).
+-- v2 lived only on the Dev channel (edge-v1.1.0 development).
+profiles.UNSHIPPED_VERSIONS = { [2] = true }
+
+--- True when the package carries a file for this profile name.
+function profiles.is_shipped(name)
+  local version = tonumber(tostring(name or ""):match("%.v(%d+)$"))
+  return version ~= nil and not profiles.UNSHIPPED_VERSIONS[version]
+end
+
 -- The profile name is written here at creation time and after a migration,
 -- because `device.profile` does not always carry a name (see `name_of`).
 profiles.FIELD = "profile_name"
