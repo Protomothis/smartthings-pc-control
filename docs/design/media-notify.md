@@ -94,7 +94,7 @@
 | 볼륨 | `audioVolume` | 표준 | 상세 화면 슬라이더 |
 | 음소거 | `audioMute` | 표준 | 토글 |
 | 미디어 | `mediaPlayback` + `mediaTrackControl` | 표준 | 재생/일시정지, 이전/다음 버튼 |
-| PC 알림 | 표준 `notification` 또는 `speechSynthesis` 실측 → 루틴에 안 나오면 커스텀 `pcNotify` | 자동화 전용 | 루틴 동작 "PC에 알림 띄우기"(문구 입력) |
+| PC 알림 | 표준 `notification`(`deviceNotification`, live)과 표준 `speechSynthesis`(`speak`, proposed). 계정에서 확인했다(#108, 플랫폼 노트 "표준 capability") — 커스텀 `pcNotify`는 필요 없다 | 표준 | 루틴 동작과 상세 화면의 문구 입력 줄. `speak`는 소리내어 읽기 |
 
 - 표준 capability는 정의 캐시 문제가 없고 앱 기본 UI를 그대로 쓴다. SmartThings에 연결된 음성 비서가
   볼륨을 인식하는지는 Dev 채널에서 확인한다.
@@ -104,6 +104,11 @@
   `pc*.v1`은 `KNOWN`에 넣어 자동 이전한다(§6.6 규칙). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
+- **PC 알림(#108):** `deviceNotification(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings"),
+  `speak(phrase)` → `{text: phrase, speak: true}`. 제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도).
+  `features`에 "notify"가 있어야 보낸다. 안내는 `pcInfo.message`에만 쓴다(루틴이 자주 보낼 수 있어 요약 줄을 덮지 않는다):
+  옛 서비스 "서비스 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐", `409 no_user_session` "사용자 없음", `429` "잠시 후 다시".
+  두 capability 모두 속성이 없어 내보낼 것이 없다.
 
 ## 6. 텔레그램
 
@@ -124,7 +129,7 @@
 - 드라이버: 표준 capability 방출·명령 매핑·옛 서비스/세션 없음 분기 테스트, 프로필 변형 동기 테스트.
 - **Dev 채널 실측 목록**
   1. 볼륨 슬라이더·음소거 토글·미디어 버튼이 상세 화면에 어떻게 그려지는가(대시보드 포함)
-  2. 표준 `notification`/`speechSynthesis`가 루틴 동작에 나오는가, 문구 입력이 되는가
+  2. ~~표준 `notification`/`speechSynthesis`가 루틴 동작에 나오는가, 문구 입력이 되는가~~ — 계정에서 확인했다(#108): 둘 다 detailView와 automation.actions에 textField가 있다. 남은 것은 `proposed`인 `speechSynthesis`가 루틴 동작 목록에 실제로 나오는지(§16)
   3. 재생 상태를 보고하지 않을 때 미디어 줄이 비는가
   4. 음성 비서에서 볼륨 명령이 먹는가(선택)
 
@@ -196,7 +201,7 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
 
 ## 14. 프로필 pc.v2 구성
 
-- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcActivity, (pcNotify) — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
+- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcActivity, notification, speechSynthesis — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
 - 이름: `pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`. `pc*.v1`은 `KNOWN`으로 자동 이전.
@@ -239,3 +244,4 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 7. **활동 줄과 루틴 조건(#114)** — `pcActivity.summary`가 상태 카드의 어디에 그려지는지, 루틴 조건 목록에 "활동"이 병기 문구(`게임 (Game)`)로 나오는지, `activity.changed` 푸시 뒤 루틴이 바로 도는지.
 8. **잠들지 않기 컴포넌트(#115)** — 프로필 컴포넌트의 `label: 잠들지 않기`가 패키징을 통과하고 화면에 그 이름으로 보이는지(안 되면 컴포넌트 id `awake`만 보인다), 토글이 상세 화면 어디에 그려지는지, 루틴 동작·조건 목록에 "잠들지 않기" 스위치가 따로 나오는지, 대시보드 타일의 토글이 여전히 main(전원)인지.
 9. **배터리 프로필 이동(#116)** — 노트북이 `pc-<style>-battery.v2`로 옮겨진 뒤 배터리 컴포넌트(`label: 배터리`)가 잔량·전원 공급원을 보여 주는지, 옮긴 직후의 빈 줄이 15초·90초 다시 칠하기로 채워지는지, 루틴 조건 "배터리 20% 이하"가 이 장치에서 고를 수 있는지. 데스크톱은 빈 카드 없이 `pc-<style>.v2`에 머무는지.
+10. **PC 알림(#108)** — `proposed`인 `speechSynthesis`가 루틴 동작 목록에 실제로 나오는지(허브에서 `st.capabilities.speechSynthesis`가 풀리는지도 — 드라이버 로그의 "standard capability not available"), `notification`의 "텍스트 표시" 입력 줄이 상세 화면에서 보내지는지, 문구를 보낸 뒤 앱이 회전 표시 없이 끝나는지(속성이 없어 답할 줄이 없다).

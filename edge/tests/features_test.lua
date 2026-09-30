@@ -818,6 +818,95 @@ function T.test_a_battery_push_reaches_the_battery_component()
 end
 
 --------------------------------------------------------------------------------
+-- #108: PC notifications
+--------------------------------------------------------------------------------
+
+--- Run `fn(sent)` with `client.notify` recorded.
+local function with_notify(opts, fn)
+  opts = opts or {}
+  local sent = {}
+  local original_notify, original_once = client.notify, poll.once
+  client.notify = function(_, text, speak)
+    sent[#sent + 1] = { text = text, speak = speak }
+    if opts.ok == false then
+      return false, opts.body, opts.kind
+    end
+    return true, { ok = true }, nil
+  end
+  poll.once = function() return true end
+  local ok, err = pcall(fn, sent)
+  client.notify, poll.once = original_notify, original_once
+  if not ok then
+    error(err, 0)
+  end
+  return sent
+end
+
+function T.test_the_text_is_cleaned_and_cut_to_the_services_limit()
+  h.assert_equal(features.notify_text("  세탁 끝\n\t남은 시간 0분  "), "세탁 끝 남은 시간 0분")
+  h.assert_equal(features.notify_text("bell\7 here\127"), "bell here")
+  h.assert_nil(features.notify_text("   \n  "))
+  h.assert_nil(features.notify_text(nil))
+  local long = features.notify_text(string.rep("가", 250))
+  local count = select(2, long:gsub("[\1-\127\194-\244][\128-\191]*", ""))
+  h.assert_equal(count, 200)
+  h.assert_equal(long:sub(-3), "…")
+end
+
+function T.test_a_device_notification_is_a_toast_and_speak_reads_it_aloud()
+  local device = device_with(status_v12())
+  local sent = with_notify(nil, function()
+    handlers_for("notification").deviceNotification(driver, device,
+      { args = { notification = "현관문이 열렸습니다" } })
+    handlers_for("speechSynthesis").speak(driver, device, { args = { phrase = "저녁 먹자" } })
+  end)
+  h.assert_deep_equal(sent, {
+    { text = "현관문이 열렸습니다", speak = false },
+    { text = "저녁 먹자", speak = true },
+  })
+end
+
+function T.test_the_notify_body_has_no_title_and_speak_only_when_asked()
+  local device = h.fake_device({ ipAddress = "192.168.1.20" })
+  local deps, sent = recording_http('{"ok":true}')
+  client.notify(device, "안녕", false, deps)
+  client.notify(device, "안녕", true, deps)
+  h.assert_equal(sent.urls[1], "http://192.168.1.20:5001/st/v1/notify")
+  h.assert_deep_equal(sent.bodies[1], { text = "안녕" })
+  h.assert_deep_equal(sent.bodies[2], { text = "안녕", speak = true })
+end
+
+function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
+  local cases = {
+    { status = { service_version = "v1.1.0" }, message = "서비스 v1.2.0 필요", sends = 0 },
+    { status = status_v12({ features = { "audio" } }), message = "이 PC에서 지원 안 함", sends = 0 },
+    { status = status_v12(), service = { ok = false, kind = "forbidden", body = { error = "notify_disabled" } },
+      message = "PC 알림 꺼짐", sends = 1 },
+    { status = status_v12(), service = { ok = false, kind = "conflict", body = { error = "no_user_session" } },
+      message = "사용자 없음", sends = 1 },
+    { status = status_v12(), service = { ok = false, kind = "ratelimited" }, message = "잠시 후 다시", sends = 1 },
+  }
+  for i, case in ipairs(cases) do
+    local device = device_with(case.status)
+    local sent = with_notify(case.service, function()
+      handlers_for("notification").deviceNotification(driver, device, { args = { notification = "hi" } })
+    end)
+    h.assert_equal(#sent, case.sends, "case " .. i .. " sends")
+    h.assert_equal(info_message(device), case.message, "case " .. i)
+    h.assert_nil(info_summary(device), "case " .. i .. " touched the summary row")
+  end
+end
+
+function T.test_an_empty_notification_is_not_sent()
+  local device = device_with(status_v12())
+  local sent = with_notify(nil, function()
+    handlers_for("speechSynthesis").speak(driver, device, { args = { phrase = " \n " } })
+  end)
+  h.assert_equal(#sent, 0)
+  h.assert_equal(info_message(device), "보낼 문구 없음")
+end
+
+--------------------------------------------------------------------------------
 -- components (#107: the emit glue)
 --------------------------------------------------------------------------------
 

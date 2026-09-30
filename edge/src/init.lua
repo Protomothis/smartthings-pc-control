@@ -621,6 +621,55 @@ local function handle_preset_run(driver, device, cmd)
 end
 
 --------------------------------------------------------------------------------
+-- #108: PC notifications
+--------------------------------------------------------------------------------
+
+--- `POST /st/v1/notify` for `notification.deviceNotification(notification)`
+--- and `speechSynthesis.speak(phrase)` (`speak = true`).
+--
+-- Both capabilities are standard and have no attributes, so there is no row to
+-- answer; a note goes to `pcInfo.message` only - a routine may send several a
+-- minute, and the summary row is the one the user reads the PC's state from.
+-- Gated like the other v1.2.0 commands (`features "notify"`), and the text is
+-- cleaned and cut to the service's 200 characters before it goes out.
+local function send_notification(driver, device, text, speak)
+  local lang = poll.lang(device)
+  local cleaned = features.notify_text(text)
+  if not cleaned then
+    poll.emit_message(device, i18n.t(lang, "notify_empty"))
+    return false
+  end
+  if poll.extras(device) == nil then
+    poll.once(driver, device)
+  end
+  local refusal = features.refusal(poll.extras(device), nil, features.NOTIFY)
+  if refusal then
+    poll.emit_message(device, i18n.t(lang, refusal))
+    log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.notify(device, cleaned, speak)
+  if not ok then
+    local note = features.notify_error_note(kind, body)
+    if note then
+      poll.emit_message(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  return true
+end
+
+local function handle_device_notification(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).notification, false)
+end
+
+local function handle_speak(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).phrase, true)
+end
+
+--------------------------------------------------------------------------------
 -- #115: the `awake` component's switch
 --------------------------------------------------------------------------------
 
@@ -702,6 +751,24 @@ local capability_handlers = {
     [capabilities.mediaTrackControl.commands.previousTrack.NAME] = media_command("prev"),
   },
 }
+
+--- #108: register the handlers of a standard capability that may not resolve
+--- on every hub. `speechSynthesis` is `proposed`, not `live`, and indexing
+--- `st.capabilities` with an id the hub cannot load raises - which at module
+--- level would take the whole driver down. Like `caps.load`, a miss is logged
+--- and the rest keeps working. Command names are literals for the same reason.
+local function add_standard(id, handlers)
+  local ok, cap = pcall(function() return capabilities[id] end)
+  if not ok or type(cap) ~= "table" or cap.ID == nil then
+    log.warn("standard capability not available: " .. id)
+    return false
+  end
+  capability_handlers[cap.ID] = handlers
+  return true
+end
+
+add_standard("notification", { deviceNotification = handle_device_notification })
+add_standard("speechSynthesis", { speak = handle_speak })
 
 -- Command names are literals: they are what `capabilities/pcRemote.json` and
 -- `capabilities/pcDefer.json` declare, and the generated capability object

@@ -84,6 +84,13 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - `automation.actions`에 `pushButton`은 불가하다. 자동화에서 예약을 취소하려면 `schedule(minutes: 0)`을 쓴다.
 - `multiArgCommand`의 각 인자 위젯(`list`/`numberField`)에는 인자 이름 `name`이 필수다.
 
+## 표준 capability (#108, 2026-09-30 계정에서 확인)
+
+- **`notification`**(status `live`): 명령 `deviceNotification(notification: string, maxLength 255)`, 속성 없음. 프레젠테이션에 detailView `textField`(라벨 "텍스트 표시")와 `automation.actions`의 `textField`가 **둘 다** 있다 — 루틴 동작으로도, 장치 화면의 입력 줄로도 나온다.
+- **`speechSynthesis`**(status `proposed`): 명령 `speak(phrase: string, maxLength 1000)`, 속성 없음. 프레젠테이션은 detailView `textField` + `automation.actions` `textField`. `proposed`라 루틴 동작 목록에 실제로 나오는지는 Dev 채널 실측 대기(media-notify.md §16).
+- 그래서 "PC에 알림 띄우기"에 커스텀 capability(`pcNotify`)는 필요 없다. 속성이 없으므로 드라이버가 내보낼 것도 없다.
+- `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고, 드라이버는 핸들러 등록을 pcall로 감싼다(init.lua `add_standard`).
+
 ## 번역
 
 - 번역 본문은 `{tag, label, attributes{<attr>{label, i18n{value{<enum>{label}}}}}, commands{<cmd>{label, arguments{<arg>{label}}}}}`이다.

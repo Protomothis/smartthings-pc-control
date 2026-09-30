@@ -232,6 +232,8 @@
 | `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
 | `pcActivity` (커스텀 `numbersystem53811.pcactivity`, #114) | main | `activity` enum `none` `game` `work` `media` `stream` `other` ← `activity.kind`(모르는 kind는 `other`), `summary` string "게임 중 · Steam" / "없음" / 옵트인 꺼짐·옛 서비스 "꺼짐" | – (루틴 조건 전용) |
 | `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
+| `notification` (표준 live, #108) | main | – (속성 없음) | `deviceNotification(notification)` → `POST /st/v1/notify {text}` |
+| `speechSynthesis` (표준 proposed, #108) | main | – (속성 없음) | `speak(phrase)` → `POST /st/v1/notify {text, speak: true}` |
 | `battery`, `powerSource` (표준, #116) | **`battery`** (label "배터리", `-battery` 프로필에만) | `battery` ← `battery.percent`(-1이면 내보내지 않음), `powerSource` ← `battery.ac` (`mains`/`battery`). `present`가 거짓이면 아무것도 내보내지 않는다 | – |
 
 - 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
@@ -243,6 +245,7 @@
 - **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, 실측 대기). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `poll.PRESET_HOLD_SECONDS`(5초)가 지난 첫 폴링·푸시가 `none`으로 되돌린다 — 바뀔 때 강제 한 번 + 다음 호출에 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
 - **활동(#114)**: 켜져 있다는 판단은 `activity.enabled`와 `features`의 `"activity"` 둘 다다(서비스는 옵트인이 켜져 있을 때만 기능을 싣는다, #110). 요약은 24자(코드 포인트) 안에서 라벨을 뒤에서부터 줄인다 — 전부 → "첫 라벨 외 N"("+N") → 첫 라벨 → 낱말만. 푸시 `activity.changed`도 전체 status를 싣고 오므로 폴링과 같은 `apply_status`로 바로 반영된다.
 - **잠들지 않기(#115)**: 표준 `switch`가 두 컴포넌트에 있으므로 핸들러는 `command.component`로 가른다 — `main`(또는 없음)은 전원(§6.2), `awake`는 `awake`/`awakeoff`. 기능 가드는 `"awake"`이고 사용자 세션은 필요 없다. 켜져 있는 동안 다시 켜면 지금부터 새 기간이다(§12). 막힌 명령은 토글을 마지막 status의 값으로 강제로 되돌린다. 전원 전환 가드(§6.9)는 적용하지 않는다 — 전원을 움직이지 않는다. 푸시 `awake.changed`로 바로 반영된다.
+- **PC 알림(#108)**: 문구는 제어 문자를 공백으로, 연속 공백을 하나로, 양끝을 다듬고 200자(코드 포인트)에서 "…"로 자른다. 비면 보내지 않는다("보낼 문구 없음"). 가드는 `"notify"`, 안내는 `pcInfo.message`에만 — 옛 서비스·기능 없음은 §4.1 위의 문구, `403 notify_disabled` "PC 알림 꺼짐", `409` "사용자 없음", `429` "잠시 후 다시"(서비스의 출처별 분당 10회). `speechSynthesis`는 `proposed`라 허브에서 풀리지 않을 수 있어 핸들러 등록을 pcall로 감싼다(`add_standard`).
 - **배터리(#116)**: 데스크톱에 빈 배터리 카드가 생기지 않도록 배터리는 `-battery` 프로필에만 있다. 폴링·푸시마다 `profiles.apply_battery(device, status.battery.present)`가 장치의 프로필과 status를 비교하고, **연속 두 번**(`profiles.BATTERY_VOTES`) 같은 답이 나와야 같은 스타일의 반대쪽으로 옮긴다(`pc-tv.v2` ⇄ `pc-tv-battery.v2`). 한 번 튀는 값은 무시하고, 거절된 대상은 같은 구동에서 다시 묻지 않는다. 옮기면 1초 뒤 `repaint_soon`(폴링 안에서 요청을 겹치지 않으려고 타이머로). 답은 `profiles.BATTERY_FIELD`에 persist 해 다음 버전 이전(`ensure`)이 바로 맞는 쪽으로 가게 한다. 옮기기 전의 배터리 이벤트는 컴포넌트가 없어 건너뛰고, 옮긴 뒤의 다시 칠하기가 채운다. 푸시 `battery.changed`는 전체 status를 싣고 온다.
 
 ## 5. 화면 구성
@@ -273,6 +276,7 @@
 | 미디어 묶음 (#107, 표준) | 재생·일시정지·정지 → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글 |
 | 프리셋 (#113) | `pcPreset.run` 목록(등록된 슬롯만, `supportedSlots`). 쉬는 값 "프리셋 선택… (Pick a preset)", 실행 직후 잠깐 "프리셋 3 실행함 (Preset 3 started)". 상태 카드에 이름 줄 `pcPreset.names` |
 | 활동 (#114) | 상태 줄 `pcActivity.summary` 하나. 루틴 조건 "활동이 게임" |
+| PC 알림 (#108, 표준) | `notification`의 문구 입력 줄("텍스트 표시")과 `speechSynthesis`의 입력 줄. 루틴 동작에도 같은 입력 |
 | 잠들지 않기 (#115) | 컴포넌트 `awake`의 표준 스위치 토글. 루틴 동작·조건에 그대로 쓴다 |
 | 배터리 (#116) | 컴포넌트 `battery`의 표준 `battery`(잔량 %)·`powerSource`(전원 공급원). 배터리가 있는 PC(`-battery` 프로필)에만 |
 

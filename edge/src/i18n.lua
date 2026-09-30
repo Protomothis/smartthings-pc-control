@@ -139,6 +139,21 @@ local STRINGS = {
     ko = "미디어 제어 꺼짐",
     en = "Media control is off",
   },
+  -- #108: why a PC notification did not go out. `pcInfo.message` only: a
+  -- routine may send several a minute and the summary row is the user's.
+  notify_disabled = {
+    ko = "PC 알림 꺼짐",
+    en = "PC notifications are off",
+  },
+  try_later = {
+    ko = "잠시 후 다시",
+    en = "Try again shortly",
+  },
+  notify_empty = {
+    ko = "보낼 문구 없음",
+    en = "Nothing to send",
+  },
+
   -- #113: a routine (or a stale list) asked for a slot the PC has no preset in.
   preset_empty = {
     ko = "프리셋 %s 비어 있음",

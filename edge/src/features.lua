@@ -35,6 +35,14 @@ features.CAP_SWITCH = "switch"
 features.AWAKE_DEFAULT_MINUTES = 60
 features.AWAKE_MAX_MINUTES = 1440
 
+-- #108: a toast (or a spoken sentence) on the PC, `POST /st/v1/notify`.
+features.NOTIFY = "notify"
+features.CAP_NOTIFICATION = "notification"
+features.CAP_SPEECH = "speechSynthesis"
+-- The service takes 1-200 characters (§3); the capabilities allow 255
+-- (`notification`) and 1000 (`speechSynthesis`), so the driver cuts first.
+features.NOTIFY_MAX_CHARS = 200
+
 -- #116: the laptop battery, on a component only the `-battery` profiles have.
 features.BATTERY = "battery"
 features.BATTERY_COMPONENT = "battery"
@@ -508,6 +516,35 @@ function features.awake_events(status)
   ev(events, features.CAP_SWITCH, "switch", features.awake_on(status) and "on" or "off",
     features.AWAKE_COMPONENT)
   return events
+end
+
+--------------------------------------------------------------------------------
+-- #108: PC notifications
+--------------------------------------------------------------------------------
+
+--- The text a notify request carries: control characters (C0 and DEL) turned
+--- into spaces, runs of white space folded, the ends trimmed, and at most
+--- `NOTIFY_MAX_CHARS` code points (a cut text ends in "…"). nil when nothing
+--- is left - the service refuses an empty text, so it is not sent at all.
+function features.notify_text(text)
+  if type(text) ~= "string" then
+    return nil
+  end
+  text = text:gsub("[%c\127]", " "):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+  if text == "" then
+    return nil
+  end
+  return features.truncate(text, features.NOTIFY_MAX_CHARS)
+end
+
+--- The note for a notify request the service refused, or nil for an ordinary
+--- failure. On top of `error_note`: `429` is the service's per-source limit
+--- (ten a minute, §3), which for a notification is worth saying.
+function features.notify_error_note(kind, body)
+  if kind == "ratelimited" then
+    return "try_later"
+  end
+  return features.error_note(kind, body)
 end
 
 --------------------------------------------------------------------------------

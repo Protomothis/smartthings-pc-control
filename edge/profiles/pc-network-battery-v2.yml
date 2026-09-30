@@ -38,6 +38,12 @@ components:
       # #114: what runs on the PC (the opt-in watch list).
       - id: numbersystem53811.pcactivity
         version: 1
+      # #108: "PC에 알림 띄우기" and "소리내어 읽기" - both standard, both a
+      # text field on the detail view and in the routine actions.
+      - id: notification
+        version: 1
+      - id: speechSynthesis
+        version: 1
     categories:
       - name: Networking
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
