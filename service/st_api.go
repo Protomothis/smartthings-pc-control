@@ -260,6 +260,9 @@ type stStatusResponse struct {
 	// Media is the system media session (#117, §15): the status, and the
 	// track with the media.now_playing opt-in.
 	Media stMedia `json:"media"`
+	// Presets are the registered preset slots and their names (#109, §10),
+	// in slot order; never null. What a slot runs never leaves this PC.
+	Presets []stPresetRef `json:"presets"`
 }
 
 // stFeatures lists what this service supports right now. Some entries
@@ -279,6 +282,10 @@ func stFeatures(b batteryInfo, cfg Config) []string {
 	// says: the driver sends and shows the 403 notify_disabled as "PC 알림
 	// 꺼짐", where a missing feature would read as "not supported".
 	features = append(features, "notify")
+	// "presets" (#109) likewise, even with no preset registered: the driver
+	// then says "slot empty" instead of "not supported", and hides the empty
+	// slots through status presets.
+	features = append(features, "presets")
 	return features
 }
 
@@ -291,6 +298,10 @@ type stLastCommand struct {
 	Command string `json:"command"`
 	Origin  string `json:"origin"`
 	At      string `json:"at"`
+	// Preset and Result are set for a preset command (#109): which slot
+	// ran and "started" or the error code.
+	Preset *stPresetRef `json:"preset,omitempty"`
+	Result string       `json:"result,omitempty"`
 }
 
 type stUpdate struct {
@@ -563,12 +574,17 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		Activity:          stActivityStatus(cfg),
 		Audio:             stAudioStatus(cfg),
 		Media:             stMediaStatus(cfg),
+		Presets:           stPresetList(cfg.Presets),
 	}
 	if lr := getLastRemote(); lr.Command != "" {
 		resp.LastCommand = &stLastCommand{
 			Command: lr.Command,
 			Origin:  lr.Origin,
 			At:      lr.At.Format(time.RFC3339),
+		}
+		if p := lr.Preset; p != nil {
+			resp.LastCommand.Preset = &stPresetRef{Slot: p.Slot, Name: p.Name}
+			resp.LastCommand.Result = p.Result
 		}
 	}
 	return resp
@@ -594,6 +610,8 @@ type stCommandResponse struct {
 	Awake *stAwake `json:"awake,omitempty"`
 	// Audio is the audio state after a volume/mute command (#104).
 	Audio *stAudio `json:"audio,omitempty"`
+	// Preset is the slot that was started, on the preset reply only (#109).
+	Preset *stPresetRun `json:"preset,omitempty"`
 }
 
 // handleSTAwake runs the keep-awake commands (#111, §12):
@@ -658,6 +676,9 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	switch name {
 	case "awake", "awakeoff":
 		handleSTAwake(w, name, body, from)
+		return
+	case "preset":
+		handleSTPreset(w, r, body, from)
 		return
 	}
 	if isMediaCommand(name) {

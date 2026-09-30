@@ -156,8 +156,8 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	if !ok || bat["present"] != false || bat["percent"] != float64(-1) || bat["charging"] != false || bat["ac"] != true {
 		t.Errorf("desktop battery = %v", got["battery"])
 	}
-	if features := fmt.Sprint(got["features"]); features != "[awake notify]" {
-		t.Errorf("desktop features = %v, want [awake notify]", features)
+	if features := fmt.Sprint(got["features"]); features != "[awake notify presets]" {
+		t.Errorf("desktop features = %v, want [awake notify presets]", features)
 	}
 
 	// Laptop: "battery" joins features.
@@ -170,8 +170,8 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	if bat["present"] != true || bat["percent"] != float64(80) || bat["charging"] != true || bat["ac"] != true {
 		t.Errorf("laptop battery = %v", bat)
 	}
-	if features := fmt.Sprint(got["features"]); features != "[awake battery notify]" {
-		t.Errorf("laptop features = %v, want [awake battery notify]", features)
+	if features := fmt.Sprint(got["features"]); features != "[awake battery notify presets]" {
+		t.Errorf("laptop features = %v, want [awake battery notify presets]", features)
 	}
 }
 

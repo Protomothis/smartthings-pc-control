@@ -159,6 +159,10 @@ type Config struct {
 	// NotifyPC controls PC notifications from SmartThings and Telegram (#106,
 	// pc_notify.go).
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
+	// Presets are the actions SmartThings and Telegram may run by slot
+	// number (#109, presets.go). Invalid entries are refused on save and
+	// dropped (with a log line) on load.
+	Presets []Preset `json:"presets"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).
@@ -247,6 +251,8 @@ var defaultConfig = Config{
 	Media: MediaConfig{Enabled: true},
 	// A missing "notify_pc" object keeps notifications on, speech off (§4).
 	NotifyPC: NotifyPCConfig{Enabled: true},
+	// Presets stays nil here, like Notify: withDefaults gives every copy its
+	// own empty list.
 	// Notify stays nil here (a nil map means "all defaults" and must not be
 	// shared between copies); withDefaults materialises the catalogue.
 }
@@ -257,6 +263,7 @@ func (c Config) withDefaults() Config {
 	c.Telegram = c.Telegram.withDefaults()
 	c.SmartThings = c.SmartThings.withDefaults()
 	c.Awake = c.Awake.withDefaults()
+	c.Presets = normalizePresets(c.Presets)
 	c.Notify = c.Notify.WithDefaults()
 	c.Activity = c.Activity.withDefaults()
 	return c
@@ -296,6 +303,7 @@ func (c Config) forUpdate() Config {
 	c.Telegram.AllowedChatIDs = nil
 	c.SmartThings.AllowedHubs = nil
 	c.Activity.Watch = nil
+	c.Presets = nil
 	return c
 }
 
@@ -358,6 +366,9 @@ func loadConfig() Config {
 	// The decoder ignores it (the field is gone) and the next save drops
 	// it; say so once so a user who turned it off is not left wondering.
 	noteLegacyDiscoveryKey(data)
+	// A hand-edited preset that breaks the rules is ignored, not fatal: the
+	// other presets and every other setting still load (#109).
+	cfg.Presets = dropInvalidPresets(cfg.Presets)
 	// A DPAPI-protected token that this machine cannot decrypt (config.json
 	// copied from another PC) is unusable: blank it so the GUI shows "not
 	// set" and the user re-enters it. The load itself still succeeds.
@@ -458,6 +469,9 @@ func normalizeConfig(cfg Config, current Config) Config {
 	if cfg.Activity.Watch == nil {
 		cfg.Activity.Watch = current.Activity.Watch
 	}
+	if cfg.Presets == nil {
+		cfg.Presets = current.Presets
+	}
 	return cfg.withDefaults()
 }
 
@@ -492,9 +506,14 @@ func configChangedKeys(old, new Config) []string {
 	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
 	add("media.enabled", old.Media.Enabled != new.Media.Enabled)
 	add("media.now_playing", old.Media.NowPlaying != new.Media.NowPlaying)
-	// PC notifications let the network act in the user's session (#106).
+	// PC notifications and presets let the network act in the user's
+	// session (#106, #109); a preset change names its slots, never what
+	// they run.
 	add("notify_pc.enabled", old.NotifyPC.Enabled != new.NotifyPC.Enabled)
 	add("notify_pc.speak", old.NotifyPC.Speak != new.NotifyPC.Speak)
+	if slots := changedPresetSlots(old.Presets, new.Presets); len(slots) > 0 {
+		keys = append(keys, presetChangeKey(slots))
+	}
 	return keys
 }
 

@@ -305,7 +305,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			// NowPlaying is the media.now_playing opt-in (#117).
 			NowPlaying bool
 			// NotifyPC mirrors the app's PC-notification switches (#106); the
-			// voice is chosen in the app.
+			// voice and the preset editor stay in the app.
 			NotifyPC NotifyPCConfig
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
@@ -335,8 +335,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	// see activity.go); loopback callers only.
 	mux.HandleFunc("/api/processes", handleProcessesAPI)
 
-	// API: the app's [테스트 알림] (#106, pc_notify.go)
+	// API: the app's [테스트 알림] (#106, pc_notify.go) and the preset
+	// [실행]/[테스트] buttons (#109, presets.go)
 	mux.HandleFunc("/api/notify/test", handleNotifyTestAPI)
+	mux.HandleFunc("/api/presets/run", handlePresetsRunAPI)
+	mux.HandleFunc("/api/presets/test", handlePresetsTestAPI)
 
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", handleTelegramTest)
@@ -607,9 +610,13 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
-		// #106: a voice name the subcommand would refuse is rejected here
-		// rather than on use.
+		// #106, #109: a preset that could never run, or a voice name the
+		// subcommand would refuse, is rejected here rather than on use.
 		if msg := validateNotifyPC(newCfg.NotifyPC); msg != "" {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if msg := validatePresets(newCfg.Presets); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}

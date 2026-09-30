@@ -32,6 +32,16 @@ type remoteRecord struct {
 	// /{secret}/{command} URL, "smartthings" for /st/v1/command (#67).
 	Origin string
 	At     time.Time
+	// Preset is set for a "preset" command (#109): which slot ran, under
+	// which name, and the outcome ("started" or an error code).
+	Preset *presetRecord
+}
+
+// presetRecord is the preset part of a remoteRecord.
+type presetRecord struct {
+	Slot   int
+	Name   string
+	Result string
 }
 
 var (
@@ -50,6 +60,14 @@ func noteRemoteCommand(command, from string) {
 func noteRemoteCommandBy(command, from, origin string) {
 	lastRemoteMu.Lock()
 	lastRemote = remoteRecord{Command: command, From: from, Origin: origin, At: time.Now()}
+	lastRemoteMu.Unlock()
+}
+
+// notePresetCommand records a preset run as the last remote command.
+func notePresetCommand(p Preset, from, origin, result string) {
+	lastRemoteMu.Lock()
+	lastRemote = remoteRecord{Command: "preset", From: from, Origin: origin, At: time.Now(),
+		Preset: &presetRecord{Slot: p.Slot, Name: p.Name, Result: result}}
 	lastRemoteMu.Unlock()
 }
 
@@ -111,6 +129,8 @@ var tgTexts = map[string][2]string{
 			"/np – 지금 재생 중인 미디어\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/say 문구 – PC 화면에 알림 띄우기\n" +
+			"/presets – 프리셋 목록\n" +
+			"/run 이름|번호 – 프리셋 실행\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
 			"/status – status\n" +
@@ -128,6 +148,8 @@ var tgTexts = map[string][2]string{
 			"/np – what is playing now\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/say text – show a notification on the PC\n" +
+			"/presets – list the presets\n" +
+			"/run name|number – run a preset\n" +
 			"/help – this list",
 	},
 	"unknown_command": {"알 수 없는 명령: <code>%s</code>", "Unknown command: <code>%s</code>"},
@@ -239,6 +261,7 @@ var tgTexts = map[string][2]string{
 	"cmd_lock":           {"잠금", "Lock"},
 	"cmd_turnscreenoff":  {"화면 끄기", "Screen off"},
 	"cmd_turnscreenon":   {"화면 켜기", "Screen on"},
+	"cmd_preset":         {"프리셋", "Preset"},
 	"origin_ui":          {"앱", "app"},
 	"origin_remote":      {"원격", "remote"},
 	"origin_telegram":    {"텔레그램", "Telegram"},
@@ -491,6 +514,10 @@ func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd s
 		return tgVolume(ctx, args)
 	case "say":
 		return c.say(chatID, args)
+	case "presets":
+		return tgPresetList(), nil, nil
+	case "run":
+		return c.runPreset(args)
 	case "mute":
 		// /mute 30m is what paused notifications before #104; a duration
 		// still does, a bare /mute mutes the PC.
@@ -1025,6 +1052,8 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 		{Command: "cancel", Description: pick("예약·유예 취소", "Cancel schedule")},
 		{Command: "now", Description: pick("예약·유예 즉시 실행", "Run schedule now")},
 		{Command: "say", Description: pick("PC에 알림 띄우기", "Show a notification on the PC")},
+		{Command: "presets", Description: pick("프리셋 목록", "List presets")},
+		{Command: "run", Description: pick("프리셋 실행 (이름 또는 번호)", "Run a preset (name or number)")},
 		{Command: "awake", Description: pick("잠들지 않기 [분|off]", "Keep awake [minutes|off]")},
 		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},
 		{Command: "mute", Description: pick("PC 음소거", "Mute the PC")},
