@@ -11,6 +11,7 @@ local log = require "log"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
+local features = require "features"
 local i18n = require "i18n"
 local poll = require "poll"
 local profiles = require "profiles"
@@ -41,7 +42,8 @@ local function device_init(driver, device)
   end
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
-  profiles.ensure(device)
+  -- #107: pc*.v1 -> pc*.v2, with the style kept.
+  local migrated = profiles.ensure(device)
   -- #100: the `iconStyle` preference changed but the driver restarted before
   -- the switch to that style's profile landed (or the hub refused it then).
   local switched = profiles.apply_style(device)
@@ -49,7 +51,7 @@ local function device_init(driver, device)
   -- pcRemote and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
   local fresh_rows = poll.ensure_rows(device)
-  if fresh_rows or switched then
+  if fresh_rows or switched or migrated then
     -- First run on this generation of rows, or a new profile whose cloud
     -- record starts empty: forced rows + forced poll, now and again shortly,
     -- so attributes that never change (updateAvailable) and rows the cloud
@@ -436,15 +438,337 @@ function handle_cancel(driver, device)
   })
 end
 
+--------------------------------------------------------------------------------
+-- #107: the v1.2.0 commands (volume, mute, media keys, …)
+--------------------------------------------------------------------------------
+
+--- Run one v1.2.0 command (media-notify.md §3, §5).
+--
+-- Unlike the power commands these need something the PC may not have: a
+-- service new enough to know them (`status.features`), the feature itself, and
+-- for audio and media a logged-in user. The last status already said which
+-- (`features.remember`), so a command that cannot work is not sent at all -
+-- the row it came from is answered with its current value (a spinner that
+-- never gets an event ends in an error, platform notes "상세 화면(detailView)
+-- 위젯") and both pcInfo rows say why, until the next poll writes them back.
+-- A command the service refuses (`409 no_user_session`, `403 media_disabled`)
+-- is answered the same way; any other failure is `report_error`'s.
+--
+-- Nothing here is held back by a power transition (#93): a volume change on a
+-- PC that is about to shut down does no harm, and one on a PC that is still
+-- waking fails as unreachable like any other request.
+-- @param answer re-emits, forced, the row the command arrived on
+-- @param rows the row keys (`poll.row_key`) the poll after a success answers
+local function run_feature(driver, device, service_command, value, answer, rows)
+  local lang = poll.lang(device)
+  if poll.extras(device) == nil then
+    -- Nothing read in this driver run yet (the hub has just restarted): ask
+    -- once, rather than calling a v1.2.0 PC too old.
+    poll.once(driver, device)
+  end
+  local refusal = features.refusal(poll.extras(device), service_command)
+  if refusal then
+    if answer then
+      answer(device)
+    end
+    poll.emit_note(device, i18n.t(lang, refusal))
+    log.info(string.format("%s not sent on %s: %s", tostring(service_command),
+      tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.action(device, service_command, value)
+  if not ok then
+    if answer then
+      answer(device)
+    end
+    local note = features.error_note(kind, body)
+    if note then
+      poll.emit_note(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  poll.once(driver, device, { force = rows })
+  return true
+end
+
+-- The rows a successful command is answered on: the poll that follows it emits
+-- them forced, so the spinner ends even when the value did not change (volume
+-- already at 100, mute pressed on a muted PC).
+local AUDIO_ROWS = {
+  [features.CAP_VOLUME .. ".volume"] = true,
+  [features.CAP_MUTE .. ".mute"] = true,
+}
+local MEDIA_ROWS = {
+  [features.CAP_PLAYBACK .. ".supportedPlaybackCommands"] = true,
+  [features.CAP_PLAYBACK .. ".playbackStatus"] = true,
+  [features.CAP_TRACK .. ".supportedTrackControlCommands"] = true,
+}
+
+-- What a refused command is answered with: the value the row already had.
+local function answer_volume(device)
+  local audio = (poll.extras(device) or {}).audio or {}
+  if audio.volume ~= nil then
+    poll.emit(device, { { cap = features.CAP_VOLUME, attr = "volume", value = audio.volume, force = true } })
+  end
+end
+
+local function answer_mute(device)
+  local audio = (poll.extras(device) or {}).audio or {}
+  if audio.muted ~= nil then
+    poll.emit(device, { { cap = features.CAP_MUTE, attr = "mute",
+      value = audio.muted and "muted" or "unmuted", force = true } })
+  end
+end
+
+-- The media rows answer with what the last status said is playing (#118), and
+-- with the constant attributes, which are all there is before #117.
+local function answer_media(device)
+  poll.emit(device, poll.force_all(features.media_events((poll.extras(device) or {}).playback)))
+end
+
+local function audio_command(service_command, answer)
+  return function(driver, device)
+    return run_feature(driver, device, service_command, nil, answer, AUDIO_ROWS)
+  end
+end
+
+local function media_command(service_command)
+  return function(driver, device)
+    return run_feature(driver, device, service_command, nil, answer_media, MEDIA_ROWS)
+  end
+end
+
+--- audioVolume.setVolume(volume): the slider. 0-100, rounded.
+local function handle_set_volume(driver, device, cmd)
+  local volume = features.volume_of({ volume = ((cmd or {}).args or {}).volume })
+  if volume == nil then
+    return answer_volume(device)
+  end
+  return run_feature(driver, device, "volume", volume, answer_volume, AUDIO_ROWS)
+end
+
+--- audioMute.setMute(state): the routine action's "muted"/"unmuted".
+local function handle_set_mute(driver, device, cmd)
+  local wanted = ((cmd or {}).args or {}).state
+  local service_command = wanted == "muted" and "mute" or "unmute"
+  return run_feature(driver, device, service_command, nil, answer_mute, AUDIO_ROWS)
+end
+
+-- mediaPlayback.setPlaybackStatus(status) -> the media key that asks for it.
+local PLAYBACK_FOR_STATUS = { playing = "play", paused = "pause", stopped = "stop" }
+
+local function handle_set_playback_status(driver, device, cmd)
+  local wanted = ((cmd or {}).args or {}).status
+  local service_command = PLAYBACK_FOR_STATUS[tostring(wanted or "")]
+  if not service_command then
+    return answer_media(device)
+  end
+  return run_feature(driver, device, service_command, nil, answer_media, MEDIA_ROWS)
+end
+
+--- #113: pcPreset.run(slot) — `/st/v1/command {command:"preset", value:N}`.
+--
+-- The list rests on "none" (platform notes "상세 화면(detailView) 위젯": a
+-- dismissed list sends the row's current value), so `run("none")` is the
+-- dismissed picker and does nothing but answer the row.
+--
+-- A preset that ran shows as "프리셋 3 실행함" until the next poll at least
+-- `poll.PRESET_HOLD_SECONDS` later puts the row back on "none"
+-- (`poll.ensure_preset`, the `lastAction` rules). During that moment the row
+-- rests on "3", so a dismissed list sends `run("3")` - which must not start
+-- the preset a second time. A `run` of the very slot the row is showing is
+-- therefore the same no-op as `none`. Picking the same preset again on purpose
+-- works as soon as the row is back on "프리셋 선택…".
+local function handle_preset_run(driver, device, cmd)
+  local slot = tostring((((cmd or {}).args or {}).slot) or features.PRESET_NONE)
+  if slot == features.PRESET_NONE or not features.is_preset_slot(slot)
+      or slot == poll.shown_preset(device) then
+    return poll.answer_preset(device)
+  end
+  local lang = poll.lang(device)
+  if poll.extras(device) == nil then
+    poll.once(driver, device)
+  end
+  local extras = poll.extras(device)
+  local refusal = features.refusal(extras, "preset")
+  if not refusal and features.has(extras, features.PRESETS)
+      and not ((extras or {}).preset_slots or {})[slot] then
+    refusal = "preset_empty"
+  end
+  if refusal then
+    poll.answer_preset(device)
+    poll.emit_note(device, i18n.t(lang, refusal, slot))
+    log.info(string.format("preset %s not sent on %s: %s", slot, tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.action(device, "preset", tonumber(slot))
+  if not ok then
+    poll.answer_preset(device)
+    local note = features.error_note(kind, body)
+    if note then
+      poll.emit_note(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  -- The row the app is watching changes value, forced as every answer is.
+  poll.emit_preset(device, slot, true)
+  poll.once(driver, device)
+  return true
+end
+
+--------------------------------------------------------------------------------
+-- #108: PC notifications
+--------------------------------------------------------------------------------
+
+--- `POST /st/v1/notify` for `notification.deviceNotification(notification)`
+--- and `speechSynthesis.speak(phrase)` (`speak = true`).
+--
+-- Both capabilities are standard and have no attributes, so there is no row to
+-- answer; a note goes to `pcInfo.message` only - a routine may send several a
+-- minute, and the summary row is the one the user reads the PC's state from.
+-- Gated like the other v1.2.0 commands (`features "notify"`), and the text is
+-- cleaned and cut to the service's 200 characters before it goes out.
+local function send_notification(driver, device, text, speak)
+  local lang = poll.lang(device)
+  local cleaned = features.notify_text(text)
+  if not cleaned then
+    poll.emit_message(device, i18n.t(lang, "notify_empty"))
+    return false
+  end
+  if poll.extras(device) == nil then
+    poll.once(driver, device)
+  end
+  local refusal = features.refusal(poll.extras(device), nil, features.NOTIFY)
+  if refusal then
+    poll.emit_message(device, i18n.t(lang, refusal))
+    log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
+    return false
+  end
+  local ok, body, kind = client.notify(device, cleaned, speak)
+  if not ok then
+    local note = features.notify_error_note(kind, body)
+    if note then
+      poll.emit_message(device, i18n.t(lang, note))
+      return false
+    end
+    report_error(device, kind, body)
+    return false
+  end
+  return true
+end
+
+local function handle_device_notification(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).notification, false)
+end
+
+local function handle_speak(driver, device, cmd)
+  return send_notification(driver, device, ((cmd or {}).args or {}).phrase, true)
+end
+
+--------------------------------------------------------------------------------
+-- #115: the `awake` component's switch
+--------------------------------------------------------------------------------
+
+local AWAKE_ROWS = {
+  [features.AWAKE_COMPONENT .. "/" .. features.CAP_SWITCH .. ".switch"] = true,
+}
+
+--- Spring the keep-awake toggle back to what the PC last said.
+local function answer_awake(device)
+  local on = (poll.extras(device) or {}).awake_on == true
+  poll.emit(device, { {
+    cap = features.CAP_SWITCH, attr = "switch", value = on and "on" or "off",
+    component = features.AWAKE_COMPONENT, force = true,
+  } })
+end
+
+--- switch.on on `awake`: keep the PC from idle sleep for `awakeMinutes`
+--- (0 = until switched off). Sent again while it is on, it starts a new period
+--- from now (§12). Not held back by a power transition - it does not move the
+--- PC's power, and on a PC that is going away it simply fails.
+local function handle_awake_on(driver, device)
+  return run_feature(driver, device, "awake", features.awake_minutes(device.preferences),
+    answer_awake, AWAKE_ROWS)
+end
+
+local function handle_awake_off(driver, device)
+  return run_feature(driver, device, "awakeoff", nil, answer_awake, AWAKE_ROWS)
+end
+
+--- The standard `switch` is on two components now: `main` is the PC's power,
+--- `awake` is keep-awake. The hub hands both to the same capability handler,
+--- with `command.component` saying which.
+local function is_awake(cmd)
+  return type(cmd) == "table" and cmd.component == features.AWAKE_COMPONENT
+end
+
+local function handle_any_switch_on(driver, device, cmd)
+  if is_awake(cmd) then
+    return handle_awake_on(driver, device)
+  end
+  return handle_switch_on(driver, device)
+end
+
+local function handle_any_switch_off(driver, device, cmd)
+  if is_awake(cmd) then
+    return handle_awake_off(driver, device)
+  end
+  return handle_switch_off(driver, device)
+end
+
 local capability_handlers = {
   [capabilities.switch.ID] = {
-    [capabilities.switch.commands.on.NAME] = handle_switch_on,
-    [capabilities.switch.commands.off.NAME] = handle_switch_off,
+    [capabilities.switch.commands.on.NAME] = handle_any_switch_on,
+    [capabilities.switch.commands.off.NAME] = handle_any_switch_off,
   },
   [capabilities.refresh.ID] = {
     [capabilities.refresh.commands.refresh.NAME] = handle_refresh,
   },
+  -- #107: standard capabilities, so their ids and command names are the
+  -- platform's own and resolve on every hub.
+  [capabilities.audioVolume.ID] = {
+    [capabilities.audioVolume.commands.setVolume.NAME] = handle_set_volume,
+    [capabilities.audioVolume.commands.volumeUp.NAME] = audio_command("volumeup", answer_volume),
+    [capabilities.audioVolume.commands.volumeDown.NAME] = audio_command("volumedown", answer_volume),
+  },
+  [capabilities.audioMute.ID] = {
+    [capabilities.audioMute.commands.mute.NAME] = audio_command("mute", answer_mute),
+    [capabilities.audioMute.commands.unmute.NAME] = audio_command("unmute", answer_mute),
+    [capabilities.audioMute.commands.setMute.NAME] = handle_set_mute,
+  },
+  [capabilities.mediaPlayback.ID] = {
+    [capabilities.mediaPlayback.commands.play.NAME] = media_command("play"),
+    [capabilities.mediaPlayback.commands.pause.NAME] = media_command("pause"),
+    [capabilities.mediaPlayback.commands.stop.NAME] = media_command("stop"),
+    [capabilities.mediaPlayback.commands.setPlaybackStatus.NAME] = handle_set_playback_status,
+  },
+  [capabilities.mediaTrackControl.ID] = {
+    [capabilities.mediaTrackControl.commands.nextTrack.NAME] = media_command("next"),
+    [capabilities.mediaTrackControl.commands.previousTrack.NAME] = media_command("prev"),
+  },
 }
+
+--- #108: register the handlers of a standard capability that may not resolve
+--- on every hub. `speechSynthesis` is `proposed`, not `live`, and indexing
+--- `st.capabilities` with an id the hub cannot load raises - which at module
+--- level would take the whole driver down. Like `caps.load`, a miss is logged
+--- and the rest keeps working. Command names are literals for the same reason.
+local function add_standard(id, handlers)
+  local ok, cap = pcall(function() return capabilities[id] end)
+  if not ok or type(cap) ~= "table" or cap.ID == nil then
+    log.warn("standard capability not available: " .. id)
+    return false
+  end
+  capability_handlers[cap.ID] = handlers
+  return true
+end
+
+add_standard("notification", { deviceNotification = handle_device_notification })
+add_standard("speechSynthesis", { speak = handle_speak })
 
 -- Command names are literals: they are what `capabilities/pcRemote.json` and
 -- `capabilities/pcDefer.json` declare, and the generated capability object
@@ -455,6 +779,9 @@ if custom.command then
     handlers[name] = button_handler(service_command)
   end
   capability_handlers[custom.command.ID] = handlers
+end
+if custom.preset then
+  capability_handlers[custom.preset.ID] = { run = handle_preset_run }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

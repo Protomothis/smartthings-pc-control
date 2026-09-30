@@ -15,7 +15,7 @@ PC의 `/st/v1` API로 이야기한다.
 | | |
 |---|---|
 | 허브 | Edge 드라이버를 실행할 수 있는 SmartThings 허브 |
-| 서비스 | PC Control **v1.1.0 이상**. 그보다 낮으면 드라이버가 `버전 불일치`로 표시한다 |
+| 서비스 | PC Control **v1.1.0 이상**. 그보다 낮으면 드라이버가 `버전 불일치`로 표시한다. 드라이버 1.1의 볼륨·미디어·PC 알림·프리셋·활동·잠들지 않기·배터리는 **v1.2.0**이 필요하다(그 전에는 `서비스 v1.2.0 필요`) |
 | 네트워크 | 허브와 PC가 같은 서브넷/VLAN(자동 검색과 WoL에 필요) |
 | 방화벽 | 인바운드 TCP 5001, 자동 검색을 쓰면 인바운드 **UDP 1900**. 둘 다 `install`이 만든다 |
 | 시크릿 | 필수는 아니지만 권장. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고 드라이버가 경고한다 |
@@ -99,9 +99,31 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 | 예약할 명령 | 시간만 고르는 예약이 무엇을 실행할지: 종료 · 재시작 · 절전 · 최대 절전 |
 | 예약 시간 | 5 · 10 · 15 · 30 · 45분, 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12시간, 1 · 2 · 3일, 그리고 **취소**. 목록 자체는 `시간 선택…`에 머문다 |
 
+그 아래가 **미디어 묶음**이다(드라이버 1.1, 서비스 v1.2.0 필요). SmartThings 표준
+capability라 모양은 앱이 정한다.
+
+| 미디어 | 하는 일 |
+|---|---|
+| 곡 정보 | 지금 재생 중인 제목 · 아티스트 · 앨범 (`audioTrackData`). PC에서 **재생 정보 공유**를 켰을 때만. 아무것도 재생하지 않으면 `재생 중인 미디어 없음`, 공유를 끄면 `재생 정보 꺼짐` |
+| 재생 | 재생 · 일시정지 · 정지 (`mediaPlayback`). 서비스가 재생 상태를 알려 주면 버튼이 실제 상태를 따른다 |
+| 곡 이동 | 이전 곡 · 다음 곡 (`mediaTrackControl`) |
+| 볼륨 | 0–100 슬라이더와 올리기·내리기 (`audioVolume`). PC의 기본 재생 장치 기준 |
+| 음소거 | 켜기 · 끄기 (`audioMute`) |
+
+그 뒤로:
+
+| 줄 | 보여 주는 것 / 하는 일 |
+|---|---|
+| 프리셋 | 데스크톱 앱에 등록한 프리셋을 슬롯으로 고른다(`프리셋 1 (Preset 1)`…). 등록되지 않은 슬롯은 목록에서 빠진다(실측 대기). 목록은 `프리셋 선택…`에 머물고, 실행하면 잠깐 `프리셋 3 실행함`이 된다 |
+| 프리셋 목록 | `1 게임 모드 · 2 방송 시작`. 없으면 `없음` |
+| 활동 | 감시 목록에 넣은 앱이 실행 중이면 `게임 중 · Steam`, 없으면 `없음`, PC에서 감지를 켜지 않았으면 `꺼짐` |
+| PC 알림 | 문구를 넣으면 PC 화면에 알림(토스트)이 뜬다(`notification`). 소리내어 읽기 줄은 같은 문구를 PC가 읽어 준다(`speechSynthesis`) |
+| 잠들지 않기 | 별도 컴포넌트의 스위치. 켜면 환경설정 `잠들지 않기 시간`(기본 60분) 동안 PC가 자동 절전하지 않는다 |
+| 배터리 | **노트북에만.** 별도 컴포넌트에 잔량(%)과 전원 공급원(전원 어댑터 · 배터리) |
+
 **프로필 이름이 중요한 이유**: 장치의 화면은 **추가한 시점의 정의로 굳는다.** "왜 아직
 옛날 화면이지?"의 답은 대개 장치가 아직 옛 프로필(`pc.vN`)에 있다는 것이다. 드라이버가
-첫 `init`에서 현재 프로필(`pc.v1`)로 옮긴다.
+첫 `init`에서 현재 프로필(`pc.v2`, 아이콘 설정에 따라 `pc-<style>.v2`)로 옮긴다.
 
 ## 사용
 
@@ -147,6 +169,66 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 > 실행될 예약, 즉 방금 누른 끄기가 유예를 기다리는 동안뿐이다. 유예를 5분으로 잡아
 > 두었다면 그 5분이, 기본값 5분이라면 그 5분이 해당한다.
 
+### 볼륨·미디어
+
+볼륨 슬라이더와 음소거, 재생·일시정지·정지와 이전·다음 곡은 **PC에 로그인한 사용자의
+세션에서** 동작한다(기본 재생 장치의 볼륨, 미디어 키). 그래서 다음 경우에는 명령을 PC로
+보내지 않고 상태 줄에 이유를 띄운다. 다음 상태 조회가 원래 문구로 되돌린다.
+
+| 상태 줄 | 뜻 |
+|---|---|
+| `서비스 v1.2.0 필요` | PC Control 서비스가 v1.2.0보다 오래됐다 |
+| `사용자 없음` | PC에 로그인한 사용자가 없다(로그인 화면, 재부팅 직후) |
+| `미디어 제어 꺼짐` | 데스크톱 앱 설정에서 미디어 제어를 껐다 |
+| `이 PC에서 지원 안 함` | 서비스가 이 기능을 제공하지 않는다고 알려 왔다(재생 장치가 없는 PC 등) |
+| `PC에서 실행 실패` | PC는 답했지만 사용자 세션에서 동작이 실패했거나 3초 안에 끝나지 않았다. 서비스 로그에 이유가 남는다 |
+
+볼륨은 키보드로 바꿔도 트레이 앱이 30초마다 알려 주므로 슬라이더가 따라온다. 재생 상태와
+곡 정보는 트레이 앱이 몇 초마다 확인해 바뀌면 바로 알린다(서비스 v1.2.0의 재생 정보 기능).
+곡 제목은 옵트인이고, 브라우저에서는 탭 제목(유튜브 영상 제목)이 제목으로 온다. 그 기능이
+없는 서비스에서는 재생 상태를 보고하지 않고 버튼만 동작한다.
+
+### 프리셋
+
+무엇을 실행할지(프로그램·주소·스크립트)는 **PC의 데스크톱 앱에만** 있다. SmartThings는
+슬롯 번호만 보내므로, 목록 항목도 이름이 아니라 `프리셋 1`…`프리셋 10`이고 이름은 바로 위
+**프리셋 목록** 줄이 알려 준다. 프리셋은 로그인한 사용자의 세션에서 실행된다(`사용자 없음`).
+
+- 실행하면 목록이 잠깐 `프리셋 3 실행함`을 보여 주다가 다음 상태 조회에 `프리셋 선택…`으로
+  돌아온다. 그 사이 목록을 그냥 닫아도 같은 프리셋이 다시 실행되지는 않는다 — 같은 것을
+  연달아 실행하려면 목록이 돌아온 뒤 다시 고른다.
+- 루틴 동작 **프리셋 실행**에서도 슬롯을 고른다. 비어 있는 슬롯이면 PC로 보내지 않고 상태
+  줄에 `프리셋 7 비어 있음`을 띄운다.
+
+### PC 알림
+
+루틴 동작 **텍스트 표시**(표준 `notification`)에 문구를 넣으면 PC에 토스트가 뜬다. 제목은
+`SmartThings`다. **소리내어 읽기**(표준 `speechSynthesis`)는 같은 문구를 PC가 음성으로 읽는다.
+문구는 200자까지이고 넘치면 `…`로 잘린다. 데스크톱 앱 설정에서 PC 알림을 끄면 보내지 않는다.
+안 뜰 때는 메시지 줄을 본다: `PC 알림 꺼짐` · `사용자 없음` · `잠시 후 다시`(분당 10회 제한) ·
+`서비스 v1.2.0 필요`.
+
+```
+조건(If)  : 현관문이 열림
+동작(Then): PC 의 텍스트 표시 ("현관문이 열렸습니다")
+```
+
+### 잠들지 않기
+
+장치 화면의 **잠들지 않기** 컴포넌트에 스위치가 있다. 켜면 `잠들지 않기 시간`(분) 동안 PC가
+**자동(유휴) 절전**에 들지 않는다. 0이면 끌 때까지다. 절전·종료 명령(이 드라이버·앱·텔레그램)은
+막지 않고, 화면이 꺼지는 것도 막지 않는다. 켜져 있는 동안 다시 켜면 지금부터 새로 센다.
+표준 스위치라 루틴에서 "잠들지 않기 켜기"를 동작으로, "잠들지 않기가 켜져 있으면"을 조건으로
+그대로 쓸 수 있다. PC 앱·텔레그램에서 바꿔도 즉시 따라온다.
+
+### 노트북 배터리
+
+PC가 배터리가 있다고 알려 오면(연속 두 번) 드라이버가 장치를 **배터리 카드가 있는 같은
+아이콘의 프로필**로 옮긴다(`pc-tv.v2` → `pc-tv-battery.v2`). 데스크톱에는 빈 배터리 카드가
+생기지 않는다. 옮긴 직후 잠깐 줄이 비어 보일 수 있지만 곧 다시 채워진다. 표준 `battery`·
+`powerSource`라 루틴에서 **"배터리가 20% 이하면 충전기 플러그 켜기"** 같은 조건을 그대로
+쓴다.
+
 ### 예약
 
 **예약할 명령**에서 무엇을 예약할지 고르고, **예약 시간**에서 얼마 뒤인지 고른다.
@@ -187,6 +269,18 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 
 `깨우는 중`을 조건에 넣으면 WoL로 깨우는 동안 모니터가 미리 켜져 부팅 화면을 놓치지 않는다.
 
+**게임을 켜면 조명 바꾸기** — 데스크톱 앱에서 실행 중 앱 감지를 켜고 감시 목록에
+Steam(종류: 게임)을 넣어 둔다.
+
+```
+조건(If)  : PC 의 활동이 게임
+동작(Then): 거실 조명 장면 "게임"
+```
+
+활동은 없음 · 게임 · 작업 · 감상 · 방송 · 기타 중 하나다. 여러 앱이 동시에 돌면 게임 > 방송 >
+감상 > 작업 > 기타 순으로 하나를 고른다. 드라이버가 받는 것은 목록에 넣은 앱의 **라벨**뿐이고
+다른 프로세스 이름은 PC 밖으로 나가지 않는다.
+
 그 밖에 조건으로 쓸 수 있는 것: 예약 상태·예약 여부·예약할 명령, 연결 상태
 (`응답 없음`이면 PC나 네트워크 이상을 알림으로 받을 수 있다), 잠금 여부(세션 노출을 켠 경우).
 
@@ -207,11 +301,12 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 | 버튼 실행 방식 | 명령 목록이 PC의 유예를 따를지, 즉시 실행할지. 자동화의 `execute`는 자기 `mode`를 따로 가진다 | 설정된 유예 따름 |
 | 문구 언어 | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 한국어다 | 자동 (한국어) |
 | 아이콘 | 앱에 보이는 장치 아이콘(카테고리): 기타 · 모니터 · 스위치 · 플러그 · TV · 프로젝터 · 네트워크 · 허브 · 홈시어터 · 리모컨. 바꾸면 드라이버가 장치를 카테고리만 다른 프로필로 옮긴다. 화면·설정·자동화는 그대로이고 **다시 추가할 필요가 없다** | 기타 |
+| 잠들지 않기 시간 | 잠들지 않기 스위치를 켰을 때 자동 절전을 막는 시간(분, 최대 1440). 0이면 끌 때까지 | 60 |
 
 **아이콘 설정이 따로 있는 이유**: 앱은 장치 아이콘을 프로필의 카테고리로 정하는데,
 이 드라이버의 기본 카테고리인 `Others`(기타)는 앱에서 아이콘을 고를 수 없고 `Computer`
 카테고리는 SmartThings가 받아 주지 않는다. 그래서 카테고리마다 같은 화면의 프로필을 하나씩
-두고(`pc-monitor.v1` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
+두고(`pc-monitor.v2` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
 드라이버가 곧 전부 다시 채운다.
 
 푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지한다. 푸시가 즉시 반영을
@@ -255,10 +350,10 @@ SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
   src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               pc-vN.yml — 현재는 pc.yml (pc.v1)과 아이콘 변형 pc-<style>.yml (pc-<style>.v1)
+  profiles/               현재 프로필 20개 pc*-v2.yml(생성물)과 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
-  tools/                  테스트 러너와 배포 스크립트
+  tools/                  테스트 러너, 프로필 생성기와 템플릿, 배포 스크립트
 ```
 
 ### 테스트
@@ -287,7 +382,8 @@ npm test
 ### capability 업로드
 
 ```bash
-./tools/create-capabilities.sh    # 계정에 한 번만: 여섯 capability와 프레젠테이션 생성
+./tools/create-capabilities.sh    # 계정에 한 번만: 모든 capability와 프레젠테이션 생성
+./tools/create-capabilities.sh pcPreset pcActivity   # 나중에 생긴 것만 (드라이버 1.1.0)
 ./tools/sync-capabilities.sh      # 이후 변경분 반영(정의·프레젠테이션·번역)
 ./tools/sync-capabilities.sh --dry-run
 ```
@@ -305,11 +401,20 @@ npm test
 장치의 화면은 **생성 시점의 프레젠테이션으로 굳는다.** 같은 이름의 프로필을 다시
 패키징하면 preference 변경만 반영되고 화면은 그대로다. 그래서:
 
-1. 프레젠테이션이나 capability 목록을 바꾸면 `profiles/pc-vN.yml`(`name: pc.vN`)을 새로 만든다.
-2. 옛 프로필 파일은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
-3. `src/profiles.lua`의 `PC`와 `KNOWN`만 고치면 `init`/`added`가 기존 장치를 옮긴다.
-4. capability id가 바뀌었다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
-5. **아이콘 변형(`pc-<style>.yml`)은 pc.yml과 `name:`·카테고리 한 줄만 다르다.** pc.yml을 고치면 변형 전부에 같은 변경을 옮기고(테스트가 한 줄이라도 다르면 실패한다), 버전을 올릴 때는 변형도 전부 함께 올린다 — `PC`와 `VARIANTS`를 새 이름으로, 옛 이름 전부를 `KNOWN`에. 이전은 스타일을 유지한다(`pc-monitor.v1` → `pc-monitor.v2`).
+1. **현재 프로필은 손으로 쓰지 않는다.** 아이콘 10종 × 배터리 유무 = 20개(`pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`, 파일은 `profiles/pc*-v2.yml`)를 `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 만든다. 템플릿을 고치고 다시 생성해 함께 커밋한다:
+
+   ```bash
+   bun tools/gen-profiles.js          # node 도 된다
+   bun tools/gen-profiles.js --check  # 어긋난 파일이 있으면 종료 코드 1
+   ```
+
+   `bun tools/gen-profiles.js --media-component`는 미디어 묶음(곡 정보 · 재생 · 곡 이동 · 볼륨 · 음소거)을 main에서 빼 컴포넌트 `미디어`로 옮긴 **대안 배치**를 쓴다. Dev 채널에서 두 화면을 비교할 패키지를 만들 때만 쓰고 커밋하지 않는다(기본은 main, 비교가 끝나면 플래그 없이 다시 생성). `--check`와 테스트는 기본 배치를 지킨다.
+
+   `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
+2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
+3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다. `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v2`).
+4. capability id가 바뀌거나 새로 생겼다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
+5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다.
 
 ### 패키징
 
@@ -342,7 +447,9 @@ Fill in the secret in the device settings. If nothing is found, check the Window
 SmartThings section (discovery responder, firewall rule, last search request).
 
 **Screen** — a status card (power state, last action, schedule summary, session, status,
-versions) and a control card (command list, what to schedule, when to schedule).
+versions) and a control card (command list, what to schedule, when to schedule), then the
+media group on standard capabilities (play/pause/stop, previous/next, volume slider, mute;
+service v1.2.0, a signed-in user).
 Preference labels are Korean with the English term in parentheses; Edge has no per-locale
 preference variants. The *Icon* preference picks the device category (the icon the app
 draws, which it does not let you change for `Others`); the driver moves the device onto a
@@ -350,8 +457,9 @@ profile that differs only in its category, no re-add needed.
 
 **Develop** — `npm test` runs the Lua 5.3 suite under fengari. `tools/apply-namespace.js`
 rewrites the capability namespace, `tools/sync-capabilities.sh` uploads definitions,
-presentations and translations. A presentation change needs a new profile name
-(`profiles/pc-vN.yml`); a definition change needs a new capability id. The design contract
+presentations and translations. The twenty current profiles are generated from
+`tools/profile-template.yml` by `tools/gen-profiles.js` (a test fails while they differ). A
+presentation change needs a new profile name; a definition change needs a new capability id. The design contract
 is in [`../docs/design/edge-driver.md`](../docs/design/edge-driver.md) and the measured
 platform behaviour in
 [`../docs/design/edge-platform-notes.md`](../docs/design/edge-platform-notes.md).

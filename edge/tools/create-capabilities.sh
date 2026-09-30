@@ -24,7 +24,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Order matters only for readability; the capabilities are independent.
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity)
+
+# Names on the command line create only those - how a capability added after
+# the first run reaches an account that already has the rest (edge-v1.1.0:
+# `./tools/create-capabilities.sh pcPreset`). Translations still go up with
+# tools/sync-capabilities.sh afterwards.
+if [ "$#" -gt 0 ]; then
+  CAPABILITIES=("$@")
+fi
 
 if ! command -v smartthings >/dev/null 2>&1; then
   echo "error: the 'smartthings' CLI is not on PATH." >&2

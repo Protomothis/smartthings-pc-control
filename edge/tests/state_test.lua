@@ -110,6 +110,21 @@ local function golden(lang)
     { cap = caps.SESSION, attr = "user", value = "kim" },
     { cap = caps.SESSION, attr = "summary",
       value = en and "Locked · 20 min · kim" or "잠김 · 20분 · kim" },
+    -- #107: the media rows' constant attributes. The sample is a v1.1.0 body
+    -- without an `audio` block, so there is no volume or mute to report.
+    { cap = "mediaPlayback", attr = "supportedPlaybackCommands", value = { "play", "pause", "stop" } },
+    { cap = "mediaTrackControl", attr = "supportedTrackControlCommands",
+      value = { "nextTrack", "previousTrack" } },
+    -- #113: a v1.1.0 service has no presets to name, and says why.
+    { cap = caps.PRESET, attr = "names",
+      value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
+    { cap = caps.PRESET, attr = "supportedSlots", value = { "none" } },
+    -- #114: no watch list on a v1.1.0 service.
+    { cap = caps.ACTIVITY, attr = "activity", value = "none" },
+    { cap = caps.ACTIVITY, attr = "summary", value = en and "Off" or "꺼짐" },
+    -- #115: the keep-awake switch, on its own component. A v1.1.0 service
+    -- cannot keep the PC awake.
+    { cap = state.CAP_SWITCH, attr = "switch", value = "off", component = "awake" },
   }
 end
 

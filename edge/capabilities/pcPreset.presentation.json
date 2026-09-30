@@ -1,0 +1,214 @@
+{
+  "id": "numbersystem53811.pcpreset",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.lastPreset.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "run",
+          "alternatives": [
+            {
+              "key": "1",
+              "value": "프리셋 1 (Preset 1)",
+              "type": "active"
+            },
+            {
+              "key": "2",
+              "value": "프리셋 2 (Preset 2)",
+              "type": "active"
+            },
+            {
+              "key": "3",
+              "value": "프리셋 3 (Preset 3)",
+              "type": "active"
+            },
+            {
+              "key": "4",
+              "value": "프리셋 4 (Preset 4)",
+              "type": "active"
+            },
+            {
+              "key": "5",
+              "value": "프리셋 5 (Preset 5)",
+              "type": "active"
+            },
+            {
+              "key": "6",
+              "value": "프리셋 6 (Preset 6)",
+              "type": "active"
+            },
+            {
+              "key": "7",
+              "value": "프리셋 7 (Preset 7)",
+              "type": "active"
+            },
+            {
+              "key": "8",
+              "value": "프리셋 8 (Preset 8)",
+              "type": "active"
+            },
+            {
+              "key": "9",
+              "value": "프리셋 9 (Preset 9)",
+              "type": "active"
+            },
+            {
+              "key": "10",
+              "value": "프리셋 10 (Preset 10)",
+              "type": "active"
+            }
+          ],
+          "supportedValues": "supportedSlots.value"
+        },
+        "state": {
+          "value": "lastPreset.value",
+          "alternatives": [
+            {
+              "key": "none",
+              "value": "프리셋 선택… (Pick a preset)",
+              "type": "inactive"
+            },
+            {
+              "key": "1",
+              "value": "프리셋 1 실행함 (Preset 1 started)",
+              "type": "active"
+            },
+            {
+              "key": "2",
+              "value": "프리셋 2 실행함 (Preset 2 started)",
+              "type": "active"
+            },
+            {
+              "key": "3",
+              "value": "프리셋 3 실행함 (Preset 3 started)",
+              "type": "active"
+            },
+            {
+              "key": "4",
+              "value": "프리셋 4 실행함 (Preset 4 started)",
+              "type": "active"
+            },
+            {
+              "key": "5",
+              "value": "프리셋 5 실행함 (Preset 5 started)",
+              "type": "active"
+            },
+            {
+              "key": "6",
+              "value": "프리셋 6 실행함 (Preset 6 started)",
+              "type": "active"
+            },
+            {
+              "key": "7",
+              "value": "프리셋 7 실행함 (Preset 7 started)",
+              "type": "active"
+            },
+            {
+              "key": "8",
+              "value": "프리셋 8 실행함 (Preset 8 started)",
+              "type": "active"
+            },
+            {
+              "key": "9",
+              "value": "프리셋 9 실행함 (Preset 9 started)",
+              "type": "active"
+            },
+            {
+              "key": "10",
+              "value": "프리셋 10 실행함 (Preset 10 started)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "{{i18n.attributes.names.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{names.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": [
+      {
+        "label": "{{i18n.commands.run.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "run",
+          "submitLabel": "Run",
+          "arguments": [
+            {
+              "name": "slot",
+              "label": "{{i18n.commands.run.arguments.slot.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "1",
+                    "value": "Preset 1",
+                    "type": "active"
+                  },
+                  {
+                    "key": "2",
+                    "value": "Preset 2",
+                    "type": "active"
+                  },
+                  {
+                    "key": "3",
+                    "value": "Preset 3",
+                    "type": "active"
+                  },
+                  {
+                    "key": "4",
+                    "value": "Preset 4",
+                    "type": "active"
+                  },
+                  {
+                    "key": "5",
+                    "value": "Preset 5",
+                    "type": "active"
+                  },
+                  {
+                    "key": "6",
+                    "value": "Preset 6",
+                    "type": "active"
+                  },
+                  {
+                    "key": "7",
+                    "value": "Preset 7",
+                    "type": "active"
+                  },
+                  {
+                    "key": "8",
+                    "value": "Preset 8",
+                    "type": "active"
+                  },
+                  {
+                    "key": "9",
+                    "value": "Preset 9",
+                    "type": "active"
+                  },
+                  {
+                    "key": "10",
+                    "value": "Preset 10",
+                    "type": "active"
+                  }
+                ],
+                "name": "slot"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

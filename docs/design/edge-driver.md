@@ -56,6 +56,7 @@
 | `src/discovery.lua` | SSDP 검색, 식별·중복 방지, 모델명의 PC id |
 | `src/wol.lua` | 매직 패킷, 깨우기 시퀀스 |
 | `src/profiles.lua` | 프로필 이름과 장치 이전 |
+| `src/features.lua` | v1.2.0 기능(media-notify.md): `status.features` 판정, 새 status 블록 → 이벤트, 명령 가드 |
 | `src/caps.lua` | 커스텀 capability id |
 | `src/i18n.lua` | 속성 **값** 문구의 ko/en |
 | `src/driver_version.lua` | 드라이버 버전(단일 출처) |
@@ -217,6 +218,37 @@
 - `pcDefer.status`는 `active`의 문자열 판이고, 이제 자동화 조건 전용이다. 목록의 `state`는 bool을 읽지 못한다.
 - `pcInfo.versions`는 정의에 남아 있고 계속 emit 되지만, 화면에 그려지는 줄은 `pcVersion.versions`다.
 
+### 4.1 v1.2.0 기능 (드라이버 1.1.0, `docs/design/media-notify.md`)
+
+서비스 v1.2.0의 기능은 되도록 **표준 capability**로 드러낸다. 표준은 정의 캐시 문제가 없고(플랫폼 노트 "허브의 정의 캐시") 앱이 슬라이더·토글·버튼을 스스로 그린다.
+
+| capability | 컴포넌트 | 속성 ← status | 명령 → `/st/v1/command` |
+|---|---|---|---|
+| `audioTrackData` (표준, #118) | main (또는 `media`, §6.6) | `audioTrackData` = `{title, artist?, album?}` ← `media.title/artist/album` — `features`에 `nowplaying`(옵트인)이 있고 제목이 있을 때만. 블록은 있는데 제목이 없으면 `{title: "재생 중인 미디어 없음"}`(옵트인 꺼짐이면 "재생 정보 꺼짐"), 블록이 없으면(#117 이전) 내보내지 않음. 빈 필드는 빼고 `""`는 보내지 않는다 | – |
+| `mediaPlayback` (표준) | main (또는 `media`) | `supportedPlaybackCommands` = `play` `pause` `stop` (상수). #118: `playbackStatus` ← `media.status`(`playing`/`paused`/`stopped`, `none` → `stopped`). 블록이 없으면 보내지 않음(`features.PLAYBACK_RESTING`, 실측 대기) | `play` `pause` `stop`, `setPlaybackStatus(playing\|paused\|stopped)` → `play`/`pause`/`stop` |
+| `mediaTrackControl` (표준) | main | `supportedTrackControlCommands` = `nextTrack` `previousTrack` (상수) | `nextTrack` → `next`, `previousTrack` → `prev` |
+| `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
+| `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
+
+| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
+| `pcActivity` (커스텀 `numbersystem53811.pcactivity`, #114) | main | `activity` enum `none` `game` `work` `media` `stream` `other` ← `activity.kind`(모르는 kind는 `other`), `summary` string "게임 중 · Steam" / "없음" / 옵트인 꺼짐·옛 서비스 "꺼짐" | – (루틴 조건 전용) |
+| `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
+| `notification` (표준 live, #108) | main | – (속성 없음) | `deviceNotification(notification)` → `POST /st/v1/notify {text}` |
+| `speechSynthesis` (표준 proposed, #108) | main | – (속성 없음) | `speak(phrase)` → `POST /st/v1/notify {text, speak: true}` |
+| `battery`, `powerSource` (표준, #116) | **`battery`** (label "배터리", `-battery` 프로필에만) | `battery` ← `battery.percent`(-1이면 내보내지 않음), `powerSource` ← `battery.ac` (`mains`/`battery`). `present`가 거짓이면 아무것도 내보내지 않는다 | – |
+
+- 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
+- **볼륨·음소거는 읽은 값이 있을 때만** 내보낸다(`audio.available` 참, 또는 `updated_at`이 있음). 서비스가 한 번도 재지 않은 0으로 슬라이더를 끌어내리지 않는다.
+- **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없으면 옛 서비스 → "서비스 v1.2.0 필요", 키는 있는데 기능이 없으면 "이 PC에서 지원 안 함" — 단 `audio`·`media`는 서비스가 `media.enabled`일 때만 싣으므로(#104/#105) "미디어 제어 꺼짐" — , `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐", `501 unsupported` → "이 PC에서 지원 안 함", `502 failed`·`504 timeout` → "PC에서 실행 실패"(`features.error_note`, 본문의 `error` 코드로 가른다 — `client.classify`는 5xx를 `unreachable`로 보므로 그보다 먼저). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
+- 막힌 명령은 그 줄의 현재 값을 강제로 다시 내보내고(회전 표시 뒤 오류 방지), `pcInfo.message`·`summary`에 이유를 띄운다(§6.9의 `emit_note`와 같은 모양). 성공하면 바로 폴링하면서 그 줄들을 강제로 내보낸다(`poll.once(..., {force = rows})`).
+- 이번 구동에서 아직 status를 읽지 못했으면(허브 재시작 직후) 명령 전에 한 번 폴링한다. 그래도 모르면 "PC에 연결할 수 없습니다".
+- 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.
+- **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, 실측 대기). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `poll.PRESET_HOLD_SECONDS`(5초)가 지난 첫 폴링·푸시가 `none`으로 되돌린다 — 바뀔 때 강제 한 번 + 다음 호출에 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
+- **활동(#114)**: 켜져 있다는 판단은 `activity.enabled`와 `features`의 `"activity"` 둘 다다(서비스는 옵트인이 켜져 있을 때만 기능을 싣는다, #110). 요약은 24자(코드 포인트) 안에서 라벨을 뒤에서부터 줄인다 — 전부 → "첫 라벨 외 N"("+N") → 첫 라벨 → 낱말만. 푸시 `activity.changed`도 전체 status를 싣고 오므로 폴링과 같은 `apply_status`로 바로 반영된다.
+- **잠들지 않기(#115)**: 표준 `switch`가 두 컴포넌트에 있으므로 핸들러는 `command.component`로 가른다 — `main`(또는 없음)은 전원(§6.2), `awake`는 `awake`/`awakeoff`. 기능 가드는 `"awake"`이고 사용자 세션은 필요 없다. 켜져 있는 동안 다시 켜면 지금부터 새 기간이다(§12). 막힌 명령은 토글을 마지막 status의 값으로 강제로 되돌린다. 전원 전환 가드(§6.9)는 적용하지 않는다 — 전원을 움직이지 않는다. 푸시 `awake.changed`로 바로 반영된다.
+- **PC 알림(#108)**: 문구는 제어 문자를 공백으로, 연속 공백을 하나로, 양끝을 다듬고 200자(코드 포인트)에서 "…"로 자른다. 비면 보내지 않는다("보낼 문구 없음"). 가드는 `"notify"`, 안내는 `pcInfo.message`에만 — 옛 서비스·기능 없음은 §4.1 위의 문구, `403 notify_disabled` "PC 알림 꺼짐", `409` "사용자 없음", `429` "잠시 후 다시"(서비스의 출처별 분당 10회). `speechSynthesis`는 `proposed`라 허브에서 풀리지 않을 수 있어 핸들러 등록을 pcall로 감싼다(`add_standard`).
+- **배터리(#116)**: 데스크톱에 빈 배터리 카드가 생기지 않도록 배터리는 `-battery` 프로필에만 있다. 폴링·푸시마다 `profiles.apply_battery(device, status.battery.present)`가 장치의 프로필과 status를 비교하고, **연속 두 번**(`profiles.BATTERY_VOTES`) 같은 답이 나와야 같은 스타일의 반대쪽으로 옮긴다(`pc-tv.v2` ⇄ `pc-tv-battery.v2`). 한 번 튀는 값은 무시하고, 거절된 대상은 같은 구동에서 다시 묻지 않는다. 옮기면 1초 뒤 `repaint_soon`(폴링 안에서 요청을 겹치지 않으려고 타이머로). 답은 `profiles.BATTERY_FIELD`에 persist 해 다음 버전 이전(`ensure`)이 바로 맞는 쪽으로 가게 한다. 옮기기 전의 배터리 이벤트는 컴포넌트가 없어 건너뛰고, 옮긴 뒤의 다시 칠하기가 채운다. 푸시 `battery.changed`는 전체 status를 싣고 온다.
+
 ## 5. 화면 구성
 
 **대시보드** — 타일의 문구는 `pcPower.powerState`("절전 (Sleeping)", "종료 대기 (Shutting down)" …), 토글은 표준 `switch`다(#101).
@@ -242,7 +274,14 @@
 | 예약할 명령 | `pcDefer.setPlanCommand` 목록 |
 | 예약 시간 | `pcDefer.schedule` 목록(#89: 5·10·15·30·45분, 1·1.5·2·3·4·6·8·12시간, 1·2·3일, 그리고 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
 
-- 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 목록 맨 끝이다.
+| 미디어 묶음 (#107 #118, 표준) | 곡 정보(`audioTrackData`) → 재생·일시정지·정지(실제 상태 반영) → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글. 기본은 main, 대안은 컴포넌트 `media`(§6.6) |
+| 프리셋 (#113) | `pcPreset.run` 목록(등록된 슬롯만, `supportedSlots`). 쉬는 값 "프리셋 선택… (Pick a preset)", 실행 직후 잠깐 "프리셋 3 실행함 (Preset 3 started)". 상태 카드에 이름 줄 `pcPreset.names` |
+| 활동 (#114) | 상태 줄 `pcActivity.summary` 하나. 루틴 조건 "활동이 게임" |
+| PC 알림 (#108, 표준) | `notification`의 문구 입력 줄("텍스트 표시")과 `speechSynthesis`의 입력 줄. 루틴 동작에도 같은 입력 |
+| 잠들지 않기 (#115) | 컴포넌트 `awake`의 표준 스위치 토글. 루틴 동작·조건에 그대로 쓴다 |
+| 배터리 (#116) | 컴포넌트 `battery`의 표준 `battery`(잔량 %)·`powerSource`(전원 공급원). 배터리가 있는 PC(`-battery` 프로필)에만 |
+
+- 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 edge-v1.0 capability의 맨 끝이고, v1.2.0 capability는 그 뒤에 media-notify.md §15 "UI 구성" 순서로 온다(미디어 묶음 → 나머지). 표준 capability의 줄이 우리 상태·조작 카드에 섞이는지, 따로 그려지는지는 실측 대기다(media-notify.md §16).
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
 - 모든 상태 줄은 해당 사항이 없을 때도 문구를 갖는다("없음 (None)", 예약 "없음", 세션 "꺼짐", 버전의 서비스 자리에 `v?`). 빈 문자열은 화면에서 "-"로 보인다.
 - **값 문구는 줄 라벨을 되풀이하지 않는다**(#87). 라벨이 이미 "예약"·"세션"이라고 말하고 있고, 값 칸은 휴대폰이 잘라 낸다. 각 줄이 말하는 것:
@@ -311,13 +350,16 @@
 
 ### 6.6 프로필 이전
 
-- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`profiles/pc-vN.yml`, `name: pc.vN`). 현재는 **`pc.v1`**(파일 `profiles/pc.yml`) — 첫 공개 때 개발 중 쌓인 v2~v17을 지우고 v1로 초기화했다(#90, §11). 다음 화면 변경은 `pc-v2.yml`부터다.
-- 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다.
-- `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다.
-- 이전 직후에는 capability id가 바뀌었을 수 있어 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`)를 보고 전 줄을 한 번 다시 칠한다.
-- **아이콘 변형(#100)**: 카테고리는 프로필마다 하나로 고정이라, 환경설정 `iconStyle`(§7)의 값마다 pc.yml과 `name:`·카테고리만 다른 프로필을 둔다 — `pc.v1`(Others)과 `pc-<style>.v1`(파일 `profiles/pc-<style>.yml`). 전부 "현재"(`profiles.CURRENT`)이므로 `ensure`는 옮기지 않는다. 변형 동기화는 `capabilities_test`가 줄 단위로 검사한다.
-- 스타일 전환은 `profiles.apply_style`이 `infoChanged`에서(값이 바뀌었을 때) 그리고 `init`에서(전환 전에 드라이버가 재시작된 경우) `try_update_metadata({ profile = … })`로 한다. 새 프로필은 클라우드 기록이 비어 시작하므로 `poll.repaint_soon`으로 다시 칠한다. 전환이 다시 `infoChanged`를 내므로, 이번 구동에서 옮긴 이름을 기억해 `name_of` 대신 쓰고(허브가 `device.profile.name`을 늦게 바꿔도 되풀이하지 않는다), 거절된 대상은 같은 구동에서 다시 요청하지 않는다. `iconStyle`이 없는 장치와 현재 이름이 아닌 장치는 건드리지 않고, 모르는 값은 `others`로 본다.
-- **버전을 올릴 때는 변형 전부를 함께 올린다.** `pc.v2`와 함께 `pc-<style>.v2` 전부, `PC`·`VARIANTS`를 새 이름으로, v1 이름 전부를 `KNOWN`에. `migration_for`는 옛 이름에서 스타일을 읽어(`pc-<style>.vN`) 같은 스타일의 새 버전으로 옮긴다.
+- 프레젠테이션이나 capability 목록이 바뀌면 프로필 이름 버전을 올린다(`name: pc.vN`). **현재는 `pc.v2`**(#107) — 첫 공개 때 v1로 초기화했고(#90, §11), 드라이버 1.1.0의 v1.2.0 capability가 v2를 만들었다.
+- 옛 프로필 파일은 패키지에 남긴다. 아직 옮겨지지 않은 장치가 참조한다. v1은 `profiles/pc.yml`(`pc.v1`)과 `profiles/pc-<style>.yml`(`pc-<style>.v1`) 열 개로, 이제 고정이다.
+- `init`/`added`가 `profiles.ensure`를 불러 알고 있는 옛 이름의 장치를 현재 프로필로 옮긴다(장치당 드라이버 구동 1회). 모르는 이름은 건드리지 않는다. 옮긴 이름은 이번 구동의 "현재 이름"(`profiles.current_name`)이 되므로, 허브가 `device.profile.name`을 늦게 바꿔도 같은 `init`의 아이콘 전환이 v2 이름에서 출발한다. 옮겼으면 `poll.repaint_soon`.
+- 이전 직후에는 capability id가 바뀌었거나 새로 생겨 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`, #107에서 `"2"`)를 보고 전 줄을 한 번 다시 칠한다.
+- **두 축, 스무 개 (#107)**: 카테고리는 프로필마다 하나로 고정이라 환경설정 `iconStyle`(§7)의 값마다 프로필이 하나씩이고(#100), 배터리 카드는 배터리가 있는 PC에만 있어야 하므로(#116) 그 각각에 `battery` 컴포넌트가 있는 짝이 있다. 이름은 `pc.v2` · `pc-<style>.v2` · `pc-battery.v2` · `pc-<style>-battery.v2`(`profiles.name_for`), 파일은 이름의 `.vN`을 `-vN`으로 바꾼 `profiles/pc*-v2.yml`. 스무 개 모두 "현재"(`profiles.CURRENT`)이므로 `ensure`는 옮기지 않는다.
+- **생성기**: 스무 개는 손으로 쓰지 않는다. `tools/gen-profiles.js`가 `tools/profile-template.yml` 하나에서 만든다 — 템플릿 머리 주석을 떼고, `__NAME__`·`__CATEGORY__`를 채우고, `# @battery-begin`…`# @battery-end` 사이는 배터리 변형에만 남기고, 생성 머리 주석을 붙인다. `tests/profilegen_test.lua`가 같은 규칙을 Lua로 적용해 디스크의 파일과 비교하고, 생성기 소스의 스타일·카테고리 목록과 `VERSION`이 `profiles.lua`와 같은지도 본다. 템플릿이 `profiles/` 밖에 있는 이유: 패키저는 그 폴더의 YAML을 모두 프로필로 올리므로 템플릿이 스물한 번째 프로필이 된다. media-notify.md §13이 적은 "`profiles/pc.yml` 하나에서"는 이것으로 바뀌었다 — `pc.yml`은 v1 장치가 아직 쓰는 고정 파일이다.
+- **미디어 묶음의 두 배치(#118)**: 기본은 main 안이다(`# @media-begin`…`# @media-end` 사이가 제자리에 남는다). `bun tools/gen-profiles.js --media-component`는 그 줄들을 main에서 빼 `# @media-component` 자리에 컴포넌트 `media`(label "미디어")로 옮긴 대안 배치를 쓴다 — Dev 채널에서 두 화면을 비교하려고 패키징할 때만 쓰고 **커밋하지 않는다**(동기 테스트는 기본 배치를 지키므로 실패한다. 비교가 끝나면 플래그 없이 다시 생성). 파일 머리의 `media group: main` / `component media`가 어느 쪽인지 말한다. 두 배치는 프로필 이름이 같으므로 비교는 배치마다 새로 추가한 장치로 한다(이미 v2에 올라탄 장치의 화면은 굳어 있다). 드라이버는 둘 다 받는다: `poll.emit`이 미디어 묶음의 이벤트(`features.MEDIA_CAPS`)를 장치 프로필에 `media` 컴포넌트가 있으면 거기로 보내고, 명령은 컴포넌트와 무관하게 같은 핸들러가 받는다. 확정되면 템플릿을 그쪽으로 고치고 프로필 버전을 올린다.
+- 스타일 전환은 `profiles.apply_style`이 `infoChanged`에서(값이 바뀌었을 때) 그리고 `init`에서(전환 전에 드라이버가 재시작된 경우) `try_update_metadata({ profile = … })`로 한다. **배터리 쪽은 그대로 둔다**(`pc-battery.v2` + 모니터 → `pc-monitor-battery.v2`). 새 프로필은 클라우드 기록이 비어 시작하므로 `poll.repaint_soon`으로 다시 칠한다. 전환이 다시 `infoChanged`를 내므로, 이번 구동에서 옮긴 이름을 기억해 `name_of` 대신 쓰고(허브가 `device.profile.name`을 늦게 바꿔도 되풀이하지 않는다), 거절된 대상은 같은 구동에서 다시 요청하지 않는다. `iconStyle`이 없는 장치와 현재 이름이 아닌 장치는 건드리지 않고, 모르는 값은 `others`로 본다.
+- **버전을 올릴 때**: 템플릿의 내용, 생성기와 `profiles.lua`의 `VERSION`을 함께 올리고 생성기를 돌린다. `KNOWN`은 v1 이름 열 개 뒤에 현재 이름 스무 개다(`name_for`로 만든다). `migration_for(name, battery)`는 옛 이름에서 스타일을 읽어(`pc-<style>[-battery].vN`) 같은 스타일의 새 버전으로 옮기고, 배터리 쪽은 호출자가 정한다 — v1에는 배터리 변형이 없었으므로 `ensure`는 배터리 없는 쪽으로 옮기고, 배터리 변형으로 가는 것은 status를 본 뒤의 별도 이동이다(#116).
+- **컴포넌트**: main이 아닌 컴포넌트(`awake` #115, `battery` #116)의 이벤트 레코드는 `component`를 달고 나가고, `poll.emit`이 `device.profile.components[<id>]`를 찾아 `emit_component_event`로 보낸다. 장치의 프로필에 그 컴포넌트가 없으면(아직 v1, 또는 배터리 없는 변형) 조용히 건너뛴다. 강제 줄 키는 `<component>/<cap>.<attr>`(`poll.row_key`)이다.
 
 ### 6.7 여러 PC
 
@@ -416,21 +458,22 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 | `buttonMode` | enum | `default` | 명령 목록의 유예 처리: 설정된 유예 따름 / 즉시 |
 | `language` | enum | `auto` | 문구 언어(auto = 한국어) |
 | `iconStyle` | enum | `others` | 장치 아이콘(카테고리). 값마다 카테고리만 다른 프로필로 갈아탄다(#100, §6.6) |
+| `awakeMinutes` | integer 0–1440 | `60` | 잠들지 않기 스위치를 켰을 때의 기간(분). 0 = 끌 때까지(#115) |
 
-`iconStyle`의 값과 프로필·카테고리:
+`iconStyle`의 값과 프로필·카테고리(배터리 변형은 이름의 `.v2` 앞에 `-battery`, 기본 스타일은 `pc-battery.v2`):
 
 | 값 | 프로필 | 카테고리 |
 |---|---|---|
-| `others` | `pc.v1` | Others |
-| `monitor` | `pc-monitor.v1` | SmartMonitor |
-| `switch` | `pc-switch.v1` | Switch |
-| `plug` | `pc-plug.v1` | SmartPlug |
-| `tv` | `pc-tv.v1` | Television |
-| `projector` | `pc-projector.v1` | Projector |
-| `network` | `pc-network.v1` | Networking |
-| `hub` | `pc-hub.v1` | Hub |
-| `theater` | `pc-theater.v1` | HomeTheater |
-| `remote` | `pc-remote.v1` | RemoteController |
+| `others` | `pc.v2` | Others |
+| `monitor` | `pc-monitor.v2` | SmartMonitor |
+| `switch` | `pc-switch.v2` | Switch |
+| `plug` | `pc-plug.v2` | SmartPlug |
+| `tv` | `pc-tv.v2` | Television |
+| `projector` | `pc-projector.v2` | Projector |
+| `network` | `pc-network.v2` | Networking |
+| `hub` | `pc-hub.v2` | Hub |
+| `theater` | `pc-theater.v2` | HomeTheater |
+| `remote` | `pc-remote.v2` | RemoteController |
 
 `Others`는 앱에서 아이콘 선택이 막히고 `Computer` 카테고리는 API가 거부하므로, 아이콘을 바꾸는 길은 카테고리를 바꾸는 것뿐이다. 각 카테고리의 실제 아이콘과 앱의 아이콘 선택 가능 여부는 Dev 채널에서 실측해 후보를 확정한다(#100).
 
@@ -449,6 +492,8 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - **Go** — `st_api_test.go`(인증·허용 목록·명령 모드·예약·취소·status 스키마), `st_push_test.go`(구독 검증·TTL·연속 실패 제거·`power.stopping` 동기 전송), `st_ssdp_test.go`(M-SEARCH 파싱·응답·레이트 리밋), `firewall_test.go`.
 - **Lua** — `edge/tests/run.lua`가 전 모듈을 돈다. 상태 머신 전이, status→이벤트 매핑, 오류 분류, 푸시 본문 파싱과 갱신 타이밍, WoL 패킷 바이트, 검색 판정, 프로필 이전, i18n.
   `capabilities_test.lua`는 **정의·프레젠테이션·드라이버가 서로 맞는지**를 지킨다: emit 하는 속성이 정의에 있는지, 목록의 키가 인자 스키마를 통과하는지, `state`가 bool에 묶이지 않았는지, 값 라벨이 병기인지, 상태 줄이 빈 문자열로 나가지 않는지.
+  `profilegen_test.lua`(#107)는 생성기 규칙을 Lua로 돌려 `profiles/pc*-v2.yml`과 비교하고, `features_test.lua`(#107~#118)는 v1.2.0 기능의 status → 이벤트, 명령 매핑, 가드와 오류 문구, 컴포넌트 배선, 배터리 프로필 이동을 본다.
+- **다시 칠하기**(`poll.repaint`)는 v1.2.0 줄을 이번 구동에서 마지막으로 읽은 status(`extras.last_status`)로 칠한다. 한 번도 읽지 못했을 때만 쉬는 기본값(잠들지 않기 `off`, 활동 `none` …)이다 — 강제로 나가는 `off`는 그 스위치를 조건으로 쓰는 루틴을 돌린다.
 - 실행: `cd edge && npm test`(CI) 또는 `bun tools/lua.js tests/run.lua`. 문법 검사는 `tests/syntax.lua`.
 - 실기 검증: 채널에 올린 뒤 허브에서 검색·스위치·명령·예약·취소·푸시·프로필 이전을 확인한다.
 

@@ -110,7 +110,7 @@
 | 볼륨 | `audioVolume` | 표준 | 상세 화면 슬라이더 |
 | 음소거 | `audioMute` | 표준 | 토글 |
 | 미디어 | `mediaPlayback` + `mediaTrackControl` | 표준 | 재생/일시정지, 이전/다음 버튼 |
-| PC 알림 | 표준 `notification` 또는 `speechSynthesis` 실측 → 루틴에 안 나오면 커스텀 `pcNotify` | 자동화 전용 | 루틴 동작 "PC에 알림 띄우기"(문구 입력) |
+| PC 알림 | 표준 `notification`(`deviceNotification`, live)과 표준 `speechSynthesis`(`speak`, proposed). 계정에서 확인했다(#108, 플랫폼 노트 "표준 capability") — 커스텀 `pcNotify`는 필요 없다 | 표준 | 루틴 동작과 상세 화면의 문구 입력 줄. `speak`는 소리내어 읽기 |
 
 - 표준 capability는 정의 캐시 문제가 없고 앱 기본 UI를 그대로 쓴다. SmartThings에 연결된 음성 비서가
   볼륨을 인식하는지는 Dev 채널에서 확인한다.
@@ -120,6 +120,11 @@
   `pc*.v1`은 `KNOWN`에 넣어 자동 이전한다(§6.6 규칙). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
+- **PC 알림(#108):** `deviceNotification(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings"),
+  `speak(phrase)` → `{text: phrase, speak: true}`. 제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도).
+  `features`에 "notify"가 있어야 보낸다. 안내는 `pcInfo.message`에만 쓴다(루틴이 자주 보낼 수 있어 요약 줄을 덮지 않는다):
+  옛 서비스 "서비스 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐", `409 no_user_session` "사용자 없음", `429` "잠시 후 다시".
+  두 capability 모두 속성이 없어 내보낼 것이 없다.
 
 ## 6. 텔레그램
 
@@ -145,7 +150,7 @@
 - 드라이버: 표준 capability 방출·명령 매핑·옛 서비스/세션 없음 분기 테스트, 프로필 변형 동기 테스트.
 - **Dev 채널 실측 목록**
   1. 볼륨 슬라이더·음소거 토글·미디어 버튼이 상세 화면에 어떻게 그려지는가(대시보드 포함)
-  2. 표준 `notification`/`speechSynthesis`가 루틴 동작에 나오는가, 문구 입력이 되는가
+  2. ~~표준 `notification`/`speechSynthesis`가 루틴 동작에 나오는가, 문구 입력이 되는가~~ — 계정에서 확인했다(#108): 둘 다 detailView와 automation.actions에 textField가 있다. 남은 것은 `proposed`인 `speechSynthesis`가 루틴 동작 목록에 실제로 나오는지(§16)
   3. 재생 상태를 보고하지 않을 때 미디어 줄이 비는가
   4. 음성 비서에서 볼륨 명령이 먹는가(선택)
 
@@ -212,12 +217,13 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
   - 텔레그램 `/status`와 앱 상단 상태 줄은 배터리가 있을 때만 한 줄을 더한다. 앱은 `GET /api/battery`를 1분마다 읽는다.
 - **드라이버:** 표준 `battery`·`powerSource`. 데스크톱에 빈 줄이 생기지 않도록 **배터리가 있을 때만** 컴포넌트 `battery`가 있는
   프로필 변형(`pc-<style>-battery.v2`)으로 옮긴다. 아이콘 10종 × 배터리 유무 = 20개 프로필은 손으로 관리하지 않고
-  `tools/gen-profiles.js`가 `profiles/pc.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교).
+  `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교). 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이고, `profiles/pc.yml`은 v1 장치가 쓰는 고정 파일로 남는다(edge-driver.md §6.6).
 - 루틴 예: "배터리 20% 이하면 충전기 플러그 켜기".
 
 ## 14. 프로필 pc.v2 구성
 
-- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioVolume, audioMute, mediaPlayback, mediaTrackControl, pcPreset, pcActivity, (pcNotify)
+- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcActivity, notification, speechSynthesis — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
+- media(대안 배치만, #118): audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute — `gen-profiles.js --media-component`. 기본은 위의 main 배치
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
 - 이름: `pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`. `pc*.v1`은 `KNOWN`으로 자동 이전.
@@ -236,6 +242,12 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 - **API:** status `media` 블록, features += "nowplaying"(옵트인일 때), 푸시 `media.changed`. 텔레그램 `/np`, `/status` 한 줄.
 - **드라이버:** 표준 `audioTrackData`(title/artist/album)와 `mediaPlayback.playbackStatus`. 미디어 묶음을 main에 둘지 컴포넌트 `media`로
   분리할지는 Dev 채널에서 둘 다 그려 보고 정한다(실측 대기).
+  - (#118 구현) `playbackStatus` ← `media.status`(`none` → `stopped`), 블록이 없으면 내보내지 않는다. `audioTrackData`는 `features`에
+    "nowplaying"이 있고 제목이 있을 때만 `{title, artist?, album?}`(빈 필드는 빼고 `""`는 보내지 않는다, 128자에서 자름). 블록은 있는데
+    제목이 없으면 `{title: "재생 중인 미디어 없음"}`, 옵트인이 꺼져 있으면 `{title: "재생 정보 꺼짐"}` — 멈춘 곡의 제목이 화면에 남지 않게.
+    `app`은 보내지 않는다. 푸시 `media.changed`는 전체 status를 싣고 와 바로 반영된다.
+  - **배치 기본값은 main**이다(템플릿 순서가 위 "UI 구성"). `bun tools/gen-profiles.js --media-component`가 미디어 묶음을 컴포넌트
+    `media`(label "미디어")로 뺀 대안 배치를 쓴다 — Dev 채널 비교용이고 커밋하지 않는다(edge-driver.md §6.6). 드라이버는 두 배치를 다 받는다.
 
 ### UI 구성
 
@@ -246,3 +258,20 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 - **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / 소리내어 읽기 + 음성 / [테스트 알림].
 - **SmartThings 상세 화면** — 상태 카드와 조작 카드 뒤에 미디어 묶음: 곡 정보 → 재생/일시정지·이전/다음 → 볼륨 슬라이더 → 음소거.
   그 뒤 프리셋(목록 + 이름 줄), 활동, PC 알림 입력, 잠들지 않기·배터리 컴포넌트.
+
+## 16. 드라이버 1.1.0 Dev 채널 실측 대기
+
+드라이버가 정해 둔 가정 중 기기에서만 확인할 수 있는 것. 확인되면 결과를 `edge-platform-notes.md`로 옮기고 여기서 지운다.
+
+1. **미디어 묶음 모양(#107)** — `mediaPlayback`·`mediaTrackControl`·`audioVolume`·`audioMute`가 상세 화면에 어떻게 그려지는지, 우리 상태·조작 카드와 섞이는지 따로 그려지는지, 대시보드 타일이 바뀌는지.
+2. **재생 상태를 보고하지 않을 때(#107, #118 이후에는 `media` 블록이 없는 서비스만)** — `playbackStatus`를 한 번도 내보내지 않으면 재생 줄이 "-"인지, 앱이 "상태를 모두 보고하지 않았다"고 하는지, 재생/일시정지를 누르면 회전 표시 뒤 오류로 끝나는지. 그렇다면 `features.PLAYBACK_RESTING = "stopped"` 한 줄로 쉬는 값을 켠다(명령마다 그 값을 강제로 내보낸다).
+3. **읽은 적 없는 볼륨(#107)** — 옛 서비스나 로그인 전 PC에서는 `volume`·`mute`를 내보내지 않는다. 슬라이더가 비어 보이는 모양과 "모두 보고하지 않음" 안내가 뜨는지.
+4. **음성 비서(선택, #107)** — SmartThings에 연결된 음성 비서가 이 장치의 볼륨을 인식하는지.
+5. **빈 프리셋 슬롯 숨기기(#113)** — `pcPreset` 목록의 `supportedValues: "supportedSlots.value"`가 등록된 슬롯만 남기는지, 하나도 없을 때(`["none"]`) 목록이 비는지 전체가 보이는지, 슬롯이 바뀌면 다시 그려지는지. 먹지 않으면 빈 슬롯은 "프리셋 7 비어 있음"으로 막힌다(드라이버 가드).
+6. **프리셋 실행 표시(#113)** — "프리셋 3 실행함"이 보였다가 다음 폴링에 "프리셋 선택…"으로 돌아오는지, 그 사이 목록을 닫아도 다시 실행되지 않는지. 이름 줄이 상태 카드의 어디(버전 줄 아래?)에 그려지는지.
+7. **활동 줄과 루틴 조건(#114)** — `pcActivity.summary`가 상태 카드의 어디에 그려지는지, 루틴 조건 목록에 "활동"이 병기 문구(`게임 (Game)`)로 나오는지, `activity.changed` 푸시 뒤 루틴이 바로 도는지.
+8. **잠들지 않기 컴포넌트(#115)** — 프로필 컴포넌트의 `label: 잠들지 않기`가 패키징을 통과하고 화면에 그 이름으로 보이는지(안 되면 컴포넌트 id `awake`만 보인다), 토글이 상세 화면 어디에 그려지는지, 루틴 동작·조건 목록에 "잠들지 않기" 스위치가 따로 나오는지, 대시보드 타일의 토글이 여전히 main(전원)인지.
+9. **배터리 프로필 이동(#116)** — 노트북이 `pc-<style>-battery.v2`로 옮겨진 뒤 배터리 컴포넌트(`label: 배터리`)가 잔량·전원 공급원을 보여 주는지, 옮긴 직후의 빈 줄이 15초·90초 다시 칠하기로 채워지는지, 루틴 조건 "배터리 20% 이하"가 이 장치에서 고를 수 있는지. 데스크톱은 빈 카드 없이 `pc-<style>.v2`에 머무는지.
+10. **PC 알림(#108)** — `proposed`인 `speechSynthesis`가 루틴 동작 목록에 실제로 나오는지(허브에서 `st.capabilities.speechSynthesis`가 풀리는지도 — 드라이버 로그의 "standard capability not available"), `notification`의 "텍스트 표시" 입력 줄이 상세 화면에서 보내지는지, 문구를 보낸 뒤 앱이 회전 표시 없이 끝나는지(속성이 없어 답할 줄이 없다).
+11. **미디어 묶음 배치 비교(#118)** — 기본(main 안)과 `--media-component`(컴포넌트 `media`) 두 패키지로 그려 보고 깔끔한 쪽을 고른다. 두 배치의 프로필 이름이 같으므로(`pc*.v2`) 이미 v2에 올라탄 장치는 패키지를 바꿔도 화면이 굳어 있다(플랫폼 노트 "프로필과 화면 생성") — 배치마다 장치를 지우고 다시 추가해서 본다. 컴포넌트 쪽이면 템플릿의 `@media-*` 블록을 그 배치로 고정하고 프로필 버전을 올린다(pc.v3 — 장치 화면은 프로필 이름으로 굳으므로 같은 v2 이름으로 바꿔 올리면 반영되지 않는다).
+12. **곡 정보·재생 상태(#118)** — `audioTrackData`의 제목·아티스트가 어떻게 그려지는지(자리표시 문구 "재생 중인 미디어 없음" 포함), 재생/일시정지 버튼이 `playbackStatus`에 따라 모양을 바꾸는지, `media.changed` 푸시 뒤 바로 바뀌는지.

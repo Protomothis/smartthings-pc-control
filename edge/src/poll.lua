@@ -7,7 +7,9 @@
 
 local caps = require "caps"
 local client = require "client"
+local features = require "features"
 local i18n = require "i18n"
+local profiles = require "profiles"
 local state = require "state"
 
 local poll = {}
@@ -46,7 +48,10 @@ poll.LAST_SEEN_STEP = 60
 -- every device installed from the channel paints its rows once on `added` and
 -- then matches. Bump it (to "2", "3", …) whenever a capability id changes or a
 -- new one is added, so `ensure_rows` repaints every already-installed device.
-poll.ROWS_VERSION = "1"
+-- #107: "2" - the move to `pc.v2` brings new capabilities whose rows start
+-- unset (the standard audio/media ones now, pcPreset/pcActivity and the
+-- awake/battery components with the rest of edge-v1.1.0).
+poll.ROWS_VERSION = "2"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status
@@ -143,44 +148,102 @@ function poll.force_all(events)
   return events
 end
 
---- Mark the events whose `<cap>.<attr>` is in `keys` as forced (#86).
+--- The key `force_rows` matches an event record by: `<cap>.<attr>` on the main
+--- component, `<component>/<cap>.<attr>` on any other (#107 - the `awake`
+--- component's switch is not the main switch).
+function poll.row_key(e)
+  local key = tostring(e.cap) .. "." .. tostring(e.attr)
+  if e.component ~= nil and e.component ~= "main" then
+    return tostring(e.component) .. "/" .. key
+  end
+  return key
+end
+
+--- Mark the events whose row key (`poll.row_key`) is in `keys` as forced (#86).
 -- Returns the same list, so it can wrap a call.
 function poll.force_rows(events, keys)
   if type(keys) ~= "table" then
     return events
   end
   for _, e in ipairs(events or {}) do
-    if keys[tostring(e.cap) .. "." .. tostring(e.attr)] then
+    if keys[poll.row_key(e)] then
       e.force = true
     end
   end
   return events
 end
 
---- Emit a list of `{ cap, attr, value, force? }` records.
+--- #107: the component object `device` has for `id`, or nil when its profile
+--- has no such component.
+--
+-- `device.profile.components` is keyed by component id on the hub; a list of
+-- `{ id = … }` (the shape some tests build) is searched as well. nil is the
+-- normal answer for a device that is still on a profile without the
+-- component - a v1 profile before its migration, or a desktop's profile for a
+-- battery row - and the event is then skipped rather than emitted into a
+-- component the hub would reject.
+function poll.component(device, id)
+  local components = (((device or {}).profile) or {}).components
+  if type(components) ~= "table" then
+    return nil
+  end
+  if type(components[id]) == "table" then
+    return components[id]
+  end
+  for _, component in ipairs(components) do
+    if type(component) == "table" and component.id == id then
+      return component
+    end
+  end
+  return nil
+end
+
+--- Emit a list of `{ cap, attr, value, force?, component? }` records.
 -- `force` marks an emit that answers a command from the app: it goes out with
 -- `{ state_change = true }` so the platform delivers it even when the value did
 -- not change. Ordinary poll updates stay unforced.
+-- #107: `component` names a component other than `main` (`awake`, `battery`).
+-- Such an event goes out with `emit_component_event`, and only when the
+-- device's profile has that component.
 function poll.emit(device, events)
   local log = logger()
   for _, e in ipairs(events or {}) do
     local cap = capability_for(e.cap)
     local attr = cap and cap[e.attr]
-    if attr then
+    local component
+    if e.component ~= nil and e.component ~= "main" then
+      component = poll.component(device, e.component)
+    elseif e.component == nil and features.MEDIA_CAPS[e.cap] then
+      -- #118: the alternative profile layout keeps the media group on a
+      -- component of its own. The record stays main-shaped (its row key does
+      -- not change); only where it is emitted does.
+      component = poll.component(device, features.MEDIA_COMPONENT)
+    end
+    if not attr then
+      log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
+    elseif e.component ~= nil and e.component ~= "main" and not component then
+      log.debug(string.format("component %s not in the profile, %s.%s skipped",
+        tostring(e.component), tostring(e.cap), tostring(e.attr)))
+    else
       local ok, err = pcall(function()
-        if e.force then
-          device:emit_event(attr(e.value, poll.FORCE))
+        local event = e.force and attr(e.value, poll.FORCE) or attr(e.value)
+        if component then
+          device:emit_component_event(component, event)
         else
-          device:emit_event(attr(e.value))
+          device:emit_event(event)
         end
       end)
       if not ok then
-        log.warn(string.format("emit %s.%s failed: %s", tostring(e.cap), tostring(e.attr), tostring(err)))
+        log.warn(string.format("emit %s failed: %s", poll.row_key(e), tostring(err)))
       end
-    else
-      log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
     end
   end
+end
+
+--- #107: what the last status said about the v1.2.0 features
+--- (`features.remember`), or nil when no status has been read in this run.
+function poll.extras(device)
+  return poll.get_state(device).extras
 end
 
 --- Emit `switch` + `powerState` for a runtime state (§6.2).
@@ -427,6 +490,87 @@ function poll.owe_action_repeat(device, value)
   return value
 end
 
+--------------------------------------------------------------------------------
+-- #113: pcPreset.lastPreset
+--------------------------------------------------------------------------------
+
+-- What the preset list shows right now ("none", or the slot that just ran),
+-- when it started showing a slot (epoch seconds), and whether one forced
+-- repeat of the return to "none" is owed - the same two rules as `lastAction`
+-- (`ensure_action`, platform notes "강제 이벤트 연발").
+poll.PRESET_FIELD = "last_preset"
+poll.PRESET_AT_FIELD = "last_preset_at"
+poll.PRESET_CONFIRM_FIELD = "last_preset_confirm"
+-- How long the row says "프리셋 3 실행함" before a poll puts it back on "none".
+-- Longer than the poll that follows a command takes to answer, shorter than
+-- the shortest poll interval (10 s), so the flash lasts until the next
+-- scheduled poll.
+poll.PRESET_HOLD_SECONDS = 5
+
+--- The value the preset list shows now.
+function poll.shown_preset(device)
+  local shown
+  pcall(function() shown = device:get_field(poll.PRESET_FIELD) end)
+  if shown == features.PRESET_NONE or features.is_preset_slot(shown) then
+    return shown
+  end
+  return features.PRESET_NONE
+end
+
+--- Emit `pcPreset.lastPreset` and remember it. Not persisted: a driver that
+--- restarts repaints the row on "none", which is where it belongs.
+function poll.emit_preset(device, value, force, deps)
+  if not features.is_preset_slot(value) then
+    value = features.PRESET_NONE
+  end
+  pcall(function()
+    device:set_field(poll.PRESET_FIELD, value)
+    device:set_field(poll.PRESET_AT_FIELD, value ~= features.PRESET_NONE and poll.clock(deps) or nil)
+  end)
+  poll.emit(device, {
+    { cap = caps.PRESET, attr = "lastPreset", value = value, force = force == true },
+  })
+  return value
+end
+
+--- Answer a `run` on the row the app is watching: the value it shows, forced.
+function poll.answer_preset(device)
+  pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+  local shown = poll.shown_preset(device)
+  poll.emit(device, {
+    { cap = caps.PRESET, attr = "lastPreset", value = shown, force = true },
+  })
+  return shown
+end
+
+--- Put the preset list back on "none" once the slot it shows has been shown
+--- for `PRESET_HOLD_SECONDS` (#113). Called from every poll and push, like
+--- `ensure_action`: the change goes out forced and once more on the next call,
+--- and nothing is sent while the value stays where it is.
+-- Returns true when something was emitted.
+function poll.ensure_preset(device, deps)
+  local shown = poll.shown_preset(device)
+  if shown ~= features.PRESET_NONE then
+    local at
+    pcall(function() at = device:get_field(poll.PRESET_AT_FIELD) end)
+    at = tonumber(at)
+    if at and poll.clock(deps) - at < poll.PRESET_HOLD_SECONDS and poll.clock(deps) >= at then
+      return false
+    end
+    poll.emit_preset(device, features.PRESET_NONE, true, deps)
+    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, true) end)
+    return true
+  end
+  local owed
+  pcall(function() owed = device:get_field(poll.PRESET_CONFIRM_FIELD) end)
+  if owed then
+    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+    poll.emit_preset(device, features.PRESET_NONE, true, deps)
+    return true
+  end
+  return false
+end
+
 --- Emit `pcDefer.planCommand` and remember it (#84, moved in #85).
 --
 -- The command a `pcDefer.schedule` without an explicit command runs. It is
@@ -522,6 +666,24 @@ function poll.repaint_soon(driver, device)
   end
 end
 
+--- #116: follow `status.battery.present` onto the plain or the `-battery`
+--- profile (`profiles.apply_battery`, which waits for two statuses that
+--- agree). Called after every status a poll or a push applied. A switch is
+--- repainted like an icon switch, one second later so the poll or push that
+--- got us here finishes first instead of nesting a second request in it.
+-- Returns the new profile name, or nil.
+function poll.follow_battery(driver, device, status)
+  local moved = profiles.apply_battery(device, features.battery_present(status))
+  if moved and driver then
+    pcall(function()
+      driver:call_with_delay(1, function()
+        poll.repaint_soon(driver, device)
+      end, "battery-profile")
+    end)
+  end
+  return moved
+end
+
 --- Repaint every row with forced events: after a profile change (`infoChanged`)
 --- the cloud starts the new profile with empty states, and the hub would
 --- otherwise drop the re-emit of values it considers unchanged.
@@ -534,10 +696,14 @@ function poll.repaint(device)
   poll.owe_action_repeat(device, nil)
   poll.emit_action(device, poll.resting_action(device), true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
+  -- #113: the preset list's resting value, like `lastAction` above.
+  poll.answer_preset(device)
   -- #92: a repaint of a device that has answered before keeps its version on
   -- the row; only one that never answered falls back to "v?".
+  -- #107: and the v1.2.0 rows from the last status, when there was one.
   poll.emit(device, poll.force_all(
-    state.initial_rows(poll.lang(device), poll.last_service_version(device))))
+    state.initial_rows(poll.lang(device), poll.last_service_version(device),
+      (poll.extras(device) or {}).last_status)))
 end
 
 --- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil
@@ -623,6 +789,8 @@ function poll.once(driver, device, opts)
     -- (state.grace_limit). Before `apply_status`, which reads it back out for
     -- `supportedCommands`.
     state.remember_schedule(nxt, body)
+    -- #107: and which v1.2.0 features the PC offers, for the command handlers.
+    features.remember(nxt, body)
     poll.set_state(device, nxt)
     -- A successful status while waking means the PC is up: drop the 90s timeout.
     local wol = require "wol"
@@ -682,6 +850,10 @@ function poll.once(driver, device, opts)
     poll.emit(device, events)
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
+    -- #113: a preset that just ran shows for a moment, then the list rests.
+    poll.ensure_preset(device, opts.deps)
+    -- #116: a laptop moves to the profile with the battery card, and back.
+    poll.follow_battery(driver, device, body)
     pcall(function() device:online() end)
     -- §6.3: with the PC answering, ask it to push instead of waiting for the
     -- next poll. A failure here only means the driver keeps polling.
@@ -714,6 +886,7 @@ function poll.once(driver, device, opts)
   -- while a transition is running, and the one that hands it back to `none`
   -- when `waking` gives up and becomes `off`.
   poll.ensure_action(device)
+  poll.ensure_preset(device, opts.deps)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
   return false, kind
 end

@@ -119,6 +119,73 @@ local STRINGS = {
     en = "Hibernating · try again after",
   },
 
+  -- #107: why a v1.2.0 command (volume, media keys, …) was not sent, or what
+  -- the service said about it (features.refusal / features.error_note). Like
+  -- the busy notes above they go on `pcInfo.message` and `pcInfo.summary` until
+  -- the next poll, so they are short enough for the summary row.
+  needs_service = {
+    ko = "서비스 v1.2.0 필요",
+    en = "Requires service v1.2.0",
+  },
+  feature_missing = {
+    ko = "이 PC에서 지원 안 함",
+    en = "Not supported on this PC",
+  },
+  no_user = {
+    ko = "사용자 없음",
+    en = "No user signed in",
+  },
+  media_disabled = {
+    ko = "미디어 제어 꺼짐",
+    en = "Media control is off",
+  },
+  -- The PC answered, but the action in the user's session did not work
+  -- (`502 failed`, `504 timeout`).
+  action_failed = {
+    ko = "PC에서 실행 실패",
+    en = "Failed on the PC",
+  },
+  -- #118: the `audioTrackData` title when there is no title to show: nothing
+  -- plays, or the PC does not share what does (the opt-in is off).
+  track_none = { ko = "재생 중인 미디어 없음", en = "Nothing playing" },
+  track_off = { ko = "재생 정보 꺼짐", en = "Now playing is off" },
+
+  -- #108: why a PC notification did not go out. `pcInfo.message` only: a
+  -- routine may send several a minute and the summary row is the user's.
+  notify_disabled = {
+    ko = "PC 알림 꺼짐",
+    en = "PC notifications are off",
+  },
+  try_later = {
+    ko = "잠시 후 다시",
+    en = "Try again shortly",
+  },
+  notify_empty = {
+    ko = "보낼 문구 없음",
+    en = "Nothing to send",
+  },
+
+  -- #113: a routine (or a stale list) asked for a slot the PC has no preset in.
+  preset_empty = {
+    ko = "프리셋 %s 비어 있음",
+    en = "Preset %s is empty",
+  },
+  -- #113: the `pcPreset.names` row. "1 게임 모드 · 2 방송 시작"; a preset the
+  -- PC's app saved without a name still gets a word.
+  presets_none = { ko = "없음", en = "None" },
+  preset_unnamed = { ko = "이름 없음", en = "unnamed" },
+
+  -- #114: the `pcActivity.summary` row, "게임 중 · Steam". The word says what
+  -- kind of thing runs (the watch list's `kind`), the labels which ones.
+  activity_off = { ko = "꺼짐", en = "Off" },
+  activity_none = { ko = "없음", en = "None" },
+  activity_game = { ko = "게임 중", en = "Gaming" },
+  activity_work = { ko = "작업 중", en = "Working" },
+  activity_media = { ko = "감상 중", en = "Watching" },
+  activity_stream = { ko = "방송 중", en = "Streaming" },
+  activity_other = { ko = "실행 중", en = "Running" },
+  activity_more = { ko = "%s 외 %d", en = "%s +%d" },
+
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {
     ko = "기존 예약을 새 예약으로 대체했습니다",

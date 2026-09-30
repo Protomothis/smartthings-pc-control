@@ -1,0 +1,35 @@
+{
+  "tag": "en",
+  "label": "PC activity",
+  "attributes": {
+    "activity": {
+      "label": "Activity",
+      "i18n": {
+        "value": {
+          "none": {
+            "label": "None"
+          },
+          "game": {
+            "label": "Game"
+          },
+          "work": {
+            "label": "Work"
+          },
+          "media": {
+            "label": "Media"
+          },
+          "stream": {
+            "label": "Stream"
+          },
+          "other": {
+            "label": "Other"
+          }
+        }
+      }
+    },
+    "summary": {
+      "label": "Activity"
+    }
+  },
+  "commands": {}
+}
