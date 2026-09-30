@@ -22,6 +22,8 @@ local features = {}
 -- "this PC does not offer it".
 features.AUDIO = "audio"
 features.MEDIA = "media"
+-- #118: listed while the PC's "재생 정보 공유" opt-in is on (§15).
+features.NOWPLAYING = "nowplaying"
 features.PRESETS = "presets"
 -- #114: listed only while the PC's opt-in is on (service #110).
 features.ACTIVITY = "activity"
@@ -55,19 +57,35 @@ features.CAP_MUTE = "audioMute"
 features.CAP_PLAYBACK = "mediaPlayback"
 features.CAP_TRACK = "mediaTrackControl"
 
--- What the media rows offer. Constant: the service sends the key whatever is
--- playing, and it has no way to know what is.
+-- #118: what is playing (title/artist/album).
+features.CAP_TRACK_DATA = "audioTrackData"
+
+-- #118: the media group, and the component it moves to in the alternative
+-- profile layout (`gen-profiles.js --media-component`). poll.emit sends these
+-- capabilities' events to that component when the device's profile has it.
+features.MEDIA_COMPONENT = "media"
+features.MEDIA_CAPS = {
+  [features.CAP_TRACK_DATA] = true, [features.CAP_PLAYBACK] = true,
+  [features.CAP_TRACK] = true, [features.CAP_VOLUME] = true, [features.CAP_MUTE] = true,
+}
+
+-- What the media rows offer. Constant: the service handles each of them
+-- whatever is playing.
 features.PLAYBACK_COMMANDS = { "play", "pause", "stop" }
 features.TRACK_COMMANDS = { "nextTrack", "previousTrack" }
 
--- #107, 실측 대기: `mediaPlayback.playbackStatus` is NOT reported. The service
--- sends media keys and cannot see what they did, so any value would be made
--- up (media-notify.md §5). Whether the app then draws the media row as "-", or
--- spins after play/pause waiting for a status that never comes, is measured on
--- the Dev channel. If it does, set this to "stopped": the driver then emits it
--- as the row's resting value (initial rows and as the answer to every media
--- command), the way `lastAction` rests on `none`.
+-- #107, 실측 대기: what `mediaPlayback.playbackStatus` rests on while the
+-- service does not say (no `media` block: a service without #117, or media
+-- control off). nil = not emitted at all, as media-notify.md §5 planned. If the
+-- Dev channel shows the media row as "-", or play/pause spinning into an
+-- error, set this to "stopped": the driver then emits it in the initial rows
+-- and as the answer to a media command when nothing better is known.
+-- #118: with `status.media.status` the real value goes out instead.
 features.PLAYBACK_RESTING = nil
+
+-- #118: `status.media.status` -> `playbackStatus`. "none" (no media session
+-- at all) reads as stopped.
+local PLAYBACK_STATUS = { playing = "playing", paused = "paused", stopped = "stopped", none = "stopped" }
 
 -- service command -> the feature it needs (media-notify.md §3).
 features.COMMAND_FEATURE = {
@@ -157,6 +175,8 @@ function features.remember(device_state, status)
     -- #115: what the keep-awake switch should spring back to when a command
     -- is not sent.
     awake_on = features.awake_on(status),
+    -- #118: and what the play/pause row does.
+    playback = features.playback_status(status),
   }
   return device_state
 end
@@ -292,15 +312,75 @@ function features.audio_events(status)
   return events
 end
 
---- #107: the media rows' constant attributes. Emitted with every status (the
---- hub drops an unchanged value) and in the initial rows, so a device that was
---- just migrated has its buttons before the first poll.
-function features.media_events()
+--- #118: `playbackStatus` from `status.media.status`, or nil when the status
+--- does not say (no `media` block, or a value this driver does not know).
+function features.playback_status(status)
+  local media = (status or {}).media
+  if type(media) ~= "table" then
+    return nil
+  end
+  return PLAYBACK_STATUS[tostring(media.status or "")]
+end
+
+--- #107: the media rows' constant attributes, and #118 the playback status.
+--- Emitted with every status (the hub drops an unchanged value) and in the
+--- initial rows, so a device that was just migrated has its buttons before the
+--- first poll.
+-- @param playback a `playbackStatus` value, or nil for "not known" (then
+--   PLAYBACK_RESTING, if set)
+function features.media_events(playback)
   local events = {}
   ev(events, features.CAP_PLAYBACK, "supportedPlaybackCommands", copy_list(features.PLAYBACK_COMMANDS))
+  playback = playback or features.PLAYBACK_RESTING
+  if playback then
+    ev(events, features.CAP_PLAYBACK, "playbackStatus", playback)
+  end
   ev(events, features.CAP_TRACK, "supportedTrackControlCommands", copy_list(features.TRACK_COMMANDS))
-  if features.PLAYBACK_RESTING then
-    ev(events, features.CAP_PLAYBACK, "playbackStatus", features.PLAYBACK_RESTING)
+  return events
+end
+
+-- #118: the track fields worth a row, and how long each may be.
+features.TRACK_FIELDS = { "title", "artist", "album" }
+features.TRACK_MAX_CHARS = 128
+
+--- #118: `audioTrackData.audioTrackData` - `{ title, artist, album }` of what
+--- is playing, or nil when nothing is to be said.
+--
+-- Only with the "재생 정보 공유" opt-in (`features` has "nowplaying") and a
+-- title in `status.media`. A field the PC did not send is left out rather than
+-- sent as "" (platform notes: an empty value reads as "-"). A PC that has a
+-- `media` block but no title says so in words, so a title that stopped
+-- playing - or an opt-in that was switched off - does not stay on screen:
+-- "재생 중인 미디어 없음" with the opt-in on, "재생 정보 꺼짐" with it off. A
+-- service without the block (older than #117) gets nothing at all.
+function features.track_data(status, lang)
+  local media = (status or {}).media
+  if type(media) ~= "table" then
+    return nil
+  end
+  local sharing = features.has({ features = features.parse(status) }, features.NOWPLAYING)
+  local title = sharing and type(media.title) == "string" and media.title:gsub("%c", " ") or ""
+  if title:match("^%s*$") then
+    return { title = i18n.t(lang, sharing and "track_none" or "track_off") }
+  end
+  local data = {}
+  for _, field in ipairs(features.TRACK_FIELDS) do
+    local value = media[field]
+    if type(value) == "string" then
+      value = value:gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if value ~= "" then
+        data[field] = features.truncate(value, features.TRACK_MAX_CHARS)
+      end
+    end
+  end
+  return data
+end
+
+function features.track_events(status, lang)
+  local events = {}
+  local data = features.track_data(status, lang)
+  if data then
+    ev(events, features.CAP_TRACK_DATA, "audioTrackData", data)
   end
   return events
 end
@@ -609,8 +689,10 @@ end
 function features.apply_status(status, opts)
   local lang = (opts or {}).lang
   local events = {}
+  -- #118: in the order of the media group on screen.
+  append(events, features.track_events(status, lang))
+  append(events, features.media_events(features.playback_status(status)))
   append(events, features.audio_events(status))
-  append(events, features.media_events())
   append(events, features.preset_events(status, lang))
   append(events, features.activity_events(status, lang))
   append(events, features.awake_events(status))

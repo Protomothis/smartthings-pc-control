@@ -926,6 +926,95 @@ function T.test_an_empty_notification_is_not_sent()
 end
 
 --------------------------------------------------------------------------------
+-- #118: now playing and the playback status
+--------------------------------------------------------------------------------
+
+local function playing(media, list)
+  local status = status_v12({ media = media })
+  status.features = list or { "audio", "media", "nowplaying", "notify", "presets", "awake" }
+  return status
+end
+
+function T.test_the_playback_status_follows_the_media_block()
+  for given, expected in pairs({ playing = "playing", paused = "paused", stopped = "stopped", none = "stopped" }) do
+    local events = features.apply_status(playing({ status = given }), { lang = "ko" })
+    h.assert_equal(h.event_value(events, "mediaPlayback", "playbackStatus"), expected, given)
+  end
+  -- No block (before #117), or a status this driver does not know: not emitted.
+  h.assert_nil(h.event_value(features.apply_status(status_v12(), {}), "mediaPlayback", "playbackStatus"))
+  h.assert_nil(features.playback_status(playing({ status = "buffering-ish" })))
+end
+
+function T.test_the_track_data_needs_the_opt_in_and_a_title()
+  local status = playing({ status = "playing", title = "Blinding Lights", artist = "The Weeknd",
+    album = "", app = "Spotify" })
+  h.assert_deep_equal(features.track_data(status, "ko"), { title = "Blinding Lights", artist = "The Weeknd" },
+    "an empty album is left out, never sent as \"\"; the app is not a track field")
+  -- Opt-in on, nothing playing.
+  h.assert_deep_equal(features.track_data(playing({ status = "none" }), "ko"), { title = "재생 중인 미디어 없음" })
+  -- Opt-in off: the service sends no title, and says nothing more.
+  h.assert_deep_equal(features.track_data(playing({ status = "playing", title = "leaked?" },
+    { "audio", "media" }), "en"), { title = "Now playing is off" })
+  -- A service without the block: nothing at all.
+  h.assert_nil(features.track_data(status_v12(), "ko"))
+  h.assert_equal(#features.track_events(status_v12(), "ko"), 0)
+end
+
+function T.test_a_long_title_is_cut_and_control_characters_go()
+  local data = features.track_data(playing({ status = "playing", title = "a\tb" .. string.rep("가", 200) }), "ko")
+  h.assert_equal(data.title:sub(1, 3), "a b")
+  h.assert_equal(data.title:sub(-3), "…")
+end
+
+function T.test_the_media_group_is_emitted_in_screen_order()
+  local events = features.apply_status(playing({ status = "paused", title = "X" }), { lang = "ko" })
+  local order = {}
+  for _, e in ipairs(events) do
+    if features.MEDIA_CAPS[e.cap] and order[#order] ~= e.cap then
+      order[#order + 1] = e.cap
+    end
+  end
+  h.assert_deep_equal(order, { "audioTrackData", "mediaPlayback", "mediaTrackControl", "audioVolume", "audioMute" })
+end
+
+function T.test_a_refused_media_command_answers_with_the_last_playback_status()
+  local device = device_with(playing({ status = "playing" }, { "audio" }))
+  with_service(nil, function()
+    handlers_for("mediaPlayback").pause(driver, device, { args = {} })
+  end)
+  local emitted = h.emitted(device)
+  h.assert_equal(h.last_value(emitted, nil, "mediaPlayback", "playbackStatus"), "playing")
+  h.assert_true(h.event_forced(emitted, "mediaPlayback", "playbackStatus"))
+  h.assert_equal(info_summary(device), "미디어 제어 꺼짐")
+end
+
+function T.test_a_media_push_repaints_the_group_at_once()
+  local push = require "push"
+  local _, events = push.apply(state.new(state.ON),
+    { type = "media.changed", status = playing({ status = "playing", title = "Song" }) }, { lang = "ko" })
+  h.assert_equal(h.event_value(events, "mediaPlayback", "playbackStatus"), "playing")
+  h.assert_deep_equal(h.event_value(events, "audioTrackData", "audioTrackData"), { title = "Song" })
+end
+
+function T.test_the_media_group_goes_to_the_media_component_when_the_profile_has_one()
+  -- #118: the alternative layout (`gen-profiles.js --media-component`).
+  local events = features.apply_status(playing({ status = "playing", title = "Song" }), { lang = "ko" })
+  local split = h.fake_device({})
+  split.profile = { components = { main = { id = "main" }, media = { id = "media" }, awake = { id = "awake" } } }
+  poll.emit(split, events)
+  local emitted = h.emitted(split)
+  h.assert_equal(h.component_value(emitted, "media", "mediaPlayback", "playbackStatus"), "playing")
+  h.assert_equal(h.component_value(emitted, "media", "audioVolume", "volume"), 30)
+  h.assert_nil(h.event_value(emitted, "mediaPlayback", "playbackStatus"), "not on main")
+  -- The rest of the screen stays on main.
+  h.assert_true(h.event_value(emitted, caps.PRESET, "names") ~= nil)
+  -- And the default layout keeps all of it on main.
+  local together = h.fake_device({})
+  poll.emit(together, events)
+  h.assert_equal(h.event_value(h.emitted(together), "mediaPlayback", "playbackStatus"), "playing")
+end
+
+--------------------------------------------------------------------------------
 -- components (#107: the emit glue)
 --------------------------------------------------------------------------------
 

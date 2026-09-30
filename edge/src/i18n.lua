@@ -145,6 +145,11 @@ local STRINGS = {
     ko = "PC에서 실행 실패",
     en = "Failed on the PC",
   },
+  -- #118: the `audioTrackData` title when there is no title to show: nothing
+  -- plays, or the PC does not share what does (the opt-in is off).
+  track_none = { ko = "재생 중인 미디어 없음", en = "Nothing playing" },
+  track_off = { ko = "재생 정보 꺼짐", en = "Now playing is off" },
+
   -- #108: why a PC notification did not go out. `pcInfo.message` only: a
   -- routine may send several a minute and the summary row is the user's.
   notify_disabled = {

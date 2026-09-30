@@ -213,6 +213,11 @@ function poll.emit(device, events)
     local component
     if e.component ~= nil and e.component ~= "main" then
       component = poll.component(device, e.component)
+    elseif e.component == nil and features.MEDIA_CAPS[e.cap] then
+      -- #118: the alternative profile layout keeps the media group on a
+      -- component of its own. The record stays main-shaped (its row key does
+      -- not change); only where it is emitted does.
+      component = poll.component(device, features.MEDIA_COMPONENT)
     end
     if not attr then
       log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))

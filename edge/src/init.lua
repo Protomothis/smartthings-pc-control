@@ -522,10 +522,10 @@ local function answer_mute(device)
   end
 end
 
--- The media rows have no state of their own (features.PLAYBACK_RESTING), so
--- the constant attributes are what answers.
+-- The media rows answer with what the last status said is playing (#118), and
+-- with the constant attributes, which are all there is before #117.
 local function answer_media(device)
-  poll.emit(device, poll.force_all(features.media_events()))
+  poll.emit(device, poll.force_all(features.media_events((poll.extras(device) or {}).playback)))
 end
 
 local function audio_command(service_command, answer)

@@ -14,6 +14,14 @@
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
+#   @media-begin … @media-end, @media-component
+#                  #118: the media group. By default it stays where it is, in
+#                  main, and the three marker lines go. With
+#                  `gen-profiles.js --media-component` the group leaves main
+#                  and becomes a component `media` (label 미디어) at the
+#                  @media-component line - an alternative layout for a Dev
+#                  channel comparison, not for committing (the sync test
+#                  checks the default).
 #
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
@@ -56,8 +64,13 @@ components:
         version: 1
       - id: numbersystem53811.pcversion
         version: 1
-      # #107: the media group - play/pause, previous/next, the volume slider
-      # and the mute toggle. Standard capabilities, drawn by the app itself.
+      # #107/#118: the media group - what is playing, play/pause, previous/
+      # next, the volume slider and the mute toggle. Standard capabilities,
+      # drawn by the app itself. `--media-component` moves these lines into
+      # the `media` component below instead.
+# @media-begin
+      - id: audioTrackData
+        version: 1
       - id: mediaPlayback
         version: 1
       - id: mediaTrackControl
@@ -66,6 +79,7 @@ components:
         version: 1
       - id: audioMute
         version: 1
+# @media-end
       # #113: the preset list and the names row.
       - id: numbersystem53811.pcpreset
         version: 1
@@ -80,6 +94,7 @@ components:
         version: 1
     categories:
       - name: __CATEGORY__
+# @media-component
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
   # an action and as a condition like any other switch; it cannot be the main
   # component's, which is the PC's power.

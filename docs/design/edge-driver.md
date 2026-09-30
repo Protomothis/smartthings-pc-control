@@ -224,7 +224,8 @@
 
 | capability | 컴포넌트 | 속성 ← status | 명령 → `/st/v1/command` |
 |---|---|---|---|
-| `mediaPlayback` (표준) | main | `supportedPlaybackCommands` = `play` `pause` `stop` (상수). `playbackStatus`는 보고하지 않음(실측 대기) | `play` `pause` `stop`, `setPlaybackStatus(playing\|paused\|stopped)` → `play`/`pause`/`stop` |
+| `audioTrackData` (표준, #118) | main (또는 `media`, §6.6) | `audioTrackData` = `{title, artist?, album?}` ← `media.title/artist/album` — `features`에 `nowplaying`(옵트인)이 있고 제목이 있을 때만. 블록은 있는데 제목이 없으면 `{title: "재생 중인 미디어 없음"}`(옵트인 꺼짐이면 "재생 정보 꺼짐"), 블록이 없으면(#117 이전) 내보내지 않음. 빈 필드는 빼고 `""`는 보내지 않는다 | – |
+| `mediaPlayback` (표준) | main (또는 `media`) | `supportedPlaybackCommands` = `play` `pause` `stop` (상수). #118: `playbackStatus` ← `media.status`(`playing`/`paused`/`stopped`, `none` → `stopped`). 블록이 없으면 보내지 않음(`features.PLAYBACK_RESTING`, 실측 대기) | `play` `pause` `stop`, `setPlaybackStatus(playing\|paused\|stopped)` → `play`/`pause`/`stop` |
 | `mediaTrackControl` (표준) | main | `supportedTrackControlCommands` = `nextTrack` `previousTrack` (상수) | `nextTrack` → `next`, `previousTrack` → `prev` |
 | `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
@@ -273,7 +274,7 @@
 | 예약할 명령 | `pcDefer.setPlanCommand` 목록 |
 | 예약 시간 | `pcDefer.schedule` 목록(#89: 5·10·15·30·45분, 1·1.5·2·3·4·6·8·12시간, 1·2·3일, 그리고 취소). 줄이 쉬는 값은 `minutesPick`의 "시간 선택… (Pick a delay)" |
 
-| 미디어 묶음 (#107, 표준) | 재생·일시정지·정지 → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글 |
+| 미디어 묶음 (#107 #118, 표준) | 곡 정보(`audioTrackData`) → 재생·일시정지·정지(실제 상태 반영) → 이전·다음 곡 → 볼륨 슬라이더 → 음소거 토글. 기본은 main, 대안은 컴포넌트 `media`(§6.6) |
 | 프리셋 (#113) | `pcPreset.run` 목록(등록된 슬롯만, `supportedSlots`). 쉬는 값 "프리셋 선택… (Pick a preset)", 실행 직후 잠깐 "프리셋 3 실행함 (Preset 3 started)". 상태 카드에 이름 줄 `pcPreset.names` |
 | 활동 (#114) | 상태 줄 `pcActivity.summary` 하나. 루틴 조건 "활동이 게임" |
 | PC 알림 (#108, 표준) | `notification`의 문구 입력 줄("텍스트 표시")과 `speechSynthesis`의 입력 줄. 루틴 동작에도 같은 입력 |
@@ -355,6 +356,7 @@
 - 이전 직후에는 capability id가 바뀌었거나 새로 생겨 모든 속성이 비어 있다. `poll.ensure_rows`가 세대 스탬프(`ROWS_VERSION`, #107에서 `"2"`)를 보고 전 줄을 한 번 다시 칠한다.
 - **두 축, 스무 개 (#107)**: 카테고리는 프로필마다 하나로 고정이라 환경설정 `iconStyle`(§7)의 값마다 프로필이 하나씩이고(#100), 배터리 카드는 배터리가 있는 PC에만 있어야 하므로(#116) 그 각각에 `battery` 컴포넌트가 있는 짝이 있다. 이름은 `pc.v2` · `pc-<style>.v2` · `pc-battery.v2` · `pc-<style>-battery.v2`(`profiles.name_for`), 파일은 이름의 `.vN`을 `-vN`으로 바꾼 `profiles/pc*-v2.yml`. 스무 개 모두 "현재"(`profiles.CURRENT`)이므로 `ensure`는 옮기지 않는다.
 - **생성기**: 스무 개는 손으로 쓰지 않는다. `tools/gen-profiles.js`가 `tools/profile-template.yml` 하나에서 만든다 — 템플릿 머리 주석을 떼고, `__NAME__`·`__CATEGORY__`를 채우고, `# @battery-begin`…`# @battery-end` 사이는 배터리 변형에만 남기고, 생성 머리 주석을 붙인다. `tests/profilegen_test.lua`가 같은 규칙을 Lua로 적용해 디스크의 파일과 비교하고, 생성기 소스의 스타일·카테고리 목록과 `VERSION`이 `profiles.lua`와 같은지도 본다. 템플릿이 `profiles/` 밖에 있는 이유: 패키저는 그 폴더의 YAML을 모두 프로필로 올리므로 템플릿이 스물한 번째 프로필이 된다. media-notify.md §13이 적은 "`profiles/pc.yml` 하나에서"는 이것으로 바뀌었다 — `pc.yml`은 v1 장치가 아직 쓰는 고정 파일이다.
+- **미디어 묶음의 두 배치(#118)**: 기본은 main 안이다(`# @media-begin`…`# @media-end` 사이가 제자리에 남는다). `bun tools/gen-profiles.js --media-component`는 그 줄들을 main에서 빼 `# @media-component` 자리에 컴포넌트 `media`(label "미디어")로 옮긴 대안 배치를 쓴다 — Dev 채널에서 두 화면을 비교하려고 패키징할 때만 쓰고 **커밋하지 않는다**(동기 테스트는 기본 배치를 지키므로 실패한다. 비교가 끝나면 플래그 없이 다시 생성). 파일 머리의 `media group: main` / `component media`가 어느 쪽인지 말한다. 두 배치는 프로필 이름이 같으므로 비교는 배치마다 새로 추가한 장치로 한다(이미 v2에 올라탄 장치의 화면은 굳어 있다). 드라이버는 둘 다 받는다: `poll.emit`이 미디어 묶음의 이벤트(`features.MEDIA_CAPS`)를 장치 프로필에 `media` 컴포넌트가 있으면 거기로 보내고, 명령은 컴포넌트와 무관하게 같은 핸들러가 받는다. 확정되면 템플릿을 그쪽으로 고치고 프로필 버전을 올린다.
 - 스타일 전환은 `profiles.apply_style`이 `infoChanged`에서(값이 바뀌었을 때) 그리고 `init`에서(전환 전에 드라이버가 재시작된 경우) `try_update_metadata({ profile = … })`로 한다. **배터리 쪽은 그대로 둔다**(`pc-battery.v2` + 모니터 → `pc-monitor-battery.v2`). 새 프로필은 클라우드 기록이 비어 시작하므로 `poll.repaint_soon`으로 다시 칠한다. 전환이 다시 `infoChanged`를 내므로, 이번 구동에서 옮긴 이름을 기억해 `name_of` 대신 쓰고(허브가 `device.profile.name`을 늦게 바꿔도 되풀이하지 않는다), 거절된 대상은 같은 구동에서 다시 요청하지 않는다. `iconStyle`이 없는 장치와 현재 이름이 아닌 장치는 건드리지 않고, 모르는 값은 `others`로 본다.
 - **버전을 올릴 때**: 템플릿의 내용, 생성기와 `profiles.lua`의 `VERSION`을 함께 올리고 생성기를 돌린다. `KNOWN`은 v1 이름 열 개 뒤에 현재 이름 스무 개다(`name_for`로 만든다). `migration_for(name, battery)`는 옛 이름에서 스타일을 읽어(`pc-<style>[-battery].vN`) 같은 스타일의 새 버전으로 옮기고, 배터리 쪽은 호출자가 정한다 — v1에는 배터리 변형이 없었으므로 `ensure`는 배터리 없는 쪽으로 옮기고, 배터리 변형으로 가는 것은 status를 본 뒤의 별도 이동이다(#116).
 - **컴포넌트**: main이 아닌 컴포넌트(`awake` #115, `battery` #116)의 이벤트 레코드는 `component`를 달고 나가고, `poll.emit`이 `device.profile.components[<id>]`를 찾아 `emit_component_event`로 보낸다. 장치의 프로필에 그 컴포넌트가 없으면(아직 v1, 또는 배터리 없는 변형) 조용히 건너뛴다. 강제 줄 키는 `<component>/<cap>.<attr>`(`poll.row_key`)이다.

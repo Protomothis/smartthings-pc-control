@@ -921,6 +921,8 @@ local ATTRIBUTES = {
   [features.CAP_MUTE] = { mute = true },
   [features.CAP_PLAYBACK] = { supportedPlaybackCommands = true, playbackStatus = true },
   [features.CAP_TRACK] = { supportedTrackControlCommands = true },
+  -- #118
+  [features.CAP_TRACK_DATA] = { audioTrackData = true },
   -- #113: `lastPreset` is the list's resting value (poll.ensure_preset), the
   -- other two come with every status.
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
