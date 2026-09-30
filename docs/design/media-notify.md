@@ -1,4 +1,4 @@
-# 설계: 미디어·알림·프리셋·활동·잠들지 않기·배터리 (v1.2.0 / Edge 1.1.0)
+# 설계: 미디어(재생 정보 포함)·알림·프리셋·활동·잠들지 않기·배터리 (v1.2.0 / Edge 1.1.0)
 
 전원만 다루던 PC Control에 일곱 가지를 한 번에 더한다: **볼륨·음소거**, **미디어 제어**, **PC에 알림 띄우기**,
 **프리셋 실행**, **실행 중 앱 감지**, **잠들지 않기**, **노트북 배터리**. 모두 SmartThings 앱·루틴·텔레그램에서 쓸 수 있어야 한다.
@@ -200,3 +200,28 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
 - 이름: `pc.v2`, `pc-<style>.v2`, `pc-battery.v2`, `pc-<style>-battery.v2`. `pc*.v1`은 `KNOWN`으로 자동 이전.
+
+## 15. 재생 정보와 앱 단위 재생 제어 (#117 / #118)
+
+Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager`(WinRT)는
+재생 중인 앱의 세션을 모아 준다. 이것으로 곡 정보를 읽고, 미디어 키 대신 **세션에 직접** 재생·일시정지를 보낸다.
+
+- **읽는 곳:** 사용자 세션의 트레이 앱. 3초마다 현재 세션을 확인하고, 바뀌면 즉시 하트비트(`sampled_at` 포함)로 보낸다.
+  트레이 앱이 없으면 곡 정보는 비고, 제어는 `user-action media`가 세션 API → 실패 시 미디어 키 순으로 처리한다.
+- **보내는 값:** `media: { status: playing|paused|stopped|none, title, artist, album, app, updated_at }`.
+  `status`는 제어 정확도를 위해 `media.enabled`면 보낸다. `title`·`artist`·`album`·`app`은 옵트인 `media.now_playing`(기본 끔)일 때만.
+  파일 경로·URL·썸네일은 보내지 않는다. 크롬 등 브라우저는 탭 제목(유튜브 영상 제목)이 제목으로 오므로 옵트인 설명에 적는다.
+- **제어:** `play`/`pause`는 이제 구분된다(TryPlayAsync/TryPauseAsync). `playpause`는 토글, `stop`/`next`/`prev`는 해당 메서드.
+- **API:** status `media` 블록, features += "nowplaying"(옵트인일 때), 푸시 `media.changed`. 텔레그램 `/np`, `/status` 한 줄.
+- **드라이버:** 표준 `audioTrackData`(title/artist/album)와 `mediaPlayback.playbackStatus`. 미디어 묶음을 main에 둘지 컴포넌트 `media`로
+  분리할지는 Dev 채널에서 둘 다 그려 보고 정한다(실측 대기).
+
+### UI 구성
+
+- **데스크톱 앱 명령 탭** — 카드 순서: 전원 → **미디어** → 잠들지 않기 → 프리셋.
+  - 미디어 카드: 첫 줄 재생 정보 `▶ 제목 — 아티스트 · Spotify`(옵트인 꺼짐이면 `재생 중` / `일시정지`만, 세션 없으면 `재생 중인 미디어 없음`),
+    둘째 줄 ⏮ ⏯ ⏭, 셋째 줄 🔈 볼륨 슬라이더(0–100, 놓을 때 전송) + 음소거 토글 + 현재 장치 이름.
+  - 긴 제목은 한 줄로 자르고 전체는 툴팁.
+- **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / 소리내어 읽기 + 음성 / [테스트 알림].
+- **SmartThings 상세 화면** — 상태 카드와 조작 카드 뒤에 미디어 묶음: 곡 정보 → 재생/일시정지·이전/다음 → 볼륨 슬라이더 → 음소거.
+  그 뒤 프리셋(목록 + 이름 줄), 활동, PC 알림 입력, 잠들지 않기·배터리 컴포넌트.
