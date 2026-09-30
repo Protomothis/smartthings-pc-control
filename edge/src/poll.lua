@@ -205,6 +205,30 @@ end
 -- #107: `component` names a component other than `main` (`awake`, `battery`).
 -- Such an event goes out with `emit_component_event`, and only when the
 -- device's profile has that component.
+-- Rows this driver run has already sent once with `state_change` (not
+-- persisted: a new run starts empty). Measured on the Dev channel with 1.1.0
+-- (2026-09-30): after a v1 -> v2 profile move the hub already held
+-- `audioMute.mute = "unmuted"` and dropped every unforced "unmuted" as
+-- unchanged, while the cloud had never stored it - the row stayed null (the
+-- app then warns that the device does not report all its state) until a
+-- forced emit. So the first emit of every row in a run is forced; after that
+-- the hub's own dedup is fine, because the cloud has seen the value once.
+poll.FIRST_FIELD = "rows_forced_this_run"
+
+local function first_emit(device, key)
+  local seen
+  pcall(function() seen = device:get_field(poll.FIRST_FIELD) end)
+  if type(seen) ~= "table" then
+    seen = {}
+  end
+  if seen[key] then
+    return false
+  end
+  seen[key] = true
+  pcall(function() device:set_field(poll.FIRST_FIELD, seen) end)
+  return true
+end
+
 function poll.emit(device, events)
   local log = logger()
   for _, e in ipairs(events or {}) do
@@ -226,7 +250,8 @@ function poll.emit(device, events)
         tostring(e.component), tostring(e.cap), tostring(e.attr)))
     else
       local ok, err = pcall(function()
-        local event = e.force and attr(e.value, poll.FORCE) or attr(e.value)
+        local force = e.force or first_emit(device, poll.row_key(e))
+        local event = force and attr(e.value, poll.FORCE) or attr(e.value)
         if component then
           device:emit_component_event(component, event)
         else

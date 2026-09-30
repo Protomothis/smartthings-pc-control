@@ -385,6 +385,11 @@ function features.track_events(status, lang)
   local data = features.track_data(status, lang)
   if data then
     ev(events, features.CAP_TRACK_DATA, "audioTrackData", data)
+    -- The service does not report durations. Left unset, both rows are null in
+    -- the cloud record and the app warns that the device does not report all
+    -- its state (measured, Dev channel 2026-09-30), so they rest on 0.
+    ev(events, features.CAP_TRACK_DATA, "totalTime", 0)
+    ev(events, features.CAP_TRACK_DATA, "elapsedTime", 0)
   end
   return events
 end

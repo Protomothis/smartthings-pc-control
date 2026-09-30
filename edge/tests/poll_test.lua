@@ -255,6 +255,12 @@ function T.test_emit_passes_the_state_change_option_through()
   -- `{ state_change = true }` (platform notes "상세 화면(detailView) 위젯").
   local caps = require "caps"
   local device = h.fake_device()
+  -- Both rows have been sent once in this run already (see the next test).
+  poll.emit(device, {
+    { cap = caps.COMMAND, attr = "lastAction", value = "none" },
+    { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" },
+  })
+  device.emitted = {}
   poll.emit(device, {
     { cap = caps.COMMAND, attr = "lastAction", value = "none", force = true },
     { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" },
@@ -264,6 +270,25 @@ function T.test_emit_passes_the_state_change_option_through()
     "a forced record must carry state_change")
   h.assert_false(h.event_forced(emitted, caps.COMMAND, "lastCommand"),
     "an ordinary poll update must stay unforced")
+end
+
+function T.test_the_first_emit_of_a_row_in_a_run_is_forced()
+  -- Dev channel, 1.1.0: after a profile move the hub held audioMute.mute =
+  -- "unmuted" and dropped every unforced "unmuted" while the cloud had never
+  -- stored one, so the row stayed null. The first emit per row per run is
+  -- forced; the second is not; a new run (fresh device object) starts over.
+  local caps = require "caps"
+  local device = h.fake_device()
+  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "first emit is forced")
+  device.emitted = {}
+  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  h.assert_false(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "second emit is not")
+  device.emitted = {}
+  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)", component = "awake" } })
+  local other = h.fake_device()
+  poll.emit(other, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  h.assert_true(h.event_forced(h.emitted(other), caps.COMMAND, "lastCommand"), "a new run starts over")
 end
 
 function T.test_force_rows_marks_only_the_rows_a_command_answers()
