@@ -17,6 +17,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -88,6 +89,11 @@ type idleHeartbeatRequest struct {
 	// Media is the system media session (#117). The tray app sends it
 	// every 3s when it changes, as a body with only this block.
 	Media *heartbeatMedia `json:"media"`
+	// SessionID is the Windows session the tray app runs in. A heartbeat
+	// from any session but the one the commands act on is ignored (see
+	// handleSessionHeartbeat); an older tray app leaves it out and is
+	// believed as before.
+	SessionID *uint32 `json:"session_id"`
 }
 
 // heartbeatMedia is the heartbeat's media block, with the same sampled_at
@@ -192,6 +198,19 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		mediaAt = at
 	}
+	if body.SessionID != nil {
+		if target, err := heartbeatTargetSession(); err == nil && target != *body.SessionID {
+			// The commands run in target (findUserSession prefers the
+			// console), so this session's idle time, volume and media say
+			// nothing about what they did: a tray app in an RDP session
+			// next to a locked console would undo every mute within one
+			// heartbeat. 200, so the tray app neither retries nor logs in
+			// again; the reason tells it why nothing was stored.
+			noteIgnoredHeartbeat(*body.SessionID, target)
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "other_session"})
+			return
+		}
+	}
 	// Validate everything before storing anything: a rejected body leaves
 	// every sample as it was.
 	if body.IdleSeconds != nil {
@@ -204,4 +223,73 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 		recordMediaSample(body.Media.NowPlaying, mediaAt)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ---- which session the samples describe -----------------------------------
+
+// heartbeatTargetSession is the session the commands act on, the one whose
+// heartbeats are stored. A var so the tests need no real sessions.
+var heartbeatTargetSession = targetUserSession
+
+var (
+	targetMu sync.Mutex
+	// targetLast is the target session last seen (0 = nobody logged in);
+	// targetKnown is false until the first lookup.
+	targetLast  uint32
+	targetKnown bool
+	// ignoredFrom and ignoredFor are the source and target of the last
+	// ignored heartbeat logged: a foreign tray app costs one log line, not
+	// one per post.
+	ignoredFrom, ignoredFor uint32
+)
+
+// targetUserSession is getActiveUserSessionID — the same findUserSession
+// that runUserAction's commands go through — which also notices the target
+// moving to another session (the console user logging on next to an RDP
+// login, say). The idle, audio and media samples then describe a session
+// nothing acts on any more and are forgotten: the audio store has no TTL,
+// so they would otherwise be reported until the next command. The lookup
+// is a few WTS calls, cheap enough for every heartbeat and status read.
+func targetUserSession() (uint32, error) {
+	id, err := getActiveUserSessionID()
+	switch {
+	case err == nil:
+		observeTargetSession(id)
+	case errors.Is(err, errNoUserSession):
+		observeTargetSession(0)
+	}
+	return id, err
+}
+
+// observeTargetSession records the target session and drops the stored
+// samples when it differs from the one seen before.
+func observeTargetSession(id uint32) {
+	targetMu.Lock()
+	prev, changed := targetLast, targetKnown && targetLast != id
+	targetLast, targetKnown = id, true
+	targetMu.Unlock()
+	if changed {
+		resetIdleHeartbeat()
+		resetAudioSample()
+		resetMediaSample()
+		logMsg("user session changed from %d to %d: idle, audio and media samples cleared", prev, id)
+	}
+}
+
+// noteIgnoredHeartbeat logs an ignored heartbeat once per source and target.
+func noteIgnoredHeartbeat(from, target uint32) {
+	targetMu.Lock()
+	first := ignoredFrom != from || ignoredFor != target
+	ignoredFrom, ignoredFor = from, target
+	targetMu.Unlock()
+	if first {
+		logMsg("heartbeat from session %d ignored: commands act on session %d", from, target)
+	}
+}
+
+// resetTargetSession forgets the target session (tests).
+func resetTargetSession() {
+	targetMu.Lock()
+	targetLast, targetKnown, ignoredFrom, ignoredFor = 0, false, 0, 0
+	targetMu.Unlock()
 }

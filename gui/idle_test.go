@@ -3,6 +3,10 @@ package gui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +169,59 @@ func TestHeartbeatSentChanges(t *testing.T) {
 	}
 	if _, ok := s.changes(nil, nil); ok {
 		t.Error("an empty sample is a change")
+	}
+}
+
+// TestPostHeartbeatSessionID covers the session_id the tray app adds and
+// the service's "ignored" reply: delivered, logged once per change.
+func TestPostHeartbeatSessionID(t *testing.T) {
+	var bodies []map[string]any
+	reply := `{"status":"ok"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		w.Write([]byte(reply))
+	}))
+	defer srv.Close()
+
+	savedID, savedLog := heartbeatSessionID, heartbeatLog
+	var logged []string
+	heartbeatSessionID = func() uint32 { return 2 }
+	heartbeatLog = func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+	heartbeatIgnored.Store(false)
+	t.Cleanup(func() {
+		heartbeatSessionID, heartbeatLog = savedID, savedLog
+		heartbeatIgnored.Store(false)
+	})
+
+	u := &ui{client: &Client{base: srv.URL, http: srv.Client()}}
+	idle := int64(5)
+	post := func() { u.postHeartbeat(Heartbeat{IdleSeconds: &idle}) }
+
+	post()
+	if len(bodies) != 1 || bodies[0]["session_id"] != float64(2) {
+		t.Fatalf("bodies = %v, want session_id 2", bodies)
+	}
+	if len(logged) != 0 {
+		t.Errorf("accepted post logged %v", logged)
+	}
+
+	reply = `{"status":"ignored","reason":"other_session"}`
+	post()
+	post()
+	if len(logged) != 1 || !strings.Contains(logged[0], "ignores heartbeats from session 2") {
+		t.Errorf("ignored twice: logged %q, want one line", logged)
+	}
+	reply = `{"status":"ok"}`
+	post()
+	if len(logged) != 2 || !strings.Contains(logged[1], "again") {
+		t.Errorf("accepted again: logged %q", logged)
+	}
+
+	// Session unknown (0): the field is left out.
+	b, _ := json.Marshal(Heartbeat{IdleSeconds: &idle})
+	if strings.Contains(string(b), "session_id") {
+		t.Errorf("zero session_id sent: %s", b)
 	}
 }

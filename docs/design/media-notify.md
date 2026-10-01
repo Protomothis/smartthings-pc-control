@@ -76,6 +76,12 @@
 - (#104) 사용자 세션 찾기는 PowerShell `Get-Process explorer` 대신 `WTSGetActiveConsoleSessionId` →
   `WTSQueryUserToken`, 콘솔에 사용자가 없으면 `WTSEnumerateSessions`의 활성 세션(RDP)을 본다. 토큰이 없는 세션만
   "사용자 없음"이고, 권한 부족 같은 다른 실패는 그대로 오류로 올린다.
+- 하트비트 본문의 `session_id`(트레이가 도는 Windows 세션, `ProcessIdToSessionId`)는 선택이다. 명령이 실행되는 세션
+  (위 세션 찾기와 같은 `findUserSession`)과 다르면 `idle_seconds`·`audio`·`media`를 모두 버리고
+  `200 {"status":"ignored","reason":"other_session"}`로 답한다(형식 검사는 그대로, 틀리면 400). 없으면(옛 트레이) 예전처럼 받는다.
+  잠긴 콘솔 세션 옆 RDP 세션의 트레이가 콘솔에 보낸 음소거를 20초 안에 되돌리던 문제(v1.2.0-rc6)를 막는다.
+  대상 세션이 바뀌면(로그온·로그오프) 이전 세션의 idle·audio·media 표본을 지운다. 대상 세션에 트레이가 없으면
+  audio는 그 세션에서 돈 `user-action`의 마지막 결과, media·idle은 90초 뒤 `none`·`null`이다.
 
 ## 3. 서비스 API 추가 (`/st/v1`, protocol 1 유지)
 

@@ -92,6 +92,10 @@ func runUserAction(ctx context.Context, args ...string) (UserActionResult, error
 		return UserActionResult{}, fmt.Errorf("get executable: %w", err)
 	}
 
+	// Look at the target session first: when it moved, the samples of the
+	// old one are dropped now, not after this reply has been stored.
+	targetUserSession()
+
 	runCtx, cancel := context.WithTimeout(ctx, userActionTimeout)
 	defer cancel()
 	out, runErr := userActionExec(runCtx, exe, append([]string{"user-action"}, args...))

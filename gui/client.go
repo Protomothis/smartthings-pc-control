@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"sync"
@@ -414,6 +415,10 @@ type Heartbeat struct {
 	Audio *HeartbeatAudio `json:"audio,omitempty"`
 	// Media is the system media session (#117).
 	Media *HeartbeatMedia `json:"media,omitempty"`
+	// SessionID is the Windows session this app runs in. The service
+	// stores the samples only from the session its commands act on and
+	// ignores the others. Never 0 for a tray app; 0 (unknown) is left out.
+	SessionID uint32 `json:"session_id,omitempty"`
 }
 
 // HeartbeatMedia is the heartbeat's media block: the status always, the
@@ -442,19 +447,27 @@ type HeartbeatAudio struct {
 // session block for 90s (after that it reports null, so a missed post
 // degrades to "unknown" rather than to a wrong number), and the volume the
 // user may have changed with the keyboard.
-func (c *Client) SessionHeartbeat(body Heartbeat) error {
+//
+// ignored is true when the service took the post but stored nothing
+// because this app runs in another session than the one its commands act
+// on ({"status":"ignored"}); an older service always answers "ok".
+func (c *Client) SessionHeartbeat(body Heartbeat) (ignored bool, err error) {
 	resp, err := c.do("POST", "/api/session/heartbeat", body)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return errUnauthorized
+		return false, errUnauthorized
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return nil
+	var r struct {
+		Status string `json:"status"`
+	}
+	json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&r)
+	return r.Status == "ignored", nil
 }
 
 // Schedule mirrors /api/schedule GET.
