@@ -152,13 +152,6 @@ func (s *Server) HubLastSeen() (status.HubSeen, bool) {
 	return s.hub, !s.hub.At.IsZero()
 }
 
-// SetHubLastSeen replaces the last hub contact (tests).
-func (s *Server) SetHubLastSeen(h status.HubSeen) {
-	s.hubMu.Lock()
-	s.hub = h
-	s.hubMu.Unlock()
-}
-
 // driverVersionOf extracts "1.0.0" from
 // "smartthings-pc-control-edge/1.0.0"; any other User-Agent is kept
 // verbatim (truncated) so an unexpected client is still recognisable.

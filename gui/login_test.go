@@ -108,17 +108,6 @@ func TestLoginErrorMessage(t *testing.T) {
 	}
 }
 
-// TestLoginMessagesTranslated keeps the new login strings in both languages.
-func TestLoginMessagesTranslated(t *testing.T) {
-	for _, key := range []string{"login.required", "login.empty", "login.invalid", "login.limited"} {
-		for _, l := range []Lang{LangKo, LangEn} {
-			if T(l, key) == key {
-				t.Errorf("%s missing for %s", key, l)
-			}
-		}
-	}
-}
-
 // TestClientLoginStatus maps the service's login answers (service/webui)
 // onto the sentinels the dialog words itself.
 func TestClientLoginStatus(t *testing.T) {

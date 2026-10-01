@@ -138,6 +138,12 @@ v1.2.0 / Edge 1.1.0 개발로 범위가 크게 늘어난 뒤 코드·테스트·
 **테스트 정책**: 버그를 고치면 회귀 테스트 1개 필수. Fyne 레이아웃 세부, 문서 문구, Win32 호출 자체는 테스트하지 않는다
 (인터페이스 뒤로 숨기고 실측 체크리스트로).
 
+**상태 (#130, 2026-10-01 — 완료)**: 서비스 Go(`service/`·`useraction/`·`internal/`) 549 → 493, 데스크톱 앱 124 → 119,
+Edge Lua 561 → 504(시작 시점 수치는 위 표의 감사 때보다 늘어 있었다). 기본 설정 golden(`internal/config/testdata`),
+기본값 status golden(`testdata/st-v1/status.off.json`, Lua도 읽음), 문구는 키·서식 일치 + golden, 같은 모양의 경우는 표 테스트로.
+`/st/v1` 인증·description·구독·전달은 `stapi`에서 가짜 `Deps`로 돌고 테스트 전용 `SetHubLastSeen`·`ResetSubscriptions`는 없앴다.
+정책 문장은 CONTRIBUTING "테스트"에 있다.
+
 ### 3.6 문서
 - 설계 문서는 결정과 근거만, 출시 후 동결(300줄 이하). 진행 메모("실측 대기")는 이슈로. 플랫폼 함정은 `edge-platform-notes.md` 한 곳.
 - 사용자 문서의 정본은 Wiki. README 150줄, edge/README 200줄 상한, 문장 단위 줄바꿈.

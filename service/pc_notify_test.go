@@ -21,36 +21,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-func TestNotifyLimiter(t *testing.T) {
-	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	l := ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
-	for i := 0; i < pcNotifyPerMinute; i++ {
-		if ok, _ := l.Allow("ip 1"); !ok {
-			t.Fatalf("request %d refused", i+1)
-		}
-		now = now.Add(time.Second)
-	}
-	ok, wait := l.Allow("ip 1")
-	if ok {
-		t.Fatal("11th request in a minute allowed")
-	}
-	// The first hit was at 12:00:00; the window frees at 12:01:00, and it
-	// is 12:00:10 now.
-	if wait != 50*time.Second {
-		t.Errorf("retry after %v, want 50s", wait)
-	}
-	if ok, _ := l.Allow("ip 2"); !ok {
-		t.Error("another source shares the limit")
-	}
-	now = now.Add(50 * time.Second)
-	if ok, _ := l.Allow("ip 1"); !ok {
-		t.Error("still refused once the oldest hit left the window")
-	}
-	if ok, _ := l.Allow("ip 1"); ok {
-		t.Error("the window should be full again")
-	}
-}
-
 // fakeNotifyRun replaces the user-action runner and the rate limiter.
 func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
@@ -194,20 +164,6 @@ func TestSTNotifyNeedsTheSecret(t *testing.T) {
 	}
 	if len(*calls) != 1 {
 		t.Errorf("calls = %q", *calls)
-	}
-}
-
-func TestSTStatusNotifyFeature(t *testing.T) {
-	stSetup(t, notifyCfg(true))
-	stubAwake(t)
-	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
-		t.Errorf("enabled: features = %s, want notify", f)
-	}
-	// Still listed while off: the driver sends, gets 403 notify_disabled and
-	// says "PC 알림 꺼짐" rather than "not supported".
-	setConfig(notifyCfg(false))
-	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
-		t.Errorf("disabled: features = %s, want notify", f)
 	}
 }
 

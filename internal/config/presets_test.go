@@ -57,13 +57,6 @@ func TestValidatePreset(t *testing.T) {
 	}
 }
 
-func TestPresetsDefault(t *testing.T) {
-	cfg := Default().WithDefaults()
-	if cfg.Presets == nil || len(cfg.Presets) != 0 {
-		t.Errorf("presets default = %#v, want []", cfg.Presets)
-	}
-}
-
 func TestValidatePresetsAndDrop(t *testing.T) {
 	a := Preset{Slot: 1, Name: "a", Type: "url", Path: "https://a.example"}
 	b := Preset{Slot: 2, Name: "b", Type: "url", Path: "https://b.example"}

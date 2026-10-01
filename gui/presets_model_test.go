@@ -94,25 +94,6 @@ func TestRowProblem(t *testing.T) {
 	}
 }
 
-func TestRowProblemKeysAreTranslated(t *testing.T) {
-	keys := []string{"slot", "name", "namelong", "type", "path", "quote", "args", "url", "urlargs", "abs", "exe", "script", "dup"}
-	for _, k := range keys {
-		key := "presets.err." + k
-		for _, l := range []Lang{LangKo, LangEn} {
-			s := T(l, key)
-			if s == key || !strings.Contains(s, "%d") {
-				t.Errorf("%s (%s) = %q: missing, or no %%d for the slot", key, l, s)
-			}
-		}
-	}
-	for _, code := range []string{"no_user_session", "notify_disabled", "rate_limited", "no_such_preset", "timeout", "unsupported", "service_too_old"} {
-		key := actionErrorKey(&actionError{Code: code})
-		if key == "" || T(LangKo, key) == key || T(LangEn, key) == key {
-			t.Errorf("code %s has no translated text (%q)", code, key)
-		}
-	}
-}
-
 func TestPresetsStateRoundTrip(t *testing.T) {
 	base := Config{
 		Port:     5001,

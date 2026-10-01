@@ -147,25 +147,3 @@ func TestLoadConfigDropsKindKeepsOrder(t *testing.T) {
 		t.Errorf("default activity = %+v", cfg.Activity)
 	}
 }
-
-func TestConfigChangedKeysCoversActivity(t *testing.T) {
-	old := Default().WithDefaults()
-	updated := old
-	updated.Activity = ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam")}}
-	keys := ChangedKeys(old, updated)
-	if !slices.Contains(keys, "activity.enabled") || !slices.Contains(keys, "activity.watch") {
-		t.Errorf("configChangedKeys = %v", keys)
-	}
-	for _, k := range keys {
-		if strings.Contains(k, "steam") {
-			t.Errorf("a key leaked a value: %v", keys)
-		}
-	}
-	// A reorder alone is a change too.
-	a := ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("a.exe", "A"), watch("b.exe", "B")}}
-	b := ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("b.exe", "B"), watch("a.exe", "A")}}
-	old.Activity, updated.Activity = a, b
-	if keys := ChangedKeys(old, updated); !slices.Contains(keys, "activity.watch") {
-		t.Errorf("reorder: configChangedKeys = %v", keys)
-	}
-}

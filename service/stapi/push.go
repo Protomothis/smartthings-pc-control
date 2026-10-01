@@ -219,24 +219,19 @@ func (s *subStore) startSweeper() {
 	})
 }
 
-// reset clears every subscription.
-func (s *subStore) reset(ids bool) {
+// reset clears every subscription and counts the ids from sub-1 again.
+func (s *subStore) reset() {
 	s.mu.Lock()
 	s.byID = map[string]*subscription{}
 	s.byCall = map[string]*subscription{}
-	if ids {
-		s.nextID = 0
-	}
+	s.nextID = 0
 	s.mu.Unlock()
 }
 
-// ResetSubscriptions clears every subscription (tests, and a config reload
-// that changes the secret).
-func (s *Server) ResetSubscriptions() { s.subs.reset(false) }
-
 // RestartSubscriptionIDs clears every subscription and counts the ids from
-// sub-1 again (tests: ids otherwise count up for the life of the process).
-func (s *Server) RestartSubscriptionIDs() { s.subs.reset(true) }
+// sub-1 again (tests of the assembled service, which share one Server: ids
+// otherwise count up for the life of the process).
+func (s *Server) RestartSubscriptionIDs() { s.subs.reset() }
 
 // Subscriptions is how many unexpired subscriptions there are.
 func (s *Server) Subscriptions() int { return len(s.subs.active()) }

@@ -10,6 +10,7 @@
 -- driver fails here against the unchanged golden.
 --
 --   status.full.json         state.apply_status + features.remember
+--   status.off.json          the same, every option at its default
 --   status.minimal-1.0.json  the same, for a pre-v1.2.0 service
 --   push.*.json              push.deliver (raw bytes, routing) + push.apply
 --   command.*.json           the capability handlers' request bodies
@@ -214,6 +215,37 @@ function T.test_minimal_status_has_no_v1_2_features()
   h.assert_nil(value(events, features.CAP_VOLUME, "volume"), "no reading, no slider move")
   h.assert_false(h.has_capability(events, features.CAP_BATTERY), "no battery card on a v1.0 PC")
   h.assert_false(features.battery_present(status))
+end
+
+--------------------------------------------------------------------------------
+-- status.off.json: a v1.2.0 PC with every option at its default
+--------------------------------------------------------------------------------
+
+function T.test_off_status_rows()
+  local status = h.fixture("status.off.json")
+  local events, s = rows_of(status)
+  h.assert_equal(value(events, caps.STATUS, "connection"), "ok")
+  h.assert_false(value(events, caps.STATUS, "updateAvailable"), "update.available")
+  h.assert_false(value(events, caps.STATUS, "wolReady"), "wol.selected.wol_enabled")
+  h.assert_equal(value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (이더넷)", "wol.selected.name")
+  h.assert_false(value(events, caps.SCHEDULE, "active"), "schedule.active")
+  h.assert_equal(value(events, caps.COMMAND, "lastCommand"), "없음 (None)", "last_command: null")
+  h.assert_false(value(events, caps.SESSION, "exposed"), "session.exposed")
+  h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
+  h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
+  h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
+  h.assert_equal(value(events, caps.APPS, "summary"), "꺼짐", "activity.enabled: false")
+  h.assert_equal(features.apps_mode(status), features.APPS_OFF)
+  h.assert_deep_equal(features.apps_of(status), {})
+  h.assert_equal(value(events, features.CAP_SWITCH, "switch", features.AWAKE_COMPONENT), "off", "awake.on")
+  h.assert_nil(value(events, features.CAP_VOLUME, "volume"), "audio.available: false moves no slider")
+  h.assert_equal(value(events, features.CAP_PLAYBACK, "playbackStatus"), "stopped", "media.status: none")
+  h.assert_false(h.has_capability(events, features.CAP_BATTERY), "battery.present: false")
+  -- Listed but off or unavailable: a command still goes out (and the
+  -- service's refusal is shown), except volume without a reading.
+  h.assert_equal(features.refusal(s.extras, "volume"), "no_user")
+  h.assert_nil(features.refusal(s.extras, nil, features.NOTIFY))
+  h.assert_nil(features.refusal(s.extras, "preset"))
 end
 
 --------------------------------------------------------------------------------

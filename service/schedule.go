@@ -24,10 +24,6 @@ const (
 // replacedSchedule is the summary of a schedule a newer one cancelled.
 type replacedSchedule = power.Replaced
 
-// maxScheduleMinutes is the longest delay any front end may ask for: three
-// days (#89, power.MaxScheduleMinutes).
-const maxScheduleMinutes = power.MaxScheduleMinutes
-
 // formatDelay renders a delay for log lines and notifications ("30 sec",
 // "5 min", "1 h 30 min", "1 d 3 h").
 func formatDelay(d time.Duration) string { return power.FormatDelay(d) }

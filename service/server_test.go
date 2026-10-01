@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,135 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/service/power"
-
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
-
-func TestLoadConfigDefaults(t *testing.T) {
-	// loadConfig returns defaults when no file exists
-	cfg := loadConfig()
-	if cfg.Port != 5001 {
-		t.Errorf("expected default port 5001, got %d", cfg.Port)
-	}
-	if cfg.Secret != "" {
-		t.Errorf("expected empty default secret, got %q", cfg.Secret)
-	}
-}
-
-func TestCommandsMapExists(t *testing.T) {
-	// Verify all expected commands exist
-	expected := []string{"ping", "shutdown", "forceshutdown", "restart", "hibernate", "suspend", "lock", "turnscreenoff"}
-	for _, cmd := range expected {
-		if _, ok := Commands[cmd]; !ok {
-			t.Errorf("Commands map missing expected command: %s", cmd)
-		}
-	}
-}
-
-func TestCommandsMapPingNoExecute(t *testing.T) {
-	cmd := Commands["ping"]
-	if cmd.Execute != nil {
-		t.Error("ping command should have nil Execute (no system action)")
-	}
-	if cmd.Response != "OK" {
-		t.Errorf("ping response should be 'OK', got %q", cmd.Response)
-	}
-}
-
-// Integration test for HTTP routing
-func TestHTTPPingNoSecret(t *testing.T) {
-	initLogger()
-	setConfig(Config{Port: 5001, Secret: ""})
-
-	handler := newCommandHandler()
-
-	req := httptest.NewRequest("GET", "/ping", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("GET /ping expected 200, got %d", w.Code)
-	}
-	if w.Body.String() != "OK" {
-		t.Errorf("GET /ping body expected 'OK', got %q", w.Body.String())
-	}
-}
-
-func TestHTTPPingWithSecret(t *testing.T) {
-	setConfig(Config{Port: 5001, Secret: "mysecret"})
-
-	handler := newCommandHandler()
-
-	// Wrong secret -> 401
-	req := httptest.NewRequest("GET", "/wrong/ping", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("wrong secret expected 401, got %d", w.Code)
-	}
-
-	// Correct secret -> 200
-	req = httptest.NewRequest("GET", "/mysecret/ping", nil)
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("correct secret expected 200, got %d", w.Code)
-	}
-}
-
-func TestHTTPUnknownCommand(t *testing.T) {
-	setConfig(Config{Port: 5001, Secret: ""})
-
-	handler := newCommandHandler()
-
-	req := httptest.NewRequest("GET", "/nonexistent", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("unknown command expected 400, got %d", w.Code)
-	}
-}
-
-func TestSaveAndLoadConfig(t *testing.T) {
-	configPath := filepath.Join(configDir(), "config.json")
-
-	// Backup
-	origData, origErr := os.ReadFile(configPath)
-	defer func() {
-		if origErr == nil {
-			os.WriteFile(configPath, origData, 0644)
-		} else {
-			os.Remove(configPath)
-		}
-	}()
-
-	// Save
-	testCfg := Config{Port: 7777, Secret: "roundtrip"}
-	err := saveConfig(testCfg)
-	if err != nil {
-		t.Fatalf("saveConfig failed: %v", err)
-	}
-
-	// Load back
-	loaded := loadConfig()
-	if loaded.Port != 7777 {
-		t.Errorf("roundtrip port expected 7777, got %d", loaded.Port)
-	}
-	if loaded.Secret != "roundtrip" {
-		t.Errorf("roundtrip secret expected 'roundtrip', got %q", loaded.Secret)
-	}
-
-	// Verify JSON format
-	data, _ := os.ReadFile(configPath)
-	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
-	if raw["port"].(float64) != 7777 {
-		t.Error("saved JSON port mismatch")
-	}
-}
 
 // stubTrayLauncher swaps the tray-app launcher for a recorder so tests
 // never spawn a process. Each launch attempt is reported on the returned
@@ -178,71 +52,70 @@ func expectNoTrayLaunch(t *testing.T, calls <-chan struct{}) {
 	}
 }
 
-func TestScheduleOriginWakesTrayApp(t *testing.T) {
-	cases := []struct {
-		origin scheduleOrigin
-		want   bool
-	}{
-		{originUI, false},
-		{originRemote, true},
-		{originTelegram, false},
+// TestLegacyCommandURL: GET /{command} (and /{secret}/{command}, see
+// TestLegacyPathLocksOutSecretGuessing) is what existing automations call,
+// so every catalogue name stays routable; ping answers without running
+// anything and an unknown name is a 400.
+func TestLegacyCommandURL(t *testing.T) {
+	initLogger()
+	setConfig(Config{Port: 5001})
+	for _, name := range []string{"ping", "shutdown", "forceshutdown", "restart", "hibernate", "suspend", "lock", "turnscreenoff", "turnscreenon"} {
+		if _, ok := Commands[name]; !ok {
+			t.Errorf("Commands has no %q", name)
+		}
 	}
-	for _, c := range cases {
-		if got := c.origin.WakesTrayApp(); got != c.want {
-			t.Errorf("origin %d wakesTrayApp = %v, want %v", c.origin, got, c.want)
+	if Commands["ping"].Execute != nil {
+		t.Error("ping runs something")
+	}
+	for path, want := range map[string]int{"/ping": http.StatusOK, "/nonexistent": http.StatusBadRequest} {
+		w := httptest.NewRecorder()
+		newCommandHandler().ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != want {
+			t.Errorf("GET %s = %d, want %d", path, w.Code, want)
+		}
+		if want == http.StatusOK && w.Body.String() != "OK" {
+			t.Errorf("GET %s body = %q, want OK", path, w.Body.String())
 		}
 	}
 }
 
-func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
+// TestScheduleWakesTrayAppOnlyForRemote: a remote grace schedule launches
+// the tray app so its [Run now]/[Cancel] toast is visible; a schedule the
+// user made in the app, the WebUI or Telegram does not, a refused schedule
+// launches nothing, and a failed launch (nobody logged in) keeps the
+// schedule.
+func TestScheduleWakesTrayAppOnlyForRemote(t *testing.T) {
 	initLogger()
-	calls := stubTrayLauncher(t, nil)
-	defer cancelScheduleBy("api")
-
-	// Same path the app/WebUI /api/schedule endpoint takes.
-	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
-		t.Fatal(err)
-	}
-	if s := getSchedule(); s["active"] != true {
-		t.Fatal("expected an active schedule")
-	}
-	expectNoTrayLaunch(t, calls)
-}
-
-func TestSetScheduleRemoteWakesTrayApp(t *testing.T) {
-	initLogger()
-	calls := stubTrayLauncher(t, nil)
-	defer cancelScheduleBy("api")
-
-	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
-		t.Fatal(err)
-	}
-	expectTrayLaunch(t, calls)
-}
-
-func TestSetScheduleUnknownCommandDoesNotWakeTrayApp(t *testing.T) {
-	initLogger()
-	calls := stubTrayLauncher(t, nil)
-
-	if err := setSchedule("no-such-command", 5*time.Minute, originRemote); err == nil {
-		cancelScheduleBy("api")
-		t.Fatal("expected error for unknown command")
-	}
-	expectNoTrayLaunch(t, calls)
-}
-
-func TestTrayLaunchFailureKeepsSchedule(t *testing.T) {
-	// No user logged in / token error must not cancel or fail the command.
-	initLogger()
-	calls := stubTrayLauncher(t, errors.New("no explorer.exe process found"))
-	defer cancelScheduleBy("api")
-
-	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
-		t.Fatalf("setSchedule failed because the tray launch failed: %v", err)
-	}
-	expectTrayLaunch(t, calls)
-	if s := getSchedule(); s["active"] != true {
-		t.Fatal("schedule dropped after tray launch failure")
+	for _, tc := range []struct {
+		name      string
+		command   string
+		origin    scheduleOrigin
+		launchErr error
+		wantErr   bool
+		launches  bool
+	}{
+		{"app or WebUI", "lock", originUI, nil, false, false},
+		{"Telegram", "lock", originTelegram, nil, false, false},
+		{"remote", "lock", originRemote, nil, false, true},
+		{"remote, unknown command", "no-such-command", originRemote, nil, true, false},
+		{"remote, the launch fails", "lock", originRemote, errors.New("no explorer.exe process found"), false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := stubTrayLauncher(t, tc.launchErr)
+			t.Cleanup(func() { cancelScheduleBy("api") })
+			err := setSchedule(tc.command, 30*time.Minute, tc.origin)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("setSchedule: %v, want an error: %v", err, tc.wantErr)
+			}
+			if tc.launches {
+				expectTrayLaunch(t, calls)
+			} else {
+				expectNoTrayLaunch(t, calls)
+			}
+			if active := getSchedule()["active"] == true; active == tc.wantErr {
+				t.Errorf("schedule active = %v", active)
+			}
+		})
 	}
 }
 
@@ -347,32 +220,6 @@ func TestGraceUsesConfiguredSeconds(t *testing.T) {
 		t.Errorf("remainingSec = %d, want ~30 (configured grace_seconds)", remaining)
 	}
 	expectTrayLaunch(t, launches)
-}
-
-func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
-	initLogger()
-	if err := scheduleTask("lock", 0, originUI); err == nil {
-		cancelScheduleBy("api")
-		t.Fatal("zero delay accepted")
-	}
-	if err := scheduleTask("lock", -time.Second, originUI); err == nil {
-		cancelScheduleBy("api")
-		t.Fatal("negative delay accepted")
-	}
-}
-
-func TestScheduleTaskRejectsADelayPastTheCeiling(t *testing.T) {
-	// #89: three days is the ceiling every front end offers, and this is the
-	// last guard before the timer is armed.
-	initLogger()
-	if err := scheduleTask("lock", power.MaxScheduleDelay+time.Minute, originUI); err == nil {
-		cancelScheduleBy("api")
-		t.Fatalf("a delay over %d minutes was accepted", maxScheduleMinutes)
-	}
-	if err := scheduleTask("lock", power.MaxScheduleDelay, originUI); err != nil {
-		t.Fatalf("the ceiling itself must be schedulable: %v", err)
-	}
-	cancelScheduleBy("api")
 }
 
 func TestFormatDelay(t *testing.T) {

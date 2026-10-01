@@ -1,0 +1,79 @@
+{
+  "port": 5001,
+  "secret": "",
+  "webui_remote": false,
+  "shutdown_grace": true,
+  "grace_seconds": 300,
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": "",
+    "control_enabled": false,
+    "allowed_chat_ids": [],
+    "detail": "full",
+    "lang": "ko",
+    "pc_name": "",
+    "quiet_hours": {
+      "enabled": false,
+      "start": "22:00",
+      "end": "07:00",
+      "security_bypass": true,
+      "digest": true
+    }
+  },
+  "smartthings": {
+    "allowed_hubs": [],
+    "expose_session": false,
+    "expose_session_user": false,
+    "wol_mac": ""
+  },
+  "notify": {
+    "power": {
+      "resumed": true,
+      "started": true,
+      "stopping": true
+    },
+    "remote": {
+      "executed": true,
+      "force": true,
+      "grace_cancelled": true,
+      "grace_scheduled": true,
+      "received": true
+    },
+    "schedule": {
+      "cancelled": false,
+      "created": false,
+      "executed": true,
+      "replaced": true
+    },
+    "security": {
+      "config_changed": true,
+      "login_limited": true,
+      "unauthorized": true,
+      "unknown_chat": true,
+      "unknown_command": true
+    },
+    "system": {
+      "exec_failed": true,
+      "tray_wake_failed": true,
+      "update_available": true,
+      "updated": true
+    }
+  },
+  "awake": {
+    "default_minutes": 60,
+    "keep_display": false
+  },
+  "activity": {
+    "enabled": false,
+    "watch": []
+  },
+  "media": {
+    "enabled": true,
+    "now_playing": false
+  },
+  "notify_pc": {
+    "enabled": true
+  },
+  "presets": []
+}

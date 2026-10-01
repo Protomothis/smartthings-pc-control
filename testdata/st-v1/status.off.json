@@ -1,0 +1,76 @@
+{
+  "activity": {
+    "apps": [],
+    "enabled": false,
+    "top": ""
+  },
+  "audio": {
+    "available": false
+  },
+  "awake": {
+    "on": false,
+    "until": ""
+  },
+  "battery": {
+    "ac": true,
+    "charging": false,
+    "percent": -1,
+    "present": false
+  },
+  "display": "off",
+  "features": [
+    "awake",
+    "audio",
+    "media",
+    "notify",
+    "presets"
+  ],
+  "grace": {
+    "enabled": true,
+    "seconds": 300
+  },
+  "hostname": "GOLDEN-PC",
+  "last_command": null,
+  "last_shutdown_clean": false,
+  "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
+  "media": {
+    "status": "none"
+  },
+  "power": "on",
+  "presets": [],
+  "protocol": 1,
+  "schedule": {
+    "active": false
+  },
+  "secret_set": true,
+  "service_version": "v1.2.0",
+  "session": {
+    "exposed": false
+  },
+  "update": {
+    "available": false,
+    "latest": ""
+  },
+  "uptime_seconds": 93784,
+  "wol": {
+    "adapters": [
+      {
+        "ip": "192.168.1.10",
+        "mac": "B4-2E-99-45-B4-F5",
+        "name": "이더넷",
+        "selected": true,
+        "wol_capable": true,
+        "wol_enabled": false
+      }
+    ],
+    "ready": false,
+    "selected": {
+      "ip": "192.168.1.10",
+      "mac": "B4-2E-99-45-B4-F5",
+      "name": "이더넷",
+      "source": "auto",
+      "wol_capable": true,
+      "wol_enabled": false
+    }
+  }
+}

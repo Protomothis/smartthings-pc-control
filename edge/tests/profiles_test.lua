@@ -628,89 +628,42 @@ function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
     "the rows of the new capabilities start unset and are painted once")
   -- #129: the row generation is the profile generation.
   h.assert_equal(poll.ROWS_VERSION, tostring(profiles.VERSION))
-  h.assert_equal(poll.ROWS_VERSION, "6")
 end
 
-function T.test_init_moves_a_v2_device_to_v6_and_repaints_it()
-  -- A development device still on `pc-battery.v2` with the rows of generation
-  -- "2" painted: the first init after the update moves it to `pc-battery.v5`
-  -- (the screen with pcToast) and paints generation "5".
-  profiles.reset()
-  require "poll"
-  local device = h.fake_device({ ipAddress = "192.168.1.20" })
-  device.id = "init-pc-v2-laptop"
-  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-5"
-  device.profile = { id = "abc-123", name = "pc-battery.v2",
-    components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(fields.ROWS_PAINTED, "2")
-  lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v6" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-battery.v6")
-  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
-end
-
-function T.test_init_moves_a_v3_device_to_v6_and_repaints_it()
-  -- pcNotify: the reviewer's own device. It sits on `pc-tv-battery.v3` (the
-  -- screen with pcMessage's two text fields) with generation "3" painted; the
-  -- first init after the update moves it to `pc-tv-battery.v5` - same icon,
-  -- same battery card, one text field - and paints generation "5".
-  profiles.reset()
-  require "poll"
-  local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "tv" })
-  device.id = "init-pc-v3-laptop"
-  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-6"
-  device.profile = { id = "abc-123", name = "pc-tv-battery.v3",
-    components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(fields.ROWS_PAINTED, "3")
-  lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-tv-battery.v6")
-  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
-end
-
-function T.test_init_moves_a_v4_device_to_v6_and_paints_the_message_row()
-  -- pcToast: a development device on `pc-tv-battery.v4` (pcNotify, whose text
-  -- row was bound to nothing and spun into "네트워크 오류") moves to
-  -- `pc-tv-battery.v5`, and the new `lastMessage` row gets a value right away
-  -- - forced, because the cloud record of the new profile starts empty.
-  profiles.reset()
-  require "poll"
+-- The Dev channel generations (never packaged, still known): a device on any
+-- of them moves to the v6 of its style and battery half on its first init
+-- after the update and paints the new row generation. A row the new profile
+-- adds is painted at once, forced, because the cloud record of the new
+-- profile starts empty: pcToast's `lastMessage` for a v4 device (whose
+-- pcNotify text row was bound to nothing and spun into "네트워크 오류"),
+-- `pcApps.summary` for a v5 one (the kind-based pcActivity row, #123).
+function T.test_init_moves_a_dev_generation_device_to_v6_keeping_style_and_battery()
   local caps = require "caps"
-  local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "tv" })
-  device.id = "init-pc-v4-laptop"
-  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-7"
-  device.profile = { id = "abc-123", name = "pc-tv-battery.v4",
-    components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(fields.ROWS_PAINTED, "4")
-  lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
-  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
-  local events = h.emitted(device)
-  h.assert_equal(h.event_value(events, caps.TOAST, "lastMessage"), "없음")
-  h.assert_true(h.event_forced(events, caps.TOAST, "lastMessage"))
-end
-
-function T.test_init_moves_a_v5_device_to_v6_keeping_style_and_battery()
-  -- #123: the Dev channel device on `pc-hub-battery.v5` (the kind-based
-  -- pcActivity row) moves to `pc-hub-battery.v6` - same icon, same battery
-  -- card - and the new `pcApps.summary` row is painted at once, forced: the
-  -- cloud record of the new profile starts empty.
-  profiles.reset()
-  require "poll"
-  local caps = require "caps"
-  local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "hub" })
-  device.id = "init-pc-v5-laptop"
-  device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-8"
-  device.profile = { id = "abc-123", name = "pc-hub-battery.v5",
-    components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(fields.ROWS_PAINTED, "5")
-  lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-hub-battery.v6" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-hub-battery.v6")
-  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
-  local events = h.emitted(device)
-  h.assert_equal(h.event_value(events, caps.APPS, "summary"), "없음")
-  h.assert_true(h.event_forced(events, caps.APPS, "summary"))
+  for i, c in ipairs({
+    { "pc-battery.v2", "others", "pc-battery.v6" },
+    -- the reviewer's own device: pcMessage's two text fields
+    { "pc-tv-battery.v3", "tv", "pc-tv-battery.v6" },
+    { "pc-tv-battery.v4", "tv", "pc-tv-battery.v6", caps.TOAST, "lastMessage" },
+    { "pc-hub-battery.v5", "hub", "pc-hub-battery.v6", caps.APPS, "summary" },
+  }) do
+    local from, style, to, cap, attr = table.unpack(c, 1, 5)
+    profiles.reset()
+    local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = style })
+    device.id = "init-" .. from
+    device.device_network_id = discovery.DNI_PREFIX .. "manual-dev-" .. i
+    device.profile = { id = "abc-123", name = from,
+      components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
+    device:set_field(fields.ROWS_PAINTED, from:match("%.v(%d+)$"))
+    lifecycle().init(fake_driver({ device }), device)
+    h.assert_deep_equal(device.metadata_updates, { { profile = to } }, from)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), to, from)
+    h.assert_equal(device:get_field(fields.ROWS_PAINTED), (require "poll").ROWS_VERSION, from)
+    if cap then
+      local events = h.emitted(device)
+      h.assert_equal(h.event_value(events, cap, attr), "없음", from)
+      h.assert_true(h.event_forced(events, cap, attr), from)
+    end
+  end
   -- And the plain twin keeps its half too.
   h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc-tv.v6")
   h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v6")

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/stapi"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // stDo sends one /st/v1 request through the real handler tree. from is the
@@ -77,178 +78,90 @@ func stSetup(t *testing.T, cfg Config) {
 	})
 }
 
-// ---- auth (§3.1) -----------------------------------------------------------
-
-func TestSTHeaderSecretAuth(t *testing.T) {
-	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
-	events := captureNotifications(t)
-
-	if w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "s3cr3t", ""); w.Code != http.StatusOK {
-		t.Fatalf("with the right header: %d, want 200 (%s)", w.Code, w.Body.String())
-	}
-
-	// Each case uses its own source IP: security.unauthorized is
-	// aggregated per source, so a second rejection from the same address
-	// would only be counted, not delivered.
-	for _, tc := range []struct{ name, secret, from string }{
-		{"missing", "", "192.168.1.20"},
-		{"wrong", "guessed", "192.168.1.21"},
-	} {
-		w := stDo(t, "GET", "/st/v1/status", tc.from, tc.secret, "")
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("%s secret: %d, want 401", tc.name, w.Code)
-			continue
-		}
-		ev := expectNotification(t, events, "security.unauthorized")
-		if ev.Fields["from"] != tc.from {
-			t.Errorf("from = %q, want %q", ev.Fields["from"], tc.from)
-		}
-		if ev.Fields["path"] != "/st/v1/status" {
-			t.Errorf("path = %q", ev.Fields["path"])
-		}
-		for _, leak := range []string{"s3cr3t", "guessed"} {
-			if strings.Contains(w.Body.String()+fmt.Sprint(ev.Fields), leak) {
-				t.Errorf("the secret %q leaked into the response or the event", leak)
-			}
-		}
-	}
-}
-
-func TestSTNoSecretNeedsNoHeader(t *testing.T) {
-	stSetup(t, Config{Port: 5001, Secret: ""})
-	if w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""); w.Code != http.StatusOK {
-		t.Fatalf("without a configured secret: %d, want 200", w.Code)
-	}
-}
-
-func TestSTAllowedHubsRejectsOtherSources(t *testing.T) {
-	stSetup(t, Config{Port: 5001, Secret: "s3cr3t", SmartThings: SmartThingsConfig{AllowedHubs: []string{"192.168.1.20"}}})
-
-	if w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "s3cr3t", ""); w.Code != http.StatusOK {
-		t.Errorf("allowed hub: %d, want 200", w.Code)
-	}
-	if w := stDo(t, "GET", "/st/v1/status", "10.0.0.9", "s3cr3t", ""); w.Code != http.StatusForbidden {
-		t.Errorf("other source: %d, want 403", w.Code)
-	}
-	// An empty list allows everyone (the default).
-	setConfig(Config{Port: 5001, Secret: "s3cr3t"})
-	stSrv.ResetRateLimit()
-	if w := stDo(t, "GET", "/st/v1/status", "10.0.0.9", "s3cr3t", ""); w.Code != http.StatusOK {
-		t.Errorf("empty allow-list: %d, want 200", w.Code)
-	}
-}
-
-func TestSTRateLimitPerSourceIP(t *testing.T) {
-	stSetup(t, Config{Port: 5001})
-
-	for i := 1; i <= stapi.RatePerSecond; i++ {
-		if w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""); w.Code != http.StatusOK {
-			t.Fatalf("request %d: %d, want 200", i, w.Code)
-		}
-	}
-	w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", "")
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("request %d: %d, want 429", stapi.RatePerSecond+1, w.Code)
-	}
-	// The bucket is per source: another hub is unaffected.
-	if w := stDo(t, "GET", "/st/v1/status", "192.168.1.21", "", ""); w.Code != http.StatusOK {
-		t.Errorf("other source IP: %d, want 200", w.Code)
-	}
-}
+// Authentication, the allow-list, the rate limit, /st/v1/description and
+// the subscriptions are tested in service/stapi (http_test.go) on a fresh
+// Server; these tests drive the assembled handler against the real stores.
 
 // ---- status (§3.2) ---------------------------------------------------------
 
-func TestSTStatusShape(t *testing.T) {
-	stSetup(t, Config{Port: 5001, Secret: "s3cr3t", ShutdownGrace: true, GraceSeconds: 300})
-	setDisplayState("off")
-	t.Cleanup(func() { setDisplayState("unknown") })
+// The status document with every option on is status.full.json, with every
+// option at its default status.off.json (TestContractStatusFull/Off). In
+// between, the readings the service holds are only reported while the
+// user's opt-ins and session allow it.
+func TestSTStatusGatesUserData(t *testing.T) {
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	stamp := at.Format(time.RFC3339)
+	for _, tc := range []struct {
+		name     string
+		cfg      Config
+		loggedIn bool
+		audio    string // the audio block as JSON
+		media    string // the media block as JSON
+		features string // fmt.Sprint of the features array
+	}{
+		{
+			name: "everything on", cfg: optIn(), loggedIn: true,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `"}`,
+			media:    `{"status":"playing","title":"Hype Boy","artist":"NewJeans","album":"New Jeans","app":"Spotify","updated_at":"` + stamp + `"}`,
+			features: "[awake audio media nowplaying notify presets]",
+		},
+		{
+			// The readings are still stored, but nobody is there to own them.
+			name: "nobody logged in", cfg: optIn(), loggedIn: false,
+			audio: `{"available":false}`, media: `{"status":"none"}`,
+			features: "[awake audio media nowplaying notify presets]",
+		},
+		{
+			// A title stored a moment ago is not shown once the opt-in is off.
+			name: "now playing not opted in", cfg: mediaOn(), loggedIn: true,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `"}`,
+			media:    `{"status":"playing","updated_at":"` + stamp + `"}`,
+			features: "[awake audio media notify presets]",
+		},
+		{
+			name: "media off", cfg: Config{Port: 5001, Media: MediaConfig{NowPlaying: true}, NotifyPC: NotifyPCConfig{Enabled: true}}, loggedIn: true,
+			audio: `{"available":false}`, media: `{"status":"none"}`,
+			features: "[awake notify presets]",
+		},
+		{
+			// Still listed while off: the driver sends, gets 403
+			// notify_disabled and says "PC 알림 꺼짐" rather than "not supported".
+			name: "PC notifications off", cfg: Config{Port: 5001}, loggedIn: true,
+			audio: `{"available":false}`, media: `{"status":"none"}`,
+			features: "[awake notify presets]",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.cfg.Media.Enabled {
+				tc.cfg.NotifyPC.Enabled = true
+			}
+			mediaSetup(t, tc.cfg)
+			stubAwake(t)
+			resetMediaSample()
+			t.Cleanup(resetMediaSample)
+			clock.audio = func() time.Time { return at }
+			noteAudioSample(useraction.Audio{Volume: 42, Muted: true}, at)
+			noteMediaSampleChange(spotifyTrack, at)
+			sys.sessionPresent = func() bool { return tc.loggedIn }
 
-	w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "s3cr3t", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status: %d", w.Code)
-	}
-	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("content type = %q", ct)
-	}
-	got := stJSON(t, w)
-
-	// Required keys and their JSON types (§3.2).
-	wantTypes := map[string]string{
-		"protocol": "number", "service_version": "string", "machine_id": "string",
-		"hostname": "string", "power": "string", "uptime_seconds": "number",
-		"last_shutdown_clean": "bool", "secret_set": "bool", "grace": "object",
-		"schedule": "object", "update": "object", "wol": "object",
-		"display": "string", "session": "object",
-	}
-	for key, kind := range wantTypes {
-		v, ok := got[key]
-		if !ok {
-			t.Errorf("status is missing %q", key)
-			continue
-		}
-		if jsonKind(v) != kind {
-			t.Errorf("%s is %s, want %s", key, jsonKind(v), kind)
-		}
-	}
-	if _, ok := got["last_command"]; !ok {
-		t.Error("status is missing last_command (null is fine, the key is not)")
-	}
-	if got["protocol"] != float64(stapi.Protocol) || got["power"] != "on" {
-		t.Errorf("protocol/power = %v/%v", got["protocol"], got["power"])
-	}
-	if got["secret_set"] != true || got["display"] != "off" {
-		t.Errorf("secret_set/display = %v/%v", got["secret_set"], got["display"])
-	}
-	if got["machine_id"] == "" {
-		t.Error("machine_id is empty")
-	}
-
-	grace := got["grace"].(map[string]any)
-	if grace["enabled"] != true || grace["seconds"] != float64(300) {
-		t.Errorf("grace = %v", grace)
-	}
-	if sched := got["schedule"].(map[string]any); sched["active"] != false {
-		t.Errorf("schedule = %v, want {active:false}", sched)
-	}
-	if sess := got["session"].(map[string]any); sess["exposed"] != false || len(sess) != 1 {
-		t.Errorf("session = %v, want only {exposed:false} while the opt-in is off", sess)
-	}
-	update := got["update"].(map[string]any)
-	if _, ok := update["available"].(bool); !ok {
-		t.Errorf("update.available = %v", update["available"])
-	}
-	wol := got["wol"].(map[string]any)
-	if wol["ready"] != true {
-		t.Errorf("wol.ready = %v", wol["ready"])
-	}
-	adapters, _ := wol["adapters"].([]any)
-	if len(adapters) != 1 {
-		t.Fatalf("wol.adapters = %v", wol["adapters"])
-	}
-	a := adapters[0].(map[string]any)
-	for _, key := range []string{"name", "mac", "ip", "wol_enabled", "wol_capable", "selected"} {
-		if _, ok := a[key]; !ok {
-			t.Errorf("adapter is missing %q: %v", key, a)
-		}
-	}
-	if a["mac"] != "AA-BB-CC-DD-EE-FF" || a["wol_enabled"] != true {
-		t.Errorf("adapter = %v", a)
-	}
-	// The only adapter is also the chosen one (#96, §3.2).
-	if a["selected"] != true {
-		t.Errorf("the only adapter is not marked selected: %v", a)
-	}
-	sel, ok := wol["selected"].(map[string]any)
-	if !ok {
-		t.Fatalf("wol.selected = %v, want an object", wol["selected"])
-	}
-	for _, key := range []string{"name", "mac", "ip", "wol_enabled", "wol_capable", "source"} {
-		if _, ok := sel[key]; !ok {
-			t.Errorf("wol.selected is missing %q: %v", key, sel)
-		}
-	}
-	if sel["mac"] != "AA-BB-CC-DD-EE-FF" || sel["name"] != "Ethernet" || sel["source"] != "auto" {
-		t.Errorf("wol.selected = %v", sel)
+			var got struct {
+				Audio    json.RawMessage `json:"audio"`
+				Media    json.RawMessage `json:"media"`
+				Features []string        `json:"features"`
+			}
+			if err := json.Unmarshal(stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", "").Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if string(got.Audio) != tc.audio {
+				t.Errorf("audio = %s\nwant    %s", got.Audio, tc.audio)
+			}
+			if string(got.Media) != tc.media {
+				t.Errorf("media = %s\nwant    %s", got.Media, tc.media)
+			}
+			if f := fmt.Sprint(got.Features); f != tc.features {
+				t.Errorf("features = %s, want %s", f, tc.features)
+			}
+		})
 	}
 }
 
@@ -283,56 +196,6 @@ func TestSTStatusWoLSelectedManual(t *testing.T) {
 	}
 	if a := adapters[1].(map[string]any); a["selected"] != true || a["ip"] != "192.168.1.9" {
 		t.Errorf("Wi-Fi row = %v", a)
-	}
-}
-
-// jsonKind names the Go type json.Unmarshal produced for a value.
-func jsonKind(v any) string {
-	switch v.(type) {
-	case nil:
-		return "null"
-	case bool:
-		return "bool"
-	case float64:
-		return "number"
-	case string:
-		return "string"
-	case []any:
-		return "array"
-	case map[string]any:
-		return "object"
-	}
-	return fmt.Sprintf("%T", v)
-}
-
-func TestSTStatusReportsScheduleAndSession(t *testing.T) {
-	stSetup(t, Config{Port: 5001, SmartThings: SmartThingsConfig{ExposeSession: false}})
-	stubTrayLauncher(t, nil)
-
-	if err := setSchedule("shutdown", 30*time.Minute, originSmartThings); err != nil {
-		t.Fatal(err)
-	}
-	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	sched, _ := got["schedule"].(map[string]any)
-	if sched["active"] != true || sched["command"] != "shutdown" || sched["origin"] != "smartthings" {
-		t.Fatalf("schedule = %v", sched)
-	}
-	remaining, ok := sched["remaining_seconds"].(float64)
-	if !ok || remaining < 1700 || remaining > 1800 {
-		t.Errorf("remaining_seconds = %v, want ~1800", sched["remaining_seconds"])
-	}
-	at, ok := sched["execute_at"].(string)
-	if !ok {
-		t.Fatalf("execute_at = %v", sched["execute_at"])
-	}
-	if _, err := time.Parse(time.RFC3339, at); err != nil {
-		t.Errorf("execute_at = %q, want RFC3339 with the local offset: %v", at, err)
-	}
-	// The old /api/schedule key names must not appear in the ST shape.
-	for _, gone := range []string{"executeAt", "remainingSec"} {
-		if _, has := sched[gone]; has {
-			t.Errorf("schedule still carries the WebUI key %q", gone)
-		}
 	}
 }
 
@@ -528,22 +391,9 @@ func TestSTScheduleDelete(t *testing.T) {
 
 func TestSTHubLastSeen(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
-
-	// An unauthenticated request must not count as a hub contact.
-	before, _ := stSrv.HubLastSeen()
-	stDo(t, "GET", "/st/v1/status", "10.0.0.9", "wrong", "")
-	if after, _ := stSrv.HubLastSeen(); after != before {
-		t.Errorf("a rejected request updated hubLastSeen: %+v", after)
-	}
-
+	// What counts as a hub contact is stapi's (TestAuth); this is the app's
+	// view of it.
 	stDo(t, "GET", "/st/v1/status", "192.168.1.20", "s3cr3t", "")
-	seen, ok := stSrv.HubLastSeen()
-	if !ok {
-		t.Fatal("hubLastSeenInfo reports nothing after an authenticated request")
-	}
-	if seen.IP != "192.168.1.20" || seen.DriverVersion != "1.0.0" {
-		t.Errorf("hub last seen = %+v", seen)
-	}
 
 	// The WebUI endpoint is behind the normal session auth.
 	w := httptest.NewRecorder()
@@ -631,18 +481,6 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 	}
 }
 
-func TestSTUnknownRouteIs404(t *testing.T) {
-	stSetup(t, Config{Port: 5001})
-	// Unknown paths must not reach the legacy /{secret}/{command} handler.
-	// /st/v1/description (#69) and /st/v1/subscribe (#68) have their own
-	// tests in st_ssdp_test.go and st_push_test.go.
-	for _, path := range []string{"/st/v1/nope", "/st/v1/"} {
-		if w := stDo(t, "GET", path, "192.168.1.20", "", ""); w.Code != http.StatusNotFound {
-			t.Errorf("%s: %d, want 404", path, w.Code)
-		}
-	}
-}
-
 // ---- turnscreenon (§3.3) ---------------------------------------------------
 
 func TestTurnScreenOnCommand(t *testing.T) {
@@ -683,3 +521,58 @@ func TestTurnScreenOnCommand(t *testing.T) {
 }
 
 // ---- config (§3.7) ---------------------------------------------------------
+
+func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
+	protectConfigFile(t)
+	withLiveConfig(t, Config{Port: 5001, SmartThings: SmartThingsConfig{
+		AllowedHubs: []string{"192.168.1.20"}, ExposeSession: true,
+	}})
+
+	// GET hands the GUI every §3.7 key.
+	w := httptest.NewRecorder()
+	webAPI(w, httptest.NewRequest("GET", "/api/config", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET status %d", w.Code)
+	}
+	st, ok := decodeBody(t, w)["smartthings"].(map[string]any)
+	if !ok {
+		t.Fatalf("no smartthings object: %s", w.Body.String())
+	}
+	if st["expose_session"] != true || st["expose_session_user"] != false {
+		t.Errorf("smartthings = %v", st)
+	}
+	// #95: the retired key is not offered to a client any more.
+	if _, ok := st["discovery"]; ok {
+		t.Errorf("GET still exposes smartthings.discovery: %v", st)
+	}
+	hubs, _ := st["allowed_hubs"].([]any)
+	if len(hubs) != 1 || hubs[0] != "192.168.1.20" {
+		t.Errorf("allowed_hubs = %v", st["allowed_hubs"])
+	}
+
+	// POST writes them back and the live config follows without a restart.
+	// The body still carries the retired discovery key, the way an older
+	// WebUI page would send it: it must be ignored, not rejected (#95).
+	w = httptest.NewRecorder()
+	webAPI(w, postJSON("/api/config", `{"port":5001,"smartthings":{"discovery":false,"allowed_hubs":["10.0.0.7"],"expose_session":false,"expose_session_user":true}}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST status %d: %s", w.Code, w.Body.String())
+	}
+	got := getConfig().SmartThings
+	if got.ExposeSession || !got.ExposeSessionUser {
+		t.Errorf("live config = %+v", got)
+	}
+	if len(got.AllowedHubs) != 1 || got.AllowedHubs[0] != "10.0.0.7" {
+		t.Errorf("allowed_hubs = %v", got.AllowedHubs)
+	}
+
+	// A request made right afterwards sees the saved values (no restart).
+	stSrv.ResetRateLimit()
+	d := stDo(t, http.MethodGet, "/st/v1/description", "10.0.0.7", "", "")
+	if d.Code != http.StatusOK {
+		t.Fatalf("description after save: status %d", d.Code)
+	}
+	if stJSON(t, d)["port"] != float64(5001) {
+		t.Errorf("description port = %v", stJSON(t, d)["port"])
+	}
+}

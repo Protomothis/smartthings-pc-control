@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	svcnotify "github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
 // baseConfig is what GET /api/config hands the tab: masked token, the full
@@ -37,25 +39,34 @@ func TestNotifyCatalogueCoversDesignDoc(t *testing.T) {
 			kinds = append(kinds, c.cat+"."+k.kind)
 		}
 	}
-	if len(kinds) != 21 {
-		t.Fatalf("catalogue has %d kinds, want 21: %v", len(kinds), kinds)
-	}
 	for _, hidden := range []string{"system.test", "system.digest"} {
 		if slices.Contains(kinds, hidden) {
 			t.Errorf("%s must not be user-toggleable", hidden)
 		}
 	}
-	// #87: the defaults this tab falls back to are the service's
-	// (service/notify/config.go). A checkbox opening on the wrong one
+	// The tab offers exactly the service's catalogue, and (#87) opens each
+	// checkbox on the service's default: one opening on the wrong value
 	// would tell the user something the service does not do.
-	for key, want := range map[string]bool{
-		"schedule.created": false, "schedule.cancelled": false,
-		"power.stopping": true, "power.started": true,
-		"remote.received": true, "system.updated": true,
-	} {
+	service := map[string]bool{}
+	for cat, ks := range svcnotify.DefaultConfig() {
+		for kind, on := range ks {
+			service[cat+"."+kind] = on
+		}
+	}
+	for _, key := range kinds {
+		want, ok := service[key]
+		if !ok {
+			t.Errorf("%s is not in the service's catalogue", key)
+			continue
+		}
 		cat, kind, _ := strings.Cut(key, ".")
 		if got := notifyValue(Config{}, cat, kind); got != want {
 			t.Errorf("notifyValue(%s) = %v, want %v (service catalogue default)", key, got, want)
+		}
+	}
+	for key := range service {
+		if !slices.Contains(kinds, key) {
+			t.Errorf("the service's %s has no checkbox", key)
 		}
 	}
 	// Every kind and category has both translations.

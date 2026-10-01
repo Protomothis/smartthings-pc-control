@@ -3,8 +3,6 @@ package service
 // Tests for the battery report (#112, docs/design/media-notify.md §13).
 
 import (
-	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,114 +42,6 @@ func stubBattery(t *testing.T, m *batteryMonitor) {
 	orig := battery
 	battery = m
 	t.Cleanup(func() { battery = orig })
-}
-
-func TestSTStatusBatteryAndFeatures(t *testing.T) {
-	stSetup(t, Config{Port: 5001})
-	stubAwake(t)
-
-	// Desktop: the block is there, "battery" is not in features.
-	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255}}}
-	m := f.monitor()
-	m.Poll()
-	stubBattery(t, m)
-	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	bat, ok := got["battery"].(map[string]any)
-	if !ok || bat["present"] != false || bat["percent"] != float64(-1) || bat["charging"] != false || bat["ac"] != true {
-		t.Errorf("desktop battery = %v", got["battery"])
-	}
-	if features := fmt.Sprint(got["features"]); features != "[awake notify presets]" {
-		t.Errorf("desktop features = %v, want [awake notify presets]", features)
-	}
-
-	// Laptop: "battery" joins features.
-	f = &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 1 | 8, BatteryLifePercent: 80}}}
-	m = f.monitor()
-	m.Poll()
-	stubBattery(t, m)
-	got = stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	bat = got["battery"].(map[string]any)
-	if bat["present"] != true || bat["percent"] != float64(80) || bat["charging"] != true || bat["ac"] != true {
-		t.Errorf("laptop battery = %v", bat)
-	}
-	if features := fmt.Sprint(got["features"]); features != "[awake battery notify presets]" {
-		t.Errorf("laptop features = %v, want [awake battery notify presets]", features)
-	}
-}
-
-func TestBatteryChangedIsPushed(t *testing.T) {
-	stPushSetup(t, Config{Port: 5001})
-	startNotifier(nil)
-	t.Cleanup(stopNotifier)
-	f := &fakeBattery{readings: []systemPowerStatus{
-		{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 21},
-		{ACLineStatus: 0, BatteryFlag: 2, BatteryLifePercent: 20},
-	}}
-	m := f.monitor()
-	m.OnChange = emitBatteryChanged
-	stubBattery(t, m)
-	cb := newCallbackServer(t)
-	subscribeTo(t, cb, 600)
-
-	m.Poll()
-	m.Poll()
-	got := cb.wait(t)
-	if got["type"] != "battery.changed" {
-		t.Fatalf("type = %v", got["type"])
-	}
-	data, _ := got["data"].(map[string]any)
-	if data["percent"] != "20" || data["present"] != "true" || data["charging"] != "false" || data["ac"] != "false" {
-		t.Errorf("data = %v", data)
-	}
-	status, _ := got["status"].(map[string]any)
-	if bat, _ := status["battery"].(map[string]any); bat["percent"] != float64(20) {
-		t.Errorf("status.battery = %v", status["battery"])
-	}
-}
-
-func TestTelegramStatusBatteryLine(t *testing.T) {
-	initLogger()
-	prev := getConfig()
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"}})
-	t.Cleanup(func() { setConfig(prev) })
-	stubAwake(t)
-	h := tgCtl
-
-	for _, tc := range []struct {
-		raw  systemPowerStatus
-		want string // "" = no battery line
-	}{
-		{systemPowerStatus{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255}, ""},
-		{systemPowerStatus{ACLineStatus: 1, BatteryFlag: 1 | 8, BatteryLifePercent: 80}, "배터리: 80% · 충전 중"},
-		{systemPowerStatus{ACLineStatus: 1, BatteryFlag: 1, BatteryLifePercent: 100}, "배터리: 100% · 전원 연결됨"},
-		{systemPowerStatus{ACLineStatus: 0, BatteryFlag: 2, BatteryLifePercent: 15}, "배터리: 15%"},
-		{systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 255}, "배터리: 잔량 알 수 없음"},
-	} {
-		f := &fakeBattery{readings: []systemPowerStatus{tc.raw}}
-		m := f.monitor()
-		m.Poll()
-		stubBattery(t, m)
-		status, _, _ := h.HandleCommand(context.Background(), "42", "status", nil)
-		if tc.want == "" {
-			if strings.Contains(status, "배터리") {
-				t.Errorf("desktop /status has a battery line:\n%s", status)
-			}
-			continue
-		}
-		if !strings.Contains(status, tc.want) {
-			t.Errorf("/status lacks %q:\n%s", tc.want, status)
-		}
-	}
-
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
-	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 8, BatteryLifePercent: 42}}}
-	m := f.monitor()
-	m.Poll()
-	stubBattery(t, m)
-	status, _, _ := h.HandleCommand(context.Background(), "42", "status", nil)
-	if !strings.Contains(status, "Battery: 42% · charging") {
-		t.Errorf("en /status:\n%s", status)
-	}
 }
 
 func TestBatteryAPI(t *testing.T) {

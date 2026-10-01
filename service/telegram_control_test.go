@@ -65,15 +65,6 @@ func tgBody(h string) string {
 	return strings.TrimPrefix(h, header)
 }
 
-// tgStatus is the bot's /status reply. Its first line is the header with
-// the version on it, so the header the bot puts on every reply adds
-// nothing.
-func tgStatus(t *testing.T) string {
-	t.Helper()
-	text, _, _ := tgCtl.HandleCommand(context.Background(), "42", "status", nil)
-	return text
-}
-
 // Every command reply starts with the PC-name header (#75).
 func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	initLogger()
@@ -116,45 +107,96 @@ func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	}
 }
 
-func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
+// TestTelegramStatusLines: the /status reply has one line per piece of
+// state, and a line only while there is something to say (no battery line
+// on a desktop, no activity line with the option off, no media line with
+// nothing playing). The line texts themselves are tgcontrol's
+// (texts_test.go); this checks the reply is built from the live stores.
+func TestTelegramStatusLines(t *testing.T) {
 	initLogger()
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko", PCName: "MY<PC>"}})
 	stubTrayLauncher(t, nil)
-	defer cancelScheduleBy("api")
-	origVersion := Version
-	Version = "v9.9.9-test"
-	defer func() { Version = origVersion }()
-	// Other tests drive newCommandHandler, which records the last remote command.
-	lastRemoteMu.Lock()
-	lastRemote = remoteRecord{}
-	lastRemoteMu.Unlock()
-
-	h := tgCtl
-	html, kb, err := h.HandleCommand(context.Background(), "42", "status", nil)
-	if err != nil || kb != nil {
-		t.Fatalf("status: err=%v kb=%v", err, kb)
-	}
-	for _, want := range []string{"v9.9.9-test", "MY&lt;PC&gt;", "가동:", "예약: 없음", "마지막 원격 명령: 없음"} {
-		if !strings.Contains(html, want) {
-			t.Errorf("status lacks %q:\n%s", want, html)
+	onBattery := func(raw systemPowerStatus) func(*testing.T, *Config) {
+		return func(t *testing.T, _ *Config) {
+			f := &fakeBattery{readings: []systemPowerStatus{raw}}
+			m := f.monitor()
+			m.Poll()
+			stubBattery(t, m)
 		}
 	}
+	for _, tc := range []struct {
+		name  string
+		lang  string
+		setup func(t *testing.T, cfg *Config)
+		want  []string
+		not   []string
+	}{
+		{"idle", "ko", nil,
+			[]string{"v9.9.9-test", "MY&lt;PC&gt;", "가동:", "예약: 없음", "마지막 원격 명령: 없음"},
+			[]string{"배터리", "활동", "미디어:"}},
+		{"a schedule and a remote command", "ko", func(t *testing.T, _ *Config) {
+			if err := setSchedule("lock", 30*time.Minute, originTelegram); err != nil {
+				t.Fatal(err)
+			}
+			noteRemoteCommandBy("shutdown", "10.0.0.5", "remote")
+		}, []string{"예약: 잠금 · 텔레그램 · ", "s 남음 (", "마지막 원격 명령: 종료 · <code>10.0.0.5</code>"}, nil},
+		{"in English", "en", func(t *testing.T, _ *Config) {
+			if err := setSchedule("lock", 30*time.Minute, originTelegram); err != nil {
+				t.Fatal(err)
+			}
+			noteRemoteCommandBy("shutdown", "10.0.0.5", "remote")
+		}, []string{"Schedule: Lock · Telegram", "Last remote command: Shut down"}, nil},
+		{"laptop charging", "ko", onBattery(systemPowerStatus{ACLineStatus: 1, BatteryFlag: 1 | 8, BatteryLifePercent: 80}), []string{"배터리: 80% · 충전 중"}, nil},
+		{"laptop full on AC", "ko", onBattery(systemPowerStatus{ACLineStatus: 1, BatteryFlag: 1, BatteryLifePercent: 100}), []string{"배터리: 100% · 전원 연결됨"}, nil},
+		{"laptop on battery", "ko", onBattery(systemPowerStatus{ACLineStatus: 0, BatteryFlag: 2, BatteryLifePercent: 15}), []string{"배터리: 15%"}, []string{"충전", "전원"}},
+		{"laptop, level unknown", "ko", onBattery(systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 255}), []string{"배터리: 잔량 알 수 없음"}, nil},
+		{"laptop in English", "en", onBattery(systemPowerStatus{ACLineStatus: 1, BatteryFlag: 8, BatteryLifePercent: 42}), []string{"Battery: 42% · charging"}, nil},
+		{"apps running", "ko", func(t *testing.T, cfg *Config) {
+			stubProcesses(t, "steam.exe", "obs64.exe")
+			cfg.Activity = ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam"), watch("obs64.exe", "OBS"), watch("code.exe", "VS Code")}}
+			activityScan.Scan(cfg.Activity)
+		}, []string{"\n활동: Steam 실행 중 · 외 1개"}, nil},
+		{"apps running, option off", "ko", func(t *testing.T, cfg *Config) {
+			stubProcesses(t, "steam.exe")
+			activityScan.Scan(ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam")}})
+		}, nil, []string{"활동"}},
+		{"playing", "ko", func(t *testing.T, cfg *Config) {
+			cfg.Media = MediaConfig{Enabled: true, NowPlaying: true}
+			setConfig(*cfg)
+			recordMediaSample(spotifyTrack, nowPlayingSetup(t, *cfg))
+		}, []string{"\n미디어: ▶ Hype Boy — NewJeans · Spotify"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{Port: 5001, Telegram: TelegramConfig{Lang: tc.lang, PCName: "MY<PC>"}}
+			setConfig(cfg)
+			t.Cleanup(func() { setConfig(Config{Port: 5001}); cancelScheduleBy("api") })
+			origVersion := Version
+			Version = "v9.9.9-test"
+			t.Cleanup(func() { Version = origVersion })
+			lastRemoteMu.Lock()
+			lastRemote = remoteRecord{}
+			lastRemoteMu.Unlock()
+			stubAwake(t)
+			onBattery(systemPowerStatus{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255})(t, &cfg)
+			if tc.setup != nil {
+				tc.setup(t, &cfg)
+				setConfig(cfg)
+			}
 
-	if err := setSchedule("lock", 30*time.Minute, originTelegram); err != nil {
-		t.Fatal(err)
-	}
-	noteRemoteCommandBy("shutdown", "10.0.0.5", "remote")
-	html, _, _ = h.HandleCommand(context.Background(), "42", "status", nil)
-	for _, want := range []string{"예약: 잠금 · 텔레그램 · ", "s 남음 (", "마지막 원격 명령: 종료 · <code>10.0.0.5</code>"} {
-		if !strings.Contains(html, want) {
-			t.Errorf("status lacks %q:\n%s", want, html)
-		}
-	}
-
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
-	html, _, _ = h.HandleCommand(context.Background(), "42", "status", nil)
-	if !strings.Contains(html, "Schedule: Lock · Telegram") || !strings.Contains(html, "Last remote command: Shut down") {
-		t.Errorf("en status:\n%s", html)
+			html, kb, err := tgCtl.HandleCommand(context.Background(), "42", "status", nil)
+			if err != nil || kb != nil {
+				t.Fatalf("status: err=%v kb=%v", err, kb)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(html, want) {
+					t.Errorf("/status lacks %q:\n%s", want, html)
+				}
+			}
+			for _, not := range tc.not {
+				if strings.Contains(html, not) {
+					t.Errorf("/status has %q:\n%s", not, html)
+				}
+			}
+		})
 	}
 }
 

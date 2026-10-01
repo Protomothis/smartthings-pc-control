@@ -254,37 +254,6 @@ func TestRunUserActionInvalidAudioIgnored(t *testing.T) {
 	}
 }
 
-func TestAudioStoreOrdering(t *testing.T) {
-	resetAudioSample()
-	t.Cleanup(resetAudioSample)
-
-	if _, ok := currentAudio(); ok {
-		t.Fatal("currentAudio reports a sample before any was stored")
-	}
-	t0 := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	if !noteAudioSample(useraction.Audio{Volume: 10}, t0.Add(2*time.Second)) {
-		t.Fatal("first sample not stored")
-	}
-	// An older reading arriving late (a heartbeat racing a command reply)
-	// does not replace the newer one.
-	if noteAudioSample(useraction.Audio{Volume: 99}, t0) {
-		t.Error("an older sample was stored")
-	}
-	if s, _ := currentAudio(); s.Volume != 10 || !s.UpdatedAt.Equal(t0.Add(2*time.Second)) {
-		t.Errorf("currentAudio = %+v, want the newer sample", s)
-	}
-	// Same time: the later call wins; newer: replaces.
-	if !noteAudioSample(useraction.Audio{Volume: 11}, t0.Add(2*time.Second)) {
-		t.Error("an equal-time sample was not stored")
-	}
-	if !noteAudioSample(useraction.Audio{Volume: 12, Muted: true, Device: "d"}, t0.Add(3*time.Second)) {
-		t.Error("a newer sample was not stored")
-	}
-	if s, _ := currentAudio(); s.Volume != 12 || !s.Muted || s.Device != "d" {
-		t.Errorf("currentAudio = %+v", s)
-	}
-}
-
 func TestSessionHeartbeatAudio(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
 	idleSetup(t)

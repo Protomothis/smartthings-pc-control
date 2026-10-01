@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
-	"github.com/Protomothis/smartthings-pc-control/service/status"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/service/webui"
 )
 
@@ -98,13 +98,17 @@ func TestWebUIStatusAPI(t *testing.T) {
 	noteLatestRelease("v1.2.1")
 	webSrv.Uptime = func() time.Duration { return 90 * time.Minute }
 	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: true, User: "kim"}, nil }
-	savedHub, _ := stSrv.HubLastSeen()
-	stSrv.SetHubLastSeen(status.HubSeen{IP: "192.168.1.20", DriverVersion: "1.1.0", At: time.Now().Add(-time.Minute)})
 	t.Cleanup(func() {
 		Version, webSrv.Uptime, sources.sessionQuery = savedVersion, savedUptime, savedQuery
 		latestRelease.Store(savedLatest)
-		stSrv.SetHubLastSeen(savedHub)
 	})
+	// A hub (driver 1.1.0) has called: one authenticated /st/v1 request.
+	stSrv.ResetRateLimit()
+	hello := httptest.NewRequest("GET", "/st/v1/status", nil)
+	hello.RemoteAddr = "192.168.1.20:51234"
+	hello.Header.Set("X-PC-Secret", pageSecret)
+	hello.Header.Set("User-Agent", stapi.DriverAgent+"/1.1.0")
+	stSrv.Handler().ServeHTTP(httptest.NewRecorder(), hello)
 
 	if w := getPage(t, "/api/status", nil, true); w.Code != http.StatusUnauthorized {
 		t.Errorf("GET /api/status without a session = %d, want 401", w.Code)
