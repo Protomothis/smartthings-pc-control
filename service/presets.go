@@ -18,6 +18,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -85,7 +86,7 @@ func presetResultCode(err error) string {
 	if err == nil {
 		return "started"
 	}
-	_, code, _ := actionErrorStatus(err)
+	_, code, _ := action.Status(err)
 	return code
 }
 
@@ -121,7 +122,7 @@ func handleSTPreset(w http.ResponseWriter, r *http.Request, body stCommandReques
 	err := runPreset(r.Context(), p, "smartthings "+from)
 	notePresetCommand(p, from, "smartthings", presetResultCode(err))
 	if err != nil {
-		writeActionError(w, err)
+		action.WriteError(w, err)
 		return
 	}
 	// Only a start is "executed"; a refusal is in last_command and the log.
@@ -186,7 +187,7 @@ func servePresetsTestAPI(w http.ResponseWriter, r *http.Request) {
 
 func writePresetAPIResult(w http.ResponseWriter, p Preset, err error) {
 	if err != nil {
-		status, code, msg := actionErrorStatus(err)
+		status, code, msg := action.Status(err)
 		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
 		return
 	}

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -133,7 +134,7 @@ var scheduleMediaRefresh = func() {
 // by the opt-in: callers decide what to show.
 func readNowPlayingNow(ctx context.Context) (useraction.NowPlaying, error) {
 	if !getConfig().Media.Enabled {
-		return useraction.NowPlaying{}, errMediaDisabled
+		return useraction.NowPlaying{}, action.ErrMediaDisabled
 	}
 	res, err := runUserActionFn(ctx, "media", useraction.MediaInfo)
 	if err != nil {
@@ -197,7 +198,7 @@ func mediaAPIView(cfg Config) mediaAPIBody {
 //	POST {"command":"next"}             one media command, then the state
 //	POST {"command":"volume","value":30}
 //
-// The commands are the /st/v1 ones (mediaCommandKinds) with the same
+// The commands are the /st/v1 ones (action.IsMedia) with the same
 // ranges, switch and errors: 403 media_disabled, 409 no_user_session,
 // 400, 501 unsupported, 502 failed, 504 timeout.
 var handleMediaAPI = apiAuth(serveMediaAPI, http.MethodGet, http.MethodPost)
@@ -215,13 +216,13 @@ func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if !isMediaCommand(body.Command) {
+	if !action.IsMedia(body.Command) {
 		writeAPIError(w, http.StatusBadRequest, "unknown media command")
 		return
 	}
 	res, err := runMediaCommand(r.Context(), body.Command, body.Value)
 	if err != nil {
-		f := classifyActionError(err)
+		f := action.Classify(err)
 		logMsg("App: %s failed: %v", body.Command, err)
 		httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
 		return

@@ -27,6 +27,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 
 	"golang.org/x/sys/windows"
@@ -594,7 +595,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		handleSTPreset(w, r, body, from)
 		return
 	}
-	if isMediaCommand(name) {
+	if action.IsMedia(name) {
 		handleSTMedia(w, r, name, body, from)
 		return
 	}

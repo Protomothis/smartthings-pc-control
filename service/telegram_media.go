@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -72,7 +73,7 @@ func tgVolume(ctx context.Context, args []string) (string, *telegram.InlineKeybo
 	return tgMediaCommand(ctx, name, &value)
 }
 
-// tgMediaCommand runs one command from mediaCommandKinds and words the
+// tgMediaCommand runs one media command (action.IsMedia) and words the
 // result: the audio state after a volume or mute command, what the media
 // session did after a media command ("⏸ 일시정지했습니다 · Spotify"), or
 // "⏯ 재생/일시정지 키를 보냈습니다" when only the media key could be pressed.
@@ -82,7 +83,7 @@ func tgMediaCommand(ctx context.Context, name string, value *int) (string, *tele
 		return tgMediaError(err)
 	}
 	logMsg("Telegram: %s", name)
-	if !mediaCommandKinds[name] {
+	if !action.IsAudio(name) {
 		return tgMediaResult(name, res, getConfig().Media.NowPlaying), nil, nil
 	}
 	if res.Audio == nil {
@@ -130,9 +131,9 @@ func tgMediaLabel(name string) string {
 // setting or an empty PC is an answer, not a fault.
 func tgMediaError(err error) (string, *telegram.InlineKeyboard, error) {
 	var uaErr *userActionError
-	var valErr *errMediaValue
+	var valErr *action.ValueError
 	switch {
-	case errors.Is(err, errMediaDisabled):
+	case errors.Is(err, action.ErrMediaDisabled):
 		return tgText("media_disabled"), nil, nil
 	case errors.Is(err, errNoUserSession):
 		return tgText("media_no_user"), nil, nil

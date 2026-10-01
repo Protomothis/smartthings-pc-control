@@ -13,86 +13,20 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 const (
-	// pcNotifyDefaultTitle is the toast title when a request sends none.
-	pcNotifyDefaultTitle = "SmartThings"
-	// pcNotifyMaxText and pcNotifyMaxTitle are counted in characters
-	// (runes) after control characters are removed (§3).
-	pcNotifyMaxText  = useraction.MaxTextRunes
-	pcNotifyMaxTitle = useraction.MaxTitleRunes
 	// pcNotifyPerMinute is how many notifications one source may send in
 	// any 60 seconds (§3, §7).
 	pcNotifyPerMinute = 10
 	pcNotifyWindow    = time.Minute
 )
-
-// cleanNotifyText removes what must not reach a toast: line breaks and
-// tabs become spaces, every other control character and the bidirectional
-// overrides (which could make a toast read differently from what was sent)
-// are dropped, and runs of spaces collapse. Surrounding space is trimmed.
-func cleanNotifyText(s string) string {
-	s = strings.ToValidUTF8(s, "")
-	var b strings.Builder
-	space := false
-	for _, r := range s {
-		switch {
-		case unicode.IsSpace(r): // \n, \r, \t included
-			space = true
-			continue
-		case unicode.IsControl(r), isBidiControl(r):
-			continue
-		}
-		if space && b.Len() > 0 {
-			b.WriteByte(' ')
-		}
-		space = false
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-// isBidiControl reports the explicit directional formatting characters
-// (LRE…RLO, LRI…PDI) and the marks ALM, LRM, RLM.
-func isBidiControl(r rune) bool {
-	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) ||
-		r == 0x061C || r == 0x200E || r == 0x200F
-}
-
-// pcNotifyError is a request the notify rules refuse. Code is the wire
-// error ("notify_disabled", "bad_text", "rate_limited").
-type pcNotifyError struct {
-	Code       string
-	Message    string
-	RetryAfter time.Duration // rate_limited only
-}
-
-func (e *pcNotifyError) Error() string { return e.Code + ": " + e.Message }
-
-// prepareNotify validates and cleans one request's title and text.
-func prepareNotify(title, text string) (string, string, error) {
-	text = cleanNotifyText(text)
-	if n := utf8.RuneCountInString(text); n == 0 || n > pcNotifyMaxText {
-		return "", "", &pcNotifyError{Code: "bad_text",
-			Message: fmt.Sprintf("text must be 1-%d characters (got %d)", pcNotifyMaxText, n)}
-	}
-	title = cleanNotifyText(title)
-	if title == "" {
-		title = pcNotifyDefaultTitle
-	}
-	if n := utf8.RuneCountInString(title); n > pcNotifyMaxTitle {
-		return "", "", &pcNotifyError{Code: "bad_text",
-			Message: fmt.Sprintf("title must be at most %d characters (got %d)", pcNotifyMaxTitle, n)}
-	}
-	return title, text, nil
-}
 
 // ---- rate limit ---------------------------------------------------------
 
@@ -120,14 +54,14 @@ func notifyArgs(title, text string) []string {
 // app's test button, which must work before the feature is on.
 func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (pcNotifyResult, error) {
 	if checkEnabled && !cfg.Enabled {
-		return pcNotifyResult{}, &pcNotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
+		return pcNotifyResult{}, &action.NotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
 	}
-	title, text, err := prepareNotify(title, text)
+	title, text, err := action.PrepareNotify(title, text)
 	if err != nil {
 		return pcNotifyResult{}, err
 	}
 	if ok, wait := pcNotifyLimits.Allow(source); !ok {
-		return pcNotifyResult{}, &pcNotifyError{Code: "rate_limited", RetryAfter: wait,
+		return pcNotifyResult{}, &action.NotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
 	res, err := pcNotifyRun(ctx, notifyArgs(title, text)...)
@@ -178,7 +112,7 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 	from := httpx.RemoteHost(r.RemoteAddr)
 	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text)
 	if err != nil {
-		writeActionError(w, err)
+		action.WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, stNotifyResponse{OK: true, pcNotifyResult: res})
@@ -206,7 +140,7 @@ func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := sendPCNotify(r.Context(), NotifyPCConfig{Enabled: true}, false, "app", body.Title, text)
 	if err != nil {
-		status, code, msg := actionErrorStatus(err)
+		status, code, msg := action.Status(err)
 		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
 		return
 	}

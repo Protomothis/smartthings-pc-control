@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
@@ -55,7 +56,7 @@ func (telegramControl) say(chatID string, args []string) (string, *telegram.Inli
 
 // tgActionError words a failed user-session action (/say, /run).
 func tgActionError(err error) string {
-	var ne *pcNotifyError
+	var ne *action.NotifyError
 	if errors.As(err, &ne) {
 		switch ne.Code {
 		case "notify_disabled":
@@ -67,7 +68,7 @@ func tgActionError(err error) string {
 			return tgText("say_rate_limited", max(secs, 1))
 		}
 	}
-	switch _, code, msg := actionErrorStatus(err); code {
+	switch _, code, msg := action.Status(err); code {
 	case "no_user_session":
 		return tgText("no_user_session")
 	case "timeout":

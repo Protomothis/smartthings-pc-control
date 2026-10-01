@@ -9,115 +9,38 @@ package service
 // These are not registry commands (commands.go): they take an argument,
 // run at once — no grace period, no schedule — and are neither recorded as
 // last_command nor notified to Telegram (a notification per slider step
-// would be noise, §3). SmartThings and Telegram share mediaCommandArgs and
+// would be noise, §3). SmartThings and Telegram share action.MediaArgs and
 // runMediaCommand, so both apply the same ranges and the same media.enabled
 // switch.
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
-
-// defaultVolumeStep is volumeup/volumedown without a value (§3), and the
-// Windows volume keys' own step.
-const defaultVolumeStep = 5
-
-// errMediaDisabled is returned while media.enabled is off; /st/v1 answers
-// 403 media_disabled.
-var errMediaDisabled = errors.New("media_disabled")
-
-// errMediaValue is a value outside the command's range (400).
-type errMediaValue struct{ msg string }
-
-func (e *errMediaValue) Error() string { return e.msg }
-
-// mediaCommandKinds are the /st/v1 command names, true for the audio ones
-// (their reply carries the new audio state), false for the media keys.
-var mediaCommandKinds = map[string]bool{
-	"volume":     true,
-	"volumeup":   true,
-	"volumedown": true,
-	"mute":       true,
-	"unmute":     true,
-	"playpause":  false,
-	"play":       false,
-	"pause":      false,
-	"stop":       false,
-	"next":       false,
-	"prev":       false,
-}
-
-// isMediaCommand reports whether name is one of mediaCommandKinds.
-func isMediaCommand(name string) bool {
-	_, ok := mediaCommandKinds[name]
-	return ok
-}
-
-// mediaCommandArgs builds the user-action argument vector for a command:
-//
-//	volume      value 0–100, required
-//	volumeup    value 1–100, default 5
-//	volumedown  value 1–100, default 5
-//	mute        audio mute on      (value ignored)
-//	unmute      audio mute off
-//	play…prev   media <key>        (the session tells play from pause, #117)
-func mediaCommandArgs(name string, value *int) ([]string, error) {
-	switch name {
-	case "volume":
-		if value == nil {
-			return nil, &errMediaValue{"volume needs a value 0-100"}
-		}
-		if *value < 0 || *value > 100 {
-			return nil, &errMediaValue{"value must be between 0 and 100"}
-		}
-		return []string{"audio", "set", strconv.Itoa(*value)}, nil
-	case "volumeup", "volumedown":
-		step := defaultVolumeStep
-		if value != nil {
-			step = *value
-		}
-		if step < 1 || step > 100 {
-			return nil, &errMediaValue{"value must be between 1 and 100"}
-		}
-		sign := "+"
-		if name == "volumedown" {
-			sign = "-"
-		}
-		return []string{"audio", "step", sign + strconv.Itoa(step)}, nil
-	case "mute":
-		return []string{"audio", "mute", "on"}, nil
-	case "unmute":
-		return []string{"audio", "mute", "off"}, nil
-	case "playpause", "play", "pause", "stop", "next", "prev":
-		return []string{"media", name}, nil
-	}
-	return nil, fmt.Errorf("not a media command: %q", name)
-}
 
 // runUserActionFn is runUserAction, replaced by the tests.
 var runUserActionFn = runUserAction
 
 // runMediaCommand checks media.enabled, builds the arguments and runs them
-// in the user session. err is errMediaDisabled, *errMediaValue, or one of
+// in the user session. err is action.ErrMediaDisabled, *action.ValueError, or one of
 // runUserAction's errors (errNoUserSession, errUserActionTimeout,
 // *userActionError, ...).
 func runMediaCommand(ctx context.Context, name string, value *int) (UserActionResult, error) {
 	if !getConfig().Media.Enabled {
-		return UserActionResult{}, errMediaDisabled
+		return UserActionResult{}, action.ErrMediaDisabled
 	}
-	args, err := mediaCommandArgs(name, value)
+	args, err := action.MediaArgs(name, value)
 	if err != nil {
 		return UserActionResult{}, err
 	}
 	res, err := runUserActionFn(ctx, args...)
-	if err == nil && !mediaCommandKinds[name] {
+	if err == nil && !action.IsAudio(name) {
 		// A media key changes what plays: show the new state at once and
 		// read the session again once the player has caught up (#117).
 		noteMediaCommand(res)
@@ -130,7 +53,7 @@ func runMediaCommand(ctx context.Context, name string, value *int) (UserActionRe
 // for Telegram's /vol without an argument.
 func readAudioNow(ctx context.Context) (useraction.Audio, error) {
 	if !getConfig().Media.Enabled {
-		return useraction.Audio{}, errMediaDisabled
+		return useraction.Audio{}, action.ErrMediaDisabled
 	}
 	res, err := runUserActionFn(ctx, "audio", "get")
 	if err != nil {
@@ -205,7 +128,7 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 	}
 	res, err := runMediaCommand(r.Context(), name, body.Value)
 	if err != nil {
-		f := classifyActionError(err)
+		f := action.Classify(err)
 		logMsg("ST API: %s from %s failed: %v", name, from, err)
 		if f.Detail == "" {
 			stError(w, f.Status, f.Code)
@@ -216,7 +139,7 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 	}
 	logMsg("ST API: %s from %s", name, from)
 	resp := stCommandResponse{Accepted: true, Executed: true, Schedule: stScheduleView()}
-	if mediaCommandKinds[name] && res.Audio != nil {
+	if action.IsAudio(name) && res.Audio != nil {
 		// The reply's own reading, stamped now: the store may hold it or
 		// a newer heartbeat, and the caller asked about this command.
 		view := stAudioView(audioSample{Audio: *res.Audio, UpdatedAt: audioNow()})
