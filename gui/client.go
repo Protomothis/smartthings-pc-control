@@ -599,22 +599,18 @@ func (c *Client) RestartService() error {
 	return nil
 }
 
-// TestCommand triggers a command through /api/test/{name}.
+// TestCommand runs a command right away through POST /api/command (#120);
+// the service logs and notifies it as coming from the desktop app.
 func (c *Client) TestCommand(name string) (string, error) {
-	resp, err := c.do("GET", "/api/test/"+name, nil)
+	resp, err := c.do("POST", "/api/command", map[string]string{"command": name, "by": "app"})
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	var r struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+	var r apiStatus
+	json.NewDecoder(resp.Body).Decode(&r)
+	if err := r.err(resp, "command failed"); err != nil {
 		return "", err
-	}
-	if r.Status != "ok" {
-		return "", fmt.Errorf("%s", r.Message)
 	}
 	return r.Message, nil
 }

@@ -56,7 +56,7 @@ func checkAuth(r *http.Request, secret string) bool {
 	}
 	sessionMu.RLock()
 	defer sessionMu.RUnlock()
-	return cookie.Value == sessionToken && sessionToken != ""
+	return sessionToken != "" && secretEqual(cookie.Value, sessionToken)
 }
 
 // checkCSRF validates CSRF protection for POST requests.
@@ -172,6 +172,35 @@ func StartWebUI(stop chan struct{}) {
 		removeWebUIFirewallRule()
 	}
 
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", bindAddr, webPort),
+		Handler: webUIHandler(webPort, pagesEnabled),
+	}
+
+	go func() {
+		<-stop
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
+
+	if bindAddr == "" {
+		logMsg("WebUI listening on http://0.0.0.0:%d (remote access enabled)", webPort)
+	} else {
+		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
+	}
+	server.ListenAndServe()
+}
+
+// webUIHandler is the whole WebUI server behind its Host check (#120).
+// remote is whether browser access from the LAN is on (pagesEnabled).
+func webUIHandler(port int, remote bool) http.Handler {
+	return webUIHostGuard(newWebUIMux(remote), port, remote)
+}
+
+// newWebUIMux registers the pages and the JSON API. Without pagesEnabled
+// the HTML pages answer with the "disabled" notice.
+func newWebUIMux(pagesEnabled bool) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// disabledPage is served for the HTML pages while browser access is off.
@@ -235,7 +264,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		}
 
 		liveCfg := getConfig()
-		if body.Secret != liveCfg.Secret {
+		if !secretEqual(body.Secret, liveCfg.Secret) {
 			recordLoginFailure(r.RemoteAddr)
 			logMsg("WebUI login failed from %s", r.RemoteAddr)
 			w.Header().Set("Content-Type", "application/json")
@@ -246,13 +275,14 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 
 		// Generate session token
 		resetLoginAttempts(r.RemoteAddr)
+		token := generateSessionToken()
 		sessionMu.Lock()
-		sessionToken = generateSessionToken()
+		sessionToken = token
 		sessionMu.Unlock()
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session",
-			Value:    sessionToken,
+			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
@@ -347,27 +377,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	mux.HandleFunc("/api/telegram/chats", handleTelegramChats)
 	mux.HandleFunc("/api/telegram/state", handleTelegramState)
 
-	// API: Test commands
-	mux.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		command := r.URL.Path[len("/api/test/"):]
-		w.Header().Set("Content-Type", "application/json")
-
-		cmd, ok := Commands[command]
-		if !ok {
-			json.NewEncoder(w).Encode(map[string]string{"status": "error", "command": command, "message": "Unknown command"})
-			return
-		}
-
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "command": command, "message": "Command sent"})
-		if cmd.Execute != nil {
-			go cmd.Execute()
-		}
-	})
+	// API: run a command now — the app's command tab, tray menu and toast
+	// [Run now], and the settings page's buttons (#120). The old GET
+	// /api/test/{cmd} is gone: any page the browser loaded could use it to
+	// run forceshutdown.
+	mux.HandleFunc("/api/command", handleCommandAPI)
 
 	// API: Restart service (exit with code 1 to trigger Recovery Action)
 	mux.HandleFunc("/api/restart-service", func(w http.ResponseWriter, r *http.Request) {
@@ -504,24 +518,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
-	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", bindAddr, webPort),
-		Handler: mux,
-	}
-
-	go func() {
-		<-stop
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		server.Shutdown(ctx)
-	}()
-
-	if bindAddr == "" {
-		logMsg("WebUI listening on http://0.0.0.0:%d (remote access enabled)", webPort)
-	} else {
-		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
-	}
-	server.ListenAndServe()
+	return mux
 }
 
 // writeJSON encodes v with the JSON content type and the given status.
@@ -534,6 +531,65 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeAPIError is the {status:"error", message} shape the GUI expects.
 func writeAPIError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"status": "error", "message": msg})
+}
+
+// commandCallers are the UIs POST /api/command may name in "by", with the
+// wording the log uses. Anything else counts as the desktop app.
+var commandCallers = map[string]string{
+	"app":   "desktop app",
+	"tray":  "tray menu",
+	"toast": "toast",
+	"webui": "WebUI",
+}
+
+// handleCommandAPI serves POST /api/command {"command": "lock", "by": "app"}
+// for the UIs on this PC (#120): auth, POST only and the CSRF header, like
+// every other state-changing endpoint. The command runs at once — the user
+// is at the PC, so there is no grace period — but it is logged, recorded
+// as last_command (origin "ui") and notified like a remote command, so a
+// command nobody at the PC asked for still shows up. An unknown command is
+// a 404.
+func handleCommandAPI(w http.ResponseWriter, r *http.Request) {
+	if !authTelegramRequest(w, r, "POST") {
+		return
+	}
+	var body struct {
+		Command string `json:"command"`
+		By      string `json:"by"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(body.Command))
+	by := body.By
+	if _, ok := commandCallers[by]; !ok {
+		by = "app"
+	}
+	cmd, ok := Commands[name]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"status": "error", "command": truncate(name, 64), "message": "Unknown command"})
+		return
+	}
+	runLocalCommand(name, cmd, by)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "command": name, "message": "Command sent"})
+}
+
+// runLocalCommand executes cmd for a UI on this PC (by is a commandCallers
+// key). ping is logged but, as on every path, never recorded or notified.
+func runLocalCommand(name string, cmd Command, by string) {
+	logMsg("Command from %s: %s", commandCallers[by], name)
+	if name != "ping" {
+		noteRemoteCommandBy(name, by, originUI.String())
+		if name == "forceshutdown" {
+			emit("remote", "force", map[string]string{"from": by})
+		} else {
+			emit("remote", "received", map[string]string{"command": name, "from": by})
+		}
+	}
+	if cmd.Execute != nil {
+		go cmd.Execute()
+	}
 }
 
 // configView is what GET /api/config returns: the live Config with the

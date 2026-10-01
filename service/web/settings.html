@@ -603,8 +603,9 @@
                 if (!confirm(t('confirmExec').replace('{cmd}', cmd))) return;
             }
             try {
-                const res = await fetch('/api/test/' + cmd, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                const res = await fetch('/api/command', {method: 'POST', headers, body: JSON.stringify({command: cmd, by: 'webui'})});
                 if (res.status === 401) { window.location.href = '/login'; return; }
+                if (!res.ok) { showStatus('Failed to send command (HTTP ' + res.status + ')', 'error'); return; }
                 showStatus(cmd + ' command sent', 'success');
             } catch(e) {
                 showStatus('Failed to send command', 'error');
