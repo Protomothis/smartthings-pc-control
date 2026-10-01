@@ -47,6 +47,11 @@ func Path(tool string) string {
 	return WindowsDir() + `\System32\` + tool
 }
 
+// Explorer is explorer.exe, which lives in the Windows directory itself.
+func Explorer() string {
+	return WindowsDir() + `\explorer.exe`
+}
+
 // Command is exec.Command for a System32 tool, by absolute path.
 func Command(tool string, args ...string) *exec.Cmd {
 	return exec.Command(Path(tool), args...)

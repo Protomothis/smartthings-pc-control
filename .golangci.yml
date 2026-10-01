@@ -168,7 +168,7 @@ linters:
       # itself (log + notification).
       - path: gui/(gui|tray|toast)\.go
         linters: [errcheck]
-        source: (exec\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
+        source: (systool\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
       # Self-update: the service is restarted best-effort (the new exe starts
       # it again), the helper is reaped in the background, and the log file
       # truncation only bounds its size.
