@@ -849,26 +849,26 @@ function T.test_every_blocked_command_still_answers_its_row()
   -- on the row the command came from, and without one the spinner runs out into
   -- an error. A refused command answers the row with a forced re-emit of the
   -- value it already shows.
-  local function rows(run)
+  local function blocked_rows(run)
     local device = busy_device(state.SHUTTING_DOWN)
     with_service(nil, function() run(device) end)
     return h.emitted(device)
   end
 
   -- The command list: the busy resting value, forced.
-  local emitted = rows(BLOCKED['execute("shutdown")'])
+  local emitted = blocked_rows(BLOCKED['execute("shutdown")'])
   h.assert_equal(h.event_value(emitted, caps.COMMAND, "lastAction"), state.ACTION_BUSY_OFF)
   h.assert_true(h.event_forced(emitted, caps.COMMAND, "lastAction"))
 
   -- The switch: still "on" while `shuttingDown` (§6.2), so the toggle springs
   -- back - and forced, or the app would never see an unchanged value.
-  emitted = rows(BLOCKED["switch off"])
+  emitted = blocked_rows(BLOCKED["switch off"])
   h.assert_equal(h.event_value(emitted, "switch", "switch"), "on")
   h.assert_true(h.event_forced(emitted, "switch", "switch"),
     "a refused switch off must force the re-emit (#86)")
 
   -- The delay row: `answer_minutes_pick` runs before the guard.
-  emitted = rows(BLOCKED["schedule(30)"])
+  emitted = blocked_rows(BLOCKED["schedule(30)"])
   h.assert_equal(h.event_value(emitted, caps.SCHEDULE, "minutesPick"), state.MINUTES_PICK)
   h.assert_true(h.event_forced(emitted, caps.SCHEDULE, "minutesPick"))
 

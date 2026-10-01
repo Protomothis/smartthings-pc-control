@@ -73,11 +73,11 @@ local function with_service(opts, fn)
     end
     return true, opts.body or {}, nil
   end
-  poll.once = function(_driver, _device, poll_opts)
+  poll.once = function(_driver, polled, poll_opts)
     calls.polls = calls.polls + 1
     calls.poll_opts[#calls.poll_opts + 1] = poll_opts or {}
     if opts.on_poll then
-      opts.on_poll(_device)
+      opts.on_poll(polled)
     end
     return true
   end

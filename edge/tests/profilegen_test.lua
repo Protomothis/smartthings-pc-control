@@ -112,9 +112,9 @@ local function render(style, battery, media_component)
       in_media = false
     elseif line == "# @media-component" then
       media_at = #out + 1
-    elseif line:match("^%s*#") then
+    elseif line:match("^%s*#") then -- luacheck: ignore 542
       -- a template comment (#129)
-    elseif in_battery and not battery then
+    elseif in_battery and not battery then -- luacheck: ignore 542
       -- not a battery profile
     elseif in_media and media_component then
       media[#media + 1] = line

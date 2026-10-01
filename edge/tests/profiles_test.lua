@@ -636,7 +636,7 @@ function T.test_init_moves_a_v2_device_to_v6_and_repaints_it()
   -- "2" painted: the first init after the update moves it to `pc-battery.v5`
   -- (the screen with pcToast) and paints generation "5".
   profiles.reset()
-  local poll = require "poll"
+  require "poll"
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
   device.id = "init-pc-v2-laptop"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-5"
@@ -655,7 +655,7 @@ function T.test_init_moves_a_v3_device_to_v6_and_repaints_it()
   -- first init after the update moves it to `pc-tv-battery.v5` - same icon,
   -- same battery card, one text field - and paints generation "5".
   profiles.reset()
-  local poll = require "poll"
+  require "poll"
   local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "tv" })
   device.id = "init-pc-v3-laptop"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-6"
@@ -674,7 +674,7 @@ function T.test_init_moves_a_v4_device_to_v6_and_paints_the_message_row()
   -- `pc-tv-battery.v5`, and the new `lastMessage` row gets a value right away
   -- - forced, because the cloud record of the new profile starts empty.
   profiles.reset()
-  local poll = require "poll"
+  require "poll"
   local caps = require "caps"
   local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "tv" })
   device.id = "init-pc-v4-laptop"
@@ -696,7 +696,7 @@ function T.test_init_moves_a_v5_device_to_v6_keeping_style_and_battery()
   -- card - and the new `pcApps.summary` row is painted at once, forced: the
   -- cloud record of the new profile starts empty.
   profiles.reset()
-  local poll = require "poll"
+  require "poll"
   local caps = require "caps"
   local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = "hub" })
   device.id = "init-pc-v5-laptop"
