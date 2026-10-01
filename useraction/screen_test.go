@@ -53,7 +53,7 @@ func TestScreenOffBroadcastsWithTimeout(t *testing.T) {
 	if _, line, code := runMain(t, "screen", "off"); code != 0 || line != `{"ok":true,"screen":"off"}` {
 		t.Fatalf("exit %d, %s", code, line)
 	}
-	want := []sentMessage{{0xFFFF, 0x0112, 0xF170, 2, 0x0002, 2000}} // HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, off, SMTO_ABORTIFHUNG
+	want := []sentMessage{{0xFFFF, 0x0112, 0xF170, 2, 0x0002, screenWindowTimeout}} // HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, off, SMTO_ABORTIFHUNG
 	if !reflect.DeepEqual(*msgs, want) {
 		t.Errorf("sent %+v, want %+v", *msgs, want)
 	}
@@ -68,7 +68,7 @@ func TestScreenOnNudgesThenBroadcasts(t *testing.T) {
 		t.Fatalf("exit %d, %s", code, line)
 	}
 	minusOne := -1
-	want := []sentMessage{{0xFFFF, 0x0112, 0xF170, uintptr(minusOne), 0x0002, 2000}}
+	want := []sentMessage{{0xFFFF, 0x0112, 0xF170, uintptr(minusOne), 0x0002, screenWindowTimeout}}
 	if !reflect.DeepEqual(*msgs, want) {
 		t.Errorf("sent %+v, want %+v", *msgs, want)
 	}

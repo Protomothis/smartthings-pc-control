@@ -42,8 +42,12 @@ const (
 	monitorPowerOn  = -1
 	monitorPowerOff = 2
 
-	// screenWindowTimeout is SendMessageTimeoutW's uTimeout in ms.
-	screenWindowTimeout = 2000
+	// screenWindowTimeout is SendMessageTimeoutW's uTimeout in ms. For a
+	// broadcast it applies to each window in turn, so it is kept short: a
+	// few slow (not hung) windows at 2 s each would overrun the service's
+	// 3 s user-action budget. The monitor reacts to the first window that
+	// handles the message; the rest only need to not block.
+	screenWindowTimeout = 300
 
 	inputMouse      = 0
 	mouseeventfMove = 0x0001
