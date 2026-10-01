@@ -63,6 +63,18 @@ func checkAuth(r *http.Request, secret string) bool {
 	return localSessionValid(r, cookie.Value)
 }
 
+// setSessionCookie hands out a session token, from /api/login or
+// /api/local-login (#131) alike.
+func setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
 // checkCSRF validates CSRF protection for POST requests.
 func checkCSRF(r *http.Request) bool {
 	if r.Method != http.MethodPost {
@@ -285,13 +297,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		sessionToken = token
 		sessionMu.Unlock()
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "session",
-			Value:    token,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
-		})
+		setSessionCookie(w, token)
 
 		logMsg("WebUI login successful from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json")

@@ -16,6 +16,23 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	initLogger()
 	saved := getConfig()
 	t.Cleanup(func() { setConfig(saved) })
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// saveConfig writes next to the test binary; later tests expect the
+	// files as they were.
+	for _, name := range []string{configFileName, trayConfigFileName} {
+		path := filepath.Join(filepath.Dir(exe), name)
+		orig, origErr := os.ReadFile(path)
+		t.Cleanup(func() {
+			if origErr == nil {
+				os.WriteFile(path, orig, 0o644)
+			} else {
+				os.Remove(path)
+			}
+		})
+	}
 
 	cfg := defaultConfig
 	cfg.Port = 5101
@@ -25,10 +42,6 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	cfg.Media.NowPlaying = true
 	cfg.Telegram.BotToken = "123:telegram-token"
 	if err := saveConfig(cfg); err != nil {
-		t.Fatal(err)
-	}
-	exe, err := os.Executable()
-	if err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), trayConfigFileName))

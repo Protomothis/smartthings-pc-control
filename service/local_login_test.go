@@ -211,7 +211,14 @@ func localLoginSetup(t *testing.T, peer peerProcess) (srv *httptest.Server, insp
 	return srv, &pids
 }
 
-func localLoginPost(t *testing.T, c *http.Client, base string) (*http.Response, map[string]string) {
+// loginReply is one /api/local-login answer, read and closed.
+type loginReply struct {
+	StatusCode int
+	cookies    []*http.Cookie
+	body       map[string]string
+}
+
+func localLoginPost(t *testing.T, c *http.Client, base string) (loginReply, map[string]string) {
 	t.Helper()
 	req, _ := http.NewRequest("POST", base+"/api/local-login", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -220,13 +227,13 @@ func localLoginPost(t *testing.T, c *http.Client, base string) (*http.Response, 
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var body map[string]string
-	json.NewDecoder(resp.Body).Decode(&body)
-	return resp, body
+	r := loginReply{StatusCode: resp.StatusCode, cookies: resp.Cookies()}
+	json.NewDecoder(resp.Body).Decode(&r.body)
+	return r, r.body
 }
 
-func sessionCookie(resp *http.Response) *http.Cookie {
-	for _, c := range resp.Cookies() {
+func sessionCookie(r loginReply) *http.Cookie {
+	for _, c := range r.cookies {
 		if c.Name == "session" {
 			return c
 		}
@@ -264,7 +271,7 @@ func TestLocalLoginIssuesSession(t *testing.T) {
 	}
 	cookie := sessionCookie(resp)
 	if cookie == nil || !cookie.HttpOnly {
-		t.Fatalf("no HttpOnly session cookie: %+v", resp.Cookies())
+		t.Fatalf("no HttpOnly session cookie: %+v", resp.cookies)
 	}
 	if code := scheduleStatus(t, c, srv.URL, cookie); code != http.StatusOK {
 		t.Errorf("with the local session: %d, want 200", code)

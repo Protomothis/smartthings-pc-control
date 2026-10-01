@@ -220,13 +220,7 @@ func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"status": "error", "code": code, "message": "Not trusted for a local login"})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    localSession(),
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	setSessionCookie(w, localSession())
 	logMsg("Local login for the tray app (pid %d, session %d)", p.PID, p.SessionID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
