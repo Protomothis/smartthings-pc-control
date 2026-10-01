@@ -108,14 +108,16 @@ func main() {
 
 	case "update-apply":
 		// Hidden: launched elevated by the GUI's self-updater as
-		// `update-apply "<newExe>" <guiPid>`. Swaps the installed exe and
+		// `update-apply "<newExe>" <guiPid> "<update.json>" "<update.json.sig>"`.
+		// Re-verifies the staged files, swaps the installed exe and
 		// relaunches the GUI; see gui/selfupdate.go.
-		newExe, pid, err := gui.ParseUpdateApplyArgs(os.Args[2:])
+		args, err := gui.ParseUpdateApplyArgs(os.Args[2:])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			gui.AbortUpdateApply(err)
 			os.Exit(2)
 		}
-		if err := gui.ApplyUpdate(newExe, pid); err != nil {
+		if err := gui.ApplyUpdate(args, Version); err != nil {
 			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 			os.Exit(1)
 		}

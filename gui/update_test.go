@@ -177,22 +177,34 @@ func TestVersionOutputMatches(t *testing.T) {
 }
 
 func TestParseUpdateApplyArgs(t *testing.T) {
-	exe, pid, err := ParseUpdateApplyArgs([]string{`C:\PC Control\update\smartthings-pc-control.v0.3.3.exe`, "4242"})
-	if err != nil || exe != `C:\PC Control\update\smartthings-pc-control.v0.3.3.exe` || pid != 4242 {
-		t.Errorf("valid args: exe=%q pid=%d err=%v", exe, pid, err)
+	const (
+		exe = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\smartthings-pc-control.v0.3.3.exe`
+		man = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\update.json`
+		sig = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\update.json.sig`
+	)
+	a, err := ParseUpdateApplyArgs([]string{exe, "4242", man, sig})
+	if err != nil || a != (UpdateApplyArgs{NewExe: exe, Pid: 4242, Manifest: man, Signature: sig}) {
+		t.Errorf("valid args: %+v err=%v", a, err)
+	}
+	// The pre-#126 form (no manifest) is refused, with a hint.
+	if _, err := ParseUpdateApplyArgs([]string{exe, "4242"}); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Errorf("2-arg form: err = %v, want a manifest error", err)
 	}
 	bad := [][]string{
 		nil,
 		{`C:\a.exe`},
-		{`C:\a.exe`, "1", "extra"},
-		{`relative\a.exe`, "1"},
-		{`C:\a.txt`, "1"},
-		{`C:\a.exe`, "notapid"},
-		{`C:\a.exe`, "-5"},
-		{"", "1"},
+		{`C:\a.exe`, "1", man},
+		{`C:\a.exe`, "1", man, sig, "extra"},
+		{`relative\a.exe`, "1", man, sig},
+		{`C:\a.txt`, "1", man, sig},
+		{`C:\a.exe`, "notapid", man, sig},
+		{`C:\a.exe`, "-5", man, sig},
+		{"", "1", man, sig},
+		{`C:\a.exe`, "1", `update.json`, sig},
+		{`C:\a.exe`, "1", man, ""},
 	}
 	for _, args := range bad {
-		if _, _, err := ParseUpdateApplyArgs(args); err == nil {
+		if _, err := ParseUpdateApplyArgs(args); err == nil {
 			t.Errorf("ParseUpdateApplyArgs(%q) accepted, want error", args)
 		}
 	}

@@ -399,7 +399,7 @@ func (u *ui) showUpdateChoice(rel *release.Info, m *release.Manifest, err error)
 	dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.now"), u.t("update.later"), body,
 		func(ok bool) {
 			if ok {
-				u.startSelfUpdate(rel, asset, assetURL)
+				u.startSelfUpdate(rel, m, asset, assetURL)
 			}
 		}, u.win)
 }
@@ -410,7 +410,7 @@ func (u *ui) showUpdateChoice(rel *release.Info, m *release.Manifest, err error)
 // selfupdate.go) and quits — the updater waits for this process to exit
 // before swapping the binary. Download errors, a hash mismatch and a
 // declined UAC prompt leave the app running.
-func (u *ui) startSelfUpdate(rel *release.Info, asset *release.ManifestAsset, assetURL string) {
+func (u *ui) startSelfUpdate(rel *release.Info, m *release.Manifest, asset *release.ManifestAsset, assetURL string) {
 	status := widget.NewLabel(u.t("update.downloading"))
 	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
 	bar := widget.NewProgressBar()
@@ -445,8 +445,14 @@ func (u *ui) startSelfUpdate(rel *release.Info, asset *release.ManifestAsset, as
 			}
 		}
 		if err == nil {
+			// The elevated updater re-verifies everything itself from its
+			// own admin-only copies (#126), so it gets the signed manifest
+			// too.
 			fyne.Do(func() { status.SetText(u.t("update.applying")) })
-			err = runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d`, path, os.Getpid()))
+			var man, sig string
+			if man, sig, err = stageManifest(filepath.Dir(path), m); err == nil {
+				err = runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d "%s" "%s"`, path, os.Getpid(), man, sig))
+			}
 		}
 		fyne.Do(func() {
 			d.Hide()

@@ -112,6 +112,25 @@ func stagingDir() string {
 	return chooseStagingDir(userDataDir(), os.TempDir())
 }
 
+// stageManifest writes the exact signed manifest bytes and signature that
+// were verified for this update next to the staged exe, for the elevated
+// updater to verify again on its own (#126). Returns both paths.
+func stageManifest(dir string, m *release.Manifest) (manifest, sig string, err error) {
+	if m == nil || len(m.Signed) == 0 || len(m.Signature) == 0 {
+		return "", "", errors.New("no signed manifest to stage")
+	}
+	manifest = filepath.Join(dir, release.ManifestName)
+	sig = filepath.Join(dir, release.ManifestSigName)
+	if err := os.WriteFile(manifest, m.Signed, 0o644); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(sig, m.Signature, 0o644); err != nil {
+		os.Remove(manifest)
+		return "", "", err
+	}
+	return manifest, sig, nil
+}
+
 // stagingPath is the final name of a staged download for tag inside dir,
 // e.g. <dir>\smartthings-pc-control.v0.3.3.exe. The tag is sanitised so a
 // hostile release name cannot escape dir.
