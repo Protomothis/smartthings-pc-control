@@ -1,25 +1,27 @@
 package service
 
-// Running-app detection, opt-in (docs/design/media-notify.md §11, #110).
+// Running-app detection, opt-in (docs/design/media-notify.md §11, #110,
+// #123).
 //
-// The user lists the programs worth reporting — "steam.exe is a game, label
-// it Steam" — and the service reports only which of those are running, as
-// a kind and the user's labels. Nothing else about the process list leaves
+// The user lists the programs worth reporting — "steam.exe, label it
+// Steam" — in priority order, and the service reports, for each of them
+// only, whether it is running. Nothing else about the process list leaves
 // the scanner:
 //
 //   - A scan compares every running process's file name (case-insensitive)
 //     against the watch list and keeps only the matching watch entries. The
 //     names of other processes are neither stored, logged nor sent.
-//   - What goes out (status, push, Telegram) is the entry's kind and label,
-//     never a process name, so even a watched program is reported by the
-//     name the user chose.
+//   - What goes out (status, push, Telegram) is built from the watch list
+//     alone: each entry's id (its own process name, lower-cased — a name
+//     the user put on the list), its label and a running flag. A program
+//     that is not on the list cannot reach the result.
 //   - The one place the full list of names is handed out is GET
 //     /api/processes, which feeds the desktop app's "pick from running
 //     programs" dialog. It answers loopback callers with a valid session
 //     only, so the list stays on this PC.
 //
 // While activity.enabled is off the scanner does not look at processes at
-// all, and the status block says {enabled:false, kind:"none", labels:[]}.
+// all, and the status block says {enabled:false, apps:[], top:""}.
 
 import (
 	"errors"
@@ -38,46 +40,42 @@ import (
 )
 
 const (
-	// activityMaxWatch caps the watch list (§11).
-	activityMaxWatch = 20
+	// activityMaxWatch caps the watch list (§11): one SmartThings child
+	// device per entry.
+	activityMaxWatch = 10
 	// activityMaxLabel is the longest label, in characters.
 	activityMaxLabel = 30
 	// activityMaxProcess bounds a process file name (MAX_PATH).
 	activityMaxProcess = 260
 	// activityScanInterval is how often the process list is read (§11).
 	activityScanInterval = 10 * time.Second
-	// activityKindNone is the kind reported when nothing watched runs.
-	activityKindNone = "none"
 	// processListMax bounds /api/processes; a PC has a few hundred.
 	processListMax = 2000
 )
-
-// activityKinds are the accepted kinds, highest priority first: when
-// several watched programs run, the status reports the first kind here.
-var activityKinds = []string{"game", "stream", "media", "work", "other"}
 
 // ActivityConfig is the "activity" object in config.json (§11).
 type ActivityConfig struct {
 	// Enabled turns the scanner on. Off by default.
 	Enabled bool `json:"enabled"`
 	// Watch is the list of programs to report, at most activityMaxWatch.
+	// Its order is the priority: the first entry ranks highest.
 	Watch []ActivityWatch `json:"watch"`
 }
 
 // ActivityWatch is one watched program. Process is a file name only
-// ("steam.exe"), matched case-insensitively; Label is what is reported
-// instead of it; Kind is one of activityKinds.
+// ("steam.exe"), matched case-insensitively; Label is the name it is shown
+// by. A "kind" key left over from v1.2.0 development builds is ignored by
+// the decoder and dropped on the next save.
 type ActivityWatch struct {
 	Process string `json:"process"`
 	Label   string `json:"label"`
-	Kind    string `json:"kind"`
 }
 
 // ---- config ----------------------------------------------------------------
 
-// withDefaults trims the entries, fills an empty kind with "other" and an
-// empty label with the program name, and never returns a nil or aliased
-// slice. It does not validate: see validateActivity / sanitizeActivity.
+// withDefaults trims the entries, fills an empty label with the program
+// name, and never returns a nil or aliased slice. It keeps the order and
+// does not validate: see validateActivity / sanitizeActivity.
 func (a ActivityConfig) withDefaults() ActivityConfig {
 	out := ActivityConfig{Enabled: a.Enabled, Watch: make([]ActivityWatch, 0, len(a.Watch))}
 	for _, w := range a.Watch {
@@ -86,20 +84,20 @@ func (a ActivityConfig) withDefaults() ActivityConfig {
 	return out
 }
 
-// normalized is one entry with the whitespace trimmed and the defaults
-// filled in.
+// normalized is one entry with the whitespace trimmed and the default
+// label filled in.
 func (w ActivityWatch) normalized() ActivityWatch {
 	w.Process = strings.TrimSpace(w.Process)
 	w.Label = strings.TrimSpace(w.Label)
-	w.Kind = strings.ToLower(strings.TrimSpace(w.Kind))
-	if w.Kind == "" {
-		w.Kind = "other"
-	}
 	if w.Label == "" && w.Process != "" {
 		w.Label = activityDefaultLabel(w.Process)
 	}
 	return w
 }
+
+// id is the entry's stable key in the status block: the process name,
+// lower-cased. It survives label edits and reordering.
+func (w ActivityWatch) id() string { return strings.ToLower(w.Process) }
 
 // activityDefaultLabel is "steam" for "steam.exe": the label an entry gets
 // when the user leaves it blank.
@@ -144,9 +142,6 @@ func validateActivityWatch(w ActivityWatch) error {
 	if strings.IndexFunc(w.Label, unicode.IsControl) >= 0 {
 		return fmt.Errorf("label for %q contains control characters", p)
 	}
-	if !slices.Contains(activityKinds, w.Kind) {
-		return fmt.Errorf("kind for %q must be one of %s", p, strings.Join(activityKinds, ", "))
-	}
 	return nil
 }
 
@@ -162,79 +157,85 @@ func validateActivity(a ActivityConfig) string {
 		if err := validateActivityWatch(w); err != nil {
 			return "activity.watch: " + err.Error()
 		}
-		key := strings.ToLower(w.Process)
-		if seen[key] {
+		if seen[w.id()] {
 			return fmt.Sprintf("activity.watch: %q is listed twice", w.Process)
 		}
-		seen[key] = true
+		seen[w.id()] = true
 	}
 	return ""
 }
 
 // sanitizeActivity is the load-time counterpart: config.json may have been
 // edited by hand, and one bad entry must not cost the user the rest of the
-// file. Invalid entries, duplicates and anything past the cap are dropped,
-// each with a log line; the result is always valid.
+// file. Invalid entries and duplicates are dropped with a log line each,
+// the order of the rest is kept, and anything past the cap is cut with one
+// log line; the result is always valid.
 func sanitizeActivity(a ActivityConfig) ActivityConfig {
 	a = a.withDefaults()
 	out := ActivityConfig{Enabled: a.Enabled, Watch: []ActivityWatch{}}
 	seen := map[string]bool{}
+	over := 0
 	for i, w := range a.Watch {
 		if err := validateActivityWatch(w); err != nil {
 			logMsg("WARNING: config.json activity.watch[%d] ignored: %v", i, err)
 			continue
 		}
-		key := strings.ToLower(w.Process)
-		if seen[key] {
+		if seen[w.id()] {
 			logMsg("WARNING: config.json activity.watch[%d] ignored: %q is listed twice", i, w.Process)
 			continue
 		}
 		if len(out.Watch) >= activityMaxWatch {
-			logMsg("WARNING: config.json activity.watch[%d] ignored: at most %d programs", i, activityMaxWatch)
+			over++
 			continue
 		}
-		seen[key] = true
+		seen[w.id()] = true
 		out.Watch = append(out.Watch, w)
+	}
+	if over > 0 {
+		logMsg("WARNING: config.json activity.watch holds more than %d programs; the last %d ignored", activityMaxWatch, over)
 	}
 	return out
 }
 
 // ---- matcher ---------------------------------------------------------------
 
-// stActivity is the §11 status block.
+// stActivity is the §11 status block, also the activity.changed push data.
 type stActivity struct {
-	Enabled bool     `json:"enabled"`
-	Kind    string   `json:"kind"`
-	Labels  []string `json:"labels"`
+	Enabled bool `json:"enabled"`
+	// Apps has one entry per watch entry, in priority order; never null.
+	Apps []stActivityApp `json:"apps"`
+	// Top is the id of the highest-priority running app, "" when none.
+	Top string `json:"top"`
+}
+
+// stActivityApp is one watched program in the status block.
+type stActivityApp struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Running bool   `json:"running"`
 }
 
 // activityOff is the block while the option is off.
 func activityOff() stActivity {
-	return stActivity{Enabled: false, Kind: activityKindNone, Labels: []string{}}
+	return stActivity{Enabled: false, Apps: []stActivityApp{}, Top: ""}
 }
 
-// activityPriority is the rank of kind (0 = highest); unknown kinds sort
-// last.
-func activityPriority(kind string) int {
-	if i := slices.Index(activityKinds, kind); i >= 0 {
-		return i
-	}
-	return len(activityKinds)
+// activityListed is the block for watch with nothing marked running: the
+// answer until a scan has looked at the list.
+func activityListed(watch []ActivityWatch) stActivity {
+	return matchActivity(watch, nil)
 }
 
-// matchActivity compares the running process names against watch. The
-// result's kind is the highest-priority kind among the running entries (or
-// "none"), and its labels are theirs, ordered by kind priority and then by
-// watch-list order, without duplicates. Nothing from running that is not
-// on the list can reach the result: only watch entries are ever copied.
+// matchActivity compares the running process names against watch. Every
+// entry becomes one app, in list order, running when at least one process
+// has its file name (case-insensitive); top is the first running one.
+// Nothing from running that is not on the list can reach the result: only
+// watch entries are ever copied.
 func matchActivity(watch []ActivityWatch, running []string) stActivity {
-	out := stActivity{Enabled: true, Kind: activityKindNone, Labels: []string{}}
-	if len(watch) == 0 || len(running) == 0 {
-		return out
-	}
+	out := stActivity{Enabled: true, Apps: make([]stActivityApp, 0, len(watch))}
 	wanted := make(map[string]bool, len(watch))
 	for _, w := range watch {
-		wanted[strings.ToLower(w.Process)] = true
+		wanted[w.id()] = true
 	}
 	// Only names on the list are remembered, so the set never holds the
 	// rest of the process list either.
@@ -244,30 +245,43 @@ func matchActivity(watch []ActivityWatch, running []string) stActivity {
 			present[key] = true
 		}
 	}
-	var active []ActivityWatch
 	for _, w := range watch {
-		if present[strings.ToLower(w.Process)] {
-			active = append(active, w)
+		app := stActivityApp{ID: w.id(), Label: w.Label, Running: present[w.id()]}
+		if app.Running && out.Top == "" {
+			out.Top = app.ID
 		}
-	}
-	if len(active) == 0 {
-		return out
-	}
-	slices.SortStableFunc(active, func(a, b ActivityWatch) int {
-		return activityPriority(a.Kind) - activityPriority(b.Kind)
-	})
-	out.Kind = active[0].Kind
-	for _, w := range active {
-		if !slices.Contains(out.Labels, w.Label) {
-			out.Labels = append(out.Labels, w.Label)
-		}
+		out.Apps = append(out.Apps, app)
 	}
 	return out
 }
 
-// equal compares two blocks, labels in order.
+// equal compares two blocks, apps in order.
 func (a stActivity) equal(b stActivity) bool {
-	return a.Enabled == b.Enabled && a.Kind == b.Kind && slices.Equal(a.Labels, b.Labels)
+	return a.Enabled == b.Enabled && a.Top == b.Top && slices.Equal(a.Apps, b.Apps)
+}
+
+// clone copies the block so a caller cannot alias the scanner's slice.
+func (a stActivity) clone() stActivity {
+	a.Apps = slices.Clone(a.Apps)
+	if a.Apps == nil {
+		a.Apps = []stActivityApp{}
+	}
+	return a
+}
+
+// topLabel is the label of the top app and how many others run.
+func (a stActivity) topLabel() (label string, others int) {
+	for _, app := range a.Apps {
+		if !app.Running {
+			continue
+		}
+		if app.ID == a.Top && label == "" {
+			label = app.Label
+			continue
+		}
+		others++
+	}
+	return label, others
 }
 
 // ---- process list ----------------------------------------------------------
@@ -309,8 +323,8 @@ func toolhelpProcessNames() ([]string, error) {
 
 // activityScanner holds the last scan and the configuration it was made
 // for. sig ties the cached result to the watch list: after an edit the
-// cache no longer counts, so a removed entry's label disappears from the
-// status at once rather than on the next tick.
+// cache no longer counts, so a removed entry disappears from the status at
+// once rather than on the next tick.
 type activityScanner struct {
 	mu    sync.Mutex
 	last  stActivity
@@ -336,7 +350,8 @@ func kickActivityScan() {
 	}
 }
 
-// activitySig identifies what a scan was made for.
+// activitySig identifies what a scan was made for: the switch, and the
+// list with its order and labels.
 func activitySig(a ActivityConfig) string {
 	if !a.Enabled {
 		return "off"
@@ -344,31 +359,44 @@ func activitySig(a ActivityConfig) string {
 	var b strings.Builder
 	b.WriteString("on")
 	for _, w := range a.Watch {
-		fmt.Fprintf(&b, "\x00%s\x01%s\x01%s", strings.ToLower(w.Process), w.Label, w.Kind)
+		fmt.Fprintf(&b, "\x00%s\x01%s", w.id(), w.Label)
 	}
 	return b.String()
 }
 
 // scan reads the process list for cfg (none at all while it is off),
 // stores the result and reports it with whether it differs from the
-// previous one. The very first result only sets the baseline (changed is
-// false), so starting the service never invents a transition.
+// previous one — an app started or stopped, the list, its order or a label
+// changed, or the option was switched. The very first result only sets the
+// baseline (changed is false), so starting the service never invents a
+// transition.
+//
+// When the process list cannot be read, a scan for an unchanged config
+// keeps the last result: what runs is unknown, and reporting everything as
+// stopped would fire "stopped" routines for programs that are still open.
+// For a new config there is no last result, so the apps are listed as not
+// running.
 func (s *activityScanner) scan(cfg ActivityConfig) (stActivity, bool) {
+	sig := activitySig(cfg)
 	next := activityOff()
 	if cfg.Enabled {
 		names, err := processLister()
 		s.mu.Lock()
 		wasFailing := s.failing
 		s.failing = err != nil
+		keep := s.known && s.sig == sig
+		last := s.last.clone()
 		s.mu.Unlock()
-		if err != nil {
-			if !wasFailing {
-				logMsg("Activity: process list unavailable: %v", err)
-			}
-			// What runs is unknown, so nothing is reported as running.
-			next = stActivity{Enabled: true, Kind: activityKindNone, Labels: []string{}}
-		} else {
+		switch {
+		case err == nil:
 			next = matchActivity(cfg.Watch, names)
+		case keep:
+			next = last
+		default:
+			next = activityListed(cfg.Watch)
+		}
+		if err != nil && !wasFailing {
+			logMsg("Activity: process list unavailable: %v", err)
 		}
 	}
 
@@ -376,16 +404,16 @@ func (s *activityScanner) scan(cfg ActivityConfig) (stActivity, bool) {
 	defer s.mu.Unlock()
 	changed := s.known && !s.last.equal(next)
 	s.last = next
-	s.sig = activitySig(cfg)
+	s.sig = sig
 	s.known = true
-	return next, changed
+	return next.clone(), changed
 }
 
 // current is the block for cfg from the last scan. It never scans itself —
 // status and push bodies are built on request paths and must stay cheap —
 // and it only trusts a scan made for this very config: while the option is
-// off it reports off, and right after an edit it reports "none" until the
-// scanner has looked again.
+// off it reports off, and right after an edit it lists the apps as not
+// running until the scanner (kicked by the save) has looked again.
 func (s *activityScanner) current(cfg ActivityConfig) stActivity {
 	if !cfg.Enabled {
 		return activityOff()
@@ -393,11 +421,9 @@ func (s *activityScanner) current(cfg ActivityConfig) stActivity {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.known || s.sig != activitySig(cfg) {
-		return stActivity{Enabled: true, Kind: activityKindNone, Labels: []string{}}
+		return activityListed(cfg.Watch)
 	}
-	out := s.last
-	out.Labels = slices.Clone(s.last.Labels)
-	return out
+	return s.last.clone()
 }
 
 // reset forgets the last scan (tests).
@@ -412,40 +438,33 @@ func stActivityStatus(cfg Config) stActivity {
 	return activityScan.current(cfg.Activity)
 }
 
-// activityTick runs one scan and reports a change as activity.changed.
+// activityTick runs one scan and reports a change as activity.changed. The
+// push data is the status block itself, filled in at delivery (stPushBody),
+// so the event carries no fields of its own.
 func activityTick(cfg ActivityConfig) {
 	next, changed := activityScan.scan(cfg)
 	if !changed {
 		return
 	}
 	logMsg("Activity: %s", activityLogLine(next))
-	emitDevice("activity", "changed", activityFields(next))
+	emitDevice("activity", "changed", nil)
 }
 
-// activityLogLine describes a block by kind and labels only.
+// activityLogLine describes a block by the users' labels only.
 func activityLogLine(a stActivity) string {
 	if !a.Enabled {
 		return "off"
 	}
-	if len(a.Labels) == 0 {
-		return a.Kind
+	var running []string
+	for _, app := range a.Apps {
+		if app.Running {
+			running = append(running, app.Label)
+		}
 	}
-	return a.Kind + " (" + strings.Join(a.Labels, ", ") + ")"
-}
-
-// activityFields is the activity.changed event data. The full block rides
-// along in the push body's status anyway; these are for a reader of the
-// event alone.
-func activityFields(a stActivity) map[string]string {
-	enabled := "false"
-	if a.Enabled {
-		enabled = "true"
+	if len(running) == 0 {
+		return fmt.Sprintf("nothing running (%d watched)", len(a.Apps))
 	}
-	return map[string]string{
-		"enabled": enabled,
-		"kind":    a.Kind,
-		"labels":  strings.Join(a.Labels, ", "),
-	}
+	return fmt.Sprintf("running %s (%d watched)", strings.Join(running, ", "), len(a.Apps))
 }
 
 // watchActivity scans every activityScanInterval, and early after a save,
@@ -480,7 +499,7 @@ func runningProcessNames() ([]string, error) {
 	out := []string{}
 	for _, n := range names {
 		n = strings.TrimSpace(n)
-		if validateActivityWatch(ActivityWatch{Process: n, Label: "x", Kind: "other"}) != nil {
+		if validateActivityWatch(ActivityWatch{Process: n, Label: "x"}) != nil {
 			continue
 		}
 		key := strings.ToLower(n)
