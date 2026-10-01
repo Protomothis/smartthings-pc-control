@@ -6,7 +6,6 @@ import (
 	"fyne.io/fyne/v2/test"
 )
 
-
 // TestRebuildDoesNotPanic builds the whole window once per language with
 // Fyne's in-memory test app. Widget constructors fire callbacks while the
 // tabs are being assembled (Select.SetSelectedIndex calls OnChanged), so a
