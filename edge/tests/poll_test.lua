@@ -72,6 +72,17 @@ function T.test_offsets_of_different_devices_differ()
   end
 end
 
+function T.test_offsets_are_the_ones_the_hub_computes()
+  -- Pinned from 64-bit (C Lua 5.3, the hub) arithmetic. The a1b2 and manual
+  -- hashes have bit 31 set (0xC13B1E75, 0xC245F643), the case where fengari's
+  -- 32-bit integers used to land in another slot than the hub.
+  h.assert_equal(poll.offset("pc-control-9f3c-guid", 30), 2)
+  h.assert_equal(poll.offset("pc-control-a1b2-guid", 30), 1)
+  h.assert_equal(poll.offset("pc-control-manual-68c0-1", 30), 13)
+  h.assert_equal(poll.offset("pc-control-a1b2-guid", 3600), 661)
+  h.assert_equal(poll.offset("pc-control-manual-68c0-1", 3600), 3283)
+end
+
 function T.test_offset_is_zero_without_anything_to_hash()
   h.assert_equal(poll.offset(nil, 30), 0)
   h.assert_equal(poll.offset("", 30), 0)

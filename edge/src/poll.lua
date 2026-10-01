@@ -1404,7 +1404,11 @@ function poll.offset(dni, interval)
     hash = (hash ~ dni:byte(i)) & 0xFFFFFFFF
     hash = (hash * 0x01000193) & 0xFFFFFFFF
   end
-  return hash % interval
+  -- The hub's integers are 64 bit, so `hash` is the unsigned 32-bit value
+  -- there; fengari's (the local test runner) are 32 bit, where the same bits
+  -- read as a negative number and `%` gives another slot. Dropping bit 31
+  -- leaves a value both read alike.
+  return (hash & 0x7FFFFFFF) % interval
 end
 
 function poll.stop(driver, device)

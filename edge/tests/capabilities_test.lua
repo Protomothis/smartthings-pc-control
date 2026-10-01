@@ -1931,15 +1931,13 @@ function T.test_the_package_stays_under_the_upload_limit()
   -- today v1 and v5.
   local root = tests_dir .. "/.."
   local total = 0
+  -- h.read_file / h.list_dir: host.* under fengari, io.* under C Lua.
   local function add(path)
-    local text = host and host.readfile and host.readfile(path)
-    h.assert_true(type(text) == "string", "could not read " .. path)
-    total = total + #text
+    total = total + #h.read_file(path)
   end
   add(root .. "/config.yml")
   for _, name in ipairs(list_yml()) do add(profiles_dir .. "/" .. name) end
-  local src = {}
-  if host and host.listdir then src = host.listdir(root .. "/src") end
+  local src = h.list_dir(root .. "/src")
   h.assert_true(#src > 0, "could not list src/")
   for _, name in ipairs(src) do add(root .. "/src/" .. name) end
   h.assert_true(total < 600000, "package is " .. total .. " bytes; the upload limit is 655360")
