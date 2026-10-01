@@ -62,12 +62,11 @@ type ActivityConfig struct {
 	Watch   []ActivityWatch `json:"watch"`
 }
 
-// ActivityWatch is one watched program: a file name ("steam.exe"), the
-// label reported instead of it, and its kind (game/stream/media/work/other).
+// ActivityWatch is one watched program: a file name ("steam.exe") and the
+// label it is shown by. The list order is the priority (#123).
 type ActivityWatch struct {
 	Process string `json:"process"`
 	Label   string `json:"label"`
-	Kind    string `json:"kind"`
 }
 
 // Preset mirrors service.Preset: one slot SmartThings and Telegram can
