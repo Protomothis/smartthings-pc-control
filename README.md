@@ -44,7 +44,7 @@
 
 **1. Windows 앱 설치와 설정**
 
-1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 `smartthings-pc-control.exe`를 받아 고정된 폴더에 둡니다(권장 `C:\Program Files\SmartThings PC Control\`). 설정 `config.json`과 로그 `service.log`가 exe 옆에 생기므로 설치 뒤에는 exe를 옮기지 마세요.
+1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 `smartthings-pc-control.exe`를 받아 고정된 폴더에 둡니다(권장 `C:\Program Files\SmartThings PC Control\`). 설정 `config.json`과 로그 `service.log`가 exe 옆에 생기므로 설치 뒤에는 exe를 옮기지 마세요. 서비스가 SYSTEM 권한으로 이 폴더의 exe를 실행하므로, 설치할 때와 서비스가 시작할 때마다 폴더 권한을 관리자 전용(일반 사용자는 읽기·실행만)으로 잠급니다. 관리자 권한 없이 고칠 파일(프리셋 스크립트 등)은 이 폴더에 두지 마세요.
 2. exe를 실행하고 **설정 탭 → [설치]** → UAC 승인. CLI로는 관리자 권한에서 `smartthings-pc-control.exe install`입니다. 서비스 등록, 자동 시작, 방화벽 인바운드 규칙(TCP 5001, UDP 1900)이 함께 만들어집니다.
 3. 설정 탭에서 **시크릿**을 정하고 [저장]합니다.
 
@@ -116,7 +116,7 @@ A single exe that runs as a Windows service (always on, no login needed) and a t
 
 ### Install
 
-1. **Windows app** — download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) into a permanent folder (`config.json` lives next to it). Run it → **Settings → [Install]** (or `smartthings-pc-control.exe install` as admin). This creates the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** and save.
+1. **Windows app** — download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) into a permanent folder of its own (`config.json` lives next to it). Installing, and every service start, restricts that folder to administrators (other users can only read and run), so keep nothing else there that you edit without admin rights. Run it → **Settings → [Install]** (or `smartthings-pc-control.exe install` as admin). This creates the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** and save.
 2. **Channel and driver** — open the **Protomothis** channel invite <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>, enroll your hub, and install **SmartThings PC Control**.
 3. **Scan nearby** — with the PC on and PC Control running, tap **[+] → Add device → Scan nearby** in the SmartThings app. This is the only way to add the device. Enter the secret in the device settings. The device model `PC Control · <8-char id>` matches **This PC's ID** on the app's Network tab.
 

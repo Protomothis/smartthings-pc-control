@@ -76,6 +76,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 앱에서 실행한 명령은 로그와 `last_command`(출처 `앱`)에 남고, WebUI에서 온 명령만 텔레그램으로 알립니다 (#120)
 - 원격 접속이 꺼져 있으면 로컬 API(5002)는 Host가 127.0.0.1·localhost·[::1]일 때만 답해 DNS 리바인딩을 막습니다 (#120)
 - 시크릿·세션 비교를 상수 시간으로 바꾸고, 옛 `/{시크릿}/{명령}` 경로도 5번 틀리면 1분 동안 막습니다 (#120)
+- 설치 폴더 권한을 잠급니다. `C:\` 바로 아래 폴더는 `Authenticated Users: 수정`을 물려받아 일반 사용자가 SYSTEM으로 도는 exe·`config.json`을 바꿀 수 있었습니다. 설치할 때와 서비스가 시작할 때마다 상속을 끊고 SYSTEM·Administrators 모든 권한, Users 읽기·실행만 남겨 기존 설치도 스스로 고칩니다(드라이브 루트·Windows·사용자 프로필 같은 공용 폴더는 로그만 남기고 그대로 둠). 트레이의 `gui.log`와 업데이트 내려받기는 `%LOCALAPPDATA%\SmartThings PC Control\`로 옮겼습니다 (#126)
 
 ### 내부
 

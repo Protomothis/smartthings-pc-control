@@ -993,13 +993,15 @@ func (u *ui) fillSvcBox(state svcState) {
 		}
 		// config.json / service.log land next to the exe and the service
 		// points at this path, so installing from Downloads, Desktop, a
-		// temp folder etc. breaks as soon as the file is tidied away.
-		exeDir, risky := exeInRiskyDir()
-		if !risky {
+		// temp folder etc. breaks as soon as the file is tidied away. A
+		// folder ordinary users can modify gets locked down on install
+		// (#126); say so, since files kept there become admin-only.
+		exeDir, risk := exeInstallDirRisk()
+		if risk == installDirOK {
 			install()
 			return
 		}
-		body := widget.NewLabel(fmt.Sprintf(u.t("svc.location.body"), exeDir, recommendedInstallDir))
+		body := widget.NewLabel(fmt.Sprintf(u.t(installDirRiskBodyKey[risk]), exeDir, recommendedInstallDir))
 		body.Wrapping = fyne.TextWrapWord
 		d := dialog.NewCustomConfirm(u.t("svc.location.title"), u.t("svc.location.anyway"), u.t("login.cancel"),
 			body, func(ok bool) {

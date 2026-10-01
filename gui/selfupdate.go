@@ -25,8 +25,9 @@ import (
 // deleting) is what makes this work: Windows allows renaming a mapped image,
 // and the elevated process itself is running from that same image.
 
-// oldExeSuffix marks the previous binary kept for rollback until the next
-// GUI start removes it.
+// oldExeSuffix marks the previous binary kept for rollback until the
+// restarted service removes it (the install folder is locked to
+// administrators since #126, so the tray usually cannot).
 const oldExeSuffix = ".old"
 
 // ParseUpdateApplyArgs validates the arguments of the hidden
@@ -55,7 +56,7 @@ func ParseUpdateApplyArgs(args []string) (newExe string, pid int, err error) {
 // ApplyUpdate replaces the running installation with newExe. It must run
 // elevated (the GUI launches it via ShellExecuteEx "runas"). waitPid is the
 // GUI process that spawned us; 0 skips the wait. Every step is appended to
-// gui.log next to the exe. On failure after the rename the old exe is put
+// gui.log (guiLogPath). On failure after the rename the old exe is put
 // back; either way the GUI is relaunched so the user is not left without it,
 // and a message box reports the failure.
 func ApplyUpdate(newExe string, waitPid int) error {
@@ -63,7 +64,7 @@ func ApplyUpdate(newExe string, waitPid int) error {
 	if err != nil {
 		updateLog("update failed: %v", err)
 		messageBox("SmartThings PC Control", "업데이트 실패 / Update failed:\n\n"+err.Error()+
-			"\n\ngui.log 를 확인하세요. / See gui.log for details.")
+			"\n\n로그 / Log: "+guiLogPath())
 	}
 	cur, cerr := os.Executable()
 	if cerr == nil {
@@ -265,13 +266,19 @@ func launchGUIUnelevated(exe string) {
 // cleanupStaleUpdateFiles removes <exe>.old and abandoned ".part" downloads
 // left by a previous update. Deleting .old fails while the elevated updater
 // (mapped from that file) is still exiting, so retry for a few seconds.
-// Best-effort; runs in a goroutine at GUI start.
+// In a locked install folder (#126) the deletes there simply fail; the
+// service removes those files instead. Best-effort; runs in a goroutine at
+// GUI start.
 func cleanupStaleUpdateFiles() {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
-	for _, dir := range []string{filepath.Join(filepath.Dir(exe), "update"), filepath.Join(os.TempDir(), "smartthings-pc-control", "update")} {
+	dirs := []string{filepath.Join(filepath.Dir(exe), "update"), filepath.Join(os.TempDir(), "smartthings-pc-control", "update")}
+	if d := userDataDir(); d != "" {
+		dirs = append(dirs, filepath.Join(d, "update"))
+	}
+	for _, dir := range dirs {
 		parts, _ := filepath.Glob(filepath.Join(dir, "*.part"))
 		for _, p := range parts {
 			os.Remove(p)
@@ -290,8 +297,42 @@ func cleanupStaleUpdateFiles() {
 	}
 }
 
-// updateLog appends a timestamped line to gui.log next to the exe (falling
-// back to the temp dir when that is not writable). Truncates once the file
+// userDataDirName is the tray's own folder under %LOCALAPPDATA%.
+const userDataDirName = "SmartThings PC Control"
+
+// tempGUILogName is gui.log's fallback name in the temp dir.
+const tempGUILogName = "smartthings-pc-control-gui.log"
+
+// userDataDir is %LOCALAPPDATA%\SmartThings PC Control, the only place the
+// tray (running as the logged-in user) writes files: gui.log and staged
+// update downloads. The install folder is locked to administrators (#126),
+// so nothing the tray does may need write access there. "" when
+// LOCALAPPDATA is unset.
+func userDataDir() string { return userDataDirIn(os.Getenv("LOCALAPPDATA")) }
+
+// userDataDirIn is userDataDir for a given %LOCALAPPDATA%.
+func userDataDirIn(localAppData string) string {
+	if localAppData == "" {
+		return ""
+	}
+	return filepath.Join(localAppData, userDataDirName)
+}
+
+// guiLogPathIn is gui.log inside dataDir, or a file in temp when dataDir is
+// unknown.
+func guiLogPathIn(dataDir, temp string) string {
+	if dataDir == "" {
+		return filepath.Join(temp, tempGUILogName)
+	}
+	return filepath.Join(dataDir, "gui.log")
+}
+
+// guiLogPath is where guiLog writes: %LOCALAPPDATA%\SmartThings PC
+// Control\gui.log. Until #126 it was next to the exe.
+func guiLogPath() string { return guiLogPathIn(userDataDir(), os.TempDir()) }
+
+// updateLog appends a timestamped line to gui.log (guiLogPath; falling back
+// to the temp dir when that is not writable). Truncates once the file
 // grows past 1 MB — this log only ever sees a handful of lines per update.
 func updateLog(format string, args ...interface{}) {
 	guiLog("update", format, args...)
@@ -300,13 +341,11 @@ func updateLog(format string, args ...interface{}) {
 // guiLog is updateLog under another tag ("[tag] ..."), for the rare line
 // the tray app itself has to leave.
 func guiLog(tag, format string, args ...interface{}) {
-	path := "gui.log"
-	if exe, err := os.Executable(); err == nil {
-		path = filepath.Join(filepath.Dir(exe), "gui.log")
-	}
+	path := guiLogPath()
+	os.MkdirAll(filepath.Dir(path), 0o755)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		path = filepath.Join(os.TempDir(), "smartthings-pc-control-gui.log")
+		path = filepath.Join(os.TempDir(), tempGUILogName)
 		if f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err != nil {
 			return
 		}
