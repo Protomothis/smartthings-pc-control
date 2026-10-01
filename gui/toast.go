@@ -97,7 +97,7 @@ func runToastAction(c toastAPI, rawURL string) {
 	// tells whether a session is needed. Refused, the calls below fail
 	// with 401 and nothing happens — the toast has no window to ask in.
 	if _, err := c.GetConfig(); errors.Is(err, errUnauthorized) {
-		c.LocalLogin()
+		_ = c.LocalLogin() // refused: see above
 	}
 
 	switch {

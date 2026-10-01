@@ -30,7 +30,7 @@ func (c *Client) LocalLogin() error {
 		return err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10)) // drain for keep-alive
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
