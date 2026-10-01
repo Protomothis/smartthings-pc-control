@@ -189,7 +189,7 @@ func (a *activityBox) form() ActivityConfig {
 func (u *ui) buildActivityBox() fyne.CanvasObject {
 	t := u.st
 	a := &t.activity
-	a.toggle = newToggle(u.t("activity.toggle"), func(bool) { u.updateSTSaveState() })
+	a.toggle = newToggle(u.t("activity.toggle"), func(bool) { u.refreshDirty() })
 	a.rows = container.NewVBox()
 	a.addBtn = widget.NewButtonWithIcon(u.t("activity.add"), theme.ContentAddIcon(), func() {
 		if len(a.watch) >= activityMaxWatch {
@@ -197,7 +197,7 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 		}
 		a.watch = append(a.watch, ActivityWatch{})
 		u.renderActivityRows()
-		u.updateSTSaveState()
+		u.refreshDirty()
 	})
 	a.pickBtn = widget.NewButtonWithIcon(u.t("activity.pick"), theme.SearchIcon(), func() { u.pickRunningProgram() })
 	u.renderActivityRows()
@@ -251,7 +251,7 @@ func (u *ui) renderActivityRows() {
 		if watch, ok := moveActivity(a.watch, i, delta); ok {
 			a.watch = watch
 			u.renderActivityRows()
-			u.updateSTSaveState()
+			u.refreshDirty()
 		}
 	}
 	for i := range a.watch {
@@ -262,7 +262,7 @@ func (u *ui) renderActivityRows() {
 		proc.OnChanged = func(s string) {
 			if i < len(a.watch) {
 				a.watch[i].Process = s
-				u.updateSTSaveState()
+				u.refreshDirty()
 			}
 		}
 		label := widget.NewEntry()
@@ -271,7 +271,7 @@ func (u *ui) renderActivityRows() {
 		label.OnChanged = func(s string) {
 			if i < len(a.watch) {
 				a.watch[i].Label = s
-				u.updateSTSaveState()
+				u.refreshDirty()
 			}
 		}
 		buttons := activityRowButtons(
@@ -281,7 +281,7 @@ func (u *ui) renderActivityRows() {
 				if i < len(a.watch) {
 					a.watch = slices.Delete(slices.Clone(a.watch), i, i+1)
 					u.renderActivityRows()
-					u.updateSTSaveState()
+					u.refreshDirty()
 				}
 			})
 		if i == 0 {
@@ -307,7 +307,7 @@ func (u *ui) renderActivityRows() {
 }
 
 // fillActivityBox writes a into the editor. Called by fillSTSection, which
-// holds the filling guard. UI thread only.
+// runs with the change callbacks muted. UI thread only.
 func (u *ui) fillActivityBox(a ActivityConfig) {
 	t := u.st
 	if t == nil || t.activity.toggle == nil {
@@ -384,7 +384,7 @@ func (u *ui) showProcessPicker(running []string) {
 		if watch, ok := addActivityProcess(a.watch, shown[id]); ok {
 			a.watch = watch
 			u.renderActivityRows()
-			u.updateSTSaveState()
+			u.refreshDirty()
 		}
 		if dlg != nil {
 			dlg.Hide()

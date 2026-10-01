@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -331,9 +332,8 @@ type stSection struct {
 	// activity is the running-app detection editor (#110).
 	activity activityBox
 
-	bar *saveBar
-	// filling suppresses the OnChanged cascade while fillSTSection writes
-	// the widgets; the dirty state is evaluated once at the end.
+	// filling suppresses the WoL dropdown's OnChanged while fillSTSection
+	// writes the widgets.
 	filling bool
 }
 
@@ -363,7 +363,7 @@ func (t *stSection) setUserEnabled(on bool) {
 func (u *ui) buildSTSection() fyne.CanvasObject {
 	t := &stSection{}
 	u.st = t
-	onToggle := func(bool) { u.updateSTSaveState() }
+	onToggle := func(bool) { u.refreshDirty() }
 
 	t.status = widget.NewLabel(u.t("st.hub.loading"))
 	t.status.Wrapping = fyne.TextWrapWord
@@ -384,7 +384,7 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 
 	t.session = newToggle(u.t("st.session"), func(on bool) {
 		t.setUserEnabled(on)
-		u.updateSTSaveState()
+		u.refreshDirty()
 	})
 	t.sessionUser = newToggle(u.t("st.session.user"), onToggle)
 	t.sessionUser.Disable()
@@ -451,7 +451,7 @@ func (u *ui) renderHubs() {
 		del := widget.NewButtonWithIcon(u.t("st.hubs.remove"), theme.DeleteIcon(), func() {
 			t.hubs = removeHub(t.hubs, ip)
 			u.renderHubs()
-			u.updateSTSaveState()
+			u.refreshDirty()
 		})
 		t.hubBox.Add(container.NewBorder(nil, nil, nil, del, label))
 	}
@@ -478,7 +478,7 @@ func (u *ui) onWoLAdapterPicked() {
 	}
 	t.wolMAC = t.wolMACs[i]
 	u.renderWoLHint()
-	u.updateSTSaveState()
+	u.refreshDirty()
 }
 
 // renderWoLAdapters redraws the dropdown from the last /api/st/hub result,
@@ -526,7 +526,7 @@ func (u *ui) addCurrentHub() {
 	}
 	t.hubs = addHub(t.hubs, t.hub.IP)
 	u.renderHubs()
-	u.updateSTSaveState()
+	u.refreshDirty()
 }
 
 // copyMachineID puts the full machine id on the clipboard — the label
@@ -556,8 +556,26 @@ func (u *ui) updateAddHubButton() {
 	t.addBtn.Disable()
 }
 
-// fillSTSection writes cfg into the section and re-evaluates Save. Must be
-// called on the UI thread, after cfgBaseline is set.
+// stForm is the section's formTab. The watch list is checked here first
+// so the reason comes in the app's language; the service checks it again.
+func (u *ui) stForm(index int) *formTab {
+	return &formTab{
+		index: index,
+		Fill:  u.fillSTSection,
+		Dirty: func(base Config) bool { return u.st.state().dirty(base) },
+		ApplyTo: func(cfg *Config) error {
+			s := u.st.state()
+			*cfg = s.applyTo(*cfg)
+			if problem := activityProblem(u.lang, s.Activity); problem != "" {
+				return errors.New(problem)
+			}
+			return nil
+		},
+	}
+}
+
+// fillSTSection writes cfg into the section (the formTab's Fill). UI
+// thread only.
 func (u *ui) fillSTSection(cfg Config) {
 	t := u.st
 	if t == nil {
@@ -573,69 +591,21 @@ func (u *ui) fillSTSection(cfg Config) {
 	u.fillActivityBox(s.Activity)
 	u.renderHubs()
 	u.renderWoLAdapters()
-	// The secret lives on the settings tab; this only points at it.
-	if cfg.Secret == "" {
+	t.filling = false
+}
+
+// setSTSecretHint shows the "no secret set" warning. It follows the saved
+// config (onConfig), not the settings tab's unsaved entry.
+func (u *ui) setSTSecretHint(on bool) {
+	t := u.st
+	if t == nil || t.secretHint == nil {
+		return
+	}
+	if on {
 		t.secretHint.Show()
 	} else {
 		t.secretHint.Hide()
 	}
-	t.filling = false
-	u.updateSTSaveState()
-}
-
-// stDirty reports whether the SmartThings section differs from
-// cfgBaseline. False while it is being filled or before a baseline exists.
-func (u *ui) stDirty() bool {
-	t := u.st
-	if t == nil || t.bar == nil || t.filling || u.cfgBaseline == nil {
-		return false
-	}
-	return t.state().dirty(*u.cfgBaseline)
-}
-
-// updateSTSaveState enables the network tab's Save, the pulsing indicator
-// and the tab marker only while the section differs from cfgBaseline. Safe
-// to call before the tab exists. UI thread only.
-func (u *ui) updateSTSaveState() {
-	t := u.st
-	if t == nil || t.bar == nil || t.filling {
-		return
-	}
-	dirty := u.stDirty()
-	t.bar.setDirty(dirty)
-	u.markTab(tabNetwork, dirty)
-}
-
-// saveSTSection posts the baseline with this section's fields written over
-// it. quiet skips the "Saved" dialog. Returns false when the save failed.
-// UI thread only.
-func (u *ui) saveSTSection(quiet bool) bool {
-	t := u.st
-	if t == nil || u.cfgBaseline == nil {
-		return false
-	}
-	// The watch list is checked here first so the reason comes in the
-	// app's language; the service checks it again.
-	if problem := activityProblem(u.lang, t.state().Activity); problem != "" {
-		dialog.ShowError(fmt.Errorf("%s", problem), u.win)
-		return false
-	}
-	cfg := t.state().applyTo(*u.cfgBaseline)
-	msg, err := u.client.SaveConfig(cfg)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	// What was just saved is the new "unchanged" state; the other tabs
-	// compare against the same baseline.
-	u.cfgBaseline = &cfg
-	u.fillSTSection(cfg)
-	u.updateSaveState()
-	u.updateNotifySaveState()
-	if !quiet {
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	}
-	return true
 }
 
 // loadSTHub refreshes the connection status line, this PC's id and the

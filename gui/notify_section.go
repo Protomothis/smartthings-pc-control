@@ -11,7 +11,7 @@ import (
 // The settings tab's 미디어·알림 section (media-notify doc §4, "UI 구성"):
 // the media switches of #104 and #117 next to the PC-notification switch
 // of #106 and [테스트 알림]. It shares the settings tab's save bar:
-// settingsDirty and saveSettings consult notifySection.
+// settingsState reads it into settingsFormState.NotifyPC.
 
 // --- Pure model (unit-tested) ------------------------------------------------
 
@@ -50,7 +50,7 @@ type notifySection struct {
 func (u *ui) buildMediaNotifySection(head ...fyne.CanvasObject) fyne.CanvasObject {
 	n := &notifySection{}
 	u.pcNotify = n
-	n.notifyCheck = newToggle(u.t("notifypc.enabled"), func(bool) { u.updateSaveState() })
+	n.notifyCheck = newToggle(u.t("notifypc.enabled"), func(bool) { u.refreshDirty() })
 	n.testStatus = widget.NewLabel("")
 	n.testStatus.Wrapping = fyne.TextWrapWord
 	n.testBtn = widget.NewButtonWithIcon(u.t("notifypc.test"), theme.MailSendIcon(), func() { u.sendNotifyTest() })
@@ -71,14 +71,6 @@ func (u *ui) notifySectionState() notifyPCState {
 		return notifyPCState{}
 	}
 	return notifyPCState{Enabled: n.notifyCheck.Checked}
-}
-
-// notifySectionDirty reports whether the section differs from base.
-func (u *ui) notifySectionDirty(base Config) bool {
-	if u.pcNotify == nil {
-		return false
-	}
-	return u.notifySectionState().dirty(base)
 }
 
 // fillNotifySection writes cfg into the section. UI thread only; the

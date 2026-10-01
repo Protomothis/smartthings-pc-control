@@ -16,7 +16,7 @@ import (
 //
 // POST sends the whole struct back and the service keeps the live value of
 // any key that is omitted — so callers must start from the last GET (see
-// ui.cfgBaseline) rather than a zero Config, or telegram/notify would be
+// forms.base, forms.go) rather than a zero Config, or telegram/notify would be
 // reset to zero values.
 type Config struct {
 	Port          int    `json:"port"`

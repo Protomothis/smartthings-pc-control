@@ -30,9 +30,6 @@ type presetsTab struct {
 	rows    []*presetRowWidgets
 	addBtn  *widget.Button
 	empty   *widget.Label
-	bar     *saveBar
-	// filling suppresses OnChanged while the tab is written.
-	filling bool
 }
 
 // presetRowWidgets is one editor row.
@@ -118,9 +115,10 @@ func (u *ui) buildPresetsTab() fyne.CanvasObject {
 		}
 		u.addPresetRow(presetRow{Slot: slot, Type: "program"})
 		u.relayoutPresets()
-		u.updatePresetsSaveState()
+		u.refreshDirty()
 	})
-	t.bar = newSaveBar(u, func() { u.savePresetsTab(false) })
+	ft := u.forms.register(u.presetsForm(tabPresets))
+	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 	t.root = container.NewVBox(
 		section(u.t("presets.section"), container.NewVBox(
 			hint(u.t("presets.hint")),
@@ -132,7 +130,7 @@ func (u *ui) buildPresetsTab() fyne.CanvasObject {
 		// footer (same as the other form tabs).
 		widget.NewLabel(""),
 	)
-	return withSaveBar(t.root, t.bar)
+	return withSaveBar(t.root, ft.bar)
 }
 
 // pathPlaceholder is the example path for a preset type.
@@ -147,7 +145,7 @@ func (u *ui) pathPlaceholder(typ string) string {
 func (u *ui) addPresetRow(r presetRow) {
 	t := u.presets
 	w := &presetRowWidgets{}
-	onEdit := func(string) { u.updatePresetsSaveState() }
+	onEdit := func(string) { u.refreshDirty() }
 
 	w.slot = widget.NewSelect(slotOptions(), onEdit)
 	if r.Slot >= 1 && r.Slot <= presetMaxSlots {
@@ -179,12 +177,12 @@ func (u *ui) addPresetRow(r presetRow) {
 		t.rows = slices.DeleteFunc(t.rows, func(x *presetRowWidgets) bool { return x == w })
 		t.rowsBox.Remove(w.box)
 		u.relayoutPresets()
-		u.updatePresetsSaveState()
+		u.refreshDirty()
 	}
 	w.typ.OnChanged = func(string) {
 		w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
 		w.setTypeEnabled()
-		u.updatePresetsSaveState()
+		u.refreshDirty()
 	}
 	w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
 	w.setTypeEnabled()
@@ -270,84 +268,40 @@ func (u *ui) testPresetRow(w *presetRowWidgets) {
 	})
 }
 
-// fillPresetsTab writes cfg into the editor and the command tab's preset
-// buttons. UI thread only, after cfgBaseline is set.
+// fillPresetsTab writes cfg into the editor (the formTab's Fill). The
+// command tab's buttons follow the saved config instead (onConfig). UI
+// thread only.
 func (u *ui) fillPresetsTab(cfg Config) {
-	u.fillPresetButtons(cfg.Presets)
 	t := u.presets
 	if t == nil {
 		return
 	}
-	t.filling = true
 	t.rows = nil
 	t.rowsBox.RemoveAll()
 	for _, r := range presetsStateFromConfig(cfg).Rows {
 		u.addPresetRow(r)
 	}
 	u.relayoutPresets()
-	t.filling = false
-	u.updatePresetsSaveState()
 }
 
-// presetsDirty reports whether the editor differs from cfgBaseline.
-func (u *ui) presetsDirty() bool {
-	t := u.presets
-	if t == nil || t.bar == nil || t.filling || u.cfgBaseline == nil {
-		return false
+// presetsForm is the tab's formTab. The rows are checked first so the
+// reason names the slot in the app's language; the service checks again.
+func (u *ui) presetsForm(index int) *formTab {
+	return &formTab{
+		index: index,
+		Fill:  u.fillPresetsTab,
+		Dirty: func(base Config) bool { return u.presets.state().dirty(base) },
+		ApplyTo: func(cfg *Config) error {
+			s := u.presets.state()
+			if next, err := s.applyTo(*cfg); err == nil {
+				*cfg = next
+			}
+			if key, slot := rowsProblem(s.Rows); key != "" {
+				return fmt.Errorf(u.t(key), slot)
+			}
+			return nil
+		},
 	}
-	return t.state().dirty(*u.cfgBaseline)
-}
-
-// updatePresetsSaveState enables Save, the indicator and the tab marker
-// while the editor differs from cfgBaseline. UI thread only.
-func (u *ui) updatePresetsSaveState() {
-	t := u.presets
-	if t == nil || t.bar == nil || t.filling {
-		return
-	}
-	dirty := u.presetsDirty()
-	t.bar.setDirty(dirty)
-	u.markTab(tabPresets, dirty)
-}
-
-// savePresetsTab validates the rows, posts the baseline with the presets
-// over it and re-reads the config (the service sorts them). quiet skips
-// the "Saved" dialog. UI thread only.
-func (u *ui) savePresetsTab(quiet bool) bool {
-	t := u.presets
-	if t == nil || u.cfgBaseline == nil {
-		return false
-	}
-	s := t.state()
-	if key, slot := rowsProblem(s.Rows); key != "" {
-		dialog.ShowError(fmt.Errorf(u.t(key), slot), u.win)
-		return false
-	}
-	cfg, err := s.applyTo(*u.cfgBaseline)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	msg, err := u.client.SaveConfig(cfg)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	fresh, err := u.client.GetConfig()
-	if err != nil {
-		fresh = cfg
-	}
-	fresh = withGraceFallback(fresh)
-	u.cfgBaseline = &fresh
-	u.fillPresetsTab(fresh)
-	// The other form tabs compare against the same baseline.
-	u.updateSaveState()
-	u.updateNotifySaveState()
-	u.updateSTSaveState()
-	if !quiet {
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	}
-	return true
 }
 
 // --- command tab ---------------------------------------------------------

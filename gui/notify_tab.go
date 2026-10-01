@@ -358,9 +358,8 @@ type notifyTab struct {
 	detailSelect *widget.Select
 	pcNameEntry  *widget.Entry
 
-	bar *saveBar
-	// filling suppresses the OnChanged cascade while fillNotifyTab writes
-	// the widgets; the dirty state is evaluated once at the end.
+	// filling suppresses the master/child check cascade while the tab
+	// writes several checks at once (fillNotifyTab, all on / all off).
 	filling bool
 }
 
@@ -463,8 +462,8 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 		kinds:   map[string]map[string]*widget.Check{},
 	}
 	u.notify = t
-	onEdit := func(string) { u.updateNotifySaveState() }
-	onToggle := func(bool) { u.updateNotifySaveState() }
+	onEdit := func(string) { u.refreshDirty() }
+	onToggle := func(bool) { u.refreshDirty() }
 
 	// 1. Telegram connection --------------------------------------------------
 	t.tokenEntry = widget.NewPasswordEntry()
@@ -511,7 +510,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 		if !on {
 			t.setConflictWarn(false)
 		}
-		u.updateNotifySaveState()
+		u.refreshDirty()
 	})
 	t.allowedEntry = widget.NewEntry()
 	t.allowedEntry.SetPlaceHolder("123456789, -1001234567890")
@@ -537,7 +536,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 			t.setChildrenEnabled(cat, on)
 		}
 		t.filling = false
-		u.updateNotifySaveState()
+		u.refreshDirty()
 	}
 	allOn := widget.NewButton(u.t("notify.all.on"), func() { setAll(true) })
 	allOff := widget.NewButton(u.t("notify.all.off"), func() { setAll(false) })
@@ -565,7 +564,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 				t.filling = false
 			}
 			t.setChildrenEnabled(cat, on)
-			u.updateNotifySaveState()
+			u.refreshDirty()
 		}
 		for _, k := range c.kinds {
 			child := widget.NewCheck(u.t("notify.kind."+cat+"."+k.kind), nil)
@@ -579,7 +578,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 					master.SetChecked(on) // runs master.OnChanged
 					return
 				}
-				u.updateNotifySaveState()
+				u.refreshDirty()
 			}
 			t.kinds[cat][k.kind] = child
 			children = append(children, child)
@@ -600,7 +599,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	t.quietDigest = widget.NewCheck(u.t("notify.quiet.digest"), onToggle)
 	t.quietCheck = newToggle(u.t("notify.quiet.enabled"), func(on bool) {
 		t.setQuietEnabled(on)
-		u.updateNotifySaveState()
+		u.refreshDirty()
 	})
 	quietBody := container.NewVBox(
 		t.quietCheck,
@@ -626,8 +625,18 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	)
 
 	// Save lives in the fixed footer (savebar.go), enabled only while the
-	// form differs from cfgBaseline (nil until initialLoad fills the tab).
-	t.bar = newSaveBar(u, func() { u.saveNotifyTab(false) })
+	// form differs from the baseline. The message language follows the app
+	// language (design doc §10), so it is written on every save of the tab.
+	ft := u.forms.register(&formTab{
+		index: tabNotify,
+		Fill:  u.fillNotifyTab,
+		Dirty: func(base Config) bool { return t.state().dirty(base) },
+		ApplyTo: func(cfg *Config) error {
+			*cfg = t.state().applyTo(*cfg, u.lang)
+			return nil
+		},
+	})
+	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
 	t.root = container.NewVBox(
 		section(u.t("notify.telegram"), telegramBody),
@@ -643,7 +652,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 		// footer (same as the settings tab).
 		widget.NewLabel(""),
 	)
-	return withSaveBar(t.root, t.bar)
+	return withSaveBar(t.root, ft.bar)
 }
 
 // anyChecked reports whether any of the checks is on.
@@ -666,8 +675,8 @@ func selectTime(sel *widget.Select, value string) {
 	sel.SetSelected(value)
 }
 
-// fillNotifyTab writes cfg into the tab and re-evaluates Save. Must be
-// called on the UI thread, after cfgBaseline is set.
+// fillNotifyTab writes cfg into the tab (the formTab's Fill). UI thread
+// only.
 func (u *ui) fillNotifyTab(cfg Config) {
 	t := u.notify
 	if t == nil {
@@ -698,7 +707,6 @@ func (u *ui) fillNotifyTab(cfg Config) {
 	t.pcNameEntry.SetText(s.PCName)
 	t.testStatus.SetText("")
 	t.filling = false
-	u.updateNotifySaveState()
 	u.refreshTelegramState()
 
 	// Connection status: ask the service which bot the stored token belongs
@@ -730,7 +738,7 @@ func (u *ui) refreshTelegramState() {
 	if u.notify == nil {
 		return
 	}
-	go func() {
+	background(func() {
 		s, err := u.client.TelegramState()
 		if err != nil {
 			u.markDisconnectedOnNetError(err)
@@ -741,65 +749,7 @@ func (u *ui) refreshTelegramState() {
 				t.setConflictWarn(s.Conflict)
 			}
 		})
-	}()
-}
-
-// notifyDirty reports whether the notify tab differs from cfgBaseline.
-// False while the tab is being filled or before a baseline exists.
-func (u *ui) notifyDirty() bool {
-	t := u.notify
-	if t == nil || t.bar == nil || t.filling || u.cfgBaseline == nil {
-		return false
-	}
-	return t.state().dirty(*u.cfgBaseline)
-}
-
-// updateNotifySaveState enables the tab's Save, the pulsing indicator and
-// the tab marker only while the form differs from cfgBaseline. Safe to call
-// before the tab exists. UI thread only.
-func (u *ui) updateNotifySaveState() {
-	t := u.notify
-	if t == nil || t.bar == nil || t.filling {
-		return
-	}
-	dirty := u.notifyDirty()
-	t.bar.setDirty(dirty)
-	u.markTab(tabNotify, dirty)
-}
-
-// saveNotifyTab posts the baseline with this tab's fields written over it,
-// then re-reads the config so the baseline (and the masked token) reflect
-// what the service stored. quiet skips the "Saved" dialog. Returns false
-// when the save failed. UI thread only.
-func (u *ui) saveNotifyTab(quiet bool) bool {
-	t := u.notify
-	if t == nil || u.cfgBaseline == nil {
-		return false
-	}
-	s := t.state()
-	cfg := s.applyTo(*u.cfgBaseline, u.lang)
-	msg, err := u.client.SaveConfig(cfg)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	fresh, err := u.client.GetConfig()
-	if err != nil {
-		// Saved, but unreadable right now: adopt what was sent, with the
-		// token re-masked so the form does not stay dirty.
-		fresh = cfg
-		fresh.Telegram.BotToken = maskedAfterSave(s.Token, u.cfgBaseline.Telegram.BotToken)
-		fresh.Telegram.BotTokenSet = fresh.Telegram.BotToken != ""
-	}
-	fresh = withGraceFallback(fresh)
-	u.cfgBaseline = &fresh
-	u.fillNotifyTab(fresh)
-	// The settings tab compares against the same baseline.
-	u.updateSaveState()
-	if !quiet {
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	}
-	return true
+	})
 }
 
 // sendTelegramTest asks the service to send one test message with the

@@ -12,12 +12,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Unsaved-changes handling shared by the Settings, Notifications, Network
-// (SmartThings section) and Presets tabs:
-// a fixed footer with a pulsing "unsaved changes" indicator and the Save
-// button (so Save is always visible, however long the tab scrolls), a "•"
-// marker on the tab title, and a Save / Discard / Keep editing prompt when
-// the user switches tabs or closes the window with edits pending.
+// Unsaved-changes handling shared by the form tabs (forms.go): a fixed
+// footer with a pulsing "unsaved changes" indicator and the Save button
+// (so Save is always visible, however long the tab scrolls), a "•" marker
+// on the tab title, and a Save / Discard / Keep editing prompt when the
+// user switches tabs or closes the window with edits pending.
 
 // Tab indices that own a save bar (order set in rebuild).
 const (
@@ -28,10 +27,6 @@ const (
 	tabPresets = 5
 )
 
-// formTabs are the tabs with a save bar, in tab order — the set consulted
-// when the window is closed with edits pending.
-var formTabs = []int{tabSettings, tabNotify, tabNetwork, tabPresets}
-
 // saveBar is the footer under a form tab.
 type saveBar struct {
 	box   *fyne.Container
@@ -39,7 +34,9 @@ type saveBar struct {
 	label *widget.Label
 	save  *widget.Button
 	anim  *fyne.Animation
-	dirty bool
+	// dirty is whether the tab has something to save, shown whether the
+	// indicator is up, busy whether a save is in flight (Save is off then).
+	dirty, shown, busy bool
 }
 
 // newSaveBar builds the footer. onSave runs when Save is pressed.
@@ -51,7 +48,6 @@ func newSaveBar(u *ui, onSave func()) *saveBar {
 	b.label.Truncation = fyne.TextTruncateEllipsis
 	b.save = widget.NewButtonWithIcon(u.t("settings.save"), theme.DocumentSaveIcon(), onSave)
 	b.save.Importance = widget.HighImportance
-	b.save.Disable()
 
 	dot := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), b.dot))
 	row := container.NewBorder(nil, nil, container.NewPadded(dot), b.save, b.label)
@@ -66,28 +62,36 @@ func newSaveBar(u *ui, onSave func()) *saveBar {
 	})
 	b.anim.AutoReverse = true
 	b.anim.RepeatCount = fyne.AnimationRepeatForever
+	b.shown = true // so the first setDirty hides the label
 	b.setDirty(false)
 	return b
 }
 
-// setDirty enables Save and shows the pulsing indicator while on; hides
-// both otherwise. Must be called on the UI thread.
+// setDirty enables Save (unless a save is in flight) and shows the pulsing
+// indicator while on; hides both otherwise. UI thread only.
 func (b *saveBar) setDirty(on bool) {
-	if on == b.dirty && (on || b.label.Hidden) {
+	b.dirty = on
+	setEnabled(b.save, on && !b.busy)
+	if on == b.shown {
 		return
 	}
-	b.dirty = on
+	b.shown = on
 	if on {
-		b.save.Enable()
 		b.label.Show()
 		b.anim.Start()
 	} else {
-		b.save.Disable()
 		b.label.Hide()
 		b.anim.Stop()
 		b.dot.FillColor = color.Transparent
 		b.dot.Refresh()
 	}
+}
+
+// setBusy turns Save off while a save is in flight and back to the dirty
+// state afterwards. UI thread only.
+func (b *saveBar) setBusy(on bool) {
+	b.busy = on
+	setEnabled(b.save, b.dirty && !on)
 }
 
 // withSaveBar lays out a tab as scrollable content over a fixed footer.
@@ -111,80 +115,40 @@ func (u *ui) markTab(index int, dirty bool) {
 	}
 }
 
-// tabDirty reports whether the form tab at index has unsaved edits.
-func (u *ui) tabDirty(index int) bool {
-	switch index {
-	case tabSettings:
-		return u.settingsDirty()
-	case tabNotify:
-		return u.notifyDirty()
-	case tabNetwork:
-		return u.stDirty()
-	case tabPresets:
-		return u.presetsDirty()
-	}
-	return false
-}
-
-// saveTab saves the form tab at index without the "Saved" dialog; returns
-// false when validation or the request failed (the tab stays dirty).
-func (u *ui) saveTab(index int) bool {
-	switch index {
-	case tabSettings:
-		return u.saveSettings(true)
-	case tabNotify:
-		return u.saveNotifyTab(true)
-	case tabNetwork:
-		return u.saveSTSection(true)
-	case tabPresets:
-		return u.savePresetsTab(true)
-	}
-	return true
-}
-
-// discardTab puts the form tab at index back to the last saved config.
-func (u *ui) discardTab(index int) {
-	if u.cfgBaseline == nil {
-		return
-	}
-	switch index {
-	case tabSettings:
-		u.fillSettingsTab(*u.cfgBaseline)
-	case tabNotify:
-		u.fillNotifyTab(*u.cfgBaseline)
-	case tabNetwork:
-		u.fillSTSection(*u.cfgBaseline)
-	case tabPresets:
-		u.fillPresetsTab(*u.cfgBaseline)
-	}
-}
-
-// promptUnsaved shows Save / Discard / Keep editing for the tabs listed in
-// dirtyTabs. onDone runs after a successful save or a discard; nothing
-// happens on Keep editing. Must be called on the UI thread.
-func (u *ui) promptUnsaved(bodyKey string, dirtyTabs []int, onDone func()) {
+// promptUnsaved shows Save / Discard / Keep editing for the dirty tabs.
+// Save posts them together through the one save path; onDone runs after a
+// successful save or a discard; nothing happens on Keep editing. UI thread
+// only.
+func (u *ui) promptUnsaved(bodyKey string, dirty []*formTab, onDone func()) {
 	body := widget.NewLabel(u.t(bodyKey))
 	body.Wrapping = fyne.TextWrapWord
 	d := dialog.NewCustomWithoutButtons(u.t("unsaved.title"), body, u.win)
 
-	saveBtn := widget.NewButtonWithIcon(u.t("unsaved.save"), theme.DocumentSaveIcon(), func() {
-		for _, i := range dirtyTabs {
-			if !u.saveTab(i) {
+	var saveBtn, discardBtn, keepBtn *widget.Button
+	saveBtn = widget.NewButtonWithIcon(u.t("unsaved.save"), theme.DocumentSaveIcon(), func() {
+		busy := busyControls(saveBtn, discardBtn, keepBtn)
+		busy(true)
+		u.saveForms(dirty, true, func(ok bool) {
+			busy(false)
+			if !ok {
 				return // error dialog already shown; keep this prompt open
 			}
-		}
-		d.Hide()
-		onDone()
+			d.Hide()
+			onDone()
+		})
 	})
 	saveBtn.Importance = widget.HighImportance
-	discardBtn := widget.NewButtonWithIcon(u.t("unsaved.discard"), theme.CancelIcon(), func() {
-		for _, i := range dirtyTabs {
-			u.discardTab(i)
+	discardBtn = widget.NewButtonWithIcon(u.t("unsaved.discard"), theme.CancelIcon(), func() {
+		if base := u.forms.base; base != nil {
+			for _, t := range dirty {
+				u.forms.fill(t, *base)
+			}
+			u.refreshDirty()
 		}
 		d.Hide()
 		onDone()
 	})
-	keepBtn := widget.NewButton(u.t("unsaved.keep"), d.Hide)
+	keepBtn = widget.NewButton(u.t("unsaved.keep"), d.Hide)
 
 	// One centred row, like Fyne's own confirm dialogs: the safe choice on
 	// the left, the primary action on the right.
@@ -224,7 +188,8 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 		return
 	}
 	from := u.curTab
-	if from == target || from < 0 || !u.tabDirty(from) {
+	leaving := u.forms.tabAt(from)
+	if from == target || leaving == nil || !u.forms.isDirty(leaving) {
 		u.setCurTab(target)
 		return
 	}
@@ -232,7 +197,7 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 	u.switching = true
 	u.tabs.SelectIndex(from)
 	u.switching = false
-	u.promptUnsaved("unsaved.body.tab", []int{from}, func() {
+	u.promptUnsaved("unsaved.body.tab", []*formTab{leaving}, func() {
 		u.switching = true
 		u.tabs.SelectIndex(target)
 		u.switching = false
@@ -241,14 +206,9 @@ func (u *ui) onTabSelected(item *container.TabItem) {
 }
 
 // onCloseRequest hides the window to the tray, asking first when a form tab
-// has unsaved edits. Installed with SetCloseIntercept in Run.
+// has unsaved edits. Installed with SetCloseIntercept in rebuild.
 func (u *ui) onCloseRequest() {
-	var dirty []int
-	for _, i := range formTabs {
-		if u.tabDirty(i) {
-			dirty = append(dirty, i)
-		}
-	}
+	dirty := u.forms.dirtyTabs()
 	if len(dirty) == 0 {
 		u.win.Hide()
 		return

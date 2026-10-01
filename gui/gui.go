@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -183,13 +182,10 @@ type ui struct {
 	schedText  string
 	trayShown  string
 
-	// Settings: the config as last loaded/saved. Save is enabled only while
-	// the form differs from it; nil until the first successful load. The
-	// notify tab (notify_tab.go) shares the baseline: each tab's Save starts
-	// from it and overwrites only its own fields.
-	settingsBar *saveBar
-	cfgBaseline *Config
-	notify      *notifyTab
+	// forms is the save coordinator (forms.go): the config as last loaded
+	// or saved, and the tabs that edit it. It survives a rebuild.
+	forms  *forms
+	notify *notifyTab
 	// Tab titles without the "•" unsaved marker, the tab shown before the
 	// current selection, and a guard for programmatic SelectIndex calls
 	// (see savebar.go).
@@ -253,9 +249,7 @@ func Run(version string, minimized bool) {
 	// scrollbar in either language; see #53.
 	u.win.Resize(fyne.NewSize(640, 800))
 	// Closing the window hides to the system tray (after an unsaved-changes
-	// prompt when needed); Exit lives in the tray menu.
-	u.win.SetCloseIntercept(u.onCloseRequest)
-
+	// prompt when needed, installed by rebuild); Exit lives in the tray menu.
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
@@ -564,6 +558,14 @@ func (u *ui) setConn(s connState) {
 
 // rebuild recreates the whole window content in the current language.
 func (u *ui) rebuild() {
+	// The form tabs are rebuilt too; their unsaved edits are carried over
+	// as drafts and written into the new widgets below.
+	if u.forms == nil {
+		u.forms = &forms{}
+	}
+	drafts := u.forms.drafts()
+	u.forms.tabs = nil
+
 	// Only the very first build is "connecting"; on a rebuild (language
 	// change) show the known state so the bar doesn't flash back to it.
 	statusKey := "status.connecting"
@@ -597,13 +599,16 @@ func (u *ui) rebuild() {
 		}
 		u.lang = newLang
 		u.app.Preferences().SetString("lang", string(newLang))
-		// rebuild() replaces every widget with empty ones; keep the
-		// current tab and reload config/status/logs/schedule so the
-		// window doesn't fall back to blank fields and "Connecting...".
+		// rebuild() replaces every widget (the forms keep their edits);
+		// keep the current tab and reload status/logs/schedule so the
+		// window doesn't fall back to "Connecting...". The switch back is
+		// not the user leaving a tab, so it asks nothing.
 		selected := u.tabs.SelectedIndex()
 		u.rebuild()
 		if u.connected.Load() && selected >= 0 && selected < len(u.tabs.Items) {
+			u.switching = true
 			u.tabs.SelectIndex(selected)
+			u.switching = false
 		}
 		go u.initialLoad()
 	})
@@ -650,8 +655,17 @@ func (u *ui) rebuild() {
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
 	u.setupTray()
+	// SetSystemTrayWindow (in setupTray) installs a plain Hide as the
+	// close intercept; put the unsaved-changes prompt back in front of it.
+	u.win.SetCloseIntercept(u.onCloseRequest)
 	u.refreshTrayStatus()
 	u.applyConnected(u.connected.Load())
+
+	u.forms.restore(drafts)
+	if u.forms.base != nil {
+		u.onConfig(*u.forms.base)
+	}
+	u.refreshDirty()
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
@@ -698,20 +712,23 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry = widget.NewEntry()
 	u.secretEntry = widget.NewPasswordEntry()
 	// Every edit re-evaluates whether the form differs from the baseline.
-	onEdit := func(string) { u.updateSaveState() }
-	onToggle := func(bool) { u.updateSaveState() }
+	onEdit := func(string) { u.refreshDirty() }
+	onToggle := func(bool) { u.refreshDirty() }
 	u.portEntry.OnChanged = onEdit
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
 	u.nowPlayingCheck = newToggle(u.t("settings.nowplaying"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
-	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
+	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
 
-	u.settingsBar = newSaveBar(u, func() { u.saveSettings(false) })
-	// Nothing to compare against until initialLoad fills the form (the
-	// fields are empty on a language-change rebuild too).
-	u.cfgBaseline = nil
+	ft := u.forms.register(&formTab{
+		index:   tabSettings,
+		Fill:    u.fillSettingsTab,
+		Dirty:   func(base Config) bool { return u.settingsState().dirty(base) },
+		ApplyTo: func(cfg *Config) error { return u.settingsState().applyTo(cfg, u.lang) },
+	})
+	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
 	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
 		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
@@ -797,79 +814,36 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		section(u.t("svc.section"), u.svcBox),
 		u.settingsExtra,
 	)
-	return withSaveBar(u.settingsRoot, u.settingsBar)
+	return withSaveBar(u.settingsRoot, ft.bar)
 }
 
-// saveSettings validates and posts the settings-tab fields over the
-// baseline. quiet skips the "Saved" dialog (used by the unsaved-changes
-// prompt). Returns false when nothing was saved. UI thread only.
-func (u *ui) saveSettings(quiet bool) bool {
-	if u.cfgBaseline == nil {
-		return false // Save is only enabled once a baseline exists
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
-	if err != nil {
-		dialog.ShowError(errors.New(u.t("settings.invalidport")+u.portEntry.Text), u.win)
-		return false
-	}
-	if u.remoteCheck.Checked && u.secretEntry.Text == "" {
-		dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
-		return false
-	}
-	graceOn, graceSec := u.graceFromSelection()
-	// Start from the baseline so the telegram/notify values (owned by the
-	// notify tab) round-trip unchanged: the masked token means "keep" to
-	// the service, and any unsaved notify-tab edits stay dirty against the
-	// new baseline instead of being lost.
-	cfg := *u.cfgBaseline
-	oldSecret := cfg.Secret
-	cfg.Port = port
-	cfg.Secret = u.secretEntry.Text
-	cfg.WebUIRemote = u.remoteCheck.Checked
-	cfg.Media.Enabled = u.mediaCheck.Checked
-	cfg.Media.NowPlaying = u.nowPlayingCheck.Checked
-	if u.pcNotify != nil {
-		u.notifySectionState().applyTo(&cfg) // the 미디어·알림 section (#106)
-	}
-	cfg.ShutdownGrace = graceOn
-	cfg.GraceSeconds = graceSec
-	msg, err := u.client.SaveConfig(cfg)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	// What was just saved is the new "unchanged" state.
-	u.cfgBaseline = &cfg
-	u.updateSaveState()
-	u.updateNotifySaveState()
-	// A new secret (notably the first one) leaves this client without a
-	// valid session; log in with it now rather than letting the next poll
-	// hit a 401 and pop the login dialog (#98). Only prompt if that fails.
-	var reloginErr error
-	if shouldReloginAfterSave(oldSecret, cfg.Secret) {
-		reloginErr = u.client.Login(cfg.Secret)
-	}
-	if !quiet {
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	}
-	if reloginErr != nil {
-		u.promptLogin(func() { go u.initialLoad() })
-	}
-	return true
-}
-
-// fillSettingsTab writes cfg into the settings-tab fields (used on load and
-// when discarding edits). Must be called on the UI thread with cfgBaseline
-// already set.
+// fillSettingsTab writes cfg into the settings-tab fields (the formTab's
+// Fill; the coordinator mutes the change callbacks). UI thread only.
 func (u *ui) fillSettingsTab(cfg Config) {
-	u.portEntry.SetText(strconv.Itoa(cfg.Port))
-	u.secretEntry.SetText(cfg.Secret)
-	u.remoteCheck.SetChecked(cfg.WebUIRemote)
-	u.mediaCheck.SetChecked(cfg.Media.Enabled)
-	u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
+	s := settingsStateFromConfig(cfg)
+	u.portEntry.SetText(s.Port)
+	u.secretEntry.SetText(s.Secret)
+	u.remoteCheck.SetChecked(s.Remote)
+	u.mediaCheck.SetChecked(s.Media)
+	u.nowPlayingCheck.SetChecked(s.NowPlaying)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
-	u.updateSaveState()
+}
+
+// settingsState reads the settings-tab fields into the pure model.
+func (u *ui) settingsState() settingsFormState {
+	s := settingsFormState{
+		Port:       u.portEntry.Text,
+		Secret:     u.secretEntry.Text,
+		Remote:     u.remoteCheck.Checked,
+		Media:      u.mediaCheck.Checked,
+		NowPlaying: u.nowPlayingCheck.Checked,
+		NotifyPC:   u.notifySectionState(),
+	}
+	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
+		s.GraceOn, s.GraceSec = true, u.graceValues[i]
+	}
+	return s
 }
 
 // graceLabels renders graceValues for the select: "Off" for 0, then the
@@ -907,49 +881,6 @@ func (u *ui) setGraceSelection(cfg Config) {
 	u.graceValues = append(u.graceValues, sec)
 	u.graceSelect.Options = u.graceLabels()
 	u.graceSelect.SetSelectedIndex(len(u.graceValues) - 1)
-}
-
-// graceFromSelection maps the select back to the config pair. "Off" keeps
-// the last known period, so switching it back on restores the old value.
-func (u *ui) graceFromSelection() (on bool, seconds int) {
-	i := u.graceSelect.SelectedIndex()
-	if i > 0 && i < len(u.graceValues) {
-		return true, u.graceValues[i]
-	}
-	seconds = fallbackGraceSeconds
-	if u.cfgBaseline != nil && u.cfgBaseline.GraceSeconds > 0 {
-		seconds = u.cfgBaseline.GraceSeconds
-	}
-	return false, seconds
-}
-
-// settingsDirty reports whether the form differs from the loaded/saved
-// config. False (nothing to save) until a baseline exists.
-func (u *ui) settingsDirty() bool {
-	b := u.cfgBaseline
-	if b == nil {
-		return false
-	}
-	graceOn, graceSec := u.graceFromSelection()
-	return strings.TrimSpace(u.portEntry.Text) != strconv.Itoa(b.Port) ||
-		u.secretEntry.Text != b.Secret ||
-		u.remoteCheck.Checked != b.WebUIRemote ||
-		u.mediaCheck.Checked != b.Media.Enabled ||
-		u.nowPlayingCheck.Checked != b.Media.NowPlaying ||
-		graceOn != b.ShutdownGrace ||
-		(graceOn && graceSec != b.GraceSeconds) ||
-		u.notifySectionDirty(*b)
-}
-
-// updateSaveState enables Save, the pulsing indicator and the tab marker
-// only while there is something to save. Must be called on the UI thread.
-func (u *ui) updateSaveState() {
-	if u.settingsBar == nil {
-		return
-	}
-	dirty := u.settingsDirty()
-	u.settingsBar.setDirty(dirty)
-	u.markTab(tabSettings, dirty)
 }
 
 // syncBackground makes background() run its work inline. Tests set it:
@@ -1237,8 +1168,9 @@ func (u *ui) buildNetworkTab() fyne.CanvasObject {
 	stBody := u.buildSTSection()
 
 	// Save lives in the fixed footer (savebar.go), enabled only while the
-	// SmartThings section differs from cfgBaseline.
-	u.st.bar = newSaveBar(u, func() { u.saveSTSection(false) })
+	// SmartThings section differs from the baseline.
+	ft := u.forms.register(u.stForm(tabNetwork))
+	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
 	u.networkRoot = container.NewVBox(
 		container.NewHBox(layout.NewSpacer(), refreshBtn),
@@ -1250,13 +1182,13 @@ func (u *ui) buildNetworkTab() fyne.CanvasObject {
 		widget.NewLabel(""),
 	)
 	u.refreshNetwork()
-	return withSaveBar(u.networkRoot, u.st.bar)
+	return withSaveBar(u.networkRoot, ft.bar)
 }
 
 // refreshNetwork re-reads both halves of the network tab off the UI thread.
 func (u *ui) refreshNetwork() {
-	go u.loadNetwork()
-	go u.loadSTHub()
+	background(u.loadNetwork)
+	background(u.loadSTHub)
 }
 
 func (u *ui) buildLogsTab() fyne.CanvasObject {
@@ -1360,22 +1292,10 @@ func (u *ui) initialLoad() {
 		u.setStatus(u.t("status.connected"))
 		u.setConn(connOK)
 		u.applyConnected(true)
-		// Baseline first: SetText/SetChecked/SetSelectedIndex fire OnChanged,
-		// which compares against it; once everything matches, Save ends up
-		// disabled.
-		cfg = withGraceFallback(cfg)
-		u.cfgBaseline = &cfg
-		u.portEntry.SetText(strconv.Itoa(cfg.Port))
-		u.secretEntry.SetText(cfg.Secret)
-		u.remoteCheck.SetChecked(cfg.WebUIRemote)
-		u.mediaCheck.SetChecked(cfg.Media.Enabled)
-		u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
-		u.setGraceSelection(cfg)
-		u.fillNotifySection(cfg)
-		u.updateSaveState()
-		u.fillNotifyTab(cfg)
-		u.fillSTSection(cfg)
-		u.fillPresetsTab(cfg)
+		// A reconnect or a language switch lands here too: tabs with
+		// unsaved edits keep them (compared against the old baseline) and
+		// only the others follow the service.
+		u.adoptConfig(cfg, u.forms.base)
 	})
 	if err == nil {
 		u.loadLogs()
