@@ -538,7 +538,9 @@ func updateLog(format string, args ...interface{}) {
 // the tray app itself has to leave.
 func guiLog(tag, format string, args ...interface{}) {
 	path := guiLogPath()
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	// Best effort: when the folder cannot be made, OpenFile fails and the
+	// temp-dir fallback below takes over.
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		path = filepath.Join(os.TempDir(), tempGUILogName)
