@@ -29,6 +29,10 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 
 	// Initialize config before starting servers
 	initLogger()
+	// Before config.json is read: as SYSTEM the service can always fix its
+	// own folder, which also heals installs made before #126.
+	secureInstallDirAtStart()
+	go cleanupStaleUpdateFiles()
 	cfg := loadConfig()
 	setConfig(cfg)
 
@@ -130,6 +134,8 @@ func RunConsole() {
 	// exist before the subsystems below read getConfig() (SSDP, Telegram)
 	// or log — otherwise their messages are dropped.
 	initLogger()
+	// No install-folder lockdown here (#126): console mode is for debugging
+	// and usually runs from a build or source folder.
 	setConfig(loadConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
@@ -154,12 +160,21 @@ func Install() error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	// The SYSTEM service will run this exe and read config.json from this
+	// folder, so lock it down before anything is written into it (#126).
+	// The service repeats this at every start.
+	fmt.Println("[1/3] Installing Windows service...")
+	if msg, warn := lockInstallDir(filepath.Dir(exePath)); warn {
+		fmt.Printf("  WARNING: %s\n", msg)
+	} else if msg != "" {
+		fmt.Println("  OK - Install folder restricted to administrators (users: read & execute)")
+	}
+
 	// Create default config if not exists
 	cfg := loadConfig()
 	saveConfig(cfg)
 
 	// Install Windows service
-	fmt.Println("[1/3] Installing Windows service...")
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager: %w", err)

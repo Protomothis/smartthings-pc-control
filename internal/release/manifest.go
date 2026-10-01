@@ -75,6 +75,12 @@ type Manifest struct {
 	// PublishedAt is RFC 3339 UTC, informational.
 	PublishedAt string          `json:"published_at"`
 	Assets      []ManifestAsset `json:"assets"`
+
+	// Signed and Signature are the exact update.json bytes and .sig text
+	// VerifyManifest accepted (never encoded). The GUI hands both to the
+	// elevated updater, which verifies them again itself (#126).
+	Signed    []byte `json:"-"`
+	Signature []byte `json:"-"`
 }
 
 // ManifestAsset is one downloadable file listed in the manifest.
@@ -154,6 +160,8 @@ func VerifyManifest(data, sig []byte, pub ed25519.PublicKey) (*Manifest, error) 
 			return nil, fmt.Errorf("%w: asset %d lacks name or sha256", ErrBadSignature, i)
 		}
 	}
+	m.Signed = append([]byte(nil), data...)
+	m.Signature = append([]byte(nil), sig...)
 	return &m, nil
 }
 

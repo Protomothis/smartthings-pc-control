@@ -76,12 +76,16 @@ func fileSHA256(path string) (string, int64, error) {
 }
 
 // chooseStagingDir picks where the downloaded exe is staged: an "update"
-// folder next to the running exe when that is writable, otherwise one under
-// tempDir (the exe may live in Program Files). The directory is created.
-func chooseStagingDir(exeDir, tempDir string) string {
-	primary := filepath.Join(exeDir, "update")
-	if dirWritable(primary) {
-		return primary
+// folder in the tray's per-user dataDir when that is writable, otherwise
+// one under tempDir. Never the install folder: that is locked to
+// administrators (#126), and the elevated updater copies from here. The
+// directory is created.
+func chooseStagingDir(dataDir, tempDir string) string {
+	if dataDir != "" {
+		primary := filepath.Join(dataDir, "update")
+		if dirWritable(primary) {
+			return primary
+		}
 	}
 	fallback := filepath.Join(tempDir, "smartthings-pc-control", "update")
 	os.MkdirAll(fallback, 0o755)
@@ -103,13 +107,28 @@ func dirWritable(dir string) bool {
 	return true
 }
 
-// stagingDir resolves chooseStagingDir for the running exe.
+// stagingDir resolves chooseStagingDir for this user.
 func stagingDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return chooseStagingDir("", os.TempDir())
+	return chooseStagingDir(userDataDir(), os.TempDir())
+}
+
+// stageManifest writes the exact signed manifest bytes and signature that
+// were verified for this update next to the staged exe, for the elevated
+// updater to verify again on its own (#126). Returns both paths.
+func stageManifest(dir string, m *release.Manifest) (manifest, sig string, err error) {
+	if m == nil || len(m.Signed) == 0 || len(m.Signature) == 0 {
+		return "", "", errors.New("no signed manifest to stage")
 	}
-	return chooseStagingDir(filepath.Dir(exe), os.TempDir())
+	manifest = filepath.Join(dir, release.ManifestName)
+	sig = filepath.Join(dir, release.ManifestSigName)
+	if err := os.WriteFile(manifest, m.Signed, 0o644); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(sig, m.Signature, 0o644); err != nil {
+		os.Remove(manifest)
+		return "", "", err
+	}
+	return manifest, sig, nil
 }
 
 // stagingPath is the final name of a staged download for tag inside dir,

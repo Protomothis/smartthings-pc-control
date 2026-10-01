@@ -35,25 +35,63 @@ func TestStagingPath(t *testing.T) {
 }
 
 func TestChooseStagingDir(t *testing.T) {
-	exeDir := t.TempDir()
+	dataDir := t.TempDir()
 	tmp := t.TempDir()
-	if got, want := chooseStagingDir(exeDir, tmp), filepath.Join(exeDir, "update"); got != want {
-		t.Errorf("writable exe dir: got %q, want %q", got, want)
+	if got, want := chooseStagingDir(dataDir, tmp), filepath.Join(dataDir, "update"); got != want {
+		t.Errorf("writable data dir: got %q, want %q", got, want)
 	}
-	if st, err := os.Stat(filepath.Join(exeDir, "update")); err != nil || !st.IsDir() {
+	if st, err := os.Stat(filepath.Join(dataDir, "update")); err != nil || !st.IsDir() {
 		t.Errorf("staging dir was not created: %v", err)
 	}
 
-	// A regular file where the exe dir should be makes MkdirAll fail →
+	// A regular file where the data dir should be makes MkdirAll fail →
 	// fall back under the temp dir.
 	blocker := filepath.Join(t.TempDir(), "file")
 	os.WriteFile(blocker, []byte("x"), 0o644)
+	fallback := filepath.Join(tmp, "smartthings-pc-control", "update")
 	got := chooseStagingDir(filepath.Join(blocker, "sub"), tmp)
-	if want := filepath.Join(tmp, "smartthings-pc-control", "update"); got != want {
-		t.Errorf("unwritable exe dir: got %q, want %q", got, want)
+	if got != fallback {
+		t.Errorf("unwritable data dir: got %q, want %q", got, fallback)
 	}
 	if st, err := os.Stat(got); err != nil || !st.IsDir() {
 		t.Errorf("fallback dir was not created: %v", err)
+	}
+	// LOCALAPPDATA unknown → temp, never a relative "update" folder.
+	if got := chooseStagingDir("", tmp); got != fallback {
+		t.Errorf("no data dir: got %q, want %q", got, fallback)
+	}
+}
+
+// The tray never writes into the install folder (#126): gui.log and the
+// staged download live in %LOCALAPPDATA%\SmartThings PC Control.
+func TestUserDataPaths(t *testing.T) {
+	const lad = `C:\Users\alice\AppData\Local`
+	if got, want := userDataDirIn(lad), lad+`\SmartThings PC Control`; got != want {
+		t.Errorf("userDataDirIn = %q, want %q", got, want)
+	}
+	if got := userDataDirIn(""); got != "" {
+		t.Errorf("userDataDirIn(\"\") = %q, want \"\"", got)
+	}
+	if got, want := guiLogPathIn(userDataDirIn(lad), `C:\T`), lad+`\SmartThings PC Control\gui.log`; got != want {
+		t.Errorf("guiLogPathIn = %q, want %q", got, want)
+	}
+	if got, want := guiLogPathIn("", `C:\T`), `C:\T\smartthings-pc-control-gui.log`; got != want {
+		t.Errorf("guiLogPathIn without data dir = %q, want %q", got, want)
+	}
+
+	// guiLog really writes there (and creates the folder).
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	guiLog("test", "hello %d", 126)
+	data, err := os.ReadFile(guiLogPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[test] hello 126") {
+		t.Errorf("gui.log = %q", data)
+	}
+	exe, _ := os.Executable()
+	if strings.EqualFold(filepath.Dir(guiLogPath()), filepath.Dir(exe)) {
+		t.Error("gui.log is next to the exe")
 	}
 }
 
@@ -139,22 +177,34 @@ func TestVersionOutputMatches(t *testing.T) {
 }
 
 func TestParseUpdateApplyArgs(t *testing.T) {
-	exe, pid, err := ParseUpdateApplyArgs([]string{`C:\PC Control\update\smartthings-pc-control.v0.3.3.exe`, "4242"})
-	if err != nil || exe != `C:\PC Control\update\smartthings-pc-control.v0.3.3.exe` || pid != 4242 {
-		t.Errorf("valid args: exe=%q pid=%d err=%v", exe, pid, err)
+	const (
+		exe = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\smartthings-pc-control.v0.3.3.exe`
+		man = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\update.json`
+		sig = `C:\Users\alice\AppData\Local\SmartThings PC Control\update\update.json.sig`
+	)
+	a, err := ParseUpdateApplyArgs([]string{exe, "4242", man, sig})
+	if err != nil || a != (UpdateApplyArgs{NewExe: exe, Pid: 4242, Manifest: man, Signature: sig}) {
+		t.Errorf("valid args: %+v err=%v", a, err)
+	}
+	// The pre-#126 form (no manifest) is refused, with a hint.
+	if _, err := ParseUpdateApplyArgs([]string{exe, "4242"}); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Errorf("2-arg form: err = %v, want a manifest error", err)
 	}
 	bad := [][]string{
 		nil,
 		{`C:\a.exe`},
-		{`C:\a.exe`, "1", "extra"},
-		{`relative\a.exe`, "1"},
-		{`C:\a.txt`, "1"},
-		{`C:\a.exe`, "notapid"},
-		{`C:\a.exe`, "-5"},
-		{"", "1"},
+		{`C:\a.exe`, "1", man},
+		{`C:\a.exe`, "1", man, sig, "extra"},
+		{`relative\a.exe`, "1", man, sig},
+		{`C:\a.txt`, "1", man, sig},
+		{`C:\a.exe`, "notapid", man, sig},
+		{`C:\a.exe`, "-5", man, sig},
+		{"", "1", man, sig},
+		{`C:\a.exe`, "1", `update.json`, sig},
+		{`C:\a.exe`, "1", man, ""},
 	}
 	for _, args := range bad {
-		if _, _, err := ParseUpdateApplyArgs(args); err == nil {
+		if _, err := ParseUpdateApplyArgs(args); err == nil {
 			t.Errorf("ParseUpdateApplyArgs(%q) accepted, want error", args)
 		}
 	}

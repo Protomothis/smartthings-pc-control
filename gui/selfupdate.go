@@ -1,102 +1,182 @@
 package gui
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/release"
+	"github.com/Protomothis/smartthings-pc-control/internal/secureacl"
 )
 
 // Self update, stage 2 of issue #40.
 //
-// The GUI downloads and verifies the new exe (update.go), then launches
-// itself elevated as `update-apply "<newExe>" <guiPid>` and quits. The
-// elevated copy (ApplyUpdate) waits for the GUI to exit, stops the service,
-// renames the installed exe to <exe>.old, copies the download over the
-// original path, restarts the service and relaunches the GUI. Renaming (not
-// deleting) is what makes this work: Windows allows renaming a mapped image,
-// and the elevated process itself is running from that same image.
+// The GUI downloads and verifies the new exe (update.go), stages it with
+// the signed manifest it was checked against, then launches itself
+// elevated as `update-apply "<newExe>" <guiPid> "<update.json>"
+// "<update.json.sig>"` and quits. The elevated copy (ApplyUpdate) does not
+// trust the GUI's check: the staged files sit in the user's own folder, so
+// any process of that user could swap them after the GUI looked (#126). It
+// copies all three into <install>\update (admin-only), verifies the
+// signature with the embedded key and the copied exe's SHA-256/size, and
+// only then waits for the GUI to exit, stops the service, renames the
+// installed exe to <exe>.old, copies the verified copy over the original
+// path, restarts the service and relaunches the GUI. Renaming (not
+// deleting) is what makes this work: Windows allows renaming a mapped
+// image, and the elevated process itself is running from that same image.
+//
+// update-apply always runs from the installed exe — the GUI launches its
+// own image (runElevatedSelf) — so a tray only ever talks to an updater of
+// its own version: an older tray runs the older update-apply. The 2-argument
+// form of releases before #126 is therefore refused rather than supported;
+// accepting it would install a file nobody re-verified.
 
-// oldExeSuffix marks the previous binary kept for rollback until the next
-// GUI start removes it.
+// oldExeSuffix marks the previous binary kept for rollback until the
+// restarted service removes it (the install folder is locked to
+// administrators since #126, so the tray usually cannot).
 const oldExeSuffix = ".old"
 
-// ParseUpdateApplyArgs validates the arguments of the hidden
-// `update-apply <newExePath> <guiPid>` command.
-func ParseUpdateApplyArgs(args []string) (newExe string, pid int, err error) {
-	if len(args) != 2 {
-		return "", 0, fmt.Errorf("usage: update-apply <newExePath> <guiPid> (got %d args)", len(args))
-	}
-	newExe = strings.TrimSpace(args[0])
-	if newExe == "" {
-		return "", 0, errors.New("update-apply: empty exe path")
-	}
-	if !filepath.IsAbs(newExe) {
-		return "", 0, fmt.Errorf("update-apply: exe path must be absolute: %q", newExe)
-	}
-	if !strings.EqualFold(filepath.Ext(newExe), ".exe") {
-		return "", 0, fmt.Errorf("update-apply: not an exe: %q", newExe)
-	}
-	pid, err = strconv.Atoi(strings.TrimSpace(args[1]))
-	if err != nil || pid < 0 {
-		return "", 0, fmt.Errorf("update-apply: bad pid %q", args[1])
-	}
-	return newExe, pid, nil
-}
+// updatePublicKey verifies the staged manifest in the elevated updater;
+// tests swap in their own key.
+var updatePublicKey = release.PublicKey
 
-// ApplyUpdate replaces the running installation with newExe. It must run
-// elevated (the GUI launches it via ShellExecuteEx "runas"). waitPid is the
-// GUI process that spawned us; 0 skips the wait. Every step is appended to
-// gui.log next to the exe. On failure after the rename the old exe is put
-// back; either way the GUI is relaunched so the user is not left without it,
-// and a message box reports the failure.
-func ApplyUpdate(newExe string, waitPid int) error {
-	err := applyUpdate(newExe, waitPid)
-	if err != nil {
-		updateLog("update failed: %v", err)
-		messageBox("SmartThings PC Control", "업데이트 실패 / Update failed:\n\n"+err.Error()+
-			"\n\ngui.log 를 확인하세요. / See gui.log for details.")
-	}
-	cur, cerr := os.Executable()
-	if cerr == nil {
-		launchGUIUnelevated(cur)
-	}
+// lockUpdateDir gives <install>\update the admin-only install DACL before
+// anything is copied into it, so the copy cannot be swapped between the
+// check and the install even when the install folder itself could not be
+// locked. Tests replace it: a non-elevated test run would lock itself out.
+var lockUpdateDir = func(dir string) error {
+	_, err := secureacl.Apply(dir)
 	return err
 }
 
-func applyUpdate(newExe string, waitPid int) error {
+// Limits for the staged manifest files (the release assets are far smaller).
+const (
+	maxStagedManifest = 64 * 1024
+	maxStagedSig      = 1024
+)
+
+// verifiedExeName is the name of the re-verified copy in <install>\update.
+const verifiedExeName = "smartthings-pc-control.verified.exe"
+
+// UpdateApplyArgs is the parsed command line of the hidden update-apply
+// command.
+type UpdateApplyArgs struct {
+	NewExe    string // staged download (user-writable)
+	Pid       int    // GUI to wait for; 0 = don't wait
+	Manifest  string // staged update.json
+	Signature string // staged update.json.sig
+}
+
+// ParseUpdateApplyArgs validates the arguments of the hidden
+// `update-apply <newExePath> <guiPid> <manifestPath> <sigPath>` command.
+func ParseUpdateApplyArgs(args []string) (UpdateApplyArgs, error) {
+	var a UpdateApplyArgs
+	if len(args) == 2 {
+		return a, errors.New("update-apply: the signed manifest is missing (this updater needs <newExePath> <guiPid> <update.json> <update.json.sig>); restart the app and update again")
+	}
+	if len(args) != 4 {
+		return a, fmt.Errorf("usage: update-apply <newExePath> <guiPid> <update.json> <update.json.sig> (got %d args)", len(args))
+	}
+	abs := func(what, p string) (string, error) {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return "", fmt.Errorf("update-apply: empty %s path", what)
+		}
+		if !filepath.IsAbs(p) {
+			return "", fmt.Errorf("update-apply: %s path must be absolute: %q", what, p)
+		}
+		return p, nil
+	}
+	var err error
+	if a.NewExe, err = abs("exe", args[0]); err != nil {
+		return UpdateApplyArgs{}, err
+	}
+	if !strings.EqualFold(filepath.Ext(a.NewExe), ".exe") {
+		return UpdateApplyArgs{}, fmt.Errorf("update-apply: not an exe: %q", a.NewExe)
+	}
+	a.Pid, err = strconv.Atoi(strings.TrimSpace(args[1]))
+	if err != nil || a.Pid < 0 {
+		return UpdateApplyArgs{}, fmt.Errorf("update-apply: bad pid %q", args[1])
+	}
+	if a.Manifest, err = abs("manifest", args[2]); err != nil {
+		return UpdateApplyArgs{}, err
+	}
+	if a.Signature, err = abs("signature", args[3]); err != nil {
+		return UpdateApplyArgs{}, err
+	}
+	return a, nil
+}
+
+// ApplyUpdate replaces the running installation with the staged exe once
+// it has been re-verified (see the top of this file). It must run elevated
+// (the GUI launches it via ShellExecuteEx "runas"); current is the version
+// of this, the installed, exe. Every step is appended to gui.log
+// (guiLogPath). A failed check leaves the installed exe untouched; a
+// failure after the rename puts the old exe back. Either way the GUI is
+// relaunched so the user is not left without it, and a message box reports
+// the failure.
+func ApplyUpdate(a UpdateApplyArgs, current string) error {
+	err := applyUpdate(a, current)
+	finishUpdateApply(err)
+	return err
+}
+
+// AbortUpdateApply reports update-apply arguments that did not parse the
+// way a failed update is reported — the GUI has already quit, so it must
+// not just vanish — and relaunches the GUI.
+func AbortUpdateApply(err error) { finishUpdateApply(err) }
+
+// finishUpdateApply logs and shows err (if any) and relaunches the GUI.
+func finishUpdateApply(err error) {
+	if err != nil {
+		updateLog("update failed: %v", err)
+		messageBox("SmartThings PC Control", "업데이트 실패 / Update failed:\n\n"+err.Error()+
+			"\n\n로그 / Log: "+guiLogPath())
+	}
+	if cur, cerr := os.Executable(); cerr == nil {
+		launchGUIUnelevated(cur)
+	}
+}
+
+func applyUpdate(a UpdateApplyArgs, current string) error {
 	cur, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve own path: %w", err)
 	}
 	cur, _ = filepath.Abs(cur)
-	newExe, _ = filepath.Abs(newExe)
-	updateLog("update-apply start: new=%s target=%s waitPid=%d", newExe, cur, waitPid)
+	a.NewExe, _ = filepath.Abs(a.NewExe)
+	updateLog("update-apply start: new=%s target=%s waitPid=%d", a.NewExe, cur, a.Pid)
 
-	if strings.EqualFold(cur, newExe) {
+	if strings.EqualFold(cur, a.NewExe) {
 		return errors.New("new exe path equals the installed path")
 	}
-	st, err := os.Stat(newExe)
-	if err != nil {
-		return fmt.Errorf("new exe: %w", err)
-	}
-	if st.Size() == 0 {
-		return errors.New("new exe is empty")
-	}
 
-	if waitPid > 0 {
-		if waitForProcessExit(uint32(waitPid), 30*time.Second) {
-			updateLog("GUI pid %d exited", waitPid)
+	// Everything below installs only this re-verified copy, never the
+	// user-writable file the GUI staged.
+	verified, err := stageVerifiedUpdate(a, cur, current, updatePublicKey)
+	if err != nil {
+		return err
+	}
+	updDir := filepath.Dir(verified)
+	defer os.RemoveAll(updDir) // also on failure; idempotent
+
+	if a.Pid > 0 {
+		if waitForProcessExit(uint32(a.Pid), 30*time.Second) {
+			updateLog("GUI pid %d exited", a.Pid)
 		} else {
-			updateLog("GUI pid %d still running after 30s — continuing anyway", waitPid)
+			updateLog("GUI pid %d still running after 30s — continuing anyway", a.Pid)
 		}
 	}
 
@@ -109,34 +189,20 @@ func applyUpdate(newExe string, waitPid int) error {
 		updateLog("service stopped")
 	}
 
-	old := cur + oldExeSuffix
-	os.Remove(old) // stale leftover from a previous update, best-effort
-	if err := os.Rename(cur, old); err != nil {
+	if err := swapExe(verified, cur); err != nil {
 		if wasRunning {
 			startService()
 		}
-		return fmt.Errorf("rename installed exe: %w", err)
+		return err
 	}
-	updateLog("renamed %s -> %s", filepath.Base(cur), filepath.Base(old))
-
-	if err := copyFile(newExe, cur); err != nil {
-		updateLog("copy failed: %v — rolling back", err)
-		os.Remove(cur)
-		if rerr := os.Rename(old, cur); rerr != nil {
-			updateLog("ROLLBACK FAILED: %v (old exe is at %s)", rerr, old)
-		} else {
-			updateLog("rollback ok")
-		}
-		if wasRunning {
-			startService()
-		}
-		return fmt.Errorf("copy new exe: %w", err)
+	// The verified copy and the GUI's staged files are no longer needed.
+	// <install>\update goes before the service starts, so its start-up
+	// permission check never races the delete.
+	os.RemoveAll(updDir)
+	for _, p := range []string{a.NewExe, a.Manifest, a.Signature} {
+		os.Remove(p)
 	}
-	updateLog("copied new exe into place")
-	// Staged download is no longer needed; ignore errors (temp dir cleanup).
-	if err := os.Remove(newExe); err == nil {
-		os.Remove(filepath.Dir(newExe)) // only succeeds when empty
-	}
+	os.Remove(filepath.Dir(a.NewExe)) // only succeeds when empty
 
 	if wasRunning {
 		if err := startService(); err != nil {
@@ -148,6 +214,137 @@ func applyUpdate(newExe string, waitPid int) error {
 		}
 	}
 	updateLog("update-apply done")
+	return nil
+}
+
+// stageVerifiedUpdate copies the GUI's staged exe, manifest and signature
+// into a fresh, admin-only <install>\update and verifies the copies: the
+// manifest signature against pub, that the manifest is newer than current
+// and allows updating from it, and the copied exe's SHA-256 and size
+// against the manifest asset for this arch. It returns the path of the
+// verified exe. On any failure the folder is removed again and nothing
+// else has been touched; a hash mismatch wraps errHashMismatch, a bad
+// signature release.ErrBadSignature.
+func stageVerifiedUpdate(a UpdateApplyArgs, cur, current string, pub ed25519.PublicKey) (verified string, err error) {
+	updDir := filepath.Join(filepath.Dir(cur), "update")
+	if err := prepareUpdateDir(updDir); err != nil {
+		return "", fmt.Errorf("prepare %s: %w", updDir, err)
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(updDir)
+		}
+	}()
+
+	manPath := filepath.Join(updDir, release.ManifestName)
+	sigPath := filepath.Join(updDir, release.ManifestSigName)
+	verified = filepath.Join(updDir, verifiedExeName)
+	if err := copyLimited(a.Manifest, manPath, maxStagedManifest); err != nil {
+		return "", fmt.Errorf("copy manifest: %w", err)
+	}
+	if err := copyLimited(a.Signature, sigPath, maxStagedSig); err != nil {
+		return "", fmt.Errorf("copy signature: %w", err)
+	}
+	if err := copyFile(a.NewExe, verified); err != nil {
+		return "", fmt.Errorf("copy new exe: %w", err)
+	}
+	updateLog("copied staged files into %s", updDir)
+
+	data, err := os.ReadFile(manPath)
+	if err != nil {
+		return "", err
+	}
+	sig, err := os.ReadFile(sigPath)
+	if err != nil {
+		return "", err
+	}
+	m, err := release.VerifyManifest(data, sig, pub)
+	if err != nil {
+		return "", err
+	}
+	if !release.IsNewer(current, m.Version) {
+		return "", fmt.Errorf("manifest is for %s, which is not newer than the installed %s", m.Version, current)
+	}
+	if !m.Allows(current) {
+		return "", fmt.Errorf("%s cannot be updated to directly from %s (min_version %s)", m.Version, current, m.MinVersion)
+	}
+	asset, ok := m.AssetFor(runtime.GOARCH)
+	if !ok {
+		return "", fmt.Errorf("manifest %s has no asset for %s", m.Version, runtime.GOARCH)
+	}
+	sum, size, err := fileSHA256(verified)
+	if err != nil {
+		return "", err
+	}
+	if err := asset.Verify(sum, size); err != nil {
+		return "", fmt.Errorf("%w: %v", errHashMismatch, err)
+	}
+	updateLog("verified %s against the signed manifest %s", verifiedExeName, m.Version)
+	return verified, nil
+}
+
+// prepareUpdateDir makes dir a fresh, empty, locked directory. Whatever was
+// there before — leftovers, a file, or a link or junction someone planted
+// while the install folder was still writable — is removed first (RemoveAll
+// removes a link itself, never its target).
+func prepareUpdateDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		return err
+	}
+	if err := lockUpdateDir(dir); err != nil {
+		return fmt.Errorf("restrict permissions: %w", err)
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() || fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+		return errors.New("not a plain directory")
+	}
+	return nil
+}
+
+// copyLimited copies src to dst, refusing a source larger than max bytes.
+func copyLimited(src, dst string, max int64) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	data, err := io.ReadAll(io.LimitReader(in, max+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) > max {
+		return fmt.Errorf("%s is larger than %d bytes", filepath.Base(src), max)
+	}
+	return os.WriteFile(dst, data, 0o644)
+}
+
+// swapExe renames cur to cur.old and copies verified into its place,
+// putting the old exe back when the copy fails.
+func swapExe(verified, cur string) error {
+	old := cur + oldExeSuffix
+	os.Remove(old) // stale leftover from a previous update, best-effort
+	if err := os.Rename(cur, old); err != nil {
+		return fmt.Errorf("rename installed exe: %w", err)
+	}
+	updateLog("renamed %s -> %s", filepath.Base(cur), filepath.Base(old))
+
+	if err := copyFile(verified, cur); err != nil {
+		updateLog("copy failed: %v — rolling back", err)
+		os.Remove(cur)
+		if rerr := os.Rename(old, cur); rerr != nil {
+			updateLog("ROLLBACK FAILED: %v (old exe is at %s)", rerr, old)
+		} else {
+			updateLog("rollback ok")
+		}
+		return fmt.Errorf("copy new exe: %w", err)
+	}
+	updateLog("copied new exe into place")
 	return nil
 }
 
@@ -265,13 +462,19 @@ func launchGUIUnelevated(exe string) {
 // cleanupStaleUpdateFiles removes <exe>.old and abandoned ".part" downloads
 // left by a previous update. Deleting .old fails while the elevated updater
 // (mapped from that file) is still exiting, so retry for a few seconds.
-// Best-effort; runs in a goroutine at GUI start.
+// In a locked install folder (#126) the deletes there simply fail; the
+// service removes those files instead. Best-effort; runs in a goroutine at
+// GUI start.
 func cleanupStaleUpdateFiles() {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
-	for _, dir := range []string{filepath.Join(filepath.Dir(exe), "update"), filepath.Join(os.TempDir(), "smartthings-pc-control", "update")} {
+	dirs := []string{filepath.Join(filepath.Dir(exe), "update"), filepath.Join(os.TempDir(), "smartthings-pc-control", "update")}
+	if d := userDataDir(); d != "" {
+		dirs = append(dirs, filepath.Join(d, "update"))
+	}
+	for _, dir := range dirs {
 		parts, _ := filepath.Glob(filepath.Join(dir, "*.part"))
 		for _, p := range parts {
 			os.Remove(p)
@@ -290,8 +493,42 @@ func cleanupStaleUpdateFiles() {
 	}
 }
 
-// updateLog appends a timestamped line to gui.log next to the exe (falling
-// back to the temp dir when that is not writable). Truncates once the file
+// userDataDirName is the tray's own folder under %LOCALAPPDATA%.
+const userDataDirName = "SmartThings PC Control"
+
+// tempGUILogName is gui.log's fallback name in the temp dir.
+const tempGUILogName = "smartthings-pc-control-gui.log"
+
+// userDataDir is %LOCALAPPDATA%\SmartThings PC Control, the only place the
+// tray (running as the logged-in user) writes files: gui.log and staged
+// update downloads. The install folder is locked to administrators (#126),
+// so nothing the tray does may need write access there. "" when
+// LOCALAPPDATA is unset.
+func userDataDir() string { return userDataDirIn(os.Getenv("LOCALAPPDATA")) }
+
+// userDataDirIn is userDataDir for a given %LOCALAPPDATA%.
+func userDataDirIn(localAppData string) string {
+	if localAppData == "" {
+		return ""
+	}
+	return filepath.Join(localAppData, userDataDirName)
+}
+
+// guiLogPathIn is gui.log inside dataDir, or a file in temp when dataDir is
+// unknown.
+func guiLogPathIn(dataDir, temp string) string {
+	if dataDir == "" {
+		return filepath.Join(temp, tempGUILogName)
+	}
+	return filepath.Join(dataDir, "gui.log")
+}
+
+// guiLogPath is where guiLog writes: %LOCALAPPDATA%\SmartThings PC
+// Control\gui.log. Until #126 it was next to the exe.
+func guiLogPath() string { return guiLogPathIn(userDataDir(), os.TempDir()) }
+
+// updateLog appends a timestamped line to gui.log (guiLogPath; falling back
+// to the temp dir when that is not writable). Truncates once the file
 // grows past 1 MB — this log only ever sees a handful of lines per update.
 func updateLog(format string, args ...interface{}) {
 	guiLog("update", format, args...)
@@ -300,13 +537,11 @@ func updateLog(format string, args ...interface{}) {
 // guiLog is updateLog under another tag ("[tag] ..."), for the rare line
 // the tray app itself has to leave.
 func guiLog(tag, format string, args ...interface{}) {
-	path := "gui.log"
-	if exe, err := os.Executable(); err == nil {
-		path = filepath.Join(filepath.Dir(exe), "gui.log")
-	}
+	path := guiLogPath()
+	os.MkdirAll(filepath.Dir(path), 0o755)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		path = filepath.Join(os.TempDir(), "smartthings-pc-control-gui.log")
+		path = filepath.Join(os.TempDir(), tempGUILogName)
 		if f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err != nil {
 			return
 		}

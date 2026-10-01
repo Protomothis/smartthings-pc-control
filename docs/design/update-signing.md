@@ -76,6 +76,16 @@ go run ./internal/tools/signmanifest verify update.json update.json.sig
 보조 확인으로 남는다. 서명 검증은 `VerifyManifest` 가 JSON 을 해석하기 **전에** 하므로,
 검증되지 않은 내용은 어떤 필드도 읽히지 않는다.
 
+관리자 권한 단계(`update-apply <exe> <pid> <update.json> <update.json.sig>`,
+`gui/selfupdate.go` `stageVerifiedUpdate`)는 앱이 한 확인을 믿지 않는다(#126). 앱이 내려받아
+둔 파일은 사용자 폴더(`%LOCALAPPDATA%\SmartThings PC Control\update`)에 있어 같은 사용자의
+다른 프로세스가 확인 뒤에 바꿀 수 있기 때문이다. 그래서 세 파일을 관리자 전용
+`<설치 폴더>\update\`로 복사한 다음 내장 공개키로 서명을, 설치본보다 새 `version`인지와
+`min_version`을, 복사한 exe의 sha256·size를 차례로 확인하고, 통과한 **복사본**으로만 교체한다.
+하나라도 어긋나면 설치된 exe는 건드리지 않고 메시지 상자와 `gui.log`로 알린다. `update-apply`는
+언제나 설치된 exe(트레이 자신의 이미지)로 실행되므로 트레이와 업데이터의 버전이 같다. 그래서
+매니페스트 없는 옛 2인자 형식은 받지 않는다.
+
 ## 4. 키 관리
 
 - 알고리즘: ed25519 (표준 라이브러리 `crypto/ed25519`), 시드 32바이트.
