@@ -111,3 +111,17 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - cosock 소켓은 `reuseaddr` 옵션을 거부한다("unknown variant"). `timeout`·`keepalive`·`tcp-nodelay`만 받는다.
 - `EDGE_CHILD` 장치는 DNI를 지정할 수 없다.
 - 장치 health를 offline으로 두면 앱이 스위치를 회색으로 만들어 **Wake-on-LAN을 쓸 수 없다.** PC가 꺼진 것은 health가 아니라 `powerState`·`switch`로 표현하고 health는 online으로 유지한다.
+
+## 이벤트 예산(rate limit)
+
+2026-10-01, 허브 logcat과 클라우드 이력을 함께 놓고 실측했다(드라이버 1.1.0 개발판, v1.2.0 서비스).
+
+- **장치마다 이벤트 예산이 있고, 허브가 버리는 이벤트도 예산을 쓴다.** 당시 드라이버는 정기 폴링(약 30초)마다 줄 약 40개(switch, pcPower, pcRemote, pcDefer×6, pcInfo×8, pcUser×5, 미디어×3, audioTrackData×3, audioVolume, audioMute, pcPreset×2, pcActivity×2, 잠들지 않기 스위치, pcToast …)를 다시 내보내고 바뀌지 않은 값은 허브가 버리리라 믿었으며, 명령이 성공할 때마다 같은 전체 폴링을 한 번 더 돌렸다. 음소거/해제 명령 넷을 1.5–2초 간격으로 보내자 8초 동안 `emitting event` 줄이 약 230개 찍혔다.
+- **예산을 넘으면 그 장치의 이벤트가 모두 사라진다.** 클라우드에는 첫 묶음만 저장되고, 그 뒤 약 40초 동안 장치의 **모든** 이벤트 — 실제로 바뀐 `pcInfo.lastSeen`도, `state_change = true`로 강제한 `audioMute.mute`도 — 가 버려졌다. 다른 시도에서는 한 묶음 중간에서 끊겼다(묶음의 16번째쯤인 lastSeen은 저장, 30번째쯤인 mute는 버려짐). 위 "강제 이벤트를 연발하면 그 뒤의 이벤트가 사라진다"(2026-09-26)도 같은 현상으로 보인다.
+- **잃은 이벤트가 허브 캐시를 오염시킨다.** 허브의 상태 캐시는 버려진 값을 이미 받아들였다. 그래서 뒤이은 정상적인(강제 아닌) `muted` 전송을 허브가 "안 바뀜"으로 버려, 클라우드는 무기한 `unmuted`에 머물렀고 휴대폰은 사용자가 해제하려 할 때마다 `mute`를 보냈다. 값이 다시 바뀌거나 강제 전송이 닿을 때까지 풀리지 않는다.
+- 그래서 드라이버(`poll.lua`)는:
+  - ⑴ **스스로 중복을 거른다.** 실행마다 메모리에 줄(`poll.row_key`)별 마지막 전송 값을 정규화해 두고(`poll.SENT_FIELD`), 강제 아닌 같은 값은 `emit_event`를 부르지도 않는다. 강제는 언제나 나가고 기록을 갱신한다. 실행마다 첫 전송 강제(`poll.FIRST_FIELD`)는 그대로이고, 프로필이 바뀌면(`poll.repaint`) 기록을 비운다. 고른 상태의 정기 폴링은 이제 `lastSeen` 하나만 낸다.
+  - ⑵ **명령의 응답 폴링을 합친다.** 첫 명령은 바로 폴링하고 1.5초 창(`poll.ANSWER_WINDOW_SECONDS`)을 연다. 창 안에 들어온 명령들은 강제할 줄을 모아 창이 닫힐 때 폴링 한 번으로 답한다. 모든 명령의 줄이 한 창 안에 강제 응답을 받으므로 회전 표시 규칙(위 "값이 바뀌지 않는 명령은 회전 표시 뒤 오류로 끝난다")은 그대로다.
+  - ⑶ **잃은 값을 되살린다.** 10분마다(`poll.RESYNC_SECONDS`), 그리고 10초 안에 명령이 셋 이상 오면 60초 뒤 한 번 더, 사용자가 보는 줄 여섯(main switch, `pcPower.powerState`, `audioMute.mute`, `audioVolume.volume`, `mediaPlayback.playbackStatus`, 잠들지 않기 switch)을 마지막으로 보낸 값 그대로 강제로 다시 보낸다. 위 #93 후속의 "같은 값을 주기적으로 다시 내보내지 않는다"가 막는 것은 몇 초 안의 연발이고, 이것은 창마다 한 번, 여섯 개다.
+  - ⑷ 드라이버가 10초에 20개를 넘게 내면 logcat에 `event budget` 경고를 한 번 남긴다(버리지는 않는다).
+- 같은 측정 조건의 테스트(`tests/budget_test.lua`)에서 정기 폴링은 39 → 1개, 음소거 명령 넷은 156 → 12개(1.5초 안에 몰아치면 6개)다. 실행의 첫 폴링과 프로필 변경 뒤의 다시 칠하기(`repaint_soon`)는 여전히 줄 전부를 강제로 낸다 — 경고가 찍히는 것이 정상인 유일한 경우다.

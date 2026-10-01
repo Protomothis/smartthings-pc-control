@@ -263,7 +263,8 @@ function T.test_emit_passes_the_state_change_option_through()
   device.emitted = {}
   poll.emit(device, {
     { cap = caps.COMMAND, attr = "lastAction", value = "none", force = true },
-    { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" },
+    -- A changed value: an unchanged one would not be emitted at all.
+    { cap = caps.COMMAND, attr = "lastCommand", value = "재시작 · 14:05" },
   })
   local emitted = h.emitted(device)
   h.assert_true(h.event_forced(emitted, caps.COMMAND, "lastAction"),
@@ -277,12 +278,16 @@ function T.test_the_first_emit_of_a_row_in_a_run_is_forced()
   -- "unmuted" and dropped every unforced "unmuted" while the cloud had never
   -- stored one, so the row stayed null. The first emit per row per run is
   -- forced; the second is not; a new run (fresh device object) starts over.
+  -- Event budget: the second emit of the SAME value is not made at all, so
+  -- the unforced second emit here carries a new value.
   local caps = require "caps"
   local device = h.fake_device()
   poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "first emit is forced")
   device.emitted = {}
   poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  h.assert_equal(#device.emitted, 0, "the same value again is not emitted")
+  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "잠금 · 14:05" } })
   h.assert_false(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "second emit is not")
   device.emitted = {}
   poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)", component = "awake" } })

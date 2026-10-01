@@ -108,8 +108,14 @@ end
 --- caller passes one (the same injection discovery.lua and push.lua take), so
 --- tests never read the real clock.
 function poll.clock(deps)
-  return ((deps or {}).now or os.time)()
+  return ((deps or {}).now or poll.wallclock)()
 end
+
+--- The clock `poll.clock` falls back to when no `deps.now` is given: what the
+--- emit funnel's budget guard and the resync windows read (they are reached
+--- from every command handler, none of which carries `deps`). A test replaces
+--- it and puts it back.
+poll.wallclock = os.time
 
 function poll.lang(device)
   return ((device or {}).preferences or {}).language
@@ -209,7 +215,9 @@ end
 --- Emit a list of `{ cap, attr, value, force?, component? }` records.
 -- `force` marks an emit that answers a command from the app: it goes out with
 -- `{ state_change = true }` so the platform delivers it even when the value did
--- not change. Ordinary poll updates stay unforced.
+-- not change. Ordinary poll updates stay unforced, and one whose value equals
+-- what this run last emitted on the row is not emitted at all (`SENT_FIELD`,
+-- the event budget).
 -- #107: `component` names a component other than `main` (`awake`, `battery`).
 -- Such an event goes out with `emit_component_event`, and only when the
 -- device's profile has that component.
@@ -237,8 +245,121 @@ local function first_emit(device, key)
   return true
 end
 
+--------------------------------------------------------------------------------
+-- The event budget (platform notes "이벤트 예산(rate limit)")
+--------------------------------------------------------------------------------
+
+-- Measured on the hub 2026-10-01 (logcat + the cloud's history): the platform
+-- counts every `emit_event` against a per-device budget whether or not the hub
+-- then drops it as unchanged. Four mute/unmute commands 1.5-2 s apart made
+-- ~230 emits in 8 s; the cloud stored the first batch and then dropped EVERY
+-- event of the device for ~40 s - while the hub's own state cache took the
+-- dropped values, so the unforced repeats of the right value that followed
+-- were deduplicated by the hub and the cloud stayed wrong.
+--
+-- So the driver deduplicates itself: `SENT_FIELD` holds, per row key, a
+-- canonical serialization of the last value this driver run emitted, and an
+-- unforced record whose value matches is not emitted at all. Forced records
+-- always go out (they answer a command, or repaint a new profile) and update
+-- the cache. In memory only: a new run starts empty, and its first emit of
+-- every row is forced anyway (`FIRST_FIELD`).
+poll.SENT_FIELD = "rows_sent_this_run"
+
+-- The budget guard: how many emits in how many seconds the driver itself may
+-- make before it says so in logcat. Log only - nothing is dropped here.
+poll.BUDGET_EVENTS = 20
+poll.BUDGET_SECONDS = 10
+poll.BUDGET_FIELD = "emit_budget"
+
+-- Turn a value into a string that is equal exactly when the value is: tables
+-- by sorted keys, numbers so that 30 and 30.0 agree, strings quoted so that
+-- "1" and 1 do not.
+local function signature(value, depth)
+  local kind = type(value)
+  if kind == "string" then
+    return string.format("%q", value)
+  end
+  if kind == "number" then
+    return "n" .. string.format("%.17g", value)
+  end
+  if kind == "boolean" or kind == "nil" then
+    return tostring(value)
+  end
+  if kind ~= "table" then
+    return kind
+  end
+  depth = (depth or 0) + 1
+  if depth > 8 then
+    return "{…}"
+  end
+  local keys = {}
+  for k in pairs(value) do
+    keys[#keys + 1] = k
+  end
+  table.sort(keys, function(a, b)
+    local ta, tb = type(a), type(b)
+    if ta ~= tb then
+      return ta < tb
+    end
+    if ta == "number" or ta == "string" then
+      return a < b
+    end
+    return tostring(a) < tostring(b)
+  end)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    parts[#parts + 1] = signature(k, depth) .. "=" .. signature(value[k], depth)
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+poll.signature = signature
+
+local function sent_cache(device)
+  local sent
+  pcall(function() sent = device:get_field(poll.SENT_FIELD) end)
+  if type(sent) ~= "table" then
+    sent = {}
+    pcall(function() device:set_field(poll.SENT_FIELD, sent) end)
+  end
+  return sent
+end
+
+--- Forget what this run has emitted for `device`, so every row goes out again
+--- once (a profile change: the cloud record of the new profile is empty).
+function poll.forget_sent(device)
+  pcall(function() device:set_field(poll.SENT_FIELD, nil) end)
+end
+
+--- The value this run last emitted on `key` (`poll.row_key`), or nil.
+function poll.sent_value(device, key)
+  local entry = sent_cache(device)[key]
+  if entry then
+    return entry.value
+  end
+  return nil
+end
+
+-- Count one emit against the device's budget window and warn once per window
+-- when the driver goes over it.
+local function spend(device, log)
+  local now = poll.clock()
+  local budget
+  pcall(function() budget = device:get_field(poll.BUDGET_FIELD) end)
+  if type(budget) ~= "table" or now < budget.start or now - budget.start >= poll.BUDGET_SECONDS then
+    budget = { start = now, count = 0, warned = false }
+    pcall(function() device:set_field(poll.BUDGET_FIELD, budget) end)
+  end
+  budget.count = budget.count + 1
+  if budget.count > poll.BUDGET_EVENTS and not budget.warned then
+    budget.warned = true
+    log.warn(string.format("event budget: %s emitted more than %d events in %d s",
+      tostring((device or {}).id), poll.BUDGET_EVENTS, poll.BUDGET_SECONDS))
+  end
+end
+
 function poll.emit(device, events)
   local log = logger()
+  local sent = sent_cache(device)
   for _, e in ipairs(events or {}) do
     local cap = capability_for(e.cap)
     local attr = cap and cap[e.attr]
@@ -257,17 +378,30 @@ function poll.emit(device, events)
       log.debug(string.format("component %s not in the profile, %s.%s skipped",
         tostring(e.component), tostring(e.cap), tostring(e.attr)))
     else
-      local ok, err = pcall(function()
-        local force = e.force or first_emit(device, poll.row_key(e))
-        local event = force and attr(e.value, poll.FORCE) or attr(e.value)
-        if component then
-          device:emit_component_event(component, event)
+      local key = poll.row_key(e)
+      local sig = signature(e.value)
+      local last = sent[key]
+      -- Unchanged and not answering anything: the hub would drop it, but it
+      -- would still cost budget (see above), so it is not emitted. Not even
+      -- logged - that is most rows of every poll.
+      if e.force or not last or last.sig ~= sig then
+        local ok, err = pcall(function()
+          local force = e.force or first_emit(device, key)
+          local event = force and attr(e.value, poll.FORCE) or attr(e.value)
+          if component then
+            device:emit_component_event(component, event)
+          else
+            device:emit_event(event)
+          end
+        end)
+        if ok then
+          -- The record as well as its signature: `resync` re-sends it.
+          sent[key] = { sig = sig, value = e.value, cap = e.cap, attr = e.attr,
+            component = e.component }
+          spend(device, log)
         else
-          device:emit_event(event)
+          log.warn(string.format("emit %s failed: %s", key, tostring(err)))
         end
-      end)
-      if not ok then
-        log.warn(string.format("emit %s failed: %s", poll.row_key(e), tostring(err)))
       end
     end
   end
@@ -754,6 +888,168 @@ function poll.repaint_soon(driver, device)
   end
 end
 
+--------------------------------------------------------------------------------
+-- The event budget, part 2: answering commands, and recovering lost events
+--------------------------------------------------------------------------------
+
+-- Commands that land close together share their answer polls. The first one
+-- polls at once (a single command is answered as fast as before) and opens a
+-- window of `ANSWER_WINDOW_SECONDS`; every command that arrives inside it adds
+-- its rows to the window and is answered by ONE poll when the window closes,
+-- which opens the next window. So a burst of commands costs at most one poll
+-- per window, and every command's rows still get their forced emit within one
+-- window (the spinner, platform notes "상세 화면(detailView) 위젯").
+poll.ANSWER_FIELD = "answer_window"
+poll.ANSWER_WINDOW_SECONDS = 1.5
+
+-- A burst of commands (`BURST_COMMANDS` inside `BURST_SECONDS`) is when the
+-- budget is most likely to have run out, so `BURST_RESYNC_SECONDS` after one
+-- the resync below runs once more, ahead of its schedule.
+poll.COMMANDS_FIELD = "recent_commands"
+poll.BURST_TIMER_FIELD = "burst_resync_timer"
+poll.BURST_COMMANDS = 3
+poll.BURST_SECONDS = 10
+poll.BURST_RESYNC_SECONDS = 60
+
+-- A dropped event leaves the hub's state cache holding the value the cloud
+-- never stored, and from then on the hub drops every unforced repeat of it as
+-- unchanged - the cloud stays wrong until the value changes again. So every
+-- `RESYNC_SECONDS` the rows whose loss the user notices are sent once more,
+-- forced, with the value this run last emitted on them. Six events at most.
+poll.RESYNC_FIELD = "resync_at"
+poll.RESYNC_SECONDS = 600
+poll.RESYNC_ROWS = {
+  state.CAP_SWITCH .. ".switch",
+  caps.POWER_STATE .. ".powerState",
+  features.CAP_MUTE .. ".mute",
+  features.CAP_VOLUME .. ".volume",
+  features.CAP_PLAYBACK .. ".playbackStatus",
+  features.AWAKE_COMPONENT .. "/" .. features.CAP_SWITCH .. ".switch",
+}
+
+--- Re-send the `RESYNC_ROWS` this run has emitted, forced. Returns how many.
+function poll.resync(device, deps)
+  pcall(function() device:set_field(poll.RESYNC_FIELD, poll.clock(deps)) end)
+  local sent = sent_cache(device)
+  local events = {}
+  for _, key in ipairs(poll.RESYNC_ROWS) do
+    local entry = sent[key]
+    if entry then
+      events[#events + 1] = { cap = entry.cap, attr = entry.attr, value = entry.value,
+        component = entry.component, force = true }
+    end
+  end
+  poll.emit(device, events)
+  return #events
+end
+
+--- `resync` when the last one is `RESYNC_SECONDS` old. Called at the end of
+--- every poll, so it needs no timer of its own; the first call of a run only
+--- starts the clock (the run's first emits are forced anyway, `FIRST_FIELD`).
+-- Returns how many events went out.
+function poll.resync_due(device, deps)
+  local now = poll.clock(deps)
+  local at
+  pcall(function() at = tonumber(device:get_field(poll.RESYNC_FIELD)) end)
+  if not at or now < at then
+    pcall(function() device:set_field(poll.RESYNC_FIELD, now) end)
+    return 0
+  end
+  if now - at < poll.RESYNC_SECONDS then
+    return 0
+  end
+  return poll.resync(device, deps)
+end
+
+--- Count a command towards the burst that brings the resync forward.
+function poll.note_command(driver, device)
+  local now = poll.clock()
+  local times
+  pcall(function() times = device:get_field(poll.COMMANDS_FIELD) end)
+  local kept = {}
+  for _, t in ipairs(type(times) == "table" and times or {}) do
+    if now >= t and now - t < poll.BURST_SECONDS then
+      kept[#kept + 1] = t
+    end
+  end
+  kept[#kept + 1] = now
+  pcall(function() device:set_field(poll.COMMANDS_FIELD, kept) end)
+  if #kept < poll.BURST_COMMANDS or not driver then
+    return false
+  end
+  local pending
+  pcall(function() pending = device:get_field(poll.BURST_TIMER_FIELD) end)
+  if pending then
+    return false
+  end
+  local ok, timer = pcall(function()
+    return driver:call_with_delay(poll.BURST_RESYNC_SECONDS, function()
+      pcall(function() device:set_field(poll.BURST_TIMER_FIELD, nil) end)
+      poll.resync(device)
+    end, "resync-burst")
+  end)
+  if ok then
+    pcall(function() device:set_field(poll.BURST_TIMER_FIELD, timer or true) end)
+  end
+  return ok
+end
+
+local function merge_rows(into, rows)
+  if type(rows) == "table" then
+    for key, wanted in pairs(rows) do
+      if wanted then
+        into[key] = true
+      end
+    end
+  end
+  return into
+end
+
+-- Open an answer window on `device`; when it closes, the commands that arrived
+-- inside it are answered by one poll, which opens the next window. Returns
+-- false when no timer could be set (no coalescing then: every command polls).
+local function open_window(driver, device)
+  if not driver then
+    return false
+  end
+  local window = { rows = {}, owed = false }
+  local ok = pcall(function()
+    driver:call_with_delay(poll.ANSWER_WINDOW_SECONDS, function()
+      local current
+      pcall(function() current = device:get_field(poll.ANSWER_FIELD) end)
+      if current ~= window then
+        return
+      end
+      pcall(function() device:set_field(poll.ANSWER_FIELD, nil) end)
+      if window.owed then
+        open_window(driver, device)
+        pcall(poll.once, driver, device, { force = window.rows })
+      end
+    end, "answer-poll")
+  end)
+  if ok then
+    pcall(function() device:set_field(poll.ANSWER_FIELD, window) end)
+  end
+  return ok
+end
+
+--- The poll that answers a command that went out (event budget, part 2).
+-- `rows` are the row keys (`row_key`) the app is watching; they go out forced.
+-- Returns what the poll returned, or true when the command joined a window
+-- whose poll is still to come.
+function poll.answer(driver, device, rows)
+  poll.note_command(driver, device)
+  local window
+  pcall(function() window = device:get_field(poll.ANSWER_FIELD) end)
+  if type(window) == "table" then
+    merge_rows(window.rows, rows)
+    window.owed = true
+    return true
+  end
+  open_window(driver, device)
+  return poll.once(driver, device, { force = rows })
+end
+
 --- #116: follow `status.battery.present` onto the plain or the `-battery`
 --- profile (`profiles.apply_battery`, which waits for two statuses that
 --- agree). Called after every status a poll or a push applied. A switch is
@@ -776,6 +1072,11 @@ end
 --- the cloud starts the new profile with empty states, and the hub would
 --- otherwise drop the re-emit of values it considers unchanged.
 function poll.repaint(device)
+  -- The event budget: a new profile starts with an empty cloud record, so
+  -- nothing this run emitted for the old one counts as "already sent". The
+  -- rows below go out forced anyway; this is for the ones only a later poll
+  -- carries.
+  poll.forget_sent(device)
   -- #93: the resting value, not the remembered one - a repaint in the middle of
   -- a transition has to leave the row saying "in progress". A repeat
   -- `ensure_action` still owed is settled here too: `repaint_soon` sends this
@@ -944,6 +1245,8 @@ function poll.once(driver, device, opts)
     poll.ensure_preset(device, opts.deps)
     -- #108: no status body carries `lastMessage` either.
     poll.ensure_toast(device)
+    -- The event budget: the rows a dropped event could have left wrong.
+    poll.resync_due(device, opts.deps)
     -- #116: a laptop moves to the profile with the battery card, and back.
     poll.follow_battery(driver, device, body)
     pcall(function() device:online() end)
@@ -981,6 +1284,7 @@ function poll.once(driver, device, opts)
   poll.ensure_preset(device, opts.deps)
   poll.ensure_toast(device)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
+  poll.resync_due(device, opts.deps)
   return false, kind
 end
 

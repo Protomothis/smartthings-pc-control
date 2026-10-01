@@ -316,14 +316,15 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
   h.assert_equal(d:get_field(poll.SERVICE_VERSION_FIELD), "v1.1.0",
     "a successful poll persists the service version")
 
-  d.emitted = {}
   local ok = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
   h.assert_false(ok)
+  -- The last value of each row: an unchanged one is not emitted again (the
+  -- event budget), so what the row shows is what it was last told.
   local emitted = h.emitted(d)
-  h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unreachable")
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "connection"), "unreachable")
   local kept = state.versions("v1.1.0", "ko")
-  h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), kept)
-  h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), kept)
+  h.assert_equal(h.last_value(emitted, nil, caps.VERSION, "versions"), kept)
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "versions"), kept)
   h.assert_contains(kept, "v1.1.0")
   h.assert_equal(kept:find("업데이트", 1, true), nil,
     "the update half is never remembered - only a live answer can offer one")
