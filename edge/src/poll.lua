@@ -1307,6 +1307,13 @@ function poll.once(driver, device, opts)
       poll.force_rows(events, opts.force)
     end
     poll.emit(device, events)
+    -- #123: the watch list's child devices - created, deleted and painted
+    -- from this status. Never on a failed poll: an unreachable PC leaves every
+    -- child on its last value.
+    local synced, sync_err = pcall(function() require("apps").sync(driver, device, body, opts.deps) end)
+    if not synced then
+      logger().warn("app children not updated: " .. tostring(sync_err))
+    end
     poll.ensure_action(device)
     poll.ensure_plan_command(device)
     -- #113: a preset that just ran shows for a moment, then the list rests.

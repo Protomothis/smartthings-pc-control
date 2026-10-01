@@ -191,6 +191,12 @@ local STRINGS = {
   apps_running_more = { ko = "%s 실행 중 · 외 %d개", en = "%s running · %d more" },
   apps_none = { ko = "없음", en = "None" },
   apps_off = { ko = "꺼짐", en = "Off" },
+  -- #123: an app left the watch list but the hub would not delete its child
+  -- device (apps.delete). `pcInfo.message`, once per run.
+  app_child_stale = {
+    ko = "%s 장치를 지우지 못했습니다 · 앱에서 직접 삭제하세요",
+    en = "Could not remove %s · delete it in the app",
+  },
 
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {

@@ -158,6 +158,26 @@ function T.test_full_status_activity_rows()
   h.assert_equal(others, 0)
 end
 
+function T.test_full_status_activity_children()
+  -- One EDGE_CHILD per apps[] entry, keyed by `id`, labelled with `label`.
+  local apps = require "apps"
+  apps.reset()
+  local status = h.fixture("status.full.json")
+  local pc = h.fake_device({})
+  pc.id = "device-golden"
+  local hub = Driver("contract", {})
+  hub.devices = { pc }
+  local plan = apps.sync(hub, pc, status, { now = function() return 1 end })
+  h.assert_equal(#plan.create, 2)
+  local first, second = hub.created[1], hub.created[2]
+  h.assert_equal(first.parent_assigned_child_key, "steam.exe", "apps[0].id")
+  h.assert_equal(first.label, "Steam", "apps[0].label")
+  h.assert_equal(second.parent_assigned_child_key, "obs64.exe", "apps[1].id")
+  h.assert_equal(second.label, "OBS", "apps[1].label")
+  h.assert_equal(features.app_running(features.apps_of(status)[1]), "running", "apps[0].running")
+  h.assert_equal(features.app_running(features.apps_of(status)[2]), "stopped", "apps[1].running")
+end
+
 --------------------------------------------------------------------------------
 -- status.minimal-1.0.json: a service older than v1.2.0
 --------------------------------------------------------------------------------

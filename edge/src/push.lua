@@ -470,6 +470,12 @@ function push.apply_to_device(driver, device, payload, deps)
 
   if events then
     poll.emit(device, events)
+    -- #123: `activity.changed` (and every other push) carries the watch list;
+    -- its child devices follow at once.
+    local synced, sync_err = pcall(function() require("apps").sync(driver, device, payload.status, deps) end)
+    if not synced then
+      logger().warn("app children not updated: " .. tostring(sync_err))
+    end
     pcall(function() device:online() end)
     -- #116: `battery.changed` and every other push carry the battery block.
     pcall(function() poll.follow_battery(driver, device, payload.status) end)

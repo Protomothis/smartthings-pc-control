@@ -8,6 +8,7 @@ local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
 local log = require "log"
 
+local apps = require "apps"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
@@ -40,6 +41,13 @@ local function device_init(driver, device)
   if profiles.remove_legacy_child(driver, device) then
     return
   end
+  -- #123: an app child is painted from its PC and nothing else - no profile
+  -- migration, no poll timer, no push subscription of its own.
+  if apps.is_child(device) then
+    apps.child_init(driver, device)
+    return
+  end
+  apps.remember_parent(device)
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   -- #107: pc*.v1 -> the current pc*.vN, with the style kept; a development
@@ -64,8 +72,13 @@ local function device_init(driver, device)
   poll.start(driver, device)
 end
 
-local function device_added(_driver, device)
+local function device_added(driver, device)
   log.info("added " .. device.id)
+  -- #123: a child `apps.sync` asked for has arrived.
+  if apps.is_child(device) then
+    apps.child_init(driver, device)
+    return
+  end
   -- A device that is being added was created by this driver run, so it is on
   -- the current profile: record the name now (platform notes "프로필과 화면 생성", the hub does not always
   -- expose it) and let `ensure` confirm there is nothing to migrate.
@@ -90,6 +103,12 @@ end
 
 local function device_removed(driver, device)
   log.info("removed " .. device.id)
+  if apps.is_child(device) then
+    apps.child_removed(driver, device)
+    return
+  end
+  -- #123: the PC's app children go with it.
+  apps.parent_removed(driver, device)
   poll.stop(driver, device)
   wol.cancel_wake(driver, device)
   push.stop(driver, device)
@@ -99,6 +118,11 @@ local function device_info_changed(driver, device, _event, _args)
   -- Preferences are already updated on `device` here; restarting the timer
   -- picks up a new pollInterval and a poll picks up a new IP/secret/port.
   log.info("preferences changed for " .. device.id)
+  -- #123: a child has no preferences; this is the user renaming it, which
+  -- is theirs to do (the driver never writes a child's label after creating it).
+  if apps.is_child(device) then
+    return
+  end
   -- #100: a new `iconStyle` moves the device onto the profile with that
   -- category (the icon). The switch fires infoChanged once more; by then
   -- `apply_style` remembers the profile it asked for and does nothing, so
@@ -112,6 +136,10 @@ local function device_info_changed(driver, device, _event, _args)
 end
 
 local function device_do_configure(driver, device)
+  -- #123: children are never polled themselves.
+  if apps.is_child(device) then
+    return
+  end
   poll.start(driver, device)
 end
 
@@ -210,6 +238,10 @@ local function handle_switch_off(driver, device)
 end
 
 local function handle_refresh(driver, device)
+  -- #123: pulling an app child down to refresh asks its PC.
+  if apps.is_child(device) then
+    return apps.refresh(driver, device)
+  end
   poll.once(driver, device)
 end
 
@@ -798,7 +830,10 @@ local function driver_lifecycle(driver, event)
   end
   local ok, devices = pcall(function() return driver:get_devices() end)
   for _, device in ipairs(ok and devices or {}) do
-    pcall(function() push.stop(driver, device) end)
+    -- #123: an app child has no subscription of its own.
+    if not apps.is_child(device) then
+      pcall(function() push.stop(driver, device) end)
+    end
   end
   pcall(function() push.shutdown(driver) end)
   log.info("driver shutting down: push subscriptions released")
