@@ -311,6 +311,46 @@ function apps.paint(child, app)
   poll_module().emit(child, features.app_events(app))
 end
 
+-- The rotation (`poll.rotate_due`, platform notes "이벤트 예산"): a child's
+-- `running` is re-sent forced, with the value last sent, once per
+-- `ROTATE_SECONDS` - an event lost to the budget would otherwise stay lost
+-- until the app starts or stops again, and every "실행 중이 되면" routine
+-- with it. One child per step of the parent's rotation (a poll interval), the
+-- one that waited longest, so a long watch list never costs more than one
+-- event per poll. A child's clock starts the first time a step sees it: its
+-- first emit of the run was forced anyway. In memory, per run.
+apps.ROTATE_SECONDS = 600
+local rotated = {}
+
+--- One step of the children's rotation for `parent`. Returns the child whose
+--- row went out, or nil.
+function apps.rotate(driver, parent, now)
+  local children = apps.children_of(driver, parent)
+  if not children then
+    return nil
+  end
+  local poll = poll_module()
+  local due, due_key, due_at
+  for key, child in pairs(children) do
+    if poll.sent_value(child, apps.ROW) ~= nil then
+      local at = rotated[child.id]
+      if at == nil or now < at then
+        rotated[child.id] = now
+      elseif now - at >= apps.ROTATE_SECONDS
+          and (due == nil or at < due_at or (at == due_at and key < due_key)) then
+        due, due_key, due_at = child, key, at
+      end
+    end
+  end
+  if not due then
+    return nil
+  end
+  rotated[due.id] = now
+  poll.emit(due, { { cap = caps.APP, attr = "running", value = poll.sent_value(due, apps.ROW),
+    force = true } })
+  return due
+end
+
 --- Bring the children of `parent` in line with one status (poll or push).
 --
 -- Returns what was planned (`apps.plan`, plus `mode`), or nil for a device
@@ -402,6 +442,7 @@ end
 --- `removed` of a child: forget it.
 function apps.child_removed(_driver, child)
   onlined[child.id] = nil
+  rotated[child.id] = nil
   undeletable[child.id] = nil
   deleting[child.id] = nil
 end
@@ -438,6 +479,7 @@ function apps.reset()
   onlined = {}
   undeletable = {}
   deleting = {}
+  rotated = {}
 end
 
 return apps

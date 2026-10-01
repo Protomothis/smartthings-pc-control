@@ -19,16 +19,16 @@ local STRINGS = {
     en = "Wake failed: no WoL response",
   },
   wol_not_ready = {
-    ko = "PC의 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
-    en = "Wake-on-LAN is off on the PC's adapter · check the Network tab",
+    ko = "PC의 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인",
+    en = "Wake-on-LAN is off on the PC's adapter · check the SmartThings tab",
   },
   -- #97: the same sentence, but naming the adapter the service picked
   -- (`status.wol.selected.name`). With several NICs "the PC's adapter" does not
   -- say which one to open, and the PC's own WoL dropdown (#96) names it too.
   -- A service too old to name one still gets `wol_not_ready`.
   wol_not_ready_on = {
-    ko = "%s 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인",
-    en = "Wake-on-LAN is off on %s · check the Network tab",
+    ko = "%s 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인",
+    en = "Wake-on-LAN is off on %s · check the SmartThings tab",
   },
   wol_no_mac = {
     ko = "MAC 주소를 설정하세요",

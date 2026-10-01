@@ -231,6 +231,17 @@ function h.fire_last(driver, name)
   return true
 end
 
+--- Run live timers named `name` until none is left - a timer may set the
+--- next one (the batches of a spread repaint, poll.paint). Newest first,
+--- like `fire_last`. Returns how many ran.
+function h.fire_all(driver, name)
+  local n = 0
+  while n < 1000 and h.fire_last(driver, name) do
+    n = n + 1
+  end
+  return n
+end
+
 --- A device stand-in: preferences plus the get_field/set_field pair.
 function h.fake_device(preferences)
   -- `parent_assigned_child_key` is deliberately absent: the hub only sets it on

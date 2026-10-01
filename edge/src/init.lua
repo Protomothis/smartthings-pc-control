@@ -59,7 +59,7 @@ local function device_init(driver, device)
   -- #85: a migration onto the new capability ids leaves every attribute of
   -- pcRemote and pcDefer unset, which reads as "-" and keeps the app saying
   -- the device has not reported all of its state. Paint them once.
-  local fresh_rows = poll.ensure_rows(device)
+  local fresh_rows = poll.ensure_rows(device, driver)
   if fresh_rows or switched or migrated then
     -- First run on this generation of rows, or a new profile whose cloud
     -- record starts empty: every row forced once, and a look again shortly
@@ -95,10 +95,13 @@ local function device_added(driver, device)
   -- #85: and the same goes for every other pcRemote / pcDefer attribute,
   -- including the "command to schedule" row, whose default is the `offAction`
   -- preference.
-  poll.ensure_rows(device)
+  poll.ensure_rows(device, driver)
   if not client.device_base_url(device) then
     poll.emit_connection(device, "unreachable", i18n.t(poll.lang(device), "no_ip"))
   end
+  -- The event budget: the repaint is queued (poll.paint); its first batch
+  -- goes now, the rest a few seconds apart.
+  poll.paint_start(driver, device)
 end
 
 local function device_removed(driver, device)

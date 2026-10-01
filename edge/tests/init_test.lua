@@ -327,6 +327,8 @@ function T.test_a_new_device_reports_every_command_and_schedule_attribute()
   -- its resting value up front.
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "restart" })
   driver.lifecycle_handlers.added(driver, device)
+  -- The event budget: the repaint goes out in batches a few seconds apart.
+  h.fire_all(driver, "repaint-batch")
 
   local seen = {}
   for _, e in ipairs(h.emitted(device)) do
@@ -621,6 +623,7 @@ function T.test_a_new_device_paints_the_delay_row()
   -- open at all, so the row is painted before the first poll (#88).
   local device = device_with()
   driver.lifecycle_handlers.added(driver, device)
+  h.fire_all(driver, "repaint-batch")
   h.assert_equal(h.event_value(h.emitted(device), caps.SCHEDULE, "minutesPick"),
     state.MINUTES_PICK)
 end
