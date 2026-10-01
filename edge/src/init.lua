@@ -490,7 +490,10 @@ local function run_feature(driver, device, service_command, value, answer, rows)
     report_error(device, kind, body)
     return false
   end
-  poll.once(driver, device, { force = rows })
+  -- The event budget (platform notes "이벤트 예산(rate limit)"): commands that
+  -- land within `poll.ANSWER_WINDOW_SECONDS` of each other share one answer
+  -- poll, and that poll sends only what changed plus `rows`, forced.
+  poll.answer(driver, device, rows)
   return true
 end
 
@@ -617,7 +620,8 @@ local function handle_preset_run(driver, device, cmd)
   end
   -- The row the app is watching changes value, forced as every answer is.
   poll.emit_preset(device, slot, true)
-  poll.once(driver, device)
+  -- The event budget: shared with any command that lands right after it.
+  poll.answer(driver, device, nil)
   return true
 end
 

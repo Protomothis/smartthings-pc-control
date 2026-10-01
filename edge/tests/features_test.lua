@@ -648,9 +648,13 @@ end
 function T.test_the_awake_switch_sends_awake_and_awakeoff()
   local device = device_with(status_v12({ awake = { on = false } }))
   device.preferences.awakeMinutes = 30
-  local calls = with_service(nil, function()
+  local calls = with_service(nil, function(recorded)
     handlers_for("switch").on(driver, device, switch_command("on", "awake"))
     handlers_for("switch").off(driver, device, switch_command("off", "awake"))
+    -- The event budget: the second command landed inside the first one's
+    -- answer window, so its poll comes when the window closes.
+    h.assert_equal(recorded.polls, 1, "two commands at once share the window")
+    h.fire_last(driver, "answer-poll")
   end)
   h.assert_deep_equal(calls.actions, {
     { command = "awake", value = 30 }, { command = "awakeoff" },
@@ -658,6 +662,8 @@ function T.test_the_awake_switch_sends_awake_and_awakeoff()
   h.assert_equal(calls.polls, 2)
   h.assert_true(calls.poll_opts[1].force["awake/switch.switch"] == true,
     "the poll after it answers the awake row")
+  h.assert_true(calls.poll_opts[2].force["awake/switch.switch"] == true,
+    "and so does the one that closes the window")
   -- The PC's power was not touched: no wake, no shutdown.
   h.assert_equal(poll.get_state(device).power_state, state.ON)
 end
@@ -1096,9 +1102,10 @@ function T.test_the_message_row_is_never_empty()
 end
 
 function T.test_the_message_row_is_painted_once_per_run_and_by_a_repaint()
-  -- `ensure_toast` goes out with every poll and push unforced, and the first
-  -- of them in a driver run is forced (`FIRST_FIELD`) - which is what gives a
-  -- device just moved onto pcToast its value. A repaint forces it as well.
+  -- `ensure_toast` runs with every poll and push unforced, and the first of
+  -- them in a driver run is forced (`FIRST_FIELD`) - which is what gives a
+  -- device just moved onto pcToast its value. After that the unchanged value
+  -- is not emitted at all (the event budget). A repaint forces it as well.
   local device = device_with(status_v12())
   device:set_field(poll.TOAST_FIELD, "안녕")
   poll.ensure_toast(device)
@@ -1110,7 +1117,7 @@ function T.test_the_message_row_is_painted_once_per_run_and_by_a_repaint()
       forced[#forced + 1] = (e.options or {}).state_change == true
     end
   end
-  h.assert_deep_equal(forced, { true, false })
+  h.assert_deep_equal(forced, { true })
   poll.repaint(device)
   h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"), "a repaint forces it")
 end

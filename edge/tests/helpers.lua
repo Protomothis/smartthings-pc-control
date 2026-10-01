@@ -212,6 +212,25 @@ function h.components_for(profile_name)
   return components
 end
 
+--- Run the most recent live timer named `name` on a st.driver mock, once: it
+--- is marked cancelled first, so firing again runs the next one (or none).
+-- Returns true when a timer ran. The suites that load init.lua share one
+-- driver, so older tests' timers are still on it; the newest is this test's.
+function h.fire_last(driver, name)
+  local found
+  for _, timer in ipairs((driver or {}).timers or {}) do
+    if timer.name == name and not timer.cancelled then
+      found = timer
+    end
+  end
+  if not found then
+    return false
+  end
+  found.cancelled = true
+  found.fn()
+  return true
+end
+
 --- A device stand-in: preferences plus the get_field/set_field pair.
 function h.fake_device(preferences)
   -- `parent_assigned_child_key` is deliberately absent: the hub only sets it on
