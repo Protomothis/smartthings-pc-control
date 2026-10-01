@@ -193,7 +193,8 @@ linters:
       - path: gui/service_control\.go
         linters: [errcheck]
         source: windows\.WaitForSingleObject\(
-      - path: service/server\.go
+      # Log rotation: a backup that is not there yet is the normal case.
+      - path: internal/logx/logx\.go
         linters: [errcheck]
         source: os\.Rename\(src, dst\)
       - path: service/st_push\.go

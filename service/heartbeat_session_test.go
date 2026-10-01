@@ -10,14 +10,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/useraction"
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // sessionHeartbeatSetup empties the idle, audio and media stores and
@@ -136,15 +137,7 @@ func TestHeartbeatTargetIsCommandSession(t *testing.T) {
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
-	logMu.Lock()
-	saved := logger
-	logger = log.New(&buf, "", 0)
-	logMu.Unlock()
-	t.Cleanup(func() {
-		logMu.Lock()
-		logger = saved
-		logMu.Unlock()
-	})
+	t.Cleanup(logx.Capture(&buf))
 	return &buf
 }
 

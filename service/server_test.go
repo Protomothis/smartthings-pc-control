@@ -112,26 +112,6 @@ func TestLoadConfigZeroPort(t *testing.T) {
 	}
 }
 
-func TestMaskSecret(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"", "(none)"},
-		{"ab", "***"},
-		{"abcd", "***"},
-		{"abcde", "ab***de"},
-		{"mysecretkey", "my***ey"},
-	}
-
-	for _, tt := range tests {
-		result := maskSecret(tt.input)
-		if result != tt.expected {
-			t.Errorf("maskSecret(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
-	}
-}
-
 func TestCommandsMapExists(t *testing.T) {
 	// Verify all expected commands exist
 	expected := []string{"ping", "shutdown", "forceshutdown", "restart", "hibernate", "suspend", "lock", "turnscreenoff"}

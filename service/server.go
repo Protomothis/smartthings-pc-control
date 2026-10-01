@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -31,102 +32,15 @@ const (
 	httpReadHeaderTimeout = 10 * time.Second
 )
 
-var (
-	logger  *log.Logger
-	logFile *os.File
-	logPath string
-	logMu   sync.Mutex
-)
+// initLogger opens service.log next to the exe (internal/logx); a second
+// call while it is open does nothing.
+func initLogger() { logx.Init(installDir()) }
 
-const maxLogSize = 512 * 1024 // 512KB
-const maxLogBackups = 3
+// closeLogger closes it at service stop.
+func closeLogger() { logx.Close() }
 
-func initLogger() {
-	logMu.Lock()
-	defer logMu.Unlock()
-
-	if logger != nil {
-		return // Already initialized
-	}
-
-	exePath, err := os.Executable()
-	if err != nil {
-		return
-	}
-	logPath = filepath.Join(filepath.Dir(exePath), "service.log")
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	logFile = f
-	logger = log.New(f, "", log.LstdFlags)
-}
-
-func closeLogger() {
-	logMu.Lock()
-	defer logMu.Unlock()
-
-	if logFile != nil {
-		logFile.Close()
-		logFile = nil
-		logger = nil
-	}
-}
-
-// rotateLog must be called with logMu held.
-func rotateLog() {
-	if logFile == nil || logPath == "" {
-		return
-	}
-	info, err := logFile.Stat()
-	if err != nil || info.Size() < maxLogSize {
-		return
-	}
-
-	// Close current log
-	logFile.Close()
-
-	// Rotate: .3 삭제, .2→.3, .1→.2, current→.1
-	for i := maxLogBackups; i >= 1; i-- {
-		src := logPath
-		if i > 1 {
-			src = fmt.Sprintf("%s.%d", logPath, i-1)
-		}
-		dst := fmt.Sprintf("%s.%d", logPath, i)
-		os.Remove(dst)
-		os.Rename(src, dst)
-	}
-
-	// Open new log file
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		logFile = nil
-		logger = nil
-		return
-	}
-	logFile = f
-	logger = log.New(f, "", log.LstdFlags)
-}
-
-func logMsg(format string, args ...interface{}) {
-	logMu.Lock()
-	defer logMu.Unlock()
-
-	if logger != nil {
-		logger.Printf(format, args...)
-		rotateLog()
-	}
-}
-
-func maskSecret(s string) string {
-	if s == "" {
-		return "(none)"
-	}
-	if len(s) <= 4 {
-		return "***"
-	}
-	return s[:2] + "***" + s[len(s)-2:]
-}
+// logMsg writes one line to service.log.
+func logMsg(format string, args ...any) { logx.Printf(format, args...) }
 
 // Config holds the service configuration
 type Config struct {

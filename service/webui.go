@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -404,6 +405,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		}
 		w.Header().Set("Content-Type", "application/json")
 
+		logPath := logx.Path()
 		if logPath == "" {
 			json.NewEncoder(w).Encode(map[string]interface{}{"lines": []string{}, "error": "log path unknown"})
 			return
@@ -670,7 +672,7 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d, telegram=%v",
-			newCfg.Port, maskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds, newCfg.Telegram.Enabled)
+			newCfg.Port, logx.MaskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds, newCfg.Telegram.Enabled)
 		// newCfg still holds a replaced token in plaintext while oldCfg holds
 		// the stored (protected) one, so a real change always differs and a
 		// kept token compares equal — configChangedKeys never sees values.
