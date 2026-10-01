@@ -1,22 +1,20 @@
 package useraction
 
 // PC notification (#106, docs/design/media-notify.md §2·§7): a toast with
-// the title and text.
+// the title and text. The tray app's grace-period toast (ShowToast, with
+// its Run now / Cancel buttons) is shown the same way.
 //
-// The toast is not built with go-toast, which the tray app uses for its own
-// fixed grace-period strings. go-toast pastes the title and message into a
-// PowerShell double-quoted here-string, where "$(…)" is evaluated and a
-// line starting with "@ ends the string, so a notification text from the
-// network would be code. Here the toast XML is escaped in Go and handed to
-// a fixed script through an environment variable: no user text ever
-// appears in a script or on a command line.
+// The toast XML is escaped in Go and handed to a fixed script through an
+// environment variable: no user text ever appears in a script or on a
+// command line. (go-toast, which the tray app used until #127, pasted the
+// title and message into a PowerShell double-quoted here-string, where
+// "$(…)" is evaluated and a line starting with "@ ends the string.)
 
 import (
 	"bytes"
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -26,13 +24,14 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // ToastAppID is the AppUserModelID a toast is shown under: the one the
-// Start menu shortcut carries (internal/appid), which the tray app's
-// go-toast notifications use too, so both land in one group. Without that
-// shortcut Windows files the toast in the notification center but never
-// shows its banner.
+// Start menu shortcut carries (internal/appid), for the PC notification
+// and the tray app's grace toast alike, so both land in one group. Without
+// that shortcut Windows files the toast in the notification center but
+// never shows its banner.
 const ToastAppID = appid.AUMID
 
 // Environment variables the fixed toast script reads.
@@ -69,17 +68,44 @@ func xmlText(s string) string {
 	return b.String()
 }
 
-// toastXML is the toast document: title (when set) and text, the default
-// notification sound, and deliberately nothing else — no launch argument,
-// no action buttons, no links (§7).
+// toastXML is the PC notification's toast document: title (when set) and
+// text, the default notification sound, and deliberately nothing else —
+// no launch argument, no action buttons, no links (§7).
 func toastXML(title, text string) string {
+	return toastDocument(title, text, nil)
+}
+
+// ToastAction is a toast button that launches a protocol URI, such as the
+// grace toast's stpc://runnow.
+type ToastAction struct {
+	Label     string
+	Arguments string
+}
+
+// toastDocument is toastXML with buttons. Buttons make it a protocol
+// toast, the form the grace toast has always had (activationType,
+// launch, duration).
+func toastDocument(title, text string, actions []ToastAction) string {
 	var b strings.Builder
-	b.WriteString(`<toast><visual><binding template="ToastGeneric">`)
+	if len(actions) > 0 {
+		b.WriteString(`<toast activationType="protocol" launch="" duration="short">`)
+	} else {
+		b.WriteString(`<toast>`)
+	}
+	b.WriteString(`<visual><binding template="ToastGeneric">`)
 	if title != "" {
 		b.WriteString("<text>" + xmlText(title) + "</text>")
 	}
 	b.WriteString("<text>" + xmlText(text) + "</text>")
-	b.WriteString(`</binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>`)
+	b.WriteString(`</binding></visual><audio src="ms-winsoundevent:Notification.Default"/>`)
+	if len(actions) > 0 {
+		b.WriteString("<actions>")
+		for _, a := range actions {
+			b.WriteString(`<action activationType="protocol" content="` + xmlText(a.Label) + `" arguments="` + xmlText(a.Arguments) + `"/>`)
+		}
+		b.WriteString("</actions>")
+	}
+	b.WriteString(`</toast>`)
 	return b.String()
 }
 
@@ -94,32 +120,49 @@ func encodedCommand(script string) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// powershellExe is Windows PowerShell by absolute path, so a powershell.exe
-// earlier on the user's PATH is never the one started.
-func powershellExe() string {
-	root := os.Getenv("SystemRoot")
-	if root == "" {
-		root = `C:\Windows`
-	}
-	return root + `\System32\WindowsPowerShell\v1.0\powershell.exe`
-}
-
-// toastCommand builds the PowerShell process that shows one toast.
-func toastCommand(title, text string) *exec.Cmd {
-	cmd := exec.Command(powershellExe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+// toastCommand builds the PowerShell process that shows the toast doc.
+// Windows PowerShell is started by absolute path (internal/systool), so a
+// powershell.exe earlier on the user's PATH is never the one started.
+func toastCommand(doc string) *exec.Cmd {
+	cmd := systool.Command(systool.PowerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-EncodedCommand", encodedCommand(toastScript))
 	cmd.Env = append(userEnviron(),
-		toastXMLEnv+"="+toastXML(title, text),
+		toastXMLEnv+"="+doc,
 		toastAppIDEnv+"="+ToastAppID)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return cmd
+}
+
+// toastError is a failed toast run, with the first line PowerShell wrote
+// to stderr when there is one.
+func toastError(err error, stderr *bytes.Buffer) error {
+	msg := strings.TrimSpace(stderr.String())
+	if line, _, _ := strings.Cut(msg, "\n"); line != "" {
+		return fmt.Errorf("toast: %v: %s", err, strings.TrimSpace(line))
+	}
+	return fmt.Errorf("toast: %w", err)
+}
+
+// ShowToast shows a toast with protocol buttons from the calling process,
+// which must already run in the user's session: the tray app's grace
+// toast. Unlike the notify action it waits for PowerShell to finish, so a
+// failure comes back as an error and the caller can fall back to another
+// kind of notification.
+func ShowToast(title, text string, actions []ToastAction) error {
+	cmd := toastCommand(toastDocument(title, text, actions))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return toastError(err, &stderr)
+	}
+	return nil
 }
 
 // showToast runs the toast script. It returns "shown" when PowerShell
 // finished cleanly within toastWait, "pending" when it is still starting
 // (it is left running and shows the toast on its own), or an error.
 var showToast = func(title, text string) (string, error) {
-	cmd := toastCommand(title, text)
+	cmd := toastCommand(toastXML(title, text))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -130,11 +173,7 @@ var showToast = func(title, text string) (string, error) {
 	select {
 	case err := <-done:
 		if err != nil {
-			msg := strings.TrimSpace(stderr.String())
-			if line, _, _ := strings.Cut(msg, "\n"); line != "" {
-				return "", fmt.Errorf("toast: %v: %s", err, strings.TrimSpace(line))
-			}
-			return "", fmt.Errorf("toast: %w", err)
+			return "", toastError(err, &stderr)
 		}
 		return "shown", nil
 	case <-time.After(toastWait):

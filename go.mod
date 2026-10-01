@@ -2,12 +2,7 @@ module github.com/Protomothis/smartthings-pc-control
 
 go 1.26.5
 
-require (
-	github.com/go-toast/toast v0.0.0-20190211030409-01e6764cf0a4
-	golang.org/x/sys v0.47.0
-)
-
-require github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
+require golang.org/x/sys v0.47.0
 
 require (
 	fyne.io/fyne/v2 v2.8.1

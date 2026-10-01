@@ -11,7 +11,8 @@
 // its banner at once, titled with the shortcut's name and the exe's icon.
 //
 // Both toast paths use AUMID: the tray app's grace-period toasts
-// (gui/toast.go, go-toast) and the PC notification (useraction/notify.go).
+// (gui/toast.go, through useraction.ShowToast) and the PC notification
+// (useraction/notify.go).
 // Both also call EnsureShortcut first, since either may be the first thing
 // of this app a user session runs.
 package appid

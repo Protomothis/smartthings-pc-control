@@ -53,7 +53,7 @@
   미디어 키는 `SendInput`(VK_MEDIA_*).
   토스트는 go-toast를 **쓰지 않는다**(#106): go-toast는 제목·문구를 PowerShell 큰따옴표 here-string에 그대로
   넣어 `$(…)`가 실행된다. 대신 토스트 XML을 Go에서 이스케이프해 환경 변수로 고정 스크립트(`-EncodedCommand`)에 넘긴다.
-  AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 고정 문구 토스트는 지금처럼 go-toast.
+  AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 유예 토스트도 #127부터 같은 경로(`useraction.ShowToast`, 버튼만 추가)이고 go-toast 의존성은 없앴다.
 
 ### user-action 확정 문법 (#103)
 

@@ -9,16 +9,22 @@ import (
 
 // Both toast paths must use the Start menu shortcut's AUMID: under any
 // other ID Windows files the toast in the notification center without a
-// banner.
+// banner. The grace toast goes through useraction.ShowToast, which shows
+// every toast under ToastAppID.
 func TestGraceToastUsesShortcutAUMID(t *testing.T) {
-	n := graceToast(LangKo, "종료 예정", "30초 뒤 종료")
-	if n.AppID != appid.AUMID {
-		t.Errorf("grace toast AppID = %q, want %q", n.AppID, appid.AUMID)
+	if useraction.ToastAppID != appid.AUMID {
+		t.Errorf("toast AppID = %q, want %q", useraction.ToastAppID, appid.AUMID)
 	}
-	if n.AppID != useraction.ToastAppID {
-		t.Errorf("grace toast AppID %q differs from the PC notification's %q", n.AppID, useraction.ToastAppID)
+}
+
+func TestGraceToastActions(t *testing.T) {
+	got := graceToastActions(LangKo)
+	if len(got) != 2 || got[0].Arguments != "stpc://runnow" || got[1].Arguments != "stpc://cancel" {
+		t.Fatalf("actions = %+v", got)
 	}
-	if len(n.Actions) != 2 {
-		t.Errorf("actions = %+v", n.Actions)
+	for _, a := range got {
+		if a.Label == "" {
+			t.Errorf("action %q has no label", a.Arguments)
+		}
 	}
 }
