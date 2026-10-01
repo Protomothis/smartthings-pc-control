@@ -8,11 +8,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -190,51 +188,6 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 		logMsg("PC notify (%s): start menu shortcut %s", source, s)
 	}
 	return out, nil
-}
-
-// actionErrorStatus maps a sendPCNotify / runPreset error to the HTTP
-// status and wire code of /st/v1 and /api.
-func actionErrorStatus(err error) (int, string, string) {
-	var ne *pcNotifyError
-	var ue *userActionError
-	switch {
-	case errors.As(err, &ne):
-		switch ne.Code {
-		case "notify_disabled":
-			return http.StatusForbidden, ne.Code, ne.Message
-		case "rate_limited":
-			return http.StatusTooManyRequests, ne.Code, ne.Message
-		}
-		return http.StatusBadRequest, ne.Code, ne.Message
-	case errors.Is(err, errNoUserSession):
-		return http.StatusConflict, "no_user_session", "nobody is logged in on this PC"
-	case errors.Is(err, errUserActionTimeout):
-		return http.StatusGatewayTimeout, "timeout", "the user session did not answer in time"
-	case errors.As(err, &ue):
-		switch ue.Code {
-		case useraction.CodeBadArgs:
-			return http.StatusBadRequest, ue.Code, ue.Message
-		case useraction.CodeUnsupported:
-			return http.StatusNotImplemented, ue.Code, ue.Message
-		}
-		return http.StatusBadGateway, useraction.CodeFailed, ue.Message
-	}
-	return http.StatusBadGateway, useraction.CodeFailed, err.Error()
-}
-
-// writeActionError answers with {"error": code, "message": …} and, for a
-// rate limit, Retry-After in whole seconds (at least 1).
-func writeActionError(w http.ResponseWriter, err error) {
-	status, code, msg := actionErrorStatus(err)
-	var ne *pcNotifyError
-	if errors.As(err, &ne) && ne.Code == "rate_limited" {
-		secs := int((ne.RetryAfter + time.Second - 1) / time.Second)
-		if secs < 1 {
-			secs = 1
-		}
-		w.Header().Set("Retry-After", strconv.Itoa(secs))
-	}
-	writeJSON(w, status, map[string]string{"error": code, "message": msg})
 }
 
 // stNotifyRequest is the POST /st/v1/notify body. A "speak" field from an

@@ -279,9 +279,9 @@ func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := runMediaCommand(r.Context(), body.Command, body.Value)
 	if err != nil {
-		status, code, msg := mediaErrorStatus(err)
+		f := classifyActionError(err)
 		logMsg("App: %s failed: %v", body.Command, err)
-		writeJSON(w, status, map[string]string{"error": code, "message": msg})
+		writeJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
 		return
 	}
 	view := mediaAPIView(getConfig())
