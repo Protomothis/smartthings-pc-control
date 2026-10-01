@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
 // This file closes the loop on the remote.grace_scheduled Telegram message
@@ -99,7 +100,9 @@ func finishGraceMessage(seq uint64, result graceResult, by string) {
 	}
 	graceMsg.cur = graceMessage{}
 	graceMsg.mu.Unlock()
-	go editGraceMessage(m, tgStampBy(string(result), by))
+	// The base URL is read here rather than in the goroutine: tests point
+	// it at a fake Bot API and restore it as soon as the caller returns.
+	go editGraceMessage(m, tgStampBy(string(result), by), telegramBaseURL)
 }
 
 // resetGraceMessage forgets any stored message (tests).
@@ -112,7 +115,7 @@ func resetGraceMessage() {
 // editGraceMessage appends line to the stored message and removes its
 // keyboard. Failures are logged only: the schedule outcome is already
 // final and a second notification (grace_cancelled / executed) went out.
-func editGraceMessage(m graceMessage, line string) {
+func editGraceMessage(m graceMessage, line, baseURL string) {
 	token, err := liveBotToken(getConfig().Telegram)
 	if err != nil || token == "" {
 		logMsg("Telegram: grace message %d not edited: bot token unavailable (%v)", m.msgID, err)
@@ -120,7 +123,9 @@ func editGraceMessage(m graceMessage, line string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), graceEditTimeout)
 	defer cancel()
-	if err := newTelegramClient(token).EditMessageText(ctx, m.chatID, m.msgID, m.html+"\n"+line, nil); err != nil {
+	cli := telegram.NewClient(token, telegram.WithBaseURL(baseURL))
+	cli.Log = logMsg
+	if err := cli.EditMessageText(ctx, m.chatID, m.msgID, m.html+"\n"+line, nil); err != nil {
 		logMsg("Telegram: grace message %d edit failed: %v", m.msgID, err)
 		return
 	}

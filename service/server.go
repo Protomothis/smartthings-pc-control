@@ -1070,8 +1070,9 @@ var trayAppLauncher = launchTrayApp
 // It never affects the scheduled command: a failure (no user logged in,
 // token error, ...) only means no toast is shown.
 func wakeTrayApp(command string) {
+	launch := trayAppLauncher // read before the goroutine: tests swap it back
 	go func() {
-		if err := trayAppLauncher(); err != nil {
+		if err := launch(); err != nil {
 			logMsg("Tray app wake failed for %s (grace toast may not appear): %v", command, err)
 			emit("system", "tray_wake_failed", map[string]string{"command": command, "error": err.Error()})
 			return

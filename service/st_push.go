@@ -411,6 +411,9 @@ type stPushJob struct {
 	Type string
 	At   time.Time
 	Data map[string]string
+	// flushed marks a no-op job: the worker closes it once every job
+	// queued before it has been delivered (tests, see stPushFlush).
+	flushed chan struct{}
 }
 
 var (
@@ -461,6 +464,10 @@ func stPushAnySubscribers() bool {
 // stPushWorker delivers queued events one at a time, in emit order.
 func stPushWorker() {
 	for job := range stPushQueue {
+		if job.flushed != nil {
+			close(job.flushed)
+			continue
+		}
 		stPushDispatch(context.Background(), job)
 	}
 }

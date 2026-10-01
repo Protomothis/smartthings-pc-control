@@ -28,10 +28,31 @@ func stPushSetup(t *testing.T, cfg Config) {
 	resetPowerCommandHint()
 	orig := stPushNow
 	t.Cleanup(func() {
+		stPushFlush(t)
 		stPushNow = orig
 		stPushReset()
 		resetPowerCommandHint()
 	})
+}
+
+// stPushFlush waits until the async push worker has delivered everything
+// queued so far, so a delivery left over from this test cannot read
+// package state (Version, the config) that the next test is rewriting.
+func stPushFlush(t *testing.T) {
+	t.Helper()
+	stPushWorkerOne.Do(func() { go stPushWorker() })
+	done := make(chan struct{})
+	select {
+	case stPushQueue <- stPushJob{flushed: done}:
+	case <-time.After(5 * time.Second):
+		t.Error("ST push queue still full after 5s")
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("ST push worker did not drain within 5s")
+	}
 }
 
 // subscribeBody builds a POST /st/v1/subscribe body.
