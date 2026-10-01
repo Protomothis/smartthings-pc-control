@@ -1,7 +1,7 @@
 package service
 
 // The service half of the user-session action channel (#103, design
-// docs/design/media-notify.md §2). Volume, media keys, toasts and speech
+// docs/design/media-notify.md §2). Volume, media keys and toasts
 // only mean something in the logged-in user's session, so the service runs
 // this same executable there as `user-action …` (CreateProcessAsUser via
 // userSessionCommand) and reads its one-line JSON reply. The subcommand

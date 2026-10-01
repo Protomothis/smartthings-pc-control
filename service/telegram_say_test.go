@@ -22,7 +22,7 @@ func TestTelegramSay(t *testing.T) {
 	if err != nil || !strings.Contains(reply, "PC에 알림을 띄웠습니다") {
 		t.Fatalf("reply %q, %v", reply, err)
 	}
-	// The words are joined back into the sentence; speech is off in the config.
+	// The words are joined back into the sentence.
 	want := []string{"notify", "--title", "SmartThings", "--text", "빨래가 끝났어요 $(calc)"}
 	if len(*calls) != 1 || strings.Join((*calls)[0], "|") != strings.Join(want, "|") {
 		t.Errorf("args = %q", *calls)
@@ -30,13 +30,6 @@ func TestTelegramSay(t *testing.T) {
 
 	if reply, _, _ := h.HandleCommand(context.Background(), "42", "say", nil); !strings.Contains(reply, "사용법") {
 		t.Errorf("no text: %q", reply)
-	}
-
-	// Speech on: /say asks for it, and the reply says it is being read.
-	setConfig(tgSayCfg(NotifyPCConfig{Enabled: true, Speak: true}))
-	fakeNotifyRun(t, `{"ok":true,"toast":"shown","spoken":true,"voice_used":"Heami"}`, nil)
-	if reply, _, _ := h.HandleCommand(context.Background(), "42", "say", []string{"hi"}); !strings.Contains(reply, "읽는 중") {
-		t.Errorf("spoken: %q", reply)
 	}
 }
 

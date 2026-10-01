@@ -249,7 +249,7 @@ var defaultConfig = Config{
 	Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 	// A missing "media" object keeps volume and media keys on (§4).
 	Media: MediaConfig{Enabled: true},
-	// A missing "notify_pc" object keeps notifications on, speech off (§4).
+	// A missing "notify_pc" object keeps notifications on (§4).
 	NotifyPC: NotifyPCConfig{Enabled: true},
 	// Presets stays nil here, like Notify: withDefaults gives every copy its
 	// own empty list.
@@ -510,7 +510,6 @@ func configChangedKeys(old, new Config) []string {
 	// session (#106, #109); a preset change names its slots, never what
 	// they run.
 	add("notify_pc.enabled", old.NotifyPC.Enabled != new.NotifyPC.Enabled)
-	add("notify_pc.speak", old.NotifyPC.Speak != new.NotifyPC.Speak)
 	if slots := changedPresetSlots(old.Presets, new.Presets); len(slots) > 0 {
 		keys = append(keys, presetChangeKey(slots))
 	}

@@ -1,7 +1,7 @@
 // Package useraction is the `user-action` subcommand (#103): the half of
 // the user-session action channel that runs inside the logged-in user's
 // session. The service lives in session 0, where the default audio
-// endpoint, media keys, toasts and speech mean nothing, so it launches this
+// endpoint, media keys and toasts mean nothing, so it launches this
 // same executable in the user's session (CreateProcessAsUser) with a fixed
 // argument vector and reads back one line of JSON.
 //
@@ -13,15 +13,9 @@
 //	user-action audio mute <on|off|toggle>
 //	user-action media <playpause|play|pause|stop|next|prev>
 //	user-action media info
-//	user-action notify --title <t> --text <t> [--speak] [--voice <name>]
+//	user-action notify --title <t> --text <t>
 //	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
-//	user-action speak --text <t> [--voice <name>]
 //	user-action screen <off|on>
-//
-// speak is internal to notify (#106): the service never builds it. A
-// notify with --speak shows its toast, answers at once and leaves the
-// reading to a detached `speak` child, because reading 200 characters aloud
-// takes far longer than the service's 3 s budget for one user-action run.
 //
 // Output is exactly one line on stdout, and the exit code follows it:
 //
@@ -65,8 +59,6 @@ const (
 	ActionMedia  = "media"
 	ActionNotify = "notify"
 	ActionPreset = "preset"
-	// ActionSpeak is the detached reader a notify --speak starts (#106).
-	ActionSpeak = "speak"
 	// ActionScreen turns the monitors off or on (#121).
 	ActionScreen = "screen"
 )
@@ -77,7 +69,6 @@ const (
 const (
 	MaxTitleRunes  = 100
 	MaxTextRunes   = 200
-	MaxVoiceRunes  = 128
 	MaxPathRunes   = 1024
 	MaxArgRunes    = 1024
 	MaxPresetArgs  = 32
@@ -123,8 +114,6 @@ type Request struct {
 	// notify
 	Title string
 	Text  string
-	Speak bool
-	Voice string
 
 	// preset
 	PresetType string // program, url or script
@@ -170,7 +159,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionSpeak, ActionScreen:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen:
 		return true
 	}
 	return false
@@ -194,7 +183,7 @@ func badArgs(format string, args ...any) *Error {
 }
 
 // Unsupported is the error a handler returns when this machine cannot do
-// the action (no audio device, no speech engine, ...).
+// the action (no audio device, ...).
 func Unsupported(format string, args ...any) error {
 	return &Error{Code: CodeUnsupported, Message: fmt.Sprintf(format, args...)}
 }
@@ -225,8 +214,6 @@ func Parse(args []string) (Request, error) {
 		return parseNotify(rest)
 	case ActionPreset:
 		return parsePreset(rest)
-	case ActionSpeak:
-		return parseSpeak(rest)
 	case ActionScreen:
 		return parseScreen(rest)
 	default:
@@ -365,7 +352,7 @@ func (f flagSet) parse(args []string) (map[string][]string, error) {
 func parseNotify(args []string) (Request, error) {
 	req := Request{Action: ActionNotify}
 	flags, err := flagSet{
-		valued: map[string]bool{"--title": true, "--text": true, "--speak": false, "--voice": true},
+		valued: map[string]bool{"--title": true, "--text": true},
 	}.parse(args)
 	if err != nil {
 		return req, err
@@ -373,23 +360,16 @@ func parseNotify(args []string) (Request, error) {
 	title, hasTitle := flags["--title"]
 	text, hasText := flags["--text"]
 	if !hasTitle || !hasText {
-		return req, badArgs("usage: notify --title <t> --text <t> [--speak] [--voice <name>]")
+		return req, badArgs("usage: notify --title <t> --text <t>")
 	}
 	req.Title, req.Text = title[0], text[0]
-	_, req.Speak = flags["--speak"]
-	if v, ok := flags["--voice"]; ok {
-		req.Voice = v[0]
-		if strings.TrimSpace(req.Voice) == "" {
-			return req, badArgs("notify: --voice is empty")
-		}
-	}
 	if strings.TrimSpace(req.Text) == "" {
 		return req, badArgs("notify: --text is empty")
 	}
 	for _, c := range []struct {
 		name, v string
 		max     int
-	}{{"--title", req.Title, MaxTitleRunes}, {"--text", req.Text, MaxTextRunes}, {"--voice", req.Voice, MaxVoiceRunes}} {
+	}{{"--title", req.Title, MaxTitleRunes}, {"--text", req.Text, MaxTextRunes}} {
 		if n := utf8.RuneCountInString(c.v); n > c.max {
 			return req, badArgs("notify: %s longer than %d characters", c.name, c.max)
 		}
@@ -398,39 +378,6 @@ func parseNotify(args []string) (Request, error) {
 		if hasControl(c.v) {
 			return req, badArgs("notify: %s contains control characters", c.name)
 		}
-	}
-	return req, nil
-}
-
-// parseSpeak reads `speak --text <t> [--voice <name>]` with the limits of
-// notify.
-func parseSpeak(args []string) (Request, error) {
-	req := Request{Action: ActionSpeak}
-	flags, err := flagSet{
-		valued: map[string]bool{"--text": true, "--voice": true},
-	}.parse(args)
-	if err != nil {
-		return req, err
-	}
-	text, ok := flags["--text"]
-	if !ok {
-		return req, badArgs("usage: speak --text <t> [--voice <name>]")
-	}
-	req.Text = text[0]
-	if v, ok := flags["--voice"]; ok {
-		req.Voice = v[0]
-		if strings.TrimSpace(req.Voice) == "" {
-			return req, badArgs("speak: --voice is empty")
-		}
-	}
-	if strings.TrimSpace(req.Text) == "" {
-		return req, badArgs("speak: --text is empty")
-	}
-	if utf8.RuneCountInString(req.Text) > MaxTextRunes || hasControl(req.Text) {
-		return req, badArgs("speak: --text is too long or contains control characters")
-	}
-	if utf8.RuneCountInString(req.Voice) > MaxVoiceRunes || hasControl(req.Voice) {
-		return req, badArgs("speak: --voice is too long or contains control characters")
 	}
 	return req, nil
 }

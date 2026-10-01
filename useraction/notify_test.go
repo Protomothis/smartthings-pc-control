@@ -87,14 +87,14 @@ func TestEncodedCommandRoundTrip(t *testing.T) {
 	}
 }
 
-// stubNotify replaces the toast, the voice lookup and the speaker, and
-// makes the Start menu shortcut check a no-op (stubShortcut overrides it).
-func stubNotify(t *testing.T, toast func(string, string) (string, error), resolve func(string) (string, bool, error), speaker func(string, string) error) {
+// stubNotify replaces the toast and makes the Start menu shortcut check a
+// no-op (stubShortcut overrides it).
+func stubNotify(t *testing.T, toast func(string, string) (string, error)) {
 	t.Helper()
-	st, rv, sp, es := showToast, resolveVoice, startSpeaker, ensureShortcut
-	showToast, resolveVoice, startSpeaker = toast, resolve, speaker
+	st, es := showToast, ensureShortcut
+	showToast = toast
 	ensureShortcut = func() error { return nil }
-	t.Cleanup(func() { showToast, resolveVoice, startSpeaker, ensureShortcut = st, rv, sp, es })
+	t.Cleanup(func() { showToast, ensureShortcut = st, es })
 }
 
 // stubShortcut replaces the Start menu shortcut check; call after
@@ -110,8 +110,7 @@ func TestToastAppIDIsTheShortcutAUMID(t *testing.T) {
 func TestHandleNotifyShortcut(t *testing.T) {
 	var order []string
 	stubNotify(t,
-		func(string, string) (string, error) { order = append(order, "toast"); return "shown", nil },
-		nil, nil)
+		func(string, string) (string, error) { order = append(order, "toast"); return "shown", nil })
 	stubShortcut(func() error { order = append(order, "shortcut"); return nil })
 	out, err := handleNotify(Request{Text: "x"})
 	if err != nil || !reflect.DeepEqual(out, map[string]any{"toast": "shown"}) {
@@ -124,8 +123,7 @@ func TestHandleNotifyShortcut(t *testing.T) {
 	// A shortcut that cannot be made does not stop the toast.
 	shown := false
 	stubNotify(t,
-		func(string, string) (string, error) { shown = true; return "pending", nil },
-		nil, nil)
+		func(string, string) (string, error) { shown = true; return "pending", nil })
 	stubShortcut(func() error { return errors.New("start menu shortcut: access denied") })
 	out, err = handleNotify(Request{Text: "x"})
 	if err != nil || !shown || out["toast"] != "pending" || out["shortcut"] != "failed: start menu shortcut: access denied" {
@@ -133,7 +131,7 @@ func TestHandleNotifyShortcut(t *testing.T) {
 	}
 
 	// Both failing: the action fails and says both.
-	stubNotify(t, func(string, string) (string, error) { return "", errors.New("toast: no notifier") }, nil, nil)
+	stubNotify(t, func(string, string) (string, error) { return "", errors.New("toast: no notifier") })
 	stubShortcut(func() error { return errors.New("access denied") })
 	if _, err := handleNotify(Request{Text: "x"}); err == nil || !strings.Contains(err.Error(), "access denied") {
 		t.Errorf("both failed: %v", err)
@@ -142,96 +140,35 @@ func TestHandleNotifyShortcut(t *testing.T) {
 
 func TestHandleNotify(t *testing.T) {
 	var toastArgs [2]string
-	var speakText, speakVoice string
-	speakerCalls := 0
 	stubNotify(t,
-		func(title, text string) (string, error) { toastArgs = [2]string{title, text}; return "shown", nil },
-		func(want string) (string, bool, error) {
-			if want == "Heami" {
-				return "Microsoft Heami Desktop - Korean", true, nil
-			}
-			return "Microsoft Zira Desktop - English (United States)", false, nil
-		},
-		func(text, voice string) error { speakerCalls++; speakText, speakVoice = text, voice; return nil })
+		func(title, text string) (string, error) { toastArgs = [2]string{title, text}; return "shown", nil })
 
 	out, err := handleNotify(Request{Action: ActionNotify, Title: "SmartThings", Text: "빨래 끝"})
-	if err != nil || !reflect.DeepEqual(out, map[string]any{"toast": "shown"}) || speakerCalls != 0 {
-		t.Fatalf("no speak: %v, %v, speaker %d", out, err, speakerCalls)
+	if err != nil || !reflect.DeepEqual(out, map[string]any{"toast": "shown"}) {
+		t.Fatalf("notify: %v, %v", out, err)
 	}
 	if toastArgs != [2]string{"SmartThings", "빨래 끝"} {
 		t.Errorf("toast got %q", toastArgs)
-	}
-
-	out, err = handleNotify(Request{Action: ActionNotify, Title: "t", Text: "hi", Speak: true, Voice: "Heami"})
-	if err != nil || out["spoken"] != true || out["voice_used"] != "Microsoft Heami Desktop - Korean" || out["voice_found"] != true {
-		t.Fatalf("speak found: %v, %v", out, err)
-	}
-	if speakText != "hi" || speakVoice != "Microsoft Heami Desktop - Korean" {
-		t.Errorf("speaker got %q / %q", speakText, speakVoice)
-	}
-
-	// An unknown voice reads with the default, and says so.
-	out, _ = handleNotify(Request{Action: ActionNotify, Title: "t", Text: "hi", Speak: true, Voice: "Nobody"})
-	if out["voice_found"] != false || out["spoken"] != true || speakVoice != "" {
-		t.Errorf("unknown voice: %v, speaker voice %q", out, speakVoice)
 	}
 }
 
 func TestHandleNotifyFailures(t *testing.T) {
 	stubNotify(t,
-		func(string, string) (string, error) { return "", errors.New("toast: exit status 1: no notifier") },
-		nil, nil)
+		func(string, string) (string, error) { return "", errors.New("toast: exit status 1: no notifier") })
 	if _, err := handleNotify(Request{Text: "x"}); err == nil {
 		t.Fatal("a failed toast must fail the action")
 	} else if ue := (*Error)(nil); !errors.As(err, &ue) || ue.Code != CodeFailed {
 		t.Errorf("err = %v, want failed", err)
 	}
-
-	// Speech trouble does not undo a toast that was shown.
-	stubNotify(t,
-		func(string, string) (string, error) { return "pending", nil },
-		func(string) (string, bool, error) { return "", false, errors.New("SAPI.SpVoice is not available") },
-		func(string, string) error { t.Error("speaker started without a voice engine"); return nil })
-	out, err := handleNotify(Request{Text: "x", Speak: true})
-	if err != nil || out["toast"] != "pending" || out["spoken"] != false || out["speak_error"] == nil {
-		t.Errorf("no engine: %v, %v", out, err)
-	}
-
-	stubNotify(t,
-		func(string, string) (string, error) { return "shown", nil },
-		func(string) (string, bool, error) { return "Zira", false, nil },
-		func(string, string) error { return errors.New("access denied") })
-	out, err = handleNotify(Request{Text: "x", Speak: true})
-	if err != nil || out["spoken"] != false || !strings.Contains(out["speak_error"].(string), "access denied") {
-		t.Errorf("speaker start failure: %v, %v", out, err)
-	}
 }
 
-func TestSpeakerArgsParse(t *testing.T) {
-	for _, c := range []struct {
-		text, voice string
-	}{{"빨래 끝", ""}, {"--text", "Microsoft Heami Desktop - Korean"}} {
-		args := speakerArgs(c.text, c.voice)
-		if args[0] != "user-action" {
-			t.Fatalf("args %q", args)
-		}
-		req, err := Parse(args[1:])
-		if err != nil || req.Action != ActionSpeak || req.Text != c.text || req.Voice != c.voice {
-			t.Errorf("Parse(%q) = %+v, %v", args[1:], req, err)
-		}
-	}
-}
-
-func TestParseSpeak(t *testing.T) {
+// The read-aloud feature was dropped (2026-10-01): neither the speak
+// action nor notify's --speak/--voice flags are part of the grammar.
+func TestSpeakIsNotAnAction(t *testing.T) {
 	bad := [][]string{
-		{"speak"},
-		{"speak", "--text"},
-		{"speak", "--text", " "},
-		{"speak", "--text", "a\nb"},
-		{"speak", "--text", strings.Repeat("a", MaxTextRunes+1)},
-		{"speak", "--text", "hi", "--voice", ""},
-		{"speak", "--text", "hi", "--speak"},
-		{"speak", "--text", "hi", "--title", "t"},
+		{"speak", "--text", "hi"},
+		{"notify", "--title", "t", "--text", "hi", "--speak"},
+		{"notify", "--title", "t", "--text", "hi", "--voice", "Heami"},
 	}
 	for _, args := range bad {
 		if _, err := Parse(args); err == nil {

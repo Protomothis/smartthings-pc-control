@@ -131,7 +131,6 @@ func TestChangedPresetSlotsAndConfigKey(t *testing.T) {
 	updated := old
 	updated.Presets = []Preset{b}
 	updated.NotifyPC.Enabled = false
-	updated.NotifyPC.Voice = "Heami" // not security-relevant
 	keys := strings.Join(configChangedKeys(old, updated), ", ")
 	if keys != "notify_pc.enabled, presets[2]" {
 		t.Errorf("keys = %q", keys)
@@ -165,8 +164,8 @@ func TestConfigAPIPresets(t *testing.T) {
 	}
 	// A body without presets keeps them (an older WebUI page).
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"speak":true}}`))
-	if w.Code != http.StatusOK || len(getConfig().Presets) != 2 || !getConfig().NotifyPC.Speak {
+	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
+	if w.Code != http.StatusOK || len(getConfig().Presets) != 2 || getConfig().NotifyPC.Enabled {
 		t.Errorf("omitted presets: %d, %+v", w.Code, getConfig())
 	}
 	// [] clears them.
@@ -175,10 +174,11 @@ func TestConfigAPIPresets(t *testing.T) {
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 0 {
 		t.Errorf("cleared: %d, %+v", w.Code, getConfig().Presets)
 	}
+	// The retired notify_pc.speak/voice keys of an older app are ignored.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"voice":"a\nb"}}`))
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("bad voice: %d", w.Code)
+	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
+	if w.Code != http.StatusOK || !getConfig().NotifyPC.Enabled {
+		t.Errorf("old speech keys: %d, %+v", w.Code, getConfig().NotifyPC)
 	}
 }
 

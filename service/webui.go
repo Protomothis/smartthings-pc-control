@@ -334,8 +334,8 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			MediaEnabled bool
 			// NowPlaying is the media.now_playing opt-in (#117).
 			NowPlaying bool
-			// NotifyPC mirrors the app's PC-notification switches (#106); the
-			// voice and the preset editor stay in the app.
+			// NotifyPC mirrors the app's PC-notification switch (#106); the
+			// preset editor stays in the app.
 			NotifyPC NotifyPCConfig
 		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
 			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
@@ -671,12 +671,8 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
-		// #106, #109: a preset that could never run, or a voice name the
-		// subcommand would refuse, is rejected here rather than on use.
-		if msg := validateNotifyPC(newCfg.NotifyPC); msg != "" {
-			writeAPIError(w, http.StatusBadRequest, msg)
-			return
-		}
+		// #109: a preset that could never run is rejected here rather
+		// than on use.
 		if msg := validatePresets(newCfg.Presets); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return

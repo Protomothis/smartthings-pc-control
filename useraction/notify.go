@@ -1,7 +1,7 @@
 package useraction
 
 // PC notification (#106, docs/design/media-notify.md §2·§7): a toast with
-// the title and text, and — with --speak — the text read aloud by SAPI.
+// the title and text.
 //
 // The toast is not built with go-toast, which the tray app uses for its own
 // fixed grace-period strings. go-toast pastes the title and message into a
@@ -10,12 +10,6 @@ package useraction
 // network would be code. Here the toast XML is escaped in Go and handed to
 // a fixed script through an environment variable: no user text ever
 // appears in a script or on a command line.
-//
-// Speaking takes seconds per sentence, far longer than the service's 3 s
-// budget for one user-action run (the child is killed when it runs out).
-// So notify only resolves the voice, starts a detached `user-action speak`
-// child and answers at once; that child reads the text and exits. Speakers
-// queue on a named mutex so two notifications are not read over each other.
 
 import (
 	"bytes"
@@ -24,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -33,7 +26,6 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
-	"github.com/Protomothis/smartthings-pc-control/internal/sapi"
 )
 
 // ToastAppID is the AppUserModelID a toast is shown under: the one the
@@ -66,16 +58,8 @@ $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
 // cold PowerShell start could otherwise overrun the service's 3 s budget.
 var toastWait = 1200 * time.Millisecond
 
-// speakMutexName serialises the detached speakers of one user session.
-const speakMutexName = `Local\SmartThingsPCControl-speak`
-
-// speakQueueWait is how long a speaker waits for the one before it; past
-// that it gives up rather than pile up behind a stuck engine.
-const speakQueueWait = 90 * time.Second
-
 func init() {
 	Register(ActionNotify, handleNotify)
-	Register(ActionSpeak, handleSpeak)
 }
 
 // xmlText escapes s for XML character data and attribute values.
@@ -165,45 +149,14 @@ var ensureShortcut = func() error {
 	return err
 }
 
-// resolveVoice is sapi.Resolve, replaced by the tests.
-var resolveVoice = sapi.Resolve
-
-// startSpeaker launches the detached `user-action speak` child. Replaced
-// by the tests.
-var startSpeaker = func(text, voice string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(exe, speakerArgs(text, voice)...)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	// Nobody waits for it: it outlives this process on purpose.
-	return cmd.Process.Release()
-}
-
-// speakerArgs is the argument vector of the detached speaker.
-func speakerArgs(text, voice string) []string {
-	args := []string{"user-action", ActionSpeak, "--text", text}
-	if voice != "" {
-		args = append(args, "--voice", voice)
-	}
-	return args
-}
-
-// handleNotify shows the toast and, with --speak, starts reading the text.
+// handleNotify shows the toast.
 //
 // The Start menu shortcut is checked first: this child may be the first
 // thing of the app to run in the session (the tray app, which makes it
 // too, need not be running). When it cannot be made the toast is still
 // sent, and the reply carries shortcut: "failed: …".
 //
-// Reply fields: toast ("shown" or "pending"); with --speak also spoken
-// (the reader was started), voice_used (the voice it reads with) and
-// voice_found (false when --voice matched no installed voice and the
-// system default is used). A speech failure does not fail the toast that
-// was already shown: spoken is false and speak_error says why.
+// Reply fields: toast ("shown" or "pending").
 func handleNotify(req Request) (map[string]any, error) {
 	shortcutErr := ensureShortcut()
 	state, err := showToast(req.Title, req.Text)
@@ -217,56 +170,5 @@ func handleNotify(req Request) (map[string]any, error) {
 	if shortcutErr != nil {
 		out["shortcut"] = "failed: " + shortcutErr.Error()
 	}
-	if !req.Speak {
-		return out, nil
-	}
-	out["spoken"] = false
-	used, found, err := resolveVoice(req.Voice)
-	if err != nil {
-		out["speak_error"] = err.Error()
-		return out, nil
-	}
-	out["voice_used"] = used
-	out["voice_found"] = found
-	// Hand the speaker the exact name, or nothing for the default: it
-	// matches again, and an exact name only matches itself.
-	voice := ""
-	if found {
-		voice = used
-	}
-	if err := startSpeaker(req.Text, voice); err != nil {
-		out["speak_error"] = "start speaker: " + err.Error()
-		return out, nil
-	}
-	out["spoken"] = true
 	return out, nil
-}
-
-// handleSpeak is the detached reader: wait for the speaker before it, read
-// the text, exit. Its reply line goes nowhere (nobody reads its output),
-// but it keeps the one-line contract anyway.
-func handleSpeak(req Request) (map[string]any, error) {
-	// A mutex belongs to the thread that took it, so take, speak and
-	// release on one OS thread (sapi nests its own lock).
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	name, _ := windows.UTF16PtrFromString(speakMutexName)
-	h, err := windows.CreateMutex(nil, false, name)
-	if h == 0 {
-		return nil, Failed("speak queue: %v", err)
-	}
-	defer windows.CloseHandle(h)
-	switch ev, err := windows.WaitForSingleObject(h, uint32(speakQueueWait/time.Millisecond)); {
-	case err != nil:
-		return nil, Failed("speak queue: %v", err)
-	case ev == uint32(windows.WAIT_TIMEOUT):
-		return nil, Failed("speak queue: still busy after %v", speakQueueWait)
-	}
-	defer windows.ReleaseMutex(h)
-
-	used, err := sapi.Speak(req.Text, req.Voice)
-	if err != nil {
-		return nil, Unsupported("%v", err)
-	}
-	return map[string]any{"voice_used": used}, nil
 }
