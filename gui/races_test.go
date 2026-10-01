@@ -11,7 +11,7 @@ import (
 
 // newTestUI builds the whole window once with Fyne's in-memory test app and
 // background work made synchronous. client may be nil (never contacted).
-func newTestUI(t *testing.T, lang Lang, client *Client) *ui {
+func newTestUI(t *testing.T, lang Lang, client serviceAPI) *ui {
 	t.Helper()
 	syncBackground = true
 	t.Cleanup(func() { syncBackground = false })

@@ -2,55 +2,65 @@ package gui
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 )
 
-// fakeService answers the API the window uses: GET/POST /api/config with
-// the service's token rules (masked on GET; "" or "****…" keeps, "-"
-// clears, anything else replaces), "{}" for every other GET and ok for
-// every other POST.
-type fakeService struct {
+// fakeAPI is the service behind serviceAPI, in memory. The embedded
+// interface is nil: a call the fake does not implement panics, so a test
+// shows exactly what it touches. GET/POST of the config follow the
+// service's token rules (masked on GET; "" or "****…" keeps, "-" clears,
+// anything else replaces) and go through JSON like the real request.
+type fakeAPI struct {
+	serviceAPI
 	mu    sync.Mutex
 	cfg   Config // BotToken in plain text
 	posts []Config
 }
 
-func (f *fakeService) handler(w http.ResponseWriter, r *http.Request) {
+func (f *fakeAPI) GetConfig() (Config, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	switch {
-	case r.URL.Path == "/api/config" && r.Method == http.MethodGet:
-		out := f.cfg
-		out.Telegram.BotToken = maskToken(f.cfg.Telegram.BotToken)
-		out.Telegram.BotTokenSet = f.cfg.Telegram.BotToken != ""
-		json.NewEncoder(w).Encode(out)
-	case r.URL.Path == "/api/config":
-		var in Config
-		json.NewDecoder(r.Body).Decode(&in)
-		f.posts = append(f.posts, in)
-		token := f.cfg.Telegram.BotToken
-		switch t := in.Telegram.BotToken; {
-		case t == "" || strings.HasPrefix(t, maskedTokenPrefix):
-		case t == "-":
-			token = ""
-		default:
-			token = t
-		}
-		f.cfg = in
-		f.cfg.Telegram.BotToken = token
-		w.Write([]byte(`{"status":"ok","message":"saved"}`))
-	case r.Method == http.MethodGet:
-		w.Write([]byte(`{}`))
-	default:
-		w.Write([]byte(`{"status":"ok"}`))
-	}
+	out := f.cfg
+	out.Telegram.BotToken = maskToken(f.cfg.Telegram.BotToken)
+	out.Telegram.BotTokenSet = f.cfg.Telegram.BotToken != ""
+	return jsonRoundTrip(out), nil
 }
 
-func (f *fakeService) lastPost(t *testing.T) Config {
+func (f *fakeAPI) SaveConfig(cfg Config) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	in := jsonRoundTrip(cfg)
+	f.posts = append(f.posts, in)
+	token := f.cfg.Telegram.BotToken
+	switch t := in.Telegram.BotToken; {
+	case t == "" || strings.HasPrefix(t, maskedTokenPrefix):
+	case t == "-":
+		token = ""
+	default:
+		token = t
+	}
+	f.cfg = in
+	f.cfg.Telegram.BotToken = token
+	return "saved", nil
+}
+
+func (f *fakeAPI) Login(string) error                    { return nil }
+func (f *fakeAPI) GetSchedule() (Schedule, error)        { return Schedule{}, nil }
+func (f *fakeAPI) GetWoLStatus() (WoLStatus, error)      { return WoLStatus{}, nil }
+func (f *fakeAPI) GetSTHub() (STHub, error)              { return STHub{}, nil }
+func (f *fakeAPI) TelegramMe() (string, string, error)   { return "bot", "Bot", nil }
+func (f *fakeAPI) TelegramState() (TelegramState, error) { return TelegramState{}, nil }
+
+func jsonRoundTrip(cfg Config) Config {
+	b, _ := json.Marshal(cfg)
+	var out Config
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+func (f *fakeAPI) lastPost(t *testing.T) Config {
 	t.Helper()
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -60,13 +70,12 @@ func (f *fakeService) lastPost(t *testing.T) Config {
 	return f.posts[len(f.posts)-1]
 }
 
-func newFakeServiceUI(t *testing.T) (*ui, *fakeService) {
+// newFakeServiceUI is the whole window on a fakeAPI, loaded once.
+func newFakeServiceUI(t *testing.T) (*ui, *fakeAPI) {
 	t.Helper()
-	svc := &fakeService{cfg: storedConfig()}
+	svc := &fakeAPI{cfg: storedConfig()}
 	svc.cfg.Telegram.BotToken = "123456:SECRETTOKEN6789"
-	srv := httptest.NewServer(http.HandlerFunc(svc.handler))
-	t.Cleanup(srv.Close)
-	u := newTestUI(t, LangEn, &Client{base: srv.URL, http: srv.Client()})
+	u := newTestUI(t, LangEn, svc)
 	u.initialLoad()
 	if !u.connected.Load() || u.forms.base == nil {
 		t.Fatal("initialLoad did not connect")
@@ -102,7 +111,7 @@ func TestSaveFromOneTabKeepsTheOthers(t *testing.T) {
 	if d := dirtyIndices(u.forms); len(d) != 1 || d[0] != tabNotify {
 		t.Errorf("dirty after saving settings = %v, want only notify", d)
 	}
-	if u.forms.tabAt(tabSettings).bar.save.Disabled() == false {
+	if !u.forms.tabAt(tabSettings).bar.save.Disabled() {
 		t.Error("settings Save still enabled after the save")
 	}
 

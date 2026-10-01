@@ -49,3 +49,18 @@ func busyControls(ws ...fyne.Disableable) func(bool) {
 		}
 	}
 }
+
+// syncBackground makes background() run its work inline. Tests set it:
+// Fyne's test driver runs fyne.Do on the calling goroutine instead of the UI
+// thread, so work a build starts in the background would race that build.
+var syncBackground = false
+
+// background runs slow work a build kicks off (the service state) off the
+// UI thread; the work hands its result back with fyne.Do.
+func background(f func()) {
+	if syncBackground {
+		f()
+		return
+	}
+	go f()
+}
