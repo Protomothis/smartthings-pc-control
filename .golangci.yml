@@ -1,0 +1,214 @@
+# golangci-lint v2 configuration (CI pins the version in .github/workflows/ci.yml).
+#
+# Run locally from the repository root (Fyne needs cgo, so a MinGW gcc must be
+# on PATH, e.g. PATH="/c/msys64/mingw64/bin:$PATH"):
+#
+#   golangci-lint run ./...
+#
+# The exclusions below are deliberate and each says why. They were written
+# when the linters were introduced (#124) so that CI starts green without a
+# mass edit of working code; prefer fixing a finding over adding to them.
+version: "2"
+
+run:
+  # The app is Windows-only (golang.org/x/sys/windows, Fyne + cgo), so it is
+  # linted on windows-latest like it is built; a cold run type-checks Fyne.
+  timeout: 10m
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - usestdlibvars
+
+  settings:
+    errcheck:
+      # Calls whose error has nothing useful to act on, on top of the
+      # std-error-handling preset below (any *.Close / Flush, os.Remove(All),
+      # os.(Un)Setenv, *print*, writes to stdout/stderr). Every one of them is
+      # cleanup on a path that already succeeded or failed for another reason,
+      # or a write to a client that may have gone away.
+      exclude-functions:
+        # Releasing Win32/SCM handles and processes: a failed release loses
+        # nothing the program could recover.
+        - (*golang.org/x/sys/windows/svc/mgr.Mgr).Disconnect
+        - (*net/http.Server).Shutdown
+        - (*os.Process).Release
+        - golang.org/x/sys/windows.CloseHandle
+        - golang.org/x/sys/windows.LocalFree
+        - golang.org/x/sys/windows.DestroyEnvironmentBlock
+        # Writing an HTTP response or a log line: if the client or console is
+        # gone there is nobody left to report the error to.
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - io.WriteString
+        # Win32 calls made through LazyProc return (r1, r2, err) where err is
+        # GetLastError and only meaningful when r1 says so; call sites that
+        # care look at r1.
+        - (*golang.org/x/sys/windows.LazyProc).Call
+        - (*syscall.LazyProc).Call
+        - syscall.SyscallN
+        # The return value of an OK-only message box is the button pressed.
+        - golang.org/x/sys/windows.MessageBox
+        # Writes into a strings.Builder, which never fails.
+        - encoding/xml.EscapeText
+        # Best-effort by contract: toast-shortcut cleanup on uninstall.
+        - github.com/Protomothis/smartthings-pc-control/internal/appid.RemoveToastShortcut
+
+    errorlint:
+      # Keep the comparison (== / != on errors) and type-assertion checks,
+      # which catch real bugs once an error gets wrapped. Do not demand %w in
+      # every fmt.Errorf: whether a cause becomes part of a package's error
+      # API is a per-call decision, and none of the existing %v call sites has
+      # a caller that unwraps them.
+      errorf: false
+
+    gosec:
+      excludes:
+        # G103 (unsafe): Win32 interop (unsafe.Pointer to syscall arguments)
+        # is the point of this program.
+        - G103
+        # G115 (integer overflow on conversion): Win32 structs and time math
+        # convert between uint32/int/uintptr all over; the values are bounded
+        # by the API, and the rule cannot see that.
+        - G115
+        # G204 (subprocess with variable): the service and tray deliberately
+        # run fixed system tools (powershell, netsh, shutdown, sc, cmd /c
+        # start) and their own executable with arguments they build.
+        - G204
+        # G304 (file path from variable): every path comes from the program's
+        # own install/config/log directories, not from a request.
+        - G304
+        # G301/G306 (Unix permission bits on MkdirAll/WriteFile): Windows
+        # ignores the bits; access is governed by the directory ACLs (install
+        # folder ACL: #126).
+        - G301
+        - G306
+        # G117 (secret-looking field marshalled to JSON): the config file is
+        # where the shared secret and tokens are meant to be stored.
+        - G117
+        # G104 (errors unhandled) duplicates errcheck, which is configured
+        # above with the reasons for each exclusion.
+        - G104
+        # G302 (Unix permission bits on OpenFile/Chmod): as G301/G306.
+        - G302
+
+  exclusions:
+    # Skip generated files; warn when a rule below no longer matches anything
+    # (its debt was paid off), so the list cannot silently rot.
+    generated: lax
+    warn-unused: true
+    # Unchecked Close/Flush/os.Remove/print/Setenv: see errcheck above.
+    presets:
+      - std-error-handling
+    rules:
+      # Tests: unchecked setup errors surface as a failing assertion anyway,
+      # contexts are irrelevant for an httptest server, and gosec rules
+      # (cookie flags, file permissions, bounds) target production code.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - noctx
+      # Test requests spell the method as a literal ("GET"); production code
+      # uses the http.Method* constants.
+      - path: _test\.go
+        linters: [usestdlibvars]
+        text: can be replaced by http\.Method
+
+      # noctx on os/exec: the commands are short-lived system tools run from
+      # places that have no caller context to plumb through (SCM handlers,
+      # tray callbacks). HTTP requests are still checked.
+      - linters: [noctx]
+        text: os/exec\.Command must not be called
+
+      # The WebUI session cookie is HttpOnly + SameSite=Strict but cannot be
+      # Secure: the WebUI is served over plain HTTP on the LAN/loopback.
+      - path: service/webui\.go
+        linters: [gosec]
+        text: G124
+
+      # Taint analysis flags paths/commands built from %SystemRoot% and
+      # %WINDIR%. Those come from the OS environment of the same process
+      # (explorer.exe for the unelevated relaunch, the Fonts folder for the
+      # Korean theme), not from untrusted input.
+      - path: gui/selfupdate\.go
+        linters: [gosec]
+        text: G702
+        source: explorer\.exe
+      - path: gui/theme\.go
+        linters: [gosec]
+        text: G703
+        source: fontsDir
+
+      # ---- errcheck debt inventoried when the linter was introduced (#124).
+      # Each rule is pinned to the exact call pattern, so new code in the
+      # same file is still checked. Remove a rule once its calls are handled.
+
+      # GUI client: a failed decode of a service reply leaves the zero value,
+      # which the callers already treat as "no data".
+      - path: gui/client\.go
+        linters: [errcheck]
+        source: json\.NewDecoder\(.*\)\.Decode\(
+      # Optional/lenient JSON fields: a malformed value is ignored on purpose
+      # and the field keeps its default.
+      - path: (gui/toast|service/nowplaying|service/pc_notify|service/presets|service/server)\.go
+        linters: [errcheck]
+        source: json\.Unmarshal\(
+      # Fire-and-forget UI actions: opening the browser, the toast protocol
+      # registration, tray/toast buttons whose outcome the service reports
+      # itself (log + notification).
+      - path: gui/(gui|tray|toast)\.go
+        linters: [errcheck]
+        source: (exec\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
+      # Self-update: the service is restarted best-effort (the new exe starts
+      # it again), the helper is reaped in the background, and the log file
+      # truncation only bounds its size.
+      - path: gui/selfupdate\.go
+        linters: [errcheck]
+        source: (startService\(\)|go cmd\.Wait\(\)|f\.Truncate\(0\))
+      - path: gui/update\.go
+        linters: [errcheck]
+        source: os\.MkdirAll\(fallback
+      # Service install/uninstall/run: SCM stop/delete/recovery settings are
+      # best effort around an operation that reports its own result, and
+      # svc.Run / saveConfig there have no caller left to report to.
+      - path: service/windows\.go
+        linters: [errcheck]
+        source: (svc\.Run\(|saveConfig\(|s\.Control\(|s\.Delete\(|s\.SetRecoveryActions\()
+      # Firewall-rule cleanup is best effort by contract (see the comments at
+      # the call sites): a rule that is already gone is the normal case.
+      - path: service/(windows|webui)\.go
+        linters: [errcheck]
+        source: remove(WebUI|SSDP)?FirewallRule\(\)
+      # Waiting for the elevated helper is advisory; its exit code is not used.
+      - path: gui/service_control\.go
+        linters: [errcheck]
+        source: windows\.WaitForSingleObject\(
+      - path: service/server\.go
+        linters: [errcheck]
+        source: os\.Rename\(src, dst\)
+      - path: service/st_push\.go
+        linters: [errcheck]
+        source: io\.Copy\(io\.Discard
+      - path: service/useraction\.go
+        linters: [errcheck]
+        source: targetUserSession\(\)
+      - path: service/webui\.go
+        linters: [errcheck]
+        source: (server\.ListenAndServe\(\)|settingsTmpl\.Execute\()
+      - path: useraction/env\.go
+        linters: [errcheck]
+        source: os\.Setenv\(
+
+formatters:
+  enable:
+    - gofmt
