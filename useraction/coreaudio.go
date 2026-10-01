@@ -91,6 +91,21 @@ type comObject struct {
 
 // call invokes vtable slot i with the object as the first argument and
 // returns the HRESULT.
+//
+// Callers pass out-pointers as uintptr(unsafe.Pointer(&v)). Rule 4 of
+// unsafe.Pointer only keeps v alive and in place when that conversion sits
+// in the syscall.SyscallN call expression itself; here it reaches SyscallN
+// through an ordinary call and an append, so without the directive below v
+// may stay on the stack and a stack move between the conversion and the
+// syscall leaves the callee writing into freed memory (#121, reproduced by
+// TestComObjectCallKeepsOutPointerValidAcrossStackGrowth).
+// //go:uintptrescapes — the same directive syscall.Proc.Call uses — makes
+// the compiler treat every uintptr(unsafe.Pointer(x)) argument at a call
+// site of call as escaping, so x is heap allocated and kept alive until
+// call returns. That covers coreaudio.go and winrt.go alike, as long as the
+// conversion stays in the o.call(...) argument list.
+//
+//go:uintptrescapes
 func (o *comObject) call(slot int, args ...uintptr) uint32 {
 	fn := o.vtbl[slot]
 	r, _, _ := syscall.SyscallN(fn, append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
