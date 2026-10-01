@@ -367,6 +367,66 @@ function T.test_an_unreachable_pc_leaves_every_child_where_it_was()
 end
 
 --------------------------------------------------------------------------------
+-- the rotation (platform notes "이벤트 예산")
+--------------------------------------------------------------------------------
+
+local function forced_rows(child)
+  local out = {}
+  for _, row in ipairs(running_rows(child)) do
+    if row.forced then
+      out[#out + 1] = row.value
+    end
+  end
+  return out
+end
+
+function T.test_the_rotation_re_sends_one_child_per_step_once_per_cycle()
+  -- A child's `running` lost to the budget would stay lost until the app
+  -- starts or stops - and every "실행 중이 되면" routine with it.
+  local w = world()
+  w.sync({ STEAM, OBS, CODE })
+  w.deliver()
+  w.sync({ STEAM, OBS, CODE })
+  local steam = w.child("steam.exe")
+  h.assert_equal(#forced_rows(steam), 1, "the first emit of the run")
+  h.assert_nil(apps.rotate(w.driver, w.parent, w.now), "the first step starts the clocks")
+  w.now = w.now + apps.ROTATE_SECONDS - 1
+  h.assert_nil(apps.rotate(w.driver, w.parent, w.now), "not due yet")
+  w.now = w.now + 1
+  local order = {}
+  for _ = 1, 4 do
+    local child = apps.rotate(w.driver, w.parent, w.now)
+    order[#order + 1] = child and child.parent_assigned_child_key or "-"
+  end
+  h.assert_deep_equal(order, { "code.exe", "obs64.exe", "steam.exe", "-" },
+    "one child per step, every child once")
+  h.assert_deep_equal(forced_rows(steam), { features.APP_RUNNING, features.APP_RUNNING },
+    "forced, with the value last sent")
+  h.assert_deep_equal(forced_rows(w.child("obs64.exe")), { features.APP_STOPPED, features.APP_STOPPED })
+  w.now = w.now + 30
+  h.assert_nil(apps.rotate(w.driver, w.parent, w.now), "and not again before a cycle")
+end
+
+function T.test_a_rotation_step_of_the_pc_takes_one_child_along()
+  local w = world()
+  w.sync({ STEAM, OBS })
+  w.deliver()
+  w.sync({ STEAM, OBS })
+  local before = #forced_rows(w.child("steam.exe")) + #forced_rows(w.child("obs64.exe"))
+  poll.rotate_due(w.driver, w.parent, w.deps) -- starts the PC's clock
+  w.now = w.now + poll.DEFAULT_INTERVAL
+  poll.rotate_due(w.driver, w.parent, w.deps) -- a step: the children's clocks start
+  w.now = w.now + apps.ROTATE_SECONDS
+  poll.rotate_due(w.driver, w.parent, w.deps)
+  local after = #forced_rows(w.child("steam.exe")) + #forced_rows(w.child("obs64.exe"))
+  h.assert_equal(after - before, 1, "one child per step")
+  w.now = w.now + poll.DEFAULT_INTERVAL
+  poll.rotate_due(w.driver, w.parent, w.deps)
+  h.assert_equal(#forced_rows(w.child("steam.exe")) + #forced_rows(w.child("obs64.exe")) - before, 2,
+    "the other one on the next step")
+end
+
+--------------------------------------------------------------------------------
 -- through a real poll and a real push, with the contract fixtures
 --------------------------------------------------------------------------------
 

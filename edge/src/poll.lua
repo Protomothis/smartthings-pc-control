@@ -359,6 +359,14 @@ end
 --     budget, or a flash write lost to a power cut)
 --   - a value that differs from the cache is the first emit of the run, forced
 --   - an app child (#123) is never seeded: its one row is forced once per run
+--
+-- The cache can be wrong for any other row as well: the 2026-10-01 migration
+-- lost `pcApps.summary` after the hub had taken it, and this skip carried the
+-- loss across a restart. It stays anyway, because the rotation
+-- (`ROTATE_SECONDS`) re-sends every row - seeded ones included - within one
+-- cycle, so a wrong cache costs at most that long, while dropping the skip
+-- would put the ~40-event burst back on every restart, and a burst is what
+-- loses events in the first place.
 poll.SEED_FIELD = "rows_seed_off"
 
 local function loss_matters(key)
@@ -422,27 +430,235 @@ local function spend(device, log)
   end
 end
 
+-- Where one record would go on `device`: its capability, the attribute's
+-- event constructor and the component object (nil for main). nil when the
+-- record cannot be emitted on this profile, which is logged and skipped.
+local function resolve(device, e, log)
+  local cap = capability_for(e.cap)
+  local attr = cap and cap[e.attr]
+  local component
+  if e.component ~= nil and e.component ~= "main" then
+    component = poll.component(device, e.component)
+  elseif e.component == nil and features.MEDIA_CAPS[e.cap] then
+    -- #118: the alternative profile layout keeps the media group on a
+    -- component of its own. The record stays main-shaped (its row key does
+    -- not change); only where it is emitted does.
+    component = poll.component(device, features.MEDIA_COMPONENT)
+  end
+  if not attr then
+    log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
+    return nil
+  end
+  if e.component ~= nil and e.component ~= "main" and not component then
+    log.debug(string.format("component %s not in the profile, %s.%s skipped",
+      tostring(e.component), tostring(e.cap), tostring(e.attr)))
+    return nil
+  end
+  return cap, attr, component
+end
+
+--------------------------------------------------------------------------------
+-- The spread repaint (platform notes "이벤트 예산", 2026-10-01 migration)
+--------------------------------------------------------------------------------
+
+-- A profile change needs every row once, forced: the new profile's cloud
+-- record is empty. Sent in one go that was ~49 events in the same second, and
+-- on the Dev hub's v5 -> v6 migration (2026-10-01) one of them -
+-- `pcApps.summary` - never reached the cloud while the hub's state cache took
+-- it. So `paint` queues the rows instead and sends them `PAINT_BATCH` at a time,
+-- `PAINT_SECONDS` apart: the rows the user sees first (`PAINT_FIRST`) in the
+-- first batch, which goes as soon as the poll that follows the repaint has
+-- added the status's rows (`paint_start`), and the rest within about 25 s
+-- for a full profile (~45 rows). Two batches fit in one budget window (18 of
+-- the guard's 20), with room for the poll's own changes.
+--
+-- While a paint is under way, `emit` keeps its rules for every row except the
+-- ones still waiting: an ordinary emit of a waiting row - or of a row this
+-- generation has not sent at all, such as the status rows of the poll that
+-- follows the repaint - only updates the value that batch will carry; a
+-- forced one (a command's answer) goes out at once and leaves the queue.
+-- Every row's first emit of the generation is still forced (`FIRST_FIELD`):
+-- it is the batch's.
+poll.PAINT_FIELD = "paint_queue"
+poll.PAINT_BATCH = 9
+poll.PAINT_SECONDS = 5
+poll.PAINT_FIRST = {
+  state.CAP_SWITCH .. ".switch",
+  caps.POWER_STATE .. ".powerState",
+  caps.STATUS .. ".summary",
+  caps.APPS .. ".summary",
+  features.CAP_MUTE .. ".mute",
+  features.CAP_VOLUME .. ".volume",
+  features.CAP_PLAYBACK .. ".playbackStatus",
+  features.AWAKE_COMPONENT .. "/" .. features.CAP_SWITCH .. ".switch",
+}
+
+-- The repaint's own rows (`poll.repaint`) are collected rather than emitted
+-- while it runs, so they can be queued: `{ device, events }` or nil.
+local gathering
+
+local function gather(device, fn)
+  local outer = gathering
+  gathering = { device = device, events = {} }
+  local ok, err = pcall(fn)
+  local events = gathering.events
+  gathering = outer
+  if not ok then
+    logger().warn("repaint: " .. tostring(err))
+  end
+  return events
+end
+
+--- The paint queue of `device` while a spread repaint is under way, else nil.
+function poll.painting(device)
+  local queue
+  pcall(function() queue = device:get_field(poll.PAINT_FIELD) end)
+  if type(queue) == "table" then
+    return queue
+  end
+  return nil
+end
+
+local function enqueue(queue, key, e)
+  if not queue.rows[key] then
+    queue.order[#queue.order + 1] = key
+  end
+  queue.rows[key] = { cap = e.cap, attr = e.attr, value = e.value, component = e.component }
+end
+
+-- The next `n` waiting rows, `PAINT_FIRST` before the rest, as forced records.
+local function take(queue, n)
+  local batch = {}
+  local function pick(key)
+    local record = queue.rows[key]
+    if record and #batch < n then
+      queue.rows[key] = nil
+      record.force = true
+      batch[#batch + 1] = record
+    end
+  end
+  for _, key in ipairs(poll.PAINT_FIRST) do
+    pick(key)
+  end
+  for _, key in ipairs(queue.order) do
+    pick(key)
+  end
+  local order, kept = {}, {}
+  for _, key in ipairs(queue.order) do
+    if queue.rows[key] and not kept[key] then
+      kept[key] = true
+      order[#order + 1] = key
+    end
+  end
+  queue.order = order
+  return batch
+end
+
+-- Everything still waiting, at once (no timer could be set).
+local function paint_all(device, queue, batch)
+  for _, record in ipairs(take(queue, math.huge)) do
+    batch[#batch + 1] = record
+  end
+  pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+  return batch
+end
+
+local paint_next
+
+-- The queue's one pending batch timer: a new one makes the one before it a
+-- no-op (`token`). Returns false when no timer could be set.
+local function paint_timer(driver, device, queue, delay)
+  local token = {}
+  queue.token = token
+  local ok, timer = pcall(function()
+    return driver:call_with_delay(delay, function()
+      if poll.painting(device) == queue and queue.token == token then
+        paint_next(driver, device)
+      end
+    end, "repaint-batch")
+  end)
+  if ok then
+    queue.timer = timer
+  end
+  return ok
+end
+
+-- Send the next batch, and set the timer for the one after it.
+paint_next = function(driver, device)
+  local queue = poll.painting(device)
+  if not queue then
+    return 0
+  end
+  queue.started = true
+  local batch = take(queue, poll.PAINT_BATCH)
+  if next(queue.rows) == nil then
+    pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+  elseif not paint_timer(driver, device, queue, poll.PAINT_SECONDS) then
+    paint_all(device, queue, batch)
+  end
+  poll.emit(device, batch)
+  return #batch
+end
+
+--- Queue `events` - every row, forced - to be painted in batches (see
+--- above). The first batch goes when `paint_start` says so - at the end of
+--- the poll that follows the repaint, so the status's rows are in the queue
+--- by then - or, if nothing does, `PAINT_START_SECONDS` later. Without a
+--- `driver` (no timers) they all go out at once. A paint that comes while
+--- one is under way (a migration, then its landing) puts every row back in
+--- the queue and keeps the running cadence. Returns how many went out now.
+poll.PAINT_START_SECONDS = 1
+function poll.paint(driver, device, events)
+  local log = logger()
+  local queue = poll.painting(device)
+  if not driver then
+    -- A queue's pending timer finds itself replaced and does nothing.
+    if queue then
+      pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+    end
+    poll.emit(device, poll.force_all(events))
+    return #(events or {})
+  end
+  local fresh = queue == nil
+  queue = queue or { rows = {}, order = {}, started = false }
+  for _, e in ipairs(events or {}) do
+    if resolve(device, e, log) then
+      enqueue(queue, poll.row_key(e), e)
+    end
+  end
+  pcall(function() device:set_field(poll.PAINT_FIELD, queue) end)
+  if fresh and not paint_timer(driver, device, queue, poll.PAINT_START_SECONDS) then
+    local batch = paint_all(device, queue, {})
+    poll.emit(device, batch)
+    return #batch
+  end
+  return 0
+end
+
+--- Send the first batch of a paint that has not started yet (see `paint`).
+--- Returns how many went out.
+function poll.paint_start(driver, device)
+  local queue = poll.painting(device)
+  if not queue or queue.started or not driver then
+    return 0
+  end
+  pcall(function() driver:cancel_timer(queue.timer) end)
+  return paint_next(driver, device)
+end
+
 function poll.emit(device, events)
+  if gathering and gathering.device == device then
+    for _, e in ipairs(events or {}) do
+      gathering.events[#gathering.events + 1] = e
+    end
+    return
+  end
   local log = logger()
   local sent = sent_cache(device)
+  local queue = poll.painting(device)
   for _, e in ipairs(events or {}) do
-    local cap = capability_for(e.cap)
-    local attr = cap and cap[e.attr]
-    local component
-    if e.component ~= nil and e.component ~= "main" then
-      component = poll.component(device, e.component)
-    elseif e.component == nil and features.MEDIA_CAPS[e.cap] then
-      -- #118: the alternative profile layout keeps the media group on a
-      -- component of its own. The record stays main-shaped (its row key does
-      -- not change); only where it is emitted does.
-      component = poll.component(device, features.MEDIA_COMPONENT)
-    end
-    if not attr then
-      log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
-    elseif e.component ~= nil and e.component ~= "main" and not component then
-      log.debug(string.format("component %s not in the profile, %s.%s skipped",
-        tostring(e.component), tostring(e.cap), tostring(e.attr)))
-    else
+    local cap, attr, component = resolve(device, e, log)
+    if cap then
       local key = poll.row_key(e)
       local sig = signature(e.value)
       local last = sent[key]
@@ -455,10 +671,17 @@ function poll.emit(device, events)
           sent[key] = last
         end
       end
+      if queue and not e.force and not last then
+        -- A paint is under way and this row has not had its batch yet: the
+        -- batch carries the latest value, forced.
+        enqueue(queue, key, e)
       -- Unchanged and not answering anything: the hub would drop it, but it
       -- would still cost budget (see above), so it is not emitted. Not even
       -- logged - that is most rows of every poll.
-      if e.force or not last or last.sig ~= sig then
+      elseif e.force or not last or last.sig ~= sig then
+        if queue then
+          queue.rows[key] = nil
+        end
         local ok, err = pcall(function()
           local force = e.force or first_emit(device, key)
           local event = force and attr(e.value, poll.FORCE) or attr(e.value)
@@ -469,9 +692,10 @@ function poll.emit(device, events)
           end
         end)
         if ok then
-          -- The record as well as its signature: `resync` re-sends it.
+          -- The record as well as its signature: `resync` and `rotate`
+          -- re-send it. `at`: when (`rotate` skips a row this very poll sent).
           sent[key] = { sig = sig, value = e.value, cap = e.cap, attr = e.attr,
-            component = e.component }
+            component = e.component, at = poll.clock() }
           spend(device, log)
         else
           log.warn(string.format("emit %s failed: %s", key, tostring(err)))
@@ -996,7 +1220,8 @@ end
 -- capability ids (platform notes "허브의 정의 캐시") has never emitted any of them, even though the
 -- `last_action` / `plan_command` fields from the old ones survived, so the
 -- version stamp forces one repaint per generation instead of trusting them.
-function poll.ensure_rows(device)
+-- `driver` (optional) spreads the repaint over batches (`poll.paint`).
+function poll.ensure_rows(device, driver)
   local painted
   pcall(function() painted = device:get_field(poll.ROWS_FIELD) end)
   if painted == poll.ROWS_VERSION then
@@ -1004,7 +1229,7 @@ function poll.ensure_rows(device)
   end
   pcall(function() device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION, { persist = true }) end)
 
-  poll.repaint(device)
+  poll.repaint(device, driver)
   return true
 end
 
@@ -1015,60 +1240,35 @@ end
 -- batches in the same second - `ensure_rows`' repaint, this repaint and a
 -- `force = true` poll, about 80 events - and the same repaint plus forced poll
 -- again at 15 s and at 90 s (about 70 each). Now:
---   - now: the repaint forces every row it carries (`repaint`, which also
+--   - now: the repaint queues every row it carries (`repaint`, which also
 --     starts a new "first emit is forced" generation), then an ordinary poll
---     sends what the status says on top of that: rows the repaint did not
---     carry go out forced as the first of the generation, rows it painted with
---     the same value are not sent again. `opts.painted` skips the repaint when
---     the caller has just done it (`ensure_rows` in `init`).
---   - at 15 s and 90 s: an ordinary poll (what changed) and `resync` - the
+--     adds what the status says: rows the repaint did not carry join the
+--     queue, rows it carries take the status's value. The queue goes out in
+--     batches (`poll.paint`, the 2026-10-01 migration): the rows the user sees
+--     first at once, the rest within about 25 s. `opts.painted` skips the
+--     repaint when the caller has just done it (`ensure_rows` in `init`).
+--   - at 30 s and 90 s: an ordinary poll (what changed) and `resync` - the
 --     rows whose loss the user notices (`RESYNC_ROWS`), forced. The follow-ups
 --     exist because the first batch can race the cloud applying the new
 --     profile; the profile's landing fires `infoChanged`, which repaints
---     once more anyway.
+--     once more anyway. The first one comes after the paint's last batch.
 --   - a repaint_soon cancels the follow-ups of the one before it, so two
 --     profile changes in a row (a migration, then its landing) do not stack
 --     their timers.
---   - and one that comes less than `REPAINT_SPACING_SECONDS` after the last
---     whole repaint waits until that many seconds have passed: the
---     migration's repaint in `init` and the repaint of its landing
---     (`infoChanged`) are both needed - the second is the one the new profile
---     keeps - but not in the same budget window. A second deferred request
---     replaces the first.
-poll.LATE_REPAINT_SECONDS = { 15, 90 }
+--   - a repaint while a paint is still going (the landing, seconds after the
+--     migration) puts every row back in the queue and keeps its cadence, so
+--     the two do not add up to two bursts. Until the paint was spread, the
+--     second repaint waited out the first one's budget window instead.
+poll.LATE_REPAINT_SECONDS = { 30, 90 }
 poll.LATE_TIMERS_FIELD = "repaint_late_timers"
-poll.REPAINT_SPACING_SECONDS = poll.BUDGET_SECONDS
-poll.REPAINT_AT_FIELD = "repaint_at"
-poll.REPAINT_DEFERRED_FIELD = "repaint_deferred_timer"
 function poll.repaint_soon(driver, device, opts)
   opts = opts or {}
-  local now = poll.clock()
-  local last
-  pcall(function() last = tonumber(device:get_field(poll.REPAINT_AT_FIELD)) end)
-  local pending
-  pcall(function() pending = device:get_field(poll.REPAINT_DEFERRED_FIELD) end)
-  if pending then
-    pcall(function() driver:cancel_timer(pending) end)
-    pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, nil) end)
-  end
-  if not opts.painted and driver and last and now >= last
-      and now - last < poll.REPAINT_SPACING_SECONDS then
-    local ok, timer = pcall(function()
-      return driver:call_with_delay(poll.REPAINT_SPACING_SECONDS - (now - last), function()
-        pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, nil) end)
-        poll.repaint_soon(driver, device)
-      end, "repaint-deferred")
-    end)
-    if ok then
-      pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, timer) end)
-      return
-    end
-  end
-  pcall(function() device:set_field(poll.REPAINT_AT_FIELD, now) end)
   if not opts.painted then
-    poll.repaint(device)
+    poll.repaint(device, driver)
   end
   pcall(poll.once, driver, device)
+  -- (`once` starts the paint itself; this is for a poll that raised.)
+  poll.paint_start(driver, device)
   local previous
   pcall(function() previous = device:get_field(poll.LATE_TIMERS_FIELD) end)
   for _, timer in ipairs(type(previous) == "table" and previous or {}) do
@@ -1105,7 +1305,8 @@ poll.ANSWER_WINDOW_SECONDS = 1.5
 
 -- A burst of commands (`BURST_COMMANDS` inside `BURST_SECONDS`) is when the
 -- budget is most likely to have run out, so `BURST_RESYNC_SECONDS` after one
--- the resync below runs once more, ahead of its schedule.
+-- the rows whose loss the user notices go out once more (`resync`), well
+-- ahead of their turn in the rotation below.
 poll.COMMANDS_FIELD = "recent_commands"
 poll.BURST_TIMER_FIELD = "burst_resync_timer"
 poll.BURST_COMMANDS = 3
@@ -1114,11 +1315,12 @@ poll.BURST_RESYNC_SECONDS = 60
 
 -- A dropped event leaves the hub's state cache holding the value the cloud
 -- never stored, and from then on the hub drops every unforced repeat of it as
--- unchanged - the cloud stays wrong until the value changes again. So every
--- `RESYNC_SECONDS` the rows whose loss the user notices are sent once more,
--- forced, with the value this run last emitted on them. Six events at most.
-poll.RESYNC_FIELD = "resync_at"
-poll.RESYNC_SECONDS = 600
+-- unchanged - the cloud stays wrong until the value changes again. These are
+-- the rows the user notices first: a burst of commands (above) and the
+-- follow-ups of a repaint re-send them, forced, with the value this run last
+-- emitted on them, and a restart never takes them from the hub's cache
+-- (`SEED_FIELD`). Six events at most. Every other row waits for its turn in
+-- the rotation.
 poll.RESYNC_ROWS = {
   state.CAP_SWITCH .. ".switch",
   caps.POWER_STATE .. ".powerState",
@@ -1129,8 +1331,7 @@ poll.RESYNC_ROWS = {
 }
 
 --- Re-send the `RESYNC_ROWS` this run has emitted, forced. Returns how many.
-function poll.resync(device, deps)
-  pcall(function() device:set_field(poll.RESYNC_FIELD, poll.clock(deps)) end)
+function poll.resync(device)
   local sent = sent_cache(device)
   local events = {}
   for _, key in ipairs(poll.RESYNC_ROWS) do
@@ -1144,22 +1345,117 @@ function poll.resync(device, deps)
   return #events
 end
 
---- `resync` when the last one is `RESYNC_SECONDS` old. Called at the end of
---- every poll, so it needs no timer of its own; the first call of a run only
---- starts the clock (the run's first emits are forced anyway, `FIRST_FIELD`).
--- Returns how many events went out.
-function poll.resync_due(device, deps)
+-- The rotation (platform notes "이벤트 예산", 2026-10-01 migration): every
+-- row goes out forced again at least once per `ROTATE_SECONDS`.
+--
+-- On the Dev hub's v5 -> v6 migration `pcApps.summary` was lost in the
+-- repaint's burst after the hub's state cache had taken it, and it stayed
+-- null in the cloud through a `refresh` and a driver restart: this run's own
+-- dedupe (`SENT_FIELD`) and the restart's (`SEED_FIELD`, the hub's cache)
+-- both took it as sent, and the six `RESYNC_ROWS`, then re-sent every ten
+-- minutes, did not include it. So no row's "sent" is trusted for longer than
+-- one cycle. Each step re-sends the next few rows of everything this run has
+-- sent, in a stable order (row keys, sorted), with the value it last sent:
+-- `rotate_size` rows, enough to go round in `ROTATE_SECONDS` at the device's
+-- poll interval - 3 per 30 s poll for the ~45 rows of a full profile, a
+-- cycle of about 8 minutes - and never more than `ROTATE_MAX`. A row this
+-- very poll has just sent (the `lastSeen` time, any change) is passed over:
+-- it has just gone out.
+--
+-- A step runs at most once per poll interval (less a fifth, for timer
+-- jitter), not on every poll: the answer polls of a command burst add none.
+-- The first step of a run only starts the clock (a run's first emits are
+-- forced anyway, `FIRST_FIELD`, or taken from the hub's cache, which the
+-- rotation then corrects within a cycle). No step while a paint is under
+-- way: it is sending every row already. App children (#123) take part
+-- through `apps.rotate`: one child per step, each at most once per cycle.
+poll.ROTATE_SECONDS = 600
+poll.ROTATE_MAX = 5
+poll.ROTATE_AT_FIELD = "rotate_at"
+poll.ROTATE_CURSOR_FIELD = "rotate_cursor"
+
+--- How many rows a rotation step re-sends: `rows` rows round in
+--- `ROTATE_SECONDS` at `interval` seconds per step, at least 1, at most
+--- `ROTATE_MAX`.
+function poll.rotate_size(rows, interval)
+  rows = tonumber(rows) or 0
+  if rows <= 0 then
+    return 0
+  end
+  interval = tonumber(interval) or poll.DEFAULT_INTERVAL
+  local steps = math.max(1, math.floor(poll.ROTATE_SECONDS / math.max(1, interval)))
+  return math.min(poll.ROTATE_MAX, math.max(1, math.ceil(rows / steps)))
+end
+
+--- One rotation step: re-send the next `rotate_size` rows after the cursor,
+--- forced. Returns how many went out.
+function poll.rotate(device)
+  local sent = sent_cache(device)
+  local keys = {}
+  for key in pairs(sent) do
+    keys[#keys + 1] = key
+  end
+  if #keys == 0 then
+    return 0
+  end
+  table.sort(keys)
+  local size = poll.rotate_size(#keys, poll.interval((device or {}).preferences))
+  local cursor
+  pcall(function() cursor = device:get_field(poll.ROTATE_CURSOR_FIELD) end)
+  -- The first key after the cursor; past the last one, round to the first.
+  local start = 1
+  if type(cursor) == "string" then
+    for i, key in ipairs(keys) do
+      if key > cursor then
+        start = i
+        break
+      end
+    end
+  end
+  local now = poll.clock()
+  local events, last = {}, cursor
+  for n = 0, #keys - 1 do
+    if #events >= size then
+      break
+    end
+    local key = keys[(start - 1 + n) % #keys + 1]
+    last = key
+    local entry = sent[key]
+    local just_sent = entry.at ~= nil and now >= entry.at and now - entry.at < 1
+    if not just_sent then
+      events[#events + 1] = { cap = entry.cap, attr = entry.attr, value = entry.value,
+        component = entry.component, force = true }
+    end
+  end
+  pcall(function() device:set_field(poll.ROTATE_CURSOR_FIELD, last) end)
+  poll.emit(device, events)
+  return #events
+end
+
+--- A rotation step when one is due (see above). Called at the end of every
+--- poll, successful or not, so it needs no timer of its own. Returns how many
+--- of the device's own rows went out.
+function poll.rotate_due(driver, device, deps)
+  if poll.painting(device) then
+    return 0
+  end
   local now = poll.clock(deps)
   local at
-  pcall(function() at = tonumber(device:get_field(poll.RESYNC_FIELD)) end)
+  pcall(function() at = tonumber(device:get_field(poll.ROTATE_AT_FIELD)) end)
   if not at or now < at then
-    pcall(function() device:set_field(poll.RESYNC_FIELD, now) end)
+    pcall(function() device:set_field(poll.ROTATE_AT_FIELD, now) end)
     return 0
   end
-  if now - at < poll.RESYNC_SECONDS then
+  if now - at < poll.interval((device or {}).preferences) * 4 / 5 then
     return 0
   end
-  return poll.resync(device, deps)
+  pcall(function() device:set_field(poll.ROTATE_AT_FIELD, now) end)
+  local n = poll.rotate(device)
+  local ok, err = pcall(function() require("apps").rotate(driver, device, now) end)
+  if not ok then
+    logger().warn("app children not rotated: " .. tostring(err))
+  end
+  return n
 end
 
 --- Count a command towards the burst that brings the resync forward.
@@ -1280,7 +1576,8 @@ end
 --- Repaint every row with forced events: after a profile change (`infoChanged`)
 --- the cloud starts the new profile with empty states, and the hub would
 --- otherwise drop the re-emit of values it considers unchanged.
-function poll.repaint(device)
+-- `driver` (optional): spread over batches (`poll.paint`); without one, at once.
+function poll.repaint(device, driver)
   -- The event budget: a new profile starts with an empty cloud record, so
   -- nothing this run emitted for the old one counts as "already sent". The
   -- rows below go out forced anyway; this is for the ones only a later poll
@@ -1290,18 +1587,20 @@ function poll.repaint(device)
   -- a transition has to leave the row saying "in progress". A repeat
   -- `ensure_action` still owed is settled here too: this forced event is it.
   poll.owe_action_repeat(device, nil)
-  poll.emit_action(device, poll.resting_action(device), true)
-  poll.emit_plan_command(device, poll.plan_command(device), true)
-  -- #113: the preset list's resting value, like `lastAction` above.
-  poll.answer_preset(device)
-  -- #108: the message row, on the last text sent (or "없음").
-  poll.answer_toast(device)
-  -- #92: a repaint of a device that has answered before keeps its version on
-  -- the row; only one that never answered falls back to "v?".
-  -- #107: and the v1.2.0 rows from the last status, when there was one.
-  poll.emit(device, poll.force_all(
-    state.initial_rows(poll.lang(device), poll.last_service_version(device),
-      (poll.extras(device) or {}).last_status)))
+  local events = gather(device, function()
+    poll.emit_action(device, poll.resting_action(device), true)
+    poll.emit_plan_command(device, poll.plan_command(device), true)
+    -- #113: the preset list's resting value, like `lastAction` above.
+    poll.answer_preset(device)
+    -- #108: the message row, on the last text sent (or "없음").
+    poll.answer_toast(device)
+    -- #92: a repaint of a device that has answered before keeps its version
+    -- on the row; only one that never answered falls back to "v?".
+    -- #107: and the v1.2.0 rows from the last status, when there was one.
+    poll.emit(device, state.initial_rows(poll.lang(device), poll.last_service_version(device),
+      (poll.extras(device) or {}).last_status))
+  end)
+  return poll.paint(driver, device, events)
 end
 
 --- err_kind (client.lua) -> `pcInfo.connection` enum value (§4), or nil
@@ -1362,7 +1661,7 @@ end
 --- `opts.note` is a one-off confirmation to show in `pcInfo.message` when
 --- nothing more important applies (§4, state.MESSAGE_ORDER); `opts.deps` is
 --- the injected http/json/ltn12 the tests use instead of a socket.
-function poll.once(driver, device, opts)
+local function once(driver, device, opts)
   opts = opts or {}
   local prefs = device.preferences or {}
   local lang = prefs.language
@@ -1427,7 +1726,7 @@ function poll.once(driver, device, opts)
     -- migrated device has emitted nothing at all under the new capability ids,
     -- so the resting values go out first and the status body overwrites the
     -- rows it does know about.
-    poll.ensure_rows(device)
+    poll.ensure_rows(device, driver)
     -- #86: `opts.force` names the rows this poll is answering a command on
     -- (the schedule rows after `schedule` / `cancel`). They go out with
     -- `state_change = true` so the app's spinner ends even when the value is
@@ -1459,8 +1758,9 @@ function poll.once(driver, device, opts)
     poll.ensure_preset(device, opts.deps)
     -- #108: no status body carries `lastMessage` either.
     poll.ensure_toast(device)
-    -- The event budget: the rows a dropped event could have left wrong.
-    poll.resync_due(device, opts.deps)
+    -- The event budget: the next few rows of the rotation (every row once per
+    -- `ROTATE_SECONDS`), so an event the platform lost does not stay lost.
+    poll.rotate_due(driver, device, opts.deps)
     -- #116: a laptop moves to the profile with the battery card, and back.
     poll.follow_battery(driver, device, body)
     pcall(function() device:online() end)
@@ -1498,8 +1798,17 @@ function poll.once(driver, device, opts)
   poll.ensure_preset(device, opts.deps)
   poll.ensure_toast(device)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
-  poll.resync_due(device, opts.deps)
+  poll.rotate_due(driver, device, opts.deps)
   return false, kind
+end
+
+function poll.once(driver, device, opts)
+  local results = table.pack(once(driver, device, opts))
+  -- A repaint this poll queued (`ensure_rows`), or the one it followed
+  -- (`repaint_soon`): the queue now holds the status's rows as well, so its
+  -- first batch goes.
+  poll.paint_start(driver, device)
+  return table.unpack(results, 1, results.n)
 end
 
 --- Store what a status body says about the PC's identity (§6.5). Returns true

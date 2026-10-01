@@ -5,7 +5,10 @@
 -- unchanged, and once it is spent it drops events after the hub's state cache
 -- has taken them. So the driver deduplicates itself (`poll.SENT_FIELD`),
 -- commands share their answer polls (`poll.answer`), and the rows a lost
--- event matters on are re-sent forced every so often (`poll.resync`).
+-- event matters on are re-sent forced after a burst (`poll.resync`).
+-- 2026-10-01 (the v5 -> v6 migration lost `pcApps.summary` for good): every
+-- row is re-sent forced once per cycle (`poll.rotate_due`), and a repaint
+-- goes out in batches (`poll.paint`).
 --
 -- These tests drive whole polls and whole command handlers, with the HTTP
 -- layer swapped for a fake PC, and count what the device was told.
@@ -60,6 +63,10 @@ local function pc_status()
 end
 
 local function new_device()
+  -- Every test's device has the same id: the battery votes and the app
+  -- children one test left behind must not decide another's profile.
+  require("profiles").reset()
+  require("apps").reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s", language = "ko" })
   device.device_network_id = "pc-control-budget"
   device.id = "budget-device"
@@ -143,6 +150,97 @@ end
 
 local MUTE = features.CAP_MUTE .. ".mute"
 local VOLUME = features.CAP_VOLUME .. ".volume"
+local LAST_SEEN = caps.STATUS .. ".lastSeen"
+local APPS_SUMMARY = caps.APPS .. ".summary"
+
+-- What a hub keeps over a driver restart (`set_field(…, { persist = true })`).
+local PERSISTED = { poll.ROWS_FIELD, poll.ACTION_FIELD, poll.PLAN_FIELD, poll.SERVICE_VERSION_FIELD,
+  poll.LAST_SEEN_FIELD }
+
+--------------------------------------------------------------------------------
+-- a clock for whole minutes of driver life
+--------------------------------------------------------------------------------
+
+--- Stamp every timer `d` sets with when it is due on `pc`'s clock, so
+--- `run_until` can run them in order.
+local function clocked(d, pc)
+  local delay, schedule = d.call_with_delay, d.call_on_schedule
+  function d:call_with_delay(seconds, fn, name)
+    local timer = delay(self, seconds, fn, name)
+    timer.due = pc.now + seconds
+    return timer
+  end
+  function d:call_on_schedule(interval, fn, name)
+    local timer = schedule(self, interval, fn, name)
+    timer.due = pc.now + interval
+    return timer
+  end
+  return d
+end
+
+--- Run every timer due up to `horizon`, earliest first, moving `pc.now` (and
+--- the `lastSeen` time with it, as on the hub). Schedules repeat.
+local function run_until(d, pc, horizon)
+  for _ = 1, 10000 do
+    local due
+    for _, timer in ipairs(d.timers) do
+      if not timer.cancelled and timer.due and timer.due <= horizon
+          and (not due or timer.due < due.due) then
+        due = timer
+      end
+    end
+    if not due then
+      break
+    end
+    pc.now = math.max(pc.now, due.due)
+    pc.seen = string.format("t+%d", math.floor(pc.now))
+    if due.kind == "schedule" then
+      due.due = due.due + due.interval
+    else
+      due.cancelled = true
+    end
+    due.fn()
+  end
+  pc.now = horizon
+end
+
+--- Record when (on `pc`'s clock) `device` emits: one `{ at, key, forced }` per
+--- event from now on.
+local function stamped(device, pc)
+  local trace = {}
+  local emit_event, emit_component_event = device.emit_event, device.emit_component_event
+  local function note(event, component)
+    local key = event.capability .. "." .. event.attribute
+    if component and component.id ~= "main" then
+      key = component.id .. "/" .. key
+    end
+    trace[#trace + 1] = { at = pc.now, key = key, forced = (event.options or {}).state_change == true }
+  end
+  function device:emit_event(event)
+    note(event)
+    return emit_event(self, event)
+  end
+  function device:emit_component_event(component, event)
+    note(event, component)
+    return emit_component_event(self, component, event)
+  end
+  return trace
+end
+
+--- The most events in any `seconds`-long window of a `stamped` trace.
+local function busiest(trace, seconds)
+  local most = 0
+  for i = 1, #trace do
+    local n = 0
+    for j = i, #trace do
+      if trace[j].at < trace[i].at + seconds then
+        n = n + 1
+      end
+    end
+    most = math.max(most, n)
+  end
+  return most
+end
 
 --------------------------------------------------------------------------------
 -- dedupe
@@ -262,10 +360,11 @@ function T.test_repaint_soon_clears_the_cache_as_well()
     local mark = #device.emitted
     poll.repaint_soon(d, device)
     local out = since(device, mark)
-    h.assert_equal(count_forced(out, "switch.switch"), 1, "the poll after the repaint sends the switch, forced as the first of the generation")
-    -- The follow-up, 15 s later, re-sends it with the other rows that matter (resync).
+    h.assert_equal(count_forced(out, "switch.switch"), 1, "the switch is in the first batch, forced as the first of the generation")
+    h.fire_all(d, "repaint-batch")
+    -- The follow-up, 30 s later, re-sends it with the other rows that matter (resync).
     mark = #device.emitted
-    h.fire_last(d, "repaint-late-15")
+    h.assert_true(h.fire_last(d, "repaint-late-30"))
     h.assert_equal(count_forced(since(device, mark), "switch.switch"), 1)
   end)
 end
@@ -355,45 +454,199 @@ local function resync_keys()
   return out
 end
 
-function T.test_every_ten_minutes_the_user_facing_rows_go_out_forced()
+--- The row keys this run has sent on `device` (the rotation's set).
+local function sent_keys(device)
+  local out = {}
+  for key in pairs(device:get_field(poll.SENT_FIELD) or {}) do
+    out[#out + 1] = key
+  end
+  table.sort(out)
+  return out
+end
+
+function T.test_the_rotation_size_goes_round_in_ten_minutes()
+  -- 600 s at the poll interval, rounded up, at most ROTATE_MAX.
+  h.assert_equal(poll.rotate_size(42, 30), 3, "the default: 20 polls for 42 rows")
+  h.assert_equal(poll.rotate_size(40, 30), 2)
+  h.assert_equal(poll.rotate_size(42, 10), 1)
+  h.assert_equal(poll.rotate_size(42, 60), 5)
+  h.assert_equal(poll.rotate_size(42, 300), poll.ROTATE_MAX, "a 5 min interval takes longer than a cycle")
+  h.assert_equal(poll.rotate_size(1, 30), 1)
+  h.assert_equal(poll.rotate_size(0, 30), 0)
+  h.assert_true(poll.ROTATE_MAX <= 5)
+end
+
+function T.test_the_rotation_re_sends_every_row_within_ten_minutes()
+  -- The 2026-10-01 migration: a row lost after the hub's cache took it stays
+  -- wrong for as long as nothing re-sends it. Now every row this run has
+  -- sent goes out forced again within one cycle, a few per poll.
   with_pc(function(pc)
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
-    pc.now = pc.now + poll.RESYNC_SECONDS - 1
+    local rows = sent_keys(device)
+    local size = poll.rotate_size(#rows, poll.DEFAULT_INTERVAL)
+    h.assert_true(size >= 1 and size <= 3, "rows per poll at 30 s: " .. size)
+    local forced = {}
+    local polls = poll.ROTATE_SECONDS // poll.DEFAULT_INTERVAL
+    for i = 1, polls do
+      pc.now = pc.now + poll.DEFAULT_INTERVAL
+      pc.seen = "t" .. i
+      local mark = #device.emitted
+      poll.once(d, device)
+      local out = since(device, mark)
+      local extra = 0
+      for _, e in ipairs(out) do
+        local key = poll.row_key(e)
+        if key ~= LAST_SEEN then
+          extra = extra + 1
+          h.assert_true((e.options or {}).state_change == true, key .. " is re-sent forced")
+          forced[key] = (forced[key] or 0) + 1
+        end
+      end
+      h.assert_equal(extra, size,
+        "poll " .. i .. ": the time and " .. size .. " rows")
+    end
+    for _, key in ipairs(rows) do
+      if key ~= LAST_SEEN then
+        h.assert_true(forced[key] ~= nil, key .. " was not re-sent within " .. poll.ROTATE_SECONDS .. " s")
+      end
+    end
+    -- And no row twice before every row has had its turn.
+    local most = 0
+    for _, n in pairs(forced) do
+      most = math.max(most, n)
+    end
+    h.assert_true(most <= 2, "round robin, not the same rows again: " .. most)
+  end)
+end
+
+function T.test_the_rotation_waits_a_poll_interval_between_steps()
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    -- Polls closer together than the interval (answer polls, a refresh)
+    -- add no rotation step.
+    pc.now = pc.now + 23
     local mark = #device.emitted
     poll.once(d, device)
-    h.assert_equal(#since(device, mark), 0, "not due yet")
+    h.assert_equal(#since(device, mark), 0, "not due 23 s after")
     pc.now = pc.now + 1
     mark = #device.emitted
     poll.once(d, device)
-    local out = since(device, mark)
-    h.assert_deep_equal(keys_of(out), resync_keys())
-    h.assert_true(#out <= 8)
-    for _, e in ipairs(out) do
-      h.assert_true((e.options or {}).state_change == true, poll.row_key(e) .. " forced")
-    end
-    h.assert_equal(h.component_value(out, features.AWAKE_COMPONENT, "switch", "switch"), "off")
-    h.assert_equal(h.event_value(out, features.CAP_PLAYBACK, "playbackStatus"), "playing")
-    -- At most once per window.
+    h.assert_equal(#since(device, mark), poll.rotate_size(#sent_keys(device), 30),
+      "due 24 s after (a fifth less than the interval, for timer jitter)")
+    pc.now = pc.now + 10
     mark = #device.emitted
     poll.once(d, device)
     h.assert_equal(#since(device, mark), 0)
   end)
 end
 
-function T.test_the_resync_also_runs_while_the_pc_is_off()
+function T.test_the_rotation_also_runs_while_the_pc_is_off()
   with_pc(function(pc)
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
+    local rows = sent_keys(device)
     client.get_status = function() return false, nil, "unreachable" end
-    pc.now = pc.now + poll.RESYNC_SECONDS
+    local forced, seen = {}, {}
+    for _ = 1, poll.ROTATE_SECONDS // poll.DEFAULT_INTERVAL + 1 do
+      pc.now = pc.now + poll.DEFAULT_INTERVAL
+      local mark = #device.emitted
+      poll.once(d, device)
+      for _, e in ipairs(since(device, mark)) do
+        seen[poll.row_key(e)] = true
+        if (e.options or {}).state_change == true then
+          forced[poll.row_key(e)] = e.value
+        end
+      end
+    end
+    -- With the values last sent: the volume the PC had before it went away.
+    h.assert_equal(forced[VOLUME], 30)
+    h.assert_equal(forced[caps.POWER_STATE .. ".powerState"], poll.sent_value(device, caps.POWER_STATE .. ".powerState"))
+    -- Every row went out again: forced by the rotation, or as a change (the
+    -- summary counts the minutes since the PC last answered).
+    for _, key in ipairs(rows) do
+      h.assert_true(seen[key] ~= nil, key .. " re-sent while the PC is off")
+    end
+  end)
+end
+
+function T.test_the_rotation_skips_a_row_this_poll_just_sent()
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    -- Put the cursor right before lastSeen: the next step would pick it.
+    local rows = sent_keys(device)
+    for i, key in ipairs(rows) do
+      if key == LAST_SEEN then
+        device:set_field(poll.ROTATE_CURSOR_FIELD, rows[i - 1])
+      end
+    end
+    pc.now = pc.now + 30
+    pc.seen = "14:05:42"
     local mark = #device.emitted
     poll.once(d, device)
     local out = since(device, mark)
-    h.assert_equal(count_forced(out, "switch.switch"), 1)
-    h.assert_equal(count_forced(out, caps.POWER_STATE .. ".powerState"), 1)
+    local times = 0
+    for _, e in ipairs(out) do
+      if poll.row_key(e) == LAST_SEEN then
+        times = times + 1
+        h.assert_false((e.options or {}).state_change == true, "the time went out as an ordinary change")
+      end
+    end
+    h.assert_equal(times, 1, "the time once, not again as a rotation row")
+    h.assert_equal(#out, 1 + poll.rotate_size(#rows, 30), "the step took the next rows instead")
+  end)
+end
+
+function T.test_a_row_the_cloud_lost_heals_within_the_cycle_even_across_a_restart()
+  -- The 2026-10-01 finding, end to end: the platform drops the summary
+  -- after the hub's cache took it. Neither this run's dedupe nor a restart
+  -- (which takes the hub's cache as sent) would ever send it again.
+  with_pc(function(pc)
+    local device = h.with_state_cache(new_device())
+    local cloud = {}
+    local emit_event = device.emit_event
+    local dropped = false
+    function device:emit_event(event)
+      local key = event.capability .. "." .. event.attribute
+      if key == APPS_SUMMARY and not dropped then
+        dropped = true -- the hub took it (the cache wrapper below), the cloud did not
+        local by_cap = self.state_cache.main or {}
+        self.state_cache.main = by_cap
+        by_cap[event.capability] = by_cap[event.capability] or {}
+        by_cap[event.capability][event.attribute] = { value = event.value }
+        return
+      end
+      cloud[key] = event.value
+      return emit_event(self, event)
+    end
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    h.assert_true(dropped)
+    h.assert_nil(cloud[APPS_SUMMARY])
+    -- A refresh: the value is unchanged, nothing is sent.
+    poll.once(d, device)
+    h.assert_nil(cloud[APPS_SUMMARY])
+    -- A restart: the hub's cache equals the value, so it is taken as sent.
+    h.restart(device, PERSISTED)
+    poll.set_state(device, state.new(state.ON))
+    poll.once(d, device)
+    h.assert_nil(cloud[APPS_SUMMARY], "the restart's first poll trusts the hub's cache")
+    -- The rotation goes round within the cycle.
+    local polls = 0
+    while cloud[APPS_SUMMARY] == nil and polls < 100 do
+      pc.now = pc.now + poll.DEFAULT_INTERVAL
+      poll.once(d, device)
+      polls = polls + 1
+    end
+    h.assert_true(cloud[APPS_SUMMARY] ~= nil, "the summary reached the cloud")
+    h.assert_true(polls * poll.DEFAULT_INTERVAL <= poll.ROTATE_SECONDS,
+      "within " .. poll.ROTATE_SECONDS .. " s: " .. polls * poll.DEFAULT_INTERVAL .. " s")
   end)
 end
 
@@ -420,11 +673,11 @@ function T.test_a_burst_of_commands_brings_the_resync_forward()
     local out = since(device, mark)
     h.assert_deep_equal(keys_of(out), resync_keys())
     h.assert_equal(h.event_value(out, features.CAP_MUTE, "mute"), "muted")
-    -- The regular one waits a whole window from there.
+    -- A poll after that is an ordinary one: one rotation step, no more.
     pc.now = pc.now + 60
     mark = #device.emitted
     poll.once(d, device)
-    h.assert_equal(#since(device, mark), 0)
+    h.assert_equal(#since(device, mark), poll.rotate_size(#sent_keys(device), poll.DEFAULT_INTERVAL))
   end)
 end
 
@@ -447,10 +700,6 @@ end
 --------------------------------------------------------------------------------
 -- #129 (W2): restarts, repaints and the power/schedule commands
 --------------------------------------------------------------------------------
-
--- What a hub keeps over a driver restart (`set_field(…, { persist = true })`).
-local PERSISTED = { poll.ROWS_FIELD, poll.ACTION_FIELD, poll.PLAN_FIELD, poll.SERVICE_VERSION_FIELD,
-  poll.LAST_SEEN_FIELD }
 
 local function forced_all(events)
   for _, e in ipairs(events) do
@@ -496,10 +745,12 @@ function T.test_after_a_profile_change_the_cache_is_no_evidence()
     h.restart(device, PERSISTED)
     poll.set_state(device, state.new(state.ON))
     -- A new generation of rows (`ensure_rows`) repaints, and the poll after
-    -- it sends every row the repaint did not carry - forced.
+    -- it adds every row the repaint did not carry - all of it forced, in
+    -- batches.
     device:set_field(poll.ROWS_FIELD, "1")
     local mark = #device.emitted
     poll.once(d, device)
+    h.fire_all(d, "repaint-batch")
     local out = since(device, mark)
     h.assert_true(#out > 30, "a new profile's record is empty: " .. #out)
     h.assert_true(forced_all(out))
@@ -510,14 +761,35 @@ end
 function T.test_a_profile_change_forces_every_row_once()
   -- Before #129: `repaint` + a `force = true` poll at once (and `ensure_rows`'
   -- own repaint on top in `init`), then the same again at 15 s and 90 s -
-  -- 83, 69 and 69 events on a migration. Now every row once, then the rows
-  -- that matter.
+  -- 83, 69 and 69 events on a migration. Now every row once - in batches of
+  -- PAINT_BATCH, the rows the user sees first in the first one - then the
+  -- rows that matter.
   with_pc(function()
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
     local mark = #device.emitted
     poll.repaint_soon(d, device)
+    local first = since(device, mark)
+    h.assert_equal(#first, poll.PAINT_BATCH, "the first batch")
+    local in_first = {}
+    for _, e in ipairs(first) do
+      in_first[poll.row_key(e)] = true
+    end
+    for _, key in ipairs(poll.PAINT_FIRST) do
+      h.assert_true(in_first[key], key .. " is in the first batch")
+    end
+    local batches = 1
+    while true do
+      local before = #device.emitted
+      if not h.fire_last(d, "repaint-batch") then
+        break
+      end
+      local batch = #device.emitted - before
+      h.assert_true(batch >= 1 and batch <= poll.PAINT_BATCH, "batch " .. batches + 1 .. ": " .. batch)
+      batches = batches + 1
+    end
+    h.assert_nil(poll.painting(device), "the queue is done")
     local out = since(device, mark)
     local seen = {}
     for _, e in ipairs(out) do
@@ -526,7 +798,8 @@ function T.test_a_profile_change_forces_every_row_once()
       seen[key] = true
     end
     h.assert_true(forced_all(out))
-    h.assert_true(#out > 30 and #out < 50, "one forced batch: " .. #out)
+    h.assert_true(#out > 30 and #out < 50, "every row once: " .. #out)
+    h.assert_equal(batches, math.ceil(#out / poll.PAINT_BATCH))
     for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
       mark = #device.emitted
       h.assert_true(h.fire_last(d, "repaint-late-" .. delay))
@@ -537,65 +810,183 @@ function T.test_a_profile_change_forces_every_row_once()
   end)
 end
 
-function T.test_a_cold_start_with_a_migration_costs_one_batch_then_the_rows_that_matter()
-  -- The Dev channel device on v5 after the driver update (#123: v6), through
-  -- the real `init`. Before #129: 83 events at once (two repaints and a forced
-  -- poll), then 69 at 15 s and 69 at 90 s. Now one batch - over the 20-in-10 s
-  -- warning, and unavoidably so: the new profile's record is empty and every
-  -- row has to reach it once - and then six.
+--- The Dev channel device on pc-monitor.v5 after the driver update (#123:
+--- v6), through the real `init` and then `minutes` of driver life on the
+--- clock: the default 30 s polls, the batches, the follow-ups. `landing`:
+--- the profile change lands that many seconds in (`infoChanged`).
+local function migrate(pc, minutes, landing)
+  local profiles = require "profiles"
+  local device = new_device()
+  device.profile = { id = "v5", name = "pc-monitor.v5", components = h.components_for("pc-monitor.v5") }
+  device:set_field(poll.ROWS_FIELD, "5")
+  local trace = stamped(device, pc)
+  local d = clocked(Driver("budget", {}), pc)
+  local start = pc.now
+  init_driver.lifecycle_handlers.init(d, device)
+  h.assert_equal(device:get_field(profiles.FIELD), "pc-monitor.v6")
+  if landing then
+    run_until(d, pc, start + landing)
+    init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
+      { old_st_store = { profile = { id = "v5" } } })
+  end
+  run_until(d, pc, start + minutes * 60)
+  return device, trace, start
+end
+
+--- When each row was first sent, forced, at or after `from`, relative to `start`.
+local function painted_at(trace, start, from)
+  local at = {}
+  for _, entry in ipairs(trace) do
+    if entry.forced and entry.at >= from and at[entry.key] == nil then
+      at[entry.key] = entry.at - start
+    end
+  end
+  return at
+end
+
+function T.test_a_migration_paints_every_row_within_seconds_under_the_guard()
+  -- The 2026-10-01 migration (v5 -> v6) sent ~49 rows in the same second, and
+  -- `pcApps.summary` never reached the cloud. Before #129 it was 83 at once,
+  -- then 69 at 15 s and at 90 s. Measured here, before this change: 47 in the
+  -- first second, 48 in the busiest 10 s. Now the same rows in batches: the
+  -- rows the user sees first at once, every row within 25 s, and no 10 s
+  -- with more than the guard's 20.
   with_pc(function(pc)
-    local profiles = require "profiles"
-    profiles.reset()
-    local device = new_device()
-    device.profile = { id = "v5", name = "pc-hub-battery.v5", components = h.components_for("pc-hub-battery.v5") }
-    device:set_field(poll.ROWS_FIELD, "5")
-    local d = Driver("budget", {})
-    init_driver.lifecycle_handlers.init(d, device)
-    h.assert_equal(device:get_field(profiles.FIELD), "pc-hub-battery.v6")
-    local first = h.emitted(device)
-    h.assert_true(forced_all(first))
-    h.assert_true(#first > 30 and #first <= 50, "init: " .. #first .. " events (83 before #129)")
-    h.assert_true(h.fire_last(d, "pc-poll-initial"))
-    h.assert_equal(#h.emitted(device), #first, "the priming poll a second later has nothing to add")
-    pc.now = pc.now + 15
-    local mark = #device.emitted
-    h.assert_true(h.fire_last(d, "repaint-late-15"))
-    h.assert_deep_equal(keys_of(since(device, mark)), resync_keys(), "15 s: 6 events (69 before)")
+    local device, trace, start = migrate(pc, 2)
+    local at = painted_at(trace, start, start)
+    local rows, last = 0, 0
+    for _, seconds in pairs(at) do
+      rows = rows + 1
+      last = math.max(last, seconds)
+    end
+    h.assert_true(rows > 30, "every row: " .. rows)
+    for _, key in ipairs(sent_keys(device)) do
+      h.assert_true(at[key] ~= nil, key .. " was painted, forced")
+    end
+    for _, key in ipairs(poll.PAINT_FIRST) do
+      h.assert_equal(at[key], 0, key .. " goes in the first batch, at once")
+    end
+    h.assert_true(last <= 25, "the last row " .. last .. " s in (all at 0 s before)")
+    local most = busiest(trace, poll.BUDGET_SECONDS)
+    h.assert_true(most <= poll.BUDGET_EVENTS, "busiest 10 s: " .. most .. " (48 before)")
+    -- The follow-up 30 s in: the rows that matter.
+    local late = 0
+    for _, entry in ipairs(trace) do
+      if entry.at == start + 30 then
+        late = late + 1
+      end
+    end
+    h.assert_true(late <= #poll.RESYNC_ROWS + 1 + poll.ROTATE_MAX, "30 s: " .. late)
   end)
 end
 
-function T.test_two_repaints_in_one_budget_window_are_spaced()
-  -- A migration in `init` and its landing (`infoChanged`) a few seconds later
-  -- both repaint; the second waits for the next window instead of doubling
-  -- the first one's batch.
+function T.test_a_migration_and_its_landing_stay_under_the_guard()
+  -- The landing's `infoChanged` repaints again - the new profile is the one
+  -- that has to hold every row - while the migration's batches are still
+  -- going. Its rows join the queue at the same cadence instead of a second
+  -- burst (before: 47 at once, then 42 more 10 s later).
+  with_pc(function(pc)
+    local landing = 3
+    local device, trace, start = migrate(pc, 2, landing)
+    local at = painted_at(trace, start, start + landing)
+    for _, key in ipairs(sent_keys(device)) do
+      h.assert_true(at[key] ~= nil, key .. " was painted again after the landing")
+      h.assert_true(at[key] <= 30, key .. " " .. at[key] .. " s in")
+    end
+    local most = busiest(trace, poll.BUDGET_SECONDS)
+    h.assert_true(most <= poll.BUDGET_EVENTS, "busiest 10 s: " .. most .. " (49 before)")
+  end)
+end
+
+function T.test_a_repaint_during_a_paint_requeues_every_row_and_keeps_the_cadence()
   with_pc(function(pc)
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
     poll.repaint_soon(d, device)
+    h.assert_true(poll.painting(device) ~= nil)
     pc.now = pc.now + 3
     local mark = #device.emitted
     poll.repaint_soon(d, device)
-    h.assert_equal(#since(device, mark), 0, "not inside the first one's window")
-    local deferred
-    for _, t in ipairs(d.timers) do
-      if t.name == "repaint-deferred" and not t.cancelled then
-        deferred = t
-      end
+    h.assert_equal(#since(device, mark), 0, "no second first batch")
+    local waiting = 0
+    for _ in pairs(poll.painting(device).rows) do
+      waiting = waiting + 1
     end
-    h.assert_true(deferred ~= nil)
-    h.assert_equal(deferred.delay, poll.REPAINT_SPACING_SECONDS - 3)
-    pc.now = pc.now + deferred.delay
-    h.fire_last(d, "repaint-deferred")
-    h.assert_true(#since(device, mark) > 30, "and then it runs in full")
-    -- Only the latest repaint's follow-ups are left.
+    h.assert_true(waiting > 30, "every row is waiting again: " .. waiting)
+    -- One live batch timer, PAINT_SECONDS apart.
     local live = 0
     for _, t in ipairs(d.timers) do
-      if t.name == "repaint-late-15" and not t.cancelled then
+      if t.name == "repaint-batch" and not t.cancelled then
+        live = live + 1
+        h.assert_equal(t.delay, poll.PAINT_SECONDS)
+      end
+    end
+    h.assert_equal(live, 1)
+    h.fire_all(d, "repaint-batch")
+    local out = since(device, mark)
+    h.assert_equal(#out, waiting, "each waiting row once")
+    h.assert_true(forced_all(out))
+    -- Only the latest repaint's follow-ups are left.
+    live = 0
+    for _, t in ipairs(d.timers) do
+      if t.name == "repaint-late-30" and not t.cancelled then
         live = live + 1
       end
     end
     h.assert_equal(live, 1)
+  end)
+end
+
+function T.test_a_command_during_a_paint_is_answered_at_once()
+  -- The answer the app's spinner waits for does not wait for its batch.
+  with_pc(function()
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    poll.repaint_soon(d, device)
+    h.assert_true(poll.painting(device).rows[caps.SCHEDULE .. ".status"] ~= nil, "still waiting")
+    local mark = #device.emitted
+    poll.answer_minutes_pick(device)
+    poll.emit(device, { { cap = caps.SCHEDULE, attr = "status", value = "idle", force = true } })
+    local out = since(device, mark)
+    h.assert_equal(count_forced(out, caps.SCHEDULE .. ".minutesPick"), 1)
+    h.assert_equal(count_forced(out, caps.SCHEDULE .. ".status"), 1)
+    h.assert_nil(poll.painting(device).rows[caps.SCHEDULE .. ".status"], "and leaves the queue")
+    -- An ordinary update of a waiting row only changes what its batch carries.
+    mark = #device.emitted
+    poll.emit(device, { { cap = caps.STATUS, attr = "message", value = "새 값" } })
+    h.assert_equal(#since(device, mark), 0)
+    h.fire_all(d, "repaint-batch")
+    out = since(device, mark)
+    h.assert_equal(h.event_value(out, caps.STATUS, "message"), "새 값")
+    h.assert_true(h.event_forced(out, caps.STATUS, "message"))
+    h.assert_equal(count_forced(out, caps.SCHEDULE .. ".status"), 0, "not a second time")
+  end)
+end
+
+function T.test_a_paint_nobody_starts_starts_itself()
+  with_pc(function()
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    local mark = #device.emitted
+    poll.repaint(device, d)
+    h.assert_equal(#since(device, mark), 0, "queued")
+    local timer
+    for _, t in ipairs(d.timers) do
+      if t.name == "repaint-batch" and not t.cancelled then
+        timer = t
+      end
+    end
+    h.assert_equal(timer.delay, poll.PAINT_START_SECONDS)
+    h.fire_last(d, "repaint-batch")
+    h.assert_equal(#since(device, mark), poll.PAINT_BATCH)
+    -- Without a driver there are no timers: everything at once, as before.
+    mark = #device.emitted
+    poll.repaint(device)
+    h.assert_true(#since(device, mark) > 10)
+    h.assert_nil(poll.painting(device))
   end)
 end
 
@@ -615,6 +1006,7 @@ function T.test_a_preference_change_that_moves_no_profile_does_not_repaint()
     -- A profile that did move is repainted.
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
       { old_st_store = { profile = { id = "profile-0" } } })
+    h.fire_all(d, "repaint-batch")
     h.assert_true(#since(device, mark) > 30)
   end)
 end
