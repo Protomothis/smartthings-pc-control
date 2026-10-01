@@ -99,14 +99,15 @@ func takeCleanShutdown(path string) bool {
 // update checker.
 var stateMu sync.Mutex
 
-// statePath returns the state.json path next to the exe, or "" when the exe
-// path is unknown (then the state is simply not persisted).
+// statePath returns the state.json path in the config folder (next to the
+// exe), or "" when that is unknown (then the state is simply not
+// persisted).
 func statePath() string {
-	exePath, err := os.Executable()
-	if err != nil {
+	dir := configDir()
+	if dir == "" {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(exePath), stateFileName)
+	return filepath.Join(dir, stateFileName)
 }
 
 // loadState reads path; a missing or unreadable file is an empty state.

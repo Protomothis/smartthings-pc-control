@@ -113,15 +113,11 @@ func withLiveConfig(t *testing.T, cfg Config) {
 	t.Cleanup(func() { setConfig(prev) })
 }
 
-// protectConfigFile backs up config.json next to the test binary (which
+// protectConfigFile backs up config.json in the config folder (TestMain) (which
 // saveConfig writes) and restores it afterwards.
 func protectConfigFile(t *testing.T) string {
 	t.Helper()
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 	origData, origErr := os.ReadFile(configPath)
 	t.Cleanup(func() {
 		if origErr == nil {

@@ -30,12 +30,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigFromFile(t *testing.T) {
-	// Create a temp config file next to the executable
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	// Create a temp config file in the config folder (TestMain)
+	configPath := filepath.Join(configDir(), "config.json")
 
 	// Backup existing config if any
 	origData, origErr := os.ReadFile(configPath)
@@ -61,11 +57,7 @@ func TestLoadConfigFromFile(t *testing.T) {
 }
 
 func TestLoadConfigInvalidJSON(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
@@ -87,11 +79,7 @@ func TestLoadConfigInvalidJSON(t *testing.T) {
 }
 
 func TestLoadConfigZeroPort(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
@@ -246,11 +234,7 @@ func TestCheckAuth(t *testing.T) {
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	// Backup
 	origData, origErr := os.ReadFile(configPath)
@@ -264,7 +248,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 	// Save
 	testCfg := Config{Port: 7777, Secret: "roundtrip"}
-	err = saveConfig(testCfg)
+	err := saveConfig(testCfg)
 	if err != nil {
 		t.Fatalf("saveConfig failed: %v", err)
 	}
@@ -674,15 +658,11 @@ func expectNoNotification(t *testing.T, events <-chan notify.Event) {
 	}
 }
 
-// withConfigFile swaps config.json next to the test binary for the test
+// withConfigFile swaps config.json in the config folder (TestMain) for the test
 // and restores whatever was there afterwards.
 func withConfigFile(t *testing.T, content string) string {
 	t.Helper()
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 	origData, origErr := os.ReadFile(configPath)
 	t.Cleanup(func() {
 		if origErr == nil {
@@ -775,11 +755,7 @@ func TestLoadConfigFillsTelegramAndNotifyDefaults(t *testing.T) {
 }
 
 func TestLoadConfigMissingFileHasDefaults(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
 		if origErr == nil {

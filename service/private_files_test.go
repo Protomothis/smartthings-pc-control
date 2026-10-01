@@ -18,14 +18,10 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	initLogger()
 	saved := getConfig()
 	t.Cleanup(func() { setConfig(saved) })
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// saveConfig writes next to the test binary; later tests expect the
+	// saveConfig writes into the test run's config folder; later tests expect the
 	// files as they were.
 	for _, name := range []string{config.FileName, config.TrayFileName} {
-		path := filepath.Join(filepath.Dir(exe), name)
+		path := filepath.Join(configDir(), name)
 		orig, origErr := os.ReadFile(path)
 		t.Cleanup(func() {
 			if origErr == nil {
@@ -46,7 +42,7 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	if err := saveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), config.TrayFileName))
+	data, err := os.ReadFile(filepath.Join(configDir(), config.TrayFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
