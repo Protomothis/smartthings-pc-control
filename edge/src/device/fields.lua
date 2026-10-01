@@ -174,12 +174,16 @@ function fields.last_seen(device)
   return nil
 end
 
---- Remember that the PC answered at `now`. Written only once the stored time
---- is `step` seconds old (or in the future: a hub clock set back), because the
---- row counts whole minutes and every write is a flash write. True when written.
-function fields.remember_last_seen(device, now, step)
+-- How stale the stored last-seen time may get before it is written again: the
+-- row says whole minutes, and every write is a flash write.
+fields.LAST_SEEN_STEP = 60
+
+--- Remember that the PC answered at `now` (epoch seconds): written once the
+--- stored time is `LAST_SEEN_STEP` old, or in the future (a hub clock set
+--- back). True when written.
+function fields.remember_last_seen(device, now)
   local seen = fields.last_seen(device)
-  if seen and now >= seen and now - seen < step then
+  if seen and now >= seen and now - seen < fields.LAST_SEEN_STEP then
     return false
   end
   fields.set(device, fields.LAST_SEEN, now)

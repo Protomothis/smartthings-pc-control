@@ -285,19 +285,19 @@ end
 
 function T.test_a_rate_limited_poll_leaves_the_device_alone()
   local d = device()
-  poll.set_state(d, state.new(state.ON))
+  fields.set_state(d, state.new(state.ON))
   local ok, kind = poll.once(nil, d, { deps = { http = fake_http(429, '{"error":"rate limited"}') } })
   h.assert_false(ok)
   h.assert_equal(kind, "ratelimited")
   h.assert_equal(#d.emitted, 0, "a 429 must not repaint any attribute")
   h.assert_nil(d.health, "a 429 must not touch health")
-  h.assert_equal(poll.get_state(d).power_state, state.ON)
+  h.assert_equal(fields.state(d).power_state, state.ON)
 end
 
 function T.test_an_unreachable_poll_does_report()
   -- The contrast to the test above: a real failure is shown.
   local d = device()
-  poll.set_state(d, state.new(state.ON))
+  fields.set_state(d, state.new(state.ON))
   local ok, kind = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
   h.assert_false(ok)
   h.assert_equal(kind, "unreachable")
@@ -311,7 +311,7 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
   -- fell back to "v? · 드라이버 1.0" every night, and the one number the row
   -- exists for disappeared exactly when nothing else on screen was moving.
   local d = device({ language = "ko" })
-  h.assert_nil(poll.last_service_version(d), "nothing is remembered before the first poll")
+  h.assert_nil(fields.service_version(d), "nothing is remembered before the first poll")
 
   h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, status_body()) } }))
   h.assert_equal(d:get_field(fields.SERVICE_VERSION), "v1.1.0",
@@ -341,7 +341,7 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
   -- Never seen: the row keeps its old words.
   poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } })
   h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결 안 됨 · 응답 없음")
-  h.assert_nil(poll.last_seen(d), "a failed poll is not a sighting")
+  h.assert_nil(fields.last_seen(d), "a failed poll is not a sighting")
 
   d.emitted = {}
   h.assert_true(poll.once(nil, d, {
@@ -356,7 +356,7 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
     h.assert_false(poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } }))
     h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"),
       string.format("응답 없음 · 마지막 확인 %d분 전", minutes))
-    h.assert_equal(poll.last_seen(d), 3000000, "the failure leaves the time alone")
+    h.assert_equal(fields.last_seen(d), 3000000, "the failure leaves the time alone")
   end
 end
 

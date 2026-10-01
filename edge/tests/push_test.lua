@@ -257,8 +257,8 @@ function T.test_a_push_is_routed_by_machine_id()
 
   local ok = push.route(driver, payload({ type = "power.stopping", data = { reason = "suspend" } }))
   h.assert_true(ok)
-  h.assert_equal(poll.get_state(one).power_state, state.SLEEPING)
-  h.assert_equal(poll.get_state(two).power_state, state.UNKNOWN, "the other PC is untouched")
+  h.assert_equal(fields.state(one).power_state, state.SLEEPING)
+  h.assert_equal(fields.state(two).power_state, state.UNKNOWN, "the other PC is untouched")
   h.assert_equal(#two.emitted, 0)
 end
 
@@ -270,7 +270,7 @@ function T.test_a_manual_device_is_found_by_its_stored_machine_id()
   local driver = fake_driver({ manual })
 
   h.assert_true(push.route(driver, payload()))
-  h.assert_equal(poll.get_state(manual).power_state, state.ON)
+  h.assert_equal(fields.state(manual).power_state, state.ON)
 end
 
 function T.test_an_unknown_machine_id_is_only_logged()

@@ -5,7 +5,7 @@ local i18n = require "i18n"
 
 local T = {}
 
--- poll.now(): the hub's local clock time of the last good poll (§4).
+-- clock.now(): the hub's local clock time of the last good poll (§4).
 local NOW = "14:05:00"
 
 -- The example body from design doc §3.2.

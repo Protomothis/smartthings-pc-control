@@ -11,11 +11,22 @@
 -- socket or a device, and both take injectable `deps`.
 
 local client = require "client"
-local i18n = require "i18n"
 local fields = require "device.fields"
+local i18n = require "i18n"
 local profiles = require "profiles"
+local rows = require "device.rows"
 
 local discovery = {}
+
+-- What this module needs from the poll layer above it, handed in by poll.lua
+-- (`discovery.use`) so that this module does not require it.
+local wired = {}
+
+--- `hooks.once(driver, device, opts)`: poll.once, for the poll after an
+--- address change.
+function discovery.use(hooks)
+  wired = hooks or {}
+end
 
 -- The profile new devices are created with; src/profiles.lua is the single
 -- source of truth for the version (§6.6).
@@ -415,21 +426,20 @@ function discovery.apply(driver, device, found, deps)
   set_field(device, fields.DISCOVERED_IP, plan.ip)
   set_field(device, fields.DISCOVERED_PORT, plan.port)
 
-  local poll = deps.poll or require "poll"
-  local lang = poll.lang(device)
+  local lang = fields.lang(device)
   if plan.warning == "hostname_mismatch" then
     log.warn(string.format("machine_id %s answers as two hostnames", tostring(found.machine_id)))
     pcall(function()
-      poll.emit_message(device, i18n.t(lang, "hostname_mismatch", tostring(plan.conflict)))
+      rows.emit_message(device, i18n.t(lang, "hostname_mismatch", tostring(plan.conflict)))
     end)
   end
 
   if plan.ip then
     log.info(string.format("device %s moved to %s", tostring(device.id), plan.ip))
-    pcall(function() poll.emit_message(device, i18n.t(lang, "ip_updated", plan.ip)) end)
+    pcall(function() rows.emit_message(device, i18n.t(lang, "ip_updated", plan.ip)) end)
   end
   if plan.repoll then
-    pcall(function() poll.once(driver, device, { deps = deps }) end)
+    pcall(function() (deps.once or wired.once)(driver, device, { deps = deps }) end)
   end
   return plan
 end

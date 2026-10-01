@@ -11,6 +11,9 @@ local caps = require "caps"
 local client = require "client"
 local features = require "features"
 local fields = require "device.fields"
+local emit = require "device.emit"
+local rows = require "device.rows"
+local clock = require "device.clock"
 local i18n = require "i18n"
 local poll = require "poll"
 local state = require "state"
@@ -45,7 +48,7 @@ local function device_with(status)
   if status ~= nil then
     features.remember(s, status)
   end
-  poll.set_state(device, s)
+  fields.set_state(device, s)
   return device
 end
 
@@ -307,13 +310,13 @@ function T.test_the_poll_after_a_volume_change_forces_the_audio_rows()
   local calls = with_service(nil, function()
     handlers_for("audioVolume").setVolume(driver, device, { args = { volume = 100 } })
   end)
-  local rows = calls.poll_opts[1].force
-  h.assert_true(rows["audioVolume.volume"] == true)
-  h.assert_true(rows["audioMute.mute"] == true)
-  -- ... which poll.force_rows then applies to exactly those records.
-  local events = poll.force_rows(features.audio_events(status_v12()), rows)
+  local answered = calls.poll_opts[1].force
+  h.assert_true(answered["audioVolume.volume"] == true)
+  h.assert_true(answered["audioMute.mute"] == true)
+  -- ... which emit.force_rows then applies to exactly those records.
+  local events = emit.force_rows(features.audio_events(status_v12()), answered)
   for _, e in ipairs(events) do
-    h.assert_true(e.force == true, poll.row_key(e) .. " not forced")
+    h.assert_true(e.force == true, emit.row_key(e) .. " not forced")
   end
 end
 
@@ -375,9 +378,9 @@ function T.test_a_command_before_any_status_asks_first()
   -- The hub restarted and nothing has been read yet: poll once, then decide.
   local device = device_with(nil)
   local calls = with_service({ on_poll = function(d)
-    local s = poll.get_state(d)
+    local s = fields.state(d)
     features.remember(s, status_v12())
-    poll.set_state(d, s)
+    fields.set_state(d, s)
   end }, function()
     handlers_for("audioMute").unmute(driver, device, { args = {} })
   end)
@@ -485,7 +488,7 @@ function T.test_running_a_preset_sends_its_slot_and_shows_it()
   h.assert_equal(calls.polls, 1)
   h.assert_equal(last_preset(device), "2")
   h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
-  h.assert_equal(poll.shown_preset(device), "2")
+  h.assert_equal(rows.shown_preset(device), "2")
 end
 
 function T.test_a_dismissed_list_resting_on_the_preset_that_just_ran_does_not_run_it_again()
@@ -533,20 +536,20 @@ function T.test_the_preset_row_returns_to_none_after_the_hold()
   local device = device_with(with_presets(PRESETS))
   local now = 1000
   local deps = { now = function() return now end }
-  poll.emit_preset(device, "3", true, deps)
+  rows.emit_preset(device, "3", true, deps)
   device.emitted = {}
   -- The poll right after the command: still showing it.
   now = 1002
-  h.assert_false(poll.ensure_preset(device, deps))
+  h.assert_false(rows.ensure_preset(device, deps))
   h.assert_equal(#device.emitted, 0)
   -- The next scheduled poll: back to "none", forced, and once more after.
   now = 1030
-  h.assert_true(poll.ensure_preset(device, deps))
+  h.assert_true(rows.ensure_preset(device, deps))
   h.assert_equal(last_preset(device), "none")
   h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
-  h.assert_true(poll.ensure_preset(device, deps), "the one repeat")
+  h.assert_true(rows.ensure_preset(device, deps), "the one repeat")
   h.assert_equal(#device.emitted, 2)
-  h.assert_false(poll.ensure_preset(device, deps), "and then nothing")
+  h.assert_false(rows.ensure_preset(device, deps), "and then nothing")
   h.assert_equal(#device.emitted, 2)
 end
 
@@ -562,12 +565,12 @@ local function preset_timers(from)
   return out
 end
 
---- Run `fn` with `poll.wallclock` reading `clock.now`.
-local function with_clock(clock, fn)
-  local original = poll.wallclock
-  poll.wallclock = function() return clock.now end
+--- Run `fn` with `clock.wallclock` reading `time.now`.
+local function with_clock(time, fn)
+  local original = clock.wallclock
+  clock.wallclock = function() return time.now end
   local ok, err = pcall(fn)
-  poll.wallclock = original
+  clock.wallclock = original
   if not ok then
     error(err, 0)
   end
@@ -585,20 +588,20 @@ end
 
 function T.test_a_timer_puts_the_preset_row_back_without_waiting_for_a_poll()
   local device = device_with(with_presets(PRESETS))
-  local clock = { now = 5000 }
+  local time = { now = 5000 }
   local from = #driver.timers
-  with_clock(clock, function()
+  with_clock(time, function()
     with_service(nil, function()
       handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
     end)
     local timers = preset_timers(from)
     h.assert_equal(#timers, 1)
     h.assert_equal(timers[1].name, "preset-reset")
-    h.assert_equal(timers[1].delay, poll.PRESET_HOLD_SECONDS)
+    h.assert_equal(timers[1].delay, rows.PRESET_HOLD_SECONDS)
     device.emitted = {}
     -- The timer fires at the hold. `os.time` counts whole seconds, so a timer
     -- that fires a moment early still ends the hold.
-    clock.now = 5000 + poll.PRESET_HOLD_SECONDS - 1
+    time.now = 5000 + rows.PRESET_HOLD_SECONDS - 1
     h.assert_true(h.fire_last(driver, "preset-reset"))
     h.assert_equal(last_preset(device), "none")
     h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
@@ -606,7 +609,7 @@ function T.test_a_timer_puts_the_preset_row_back_without_waiting_for_a_poll()
     -- The owed repeat, on a short timer of its own.
     timers = preset_timers(from)
     h.assert_equal(timers[#timers].name, "preset-repeat")
-    h.assert_equal(timers[#timers].delay, poll.PRESET_REPEAT_SECONDS)
+    h.assert_equal(timers[#timers].delay, rows.PRESET_REPEAT_SECONDS)
     h.assert_true(h.fire_last(driver, "preset-repeat"))
     h.assert_equal(#device.emitted, 2)
     h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
@@ -614,8 +617,8 @@ function T.test_a_timer_puts_the_preset_row_back_without_waiting_for_a_poll()
     for _, t in ipairs(preset_timers(from)) do
       h.assert_true(t.cancelled, "no preset timer is still pending")
     end
-    clock.now = 5100
-    h.assert_false(poll.ensure_preset(device))
+    time.now = 5100
+    h.assert_false(rows.ensure_preset(device))
     h.assert_equal(#device.emitted, 2)
   end)
   -- The same preset runs again as soon as the row rests on "none".
@@ -627,12 +630,12 @@ end
 
 function T.test_a_second_run_within_the_hold_replaces_the_preset_timer()
   local device = device_with(with_presets(PRESETS))
-  local clock = { now = 6000 }
+  local time = { now = 6000 }
   local from = #driver.timers
-  with_clock(clock, function()
+  with_clock(time, function()
     with_service(nil, function()
       handlers_for(caps.PRESET).run(driver, device, { args = { slot = "1" } })
-      clock.now = 6003
+      time.now = 6003
       handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
     end)
     local timers = preset_timers(from)
@@ -641,12 +644,12 @@ function T.test_a_second_run_within_the_hold_replaces_the_preset_timer()
     h.assert_false(timers[2].cancelled)
     -- Even if the platform ran the cancelled one anyway, it would do nothing.
     device.emitted = {}
-    clock.now = 6005
+    time.now = 6005
     timers[1].fn()
     h.assert_equal(#device.emitted, 0)
-    h.assert_equal(poll.shown_preset(device), "2")
+    h.assert_equal(rows.shown_preset(device), "2")
     -- The second run's timer ends the second run's hold.
-    clock.now = 6008
+    time.now = 6008
     h.assert_true(h.fire_last(driver, "preset-reset"))
     h.assert_true(h.fire_last(driver, "preset-repeat"))
     h.assert_false(h.fire_last(driver, "preset-repeat"))
@@ -657,38 +660,38 @@ end
 
 function T.test_a_poll_that_comes_first_leaves_the_timers_nothing_extra_to_send()
   local device = device_with(with_presets(PRESETS))
-  local clock = { now = 7000 }
-  with_clock(clock, function()
+  local time = { now = 7000 }
+  with_clock(time, function()
     with_service(nil, function()
       handlers_for(caps.PRESET).run(driver, device, { args = { slot = "5" } })
     end)
     device.emitted = {}
-    clock.now = 7000 + poll.PRESET_HOLD_SECONDS
-    h.assert_true(poll.ensure_preset(device), "a poll at the hold resets the row")
+    time.now = 7000 + rows.PRESET_HOLD_SECONDS
+    h.assert_true(rows.ensure_preset(device), "a poll at the hold resets the row")
     h.assert_true(h.fire_last(driver, "preset-reset"), "then the timer: the owed repeat")
     h.assert_false(h.fire_last(driver, "preset-repeat"), "nothing left to repeat")
-    h.assert_false(poll.ensure_preset(device))
+    h.assert_false(rows.ensure_preset(device))
     h.assert_equal(#preset_events(device), 2)
   end)
 end
 
 function T.test_without_timers_the_polls_still_put_the_preset_row_back()
   local device = device_with(with_presets(PRESETS))
-  local clock = { now = 8000 }
+  local time = { now = 8000 }
   local timerless = {}
-  with_clock(clock, function()
+  with_clock(time, function()
     with_service(nil, function()
       handlers_for(caps.PRESET).run(timerless, device, { args = { slot = "1" } })
     end)
-    h.assert_equal(poll.shown_preset(device), "1")
-    h.assert_false(poll.hold_preset(nil, device))
+    h.assert_equal(rows.shown_preset(device), "1")
+    h.assert_false(rows.hold_preset(nil, device))
     device.emitted = {}
-    clock.now = 8002
-    h.assert_false(poll.ensure_preset(device), "still inside the hold")
-    clock.now = 8030
-    h.assert_true(poll.ensure_preset(device))
-    h.assert_true(poll.ensure_preset(device), "the one repeat")
-    h.assert_false(poll.ensure_preset(device))
+    time.now = 8002
+    h.assert_false(rows.ensure_preset(device), "still inside the hold")
+    time.now = 8030
+    h.assert_true(rows.ensure_preset(device))
+    h.assert_true(rows.ensure_preset(device), "the one repeat")
+    h.assert_false(rows.ensure_preset(device))
     h.assert_equal(#preset_events(device), 2)
     h.assert_equal(last_preset(device), "none")
   end)
@@ -842,7 +845,7 @@ function T.test_the_awake_switch_sends_awake_and_awakeoff()
   h.assert_true(calls.poll_opts[2].force["awake/switch.switch"] == true,
     "and so does the one that closes the window")
   -- The PC's power was not touched: no wake, no shutdown.
-  h.assert_equal(poll.get_state(device).power_state, state.ON)
+  h.assert_equal(fields.state(device).power_state, state.ON)
 end
 
 function T.test_the_default_period_is_sent_as_sixty_minutes()
@@ -909,7 +912,7 @@ function T.test_an_awake_push_moves_the_switch_at_once()
   h.assert_true(nxt.extras.awake_on)
   -- ... and the glue puts it on the awake component of the device.
   local device = h.fake_device({})
-  poll.emit(device, events)
+  emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "awake", "switch", "switch"), "on")
   h.assert_equal(h.event_value(h.emitted(device), "switch", "switch"), "on",
     "the main switch comes from the power state (on)")
@@ -1052,11 +1055,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
   local device = device_on_profile("pc-battery.v6", "pushed-laptop")
-  poll.emit(device, events)
+  emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
   local desktop = device_on_profile("pc.v6", "pushed-desktop")
-  poll.emit(desktop, events)
+  emit.rows(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
 
@@ -1268,11 +1271,11 @@ function T.test_the_message_row_is_never_empty()
   for _, lang in ipairs({ "ko", "en" }) do
     local device = device_with(status_v12())
     device.preferences.language = lang
-    h.assert_equal(poll.shown_toast(device), lang == "ko" and "없음" or "None")
+    h.assert_equal(rows.shown_toast(device), lang == "ko" and "없음" or "None")
     device:set_field(fields.LAST_TOAST, "")
-    h.assert_true(poll.shown_toast(device) ~= "", lang)
+    h.assert_true(rows.shown_toast(device) ~= "", lang)
     -- An empty text is never remembered either.
-    poll.emit_toast(device, "")
+    rows.emit_toast(device, "")
     h.assert_true(toast_value(device) ~= "", lang)
     h.assert_true(toast_value(device) ~= nil, lang)
   end
@@ -1285,8 +1288,8 @@ function T.test_the_message_row_is_painted_once_per_run_and_by_a_repaint()
   -- is not emitted at all (the event budget). A repaint forces it as well.
   local device = device_with(status_v12())
   device:set_field(fields.LAST_TOAST, "안녕")
-  poll.ensure_toast(device)
-  poll.ensure_toast(device)
+  rows.ensure_toast(device)
+  rows.ensure_toast(device)
   local forced = {}
   for _, e in ipairs(h.emitted(device)) do
     if e.cap == caps.TOAST and e.attr == "lastMessage" then
@@ -1375,7 +1378,7 @@ function T.test_the_media_group_goes_to_the_media_component_when_the_profile_has
   local events = features.apply_status(playing({ status = "playing", title = "Song" }), { lang = "ko" })
   local split = h.fake_device({})
   split.profile = { components = { main = { id = "main" }, media = { id = "media" }, awake = { id = "awake" } } }
-  poll.emit(split, events)
+  emit.rows(split, events)
   local emitted = h.emitted(split)
   h.assert_equal(h.component_value(emitted, "media", "mediaPlayback", "playbackStatus"), "playing")
   h.assert_equal(h.component_value(emitted, "media", "audioVolume", "volume"), 30)
@@ -1384,7 +1387,7 @@ function T.test_the_media_group_goes_to_the_media_component_when_the_profile_has
   h.assert_true(h.event_value(emitted, caps.PRESET, "names") ~= nil)
   -- And the default layout keeps all of it on main.
   local together = h.fake_device({})
-  poll.emit(together, events)
+  emit.rows(together, events)
   h.assert_equal(h.event_value(h.emitted(together), "mediaPlayback", "playbackStatus"), "playing")
 end
 
@@ -1394,7 +1397,7 @@ end
 
 function T.test_an_event_for_another_component_goes_there()
   local device = h.fake_device({})
-  poll.emit(device, { { cap = "switch", attr = "switch", value = "on", component = "awake" } })
+  emit.rows(device, { { cap = "switch", attr = "switch", value = "on", component = "awake" } })
   local emitted = h.emitted(device)
   h.assert_equal(#emitted, 1)
   h.assert_equal(emitted[1].component, "awake")
@@ -1405,17 +1408,17 @@ end
 function T.test_an_event_for_a_component_the_profile_lacks_is_skipped()
   -- A desktop's profile has no battery component, and a v1 profile no awake one.
   local device = h.fake_device({})
-  poll.emit(device, { { cap = "battery", attr = "battery", value = 80, component = "battery" } })
+  emit.rows(device, { { cap = "battery", attr = "battery", value = 80, component = "battery" } })
   h.assert_equal(#h.emitted(device), 0)
   device.profile = { components = { { id = "main" } } }
-  poll.emit(device, { { cap = "switch", attr = "switch", value = "on", component = "awake" } })
+  emit.rows(device, { { cap = "switch", attr = "switch", value = "on", component = "awake" } })
   h.assert_equal(#h.emitted(device), 0)
 end
 
 function T.test_the_row_key_names_the_component()
-  h.assert_equal(poll.row_key({ cap = "switch", attr = "switch" }), "switch.switch")
-  h.assert_equal(poll.row_key({ cap = "switch", attr = "switch", component = "main" }), "switch.switch")
-  h.assert_equal(poll.row_key({ cap = "switch", attr = "switch", component = "awake" }), "awake/switch.switch")
+  h.assert_equal(emit.row_key({ cap = "switch", attr = "switch" }), "switch.switch")
+  h.assert_equal(emit.row_key({ cap = "switch", attr = "switch", component = "main" }), "switch.switch")
+  h.assert_equal(emit.row_key({ cap = "switch", attr = "switch", component = "awake" }), "awake/switch.switch")
 end
 
 return T

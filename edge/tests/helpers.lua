@@ -232,7 +232,7 @@ function h.fire_last(driver, name)
 end
 
 --- Run live timers named `name` until none is left - a timer may set the
---- next one (the batches of a spread repaint, poll.paint). Newest first,
+--- next one (the batches of a spread repaint, emit.paint). Newest first,
 --- like `fire_last`. Returns how many ran.
 function h.fire_all(driver, name)
   local n = 0
@@ -257,7 +257,7 @@ function h.fake_device(preferences)
   function device:emit_event(event)
     self.emitted[#self.emitted + 1] = event
   end
-  -- #107: what `poll.emit` uses for the `awake` and `battery` components.
+  -- #107: what `emit.rows` uses for the `awake` and `battery` components.
   function device:emit_component_event(component, event)
     local copy = {}
     for k, v in pairs(event) do

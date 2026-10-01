@@ -341,7 +341,7 @@ local function commanded_device()
   device.device_network_id = discovery.DNI_PREFIX .. MACHINE_ID
   -- The PC is on and the last poll was status.full.json, so no command is
   -- refused before it goes out.
-  poll.set_state(device, features.remember(state.new(state.ON), h.fixture("status.full.json")))
+  fields.set_state(device, features.remember(state.new(state.ON), h.fixture("status.full.json")))
   return device
 end
 

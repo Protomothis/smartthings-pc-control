@@ -7,6 +7,9 @@
 local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
 local log = require "log"
+local emit = require "device.emit"
+local rows = require "device.rows"
+local fields = require "device.fields"
 
 local apps = require "apps"
 local caps = require "caps"
@@ -88,8 +91,8 @@ local function device_added(driver, device)
   discovery.adopt(device)
   -- Paint the tiles immediately; the first poll fills in the real values.
   local initial = state.new()
-  poll.set_state(device, initial)
-  poll.emit_power(device, initial)
+  fields.set_state(device, initial)
+  rows.emit_power(device, initial)
   -- #82: the command list shows `lastAction`, and an attribute that was never
   -- emitted reads as "-" on the phone. #84: the row rests on `none` for good.
   -- #85: and the same goes for every other pcRemote / pcDefer attribute,
@@ -97,11 +100,11 @@ local function device_added(driver, device)
   -- preference.
   poll.ensure_rows(device, driver)
   if not client.device_base_url(device) then
-    poll.emit_connection(device, "unreachable", i18n.t(poll.lang(device), "no_ip"))
+    rows.emit_connection(device, "unreachable", i18n.t(fields.lang(device), "no_ip"))
   end
-  -- The event budget: the repaint is queued (poll.paint); its first batch
+  -- The event budget: the repaint is queued (emit.paint); its first batch
   -- goes now, the rest a few seconds apart.
-  poll.paint_start(driver, device)
+  emit.paint_start(driver, device)
 end
 
 local function device_removed(driver, device)
@@ -190,8 +193,8 @@ local function report_error(device, kind, body)
     log.warn(string.format("command refused (%s) on %s", tostring(kind), device.id))
     return
   end
-  local lang = poll.lang(device)
-  poll.emit_connection(device, connection, poll.message_for(kind, body, lang))
+  local lang = fields.lang(device)
+  rows.emit_connection(device, connection, poll.message_for(kind, body, lang))
 end
 
 --------------------------------------------------------------------------------
@@ -205,9 +208,9 @@ end
 -- useful a second power command can do: it either races the one already running
 -- or lands on a PC that is not there any more. The app has no way to grey a row
 -- out (platform notes "상세 화면(detailView) 위젯"), so the list says "진행 중…"
--- (poll.resting_action) and the driver is what actually holds the commands back.
+-- (rows.resting_action) and the driver is what actually holds the commands back.
 local function transition_of(device)
-  local s = poll.get_state(device)
+  local s = fields.state(device)
   if not state.is_transitioning(s) then
     return nil
   end
@@ -226,7 +229,7 @@ local function refuse(device, busy_action, answer)
   if answer then
     answer(device)
   end
-  poll.emit_note(device, i18n.busy(poll.lang(device), busy_action))
+  rows.emit_note(device, i18n.busy(fields.lang(device), busy_action))
   log.info(string.format("command held back on %s: %s",
     tostring(device.id), tostring(busy_action)))
 end
@@ -237,13 +240,13 @@ end
 -- on cancels the grace period" path of §6.2, which is the one thing a user in
 -- front of a PC that is about to go away actually wants.
 local function handle_switch_on(driver, device)
-  local nxt = state.transition(poll.get_state(device), "switch_on")
-  poll.set_state(device, nxt)
-  poll.emit_power(device, nxt)
+  local nxt = state.transition(fields.state(device), "switch_on")
+  fields.set_state(device, nxt)
+  rows.emit_power(device, nxt)
   -- The PC is now `waking`, so the command list says "켜는 중…" straight away
   -- rather than at the next poll - and the polls that follow will fail until
   -- the PC is up, so this is the only place that can move it.
-  poll.ensure_action(device)
+  rows.ensure_action(device)
   wol.wake(driver, device)
 end
 
@@ -264,7 +267,7 @@ local function handle_switch_off(driver, device)
   local busy_action = transition_of(device)
   if busy_action then
     return refuse(device, busy_action, function(d)
-      poll.emit_power(d, poll.get_state(d), true)
+      rows.emit_power(d, fields.state(d), true)
     end)
   end
   local prefs = device.preferences or {}
@@ -284,7 +287,11 @@ end
 local function handle_refresh(driver, device)
   -- #123: pulling an app child down to refresh asks its PC.
   if apps.is_child(device) then
-    return apps.refresh(driver, device)
+    local parent = apps.parent_of(driver, device)
+    if not parent then
+      return false
+    end
+    return poll.once(driver, parent)
   end
   poll.once(driver, device)
 end
@@ -348,7 +355,7 @@ end
 -- transition is over. `wake` is the one exception: it is the WoL sequence, the
 -- same thing `switch on` does, and re-sending a magic packet is free.
 local function run_command(driver, device, service_command, mode, minutes)
-  poll.answer_action(device)
+  rows.answer_action(device)
   if service_command == nil or service_command == "" or service_command == state.ACTION_NONE
       or state.is_busy_action(service_command) then
     -- #129 (W2): the dismissed picker's refresh shares the answer window too.
@@ -417,17 +424,17 @@ local function handle_set_plan_command(_driver, device, cmd)
   local busy_action = transition_of(device)
   if busy_action then
     return refuse(device, busy_action, function(d)
-      poll.emit_plan_command(d, poll.plan_command(d), true)
+      rows.emit_plan_command(d, rows.plan_command(d), true)
     end)
   end
-  poll.emit_plan_command(device, args.command, true)
+  rows.emit_plan_command(device, args.command, true)
 end
 
 --- The command `pcDefer.schedule` runs when it carries none of its own:
 --- the automation's argument first, then the `planCommand` the user picked,
 --- then the `offAction` preference, else shutdown (§3.3).
 local function schedule_command(device, requested)
-  return state.plan_command_for(requested, poll.plan_command(device))
+  return state.plan_command_for(requested, rows.plan_command(device))
 end
 
 --- pcDefer.cancel(): DELETE /st/v1/schedule (§3.4). The service answers
@@ -468,7 +475,7 @@ local handle_cancel
 --- integers an older profile's automation may carry.
 local function handle_schedule(driver, device, cmd)
   local args = (cmd or {}).args or {}
-  poll.answer_minutes_pick(device)
+  rows.answer_minutes_pick(device)
   -- A `schedule` with no minutes at all is the same "nothing was picked" case.
   local minutes = math.floor(tonumber(args.minutes) or state.MINUTES_NONE)
   if minutes < 0 then
@@ -484,7 +491,7 @@ local function handle_schedule(driver, device, cmd)
   if busy_action then
     return refuse(device, busy_action)
   end
-  local had_schedule = poll.get_state(device).schedule_active == true
+  local had_schedule = fields.state(device).schedule_active == true
   local ok, body, kind = client.command(device, schedule_command(device, args.command), "default", minutes)
   if not ok then
     report_error(device, kind, body)
@@ -492,8 +499,8 @@ local function handle_schedule(driver, device, cmd)
   end
   -- #86: the rows the schedule list is bound to answer this command. #129
   -- (W2): through the shared answer window, like every other command.
-  poll.answer(driver, device, poll.SCHEDULE_ROWS,
-    had_schedule and i18n.t(poll.lang(device), "schedule_replaced") or nil)
+  poll.answer(driver, device, rows.SCHEDULE_ROWS,
+    had_schedule and i18n.t(fields.lang(device), "schedule_replaced") or nil)
 end
 
 function handle_cancel(driver, device)
@@ -504,15 +511,15 @@ function handle_cancel(driver, device)
   end
   local cancelled = (body or {}).cancelled == true
   -- §6.2: cancelling the grace period brings the switch back on.
-  local nxt = state.transition(poll.get_state(device), "schedule_cancelled")
-  poll.set_state(device, nxt)
-  poll.emit_power(device, nxt)
+  local nxt = state.transition(fields.state(device), "schedule_cancelled")
+  fields.set_state(device, nxt)
+  rows.emit_power(device, nxt)
   -- #86: cancelling with nothing scheduled leaves every schedule row exactly
   -- as it was, which is precisely when the app's spinner used to end in an
   -- error. Forced, the rows go out anyway and the spinner finishes (platform
   -- notes "상세 화면(detailView) 위젯"). #129 (W2): through the answer window.
-  poll.answer(driver, device, poll.SCHEDULE_ROWS,
-    i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"))
+  poll.answer(driver, device, rows.SCHEDULE_ROWS,
+    i18n.t(fields.lang(device), cancelled and "schedule_cancelled" or "schedule_none"))
 end
 
 --------------------------------------------------------------------------------
@@ -535,20 +542,20 @@ end
 -- PC that is about to shut down does no harm, and one on a PC that is still
 -- waking fails as unreachable like any other request.
 -- @param answer re-emits, forced, the row the command arrived on
--- @param rows the row keys (`poll.row_key`) the poll after a success answers
-local function run_feature(driver, device, service_command, value, answer, rows)
-  local lang = poll.lang(device)
-  if poll.extras(device) == nil then
+-- @param keys the row keys (`emit.row_key`) the poll after a success answers
+local function run_feature(driver, device, service_command, value, answer, keys)
+  local lang = fields.lang(device)
+  if fields.extras(device) == nil then
     -- Nothing read in this driver run yet (the hub has just restarted): ask
     -- once, rather than calling a v1.2.0 PC too old.
     poll.once(driver, device)
   end
-  local refusal = features.refusal(poll.extras(device), service_command)
+  local refusal = features.refusal(fields.extras(device), service_command)
   if refusal then
     if answer then
       answer(device)
     end
-    poll.emit_note(device, i18n.t(lang, refusal))
+    rows.emit_note(device, i18n.t(lang, refusal))
     log.info(string.format("%s not sent on %s: %s", tostring(service_command),
       tostring(device.id), refusal))
     return false
@@ -560,7 +567,7 @@ local function run_feature(driver, device, service_command, value, answer, rows)
     end
     local note = features.error_note(kind, body)
     if note then
-      poll.emit_note(device, i18n.t(lang, note))
+      rows.emit_note(device, i18n.t(lang, note))
       return false
     end
     report_error(device, kind, body)
@@ -568,8 +575,8 @@ local function run_feature(driver, device, service_command, value, answer, rows)
   end
   -- The event budget (platform notes "이벤트 예산(rate limit)"): commands that
   -- land within `poll.ANSWER_WINDOW_SECONDS` of each other share one answer
-  -- poll, and that poll sends only what changed plus `rows`, forced.
-  poll.answer(driver, device, rows)
+  -- poll, and that poll sends only what changed plus `keys`, forced.
+  poll.answer(driver, device, keys)
   return true
 end
 
@@ -588,16 +595,16 @@ local MEDIA_ROWS = {
 
 -- What a refused command is answered with: the value the row already had.
 local function answer_volume(device)
-  local audio = (poll.extras(device) or {}).audio or {}
+  local audio = (fields.extras(device) or {}).audio or {}
   if audio.volume ~= nil then
-    poll.emit(device, { { cap = features.CAP_VOLUME, attr = "volume", value = audio.volume, force = true } })
+    emit.rows(device, { { cap = features.CAP_VOLUME, attr = "volume", value = audio.volume, force = true } })
   end
 end
 
 local function answer_mute(device)
-  local audio = (poll.extras(device) or {}).audio or {}
+  local audio = (fields.extras(device) or {}).audio or {}
   if audio.muted ~= nil then
-    poll.emit(device, { { cap = features.CAP_MUTE, attr = "mute",
+    emit.rows(device, { { cap = features.CAP_MUTE, attr = "mute",
       value = audio.muted and "muted" or "unmuted", force = true } })
   end
 end
@@ -605,7 +612,7 @@ end
 -- The media rows answer with what the last status said is playing (#118), and
 -- with the constant attributes, which are all there is before #117.
 local function answer_media(device)
-  poll.emit(device, poll.force_all(features.media_events((poll.extras(device) or {}).playback)))
+  emit.rows(device, features.media_events((fields.extras(device) or {}).playback), { reason = "answer" })
 end
 
 local function audio_command(service_command, answer)
@@ -654,9 +661,9 @@ end
 -- dismissed list sends the row's current value), so `run("none")` is the
 -- dismissed picker and does nothing but answer the row.
 --
--- A preset that ran shows as "프리셋 3 실행함" for `poll.PRESET_HOLD_SECONDS`,
--- then a timer puts the row back on "none" (`poll.hold_preset`, with the
--- polls as the fallback - `poll.ensure_preset`, the `lastAction` rules).
+-- A preset that ran shows as "프리셋 3 실행함" for `rows.PRESET_HOLD_SECONDS`,
+-- then a timer puts the row back on "none" (`rows.hold_preset`, with the
+-- polls as the fallback - `rows.ensure_preset`, the `lastAction` rules).
 -- During that moment the row
 -- rests on "3", so a dismissed list sends `run("3")` - which must not start
 -- the preset a second time. A `run` of the very slot the row is showing is
@@ -665,40 +672,40 @@ end
 local function handle_preset_run(driver, device, cmd)
   local slot = tostring((((cmd or {}).args or {}).slot) or features.PRESET_NONE)
   if slot == features.PRESET_NONE or not features.is_preset_slot(slot)
-      or slot == poll.shown_preset(device) then
-    return poll.answer_preset(device)
+      or slot == rows.shown_preset(device) then
+    return rows.answer_preset(device)
   end
-  local lang = poll.lang(device)
-  if poll.extras(device) == nil then
+  local lang = fields.lang(device)
+  if fields.extras(device) == nil then
     poll.once(driver, device)
   end
-  local extras = poll.extras(device)
+  local extras = fields.extras(device)
   local refusal = features.refusal(extras, "preset")
   if not refusal and features.has(extras, features.PRESETS)
       and not ((extras or {}).preset_slots or {})[slot] then
     refusal = "preset_empty"
   end
   if refusal then
-    poll.answer_preset(device)
-    poll.emit_note(device, i18n.t(lang, refusal, slot))
+    rows.answer_preset(device)
+    rows.emit_note(device, i18n.t(lang, refusal, slot))
     log.info(string.format("preset %s not sent on %s: %s", slot, tostring(device.id), refusal))
     return false
   end
   local ok, body, kind = client.action(device, "preset", tonumber(slot))
   if not ok then
-    poll.answer_preset(device)
+    rows.answer_preset(device)
     local note = features.error_note(kind, body)
     if note then
-      poll.emit_note(device, i18n.t(lang, note))
+      rows.emit_note(device, i18n.t(lang, note))
       return false
     end
     report_error(device, kind, body)
     return false
   end
   -- The row the app is watching changes value, forced as every answer is.
-  poll.emit_preset(device, slot, true)
+  rows.emit_preset(device, slot, true)
   -- And back on "none" a few seconds later, not at the next scheduled poll.
-  poll.hold_preset(driver, device)
+  rows.hold_preset(driver, device)
   -- The event budget: shared with any command that lands right after it.
   poll.answer(driver, device, nil)
   return true
@@ -722,36 +729,36 @@ end
 -- before it goes out.
 local function handle_toast_send(driver, device, cmd)
   local text = ((cmd or {}).args or {}).text
-  local lang = poll.lang(device)
+  local lang = fields.lang(device)
   local cleaned = features.notify_text(text)
   if not cleaned then
-    poll.answer_toast(device)
-    poll.emit_message(device, i18n.t(lang, "notify_empty"))
+    rows.answer_toast(device)
+    rows.emit_message(device, i18n.t(lang, "notify_empty"))
     return false
   end
-  if poll.extras(device) == nil then
+  if fields.extras(device) == nil then
     poll.once(driver, device)
   end
-  local refusal = features.refusal(poll.extras(device), nil, features.NOTIFY)
+  local refusal = features.refusal(fields.extras(device), nil, features.NOTIFY)
   if refusal then
-    poll.answer_toast(device)
-    poll.emit_message(device, i18n.t(lang, refusal))
+    rows.answer_toast(device)
+    rows.emit_message(device, i18n.t(lang, refusal))
     log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
     return false
   end
   local ok, body, kind = client.notify(device, cleaned)
   if not ok then
-    poll.answer_toast(device)
+    rows.answer_toast(device)
     local note = features.notify_error_note(kind, body)
     if note then
-      poll.emit_message(device, i18n.t(lang, note))
+      rows.emit_message(device, i18n.t(lang, note))
       return false
     end
     report_error(device, kind, body)
     return false
   end
-  poll.emit_toast(device, cleaned)
-  poll.emit_message(device, i18n.t(lang, "notify_sent"))
+  rows.emit_toast(device, cleaned)
+  rows.emit_message(device, i18n.t(lang, "notify_sent"))
   return true
 end
 
@@ -765,8 +772,8 @@ local AWAKE_ROWS = {
 
 --- Spring the keep-awake toggle back to what the PC last said.
 local function answer_awake(device)
-  local on = (poll.extras(device) or {}).awake_on == true
-  poll.emit(device, { {
+  local on = (fields.extras(device) or {}).awake_on == true
+  emit.rows(device, { {
     cap = features.CAP_SWITCH, attr = "switch", value = on and "on" or "off",
     component = features.AWAKE_COMPONENT, force = true,
   } })
