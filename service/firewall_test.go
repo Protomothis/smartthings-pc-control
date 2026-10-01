@@ -104,106 +104,61 @@ func hasArgs(call []string, want ...string) bool {
 	return true
 }
 
-// ---- argument construction -------------------------------------------------
-
-func TestEnsureFirewallRuleAddsInboundRule(t *testing.T) {
-	f := newFakeNetsh()
-	withFakeNetsh(t, f)
-
-	if err := ensureFirewallRule("Test Rule", firewallProtoUDP, 1900); err != nil {
-		t.Fatalf("ensureFirewallRule: %v", err)
+// TestFirewallRuleCalls: each entry point runs exactly these netsh calls
+// against a firewall that does or does not hold the rule yet. A rule that
+// exists is never added twice (a restart, an upgrade); the command-port
+// rule is deleted first so a changed port replaces the stale one. The SSDP
+// rule's name is the one the user documentation tells people to look for.
+func TestFirewallRuleCalls(t *testing.T) {
+	const ssdpName = "SmartThings PC Control SSDP"
+	ssdpAdd := []string{"name=" + ssdpName, "dir=in", "action=allow", "protocol=udp", "localport=1900"}
+	for _, tc := range []struct {
+		name     string
+		existing []string
+		run      func() error
+		verbs    string
+		add      []string // the add rule call's arguments, when there is one
+	}{
+		{"SSDP rule, missing", nil, ensureSSDPFirewallRule, "show add", ssdpAdd},
+		{"SSDP rule, present", []string{ssdpName}, ensureSSDPFirewallRule, "show", nil},
+		{"SSDP rule, three restarts", nil, func() error {
+			for range 3 {
+				if err := ensureSSDPFirewallRule(); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, "show add show show", ssdpAdd},
+		{"SSDP rule, uninstall", []string{ssdpName}, removeSSDPFirewallRule, "delete", nil},
+		{"any rule, TCP", nil, func() error { return ensureFirewallRule("Test Rule", firewallProtoTCP, 5001) }, "show add",
+			[]string{"name=Test Rule", "dir=in", "action=allow", "protocol=tcp", "localport=5001"}},
+		{"command port, replacing the old port", []string{firewallRuleName}, func() error { return addFirewallRule(5005) }, "delete show add",
+			[]string{"name=" + firewallRuleName, "protocol=tcp", "localport=5005"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeNetsh(tc.existing...)
+			withFakeNetsh(t, f)
+			if err := tc.run(); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(f.verbs(), " "); got != tc.verbs {
+				t.Fatalf("netsh calls = %q, want %q (%v)", got, tc.verbs, f.calls)
+			}
+			for _, c := range f.calls {
+				if c[0] != "advfirewall" || c[1] != "firewall" || c[3] != "rule" {
+					t.Errorf("call prefix = %v", c[:4])
+				}
+				if verbOf(c) == "add" && !hasArgs(c, tc.add...) {
+					t.Errorf("add rule args = %v, want %v among them", c, tc.add)
+				}
+				if verbOf(c) == "delete" && ruleNameArg(c) == "" {
+					t.Errorf("delete without a rule name: %v", c)
+				}
+			}
+		})
 	}
-	if got := f.verbs(); len(got) != 2 || got[0] != "show" || got[1] != "add" {
-		t.Fatalf("calls = %v, want show then add", got)
-	}
-	add := f.calls[1]
-	if add[0] != "advfirewall" || add[1] != "firewall" || add[3] != "rule" {
-		t.Fatalf("add prefix = %v", add[:4])
-	}
-	if !hasArgs(add, "name=Test Rule", "dir=in", "action=allow", "protocol=udp", "localport=1900") {
-		t.Fatalf("add rule args = %v", add)
-	}
-}
-
-func TestEnsureFirewallRuleTCPPortIsFormatted(t *testing.T) {
-	f := newFakeNetsh()
-	withFakeNetsh(t, f)
-
-	if err := ensureFirewallRule(firewallRuleName, firewallProtoTCP, 5001); err != nil {
-		t.Fatalf("ensureFirewallRule: %v", err)
-	}
-	if !hasArgs(f.calls[1], "protocol=tcp", "localport=5001", "name="+firewallRuleName) {
-		t.Fatalf("add rule args = %v", f.calls[1])
-	}
-}
-
-func TestSSDPRuleUsesUDP1900AndTheDocumentedName(t *testing.T) {
-	f := newFakeNetsh()
-	withFakeNetsh(t, f)
-
-	if err := ensureSSDPFirewallRule(); err != nil {
-		t.Fatalf("ensureSSDPFirewallRule: %v", err)
-	}
-	if ssdpFirewallRuleName != "SmartThings PC Control SSDP" {
-		t.Fatalf("rule name = %q", ssdpFirewallRuleName)
-	}
-	if !hasArgs(f.calls[1], "name="+ssdpFirewallRuleName, "dir=in", "action=allow",
-		"protocol=udp", "localport=1900") {
-		t.Fatalf("add rule args = %v", f.calls[1])
-	}
-	// The port comes from the responder's own constant, not a literal.
-	if stapi.SSDPPort != 1900 {
-		t.Fatalf("stapi.SSDPPort = %d", stapi.SSDPPort)
-	}
-}
-
-func TestDeleteFirewallRuleArgs(t *testing.T) {
-	f := newFakeNetsh(ssdpFirewallRuleName)
-	withFakeNetsh(t, f)
-
-	if err := removeSSDPFirewallRule(); err != nil {
-		t.Fatalf("removeSSDPFirewallRule: %v", err)
-	}
-	del := f.calls[0]
-	if verbOf(del) != "delete" || del[3] != "rule" || !hasArgs(del, "name="+ssdpFirewallRuleName) {
-		t.Fatalf("delete args = %v", del)
-	}
-	if f.existing[ssdpFirewallRuleName] {
-		t.Fatal("rule still present after delete")
-	}
-}
-
-// ---- idempotence -----------------------------------------------------------
-
-func TestEnsureFirewallRuleIsIdempotent(t *testing.T) {
-	f := newFakeNetsh(ssdpFirewallRuleName)
-	withFakeNetsh(t, f)
-
-	if err := ensureSSDPFirewallRule(); err != nil {
-		t.Fatalf("ensureSSDPFirewallRule: %v", err)
-	}
-	if got := f.verbs(); len(got) != 1 || got[0] != "show" {
-		t.Fatalf("calls = %v, want a single show and no add", got)
-	}
-}
-
-func TestEnsureFirewallRuleAddsOnlyOnceAcrossRestarts(t *testing.T) {
-	f := newFakeNetsh()
-	withFakeNetsh(t, f)
-
-	for i := 0; i < 3; i++ {
-		if err := ensureSSDPFirewallRule(); err != nil {
-			t.Fatalf("call %d: %v", i, err)
-		}
-	}
-	adds := 0
-	for _, v := range f.verbs() {
-		if v == "add" {
-			adds++
-		}
-	}
-	if adds != 1 {
-		t.Fatalf("add rule ran %d times, want 1", adds)
+	if stapi.SSDPPort != 1900 || ssdpFirewallRuleName != ssdpName {
+		t.Errorf("the SSDP rule follows stapi.SSDPPort %d and is named %q", stapi.SSDPPort, ssdpFirewallRuleName)
 	}
 }
 
@@ -219,24 +174,6 @@ func TestEnsureFirewallRuleReportsAddFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), ssdpFirewallRuleName) ||
 		!strings.Contains(err.Error(), "elevation") {
 		t.Fatalf("error should name the rule and carry netsh output: %v", err)
-	}
-}
-
-// ---- the command-port rule still replaces a stale port ---------------------
-
-func TestAddFirewallRuleDeletesThenAdds(t *testing.T) {
-	f := newFakeNetsh(firewallRuleName) // a rule for the old port exists
-	withFakeNetsh(t, f)
-
-	if err := addFirewallRule(5005); err != nil {
-		t.Fatalf("addFirewallRule: %v", err)
-	}
-	got := f.verbs()
-	if len(got) != 3 || got[0] != "delete" || got[1] != "show" || got[2] != "add" {
-		t.Fatalf("calls = %v, want delete, show, add", got)
-	}
-	if !hasArgs(f.calls[2], "localport=5005", "protocol=tcp") {
-		t.Fatalf("add rule args = %v", f.calls[2])
 	}
 }
 

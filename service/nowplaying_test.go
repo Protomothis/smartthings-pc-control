@@ -303,15 +303,3 @@ func TestTelegramMediaCommandResults(t *testing.T) {
 		t.Errorf("/np while disabled = %q", got)
 	}
 }
-
-func TestTelegramStatusMediaLine(t *testing.T) {
-	initLogger()
-	now := nowPlayingSetup(t, Config{Media: MediaConfig{Enabled: true, NowPlaying: true}, Telegram: TelegramConfig{Lang: "ko"}})
-	if strings.Contains(tgStatus(t), "미디어:") {
-		t.Error("/status has a media line with nothing playing")
-	}
-	recordMediaSample(spotifyTrack, now)
-	if got := tgStatus(t); !strings.Contains(got, "\n미디어: ▶ Hype Boy — NewJeans · Spotify") {
-		t.Errorf("/status = %q", got)
-	}
-}

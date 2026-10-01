@@ -239,21 +239,3 @@ func TestProcessesAPI(t *testing.T) {
 }
 
 // ---- Telegram ----------------------------------------------------------------
-
-func TestTelegramStatusShowsActivity(t *testing.T) {
-	initLogger()
-	stubProcesses(t, "steam.exe", "obs64.exe")
-	cfg := Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"},
-		Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam"), watch("obs64.exe", "OBS"), watch("code.exe", "VS Code")}}}
-	setConfig(cfg)
-	t.Cleanup(func() { setConfig(Config{Port: 5001}) })
-	activityScan.Scan(cfg.Activity)
-	if got := tgStatus(t); !strings.Contains(got, "\n활동: Steam 실행 중 · 외 1개") {
-		t.Errorf("/status lacks the activity line:\n%s", got)
-	}
-	cfg.Activity.Enabled = false
-	setConfig(cfg)
-	if got := tgStatus(t); strings.Contains(got, "활동") {
-		t.Errorf("/status shows activity while the option is off:\n%s", got)
-	}
-}

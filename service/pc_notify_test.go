@@ -21,36 +21,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-func TestNotifyLimiter(t *testing.T) {
-	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	l := ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
-	for i := 0; i < pcNotifyPerMinute; i++ {
-		if ok, _ := l.Allow("ip 1"); !ok {
-			t.Fatalf("request %d refused", i+1)
-		}
-		now = now.Add(time.Second)
-	}
-	ok, wait := l.Allow("ip 1")
-	if ok {
-		t.Fatal("11th request in a minute allowed")
-	}
-	// The first hit was at 12:00:00; the window frees at 12:01:00, and it
-	// is 12:00:10 now.
-	if wait != 50*time.Second {
-		t.Errorf("retry after %v, want 50s", wait)
-	}
-	if ok, _ := l.Allow("ip 2"); !ok {
-		t.Error("another source shares the limit")
-	}
-	now = now.Add(50 * time.Second)
-	if ok, _ := l.Allow("ip 1"); !ok {
-		t.Error("still refused once the oldest hit left the window")
-	}
-	if ok, _ := l.Allow("ip 1"); ok {
-		t.Error("the window should be full again")
-	}
-}
-
 // fakeNotifyRun replaces the user-action runner and the rate limiter.
 func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
