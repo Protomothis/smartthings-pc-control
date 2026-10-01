@@ -225,20 +225,23 @@ func TestSTStateFromConfigCopiesHubs(t *testing.T) {
 	}
 }
 
-func TestSTApplyToTouchesOnlySmartThings(t *testing.T) {
+// The SmartThings tab writes the hub list and the WoL adapter only; the
+// session switches in the same smartthings object are the sharing tab's.
+func TestSTApplyToTouchesOnlyItsFields(t *testing.T) {
 	base := stBaseConfig()
-	s := stFormState{ExposeSession: true, ExposeSessionUser: true, Hubs: []string{"10.0.0.2"}}
+	base.SmartThings.ExposeSession, base.SmartThings.ExposeSessionUser = true, true
+	s := stFormState{Hubs: []string{"10.0.0.2"}, WoLMAC: "B4-2E-99-45-B4-F5"}
 	cfg := s.applyTo(base)
 
 	if cfg.Port != base.Port || cfg.Secret != base.Secret ||
 		!reflect.DeepEqual(cfg.Telegram, base.Telegram) || !reflect.DeepEqual(cfg.Notify, base.Notify) {
 		t.Errorf("applyTo changed fields owned by another tab: %+v", cfg)
 	}
-	want := SmartThingsConfig{AllowedHubs: []string{"10.0.0.2"}, ExposeSession: true, ExposeSessionUser: true}
-	if cfg.SmartThings.ExposeSession != want.ExposeSession ||
-		cfg.SmartThings.ExposeSessionUser != want.ExposeSessionUser ||
-		!slices.Equal(cfg.SmartThings.AllowedHubs, want.AllowedHubs) {
-		t.Errorf("applyTo smartthings = %+v, want %+v", cfg.SmartThings, want)
+	if !cfg.SmartThings.ExposeSession || !cfg.SmartThings.ExposeSessionUser {
+		t.Errorf("applyTo reset the sharing tab's session switches: %+v", cfg.SmartThings)
+	}
+	if !slices.Equal(cfg.SmartThings.AllowedHubs, []string{"10.0.0.2"}) || cfg.SmartThings.WoLMAC != "B4-2E-99-45-B4-F5" {
+		t.Errorf("applyTo smartthings = %+v", cfg.SmartThings)
 	}
 	// An emptied list must travel as [] so the service clears it.
 	cleared := stFormState{}.applyTo(base)
@@ -247,11 +250,11 @@ func TestSTApplyToTouchesOnlySmartThings(t *testing.T) {
 	}
 }
 
-func TestSTUserNameGatedBySessionExposure(t *testing.T) {
+func TestShareUserNameGatedBySessionExposure(t *testing.T) {
 	base := stBaseConfig()
 	// The user toggle keeps its position while exposure is off, but what is
 	// saved — and what counts as a change — is the gated value.
-	s := stFormState{ExposeSession: false, ExposeSessionUser: true, Hubs: base.SmartThings.AllowedHubs}
+	s := shareFormState{ExposeSession: false, ExposeSessionUser: true}
 	if cfg := s.applyTo(base); cfg.SmartThings.ExposeSessionUser {
 		t.Error("expose_session_user was saved while expose_session is off")
 	}
@@ -261,6 +264,39 @@ func TestSTUserNameGatedBySessionExposure(t *testing.T) {
 	s.ExposeSession = true
 	if !s.dirty(base) {
 		t.Error("turning session exposure on is not dirty")
+	}
+}
+
+// The sharing tab writes the session switches, now playing and the watch
+// list; the hub list next to them and media.enabled stay as they were.
+func TestShareApplyToTouchesOnlyItsFields(t *testing.T) {
+	base := stBaseConfig()
+	base.Media.Enabled = true
+	base.SmartThings.WoLMAC = "B4-2E-99-45-B4-F5"
+	s := shareFormState{ExposeSession: true, NowPlaying: true}
+	cfg := s.applyTo(base)
+	if !slices.Equal(cfg.SmartThings.AllowedHubs, base.SmartThings.AllowedHubs) || cfg.SmartThings.WoLMAC != base.SmartThings.WoLMAC {
+		t.Errorf("applyTo changed the SmartThings tab's fields: %+v", cfg.SmartThings)
+	}
+	if !cfg.Media.Enabled || !cfg.Media.NowPlaying || !cfg.SmartThings.ExposeSession {
+		t.Errorf("applyTo media %+v smartthings %+v", cfg.Media, cfg.SmartThings)
+	}
+	if cfg.Port != base.Port || cfg.Secret != base.Secret || !reflect.DeepEqual(cfg.Telegram, base.Telegram) {
+		t.Errorf("applyTo changed fields owned by another tab: %+v", cfg)
+	}
+	for _, mutate := range []func(*shareFormState){
+		func(s *shareFormState) { s.ExposeSession = true },
+		func(s *shareFormState) { s.NowPlaying = true },
+		func(s *shareFormState) { s.Activity.Enabled = true },
+	} {
+		changed := shareStateFromConfig(base)
+		mutate(&changed)
+		if !changed.dirty(base) {
+			t.Errorf("an edit went unnoticed: %+v", changed)
+		}
+		if changed.dirty(changed.applyTo(base)) {
+			t.Errorf("still dirty after saving %+v", changed)
+		}
 	}
 }
 
@@ -276,7 +312,6 @@ func TestSTDirty(t *testing.T) {
 		t.Error("whitespace around a hub IP counts as a change")
 	}
 	for _, mutate := range []func(*stFormState){
-		func(s *stFormState) { s.ExposeSession = true },
 		func(s *stFormState) { s.Hubs = addHub(s.Hubs, "10.0.0.2") },
 		func(s *stFormState) { s.Hubs = removeHub(s.Hubs, "192.168.1.20") },
 		func(s *stFormState) { s.WoLMAC = "B4-2E-99-45-B4-F5" },

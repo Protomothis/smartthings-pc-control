@@ -9,9 +9,10 @@ import (
 )
 
 // The settings tab's 미디어·알림 section (media-notify doc §4, "UI 구성"):
-// the media switches of #104 and #117 next to the PC-notification switch
-// of #106 and [테스트 알림]. It shares the settings tab's save bar:
-// settingsDirty and saveSettings consult notifySection.
+// the media switch of #104 next to the PC-notification switch of #106 and
+// [테스트 알림]; #117's now-playing opt-in is on the sharing tab. It shares
+// the settings tab's save bar:
+// settingsState reads it into settingsFormState.NotifyPC.
 
 // --- Pure model (unit-tested) ------------------------------------------------
 
@@ -45,12 +46,12 @@ type notifySection struct {
 }
 
 // buildMediaNotifySection creates the section. head are the settings
-// tab's own media switches (media.enabled and media.now_playing with their
-// hints), placed first; the PC-notification controls follow.
+// tab's own media switch (media.enabled with its hint), placed first; the
+// PC-notification controls follow.
 func (u *ui) buildMediaNotifySection(head ...fyne.CanvasObject) fyne.CanvasObject {
 	n := &notifySection{}
 	u.pcNotify = n
-	n.notifyCheck = newToggle(u.t("notifypc.enabled"), func(bool) { u.updateSaveState() })
+	n.notifyCheck = newToggle(u.t("notifypc.enabled"), func(bool) { u.refreshDirty() })
 	n.testStatus = widget.NewLabel("")
 	n.testStatus.Wrapping = fyne.TextWrapWord
 	n.testBtn = widget.NewButtonWithIcon(u.t("notifypc.test"), theme.MailSendIcon(), func() { u.sendNotifyTest() })
@@ -73,14 +74,6 @@ func (u *ui) notifySectionState() notifyPCState {
 	return notifyPCState{Enabled: n.notifyCheck.Checked}
 }
 
-// notifySectionDirty reports whether the section differs from base.
-func (u *ui) notifySectionDirty(base Config) bool {
-	if u.pcNotify == nil {
-		return false
-	}
-	return u.notifySectionState().dirty(base)
-}
-
 // fillNotifySection writes cfg into the section. UI thread only; the
 // caller re-evaluates the save state.
 func (u *ui) fillNotifySection(cfg Config) {
@@ -96,23 +89,18 @@ func (u *ui) fillNotifySection(cfg Config) {
 // notifications are allowed yet.
 func (u *ui) sendNotifyTest() {
 	n := u.pcNotify
-	n.testBtn.Disable()
 	n.testStatus.Importance = widget.LowImportance
 	n.testStatus.SetText(u.t("notifypc.test.sending"))
-	go func() {
-		_, err := u.client.TestNotify()
-		fyne.Do(func() {
-			n.testBtn.Enable()
-			if err != nil {
-				n.testStatus.Importance = widget.DangerImportance
-				n.testStatus.SetText(u.actionErrorText(err))
-			} else {
-				n.testStatus.Importance = widget.SuccessImportance
-				n.testStatus.SetText(u.t("notifypc.test.shown"))
-			}
-			n.testStatus.Refresh()
-		})
-	}()
+	runAsync(busyControls(n.testBtn), u.client.TestNotify, func(_ NotifyResult, err error) {
+		if err != nil {
+			n.testStatus.Importance = widget.DangerImportance
+			n.testStatus.SetText(u.actionErrorText(err))
+		} else {
+			n.testStatus.Importance = widget.SuccessImportance
+			n.testStatus.SetText(u.t("notifypc.test.shown"))
+		}
+		n.testStatus.Refresh()
+	})
 }
 
 // actionErrorText is err in the user's words when the app knows its code.

@@ -16,7 +16,7 @@ import (
 //
 // POST sends the whole struct back and the service keeps the live value of
 // any key that is omitted — so callers must start from the last GET (see
-// ui.cfgBaseline) rather than a zero Config, or telegram/notify would be
+// forms.base, forms.go) rather than a zero Config, or telegram/notify would be
 // reset to zero values.
 type Config struct {
 	Port          int    `json:"port"`
@@ -31,7 +31,7 @@ type Config struct {
 	// SmartThings is the "smartthings" object (edge-driver doc §3.7).
 	SmartThings SmartThingsConfig `json:"smartthings"`
 	// Activity is the opt-in running-app detection (#110), edited in the
-	// network tab's SmartThings section.
+	// sharing tab (share_tab.go).
 	Activity ActivityConfig `json:"activity"`
 	// Media is the "media" object (#104): volume and media-key commands.
 	Media MediaConfig `json:"media"`
@@ -47,7 +47,8 @@ type NotifyPCConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
-// MediaConfig mirrors service.MediaConfig; the settings tab edits it.
+// MediaConfig mirrors service.MediaConfig; the settings tab edits enabled,
+// the sharing tab now_playing.
 type MediaConfig struct {
 	Enabled bool `json:"enabled"`
 	// NowPlaying is the opt-in to share title/artist/album/app (#117).
@@ -79,8 +80,9 @@ type Preset struct {
 	Args []string `json:"args,omitempty"`
 }
 
-// SmartThingsConfig mirrors service.SmartThingsConfig. The widgets that
-// edit it live in the network tab (#70); this struct only keeps the values
+// SmartThingsConfig mirrors service.SmartThingsConfig. The SmartThings tab
+// edits the hubs and the WoL adapter (#70), the sharing tab the session
+// switches; this struct only keeps the values
 // alive across a GET/POST round trip.
 type SmartThingsConfig struct {
 	// There is no "discovery" key: SSDP is always on (#95).
@@ -88,7 +90,7 @@ type SmartThingsConfig struct {
 	ExposeSession     bool     `json:"expose_session"`
 	ExposeSessionUser bool     `json:"expose_session_user"`
 	// WoLMAC pins the adapter the Edge driver wakes this PC through (#96).
-	// Empty means the service chooses; the network tab's dropdown edits it.
+	// Empty means the service chooses; the SmartThings tab's dropdown edits it.
 	WoLMAC string `json:"wol_mac"`
 }
 
@@ -365,7 +367,7 @@ type STLastSearch struct {
 }
 
 // GetSTHub fetches the SmartThings hub connection state shown by the
-// network tab's SmartThings section (#70).
+// SmartThings tab (#70).
 func (c *Client) GetSTHub() (STHub, error) {
 	var h STHub
 	resp, err := c.do("GET", "/api/st/hub", nil)
@@ -715,7 +717,7 @@ type TelegramState struct {
 	Since    string `json:"since"`
 }
 
-// TelegramState fetches that state for the notify tab's warning line.
+// TelegramState fetches that state for the Telegram tab's warning line.
 func (c *Client) TelegramState() (TelegramState, error) {
 	var s TelegramState
 	resp, err := c.do("GET", "/api/telegram/state", nil)

@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -12,22 +13,33 @@ import (
 // koreanTheme wraps the default theme but serves Malgun Gothic (bundled with
 // Windows) so Korean text renders instead of tofu. Fonts are loaded from the
 // system at runtime — nothing is redistributed in the binary.
+//
+// The two files are about 26 MB, so they are read the first time text is
+// measured rather than at start: a login autostart that stays in the tray
+// never measures text (Run defers the window content until it is shown).
 type koreanTheme struct {
 	fyne.Theme
+	once    sync.Once
+	load    func() (regular, bold fyne.Resource)
 	regular fyne.Resource
 	bold    fyne.Resource
 }
 
-func newKoreanTheme() fyne.Theme {
-	t := &koreanTheme{Theme: theme.DefaultTheme()}
+func newKoreanTheme() *koreanTheme {
+	return &koreanTheme{Theme: theme.DefaultTheme(), load: loadMalgunGothic}
+}
+
+// loadMalgunGothic reads the regular and bold faces from the Windows font
+// folder; a missing file leaves that face to the default theme.
+func loadMalgunGothic() (regular, bold fyne.Resource) {
 	fontsDir := filepath.Join(os.Getenv("WINDIR"), "Fonts")
 	if data, err := os.ReadFile(filepath.Join(fontsDir, "malgun.ttf")); err == nil {
-		t.regular = fyne.NewStaticResource("malgun.ttf", data)
+		regular = fyne.NewStaticResource("malgun.ttf", data)
 	}
 	if data, err := os.ReadFile(filepath.Join(fontsDir, "malgunbd.ttf")); err == nil {
-		t.bold = fyne.NewStaticResource("malgunbd.ttf", data)
+		bold = fyne.NewStaticResource("malgunbd.ttf", data)
 	}
-	return t
+	return regular, bold
 }
 
 // sizeNameCountdown is the custom text size used by the schedule tab's
@@ -62,6 +74,7 @@ func (t *koreanTheme) Font(style fyne.TextStyle) fyne.Resource {
 	if style.Monospace {
 		return t.Theme.Font(style)
 	}
+	t.once.Do(func() { t.regular, t.bold = t.load() })
 	if style.Bold && t.bold != nil {
 		return t.bold
 	}

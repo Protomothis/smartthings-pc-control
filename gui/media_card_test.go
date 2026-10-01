@@ -135,8 +135,7 @@ func TestMediaStringsTranslated(t *testing.T) {
 		"media.paused", "media.stopped", "media.audio.waiting", "media.reason.old", "media.reason.disabled",
 		"media.reason.nouser", "media.err.timeout", "media.err.unsupported", "media.err.failed",
 	} {
-		m, ok := messages[key]
-		if !ok || m[LangKo] == "" || m[LangEn] == "" {
+		if messages[LangKo][key] == "" || messages[LangEn][key] == "" {
 			t.Errorf("%s is missing a translation", key)
 		}
 	}
