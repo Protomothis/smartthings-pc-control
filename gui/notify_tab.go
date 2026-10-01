@@ -709,16 +709,16 @@ func (u *ui) fillNotifyTab(cfg Config) {
 	}
 	t.botStatus.SetText(u.t("notify.bot.checking"))
 	status := t.botStatus
-	go func() {
+	runAsync(nil, func() (string, error) {
 		username, _, err := u.client.TelegramMe()
-		fyne.Do(func() {
-			if err != nil {
-				status.SetText(fmt.Sprintf(u.t("notify.bot.error"), err.Error()))
-				return
-			}
-			status.SetText(fmt.Sprintf(u.t("notify.bot.connected"), username))
-		})
-	}()
+		return username, err
+	}, func(username string, err error) {
+		if err != nil {
+			status.SetText(fmt.Sprintf(u.t("notify.bot.error"), err.Error()))
+			return
+		}
+		status.SetText(fmt.Sprintf(u.t("notify.bot.connected"), username))
+	})
 }
 
 // refreshTelegramState re-reads /api/telegram/state and shows or hides the
@@ -810,24 +810,19 @@ func (u *ui) sendTelegramTest() {
 	if t == nil {
 		return
 	}
-	t.testBtn.Disable()
 	t.testStatus.Importance = widget.LowImportance
 	t.testStatus.SetText(u.t("notify.test.sending"))
 	token, chatID := t.tokenEntry.Text, strings.TrimSpace(t.chatEntry.Text)
-	go func() {
-		err := u.client.TestTelegram(token, chatID)
-		fyne.Do(func() {
-			t.testBtn.Enable()
-			if err != nil {
-				t.testStatus.Importance = widget.DangerImportance
-				t.testStatus.SetText(err.Error())
-			} else {
-				t.testStatus.Importance = widget.SuccessImportance
-				t.testStatus.SetText(u.t("notify.test.sent"))
-			}
-			t.testStatus.Refresh()
-		})
-	}()
+	runAsyncErr(busyControls(t.testBtn), func() error { return u.client.TestTelegram(token, chatID) }, func(err error) {
+		if err != nil {
+			t.testStatus.Importance = widget.DangerImportance
+			t.testStatus.SetText(err.Error())
+		} else {
+			t.testStatus.Importance = widget.SuccessImportance
+			t.testStatus.SetText(u.t("notify.test.sent"))
+		}
+		t.testStatus.Refresh()
+	})
 }
 
 // findChatID lists the chats that recently wrote to the bot and fills the
@@ -837,12 +832,9 @@ func (u *ui) findChatID() {
 	if t == nil {
 		return
 	}
-	t.findBtn.Disable()
 	token := t.tokenEntry.Text
-	go func() {
-		chats, err := u.client.TelegramChats(token)
-		fyne.Do(func() {
-			t.findBtn.Enable()
+	runAsync(busyControls(t.findBtn), func() ([]TelegramChat, error) { return u.client.TelegramChats(token) },
+		func(chats []TelegramChat, err error) {
 			if err != nil {
 				dialog.ShowError(err, u.win)
 				return
@@ -878,5 +870,4 @@ func (u *ui) findChatID() {
 			d.Resize(fyne.NewSize(440, 320))
 			d.Show()
 		})
-	}()
 }

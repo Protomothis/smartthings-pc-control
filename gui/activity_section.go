@@ -321,17 +321,20 @@ func (u *ui) fillActivityBox(a ActivityConfig) {
 // pickRunningProgram fetches the running program names off the UI thread
 // and opens the picker with them. The names stay in this dialog.
 func (u *ui) pickRunningProgram() {
-	go func() {
-		names, err := u.client.RunningProcesses()
-		fyne.Do(func() {
-			if err != nil {
-				u.markDisconnectedOnNetError(err)
-				dialog.ShowError(fmt.Errorf(u.t("activity.pick.fail"), err), u.win)
-				return
-			}
-			u.showProcessPicker(names)
-		})
-	}()
+	a := &u.st.activity
+	busy := func(on bool) {
+		// Back on afterwards only while the list has room, the rule
+		// renderActivityRows applies.
+		setEnabled(a.pickBtn, !on && len(a.watch) < activityMaxWatch)
+	}
+	runAsync(busy, u.client.RunningProcesses, func(names []string, err error) {
+		if err != nil {
+			u.markDisconnectedOnNetError(err)
+			dialog.ShowError(fmt.Errorf(u.t("activity.pick.fail"), err), u.win)
+			return
+		}
+		u.showProcessPicker(names)
+	})
 }
 
 // showProcessPicker is the dialog: a search box over the names not yet on

@@ -44,21 +44,34 @@ func TestLogsAutoRefreshFlagFollowsTheCheck(t *testing.T) {
 	}
 }
 
-// sendAwake runs off the UI goroutine, so the duration comes in as an
-// argument instead of being read from the select there (refactor-plan 1-5).
-func TestSendAwakePostsTheMinutesPassedIn(t *testing.T) {
-	var got struct {
-		Minutes int `json:"minutes"`
-	}
+// sendAwake reads the duration on the UI goroutine and only the request
+// runs in the background (refactor-plan 1-5); the row is busy meanwhile
+// and usable again once the answer is applied.
+func TestSendAwakePostsTheSelectedMinutes(t *testing.T) {
+	posted := make(chan int, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&got)
-		w.Write([]byte(`{"on":true}`))
+		if r.Method == http.MethodPost && r.URL.Path == "/api/awake" {
+			var body struct {
+				Minutes int `json:"minutes"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			posted <- body.Minutes
+			w.Write([]byte(`{"on":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
-	test.NewTempApp(t)
-	u := &ui{client: &Client{base: srv.URL, http: srv.Client()}}
-	u.sendAwake(true, 120)
-	if got.Minutes != 120 {
-		t.Errorf("posted minutes = %d, want 120", got.Minutes)
+	u := newTestUI(t, LangEn, &Client{base: srv.URL, http: srv.Client()})
+	u.awake.sel.SetSelectedIndex(awakePresetIndex(120))
+	u.sendAwake(true)
+	if got := <-posted; got != 120 {
+		t.Errorf("posted minutes = %d, want 120", got)
+	}
+	if u.awake.toggle.Disabled() || u.awake.sel.Disabled() {
+		t.Error("the row stayed busy after the answer")
+	}
+	if !u.awake.toggle.Checked {
+		t.Error("the answer (on) was not applied to the toggle")
 	}
 }

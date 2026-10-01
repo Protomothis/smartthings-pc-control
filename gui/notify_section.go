@@ -96,23 +96,18 @@ func (u *ui) fillNotifySection(cfg Config) {
 // notifications are allowed yet.
 func (u *ui) sendNotifyTest() {
 	n := u.pcNotify
-	n.testBtn.Disable()
 	n.testStatus.Importance = widget.LowImportance
 	n.testStatus.SetText(u.t("notifypc.test.sending"))
-	go func() {
-		_, err := u.client.TestNotify()
-		fyne.Do(func() {
-			n.testBtn.Enable()
-			if err != nil {
-				n.testStatus.Importance = widget.DangerImportance
-				n.testStatus.SetText(u.actionErrorText(err))
-			} else {
-				n.testStatus.Importance = widget.SuccessImportance
-				n.testStatus.SetText(u.t("notifypc.test.shown"))
-			}
-			n.testStatus.Refresh()
-		})
-	}()
+	runAsync(busyControls(n.testBtn), u.client.TestNotify, func(_ NotifyResult, err error) {
+		if err != nil {
+			n.testStatus.Importance = widget.DangerImportance
+			n.testStatus.SetText(u.actionErrorText(err))
+		} else {
+			n.testStatus.Importance = widget.SuccessImportance
+			n.testStatus.SetText(u.t("notifypc.test.shown"))
+		}
+		n.testStatus.Refresh()
+	})
 }
 
 // actionErrorText is err in the user's words when the app knows its code.

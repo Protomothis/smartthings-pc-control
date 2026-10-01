@@ -39,7 +39,9 @@ func (u *ui) setupTray() {
 	// Quick commands (safe ones only — destructive commands live in the
 	// window, behind a confirmation dialog).
 	trayCmd := func(name string) func() {
-		return func() { go u.client.TestCommand(name) }
+		return func() {
+			runAsync(nil, func() (string, error) { return u.client.TestCommand(name) }, nil)
+		}
 	}
 	commandsItem := fyne.NewMenuItem(u.t("tab.commands"), nil)
 	commandsItem.ChildMenu = fyne.NewMenu("",
@@ -48,10 +50,8 @@ func (u *ui) setupTray() {
 	)
 
 	cancelScheduleItem := fyne.NewMenuItem(u.t("schedule.cancel"), func() {
-		go func() {
-			u.client.CancelSchedule("tray")
-			u.loadSchedule()
-		}()
+		runAsyncErr(nil, func() error { return u.client.CancelSchedule("tray") },
+			func(error) { go u.loadSchedule() })
 	})
 
 	quitItem := fyne.NewMenuItem(u.t("tray.exit"), func() {

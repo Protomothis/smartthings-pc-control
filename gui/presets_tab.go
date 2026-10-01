@@ -257,22 +257,17 @@ func (u *ui) testPresetRow(w *presetRowWidgets) {
 		return
 	}
 	p, _ := r.preset()
-	w.test.Disable()
 	w.setStatus(u.t("presets.testing"), widget.LowImportance)
-	go func() {
-		err := u.client.TestPreset(p)
-		fyne.Do(func() {
-			w.test.Enable()
-			if err != nil {
-				w.setStatus(u.actionErrorText(err), widget.DangerImportance)
-			} else {
-				w.setStatus(u.t("presets.started"), widget.SuccessImportance)
-			}
-			if u.presets != nil {
-				u.presets.root.Refresh()
-			}
-		})
-	}()
+	runAsyncErr(busyControls(w.test), func() error { return u.client.TestPreset(p) }, func(err error) {
+		if err != nil {
+			w.setStatus(u.actionErrorText(err), widget.DangerImportance)
+		} else {
+			w.setStatus(u.t("presets.started"), widget.SuccessImportance)
+		}
+		if u.presets != nil {
+			u.presets.root.Refresh()
+		}
+	})
 }
 
 // fillPresetsTab writes cfg into the editor and the command tab's preset
@@ -375,18 +370,13 @@ func (u *ui) fillPresetButtons(ps []Preset) {
 		label := presetButtonLabel(p)
 		btn := widget.NewButtonWithIcon(label, theme.MediaPlayIcon(), nil)
 		btn.OnTapped = func() {
-			btn.Disable()
-			go func() {
-				err := u.client.RunPreset(p.Slot)
-				fyne.Do(func() {
-					btn.Enable()
-					if err != nil {
-						dialog.ShowError(errors.New(u.actionErrorText(err)), u.win)
-						return
-					}
-					u.setStatus(fmt.Sprintf(u.t("cmd.presets.started"), label))
-				})
-			}()
+			runAsyncErr(busyControls(btn), func() error { return u.client.RunPreset(p.Slot) }, func(err error) {
+				if err != nil {
+					dialog.ShowError(errors.New(u.actionErrorText(err)), u.win)
+					return
+				}
+				u.setStatus(fmt.Sprintf(u.t("cmd.presets.started"), label))
+			})
 		}
 		u.presetButtons.Add(btn)
 	}

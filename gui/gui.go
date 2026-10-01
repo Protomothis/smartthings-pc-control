@@ -298,25 +298,23 @@ func (u *ui) checkForUpdates(startup bool) {
 
 // checkForUpdatesManual is the "Check for updates" button: always reports
 // a result — newer release (update dialog), up to date, or the error.
-// Safe to call from the UI goroutine.
-func (u *ui) checkForUpdatesManual() {
-	go func() {
-		rel, err := checkLatestRelease()
-		fyne.Do(func() {
-			switch {
-			case err != nil:
-				dialog.ShowError(errors.New(u.t("update.checkfailed")+err.Error()), u.win)
-			case release.IsNewer(u.version, rel.TagName):
-				u.showUpdateDialog(rel)
-			case !u.canSelfUpdate():
-				// dev build: version comparison is meaningless, but the
-				// user asked — offer the release page.
-				u.showUpdateDialog(rel)
-			default:
-				dialog.ShowInformation(u.t("update.title"), fmt.Sprintf(u.t("update.uptodate"), u.version), u.win)
-			}
-		})
-	}()
+// btn is the button that asked; it is busy while GitHub answers. UI
+// goroutine only.
+func (u *ui) checkForUpdatesManual(btn *widget.Button) {
+	runAsync(busyControls(btn), checkLatestRelease, func(rel *release.Info, err error) {
+		switch {
+		case err != nil:
+			dialog.ShowError(errors.New(u.t("update.checkfailed")+err.Error()), u.win)
+		case release.IsNewer(u.version, rel.TagName):
+			u.showUpdateDialog(rel)
+		case !u.canSelfUpdate():
+			// dev build: version comparison is meaningless, but the
+			// user asked — offer the release page.
+			u.showUpdateDialog(rel)
+		default:
+			dialog.ShowInformation(u.t("update.title"), fmt.Sprintf(u.t("update.uptodate"), u.version), u.win)
+		}
+	})
 }
 
 // canSelfUpdate is false for "dev"/empty builds — those may check for
@@ -337,10 +335,8 @@ func (u *ui) showUpdateDialog(rel *release.Info) {
 		u.showUpdateChoice(rel, nil, nil)
 		return
 	}
-	go func() {
-		m, err := fetchManifest(rel)
-		fyne.Do(func() { u.showUpdateChoice(rel, m, err) })
-	}()
+	runAsync(nil, func() (*release.Manifest, error) { return fetchManifest(rel) },
+		func(m *release.Manifest, err error) { u.showUpdateChoice(rel, m, err) })
 }
 
 // showUpdateChoice renders the update dialog for rel given the manifest
@@ -721,17 +717,20 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
 
-	restartBtn := widget.NewButtonWithIcon(u.t("settings.restart"), theme.ViewRefreshIcon(), func() {
+	var restartBtn *widget.Button
+	restartBtn = widget.NewButtonWithIcon(u.t("settings.restart"), theme.ViewRefreshIcon(), func() {
 		dialog.ShowConfirm(u.t("cmd.confirm.title"), u.t("settings.restart.confirm"), func(ok bool) {
 			if !ok {
 				return
 			}
-			if err := u.client.RestartService(); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.setStatus(u.t("settings.restarting"))
-			u.setConn(connPending)
+			runAsyncErr(busyControls(restartBtn), u.client.RestartService, func(err error) {
+				if err != nil {
+					dialog.ShowError(err, u.win)
+					return
+				}
+				u.setStatus(u.t("settings.restarting"))
+				u.setConn(connPending)
+			})
 		}, u.win)
 	})
 
@@ -762,6 +761,10 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		u.app.Preferences().SetBool("check_updates", b)
 	})
 	updateCheck.SetChecked(u.app.Preferences().BoolWithFallback("check_updates", true))
+	var manualUpdateBtn *widget.Button
+	manualUpdateBtn = widget.NewButtonWithIcon(u.t("update.manual"), theme.DownloadIcon(), func() {
+		u.checkForUpdatesManual(manualUpdateBtn)
+	})
 
 	autostartCheck := newToggle(u.t("autostart.check"), func(b bool) {
 		u.app.Preferences().SetBool("autostart", b)
@@ -783,7 +786,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		section(u.t("settings.app"), container.NewVBox(
 			autostartCheck,
-			container.NewHBox(updateCheck, widget.NewButtonWithIcon(u.t("update.manual"), theme.DownloadIcon(), u.checkForUpdatesManual), layout.NewSpacer()),
+			container.NewHBox(updateCheck, manualUpdateBtn, layout.NewSpacer()),
 		)),
 		// Trailing padding so the last row never sits flush against the
 		// window edge when the tab fits without scrolling.
@@ -980,21 +983,29 @@ func (u *ui) fillSvcBox(state svcState) {
 
 	// Elevated actions block until the spawned process exits (UAC included),
 	// then the state and connection refresh immediately — no manual refresh.
+	// Every button of the box is busy meanwhile.
+	var buttons []fyne.CanvasObject
 	elevated := func(run func() error) {
-		go func() {
-			if err := run(); err != nil {
-				fyne.Do(func() { dialog.ShowError(err, u.win) })
-			}
+		var ws []fyne.Disableable
+		for _, b := range buttons {
+			ws = append(ws, b.(fyne.Disableable))
+		}
+		runAsyncErr(busyControls(ws...), func() error {
+			err := run()
 			// Give the freshly (un)installed service a moment to settle
 			// before re-checking state and connectivity.
 			time.Sleep(1500 * time.Millisecond)
+			return err
+		}, func(err error) {
+			if err != nil {
+				dialog.ShowError(err, u.win)
+			}
 			u.refreshSvcBox()
 			go u.initialLoad()
-		}()
+		})
 	}
 
 	var stateText string
-	var buttons []fyne.CanvasObject
 
 	installBtn := widget.NewButtonWithIcon(u.t("svc.install"), theme.DownloadIcon(), func() {
 		install := func() {
@@ -1074,14 +1085,18 @@ func (u *ui) fillSvcBox(state svcState) {
 
 func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	makeButton := func(name, label string, icon fyne.Resource, destructive bool) fyne.CanvasObject {
+		var btn *widget.Button
 		run := func() {
-			if _, err := u.client.TestCommand(name); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.setStatus(fmt.Sprintf(u.t("cmd.sent"), label))
+			runAsync(busyControls(btn), func() (string, error) { return u.client.TestCommand(name) },
+				func(_ string, err error) {
+					if err != nil {
+						dialog.ShowError(err, u.win)
+						return
+					}
+					u.setStatus(fmt.Sprintf(u.t("cmd.sent"), label))
+				})
 		}
-		btn := widget.NewButtonWithIcon(label, icon, func() {
+		btn = widget.NewButtonWithIcon(label, icon, func() {
 			if destructive {
 				dialog.ShowConfirm(u.t("cmd.confirm.title"), fmt.Sprintf(u.t("cmd.confirm.body"), label), func(ok bool) {
 					if ok {
@@ -1159,7 +1174,8 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	delaySelect := widget.NewSelect(presetLabels, nil)
 	delaySelect.SetSelected(defaultLabel)
 
-	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
+	var startBtn *widget.Button
+	startBtn = widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
 		minutes := defaultSchedulePreset
 		for i, l := range presetLabels {
 			if l == delaySelect.Selected {
@@ -1172,22 +1188,31 @@ func (u *ui) buildScheduleTab() fyne.CanvasObject {
 			if !ok {
 				return
 			}
-			if err := u.client.SetSchedule(name, minutes); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.refreshNow()
+			runAsyncErr(busyControls(startBtn), func() error { return u.client.SetSchedule(name, minutes) },
+				func(err error) {
+					if err != nil {
+						dialog.ShowError(err, u.win)
+						return
+					}
+					u.refreshNow()
+				})
 		}, u.win)
 	})
 	startBtn.Importance = widget.HighImportance
 
-	u.schedCancelBtn = widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
-		if err := u.client.CancelSchedule("app"); err != nil {
-			dialog.ShowError(err, u.win)
-			return
-		}
-		u.refreshNow()
+	var cancelBtn *widget.Button
+	cancelBtn = widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
+		runAsyncErr(busyControls(cancelBtn), func() error { return u.client.CancelSchedule("app") },
+			func(err error) {
+				if err != nil {
+					dialog.ShowError(err, u.win)
+				}
+				// Back to "disabled unless a schedule is active" once the
+				// refresh lands.
+				u.refreshNow()
+			})
 	})
+	u.schedCancelBtn = cancelBtn
 	u.schedCancelBtn.Disable() // enabled by loadSchedule while a schedule is active
 
 	form := widget.NewForm(

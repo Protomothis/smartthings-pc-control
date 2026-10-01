@@ -315,9 +315,8 @@ func (u *ui) buildMediaCard() fyne.CanvasObject {
 // sendMediaCommand runs one command off the UI thread and shows the state
 // the service answers with.
 func (u *ui) sendMediaCommand(command string, value *int) {
-	go func() {
-		m, err := u.client.MediaCommand(command, value)
-		fyne.Do(func() {
+	runAsync(nil, func() (MediaState, error) { return u.client.MediaCommand(command, value) },
+		func(m MediaState, err error) {
 			c := u.media
 			if c == nil {
 				return
@@ -330,7 +329,6 @@ func (u *ui) sendMediaCommand(command string, value *int) {
 			c.cmdErr = ""
 			u.applyMedia(m, nil)
 		})
-	}()
 }
 
 // mediaTick is the 3s media work: the tray's change check, then — while
