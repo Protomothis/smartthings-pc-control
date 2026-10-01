@@ -177,7 +177,7 @@ func localMediaEnabled() bool {
 func localNowPlaying() bool { return readLocalConfig().Media.NowPlaying }
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
-// 1, matching service/webui.go), defaulting to 5002 when tray.json has
+// 1, matching service/webui_wiring.go), defaulting to 5002 when tray.json has
 // no usable port. Read at startup, and again while the service is
 // unreachable to follow a port change once it has restarted (port.go).
 func localWebUIPort() int {

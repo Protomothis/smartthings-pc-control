@@ -38,12 +38,12 @@ func TestConfigAPIPresets(t *testing.T) {
 	initLogger()
 
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "absolute") {
 		t.Fatalf("invalid preset: %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[
 		{"slot":4,"name":"b","type":"url","path":"https://b.example"},
 		{"slot":2,"name":"a","type":"url","path":"https://a.example"}]}`))
 	if w.Code != http.StatusOK {
@@ -55,19 +55,19 @@ func TestConfigAPIPresets(t *testing.T) {
 	}
 	// A body without presets keeps them (an older WebUI page).
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 2 || getConfig().NotifyPC.Enabled {
 		t.Errorf("omitted presets: %d, %+v", w.Code, getConfig())
 	}
 	// [] clears them.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[]}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[]}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 0 {
 		t.Errorf("cleared: %d, %+v", w.Code, getConfig().Presets)
 	}
 	// The retired notify_pc.speak/voice keys of an older app are ignored.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
 	if w.Code != http.StatusOK || !getConfig().NotifyPC.Enabled {
 		t.Errorf("old speech keys: %d, %+v", w.Code, getConfig().NotifyPC)
 	}
@@ -198,19 +198,19 @@ func TestPresetsAPI(t *testing.T) {
 	calls := fakePresetRun(t, `{"ok":true,"started":true}`, nil)
 
 	w := httptest.NewRecorder()
-	handlePresetsRunAPI(w, postJSON("/api/presets/run", `{"slot":1}`))
+	webAPI(w, postJSON("/api/presets/run", `{"slot":1}`))
 	if w.Code != http.StatusOK || decodeBody(t, w)["started"] != true {
 		t.Errorf("run: %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handlePresetsRunAPI(w, postJSON("/api/presets/run", `{"slot":9}`))
+	webAPI(w, postJSON("/api/presets/run", `{"slot":9}`))
 	if w.Code != http.StatusNotFound || decodeBody(t, w)["error"] != "no_such_preset" {
 		t.Errorf("unknown slot: %d %s", w.Code, w.Body.String())
 	}
 
 	// The editor's test runs an unsaved row, through the save rules.
 	w = httptest.NewRecorder()
-	handlePresetsTestAPI(w, postJSON("/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
+	webAPI(w, postJSON("/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("test: %d %s", w.Code, w.Body.String())
 	}
@@ -219,12 +219,12 @@ func TestPresetsAPI(t *testing.T) {
 	}
 	n := len(*calls)
 	w = httptest.NewRecorder()
-	handlePresetsTestAPI(w, postJSON("/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
+	webAPI(w, postJSON("/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
 	if w.Code != http.StatusBadRequest || len(*calls) != n {
 		t.Errorf("invalid test: %d, ran %d", w.Code, len(*calls)-n)
 	}
 	w = httptest.NewRecorder()
-	handlePresetsRunAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
+	webAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("without CSRF header: %d", w.Code)
 	}

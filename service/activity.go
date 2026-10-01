@@ -26,8 +26,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -35,7 +33,6 @@ import (
 	"unsafe"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"golang.org/x/sys/windows"
 )
@@ -293,7 +290,7 @@ func watchActivity(stop <-chan struct{}) {
 	}
 }
 
-// ---- /api/processes (the app's picker) -------------------------------------
+// ---- the app's picker (/api/processes) -------------------------------------
 
 // runningProcessNames is the picker list: the unique .exe names, sorted
 // case-insensitively. Names that could not go on the watch list anyway
@@ -324,31 +321,4 @@ func runningProcessNames() ([]string, error) {
 		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 	})
 	return out, nil
-}
-
-// isLoopbackRequest reports whether r came from this PC.
-func isLoopbackRequest(r *http.Request) bool {
-	ip := net.ParseIP(httpx.RemoteHost(r.RemoteAddr))
-	return ip != nil && ip.IsLoopback()
-}
-
-// handleProcessesAPI serves GET /api/processes for the desktop app's
-// "pick from running programs" dialog. Besides the usual session check it
-// refuses anything but a loopback caller: the WebUI may be open to the LAN
-// (webui_remote), and the process list is meant for this PC's screen only.
-// Nothing is logged about the names.
-var handleProcessesAPI = apiAuth(serveProcessesAPI, http.MethodGet)
-
-func serveProcessesAPI(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		writeAPIError(w, http.StatusForbidden, "The process list is only available on this PC.")
-		return
-	}
-	names, err := runningProcessNames()
-	if err != nil {
-		logMsg("Activity: process list for the app unavailable: %v", err)
-		writeAPIError(w, http.StatusInternalServerError, "The process list is unavailable.")
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string][]string{"processes": names})
 }

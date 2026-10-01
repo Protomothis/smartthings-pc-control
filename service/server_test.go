@@ -105,63 +105,6 @@ func TestHTTPUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestCheckCSRF(t *testing.T) {
-	// GET requests should pass
-	req := httptest.NewRequest("GET", "/", nil)
-	if !checkCSRF(req) {
-		t.Error("GET request should pass CSRF check")
-	}
-
-	// POST without header should fail
-	req = httptest.NewRequest("POST", "/", nil)
-	if checkCSRF(req) {
-		t.Error("POST without X-Requested-With should fail CSRF check")
-	}
-
-	// POST with header should pass
-	req = httptest.NewRequest("POST", "/", nil)
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	if !checkCSRF(req) {
-		t.Error("POST with X-Requested-With should pass CSRF check")
-	}
-}
-
-func TestCheckAuth(t *testing.T) {
-	// No secret -> always authenticated
-	req := httptest.NewRequest("GET", "/", nil)
-	if !checkAuth(req, "") {
-		t.Error("no secret should always authenticate")
-	}
-
-	// Secret set but no cookie -> not authenticated
-	if checkAuth(req, "mysecret") {
-		t.Error("missing cookie should not authenticate")
-	}
-
-	// Secret set with valid session
-	sessionMu.Lock()
-	sessionToken = "valid-token"
-	sessionMu.Unlock()
-
-	req = httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "valid-token"})
-	if !checkAuth(req, "mysecret") {
-		t.Error("valid session cookie should authenticate")
-	}
-
-	// Wrong cookie value
-	req = httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "wrong-token"})
-	if checkAuth(req, "mysecret") {
-		t.Error("wrong session cookie should not authenticate")
-	}
-
-	// Cleanup
-	sessionMu.Lock()
-	sessionToken = ""
-	sessionMu.Unlock()
-}
-
 func TestSaveAndLoadConfig(t *testing.T) {
 	configPath := filepath.Join(configDir(), "config.json")
 

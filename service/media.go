@@ -63,7 +63,7 @@ func readAudioNow(ctx context.Context) (useraction.Audio, error) {
 	return *res.Audio, nil
 }
 
-// ---- /st/v1 ----------------------------------------------------------------
+// ---- status ----------------------------------------------------------------
 
 // audioSessionPresent reports whether someone is logged in; a var so the
 // status tests do not depend on the machine they run on. It goes through

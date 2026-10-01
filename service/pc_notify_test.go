@@ -217,7 +217,7 @@ func TestNotifyTestAPI(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	// An older app still sends speak/voice: ignored.
-	handleNotifyTestAPI(w, postJSON("/api/notify/test", `{"speak":true,"voice":"Zira"}`))
+	webAPI(w, postJSON("/api/notify/test", `{"speak":true,"voice":"Zira"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -231,14 +231,14 @@ func TestNotifyTestAPI(t *testing.T) {
 
 	// No CSRF header: refused before anything runs.
 	w = httptest.NewRecorder()
-	handleNotifyTestAPI(w, httptest.NewRequest("POST", "/api/notify/test", strings.NewReader(`{}`)))
+	webAPI(w, httptest.NewRequest("POST", "/api/notify/test", strings.NewReader(`{}`)))
 	if w.Code != http.StatusForbidden || len(*calls) != 1 {
 		t.Errorf("without CSRF header: %d, calls %d", w.Code, len(*calls))
 	}
 
 	fakeNotifyRun(t, "", errNoUserSession)
 	w = httptest.NewRecorder()
-	handleNotifyTestAPI(w, postJSON("/api/notify/test", `{}`))
+	webAPI(w, postJSON("/api/notify/test", `{}`))
 	if w.Code != http.StatusConflict || decodeBody(t, w)["error"] != "no_user_session" {
 		t.Errorf("no session: %d %s", w.Code, w.Body.String())
 	}

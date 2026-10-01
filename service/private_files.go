@@ -13,7 +13,7 @@ package service
 //     (config.WriteTrayFile). The service rewrites it with every config
 //     save and at start.
 //   - the tray gets its session from POST /api/local-login
-//     (local_login.go) instead of the secret.
+//     (service/webui/locallogin.go) instead of the secret.
 //
 // service.log stays readable: the secret is masked there (logx.MaskSecret),
 // the bot token never reaches it (telegram's maskErr), and the app's Log

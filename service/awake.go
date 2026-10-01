@@ -21,16 +21,12 @@ package service
 // usually means a reboot) the PC is allowed to sleep again, the safe side.
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"runtime"
 	"sync"
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"golang.org/x/sys/windows"
 )
@@ -345,82 +341,4 @@ func startAwake(stop <-chan struct{}) {
 			}
 		}
 	}()
-}
-
-// ---- local API for the desktop app -----------------------------------------
-
-// awakeAPIView is GET/POST/DELETE /api/awake: the state plus what the app's
-// command tab needs to draw it. RemainingSeconds is 0 while off and while on
-// until turned off.
-type awakeAPIView struct {
-	Status           string `json:"status"`
-	On               bool   `json:"on"`
-	Until            string `json:"until"`
-	RemainingSeconds int    `json:"remaining_seconds"`
-	DefaultMinutes   int    `json:"default_minutes"`
-	KeepDisplay      bool   `json:"keep_display"`
-}
-
-func awakeAPIBody(v awakeView, cfg Config, now time.Time) awakeAPIView {
-	a := cfg.Awake.WithDefaults()
-	out := awakeAPIView{
-		Status:         "ok",
-		On:             v.On,
-		Until:          v.Wire().Until,
-		DefaultMinutes: a.DefaultMinutes,
-		KeepDisplay:    a.KeepDisplay,
-	}
-	if v.On && !v.Until.IsZero() {
-		if left := v.Until.Sub(now); left > 0 {
-			out.RemainingSeconds = int(left.Round(time.Second) / time.Second)
-		}
-	}
-	return out
-}
-
-// handleAwakeAPI serves /api/awake on the WebUI port, behind the same
-// session and CSRF checks as /api/schedule:
-//
-//	GET                         the state
-//	POST {"minutes": n}         turn on for n minutes (0 = until turned off,
-//	                            key absent = awake.default_minutes)
-//	DELETE                      turn off
-var handleAwakeAPI = apiAuth(serveAwakeAPI, http.MethodGet, http.MethodPost, http.MethodDelete)
-
-func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
-	liveCfg := getConfig()
-	ctl := currentAwake()
-	if r.Method == http.MethodGet {
-		httpx.WriteJSON(w, http.StatusOK, awakeAPIBody(ctl.View(), liveCfg, ctl.now()))
-		return
-	}
-	var (
-		view awakeView
-		err  error
-	)
-	if r.Method == http.MethodDelete {
-		view, _, err = ctl.TurnOff()
-	} else {
-		var body struct {
-			Minutes *int `json:"minutes"`
-		}
-		if r.Body != nil {
-			if derr := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body); derr != nil && derr != io.EOF {
-				writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
-				return
-			}
-		}
-		minutes := getConfig().Awake.Period(body.Minutes)
-		if !config.ValidAwakeMinutes(minutes) {
-			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("Minutes must be between 0 and %d", config.AwakeMaxMinutes))
-			return
-		}
-		view, err = ctl.TurnOn(minutes)
-	}
-	if err != nil {
-		logMsg("Keep-awake via app failed: %v", err)
-		writeAPIError(w, http.StatusInternalServerError, "Keep-awake failed: "+err.Error())
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, awakeAPIBody(view, getConfig(), ctl.now()))
 }

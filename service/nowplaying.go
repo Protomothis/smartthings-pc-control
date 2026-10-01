@@ -19,12 +19,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -167,71 +163,4 @@ func stMediaStatus(cfg Config) stMedia {
 		App:       np.App,
 		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
 	}
-}
-
-// ---- /api/media (the desktop app's media card) -----------------------------
-
-// mediaAPIBody is GET /api/media and the reply of POST /api/media: the two
-// switches, whether anyone is logged in, and the audio and media blocks
-// exactly as /st/v1/status shows them.
-type mediaAPIBody struct {
-	Enabled    bool    `json:"enabled"`
-	NowPlaying bool    `json:"now_playing"`
-	Session    bool    `json:"session"`
-	Audio      stAudio `json:"audio"`
-	Media      stMedia `json:"media"`
-}
-
-func mediaAPIView(cfg Config) mediaAPIBody {
-	return mediaAPIBody{
-		Enabled:    cfg.Media.Enabled,
-		NowPlaying: cfg.Media.NowPlaying,
-		Session:    audioSessionPresent(),
-		Audio:      stAudioStatus(cfg),
-		Media:      stMediaStatus(cfg),
-	}
-}
-
-// handleMediaAPI serves /api/media for the command tab's media card:
-//
-//	GET                                 the state
-//	POST {"command":"next"}             one media command, then the state
-//	POST {"command":"volume","value":30}
-//
-// The commands are the /st/v1 ones (action.IsMedia) with the same
-// ranges, switch and errors: 403 media_disabled, 409 no_user_session,
-// 400, 501 unsupported, 502 failed, 504 timeout.
-var handleMediaAPI = apiAuth(serveMediaAPI, http.MethodGet, http.MethodPost)
-
-func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		httpx.WriteJSON(w, http.StatusOK, mediaAPIView(getConfig()))
-		return
-	}
-	var body struct {
-		Command string `json:"command"`
-		Value   *int   `json:"value"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	if !action.IsMedia(body.Command) {
-		writeAPIError(w, http.StatusBadRequest, "unknown media command")
-		return
-	}
-	res, err := runMediaCommand(r.Context(), body.Command, body.Value)
-	if err != nil {
-		f := action.Classify(err)
-		logMsg("App: %s failed: %v", body.Command, err)
-		httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
-		return
-	}
-	view := mediaAPIView(getConfig())
-	if res.Audio != nil {
-		// The reply's own reading: the store may already hold a newer
-		// heartbeat, but the caller asked about this command.
-		view.Audio = stAudioView(audioSample{Audio: *res.Audio, UpdatedAt: audioNow()})
-	}
-	httpx.WriteJSON(w, http.StatusOK, view)
 }

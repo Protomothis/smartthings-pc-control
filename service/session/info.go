@@ -10,7 +10,7 @@ package session
 // near logon on Windows 10/11 console sessions, so what it yields is the
 // uptime, not the idle time (measured: 16780s reported against a real 136s).
 // Only a process inside the interactive session can call GetLastInputInfo, so
-// the tray app samples it and posts it to the service (service/st_idle.go).
+// the tray app samples it and posts it to the service (service/webui/heartbeat.go).
 
 import (
 	"fmt"

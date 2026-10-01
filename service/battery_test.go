@@ -164,12 +164,12 @@ func TestBatteryAPI(t *testing.T) {
 	stubBattery(t, m)
 
 	w := httptest.NewRecorder()
-	handleBatteryAPI(w, httptest.NewRequest("GET", "/api/battery", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/battery", nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"present":true`) || !strings.Contains(w.Body.String(), `"percent":55`) {
 		t.Errorf("GET /api/battery = %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handleBatteryAPI(w, httptest.NewRequest("POST", "/api/battery", nil))
+	webAPI(w, httptest.NewRequest("POST", "/api/battery", nil))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST = %d", w.Code)
 	}

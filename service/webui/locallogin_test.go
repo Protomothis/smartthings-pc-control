@@ -1,4 +1,4 @@
-package service
+package webui
 
 // Tests for POST /api/local-login (#131): the TCP table lookup, the trust
 // decision, and the endpoint end to end over a real loopback connection.
@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"golang.org/x/sys/windows"
 )
 
@@ -119,7 +120,7 @@ func TestReadTCPTableFindsOwnConnection(t *testing.T) {
 // the tray. WTSQueryUserToken needs LocalSystem, so SessionUserSID is not
 // checked here.
 func TestInspectOwnProcess(t *testing.T) {
-	p, err := inspectProcess(uint32(os.Getpid()))
+	p, err := newTestServer(t, config.Config{}).inspectProcess(uint32(os.Getpid()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,29 +187,20 @@ func TestTrustLocalPeer(t *testing.T) {
 // localLoginSetup configures a secret, swaps the process lookup for peer
 // (the real TCP table still maps the connection to this test process) and
 // returns a loopback server for the WebUI mux.
-func localLoginSetup(t *testing.T, peer peerProcess) (srv *httptest.Server, inspected *[]uint32) {
+func localLoginSetup(t *testing.T, peer peerProcess) (s *testServer, srv *httptest.Server, inspected *[]uint32) {
 	t.Helper()
-	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
-	resetLocalSession()
+	s = newTestServer(t, config.Config{Port: 5001, Secret: "s3cr3t"})
 	var pids []uint32
-	savedInspect, savedSame, savedNow := localPeerInspect, localPeerSameExe, localLoginNow
-	localPeerInspect = func(pid uint32) (peerProcess, error) {
+	s.peerInspect = func(pid uint32) (peerProcess, error) {
 		pids = append(pids, pid)
 		p := peer
 		p.PID = pid
 		return p, nil
 	}
-	localPeerSameExe = isTray
-	t.Cleanup(func() {
-		localPeerInspect, localPeerSameExe, localLoginNow = savedInspect, savedSame, savedNow
-		resetLocalSession()
-		sessionMu.Lock()
-		sessionToken = ""
-		sessionMu.Unlock()
-	})
-	srv = httptest.NewServer(newWebUIMux(false))
+	s.peerSameExe = isTray
+	srv = httptest.NewServer(s.Routes(false))
 	t.Cleanup(srv.Close)
-	return srv, &pids
+	return s, srv, &pids
 }
 
 // loginReply is one /api/local-login answer, read and closed.
@@ -256,7 +248,7 @@ func scheduleStatus(t *testing.T, c *http.Client, base string, cookie *http.Cook
 }
 
 func TestLocalLoginIssuesSession(t *testing.T) {
-	srv, pids := localLoginSetup(t, trustedTray())
+	s, srv, pids := localLoginSetup(t, trustedTray())
 	c := &http.Client{Timeout: 5 * time.Second}
 
 	if code := scheduleStatus(t, c, srv.URL, nil); code != http.StatusUnauthorized {
@@ -282,7 +274,7 @@ func TestLocalLoginIssuesSession(t *testing.T) {
 	browser := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"secret":"s3cr3t"}`))
 	browser.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
-	newWebUIMux(false).ServeHTTP(w, browser)
+	s.Routes(false).ServeHTTP(w, browser)
 	if w.Code != http.StatusOK {
 		t.Fatalf("secret login: %d", w.Code)
 	}
@@ -298,7 +290,7 @@ func TestLocalLoginIssuesSession(t *testing.T) {
 	lan := httptest.NewRequest("GET", "/api/schedule", nil)
 	lan.RemoteAddr = lanClient.String()
 	lan.AddCookie(cookie)
-	if checkAuth(lan, "s3cr3t") {
+	if s.checkAuth(lan, "s3cr3t") {
 		t.Error("the local session was accepted from a LAN address")
 	}
 }
@@ -317,7 +309,7 @@ func TestLocalLoginRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := trustedTray()
 			tc.change(&p)
-			srv, _ := localLoginSetup(t, p)
+			_, srv, _ := localLoginSetup(t, p)
 			c := &http.Client{Timeout: 5 * time.Second}
 			resp, body := localLoginPost(t, c, srv.URL)
 			if resp.StatusCode != http.StatusForbidden || body["code"] != tc.code {
@@ -331,7 +323,7 @@ func TestLocalLoginRefusals(t *testing.T) {
 }
 
 func TestLocalLoginRequestChecks(t *testing.T) {
-	_, pids := localLoginSetup(t, trustedTray())
+	s, _, pids := localLoginSetup(t, trustedTray())
 	do := func(method, remote string, csrf bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "/api/local-login", nil)
 		r.RemoteAddr = remote
@@ -339,7 +331,7 @@ func TestLocalLoginRequestChecks(t *testing.T) {
 			r.Header.Set("X-Requested-With", "XMLHttpRequest")
 		}
 		w := httptest.NewRecorder()
-		handleLocalLoginAPI(w, r)
+		s.handleLocalLogin(w, r)
 		return w
 	}
 	if w := do("POST", lanClient.String(), true); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "not_loopback") {
@@ -359,7 +351,7 @@ func TestLocalLoginRequestChecks(t *testing.T) {
 	}
 
 	// No secret: nothing needs a session, so no lookup and no cookie.
-	setConfig(Config{Port: 5001})
+	s.cfg = config.Config{Port: 5001}
 	w := do("POST", lanClient.String(), true)
 	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 0 {
 		t.Errorf("without a secret: %d %v, want a plain 200", w.Code, w.Result().Cookies())
@@ -367,15 +359,15 @@ func TestLocalLoginRequestChecks(t *testing.T) {
 }
 
 func TestLocalLoginRateLimit(t *testing.T) {
-	localLoginSetup(t, trustedTray())
+	s, _, _ := localLoginSetup(t, trustedTray())
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	localLoginNow = func() time.Time { return now }
+	s.loginNow = func() time.Time { return now }
 	do := func() int {
 		r := httptest.NewRequest("POST", "/api/local-login", nil)
 		r.RemoteAddr = lanClient.String() // refused, but it still counts
 		r.Header.Set("X-Requested-With", "XMLHttpRequest")
 		w := httptest.NewRecorder()
-		handleLocalLoginAPI(w, r)
+		s.handleLocalLogin(w, r)
 		return w.Code
 	}
 	for i := 0; i < localLoginMax; i++ {

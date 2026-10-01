@@ -61,7 +61,7 @@ func shouldReloginAfterSave(oldSecret, newSecret string) bool {
 }
 
 // loginErrorMessage is the text shown after a failed login attempt. The
-// "60초" in login.limited is service/webui.go loginLockDuration.
+// "60초" in login.limited is service/webui_wiring.go loginLockDuration.
 func loginErrorMessage(err error, l Lang) string {
 	switch {
 	case errors.Is(err, errLoginLimited):

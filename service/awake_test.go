@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/webui"
 )
 
 // fakeAwake is the test harness around an awakeController: a settable
@@ -523,7 +524,7 @@ func TestAwakeChangedIsPushed(t *testing.T) {
 
 // ---- /api/awake ------------------------------------------------------------
 
-func awakeAPI(t *testing.T, method, body string) (int, awakeAPIView) {
+func awakeAPI(t *testing.T, method, body string) (int, webui.AwakeBody) {
 	t.Helper()
 	var r *http.Request
 	if body == "" {
@@ -533,8 +534,8 @@ func awakeAPI(t *testing.T, method, body string) (int, awakeAPIView) {
 	}
 	r.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
-	handleAwakeAPI(w, r)
-	var out awakeAPIView
+	webAPI(w, r)
+	var out webui.AwakeBody
 	json.Unmarshal(w.Body.Bytes(), &out)
 	return w.Code, out
 }
@@ -575,7 +576,7 @@ func TestAwakeAPI(t *testing.T) {
 	// CSRF header required for changes.
 	r := httptest.NewRequest("POST", "/api/awake", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
-	handleAwakeAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("POST without the CSRF header = %d", w.Code)
 	}

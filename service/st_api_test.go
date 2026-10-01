@@ -547,13 +547,13 @@ func TestSTHubLastSeen(t *testing.T) {
 
 	// The WebUI endpoint is behind the normal session auth.
 	w := httptest.NewRecorder()
-	handleSTHubAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("/api/st/hub without a session: %d, want 401", w.Code)
 	}
 	setConfig(Config{Port: 5001}) // no secret configured: no login needed
 	w = httptest.NewRecorder()
-	handleSTHubAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("/api/st/hub: %d", w.Code)
 	}
@@ -582,7 +582,7 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 	hub := func() map[string]any {
 		t.Helper()
 		w := httptest.NewRecorder()
-		handleSTHubAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
+		webAPI(w, httptest.NewRequest("GET", "/api/st/hub", nil))
 		if w.Code != http.StatusOK {
 			t.Fatalf("/api/st/hub: %d", w.Code)
 		}

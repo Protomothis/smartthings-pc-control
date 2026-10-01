@@ -44,9 +44,6 @@ const (
 	// DriverAgent is the User-Agent prefix the Edge driver sends,
 	// "smartthings-pc-control-edge/<driver version>".
 	DriverAgent = "smartthings-pc-control-edge"
-	// HubStale is 2× the longest poll interval the driver offers (5 min,
-	// §7), after which the app calls the hub disconnected.
-	HubStale = 10 * time.Minute
 	// MaxBody caps a command body; the JSON is a handful of fields.
 	MaxBody = 8 << 10
 	// MaxMinutes matches /api/schedule, the Telegram bot and the app's

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -16,10 +15,6 @@ import (
 // points. Tests swap it for an httptest.Server; production leaves the
 // public endpoint.
 var telegramBaseURL = telegram.DefaultBaseURL
-
-// telegramAPITimeout bounds the one-shot calls made on behalf of the
-// WebUI (/api/telegram/test, /me, /chats).
-const telegramAPITimeout = 15 * time.Second
 
 // newTelegramClient builds a Bot API client for a plaintext token. Callers
 // must secret.Unprotect the stored config value first (see liveBotToken).

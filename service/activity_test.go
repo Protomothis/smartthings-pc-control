@@ -59,7 +59,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 	}})
 
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"C:\\bad.exe","label":"x"}]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"C:\\bad.exe","label":"x"}]}}`))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("a path was accepted: %d %s", w.Code, w.Body.String())
 	}
@@ -73,7 +73,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 		list = append(list, `{"process":"app`+string(rune('a'+i))+`.exe"}`)
 	}
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[`+strings.Join(list, ",")+`]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[`+strings.Join(list, ",")+`]}}`))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "at most 10") {
 		t.Errorf("eleven programs: %d %s", w.Code, w.Body.String())
 	}
@@ -85,7 +85,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 	default:
 	}
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("toggle only: %d %s", w.Code, w.Body.String())
 	}
@@ -101,7 +101,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 
 	// An old client still sending kind is accepted; the key is dropped.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"obs64.exe","label":"OBS","kind":"stream"},{"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"obs64.exe","label":"OBS","kind":"stream"},{"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("with kind: %d %s", w.Code, w.Body.String())
 	}
@@ -111,7 +111,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 
 	// An empty list is a real edit.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[]}}`))
 	if w.Code != http.StatusOK || len(getConfig().Activity.Watch) != 0 {
 		t.Errorf("clearing the list: %d, %+v", w.Code, getConfig().Activity)
 	}
@@ -444,7 +444,7 @@ func TestProcessesAPI(t *testing.T) {
 	r := httptest.NewRequest("GET", "/api/processes", nil)
 	r.RemoteAddr = "127.0.0.1:50000"
 	w := httptest.NewRecorder()
-	handleProcessesAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -462,7 +462,7 @@ func TestProcessesAPI(t *testing.T) {
 	r = httptest.NewRequest("GET", "/api/processes", nil)
 	r.RemoteAddr = "192.168.1.30:50000"
 	w = httptest.NewRecorder()
-	handleProcessesAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "exe") {
 		t.Errorf("LAN caller: %d %s", w.Code, w.Body.String())
 	}
@@ -472,7 +472,7 @@ func TestProcessesAPI(t *testing.T) {
 	r = httptest.NewRequest("GET", "/api/processes", nil)
 	r.RemoteAddr = "127.0.0.1:50000"
 	w = httptest.NewRecorder()
-	handleProcessesAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("without a session: %d", w.Code)
 	}

@@ -1,4 +1,4 @@
-package service
+package webui
 
 // Who is on the other end of a loopback connection (#131). A TCP
 // connection between two sockets of this machine shows up twice in the
@@ -135,7 +135,7 @@ type peerProcess struct {
 
 // inspectProcess opens pid and reads its token, session and image. It
 // needs LocalSystem for other users' processes, which the service is.
-func inspectProcess(pid uint32) (peerProcess, error) {
+func (s *Server) inspectProcess(pid uint32) (peerProcess, error) {
 	p := peerProcess{PID: pid}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
@@ -178,17 +178,17 @@ func inspectProcess(pid uint32) (peerProcess, error) {
 		}
 	}
 
-	p.SessionUserSID = sessionUserSID(p.SessionID)
+	p.SessionUserSID = s.sessionUserSID(p.SessionID)
 	return p, nil
 }
 
 // sessionUserSID is the SID of the user logged on to session, "" when
 // nobody is (the logon screen) or the token cannot be had.
-func sessionUserSID(session uint32) string {
+func (s *Server) sessionUserSID(session uint32) string {
 	if session == 0 {
 		return ""
 	}
-	t, err := wts.QueryUserToken(session)
+	t, err := s.d.UserToken(session)
 	if err != nil {
 		return ""
 	}

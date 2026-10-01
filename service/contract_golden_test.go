@@ -826,20 +826,13 @@ func TestContractConfigMasked(t *testing.T) {
 		Detail: "simple", Lang: "ko",
 	}
 	withLiveConfig(t, cfg)
-	sessionMu.Lock()
-	savedToken := sessionToken
-	sessionToken = "golden-session"
-	sessionMu.Unlock()
-	t.Cleanup(func() {
-		sessionMu.Lock()
-		sessionToken = savedToken
-		sessionMu.Unlock()
-	})
+	savedToken := webSrv.SetSessionToken("golden-session")
+	t.Cleanup(func() { webSrv.SetSessionToken(savedToken) })
 
 	r := httptest.NewRequest("GET", "/api/config", nil)
 	r.AddCookie(&http.Cookie{Name: "session", Value: "golden-session"})
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /api/config: %d (%s)", w.Code, w.Body.String())
 	}

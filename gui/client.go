@@ -188,7 +188,7 @@ func (c *Client) Login(secret string) error {
 	case http.StatusUnauthorized:
 		return errLoginInvalid
 	case http.StatusTooManyRequests:
-		// service/webui.go locks an address out for 60 s after 5 failures.
+		// The service (service/webui_wiring.go) locks an address out for 60 s after 5 failures.
 		return errLoginLimited
 	}
 	var e struct {

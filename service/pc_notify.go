@@ -9,16 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
-	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -79,36 +74,4 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 		logMsg("PC notify (%s): start menu shortcut %s", source, s)
 	}
 	return out, nil
-}
-
-// handleNotifyTestAPI serves POST /api/notify/test for the app's
-// [테스트 알림] button. The enabled switch is ignored (testing is how the
-// user decides), the rate limit is not.
-var handleNotifyTestAPI = apiAuth(serveNotifyTestAPI, "POST")
-
-func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Title string `json:"title"`
-		Text  string `json:"text"`
-	}
-	if r.Body != nil {
-		if err := json.NewDecoder(io.LimitReader(r.Body, stapi.MaxBody)).Decode(&body); err != nil && err != io.EOF {
-			writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
-			return
-		}
-	}
-	text := body.Text
-	if strings.TrimSpace(text) == "" {
-		text = "PC Control 테스트 알림입니다 · This is a test notification"
-	}
-	res, err := sendPCNotify(r.Context(), NotifyPCConfig{Enabled: true}, false, "app", body.Title, text)
-	if err != nil {
-		status, code, msg := action.Status(err)
-		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, struct {
-		Status string `json:"status"`
-		action.NotifyResult
-	}{"ok", res})
 }

@@ -120,7 +120,7 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 
 	// GET hands the GUI every §3.7 key.
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, httptest.NewRequest("GET", "/api/config", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/config", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET status %d", w.Code)
 	}
@@ -144,7 +144,7 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 	// The body still carries the retired discovery key, the way an older
 	// WebUI page would send it: it must be ignored, not rejected (#95).
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"smartthings":{"discovery":false,"allowed_hubs":["10.0.0.7"],"expose_session":false,"expose_session_user":true}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"smartthings":{"discovery":false,"allowed_hubs":["10.0.0.7"],"expose_session":false,"expose_session_user":true}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST status %d: %s", w.Code, w.Body.String())
 	}

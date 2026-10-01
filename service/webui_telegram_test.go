@@ -19,6 +19,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
+	"github.com/Protomothis/smartthings-pc-control/service/webui"
 )
 
 const testBotToken = "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ0123456789"
@@ -157,7 +158,7 @@ func TestTelegramTestEndpointSendsTestMessage(t *testing.T) {
 	withLiveConfig(t, telegramCfg(false, testBotToken)) // enabled is irrelevant for a test send
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", ""))
+	webAPI(w, postJSON("/api/telegram/test", ""))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -189,7 +190,7 @@ func TestTelegramTestEndpointUsesDecryptedStoredToken(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, enc))
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", ""))
+	webAPI(w, postJSON("/api/telegram/test", ""))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -203,7 +204,7 @@ func TestTelegramTestEndpointOverrideBody(t *testing.T) {
 	withLiveConfig(t, telegramCfg(false, "")) // nothing saved yet
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", `{"bot_token":"999:unsaved","chat_id":"77"}`))
+	webAPI(w, postJSON("/api/telegram/test", `{"bot_token":"999:unsaved","chat_id":"77"}`))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -215,7 +216,7 @@ func TestTelegramTestEndpointOverrideBody(t *testing.T) {
 	// The masked placeholder in the body means "use the stored token".
 	withLiveConfig(t, telegramCfg(false, testBotToken))
 	w = httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", `{"bot_token":"****6789"}`))
+	webAPI(w, postJSON("/api/telegram/test", `{"bot_token":"****6789"}`))
 	if w.Code != 200 || f.last(t).token != testBotToken {
 		t.Errorf("status %d, token %q", w.Code, f.last(t).token)
 	}
@@ -226,7 +227,7 @@ func TestTelegramTestEndpointNotConfigured(t *testing.T) {
 	withLiveConfig(t, Config{Port: 5001})
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", ""))
+	webAPI(w, postJSON("/api/telegram/test", ""))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -240,7 +241,7 @@ func TestTelegramTestEndpointNotConfigured(t *testing.T) {
 	// Token but no chat id.
 	withLiveConfig(t, Config{Port: 5001, Telegram: TelegramConfig{BotToken: testBotToken}})
 	w = httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", ""))
+	webAPI(w, postJSON("/api/telegram/test", ""))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "chat id") {
 		t.Errorf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -252,7 +253,7 @@ func TestTelegramTestEndpointReportsAPIError(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, testBotToken))
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, postJSON("/api/telegram/test", ""))
+	webAPI(w, postJSON("/api/telegram/test", ""))
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -266,17 +267,17 @@ func TestTelegramEndpointsRequireCSRFAndMethod(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, testBotToken))
 
 	w := httptest.NewRecorder()
-	handleTelegramTest(w, httptest.NewRequest("POST", "/api/telegram/test", nil)) // no X-Requested-With
+	webAPI(w, httptest.NewRequest("POST", "/api/telegram/test", nil)) // no X-Requested-With
 	if w.Code != http.StatusForbidden {
 		t.Errorf("POST without CSRF header: status %d", w.Code)
 	}
 	w = httptest.NewRecorder()
-	handleTelegramTest(w, httptest.NewRequest("GET", "/api/telegram/test", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/test", nil))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET test: status %d", w.Code)
 	}
 	w = httptest.NewRecorder()
-	handleTelegramMe(w, postJSON("/api/telegram/me", ""))
+	webAPI(w, postJSON("/api/telegram/me", ""))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST me: status %d", w.Code)
 	}
@@ -287,7 +288,7 @@ func TestTelegramEndpointsRequireCSRFAndMethod(t *testing.T) {
 	cfg.Secret = "s3cret"
 	withLiveConfig(t, cfg)
 	w = httptest.NewRecorder()
-	handleTelegramMe(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated me: status %d", w.Code)
 	}
@@ -300,7 +301,7 @@ func TestTelegramMeEndpoint(t *testing.T) {
 	withLiveConfig(t, telegramCfg(false, testBotToken))
 
 	w := httptest.NewRecorder()
-	handleTelegramMe(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -314,7 +315,7 @@ func TestTelegramMeEndpoint(t *testing.T) {
 
 	withLiveConfig(t, Config{Port: 5001})
 	w = httptest.NewRecorder()
-	handleTelegramMe(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("no token: status %d", w.Code)
 	}
@@ -326,7 +327,7 @@ func TestTelegramMeEndpointUnauthorizedToken(t *testing.T) {
 	withLiveConfig(t, telegramCfg(false, "bad:token"))
 
 	w := httptest.NewRecorder()
-	handleTelegramMe(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/me", nil))
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -343,7 +344,7 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 	t.Cleanup(func() { setTelegramConflict(false) })
 
 	w := httptest.NewRecorder()
-	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -360,7 +361,7 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 	// Repeated reports keep the original start time.
 	setTelegramConflict(true)
 	w = httptest.NewRecorder()
-	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	body = decodeBody(t, w)
 	if body["conflict"] != true {
 		t.Errorf("conflict state = %v", body)
@@ -376,7 +377,7 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 
 	setTelegramConflict(false)
 	w = httptest.NewRecorder()
-	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	if body = decodeBody(t, w); body["conflict"] != false {
 		t.Errorf("cleared state = %v", body)
 	}
@@ -385,7 +386,7 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 func TestTelegramStateEndpointRejectsPostAndUnauthenticated(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, testBotToken))
 	w := httptest.NewRecorder()
-	handleTelegramState(w, postJSON("/api/telegram/state", ""))
+	webAPI(w, postJSON("/api/telegram/state", ""))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST state: status %d", w.Code)
 	}
@@ -393,7 +394,7 @@ func TestTelegramStateEndpointRejectsPostAndUnauthenticated(t *testing.T) {
 	cfg.Secret = "s3cret"
 	withLiveConfig(t, cfg)
 	w = httptest.NewRecorder()
-	handleTelegramState(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated state: status %d", w.Code)
 	}
@@ -406,13 +407,13 @@ func TestTelegramChatsEndpointDedups(t *testing.T) {
 	withLiveConfig(t, telegramCfg(false, testBotToken))
 
 	w := httptest.NewRecorder()
-	handleTelegramChats(w, httptest.NewRequest("GET", "/api/telegram/chats", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/chats", nil))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 	var got struct {
-		Status string         `json:"status"`
-		Chats  []telegramChat `json:"chats"`
+		Status string               `json:"status"`
+		Chats  []webui.TelegramChat `json:"chats"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
@@ -420,10 +421,10 @@ func TestTelegramChatsEndpointDedups(t *testing.T) {
 	if got.Status != "ok" || len(got.Chats) != 2 {
 		t.Fatalf("body = %s", w.Body.String())
 	}
-	if got.Chats[0] != (telegramChat{ChatID: "42", Title: "Kim Lump", Username: "lump", Type: "private"}) {
+	if got.Chats[0] != (webui.TelegramChat{ChatID: "42", Title: "Kim Lump", Username: "lump", Type: "private"}) {
 		t.Errorf("chats[0] = %+v", got.Chats[0])
 	}
-	if got.Chats[1] != (telegramChat{ChatID: "-100", Title: "Home", Type: "group"}) {
+	if got.Chats[1] != (webui.TelegramChat{ChatID: "-100", Title: "Home", Type: "group"}) {
 		t.Errorf("chats[1] = %+v", got.Chats[1])
 	}
 	c := f.last(t)
@@ -438,7 +439,7 @@ func TestTelegramChatsEndpointPostOverrideAndEmpty(t *testing.T) {
 	withLiveConfig(t, Config{Port: 5001})
 
 	w := httptest.NewRecorder()
-	handleTelegramChats(w, postJSON("/api/telegram/chats", `{"bot_token":"555:typed"}`))
+	webAPI(w, postJSON("/api/telegram/chats", `{"bot_token":"555:typed"}`))
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -450,7 +451,7 @@ func TestTelegramChatsEndpointPostOverrideAndEmpty(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	handleTelegramChats(w, httptest.NewRequest("GET", "/api/telegram/chats", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/telegram/chats", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("GET without live token: status %d", w.Code)
 	}
@@ -466,7 +467,7 @@ func TestConfigGetMasksToken(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, enc))
 
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, httptest.NewRequest("GET", "/api/config", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/config", nil))
 	if w.Code != 200 {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -492,7 +493,7 @@ func TestConfigGetMasksToken(t *testing.T) {
 
 	withLiveConfig(t, telegramCfg(true, ""))
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, httptest.NewRequest("GET", "/api/config", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/config", nil))
 	tg, _ = decodeBody(t, w)["telegram"].(map[string]any)
 	if tg["bot_token"] != "" || tg["bot_token_set"] != false {
 		t.Errorf("empty token view = %v", tg)
@@ -510,7 +511,7 @@ func TestConfigPostTokenRules(t *testing.T) {
 	post := func(t *testing.T, body string) {
 		t.Helper()
 		w := httptest.NewRecorder()
-		handleConfigAPI(w, postJSON("/api/config", body))
+		webAPI(w, postJSON("/api/config", body))
 		if w.Code != 200 {
 			t.Fatalf("status %d: %s", w.Code, w.Body.String())
 		}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,21 +10,15 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
+	"github.com/Protomothis/smartthings-pc-control/service/webui"
 )
 
 // withWebUISession logs a browser in for one test: the cookie it returns
 // matches the live session token.
 func withWebUISession(t *testing.T) *http.Cookie {
 	t.Helper()
-	sessionMu.Lock()
-	saved := sessionToken
-	sessionToken = "page-session"
-	sessionMu.Unlock()
-	t.Cleanup(func() {
-		sessionMu.Lock()
-		sessionToken = saved
-		sessionMu.Unlock()
-	})
+	saved := webSrv.SetSessionToken("page-session")
+	t.Cleanup(func() { webSrv.SetSessionToken(saved) })
 	return &http.Cookie{Name: "session", Value: "page-session"}
 }
 
@@ -100,15 +93,15 @@ func TestWebUIStatusAPI(t *testing.T) {
 		SmartThings: SmartThingsConfig{ExposeSession: true}})
 	cookie := withWebUISession(t)
 
-	savedVersion, savedLatest, savedUptime, savedQuery := Version, latestReleaseTag(), webUIUptime, sources.sessionQuery
+	savedVersion, savedLatest, savedUptime, savedQuery := Version, latestReleaseTag(), webSrv.Uptime, sources.sessionQuery
 	Version = "v1.2.0"
 	noteLatestRelease("v1.2.1")
-	webUIUptime = func() time.Duration { return 90 * time.Minute }
+	webSrv.Uptime = func() time.Duration { return 90 * time.Minute }
 	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: true, User: "kim"}, nil }
 	savedHub, _ := stSrv.HubLastSeen()
 	stSrv.SetHubLastSeen(status.HubSeen{IP: "192.168.1.20", DriverVersion: "1.1.0", At: time.Now().Add(-time.Minute)})
 	t.Cleanup(func() {
-		Version, webUIUptime, sources.sessionQuery = savedVersion, savedUptime, savedQuery
+		Version, webSrv.Uptime, sources.sessionQuery = savedVersion, savedUptime, savedQuery
 		latestRelease.Store(savedLatest)
 		stSrv.SetHubLastSeen(savedHub)
 	})
@@ -131,7 +124,7 @@ func TestWebUIStatusAPI(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /api/status = %d, want 200", w.Code)
 	}
-	var st webUIStatus
+	var st webui.StatusCard
 	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
 		t.Fatal(err)
 	}
@@ -157,23 +150,6 @@ func TestWebUIStatusAPI(t *testing.T) {
 	// The status carries none of the config: no secret, no token.
 	if strings.Contains(w.Body.String(), pageSecret) {
 		t.Error("/api/status leaks the secret")
-	}
-}
-
-func TestWebUISessionFollowsExposure(t *testing.T) {
-	saved := sources.sessionQuery
-	t.Cleanup(func() { sources.sessionQuery = saved })
-	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: false, User: "kim"}, nil }
-
-	if s := webUISession(SmartThingsConfig{}); s.Exposed || s.Locked != nil || s.User != "" {
-		t.Errorf("not exposed = %+v, want nothing", s)
-	}
-	if s := webUISession(SmartThingsConfig{ExposeSession: true, ExposeSessionUser: true}); !s.Exposed || s.Locked == nil || *s.Locked || s.User != "kim" {
-		t.Errorf("exposed with user = %+v", s)
-	}
-	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{}, errors.New("no session") }
-	if s := webUISession(SmartThingsConfig{ExposeSession: true}); !s.Exposed || s.Locked != nil {
-		t.Errorf("nobody signed in = %+v, want exposed with locked unset", s)
 	}
 }
 

@@ -45,6 +45,7 @@ func (*serviceSources) Audio(cfg Config) stAudio         { return stAudioStatus(
 func (*serviceSources) Media(cfg Config) stMedia         { return stMediaStatus(cfg) }
 func (s *serviceSources) WoLScan() WoLStatus             { return s.wolScan() }
 func (*serviceSources) LastCommand() *status.LastCommand { return lastCommandBlock() }
+func (*serviceSources) Processes() ([]string, error)     { return runningProcessNames() }
 
 // lastCommandBlock is the last remote command as the status reports it,
 // nil before one.
@@ -74,8 +75,10 @@ func (awakeControl) TurnOn(minutes int) (status.AwakeView, error) {
 	return currentAwake().TurnOn(minutes)
 }
 func (awakeControl) TurnOff() (status.AwakeView, bool, error) { return currentAwake().TurnOff() }
+func (awakeControl) Now() time.Time                           { return currentAwake().now() }
 
-// mediaControl runs the volume, mute and media-key commands.
+// mediaControl runs the volume, mute and media-key commands and reports
+// the state the media card shows.
 type mediaControl struct{}
 
 func (mediaControl) Run(ctx context.Context, name string, value *int) (UserActionResult, error) {
@@ -86,6 +89,10 @@ func (mediaControl) Run(ctx context.Context, name string, value *int) (UserActio
 func (mediaControl) AudioView(a useraction.Audio) status.Audio {
 	return stAudioView(audioSample{Audio: a, UpdatedAt: audioNow()})
 }
+
+func (mediaControl) SessionPresent() bool     { return audioSessionPresent() }
+func (mediaControl) Audio(cfg Config) stAudio { return stAudioStatus(cfg) }
+func (mediaControl) Media(cfg Config) stMedia { return stMediaStatus(cfg) }
 
 // presetControl runs presets on behalf of one origin ("smartthings",
 // "telegram"), which last_command records.

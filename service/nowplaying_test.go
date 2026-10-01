@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/session"
+	"github.com/Protomothis/smartthings-pc-control/service/webui"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -290,7 +291,7 @@ func TestRunUserActionStoresNowPlaying(t *testing.T) {
 
 // ---- /api/media ------------------------------------------------------------
 
-func mediaAPI(t *testing.T, method, body string) (int, mediaAPIBody, map[string]string) {
+func mediaAPI(t *testing.T, method, body string) (int, webui.MediaBody, map[string]string) {
 	t.Helper()
 	var r *http.Request
 	if body == "" {
@@ -300,8 +301,8 @@ func mediaAPI(t *testing.T, method, body string) (int, mediaAPIBody, map[string]
 	}
 	r.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
-	handleMediaAPI(w, r)
-	var out mediaAPIBody
+	webAPI(w, r)
+	var out webui.MediaBody
 	json.Unmarshal(w.Body.Bytes(), &out)
 	var errBody map[string]string
 	json.Unmarshal(w.Body.Bytes(), &errBody)
@@ -347,7 +348,7 @@ func TestMediaAPI(t *testing.T) {
 	// Changes need the CSRF header.
 	r := httptest.NewRequest("POST", "/api/media", strings.NewReader(`{"command":"next"}`))
 	w := httptest.NewRecorder()
-	handleMediaAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("POST without CSRF = %d", w.Code)
 	}

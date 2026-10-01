@@ -1,10 +1,10 @@
-package service
+package webui
 
 // POST /api/local-login (#131): a session for this app's own tray without
 // the secret. Until #131 the tray read the secret from config.json, which
 // every local account could read too. Now config.json is SYSTEM and
 // Administrators only, and the service vouches for the tray itself: it
-// looks the loopback connection up in the TCP table (loopback_peer.go),
+// looks the loopback connection up in the TCP table (peer.go),
 // and issues a session only when the process that opened it
 //
 //   - runs in an interactive session (not session 0) under an INTERACTIVE
@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 )
@@ -48,24 +49,18 @@ const (
 	localLoginMax    = 10
 )
 
-// The lookups behind identifyLocalPeer, replaced by the tests.
-var (
-	localPeerTable   = readTCPTable
-	localPeerInspect = inspectProcess
-	localPeerSameExe = isServiceExe
-	localLoginNow    = time.Now
-)
-
-var (
-	localSessionMu    sync.Mutex
-	localSessionToken string
-	// localLoginLimiter is one global limit ("" key): localLoginMax
-	// attempts per localLoginWindow.
-	localLoginLimiter = ratelimit.New(localLoginMax, localLoginWindow, func() time.Time { return localLoginNow() })
-	// localLoginLastRefusal is the last refusal logged, so a tray that
-	// keeps asking costs one log line, not one per attempt.
-	localLoginLastRefusal string
-)
+// localLogin is the local session and its bookkeeping. The lookups behind
+// identifyLocalPeer are the Server's peer* fields.
+type localLogin struct {
+	mu    sync.Mutex
+	token string
+	// limiter is one global limit ("" key): localLoginMax attempts per
+	// localLoginWindow.
+	limiter *ratelimit.Limiter
+	// lastRefusal is the last refusal logged, so a tray that keeps asking
+	// costs one log line, not one per attempt.
+	lastRefusal string
+}
 
 // localTrustError is why a peer is refused; code goes to the client and
 // the log, detail only to the log.
@@ -117,7 +112,7 @@ func loopbackV4(addr string) (netip.AddrPort, bool) {
 }
 
 // identifyLocalPeer finds and judges the process that sent r.
-func identifyLocalPeer(r *http.Request) (peerProcess, error) {
+func (s *Server) identifyLocalPeer(r *http.Request) (peerProcess, error) {
 	client, ok := loopbackV4(r.RemoteAddr)
 	if !ok {
 		return peerProcess{}, refuse("not_loopback", "request from %s", r.RemoteAddr)
@@ -130,7 +125,7 @@ func identifyLocalPeer(r *http.Request) (peerProcess, error) {
 	if !ok {
 		return peerProcess{}, refuse("not_loopback", "request to %s", la)
 	}
-	rows, err := localPeerTable()
+	rows, err := s.peerTable()
 	if err != nil {
 		return peerProcess{}, refuse("unknown_peer", "%v", err)
 	}
@@ -138,11 +133,11 @@ func identifyLocalPeer(r *http.Request) (peerProcess, error) {
 	if err != nil {
 		return peerProcess{}, refuse("unknown_peer", "%v", err)
 	}
-	p, err := localPeerInspect(pid)
+	p, err := s.peerInspect(pid)
 	if err != nil {
 		return p, refuse("unknown_peer", "%v", err)
 	}
-	return p, trustLocalPeer(p, localPeerSameExe)
+	return p, trustLocalPeer(p, s.peerSameExe)
 }
 
 // isServiceExe reports whether image is the very file this service runs
@@ -165,40 +160,32 @@ func isServiceExe(image string) bool {
 }
 
 // localSession returns the local session token, made on first use.
-func localSession() string {
-	localSessionMu.Lock()
-	defer localSessionMu.Unlock()
-	if localSessionToken == "" {
-		localSessionToken = generateSessionToken()
+func (s *Server) localSession() string {
+	s.local.mu.Lock()
+	defer s.local.mu.Unlock()
+	if s.local.token == "" {
+		s.local.token = generateSessionToken()
 	}
-	return localSessionToken
+	return s.local.token
 }
 
 // localSessionValid reports whether value is the local session token and r
 // came over loopback — the token is never honoured from the network.
-func localSessionValid(r *http.Request, value string) bool {
+func (s *Server) localSessionValid(r *http.Request, value string) bool {
 	if _, ok := loopbackV4(r.RemoteAddr); !ok {
 		return false
 	}
-	localSessionMu.Lock()
-	tok := localSessionToken
-	localSessionMu.Unlock()
+	s.local.mu.Lock()
+	tok := s.local.token
+	s.local.mu.Unlock()
 	return tok != "" && secret.Equal(value, tok)
 }
 
-// resetLocalSession forgets the token and the limiter (tests).
-func resetLocalSession() {
-	localSessionMu.Lock()
-	localSessionToken, localLoginLastRefusal = "", ""
-	localSessionMu.Unlock()
-	localLoginLimiter.Reset()
-}
-
-// handleLocalLoginAPI serves POST /api/local-login. Replies: 200
+// handleLocalLogin serves POST /api/local-login. Replies: 200
 // {"status":"ok"} with the session cookie; 403 {"status":"error",
 // "code":…} when the caller is not trusted; 429 when rate limited. With no
 // secret configured nothing needs a session and the reply is a plain ok.
-func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -207,38 +194,38 @@ func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if getConfig().Secret == "" {
+	if s.d.Config().Secret == "" {
 		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
-	if ok, _ := localLoginLimiter.Allow(""); !ok {
+	if ok, _ := s.local.limiter.Allow(""); !ok {
 		httpx.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"status": "error", "code": "rate_limited", "message": "Too many attempts. Try again later."})
 		return
 	}
-	p, err := identifyLocalPeer(r)
+	p, err := s.identifyLocalPeer(r)
 	if err != nil {
 		code := "unknown_peer"
 		var te *localTrustError
 		if errors.As(err, &te) {
 			code = te.code
 		}
-		noteLocalLoginRefusal(err)
+		s.noteLocalLoginRefusal(err)
 		httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"status": "error", "code": code, "message": "Not trusted for a local login"})
 		return
 	}
-	setSessionCookie(w, localSession())
-	logMsg("Local login for the tray app (pid %d, session %d)", p.PID, p.SessionID)
+	setSessionCookie(w, s.localSession())
+	logx.Printf("Local login for the tray app (pid %d, session %d)", p.PID, p.SessionID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // noteLocalLoginRefusal logs a refusal unless it repeats the last one.
-func noteLocalLoginRefusal(err error) {
+func (s *Server) noteLocalLoginRefusal(err error) {
 	msg := err.Error()
-	localSessionMu.Lock()
-	repeat := msg == localLoginLastRefusal
-	localLoginLastRefusal = msg
-	localSessionMu.Unlock()
+	s.local.mu.Lock()
+	repeat := msg == s.local.lastRefusal
+	s.local.lastRefusal = msg
+	s.local.mu.Unlock()
 	if !repeat {
-		logMsg("Local login refused: %s", msg)
+		logx.Printf("Local login refused: %s", msg)
 	}
 }

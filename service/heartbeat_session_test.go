@@ -31,12 +31,12 @@ func sessionHeartbeatSetup(t *testing.T) {
 	t.Cleanup(resetTargetSession)
 }
 
-// fakeTarget makes heartbeatTargetSession answer id, err.
+// fakeTarget makes heartbeat.target answer id, err.
 func fakeTarget(t *testing.T, id uint32, err error) {
 	t.Helper()
-	saved := heartbeatTargetSession
-	heartbeatTargetSession = func() (uint32, error) { return id, err }
-	t.Cleanup(func() { heartbeatTargetSession = saved })
+	saved := heartbeat.target
+	heartbeat.target = func() (uint32, error) { return id, err }
+	t.Cleanup(func() { heartbeat.target = saved })
 }
 
 const fullBeat = `"idle_seconds":42,"audio":{"volume":30,"muted":false,"device":"원격 오디오"},"media":{"status":"playing","app":"Spotify"}`

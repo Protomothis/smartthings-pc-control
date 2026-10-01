@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 )
 
 // withWebUIConfig sets the live config for one test and restores it after.
@@ -31,7 +33,7 @@ func commandRequest(method, body string, csrf bool) *http.Request {
 
 func serveWebUI(req *http.Request, remote bool) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	webUIHandler(5002, remote).ServeHTTP(w, req)
+	webSrv.Handler(5002, remote).ServeHTTP(w, req)
 	return w
 }
 
@@ -150,38 +152,6 @@ func TestCommandAPIUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestWebUIHostAllowed(t *testing.T) {
-
-	cases := []struct {
-		host        string
-		local       bool // allowed with remote access off
-		description string
-	}{
-		{"127.0.0.1:5002", true, "loopback IPv4"},
-		{"localhost:5002", true, "localhost"},
-		{"LocalHost:5002", true, "localhost, any case"},
-		{"[::1]:5002", true, "loopback IPv6"},
-		{"127.0.0.1:5001", false, "wrong port"},
-		{"127.0.0.1", false, "no port"},
-		{"", false, "empty"},
-		{"evil.example:5002", false, "rebound domain"},
-		{"localhost.evil.example:5002", false, "localhost prefix"},
-		{"127.0.0.1.nip.io:5002", false, "loopback-looking domain"},
-		{"192.168.1.30:5002", false, "LAN IP"},
-		{"pc.tailnet.ts.net:5002", false, "Tailscale name"},
-	}
-	for _, c := range cases {
-		if got := webUIHostAllowed(c.host, 5002, false); got != c.local {
-			t.Errorf("%s (%q), remote off: allowed = %v, want %v", c.description, c.host, got, c.local)
-		}
-		// Remote access requires a secret and a session cookie on every API
-		// call, so any name the user reaches the PC by is fine.
-		if !webUIHostAllowed(c.host, 5002, true) {
-			t.Errorf("%s (%q), remote on: refused", c.description, c.host)
-		}
-	}
-}
-
 // The Host check runs before any handler: a rebound page cannot even read
 // the config, let alone run a command.
 func TestWebUIHostGuardRunsBeforeHandlers(t *testing.T) {
@@ -218,8 +188,8 @@ func TestLegacyPathLocksOutSecretGuessing(t *testing.T) {
 	withWebUIConfig(t, Config{Port: 5001, Secret: "mysecret"})
 	const attacker, hub = "10.9.8.7:40000", "10.9.8.8:40000"
 	t.Cleanup(func() {
-		resetLoginAttempts(attacker)
-		resetLoginAttempts(hub)
+		logins.Reset(httpx.RemoteHost(attacker))
+		logins.Reset(httpx.RemoteHost(hub))
 	})
 	get := func(path, from string) int {
 		req := httptest.NewRequest("GET", path, nil)
@@ -245,10 +215,11 @@ func TestLegacyPathLocksOutSecretGuessing(t *testing.T) {
 	if code := get("/mysecret/ping", hub); code != http.StatusOK {
 		t.Fatalf("other address, right secret = %d, want 200", code)
 	}
-	loginAttemptsMu.Lock()
-	_, left := loginAttempts["10.9.8.8"]
-	loginAttemptsMu.Unlock()
-	if left {
+	if logins.Failing("10.9.8.8") {
 		t.Error("a correct secret should clear the address's failure count")
 	}
 }
+
+// webAPI serves r through the WebUI's routes (pages on, no Host check), the
+// way the tests used to call one /api handler directly.
+func webAPI(w http.ResponseWriter, r *http.Request) { webSrv.Routes(true).ServeHTTP(w, r) }

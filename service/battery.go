@@ -8,11 +8,9 @@ package service
 // decoding are service/devstate.
 
 import (
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/devstate"
 )
 
@@ -56,12 +54,4 @@ func startBatteryMonitor(stop <-chan struct{}) {
 			}
 		}
 	}()
-}
-
-// handleBatteryAPI serves GET /api/battery for the app's status bar, behind
-// the same session check as the other /api routes.
-var handleBatteryAPI = apiAuth(serveBatteryAPI, http.MethodGet)
-
-func serveBatteryAPI(w http.ResponseWriter, r *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, battery.Info())
 }

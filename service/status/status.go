@@ -206,6 +206,10 @@ type NetAdapter struct {
 	WoLCapable bool     `json:"wolCapable"`
 }
 
+// HubStale is 2× the longest poll interval the driver offers (5 min,
+// edge-driver doc §7), after which the app calls the hub disconnected.
+const HubStale = 10 * time.Minute
+
 // HubSeen is the last authenticated /st/v1 caller. The app's SmartThings
 // section (#70) shows it as "hub 192.168.1.20 · driver v1.0.0 · 3s ago".
 type HubSeen struct {

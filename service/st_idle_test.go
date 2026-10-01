@@ -17,16 +17,14 @@ func heartbeatDo(t *testing.T, body string, session, csrf bool) *httptest.Respon
 	t.Helper()
 	r := httptest.NewRequest("POST", "/api/session/heartbeat", strings.NewReader(body))
 	if session {
-		sessionMu.Lock()
-		sessionToken = "heartbeat-token"
-		sessionMu.Unlock()
+		webSrv.SetSessionToken("heartbeat-token")
 		r.AddCookie(&http.Cookie{Name: "session", Value: "heartbeat-token"})
 	}
 	if csrf {
 		r.Header.Set("X-Requested-With", "XMLHttpRequest")
 	}
 	w := httptest.NewRecorder()
-	handleSessionHeartbeat(w, r)
+	webAPI(w, r)
 	return w
 }
 
@@ -37,9 +35,7 @@ func idleSetup(t *testing.T) {
 	t.Cleanup(func() {
 		resetIdleHeartbeat()
 		idleNow = time.Now
-		sessionMu.Lock()
-		sessionToken = ""
-		sessionMu.Unlock()
+		webSrv.SetSessionToken("")
 	})
 }
 
