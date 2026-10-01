@@ -1,793 +1,305 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartThings PC Control</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-body: #f5f7fa;
-            --bg-panel: #ffffff;
-            --bg-input: #f0f2f5;
-            --bg-log: #fafbfc;
-            --border: #e2e8f0;
-            --border-focus: #6366f1;
-            --text-primary: #1a202c;
-            --text-secondary: #4a5568;
-            --text-muted: #718096;
-            --text-dim: #a0aec0;
-            --accent: #6366f1;
-            --accent-hover: #818cf8;
-            --success: #22c55e;
-            --success-bg: #ecfdf5;
-            --danger: #ef4444;
-            --danger-hover: #dc2626;
-            --danger-bg: #fef2f2;
-            --warning: #f59e0b;
-            --warning-bg: #fffbeb;
-            --btn-secondary-bg: #f1f5f9;
-            --btn-secondary-hover: #e2e8f0;
-            --shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        @media (prefers-color-scheme: dark) {
-            :root:not([data-theme="light"]) {
-                --bg-body: #0f1419;
-                --bg-panel: #1c2530;
-                --bg-input: #151d27;
-                --bg-log: #0d1117;
-                --border: #2d3748;
-                --border-focus: #818cf8;
-                --text-primary: #f1f5f9;
-                --text-secondary: #cbd5e1;
-                --text-muted: #94a3b8;
-                --text-dim: #64748b;
-                --accent: #818cf8;
-                --accent-hover: #a5b4fc;
-                --success: #4ade80;
-                --success-bg: #0d2818;
-                --danger: #f87171;
-                --danger-hover: #ef4444;
-                --danger-bg: #2d1515;
-                --warning: #fbbf24;
-                --warning-bg: rgba(251,191,36,0.08);
-                --btn-secondary-bg: #1e293b;
-                --btn-secondary-hover: #334155;
-                --shadow: 0 1px 3px rgba(0,0,0,0.3);
-            }
-        }
-        [data-theme="dark"] {
-            --bg-body: #0f1419;
-            --bg-panel: #1c2530;
-            --bg-input: #151d27;
-            --bg-log: #0d1117;
-            --border: #2d3748;
-            --border-focus: #818cf8;
-            --text-primary: #f1f5f9;
-            --text-secondary: #cbd5e1;
-            --text-muted: #94a3b8;
-            --text-dim: #64748b;
-            --accent: #818cf8;
-            --accent-hover: #a5b4fc;
-            --success: #4ade80;
-            --success-bg: #0d2818;
-            --danger: #f87171;
-            --danger-hover: #ef4444;
-            --danger-bg: #2d1515;
-            --warning: #fbbf24;
-            --warning-bg: rgba(251,191,36,0.08);
-            --btn-secondary-bg: #1e293b;
-            --btn-secondary-hover: #334155;
-            --shadow: 0 1px 3px rgba(0,0,0,0.3);
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg-body);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-            padding: 20px;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; height: 100%; }
-        .panel {
-            background: var(--bg-panel);
-            border-radius: 12px;
-            padding: 28px;
-            border: 1px solid var(--border);
-            box-shadow: var(--shadow);
-            overflow-y: auto;
-            overflow-x: hidden;
-        }
-        .panel-left { }
-        .panel-right { display: flex; flex-direction: column; overflow: hidden; }
-        .grid-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .section { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
-        h1 { font-size: 1.4em; margin-bottom: 24px; color: var(--text-primary); font-weight: 600; letter-spacing: -0.3px; }
-        h1 span { color: var(--accent); }
-        h2 { font-size: 1.05em; color: var(--text-primary); margin-bottom: 14px; font-weight: 600; }
-        .field { margin-bottom: 18px; }
-        label {
-            display: block;
-            font-size: 0.85em;
-            font-weight: 500;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
-        }
-        input[type="number"], input[type="text"] {
-            width: 100%;
-            padding: 11px 14px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--bg-input);
-            color: var(--text-primary);
-            font-size: 0.95em;
-            outline: none;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(79,195,247,0.1); }
-        .btn {
-            padding: 10px 18px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.85em;
-            font-weight: 600;
-            transition: all 0.15s;
-            letter-spacing: 0.2px;
-        }
-        .btn-primary { background: var(--accent); color: #fff; }
-        .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-        .btn-danger { background: var(--danger); color: #fff; }
-        .btn-danger:hover { background: var(--danger-hover); transform: translateY(-1px); }
-        .btn-secondary { background: var(--btn-secondary-bg); color: var(--text-primary); border: 1px solid var(--border); }
-        .btn-secondary:hover { background: var(--btn-secondary-hover); }
-        .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-        .status { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 0.85em; display: none; font-weight: 500; }
-        .status.success { display: block; background: var(--success-bg); color: var(--success); border: 1px solid rgba(102,187,106,0.2); }
-        .status.error { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239,83,80,0.2); }
-        .section-title {
-            font-size: 0.8em;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-top: 24px;
-            margin-bottom: 12px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-        }
-        .test-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-        .test-btns .btn { font-size: 0.82em; padding: 9px 14px; }
-        .info { font-size: 0.8em; color: var(--text-dim); margin-top: 4px; }
-        .log-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-        .log-viewer {
-            background: var(--bg-log);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px;
-            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-            font-size: 0.82em;
-            line-height: 1.7;
-            flex: 1;
-            overflow-y: auto;
-            color: var(--text-secondary);
-            white-space: pre-wrap;
-            word-break: break-all;
-            min-height: 0;
-        }
-        .wol-section { font-size: 0.9em; color: var(--text-secondary); }
-        .wol-adapter { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
-        .wol-adapter b { color: var(--text-primary); }
-        .wol-meta { font-size: 0.85em; color: var(--text-muted); margin-top: 4px; }
-        .wol-badge-ok { color: var(--success); font-weight: 500; }
-        .wol-badge-warn { color: var(--warning); font-weight: 500; }
-        .wol-badge-na { color: var(--text-dim); }
-        .wol-summary { margin-top: 10px; padding: 8px 12px; border-radius: 6px; font-size: 0.85em; font-weight: 500; }
-        .wol-summary.ready { background: var(--success-bg); color: var(--success); border: 1px solid rgba(102,187,106,0.2); }
-        .wol-summary.not-ready { background: rgba(255,213,79,0.08); color: var(--warning); border: 1px solid rgba(255,213,79,0.2); }
-        .schedule-row {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .schedule-row select, .schedule-row input[type="number"] {
-            padding: 9px 12px;
-            border-radius: 8px;
-            background: var(--bg-input);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-            font-size: 0.85em;
-        }
-        .schedule-row input[type="number"] { width: 72px; }
-        .schedule-row .unit { font-size: 0.85em; color: var(--text-muted); }
-        .schedule-active {
-            padding: 10px 14px;
-            border-radius: 8px;
-            background: rgba(255,213,79,0.08);
-            border: 1px solid rgba(255,213,79,0.2);
-            color: var(--warning);
-            font-weight: 500;
-            font-size: 0.9em;
-            margin-bottom: 10px;
-        }
-        .schedule-inactive { color: var(--text-dim); font-size: 0.85em; margin-bottom: 10px; }
-        @media (max-width: 900px) {
-            body { padding: 14px; height: auto; overflow: auto; }
-            .layout { grid-template-columns: 1fr; height: auto; }
-            .grid-sections { grid-template-columns: 1fr; }
-            .panel-left { overflow-y: visible; max-height: none; }
-            .panel-right { height: 50vh; overflow: hidden; }
-            .log-viewer { max-height: none; }
-        }
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            .panel { padding: 20px 16px; }
-            .layout { gap: 12px; }
-            h1 { font-size: 1.2em; }
-            .btn { padding: 10px 14px; }
-            .test-btns .btn { flex: 1 1 calc(50% - 4px); text-align: center; }
-            .actions { flex-direction: column; }
-            .actions .btn { width: 100%; }
-            .panel-right { height: 40vh; }
-            .log-viewer { font-size: 0.75em; }
-            .schedule-row { flex-direction: column; align-items: stretch; }
-            .schedule-row .btn { width: 100%; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartThings PC Control</title>
+<style>
+:root{--bg:#f5f7fa;--panel:#fff;--input:#f0f2f5;--border:#e2e8f0;--text:#1a202c;--muted:#718096;--accent:#6366f1;--ok:#16a34a;--ok-bg:#ecfdf5;--danger:#ef4444;--danger-bg:#fef2f2;--warn:#b45309;--warn-bg:#fffbeb;--btn:#f1f5f9}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1419;--panel:#1c2530;--input:#151d27;--border:#2d3748;--text:#f1f5f9;--muted:#94a3b8;--accent:#818cf8;--ok:#4ade80;--ok-bg:#0d2818;--danger:#f87171;--danger-bg:#2d1515;--warn:#fbbf24;--warn-bg:#2a2210;--btn:#1e293b}}
+[data-theme="dark"]{--bg:#0f1419;--panel:#1c2530;--input:#151d27;--border:#2d3748;--text:#f1f5f9;--muted:#94a3b8;--accent:#818cf8;--ok:#4ade80;--ok-bg:#0d2818;--danger:#f87171;--danger-bg:#2d1515;--warn:#fbbf24;--warn-bg:#2a2210;--btn:#1e293b}
+*{margin:0;padding:0;box-sizing:border-box}[hidden]{display:none!important}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;padding:16px}
+main{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:1.15em;font-weight:600}h1 small{font-size:.65em;color:var(--muted);font-weight:400}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+h2{font-size:.78em;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}
+.row>span:first-child{color:var(--muted)}.row>span:last-child{text-align:right}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+.btns{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.btn{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--btn);color:var(--text);font-size:.9em;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.small{padding:5px 10px;font-size:.8em}
+.sched{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.active{padding:10px 12px;border-radius:8px;background:var(--warn-bg);color:var(--warn);font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+select,input[type=number],input[type=password]{padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--text);font-size:.95em}
+.field{margin-bottom:12px}.field>label{display:block;font-size:.85em;color:var(--muted);margin-bottom:4px}.field input[type=number],.field input[type=password]{width:100%}
+.check{display:flex;gap:8px;align-items:center;cursor:pointer}
+.info{font-size:.8em;color:var(--muted);margin-top:3px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+#toast{display:none;padding:10px 12px;border-radius:8px;font-weight:500}
+#toast.success{display:block;background:var(--ok-bg);color:var(--ok)}#toast.error{display:block;background:var(--danger-bg);color:var(--danger)}
+footer{text-align:center;font-size:.85em;color:var(--muted)}
+@media (max-width:420px){body{padding:10px}.sched>*{flex:1 1 auto}}
+</style>
 </head>
 <body>
-    <div class="layout">
-        <div class="panel panel-left">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
-                <h1 style="margin-bottom:0;"><span>⚡</span> SmartThings PC Control <span style="font-size:0.5em;color:var(--text-dim);font-weight:400;">{{.Version}}</span></h1>
-                <div style="display:flex;gap:6px;">
-                    <button class="btn btn-secondary" onclick="toggleTheme()" style="font-size:0.75em;padding:6px 10px;" id="btnTheme">🌙</button>
-                    <button class="btn btn-secondary" onclick="toggleLang()" style="font-size:0.75em;padding:6px 10px;" id="btnLang">EN</button>
-                </div>
-            </div>
-            <div class="grid-sections">
-                <div class="section">
-                    <div class="section-title" style="margin-top:0;padding-top:0;border-top:none;" data-i18n="settings">Settings</div>
-                    <div class="field">
-                        <label data-i18n="port">Port</label>
-                        <input type="number" id="port" value="{{.Port}}" oninput="checkChanges()">
-                        <div class="info" data-i18n="portInfo">SmartThings Edge driver default: 5001</div>
-                    </div>
-                    <div class="field">
-                        <label data-i18n="secretKey">Secret Key</label>
-                        <input type="text" id="secret" value="{{.Secret}}" placeholder="(none)" oninput="checkChanges()">
-                        <div class="info" data-i18n="secretInfo">Leave empty to disable authentication</div>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="webuiRemote" {{if .WebUIRemote}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="webuiRemote">Allow browser access to WebUI (local + LAN)</span>
-                        </label>
-                        <div class="info" data-i18n="webuiRemoteInfo">Requires a secret. Applied after service restart. When off, use the desktop app.</div>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="shutdownGrace" {{if .ShutdownGrace}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="shutdownGrace">Grace period for remote power commands (length is set in the desktop app)</span>
-                        </label>
-                        <div class="info" data-i18n="shutdownGraceInfo">Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.</div>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="mediaEnabled" {{if .MediaEnabled}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="mediaEnabled">Allow remote volume and media control</span>
-                        </label>
-                        <div class="info" data-i18n="mediaEnabledInfo">Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.</div>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="nowPlaying" {{if .NowPlaying}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="nowPlaying">Share what is playing</span>
-                        </label>
-                        <div class="info" data-i18n="nowPlayingInfo">Sends the title, artist, album and app of the playing media to SmartThings and Telegram. Browsers report the tab title (a YouTube video's title, say). Off: only playing/paused is shared.</div>
-                    </div>
-                    <div class="section-title" data-i18n="smartthings">SmartThings</div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="stSession" {{if .SmartThings.ExposeSession}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="stSession">Expose session info (lock, idle)</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="stSessionUser" {{if .SmartThings.ExposeSessionUser}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="stSessionUser">Include user name</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <label data-i18n="stWolMac">WoL adapter</label>
-                        <!-- Filled by loadSTWoL() from /api/st/hub; the value
-                             saved is the adapter's MAC, empty for automatic. -->
-                        <select id="stWolMac" data-current="{{.SmartThings.WoLMAC}}" onchange="checkChanges()"></select>
-                        <div class="info" data-i18n="stWolMacInfo">Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.</div>
-                    </div>
-                    <div class="field">
-                        <label data-i18n="stHubs">Allowed hubs</label>
-                        <input type="text" id="stHubs" value="{{.AllowedHubs}}" placeholder="192.168.1.20, 192.168.1.21" oninput="checkChanges()">
-                        <div class="info" data-i18n="stHubsInfo">Comma separated. Empty = any hub allowed.</div>
-                    </div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="activityEnabled" {{if .ActivityEnabled}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="activity">Detect running apps</span>
-                        </label>
-                        <div class="info" data-i18n="activityInfo">Reports only the programs on the watch list, as their kind and label. Edit the list in the desktop app.</div>
-                    </div>
-                    <div class="section-title" data-i18n="pcNotify">PC notifications</div>
-                    <div class="field">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                            <input type="checkbox" id="notifyPC" {{if .NotifyPC.Enabled}}checked{{end}} onchange="checkChanges()" style="width:auto;">
-                            <span data-i18n="notifyPC">Allow PC notifications (SmartThings, Telegram /say)</span>
-                        </label>
-                        <div class="info" data-i18n="notifyPCInfo">Text only, no links or buttons, 10 a minute per sender. The presets are set in the desktop app.</div>
-                    </div>
-                    <div class="section-title" data-i18n="telegram">Telegram</div>
-                    <div class="field">
-                        <label data-i18n="tgPCName">PC name</label>
-                        <input type="text" id="tgPCName" value="{{.PCName}}" placeholder="{{.Hostname}}" oninput="checkChanges()">
-                        <div class="info" data-i18n="tgPCNameInfo">Shown in the Telegram message header; empty uses the computer name.</div>
-                    </div>
-                    <div class="actions">
-                        <button class="btn btn-primary" id="btnSave" onclick="saveConfig()" disabled data-i18n="save">💾 Save</button>
-                        <button class="btn btn-secondary" onclick="restartService()" data-i18n="restart">🔄 Restart</button>
-                    </div>
-                    <div id="status" class="status"></div>
-                </div>
-                <div class="section">
-                    <div class="section-title" style="margin-top:0;padding-top:0;border-top:none;" data-i18n="commands">Commands</div>
-                    <div class="test-btns">
-                        <button class="btn btn-secondary" onclick="testCmd('lock')" data-i18n="cmdLock">🔒 Lock</button>
-                        <button class="btn btn-secondary" onclick="testCmd('turnscreenoff')" data-i18n="cmdScreenOff">🖥️ Screen Off</button>
-                        <button class="btn btn-secondary" onclick="testCmd('suspend')" data-i18n="cmdSuspend">😴 Suspend</button>
-                        <button class="btn btn-secondary" onclick="testCmd('hibernate')" data-i18n="cmdHibernate">💤 Hibernate</button>
-                        <button class="btn btn-secondary" onclick="testCmd('restart')" data-i18n="cmdRestart">🔁 Restart</button>
-                        <button class="btn btn-danger" onclick="testCmd('shutdown')" data-i18n="cmdShutdown">⏻ Shutdown</button>
-                        <button class="btn btn-danger" onclick="testCmd('forceshutdown')" data-i18n="cmdForce">⚠️ Force</button>
-                    </div>
-                </div>
-                <div class="section">
-                    <div class="section-title" style="margin-top:0;padding-top:0;border-top:none;" data-i18n="networkWol">Network / WoL</div>
-                    <div id="wolStatus" class="wol-section" data-i18n="loading">Loading...</div>
-                </div>
-                <div class="section">
-                    <div class="section-title" style="margin-top:0;padding-top:0;border-top:none;" data-i18n="scheduledTask">Scheduled Task</div>
-                    <div id="scheduleStatus"></div>
-                    <div id="scheduleForm" class="schedule-row">
-                        <select id="schedCmd">
-                            <option value="shutdown">Shutdown</option>
-                            <option value="forceshutdown">Force Shutdown</option>
-                            <option value="restart">Restart</option>
-                            <option value="hibernate">Hibernate</option>
-                            <option value="suspend">Suspend</option>
-                        </select>
-                        <input type="number" id="schedMin" min="1" max="4320" value="30">
-                        <span class="unit" data-i18n="min">min</span>
-                        <button class="btn btn-primary" onclick="scheduleCmd()" style="font-size:0.82em;" data-i18n="schedule">Schedule</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="panel panel-right">
-            <h2 data-i18n="serviceLogs">📋 Service Logs</h2>
-            <div class="log-header">
-                <button class="btn btn-secondary" onclick="loadLogs()" style="font-size:0.82em;padding:7px 14px;" data-i18n="refresh">↻ Refresh</button>
-                <label style="display:flex;align-items:center;gap:6px;font-size:0.85em;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:400;">
-                    <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()" checked> <span data-i18n="autoRefresh">Auto-refresh (5s)</span>
-                </label>
-            </div>
-            <div id="logViewer" class="log-viewer" data-i18n="loading">Loading...</div>
-        </div>
-    </div>
-    <script>
-        const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
+<main>
+<header>
+<h1>⚡ SmartThings PC Control <small>{{.Version}}</small></h1>
+<div class="actions"><button class="btn small" id="btnTheme" onclick="toggleTheme()">🌙</button><button class="btn small" id="btnLang" onclick="toggleLang()">EN</button></div>
+</header>
+<div id="toast"></div>
 
-        // Theme
-        function getPreferredTheme() {
-            const stored = localStorage.getItem('theme');
-            if (stored) return stored;
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-        function applyTheme(theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-            document.getElementById('btnTheme').textContent = theme === 'dark' ? '☀️' : '🌙';
-        }
-        function toggleTheme() {
-            const current = document.documentElement.getAttribute('data-theme') || getPreferredTheme();
-            const next = current === 'dark' ? 'light' : 'dark';
-            localStorage.setItem('theme', next);
-            applyTheme(next);
-        }
-        applyTheme(getPreferredTheme());
+<section class="card" data-section="status">
+<h2 data-i18n="status">Status</h2>
+<div class="row"><span data-i18n="pc">PC</span><span id="stPC">…</span></div>
+<div class="row" id="rowSession" hidden><span data-i18n="session">Session</span><span id="stSession"></span></div>
+<div class="row"><span data-i18n="service">Service</span><span id="stService">…</span></div>
+<div class="row"><span>SmartThings</span><span id="stHub">…</span></div>
+<div class="row"><span data-i18n="grace">Grace</span><span id="stGrace">…</span></div>
+</section>
 
-        // i18n
-        const i18n = {
-            en: {
-                settings: 'Settings', port: 'Port', portInfo: 'SmartThings Edge driver default: 5001',
-                secretKey: 'Secret Key', secretInfo: 'Leave empty to disable authentication',
-                webuiRemote: 'Allow browser access to WebUI (local + LAN)',
-                webuiRemoteInfo: 'Requires a secret. Applied after service restart. When off, use the desktop app.',
-                shutdownGrace: 'Grace period for remote power commands (length is set in the desktop app)',
-                shutdownGraceInfo: 'Applies only to SmartThings commands (shutdown/restart/suspend/hibernate) — cancellable during the wait. Buttons in the app/WebUI and force shutdown always run immediately.',
-                mediaEnabled: 'Allow remote volume and media control',
-                mediaEnabledInfo: 'Volume, mute and play/pause/next from SmartThings and Telegram. Works only while a user is logged in.',
-                nowPlaying: 'Share what is playing',
-                nowPlayingInfo: 'Sends the title, artist, album and app of the playing media to SmartThings and Telegram. Browsers report the tab title (a YouTube video\'s title, say). Off: only playing/paused is shared.',
-                smartthings: 'SmartThings',
-                stSession: 'Expose session info (lock, idle)', stSessionUser: 'Include user name',
-                stHubs: 'Allowed hubs', stHubsInfo: 'Comma separated. Empty = any hub allowed.',
-                stWolMac: 'WoL adapter',
-                stWolMacInfo: 'Which adapter the Edge driver wakes this PC through. Automatic prefers the adapter the hub already reaches this PC on.',
-                stWolAuto: 'Automatic', stWolAutoNone: 'Automatic (no adapter found)',
-                stWolOn: 'WoL on', stWolOff: 'WoL off', stWolNA: 'WoL not supported',
-                stWolUnknown: 'Adapter not found',
-                activity: 'Detect running apps',
-                activityInfo: 'Reports only the programs on the watch list, as their kind and label. Edit the list in the desktop app.',
-                pcNotify: 'PC notifications', notifyPC: 'Allow PC notifications (SmartThings, Telegram /say)',
-                notifyPCInfo: 'Text only, no links or buttons, 10 a minute per sender. The presets are set in the desktop app.',
-                telegram: 'Telegram', tgPCName: 'PC name',
-                tgPCNameInfo: 'Shown in the Telegram message header; empty uses the computer name.',
-                save: '💾 Save', restart: '🔄 Restart', commands: 'Commands',
-                networkWol: 'Network / WoL', loading: 'Loading...',
-                scheduledTask: 'Scheduled Task', min: 'min', schedule: 'Schedule',
-                serviceLogs: '📋 Service Logs', refresh: '↻ Refresh', autoRefresh: 'Auto-refresh (5s)',
-                wolReady: '✅ WoL ready — this PC can be woken remotely',
-                wolNotReady: '⚠️ WoL not ready — enable in BIOS & adapter settings',
-                wolNoAdapters: '⚠️ No adapters found',
-                wolEnabled: '✅ WoL Enabled', wolDisabled: '⚠️ WoL Disabled', wolNA: '— Not supported',
-                noSchedule: '', scheduleIn: 'in', cancel: 'Cancel',
-                confirmExec: 'Execute {cmd}? This will affect the system immediately.',
-                confirmRestart: 'Restart the service? Connection will be lost briefly.',
-                confirmSchedule: 'Schedule {cmd} in {min} minutes?',
-                confirmCancel: 'Cancel the scheduled task?',
-                savedMsg: 'Settings saved. Restart service to apply port changes.',
-                portError: 'Minutes must be between 1 and 1440',
-                noLogs: '(no logs)', logFail: 'Failed to load logs',
-                cmdLock: '🔒 Lock', cmdScreenOff: '🖥️ Screen Off', cmdSuspend: '😴 Suspend',
-                cmdHibernate: '💤 Hibernate', cmdRestart: '🔁 Restart',
-                cmdShutdown: '⏻ Shutdown', cmdForce: '⚠️ Force',
-            },
-            ko: {
-                settings: '설정', port: '포트', portInfo: 'SmartThings Edge 드라이버 기본값: 5001',
-                secretKey: '시크릿 키', secretInfo: '비워두면 인증 없이 동작합니다',
-                webuiRemote: 'WebUI 브라우저 접속 허용 (로컬+LAN)',
-                webuiRemoteInfo: '시크릿 설정이 필요합니다. 서비스 재시작 후 적용되며, 끄면 데스크톱 앱으로 관리합니다.',
-                shutdownGrace: '원격 전원 명령 유예 (시간은 데스크톱 앱에서 설정)',
-                shutdownGraceInfo: 'SmartThings 명령(종료/재시작/절전/최대절전)에만 적용되며 대기 중 취소할 수 있습니다. 앱/WebUI 버튼과 강제 종료는 항상 즉시 실행됩니다.',
-                mediaEnabled: '원격 볼륨·미디어 제어 허용',
-                mediaEnabledInfo: 'SmartThings·텔레그램에서 볼륨·음소거와 재생/일시정지·다음 곡 등을 보냅니다. 로그인한 사용자가 있을 때만 동작합니다.',
-                nowPlaying: '재생 정보 공유',
-                nowPlayingInfo: '재생 중인 미디어의 제목·아티스트·앨범·앱 이름을 SmartThings와 텔레그램에 보냅니다. 브라우저는 탭 제목(유튜브 영상 제목 등)이 제목으로 갑니다. 끄면 재생 중/일시정지 여부만 보냅니다.',
-                smartthings: 'SmartThings',
-                stSession: '세션 정보 노출(잠금·유휴)', stSessionUser: '사용자 이름 포함',
-                stHubs: '허용 허브', stHubsInfo: '쉼표로 구분. 비어 있으면 모든 허브를 허용합니다.',
-                stWolMac: 'WoL 어댑터',
-                stWolMacInfo: 'Edge 드라이버가 이 PC를 깨울 때 쓸 어댑터입니다. 자동은 허브가 실제로 이 PC에 닿는 어댑터를 먼저 고릅니다.',
-                stWolAuto: '자동', stWolAutoNone: '자동 (어댑터 없음)',
-                stWolOn: 'WoL 켜짐', stWolOff: 'WoL 꺼짐', stWolNA: 'WoL 미지원',
-                stWolUnknown: '없는 어댑터',
-                activity: '실행 중 앱 감지',
-                activityInfo: '감시 목록에 있는 프로그램만 종류와 라벨로 알립니다. 목록은 데스크톱 앱에서 편집합니다.',
-                pcNotify: 'PC 알림', notifyPC: 'PC 알림 허용 (SmartThings, 텔레그램 /say)',
-                notifyPCInfo: '문구만 보여 주고 링크·버튼은 없으며, 보내는 곳마다 분당 10개까지입니다. 프리셋은 데스크톱 앱에서 설정합니다.',
-                telegram: '텔레그램', tgPCName: 'PC 이름',
-                tgPCNameInfo: '알림 머리말에 표시. 비우면 컴퓨터 이름',
-                save: '💾 설정 저장', restart: '🔄 서버 재시작', commands: '명령',
-                networkWol: '네트워크 / WoL', loading: '로딩 중...',
-                scheduledTask: '예약 작업', min: '분', schedule: '예약',
-                serviceLogs: '📋 서비스 로그', refresh: '↻ 새로고침', autoRefresh: '자동 새로고침 (5초)',
-                wolReady: '✅ WoL 준비 완료 — 원격으로 PC를 깨울 수 있습니다',
-                wolNotReady: '⚠️ WoL 미설정 — BIOS 및 어댑터 설정에서 활성화하세요',
-                wolNoAdapters: '⚠️ 어댑터를 찾을 수 없습니다',
-                wolEnabled: '✅ WoL 활성', wolDisabled: '⚠️ WoL 비활성', wolNA: '— 미지원',
-                noSchedule: '', scheduleIn: '후', cancel: '취소',
-                confirmExec: '{cmd}을(를) 실행하시겠습니까? 시스템에 즉시 영향을 줍니다.',
-                confirmRestart: '서비스를 재시작하시겠습니까? 잠시 연결이 끊깁니다.',
-                confirmSchedule: '{min}분 후 {cmd}을(를) 예약하시겠습니까?',
-                confirmCancel: '예약된 작업을 취소하시겠습니까?',
-                savedMsg: '설정이 저장되었습니다. 포트 변경 시 서비스를 재시작하세요.',
-                portError: '분은 1~1440 사이여야 합니다',
-                noLogs: '(로그 없음)', logFail: '로그를 불러올 수 없습니다',
-                cmdLock: '🔒 잠금', cmdScreenOff: '🖥️ 화면 끄기', cmdSuspend: '😴 절전',
-                cmdHibernate: '💤 최대절전', cmdRestart: '🔁 재시작',
-                cmdShutdown: '⏻ 종료', cmdForce: '⚠️ 강제종료',
-            }
-        };
-        let currentLang = localStorage.getItem('lang') || (navigator.language.startsWith('ko') ? 'ko' : 'en');
-        function t(key) { return i18n[currentLang][key] || i18n['en'][key] || key; }
-        function applyLang() {
-            document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
-                if (i18n[currentLang][key]) el.textContent = i18n[currentLang][key];
-            });
-            document.getElementById('btnLang').textContent = currentLang === 'ko' ? 'EN' : '한국어';
-        }
-        function toggleLang() {
-            currentLang = currentLang === 'ko' ? 'en' : 'ko';
-            localStorage.setItem('lang', currentLang);
-            applyLang();
-            loadWoL();
-            loadSTWoL();
-            loadSchedule();
-        }
+<section class="card" data-section="power">
+<h2 data-i18n="power">Power</h2>
+<div class="btns">
+<button class="btn" onclick="runCmd('lock')" data-i18n="lock">🔒 Lock</button>
+<button class="btn" onclick="runCmd('turnscreenoff')" data-i18n="turnscreenoff">🖥️ Screen off</button>
+<button class="btn" onclick="runCmd('turnscreenon')" data-i18n="turnscreenon">💡 Screen on</button>
+<button class="btn" onclick="runCmd('suspend')" data-i18n="suspend">😴 Sleep</button>
+<button class="btn" onclick="runCmd('hibernate')" data-i18n="hibernate">💤 Hibernate</button>
+<button class="btn" onclick="runCmd('restart')" data-i18n="restart">🔁 Restart</button>
+<button class="btn danger" onclick="runCmd('shutdown')" data-i18n="shutdown">⏻ Shut down</button>
+<button class="btn danger" onclick="runCmd('forceshutdown')" data-i18n="forceshutdown">⚠️ Force shut down</button>
+</div>
+<div class="info" data-i18n="powerInfo">Buttons here run at once; the grace period applies to SmartThings commands.</div>
+</section>
 
-        // Track original values for change detection
-        const originalPort = document.getElementById('port').value;
-        const originalSecret = document.getElementById('secret').value;
-        const originalRemote = document.getElementById('webuiRemote').checked;
-        const originalGrace = document.getElementById('shutdownGrace').checked;
-        const originalMedia = document.getElementById('mediaEnabled').checked;
-        const originalNowPlaying = document.getElementById('nowPlaying').checked;
-        const originalStSession = document.getElementById('stSession').checked;
-        const originalStSessionUser = document.getElementById('stSessionUser').checked;
-        const originalStHubs = document.getElementById('stHubs').value;
-        // The dropdown's options arrive with /api/st/hub, so the baseline is
-        // the value the template rendered, not the (still empty) selection.
-        const originalStWolMac = document.getElementById('stWolMac').dataset.current || '';
-        const originalTgPCName = document.getElementById('tgPCName').value;
-        const originalActivity = document.getElementById('activityEnabled').checked;
-        const originalNotifyPC = document.getElementById('notifyPC').checked;
-        function checkChanges() {
-            const changed = document.getElementById('port').value !== originalPort ||
-                            document.getElementById('secret').value !== originalSecret ||
-                            document.getElementById('webuiRemote').checked !== originalRemote ||
-                            document.getElementById('shutdownGrace').checked !== originalGrace ||
-                            document.getElementById('mediaEnabled').checked !== originalMedia ||
-                            document.getElementById('nowPlaying').checked !== originalNowPlaying ||
-                            document.getElementById('stSession').checked !== originalStSession ||
-                            document.getElementById('stSessionUser').checked !== originalStSessionUser ||
-                            document.getElementById('stHubs').value !== originalStHubs ||
-                            document.getElementById('stWolMac').value !== originalStWolMac ||
-                            document.getElementById('tgPCName').value !== originalTgPCName ||
-                            document.getElementById('activityEnabled').checked !== originalActivity ||
-                            document.getElementById('notifyPC').checked !== originalNotifyPC;
-            document.getElementById('btnSave').disabled = !changed;
-        }
-        async function saveConfig() {
-            const port = parseInt(document.getElementById('port').value);
-            const secret = document.getElementById('secret').value;
-            const webui_remote = document.getElementById('webuiRemote').checked;
-            const shutdown_grace = document.getElementById('shutdownGrace').checked;
-            // allowed_hubs must travel as an array (never omitted), or the
-            // service keeps the stored list and it can never be cleared.
-            const smartthings = {
-                expose_session: document.getElementById('stSession').checked,
-                expose_session_user: document.getElementById('stSession').checked && document.getElementById('stSessionUser').checked,
-                allowed_hubs: document.getElementById('stHubs').value.split(',').map(s => s.trim()).filter(s => s !== ''),
-                wol_mac: document.getElementById('stWolMac').value,
-            };
-            // Only pc_name: the service decodes over the live config, so the
-            // bot token, chat id and the rest of telegram{} are left alone.
-            const telegram = {pc_name: document.getElementById('tgPCName').value.trim()};
-            // Only the switch: without a watch key the service keeps the
-            // list the desktop app edited.
-            const activity = {enabled: document.getElementById('activityEnabled').checked};
-            const media = {enabled: document.getElementById('mediaEnabled').checked, now_playing: document.getElementById('nowPlaying').checked};
-            const notify_pc = {enabled: document.getElementById('notifyPC').checked};
-            try {
-                const res = await fetch('/api/config', {method: 'POST', headers, body: JSON.stringify({port, secret, webui_remote, shutdown_grace, smartthings, telegram, activity, media, notify_pc})});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                showStatus(data.message, data.status === 'error' ? 'error' : 'success');
-            } catch(e) {
-                showStatus('Failed to save settings', 'error');
-            }
-        }
-        async function testCmd(cmd) {
-            if (['shutdown','restart','forceshutdown'].includes(cmd)) {
-                if (!confirm(t('confirmExec').replace('{cmd}', cmd))) return;
-            }
-            try {
-                const res = await fetch('/api/command', {method: 'POST', headers, body: JSON.stringify({command: cmd, by: 'webui'})});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                if (!res.ok) { showStatus('Failed to send command (HTTP ' + res.status + ')', 'error'); return; }
-                showStatus(cmd + ' command sent', 'success');
-            } catch(e) {
-                showStatus('Failed to send command', 'error');
-            }
-        }
-        function showStatus(msg, type) {
-            const el = document.getElementById('status');
-            el.textContent = msg;
-            el.className = 'status ' + type;
-            setTimeout(() => { el.className = 'status'; }, 4000);
-        }
-        async function restartService() {
-            if (!confirm(t('confirmRestart'))) return;
-            try {
-                await fetch('/api/restart-service', {method: 'POST', headers});
-                showStatus('Service restarting...', 'success');
-                setTimeout(() => location.reload(), 3000);
-            } catch(e) {
-                showStatus('Restart triggered', 'success');
-                setTimeout(() => location.reload(), 3000);
-            }
-        }
-        let autoRefreshTimer = null;
-        function toggleAutoRefresh() {
-            if (document.getElementById('autoRefresh').checked) {
-                loadLogs();
-                autoRefreshTimer = setInterval(loadLogs, 5000);
-            } else {
-                if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
-            }
-        }
-        function convertLogTime(line) {
-            const match = line.match(/^(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}) (.*)$/);
-            if (!match) return line;
-            const serverTime = match[1].replace(/\//g, '-').replace(' ', 'T');
-            const d = new Date(serverTime);
-            if (isNaN(d.getTime())) return line;
-            const local = d.toLocaleString(undefined, {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-            return local + ' ' + match[2];
-        }
-        async function loadLogs() {
-            try {
-                const res = await fetch('/api/logs', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                const viewer = document.getElementById('logViewer');
-                if (data.lines && data.lines.length > 0) {
-                    viewer.textContent = data.lines.map(convertLogTime).join('\n');
-                    viewer.scrollTop = viewer.scrollHeight;
-                } else {
-                    viewer.textContent = t('noLogs');
-                }
-            } catch(e) {
-                document.getElementById('logViewer').textContent = t('logFail');
-            }
-        }
-        async function loadWoL() {
-            try {
-                const res = await fetch('/api/wol-status', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                const el = document.getElementById('wolStatus');
-                if (data.error) { el.innerHTML = '<div class="wol-summary not-ready">⚠️ ' + data.error + '</div>'; return; }
-                if (!data.adapters || data.adapters.length === 0) { el.innerHTML = '<div class="wol-summary not-ready">' + t('wolNoAdapters') + '</div>'; return; }
-                let html = '';
-                for (const a of data.adapters) {
-                    const badge = a.wolEnabled ? '<span class="wol-badge-ok">' + t('wolEnabled') + '</span>' :
-                                  a.wolCapable ? '<span class="wol-badge-warn">' + t('wolDisabled') + '</span>' :
-                                  '<span class="wol-badge-na">' + t('wolNA') + '</span>';
-                    const dot = a.status === 'Up' ? '🟢' : '⚪';
-                    const ips = (a.ips || []).filter(ip => !ip.includes(':')).join(', ') || '—';
-                    html += '<div class="wol-adapter">' + dot + ' <b>' + a.name + '</b> — ' + badge +
-                            '<div class="wol-meta">MAC: ' + a.mac + ' &nbsp;|&nbsp; IP: ' + ips + '</div></div>';
-                }
-                if (data.externalIP) {
-                    html += '<div class="wol-meta" style="margin-top:8px">🌐 External IP: <b style="color:var(--text-primary)">' + data.externalIP + '</b></div>';
-                }
-                if (data.ready) {
-                    html += '<div class="wol-summary ready">' + t('wolReady') + '</div>';
-                } else {
-                    html += '<div class="wol-summary not-ready">' + t('wolNotReady') + '</div>';
-                }
-                if (data.warning) {
-                    html += '<div style="margin-top:6px;font-size:0.82em;color:var(--warning);">⚠️ ' + data.warning + '</div>';
-                }
-                el.innerHTML = html;
-            } catch(e) {
-                document.getElementById('wolStatus').textContent = 'Failed to load';
-            }
-        }
-        // Fills the WoL adapter dropdown from /api/st/hub. The first entry is
-        // "Automatic", labelled with the adapter the service would pick; the
-        // rest are the adapters themselves. A saved MAC that no longer exists
-        // keeps an entry of its own so the selection is never silently lost.
-        async function loadSTWoL() {
-            const sel = document.getElementById('stWolMac');
-            const chosen = sel.value || sel.dataset.current || '';
-            try {
-                const res = await fetch('/api/st/hub', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                const wol = data.wol || {};
-                const auto = wol.auto;
-                let html = '<option value="">' +
-                    (auto ? t('stWolAuto') + ' (' + auto.name + ' · ' + auto.mac + ')' : t('stWolAutoNone')) +
-                    '</option>';
-                let found = false;
-                for (const a of (wol.adapters || [])) {
-                    if (!a.mac) continue;
-                    const state = a.wol_enabled ? t('stWolOn') : a.wol_capable ? t('stWolOff') : t('stWolNA');
-                    if (a.mac === chosen) found = true;
-                    html += '<option value="' + a.mac + '">' + a.name + ' · ' + a.mac + ' · ' + state + '</option>';
-                }
-                if (chosen && !found) {
-                    html += '<option value="' + chosen + '">' + t('stWolUnknown') + ' · ' + chosen + '</option>';
-                }
-                sel.innerHTML = html;
-                sel.value = chosen;
-            } catch(e) {
-                // Leave whatever is there; the saved value still round-trips.
-            }
-        }
-        async function loadSchedule() {
-            try {
-                const res = await fetch('/api/schedule', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-                if (res.status === 401) return;
-                const data = await res.json();
-                const el = document.getElementById('scheduleStatus');
-                const form = document.getElementById('scheduleForm');
-                if (!data.active) {
-                    el.innerHTML = '';
-                    form.style.display = 'flex';
-                    return;
-                }
-                form.style.display = 'none';
-                // #89: schedules reach three days, so the units climb instead
-                // of counting "4319m 58s".
-                const total = Math.max(0, data.remainingSec);
-                const days = Math.floor(total / 86400);
-                const hours = Math.floor((total % 86400) / 3600);
-                const mins = Math.floor((total % 3600) / 60);
-                const secs = total % 60;
-                let timeStr;
-                if (days > 0) {
-                    timeStr = days + 'd ' + hours + 'h';
-                } else if (hours > 0) {
-                    timeStr = hours + 'h ' + mins + 'm';
-                } else if (mins > 0) {
-                    timeStr = mins + 'm ' + secs + 's';
-                } else {
-                    timeStr = secs + 's';
-                }
-                el.innerHTML = '<div class="schedule-active">⏱️ <b>' + data.command + '</b> ' + t('scheduleIn') + ' ' + timeStr +
-                    ' <button class="btn btn-secondary" onclick="cancelSchedule()" style="font-size:0.78em;padding:6px 12px;margin-left:12px;">' + t('cancel') + '</button></div>';
-            } catch(e) {
-                document.getElementById('scheduleStatus').innerHTML = '';
-            }
-        }
-        async function scheduleCmd() {
-            const command = document.getElementById('schedCmd').value;
-            const minutes = parseInt(document.getElementById('schedMin').value);
-            if (!minutes || minutes < 1 || minutes > 4320) {
-                showStatus('Minutes must be between 1 and 4320', 'error');
-                return;
-            }
-            if (!confirm(t('confirmSchedule').replace('{cmd}', command).replace('{min}', minutes))) return;
-            try {
-                const res = await fetch('/api/schedule', {method: 'POST', headers, body: JSON.stringify({command, minutes})});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                showStatus(data.status === 'ok' ? data.message : data.message, data.status === 'ok' ? 'success' : 'error');
-                loadSchedule();
-            } catch(e) {
-                showStatus('Failed to schedule', 'error');
-            }
-        }
-        async function cancelSchedule() {
-            if (!confirm(t('confirmCancel'))) return;
-            try {
-                const res = await fetch('/api/schedule?by=webui', {method: 'DELETE', headers: {'X-Requested-With': 'XMLHttpRequest'}});
-                if (res.status === 401) { window.location.href = '/login'; return; }
-                const data = await res.json();
-                showStatus(data.message, 'success');
-                loadSchedule();
-            } catch(e) {
-                showStatus('Failed to cancel', 'error');
-            }
-        }
-        // Init
-        applyLang();
-        loadLogs();
-        loadWoL();
-        loadSTWoL();
-        loadSchedule();
-        setInterval(loadSchedule, 5000);
-        autoRefreshTimer = setInterval(loadLogs, 5000);
-    </script>
+<section class="card" data-section="schedule">
+<h2 data-i18n="scheduleTitle">Schedule</h2>
+<div id="schedActive" class="active" hidden><span id="schedText"></span><button class="btn small" onclick="cancelSchedule()" data-i18n="cancel">Cancel</button></div>
+<div id="schedForm" class="sched">
+<select id="schedCmd">
+<option value="shutdown" data-i18n="optShutdown">Shut down</option>
+<option value="restart" data-i18n="optRestart">Restart</option>
+<option value="suspend" data-i18n="optSuspend">Sleep</option>
+<option value="hibernate" data-i18n="optHibernate">Hibernate</option>
+<option value="forceshutdown" data-i18n="optForce">Force shut down</option>
+</select>
+<input type="number" id="schedMin" min="1" max="4320" value="30" style="width:80px"><span data-i18n="minLater">min later</span>
+<button class="btn primary" onclick="scheduleCmd()" data-i18n="scheduleBtn">Schedule</button>
+</div>
+</section>
+
+<section class="card" data-section="settings">
+<h2 data-i18n="settings">Settings</h2>
+<div class="field"><label for="port" data-i18n="port">Port</label><input type="number" id="port" min="1" max="65535" value="{{.Port}}" oninput="checkChanges()"><div class="info" data-i18n="portInfo">SmartThings port; this page is on port + 1. Applied after a service restart.</div></div>
+<div class="field"><label for="secret" data-i18n="secret">Secret</label><input type="password" id="secret" autocomplete="new-password" placeholder="{{if .SecretSet}}••••••••{{end}}" oninput="checkChanges()"><div class="info" data-i18n="secretInfo">Type a new secret to change it; leave empty to keep the current one.</div></div>
+<div class="field"><label class="check"><input type="checkbox" id="webuiRemote" {{if .WebUIRemote}}checked{{end}} onchange="checkChanges()"><span data-i18n="webuiRemote">Allow browser access (LAN)</span></label><div class="info" data-i18n="webuiRemoteInfo">Requires a secret. Applied after a service restart — turning it off closes this page.</div></div>
+<div class="field"><label class="check"><input type="checkbox" id="shutdownGrace" {{if .ShutdownGrace}}checked{{end}} onchange="checkChanges()"><span data-i18n="shutdownGrace">Grace period for remote power commands</span></label></div>
+<div class="field"><label for="graceSeconds" data-i18n="graceSeconds">Grace period (seconds, 5–3600)</label><input type="number" id="graceSeconds" min="5" max="3600" value="{{.GraceSeconds}}" oninput="checkChanges()"></div>
+<div class="actions"><button class="btn primary" id="btnSave" onclick="saveConfig()" disabled data-i18n="save">💾 Save</button><button class="btn" onclick="restartService()" data-i18n="restartService">🔄 Restart service</button></div>
+</section>
+
+<footer data-i18n="otherSettings">Other settings are in the PC app.</footer>
+</main>
+<script>
+const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'};
+const $ = id => document.getElementById(id);
+
+function getPreferredTheme() {
+    try { const s = localStorage.getItem('theme'); if (s) return s; } catch (e) {}
+    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    $('btnTheme').textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    applyTheme(next);
+}
+applyTheme(getPreferredTheme());
+
+const i18n = {
+    en: {
+        status: 'Status', pc: 'PC', session: 'Session', service: 'Service', grace: 'Grace period',
+        on: 'On', up: 'up', screenOff: 'screen off', locked: '🔒 Locked', unlocked: 'In use', noUser: 'No one signed in',
+        updateAvail: 'update available', upToDate: 'up to date',
+        hubOk: '✅ Connected', hubStale: '⚠️ No recent contact', hubNever: 'Never contacted', ago: 'ago',
+        graceOn: 'On · {s}s', graceOff: 'Off',
+        power: 'Power', lock: '🔒 Lock', turnscreenoff: '🖥️ Screen off', turnscreenon: '💡 Screen on',
+        suspend: '😴 Sleep', hibernate: '💤 Hibernate', restart: '🔁 Restart', shutdown: '⏻ Shut down', forceshutdown: '⚠️ Force shut down',
+        powerInfo: 'Buttons here run at once; the grace period applies to SmartThings commands.',
+        scheduleTitle: 'Schedule', optShutdown: 'Shut down', optRestart: 'Restart', optSuspend: 'Sleep',
+        optHibernate: 'Hibernate', optForce: 'Force shut down', minLater: 'min later', scheduleBtn: 'Schedule',
+        cancel: 'Cancel', schedIn: '{cmd} in {t}', originRemote: 'grace', originTelegram: 'Telegram', originSmartthings: 'SmartThings', originUi: 'app/WebUI',
+        settings: 'Settings', port: 'Port', portInfo: 'SmartThings port; this page is on port + 1. Applied after a service restart.',
+        secret: 'Secret', secretInfo: 'Type a new secret to change it; leave empty to keep the current one.',
+        webuiRemote: 'Allow browser access (LAN)', webuiRemoteInfo: 'Requires a secret. Applied after a service restart — turning it off closes this page.',
+        shutdownGrace: 'Grace period for remote power commands', graceSeconds: 'Grace period (seconds, 5–3600)',
+        save: '💾 Save', restartService: '🔄 Restart service', otherSettings: 'Other settings are in the PC app.',
+        confirmExec: 'Run {cmd} now? It affects the PC immediately.', confirmSchedule: 'Schedule {cmd} in {min} minutes?',
+        confirmCancel: 'Cancel the scheduled task?', confirmRestart: 'Restart the service? This page disconnects briefly.',
+        sent: '{cmd} sent', failed: 'Request failed', badMinutes: 'Minutes must be between 1 and 4320',
+        badGrace: 'Grace period must be between 5 and 3600 seconds', badPort: 'Port must be between 1 and 65535',
+        restarting: 'Service restarting…', d: 'd', h: 'h', m: 'm', s: 's',
+    },
+    ko: {
+        status: '상태', pc: 'PC', session: '세션', service: '서비스', grace: '유예',
+        on: '켜짐', up: '가동', screenOff: '화면 꺼짐', locked: '🔒 잠김', unlocked: '사용 중', noUser: '로그인한 사용자 없음',
+        updateAvail: '업데이트 있음', upToDate: '최신',
+        hubOk: '✅ 연결됨', hubStale: '⚠️ 최근 연락 없음', hubNever: '연락한 적 없음', ago: '전',
+        graceOn: '켜짐 · {s}초', graceOff: '꺼짐',
+        power: '전원', lock: '🔒 잠금', turnscreenoff: '🖥️ 화면 끄기', turnscreenon: '💡 화면 켜기',
+        suspend: '😴 절전', hibernate: '💤 최대 절전', restart: '🔁 재시작', shutdown: '⏻ 종료', forceshutdown: '⚠️ 강제 종료',
+        powerInfo: '여기 버튼은 바로 실행됩니다. 유예는 SmartThings 명령에 적용됩니다.',
+        scheduleTitle: '예약', optShutdown: '종료', optRestart: '재시작', optSuspend: '절전',
+        optHibernate: '최대 절전', optForce: '강제 종료', minLater: '분 후', scheduleBtn: '예약',
+        cancel: '취소', schedIn: '{t} 후 {cmd}', originRemote: '유예', originTelegram: '텔레그램', originSmartthings: 'SmartThings', originUi: '앱/WebUI',
+        settings: '설정', port: '포트', portInfo: 'SmartThings 포트이며 이 페이지는 포트 + 1입니다. 서비스를 재시작하면 적용됩니다.',
+        secret: '시크릿', secretInfo: '바꿀 때만 새 시크릿을 입력하세요. 비워 두면 그대로 둡니다.',
+        webuiRemote: '브라우저 접속 허용 (LAN)', webuiRemoteInfo: '시크릿이 있어야 합니다. 서비스를 재시작하면 적용되며, 끄면 이 페이지가 닫힙니다.',
+        shutdownGrace: '원격 전원 명령 유예', graceSeconds: '유예 시간 (초, 5–3600)',
+        save: '💾 저장', restartService: '🔄 서비스 재시작', otherSettings: '나머지 설정은 PC의 앱에서',
+        confirmExec: '{cmd}을(를) 지금 실행할까요? PC에 바로 적용됩니다.', confirmSchedule: '{min}분 후 {cmd}을(를) 예약할까요?',
+        confirmCancel: '예약된 작업을 취소할까요?', confirmRestart: '서비스를 재시작할까요? 잠시 연결이 끊깁니다.',
+        sent: '{cmd} 보냄', failed: '요청 실패', badMinutes: '분은 1~4320 사이여야 합니다',
+        badGrace: '유예 시간은 5~3600초 사이여야 합니다', badPort: '포트는 1~65535 사이여야 합니다',
+        restarting: '서비스를 재시작합니다…', d: '일 ', h: '시간 ', m: '분 ', s: '초',
+    }
+};
+let lang = 'en';
+try { lang = localStorage.getItem('lang') || ''; } catch (e) {}
+if (!i18n[lang]) lang = navigator.language.startsWith('ko') ? 'ko' : 'en';
+function t(key) { return i18n[lang][key] || i18n.en[key] || key; }
+function applyLang() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+    $('btnLang').textContent = lang === 'ko' ? 'EN' : '한국어';
+    render();
+}
+function toggleLang() {
+    lang = lang === 'ko' ? 'en' : 'ko';
+    try { localStorage.setItem('lang', lang); } catch (e) {}
+    applyLang();
+}
+// cmdName is the plain label of a command (no emoji) for messages.
+function cmdName(cmd) { return t(cmd).replace(/^\S+\s/, ''); }
+function fmtDur(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    const out = d ? [d + t('d'), h + t('h')] : h ? [h + t('h'), m + t('m')] : m ? [m + t('m'), s + t('s')] : [s + t('s')];
+    return out.join(lang === 'ko' ? '' : ' ').trim();
+}
+
+let toastTimer = null;
+function toast(msg, type) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = ''; }, 5000);
+}
+// api does one request; it sends the CSRF header always and goes to the
+// login page when the session is gone.
+async function api(method, path, body) {
+    const opts = {method, headers};
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (res.status === 401) { location.href = '/login'; throw new Error('unauthorized'); }
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || data.status === 'error') throw new Error(data.message || ('HTTP ' + res.status));
+    return data;
+}
+
+// Status card: /api/status every 5 seconds, the countdown ticks locally.
+let status = null, fetchedAt = 0;
+async function loadStatus() {
+    try { status = await api('GET', '/api/status'); fetchedAt = Date.now(); render(); } catch (e) {}
+}
+function render() {
+    if (!status) return;
+    const st = status, el = (Date.now() - fetchedAt) / 1000;
+    let pc = (st.hostname ? st.hostname + ' · ' : '') + t('on') + ' · ' + t('up') + ' ' + fmtDur(st.uptime_seconds + el);
+    if (st.display === 'off') pc += ' · ' + t('screenOff');
+    $('stPC').textContent = pc;
+    const ses = st.session || {};
+    $('rowSession').hidden = !ses.exposed;
+    if (ses.exposed) {
+        $('stSession').textContent = ses.locked === undefined ? t('noUser') : (ses.locked ? t('locked') : t('unlocked')) + (ses.user ? ' · ' + ses.user : '');
+    }
+    const svc = $('stService');
+    svc.textContent = st.version + ' · ' + (st.update.available ? t('updateAvail') + ' ' + st.update.latest : t('upToDate'));
+    svc.className = st.update.available ? 'warn' : '';
+    const hub = st.smartthings, hubEl = $('stHub');
+    if (!hub.last_seen) { hubEl.textContent = t('hubNever'); hubEl.className = 'warn'; }
+    else {
+        const ago = fmtDur((Date.now() - Date.parse(hub.last_seen)) / 1000);
+        hubEl.textContent = (hub.connected ? t('hubOk') : t('hubStale')) + ' · ' + ago + ' ' + t('ago');
+        hubEl.className = hub.connected ? 'ok' : 'warn';
+    }
+    $('stGrace').textContent = st.grace.enabled ? t('graceOn').replace('{s}', st.grace.seconds) : t('graceOff');
+    const sc = st.schedule || {};
+    $('schedActive').hidden = !sc.active;
+    $('schedForm').hidden = !!sc.active;
+    if (sc.active) {
+        const o = 'origin' + (sc.origin || 'ui').replace(/^./, c => c.toUpperCase());
+        $('schedText').textContent = '⏱️ ' + t('schedIn').replace('{cmd}', cmdName(sc.command)).replace('{t}', fmtDur(sc.remainingSec - el)) + ' (' + t(o) + ')';
+    }
+}
+
+async function runCmd(cmd) {
+    if (!['lock', 'turnscreenoff', 'turnscreenon'].includes(cmd) && !confirm(t('confirmExec').replace('{cmd}', cmdName(cmd)))) return;
+    try { await api('POST', '/api/command', {command: cmd, by: 'webui'}); toast(t('sent').replace('{cmd}', cmdName(cmd)), 'success'); }
+    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+}
+async function scheduleCmd() {
+    const command = $('schedCmd').value, minutes = parseInt($('schedMin').value, 10);
+    if (!(minutes >= 1 && minutes <= 4320)) { toast(t('badMinutes'), 'error'); return; }
+    if (!confirm(t('confirmSchedule').replace('{cmd}', cmdName(command)).replace('{min}', minutes))) return;
+    try { const d = await api('POST', '/api/schedule', {command, minutes}); toast(d.message, 'success'); }
+    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+    loadStatus();
+}
+async function cancelSchedule() {
+    if (!confirm(t('confirmCancel'))) return;
+    try { const d = await api('DELETE', '/api/schedule?by=webui'); toast(d.message, 'success'); }
+    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+    loadStatus();
+}
+
+const fields = ['port', 'secret', 'webuiRemote', 'shutdownGrace', 'graceSeconds'];
+const val = id => $(id).type === 'checkbox' ? $(id).checked : $(id).value;
+let original = {};
+function snapshot() { fields.forEach(id => { original[id] = val(id); }); }
+function checkChanges() { $('btnSave').disabled = !fields.some(id => val(id) !== original[id]); }
+async function saveConfig() {
+    const port = parseInt($('port').value, 10), grace_seconds = parseInt($('graceSeconds').value, 10);
+    if (!(port >= 1 && port <= 65535)) { toast(t('badPort'), 'error'); return; }
+    if (!(grace_seconds >= 5 && grace_seconds <= 3600)) { toast(t('badGrace'), 'error'); return; }
+    // Only the core keys: the service decodes over the live config, so
+    // everything the PC app manages is left alone. No secret key keeps it.
+    const body = {port, webui_remote: $('webuiRemote').checked, shutdown_grace: $('shutdownGrace').checked, grace_seconds};
+    if ($('secret').value !== '') body.secret = $('secret').value;
+    try {
+        const d = await api('POST', '/api/config', body);
+        $('secret').value = '';
+        $('secret').placeholder = '••••••••';
+        snapshot();
+        checkChanges();
+        toast(d.message, 'success');
+        loadStatus();
+    } catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+}
+async function restartService() {
+    if (!confirm(t('confirmRestart'))) return;
+    try { await api('POST', '/api/restart-service'); } catch (e) {}
+    toast(t('restarting'), 'success');
+    setTimeout(() => location.reload(), 3000);
+}
+
+snapshot();
+applyLang();
+loadStatus();
+setInterval(loadStatus, 5000);
+setInterval(render, 1000);
+</script>
 </body>
 </html>
