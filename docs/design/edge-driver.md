@@ -240,7 +240,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 
 - `execute`의 `command` enum은 서비스 명령 여덟에 `wake`와 `none`, 그리고 #93의 `busyOff` `busyRestart` `busyWake` `busySleep` `busyHibernate`를 더한 열다섯이다. `wake`는 서비스로 나가지 않는 WoL 시퀀스이고, **`none`과 `busy*`는 아무것도 하지 않고 폴링만 한다** — 목록을 고르지 않고 닫으면 휴대폰이 그 줄의 현재 값을 인자로 보내기 때문이다.
 - `lastAction`은 **쉬는 값**에 머문다. 평소에는 `none`("명령 선택…"), 전원 전환 중에는 `busy*`("종료 진행 중…")다(§6.9). 무엇이 실행됐는지는 `lastCommand`가 말한다.
-- `supportedCommands`(#93)는 명령 목록이 보여 줄 키의 배열이다. 평소에는 메뉴 전체(`wake` `suspend` `hibernate` `restart` `shutdown` `lock` `turnscreenoff` `turnscreenon`), 전환 중에는 지금 쉬는 `busy*` 하나뿐이다 — 그 값은 메뉴 항목이 아니므로 고를 것이 없어지기를 노린다. 프레젠테이션의 `supportedValues`가 이 속성을 읽는다. **실기 확인 대기**(플랫폼 노트 "supportedValues"). 빈 배열은 쓰지 않는다.
+- `supportedCommands`(#93)는 명령 목록이 보여 줄 키의 배열이다. 평소에는 메뉴 전체(`wake` `suspend` `hibernate` `restart` `shutdown` `lock` `turnscreenoff` `turnscreenon`), 전환 중에는 지금 쉬는 `busy*` 하나뿐이다 — 그 값은 메뉴 항목이 아니므로 고를 것이 없어지기를 노린다. 프레젠테이션의 `supportedValues`가 이 속성을 읽는다. 확인 전이다(§12, 플랫폼 노트 "supportedValues"). 빈 배열은 쓰지 않는다.
 - `schedule`의 `minutes`는 **문자열 enum**이다: `-1` `0`과 프리셋 열여섯(`5` `10` `15` `30` `45` `60` `90` `120` `180` `240` `360` `480` `720` `1440` `2880` `4320`). **`-1`은 무동작**(폴링만), **`0`은 취소**, 나머지는 예약이다. 드라이버는 `tonumber`로 숫자를 되읽는다. `remainingSeconds`의 상한은 가장 긴 프리셋에 맞춘 259200이다.
 - 문자열인 이유(#91, 실측): 목록을 고르지 않고 닫을 때 나가는 현재 값은 프레젠테이션의 `argumentType` 변환을 **거치지 않는다.** `schedule(-1)`은 허브에 닿았지만 `schedule("-1")`은 `422 commands[0].arguments[0]: string found, integer expected`로 클라우드에서 막혔다. 그래서 목록이 보내는 인자는 문자열 enum으로 정의하고, 프레젠테이션에서 `argumentType`은 뺀다. 정의가 바뀌었으므로 capability id도 `pcDelay` → `pcDefer`다 — 허브가 정의를 id로 캐시한다(#89에는 같은 이유로 `pcPlanner` → `pcDelay`였다).
 - 클라우드가 인자를 정의로 검증하므로 목록이 보내는 값 — 고른 값이든 닫을 때 나가는 현재 값이든 — 이 모두 정의 안에 있어야 한다.
@@ -255,7 +255,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 | capability | 컴포넌트 | 속성 ← status | 명령 → `/st/v1/command` |
 |---|---|---|---|
 | `audioTrackData` (표준, #118) | main (또는 `media`, §6.6) | `audioTrackData` = `{title, artist?, album?}` ← `media.title/artist/album` — `features`에 `nowplaying`(옵트인)이 있고 제목이 있을 때만. 블록은 있는데 제목이 없으면 `{title: "재생 중인 미디어 없음"}`(옵트인 꺼짐이면 "재생 정보 꺼짐"), 블록이 없으면(#117 이전) 내보내지 않음. 빈 필드는 빼고 `""`는 보내지 않는다 | – |
-| `mediaPlayback` (표준) | main (또는 `media`) | `supportedPlaybackCommands` = `play` `pause` `stop` (상수). #118: `playbackStatus` ← `media.status`(`playing`/`paused`/`stopped`, `none` → `stopped`). 블록이 없으면 보내지 않음(`features.PLAYBACK_RESTING`, 실측 대기) | `play` `pause` `stop`, `setPlaybackStatus(playing\|paused\|stopped)` → `play`/`pause`/`stop` |
+| `mediaPlayback` (표준) | main (또는 `media`) | `supportedPlaybackCommands` = `play` `pause` `stop` (상수). #118: `playbackStatus` ← `media.status`(`playing`/`paused`/`stopped`, `none` → `stopped`). 블록이 없으면 보내지 않음(`features.PLAYBACK_RESTING`, §12) | `play` `pause` `stop`, `setPlaybackStatus(playing\|paused\|stopped)` → `play`/`pause`/`stop` |
 | `mediaTrackControl` (표준) | main | `supportedTrackControlCommands` = `nextTrack` `previousTrack` (상수) | `nextTrack` → `next`, `previousTrack` → `prev` |
 | `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
@@ -272,9 +272,9 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 - 막힌 명령은 그 줄의 현재 값을 강제로 다시 내보내고(회전 표시 뒤 오류 방지), `pcInfo.message`·`summary`에 이유를 띄운다(§6.9의 `emit_note`와 같은 모양). 성공하면 바로 폴링하면서 그 줄들을 강제로 내보낸다(`poll.once(..., {force = rows})`).
 - 이번 구동에서 아직 status를 읽지 못했으면(허브 재시작 직후) 명령 전에 한 번 폴링한다. 그래도 모르면 "PC에 연결할 수 없습니다".
 - 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.
-- **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, 실측 대기). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `rows.PRESET_HOLD_SECONDS`(5초) 뒤에 장치별 타이머(`rows.hold_preset`, `preset-reset`)가 `none`으로 되돌리고 `rows.PRESET_REPEAT_SECONDS`(2초) 뒤 타이머(`preset-repeat`)가 한 번 더 보낸다 — 바뀔 때 강제 한 번 + 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 예전에는 5초가 지난 **첫 폴링·푸시**가 되돌려 기본 간격 30초에서 최대 35초 동안 같은 프리셋을 다시 실행할 수 없었다. 그 사이 다른 슬롯을 실행하면 걸린 타이머를 바꿔 끼우고(쌓지 않는다), 타이머를 못 걸면 폴링·푸시가 예전처럼 되돌린다. 5초보다 줄이지 않는 이유: 명령의 응답 폴링(바로, 또는 합쳐진 창이 닫히는 1.5초 뒤 + PC 응답 시간)이 먼저 되돌리지 않아야 하는데 `clock.epoch`이 초 단위라 3초면 실제 2초 남짓에 끝날 수 있다. 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
+- **프리셋 목록(#113)**: 목록 항목은 프레젠테이션에 고정이라 "프리셋 1 (Preset 1)"…"프리셋 10"의 슬롯이고, 비어 있는 슬롯은 `supportedValues: "supportedSlots.value"`로 숨긴다(#93과 같은 실험, §12). 이름은 따로 `names` 상태 줄. 목록이 쉬는 값은 `none`("프리셋 선택…")이고 `run("none")`은 줄에 강제로 답만 한다. 실행에 성공하면 `lastPreset`을 그 슬롯("프리셋 3 실행함")으로 강제로 내보내고, `rows.PRESET_HOLD_SECONDS`(5초) 뒤에 장치별 타이머(`rows.hold_preset`, `preset-reset`)가 `none`으로 되돌리고 `rows.PRESET_REPEAT_SECONDS`(2초) 뒤 타이머(`preset-repeat`)가 한 번 더 보낸다 — 바뀔 때 강제 한 번 + 한 번 더, 그 뒤로는 보내지 않는다(`lastAction`의 규칙, 플랫폼 노트 "강제 이벤트 연발"). 예전에는 5초가 지난 **첫 폴링·푸시**가 되돌려 기본 간격 30초에서 최대 35초 동안 같은 프리셋을 다시 실행할 수 없었다. 그 사이 다른 슬롯을 실행하면 걸린 타이머를 바꿔 끼우고(쌓지 않는다), 타이머를 못 걸면 폴링·푸시가 예전처럼 되돌린다. 5초보다 줄이지 않는 이유: 명령의 응답 폴링(바로, 또는 합쳐진 창이 닫히는 1.5초 뒤 + PC 응답 시간)이 먼저 되돌리지 않아야 하는데 `clock.epoch`이 초 단위라 3초면 실제 2초 남짓에 끝날 수 있다. 그 몇 초 동안 줄이 "3"에 쉬므로 목록을 그냥 닫으면 `run("3")`이 온다. **줄이 보여 주는 바로 그 슬롯의 `run`은 무동작**으로 받는다 — 같은 프리셋을 연달아 두 번 실행하지 않는다. 등록되지 않은 슬롯(루틴)은 보내지 않고 "프리셋 7 비어 있음". 원격은 슬롯 번호만 보낸다(media-notify.md §10).
 - **앱 감지(#123, §4.2)**: 켜져 있다는 판단은 `activity.enabled`와 `features`의 `"activity"` 둘 다다(서비스는 옵트인이 켜져 있을 때만 기능을 싣는다, #110). PC에는 요약 줄 `pcApps.summary` 하나만 있고, 실행 중인 것 중 **목록 순서가 가장 앞선** 앱을 이름으로 말한다(`top`이 실행 중인 항목을 가리키지 않으면 첫 실행 중 항목). 앱마다의 "실행 중 / 꺼짐"은 자식 장치가 말한다. 푸시 `activity.changed`(`data`는 status의 `activity` 블록 그대로)도 전체 status를 싣고 오므로 폴링과 같은 경로로 요약 줄과 자식 장치가 바로 반영된다. kind 방식(#114, `pcActivity`)은 공개된 적이 없어 호환 계층 없이 바뀌었다.
-- **잠들지 않기(#115)**: 표준 `switch`가 두 컴포넌트에 있으므로 핸들러는 `command.component`로 가른다 — `main`(또는 없음)은 전원(§6.2), `awake`는 `awake`/`awakeoff`. 기능 가드는 `"awake"`이고 사용자 세션은 필요 없다. 켜져 있는 동안 다시 켜면 지금부터 새 기간이다(§12). 막힌 명령은 토글을 마지막 status의 값으로 강제로 되돌린다. 전원 전환 가드(§6.9)는 적용하지 않는다 — 전원을 움직이지 않는다. 푸시 `awake.changed`로 바로 반영된다.
+- **잠들지 않기(#115)**: 표준 `switch`가 두 컴포넌트에 있으므로 핸들러는 `command.component`로 가른다 — `main`(또는 없음)은 전원(§6.2), `awake`는 `awake`/`awakeoff`. 기능 가드는 `"awake"`이고 사용자 세션은 필요 없다. 켜져 있는 동안 다시 켜면 지금부터 새 기간이다(media-notify.md §12). 막힌 명령은 토글을 마지막 status의 값으로 강제로 되돌린다. 전원 전환 가드(§6.9)는 적용하지 않는다 — 전원을 움직이지 않는다. 푸시 `awake.changed`로 바로 반영된다.
 - **PC 알림(#108)**: 문구는 제어 문자를 공백으로, 연속 공백을 하나로, 양끝을 다듬고 200자(코드 포인트)에서 "…"로 자른다. 비면 보내지 않는다("보낼 문구 없음"). 입력 줄은 `lastMessage`에 묶여 있고 앱은 그 속성의 이벤트를 기다리므로, **`send`마다 그 줄에 강제로 답한다** — 보냈으면 보낸 문구(같은 문구를 두 번 보내도 `state_change`), 거절·실패면 지금 값을 다시. 보낸 문구는 persist 해 재시작 뒤에도 줄에 남고, 폴링·푸시가 강제 없이 다시 내보내 구동마다 첫 번째만 강제된다(`fields.ROWS_FORCED`). 가드는 `"notify"`, 결과 문구는 `pcInfo.message`에만 — 보냈으면 "PC에 메시지를 보냈습니다", 옛 서비스·기능 없음은 §4.1 위의 문구, `403 notify_disabled` "PC 알림 꺼짐", `409` "사용자 없음", `429` "잠시 후 다시"(서비스의 출처별 분당 10회).
 - **왜 커스텀 `pcToast`인가**: 처음에는 표준 `notification`을 썼지만 앱이 그 줄을 "텍스트 표시"로 부르고, 표준 capability의 라벨은 장치 쪽에서 덮어쓸 수 없다(플랫폼 노트 "표준 capability"). 그래서 커스텀 capability로 "PC에 메시지 보내기"를 번역 파일에 둔다(media-notify.md §5). 소리내어 읽기는 없앴다 — 그것까지 있던 `pcMessage`(Dev 채널의 `pc.v3`)와 v2의 표준 두 핸들러도 함께 지웠다. 명령만 있던 `pcNotify`(`pc.v4`)는 입력 줄이 속성에 묶이지 않아 회전 뒤 "네트워크 오류"로 끝났고(2026-10-01), 속성을 더하는 것은 정의 변경이라 새 id `pcToast`가 됐다. 셋 다 공개된 적이 없어 옮겨 줄 장치는 개발 장치뿐이고, 그 장치는 첫 `init`에서 v6으로 옮겨진다.
 - **배터리(#116)**: 데스크톱에 빈 배터리 카드가 생기지 않도록 배터리는 `-battery` 프로필에만 있다. 폴링·푸시마다 `profiles.apply_battery(device, status.battery.present)`가 장치의 프로필과 status를 비교하고, **연속 두 번**(`profiles.BATTERY_VOTES`) 같은 답이 나와야 같은 스타일의 반대쪽으로 옮긴다(`pc-tv.v6` ⇄ `pc-tv-battery.v6`). 한 번 튀는 값은 무시하고, 거절된 대상은 같은 구동에서 다시 묻지 않는다. 옮기면 1초 뒤 `repaint_soon`(폴링 안에서 요청을 겹치지 않으려고 타이머로). 답은 `fields.HAS_BATTERY`에 persist 해 다음 버전 이전(`ensure`)이 바로 맞는 쪽으로 가게 한다. 옮기기 전의 배터리 이벤트는 컴포넌트가 없어 건너뛰고, 옮긴 뒤의 다시 칠하기가 채운다. 푸시 `battery.changed`는 전체 status를 싣고 온다.
@@ -298,7 +298,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 - **목록 편집 직후의 보류**: 계약상 설정을 저장한 직후 다음 스캔까지 모든 항목이 `running: false`로 나온다. 그래서 **목록 자체(id·라벨·순서)가 바뀐 status**는 "실행 중"으로 보이는 자식을 "꺼짐"으로 옮기지 않고, 목록이 그대로인 다음 status가 정한다(`apps.plan`의 `held`). 목록 편집과 겹친 진짜 종료는 status 하나만큼 늦다.
 - **lifecycle**: `init`·`added`·`removed`·`infoChanged`·`doConfigure`는 `parent_assigned_child_key`로 갈라, 자식에게는 PC의 이전·아이콘·폴링·푸시 경로를 하나도 타지 않는다. `init`/`added`는 online으로 두고, 이번 구동에서 본 부모의 마지막 status(`extras.apps`)로 바로 칠한다. 부모는 메모리에 기억한 것만 쓴다(`get_parent_device`는 lifecycle 안에서 막힐 수 있다, 플랫폼 노트). 부모를 아직 모르면 부모의 첫 폴링이 칠한다. 자식의 `refresh`는 부모를 폴링한다. `infoChanged`는 사용자의 이름 바꾸기뿐이라 아무것도 하지 않는다.
 - #81의 옛 모니터 자식(`parent_assigned_child_key` = `"display"` 또는 `pc-display.vN` 프로필)은 여전히 `init`에서 지운다. 그 밖의 자식 키는 앱 자식이다.
-- 지우지 못한 자식의 offline, 자식 장치의 이벤트 예산이 장치마다 따로인지, 앱에서의 아이콘·방 배치는 Dev 채널 실측 대기다(media-notify.md §16).
+- 자식이 허브에 생기는 것은 2026-10-01 Dev 허브에서 확인했다. 지우지 못한 자식의 offline, 자식의 이벤트 예산, 아이콘·방 배치는 §12.
 
 ## 5. 화면 구성
 
@@ -306,7 +306,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 
 - `pcPower` 프레젠테이션의 `dashboard.states`는 `{{powerState.value}}` 하나이고, 대안 문구는 enum 일곱 값 모두에 상세 줄과 **같은** "한국어 (English)" 병기를 쓴다 — 타일과 상세 줄이 다른 말을 하지 않게. `dashboard.actions`는 비워 둔다. 토글은 `switch` capability 자신의 프레젠테이션이 준다.
 - 다른 커스텀 capability의 `dashboard.states`는 비어 있다. 타일 자리를 다투지 않는다.
-- 이 문구는 #83부터 프레젠테이션에 들어 있었다. #101 시점에 타일이 토글만 보였다면 원인은 프레젠테이션 파일이 아니라 **장치 화면 쪽**이다 — 화면은 장치가 올라탄 프로필 이름으로 굳고(플랫폼 노트 "프로필과 화면 생성"), 자동 생성된 화면이 타일에 무엇을 쓰는지는 아직 재지 않았다. **실측 대기**: Dev 채널에서 새 장치의 타일을 보고, 문구가 없으면 프로필(capability 순서 또는 화면 정의) 쪽을 고친다.
+- 이 문구는 #83부터 프레젠테이션에 들어 있었다. #101 시점에 타일이 토글만 보였다면 원인은 프레젠테이션 파일이 아니라 **장치 화면 쪽**이다 — 화면은 장치가 올라탄 프로필 이름으로 굳고(플랫폼 노트 "프로필과 화면 생성"), 자동 생성된 화면이 타일에 무엇을 쓰는지는 아직 재지 않았다. 새 장치의 타일에 문구가 없으면(§12) 프로필(capability 순서 또는 화면 정의) 쪽을 고친다.
 
 **상세 화면** — 앱이 상태 줄과 조작 줄을 각각 한 카드로 모은다.
 
@@ -332,7 +332,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 | 잠들지 않기 (#115) | 컴포넌트 `awake`의 표준 스위치 토글. 루틴 동작·조건에 그대로 쓴다 |
 | 배터리 (#116) | 컴포넌트 `battery`의 표준 `battery`(잔량 %)·`powerSource`(전원 공급원). 배터리가 있는 PC(`-battery` 프로필)에만 |
 
-- 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 edge-v1.0 capability의 맨 끝이고, v1.2.0 capability는 그 뒤에 media-notify.md §15 "UI 구성" 순서로 온다(미디어 묶음 → 나머지). 표준 capability의 줄이 우리 상태·조작 카드에 섞이는지, 따로 그려지는지는 실측 대기다(media-notify.md §16).
+- 카드 안의 순서는 프로필의 capability 목록 순서를 따른다. 그래서 `pcVersion`이 edge-v1.0 capability의 맨 끝이고, v1.2.0 capability는 그 뒤에 media-notify.md §15 "UI 구성" 순서로 온다(미디어 묶음 → 나머지). 표준 capability의 줄이 우리 상태·조작 카드에 섞이는지, 따로 그려지는지는 §12.
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
 - 모든 상태 줄은 해당 사항이 없을 때도 문구를 갖는다("없음 (None)", 예약 "없음", 세션 "꺼짐", 버전의 서비스 자리에 `v?`). 빈 문자열은 화면에서 "-"로 보인다.
 - **값 문구는 줄 라벨을 되풀이하지 않는다**(#87). 라벨이 이미 "예약"·"세션"이라고 말하고 있고, 값 칸은 휴대폰이 잘라 낸다. 각 줄이 말하는 것:
@@ -389,7 +389,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 
 - `switch on`과 `execute(wake)`는 같은 시퀀스다: 매직 패킷을 **즉시·2초 뒤·5초 뒤** 세 번, 포트 **7과 9** 양쪽으로 보낸다.
 - **MAC은 세 단계로 고른다**(#97): ① `macAddress` 환경설정 — 사용자가 드라이버에 직접 넣은 값이라 무엇도 밀어내지 못한다 ② 마지막 폴링이 기억한 `wol.selected.mac`(없으면 `adapters[].selected`가 가리키는 행) — 서비스가 고른 어댑터다(§3.2) ③ 그것도 없는 옛 서비스면 예전 추측, 즉 `wol.adapters`에서 `wol_enabled`인 첫 어댑터, 아니면 MAC이 있는 첫 어댑터. ②③은 persist 한다: 깨우는 시점은 PC가 꺼져 있는 시점이라 읽을 상태 응답이 없다.
-- **"WoL 꺼짐" 안내는 고른 어댑터 하나를 기준으로 한다**(#97). `wol.selected.wol_enabled`가 답이고, `selected`가 없는 옛 서비스에서만 `wol.ready`를 쓴다. 다른 랜카드에 WoL이 켜져 있다고 경고가 가려지지도, 고른 어댑터가 멀쩡한데 경고가 뜨지도 않는다. `pcInfo.message`는 어댑터 이름을 넣어 "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인"이라고 쓰고, `pcInfo.summary`는 줄이 `state.SUMMARY_MAX_CHARS`(24자) 안에 들어올 때만 "연결됨 · WoL 꺼짐 (이더넷)"까지 쓴다 — 넘치면 이름을 빼고 "연결됨 · WoL 꺼짐"으로 돌아간다(상세 줄은 말없이 잘린다, 플랫폼 노트 "화면 배치"). #102의 가동 시간은 이름보다 먼저 빠진다(§5).
+- **"WoL 꺼짐" 안내는 고른 어댑터 하나를 기준으로 한다**(#97). `wol.selected.wol_enabled`가 답이고, `selected`가 없는 옛 서비스에서만 `wol.ready`를 쓴다. 다른 랜카드에 WoL이 켜져 있다고 경고가 가려지지도, 고른 어댑터가 멀쩡한데 경고가 뜨지도 않는다. `pcInfo.message`는 어댑터 이름을 넣어 "이더넷 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인"(#128 전에는 "네트워크 탭")이라고 쓰고, `pcInfo.summary`는 줄이 `state.SUMMARY_MAX_CHARS`(24자) 안에 들어올 때만 "연결됨 · WoL 꺼짐 (이더넷)"까지 쓴다 — 넘치면 이름을 빼고 "연결됨 · WoL 꺼짐"으로 돌아간다(상세 줄은 말없이 잘린다, 플랫폼 노트 "화면 배치"). #102의 가동 시간은 이름보다 먼저 빠진다(§5).
 - 보내는 주소는 `wolBroadcast`(기본 `255.255.255.255`). 공유기가 막으면 서브넷 브로드캐스트를 넣는다.
 - 상태는 `waking`이 되고 90초 뒤에도 응답이 없으면 직전 상태로 돌아가며 "깨우기 실패"를 `pcInfo.message`에 쓴다. 그 사이 폴링이나 푸시가 성공하면 타임아웃을 취소한다.
 - 어댑터의 WoL이 꺼져 있다는 것을 이미 알고 있으면 패킷은 그대로 보내되 미리 안내를 띄운다. 마지막 폴링이 어댑터 이름까지 기억해 두므로(persist) PC가 꺼져 있어도 어느 랜카드를 열어야 하는지 말해 준다.
@@ -405,7 +405,7 @@ init → handlers/* → poll → apps · push · wol · discovery → device/* �
 - `machine_id`는 같은데 호스트 이름이 다르면(이미지 복제) 경고를 `pcInfo.message`에 띄운다.
 - `ipAddress` 환경설정이 비어 있고 `followDiscovery`가 켜져 있으면 검색이 알려 온 주소를 따라간다. `unreachable`이 된 장치는 **장치당 5분에 한 번** 표적 검색을 돈다.
 - `config.yml`의 `permissions`에는 `lan`과 `discovery`가 모두 필요하다.
-- 검색은 **PC가 켜져 있고 PC Control이 돌고 있을 때만** 응답을 받는다. 0대가 나왔을 때 PC 쪽에서 볼 곳은 앱 [네트워크] 탭의 검색 상태 줄이고, 그 값은 `GET /api/st/hub`의 `ssdp: {running, firewall_rule, last_search: {ip, at}}`에서 온다(§3.6). 순서는 앱 켜짐 → 방화벽 규칙 → 마지막 검색 요청 시각 → 허브 allow list.
+- 검색은 **PC가 켜져 있고 PC Control이 돌고 있을 때만** 응답을 받는다. 0대가 나왔을 때 PC 쪽에서 볼 곳은 앱 SmartThings 탭의 검색 상태 줄이고, 그 값은 `GET /api/st/hub`의 `ssdp: {running, firewall_rule, last_search: {ip, at}}`에서 온다(§3.6). 순서는 앱 켜짐 → 방화벽 규칙 → 마지막 검색 요청 시각 → 허브 allow list.
 
 ### 6.6 프로필 이전
 
@@ -475,7 +475,7 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 
 **② 항목 숨김 실험** — `supportedCommands`(string 배열)를 프레젠테이션의
 `supportedValues`가 읽는다. 평소에는 메뉴 여덟, 전환 중에는 지금 쉬는 `busy*`
-하나뿐이다. **실기 확인 대기**이고, 먹지 않아도 ①과 ③은 그대로 성립한다. 빈
+하나뿐이다. 확인 전이고(§12), 먹지 않아도 ①과 ③은 그대로 성립한다. 빈
 배열은 쓰지 않는다(플랫폼 노트).
 
 **③ 드라이버 가드** — 전환 중 막히는 것과 통과하는 것:
@@ -532,7 +532,7 @@ PC가 **전환 중**일 때는 명령 목록이 "진행 중"으로 읽히고, �
 | `theater` | `pc-theater.v6` | HomeTheater |
 | `remote` | `pc-remote.v6` | RemoteController |
 
-`Others`는 앱에서 아이콘 선택이 막히고 `Computer` 카테고리는 API가 거부하므로, 아이콘을 바꾸는 길은 카테고리를 바꾸는 것뿐이다. 각 카테고리의 실제 아이콘과 앱의 아이콘 선택 가능 여부는 Dev 채널에서 실측해 후보를 확정한다(#100).
+`Others`는 앱에서 아이콘 선택이 막히고 `Computer` 카테고리는 API가 거부하므로, 아이콘을 바꾸는 길은 카테고리를 바꾸는 것뿐이다. 각 카테고리의 실제 아이콘은 §12.
 
 Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국어 (English)"로 병기한다.
 
@@ -561,10 +561,17 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - 드라이버와 서비스는 **따로 버전을 매긴다.** 드라이버는 채널로, 서비스는 GitHub Release로 나간다.
 - capability 정의·프레젠테이션·번역은 드라이버 패키지에 들어가지 않는다. 계정에 올리는 것은 `tools/sync-capabilities.sh`(갱신)와 `tools/create-capabilities.sh`(최초 생성)다.
 
-## 11. 정식 릴리스 전 체크리스트
+## 11. 첫 공개 때 정한 것 (edge-v1.0.0)
 
-1. **프로필 이름 리셋** — 최신 프로필을 `pc.v1`(파일 `profiles/pc.yml`)로 두고, 개발 중 쌓인 `pc-vN` 파일과 `profiles.lua`의 `KNOWN`을 `pc.v1`만 남긴다. 사용자에게 보이지 않는 이름표이므로 정식은 v1에서 시작한다. 개발 허브의 장치는 삭제 후 재추가한다. **첫 공개 때 pc.v1로 초기화했다(#90); 이후 화면이 바뀌면 v2부터 올린다.** `poll.ROWS_VERSION`도 같이 `"1"`로 되돌렸다 — 이전 스탬프를 가진 장치가 채널에는 없다.
-2. **capability 이름 확정** — `pcPower` `pcRemote` `pcDefer` `pcUser` `pcInfo` `pcVersion` 그대로 v1. 계정에 옛 정의가 남아 있지 않은지 `smartthings capabilities`로 확인한다. 배포 후 정의 변경은 새 id로만 가능하다.
-3. **버전** — `src/driver_version.lua` = `1.0.0`, 태그 `edge-v1.0.0`(CI가 일치를 검증한다).
-4. **채널** — 채널 이름은 `Protomothis`(id `53831a53-…`, 드라이버 id는 그대로). 초대 링크 `https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A`(만료 없음, `edge:channels:invites:create`로 생성)는 README/edge README/Wiki에 적혀 있다.
-5. **서비스** — v1.1.0 정식 태그는 `milestone/v1.1.0 → develop → main → v1.1.0` 순서로 올린다.
+- 프로필 이름은 공개 때 `pc.v1`로 초기화했다(#90). 개발 허브의 장치는 지우고 다시 추가했다. 이 절차가 생성 시점에 정해지는 모델명(§6.5)의 갱신도 대신했다. 이후 화면이 바뀌면 v2부터 올린다.
+- 공개된 capability id는 바꾸지 않는다. 정의를 바꾸려면 새 id다(플랫폼 노트).
+- 채널 이름은 `Protomothis`, 초대 링크 `https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A`(만료 없음)는 README·edge README·Wiki에 적는다.
+
+## 12. 남은 실측
+
+기기에서 아직 확인하지 않은 것. 확인되면 해당 절과 플랫폼 노트에 결과를 적고 여기서 지운다. 드라이버 1.1.0 항목의 자세한 목록은 media-notify.md §16.
+
+- `supportedValues`로 명령 목록·프리셋 슬롯을 줄이는지(#93, #113, 플랫폼 노트).
+- 대시보드 타일에 전원 상태 문구가 보이는지(#101), 카테고리별 실제 아이콘(#100).
+- 표준 capability 줄(미디어 묶음)이 상태·조작 카드와 섞이는지, 값이 없는 재생 줄의 모양(`features.PLAYBACK_RESTING`, #107, #118).
+- 앱 자식 장치의 삭제·offline, 자식의 이벤트 예산, 아이콘·방 배치(#123).
