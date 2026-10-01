@@ -117,34 +117,71 @@ func compareGolden(t *testing.T, name string, got any) {
 	want := readGolden(t, name)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("%s does not match the handler output (an API change? see testdata/st-v1/README.md):\n%s",
-			name, goldenDiff(encodeGolden(t, want), encodeGolden(t, got)))
+			name, goldenDiff(want, got))
 	}
 }
 
-// goldenDiff shows the lines that differ, with a little context.
-func goldenDiff(want, got []byte) string {
-	w := strings.Split(string(want), "\n")
-	g := strings.Split(string(got), "\n")
-	var b strings.Builder
-	shown := 0
-	for i := 0; i < len(w) || i < len(g); i++ {
-		var wl, gl string
-		if i < len(w) {
-			wl = w[i]
+// goldenDiff lists the JSON paths whose values differ, at most a dozen.
+func goldenDiff(want, got any) string {
+	var lines []string
+	var walk func(path string, w, g any)
+	walk = func(path string, w, g any) {
+		if reflect.DeepEqual(w, g) {
+			return
 		}
-		if i < len(g) {
-			gl = g[i]
+		wm, wok := w.(map[string]any)
+		gm, gok := g.(map[string]any)
+		if wok && gok {
+			keys := make([]string, 0, len(wm)+len(gm))
+			for k := range wm {
+				keys = append(keys, k)
+			}
+			for k := range gm {
+				if _, dup := wm[k]; !dup {
+					keys = append(keys, k)
+				}
+			}
+			slices.Sort(keys)
+			for _, k := range keys {
+				wv, inW := wm[k]
+				gv, inG := gm[k]
+				switch {
+				case !inW:
+					lines = append(lines, fmt.Sprintf("  %s%s: not in the golden, handler has %s", path, k, compactJSON(gv)))
+				case !inG:
+					lines = append(lines, fmt.Sprintf("  %s%s: golden has %s, the handler does not send it", path, k, compactJSON(wv)))
+				default:
+					walk(path+k+".", wv, gv)
+				}
+			}
+			return
 		}
-		if wl == gl {
-			continue
+		wa, wok := w.([]any)
+		ga, gok := g.([]any)
+		if wok && gok && len(wa) == len(ga) {
+			for i := range wa {
+				walk(fmt.Sprintf("%s[%d].", strings.TrimSuffix(path, "."), i), wa[i], ga[i])
+			}
+			return
 		}
-		fmt.Fprintf(&b, "line %d\n  golden:  %s\n  handler: %s\n", i+1, wl, gl)
-		if shown++; shown >= 8 {
-			b.WriteString("  ...\n")
-			break
-		}
+		lines = append(lines, fmt.Sprintf("  %s: golden %s, handler %s", strings.TrimSuffix(path, "."), compactJSON(w), compactJSON(g)))
 	}
-	return b.String()
+	walk("", want, got)
+	if len(lines) > 12 {
+		lines = append(lines[:12], "  ...")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func compactJSON(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	if len(raw) > 120 {
+		return string(raw[:117]) + "..."
+	}
+	return string(raw)
 }
 
 // ---- volatile fields ---------------------------------------------------------
@@ -198,7 +235,7 @@ func normalize(t *testing.T, doc any, fields ...volatileField) any {
 			obj, ok = obj[k].(map[string]any)
 		}
 		if !ok {
-			t.Fatalf("volatile field %s: parent object missing in %s", f.path, encodeGolden(t, doc))
+			t.Fatalf("volatile field %s: its parent object is missing (renamed or dropped?)", f.path)
 		}
 		last := keys[len(keys)-1]
 		v, present := obj[last]
@@ -585,7 +622,9 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(target); err != nil {
-		t.Fatalf("the service does not decode the driver's request %s: %v", raw, err)
+		var compact bytes.Buffer
+		_ = json.Compact(&compact, raw)
+		t.Fatalf("the service does not decode the driver's request %s: %v", compact.String(), err)
 	}
 }
 
@@ -662,7 +701,7 @@ func TestContractCommands(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, fx.Response.Body) {
 				t.Errorf("%s response does not match:\n%s", name,
-					goldenDiff(encodeGolden(t, fx.Response.Body), encodeGolden(t, got)))
+					goldenDiff(fx.Response.Body, got))
 			}
 		})
 	}
