@@ -36,7 +36,7 @@ func stubDisconnect(t *testing.T, fail map[uint32]bool) *[]uint32 {
 // 0, the logon screen and sessions that are not active are left alone.
 func TestLockAllSessionsDisconnectsEverySessionWithAUser(t *testing.T) {
 	active, disc := uint32(windows.WTSActive), uint32(windows.WTSDisconnected)
-	fakeWTS(t, 1, []wtsSession{{0, disc}, {1, active}, {2, active}, {3, active}, {4, disc}},
+	fakeWTS(t, 1, []wtsSession{{ID: 0, State: disc}, {ID: 1, State: active}, {ID: 2, State: active}, {ID: 3, State: active}, {ID: 4, State: disc}},
 		nil, map[uint32]error{1: nil, 2: nil, 4: nil}) // 3: logon screen
 	got := stubDisconnect(t, nil)
 	buf := captureLog(t)
@@ -52,7 +52,7 @@ func TestLockAllSessionsDisconnectsEverySessionWithAUser(t *testing.T) {
 
 func TestLockAllSessionsReportsFailures(t *testing.T) {
 	active := uint32(windows.WTSActive)
-	fakeWTS(t, 1, []wtsSession{{1, active}, {2, active}}, nil, map[uint32]error{1: nil, 2: nil})
+	fakeWTS(t, 1, []wtsSession{{ID: 1, State: active}, {ID: 2, State: active}}, nil, map[uint32]error{1: nil, 2: nil})
 	got := stubDisconnect(t, map[uint32]bool{1: true})
 	buf := captureLog(t)
 
@@ -67,7 +67,7 @@ func TestLockAllSessionsReportsFailures(t *testing.T) {
 }
 
 func TestLockAllSessionsNobodyLoggedIn(t *testing.T) {
-	fakeWTS(t, 1, []wtsSession{{1, uint32(windows.WTSActive)}}, nil, nil)
+	fakeWTS(t, 1, []wtsSession{{ID: 1, State: uint32(windows.WTSActive)}}, nil, nil)
 	got := stubDisconnect(t, nil)
 	buf := captureLog(t)
 	lockAllSessions()

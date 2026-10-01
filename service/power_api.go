@@ -20,9 +20,8 @@ import (
 )
 
 var (
-	modPowrprof              = windows.NewLazySystemDLL("powrprof.dll")
-	procSetSuspendState      = modPowrprof.NewProc("SetSuspendState")
-	procWTSDisconnectSession = modWtsapi32.NewProc("WTSDisconnectSession")
+	procSetSuspendState      = windows.NewLazySystemDLL("powrprof.dll").NewProc("SetSuspendState")
+	procWTSDisconnectSession = windows.NewLazySystemDLL("wtsapi32.dll").NewProc("WTSDisconnectSession")
 )
 
 // enableShutdownPrivilege turns SE_SHUTDOWN_NAME on in the process token,
@@ -81,34 +80,12 @@ var wtsDisconnectSession = func(session uint32) error {
 	return nil
 }
 
-// lockableSessions lists the sessions lockAllSessions disconnects: every
-// active session other than 0 that has a logged-in user (the console and
-// any RDP login). A session at the logon screen has no user and nothing
-// to lock.
-func lockableSessions() ([]uint32, error) {
-	sessions, err := wtsEnumerateSessions()
-	if err != nil {
-		return nil, fmt.Errorf("WTSEnumerateSessions: %w", err)
-	}
-	var out []uint32
-	for _, s := range sessions {
-		if s.ID == 0 || s.State != windows.WTSActive {
-			continue
-		}
-		tok, err := wtsQueryUserToken(s.ID)
-		if err != nil {
-			continue
-		}
-		tok.Close()
-		out = append(out, s.ID)
-	}
-	return out, nil
-}
-
-// lockAllSessions locks the PC: every session with a user is disconnected,
-// which leaves the console at the lock screen and ends an RDP connection.
+// lockAllSessions locks the PC: every session with a user (wts.LoggedOn:
+// the console and any RDP login; a session at the logon screen has
+// nothing to lock) is disconnected, which leaves the console at the lock
+// screen and ends an RDP connection.
 func lockAllSessions() {
-	ids, err := lockableSessions()
+	ids, err := wts.LoggedOn()
 	if err != nil {
 		logMsg("lockAllSessions error: %v", err)
 		return

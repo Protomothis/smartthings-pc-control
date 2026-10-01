@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
@@ -194,7 +196,7 @@ func fakePresetRun(t *testing.T, reply string, err error) *[][]string {
 		if err != nil {
 			return UserActionResult{}, err
 		}
-		return parseUserActionOutput([]byte(reply))
+		return session.ParseOutput([]byte(reply))
 	}
 	t.Cleanup(func() { presetRun = saved })
 	return &calls

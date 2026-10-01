@@ -44,7 +44,7 @@ func (telegramControl) say(chatID string, args []string) (string, *telegram.Inli
 		return tgText("say_usage"), nil, nil
 	}
 	cfg := getConfig().NotifyPC
-	ctx, cancel := context.WithTimeout(context.Background(), userActionTimeout+time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
 	defer cancel()
 	if _, err := sendPCNotify(ctx, cfg, true, "telegram "+chatID, "", text); err != nil {
 		return tgActionError(err), nil, err

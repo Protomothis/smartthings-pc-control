@@ -18,7 +18,6 @@ package service
 // (bus taps only) and never becomes a Telegram notification.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -88,37 +87,13 @@ func currentMedia() (mediaSample, bool) {
 // resetMediaSample forgets the stored reading (tests).
 func resetMediaSample() { dev.media.Reset() }
 
-// nowPlaying reads the "media" object of a `media info` reply. A media key
-// reply has a string there ("media":"next") and reads as ok=false, as does
-// anything that fails Validate.
-func (r UserActionResult) nowPlaying() (useraction.NowPlaying, bool) {
-	raw := bytes.TrimSpace(r.Fields["media"])
-	if len(raw) == 0 || raw[0] != '{' {
-		return useraction.NowPlaying{}, false
-	}
-	var np useraction.NowPlaying
-	if json.Unmarshal(raw, &np) != nil || np.Validate() != nil {
-		return useraction.NowPlaying{}, false
-	}
-	return np, true
-}
-
-// replyString reads a string field of a reply, "" when absent.
-func (r UserActionResult) replyString(key string) string {
-	var s string
-	if raw, ok := r.Fields[key]; ok {
-		json.Unmarshal(raw, &s)
-	}
-	return s
-}
-
 // noteMediaCommand folds a media key reply into the store. The session
 // backend says what state it left the session in ("status") and whose it
 // is ("app"); the stored track is kept when it is the same app, so the
 // play button flips at once and the title stays until the refresh.
 func noteMediaCommand(res UserActionResult) {
-	status, app := res.replyString("status"), res.replyString("app")
-	if res.replyString("via") != "session" || !useraction.ValidMediaStatus(status) {
+	status, app := res.ReplyString("status"), res.ReplyString("app")
+	if res.ReplyString("via") != "session" || !useraction.ValidMediaStatus(status) {
 		return
 	}
 	np := useraction.NowPlaying{Status: status, App: app}
@@ -144,7 +119,7 @@ const mediaRefreshDelay = 1200 * time.Millisecond
 var scheduleMediaRefresh = func() {
 	go func() {
 		time.Sleep(mediaRefreshDelay)
-		ctx, cancel := context.WithTimeout(context.Background(), userActionTimeout+time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
 		defer cancel()
 		if _, err := readNowPlayingNow(ctx); err != nil {
 			logMsg("media refresh after a command: %v", err)
@@ -163,7 +138,7 @@ func readNowPlayingNow(ctx context.Context) (useraction.NowPlaying, error) {
 	if err != nil {
 		return useraction.NowPlaying{}, err
 	}
-	np, ok := res.nowPlaying()
+	np, ok := res.NowPlaying()
 	if !ok {
 		return useraction.NowPlaying{}, errUserActionOutput
 	}

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -36,7 +38,7 @@ func TestParseUserActionOutput(t *testing.T) {
 		{"last line wins", `{"ok":false,"error":"failed"}` + "\n" + `{"ok":true}` + "\n", UserActionResult{OK: true}},
 	}
 	for _, c := range ok {
-		got, err := parseUserActionOutput([]byte(c.out))
+		got, err := session.ParseOutput([]byte(c.out))
 		if err != nil {
 			t.Errorf("%s: %v", c.name, err)
 			continue
@@ -47,7 +49,7 @@ func TestParseUserActionOutput(t *testing.T) {
 		}
 	}
 
-	res, err := parseUserActionOutput([]byte(`{"ok":true,"presets":[1,2]}`))
+	res, err := session.ParseOutput([]byte(`{"ok":true,"presets":[1,2]}`))
 	if err != nil || string(res.Fields["presets"]) != "[1,2]" {
 		t.Errorf("Fields = %v, %v; want the untyped keys kept", res.Fields, err)
 	}
@@ -65,7 +67,7 @@ func TestParseUserActionOutput(t *testing.T) {
 		"truncated":    `{"ok":tr`,
 		"string value": `"ok"`,
 	} {
-		if _, err := parseUserActionOutput([]byte(out)); !errors.Is(err, errUserActionOutput) {
+		if _, err := session.ParseOutput([]byte(out)); !errors.Is(err, errUserActionOutput) {
 			t.Errorf("%s: err = %v, want errUserActionOutput", name, err)
 		}
 	}
@@ -74,14 +76,14 @@ func TestParseUserActionOutput(t *testing.T) {
 // fakeUserAction installs a runner and restores the real one afterwards.
 func fakeUserAction(t *testing.T, run func(ctx context.Context, exe string, args []string) ([]byte, error)) {
 	t.Helper()
-	savedExec, savedExe, savedTimeout := userActionExec, userActionExe, userActionTimeout
-	userActionExec = func(ctx context.Context, _ sessionTarget, exe string, args []string) ([]byte, error) {
+	saved := userActions
+	userActions.Exec = func(ctx context.Context, _ sessionTarget, exe string, args []string) ([]byte, error) {
 		return run(ctx, exe, args)
 	}
-	userActionExe = func() (string, error) { return `C:\PC Control\SmartThingsPCControl.exe`, nil }
+	userActions.Exe = func() (string, error) { return `C:\PC Control\SmartThingsPCControl.exe`, nil }
 	resetAudioSample()
 	t.Cleanup(func() {
-		userActionExec, userActionExe, userActionTimeout = savedExec, savedExe, savedTimeout
+		userActions = saved
 		resetAudioSample()
 		audioNow = time.Now
 	})
@@ -202,7 +204,7 @@ func TestRunUserActionTimeout(t *testing.T) {
 		close(killed)
 		return []byte("partial"), errors.New("exec error: exit status 1")
 	})
-	userActionTimeout = 50 * time.Millisecond
+	userActions.Timeout = 50 * time.Millisecond
 
 	start := time.Now()
 	_, err := runUserAction(context.Background(), "audio", "get")
@@ -223,8 +225,8 @@ func TestRunUserActionTimeout(t *testing.T) {
 }
 
 func TestRunUserActionTimeoutDefault(t *testing.T) {
-	if userActionTimeout != 3*time.Second {
-		t.Errorf("userActionTimeout = %v, want 3s (§2)", userActionTimeout)
+	if userActions.Timeout != 3*time.Second {
+		t.Errorf("userActions.Timeout = %v, want 3s (§2)", userActions.Timeout)
 	}
 }
 

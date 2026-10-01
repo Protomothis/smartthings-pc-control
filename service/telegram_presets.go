@@ -64,7 +64,7 @@ func (telegramControl) runPreset(args []string) (string, *telegram.InlineKeyboar
 	if !ok {
 		return tgText("run_no_such", html.EscapeString(truncate(arg, 64))), nil, fmt.Errorf("no preset %q", truncate(arg, 64))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), userActionTimeout+time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
 	defer cancel()
 	err := runPreset(ctx, p, "telegram")
 	notePresetCommand(p, "telegram", "telegram", presetResultCode(err))

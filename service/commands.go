@@ -107,7 +107,7 @@ var screenRun = func(ctx context.Context, args ...string) (UserActionResult, err
 // (session 0 isolation) — and records the display state. It replaced a
 // PowerShell SendMessage(HWND_BROADCAST) that one hung window could block
 // forever (#121); the child now uses SendMessageTimeoutW and runUserAction
-// bounds the whole run (userActionTimeout, child killed when it runs out).
+// bounds the whole run (userActions.Timeout, child killed when it runs out).
 //
 // Unlike the other user actions it never follows the unlocked-session
 // target: next to a locked console that is an RDP session, whose display
