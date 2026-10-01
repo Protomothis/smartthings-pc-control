@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -171,25 +172,25 @@ var Commands = map[string]Command{
 	},
 	"shutdown": {
 		Response: "Shutting down...",
-		Execute:  func() { executeCommand("shutdown", "shutdown", "/s", "/t", "5") },
+		Execute:  func() { executeCommand("shutdown", systool.Shutdown, "/s", "/t", "5") },
 	},
 	"forceshutdown": {
 		Response: "Force shutting down...",
-		Execute:  func() { executeCommand("forceshutdown", "shutdown", "/s", "/f", "/t", "0") },
+		Execute:  func() { executeCommand("forceshutdown", systool.Shutdown, "/s", "/f", "/t", "0") },
 	},
 	"restart": {
 		Response: "Restarting...",
-		Execute:  func() { executeCommand("restart", "shutdown", "/r", "/t", "5") },
+		Execute:  func() { executeCommand("restart", systool.Shutdown, "/r", "/t", "5") },
 	},
+	// hibernate stays on shutdown.exe: /h is one fast call that already
+	// reports a disabled hibernation in its own words.
 	"hibernate": {
 		Response: "Hibernating...",
-		Execute:  func() { executeCommand("hibernate", "shutdown", "/h") },
+		Execute:  func() { executeCommand("hibernate", systool.Shutdown, "/h") },
 	},
 	"suspend": {
 		Response: "Suspending...",
-		Execute: func() {
-			executePowerShell("suspend", "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)")
-		},
+		Execute:  suspendPC, // SetSuspendState (power_api.go)
 	},
 	"lock": {
 		Response: "Locking...",

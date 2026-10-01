@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 )
@@ -712,19 +712,24 @@ func StartHTTPServer(stop chan struct{}) {
 	}
 }
 
-// executeCommand runs name with args for the catalogue command `command`
-// (shutdown, restart, ...) and logs the outcome; a failure also raises
-// system.exec_failed naming that command.
-func executeCommand(command string, name string, args ...string) {
+// executeCommand runs the System32 tool with args for the catalogue
+// command `command` (shutdown, restart, ...) and logs the outcome; a
+// failure also raises system.exec_failed naming that command.
+func executeCommand(command string, tool string, args ...string) {
 	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
-	cmd := exec.Command(name, args...)
-	output, err := cmd.CombinedOutput()
+	output, err := runTool(tool, args...)
 	if err != nil {
-		logMsg("exec [%s %v] error: %v - output: %s", name, args, err, string(output))
+		logMsg("exec [%s %v] error: %v - output: %s", tool, args, err, string(output))
 		reportExecFailure(command, err, output)
 	} else {
-		logMsg("exec [%s %v] ok", name, args)
+		logMsg("exec [%s %v] ok", tool, args)
 	}
+}
+
+// runTool runs a System32 tool by absolute path (internal/systool) and
+// returns its combined output. Replaced by the tests.
+var runTool = func(tool string, args ...string) ([]byte, error) {
+	return systool.Command(tool, args...).CombinedOutput()
 }
 
 // reportExecFailure emits system.exec_failed. The first line of output is
@@ -736,42 +741,6 @@ func reportExecFailure(command string, err error, output []byte) {
 		msg += ": " + truncate(strings.TrimSpace(line), 200)
 	}
 	emit("system", "exec_failed", map[string]string{"command": command, "error": msg})
-}
-
-// executePowerShell runs script for the catalogue command `command`; see
-// executeCommand for the failure notification.
-func executePowerShell(command string, script string) {
-	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logMsg("powershell error: %v - output: %s", err, string(output))
-		reportExecFailure(command, err, output)
-	} else {
-		logMsg("powershell ok - output: %s", string(output))
-	}
-}
-
-func lockAllSessions() {
-	// Get active session IDs using WTS API via PowerShell and disconnect them
-	// tsdiscon disconnects a session which forces lock screen
-	script := "$ErrorActionPreference = 'Continue'; " +
-		"$output = @(); " +
-		"$procs = Get-Process -Name explorer -ErrorAction SilentlyContinue; " +
-		"$output += \"Found explorer processes: $($procs.Count)\"; " +
-		"foreach ($p in $procs) { " +
-		"$sid = $p.SessionId; " +
-		"$output += \"Disconnecting session $sid\"; " +
-		"$r = tsdiscon $sid 2>&1; " +
-		"$output += \"Result: $r\" }; " +
-		"$output -join \"`n\""
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logMsg("lockAllSessions error: %v - output: %s", err, string(output))
-	} else {
-		logMsg("lockAllSessions success - output: %s", string(output))
-	}
 }
 
 // WoLAdapter represents a physical network adapter's WoL status
@@ -865,7 +834,7 @@ func getWoLStatus() WoLStatus {
   }
   [pscustomobject]@{ MAC = $_.MacAddress; WakeOnMagicPacket = $v }
 } | ConvertTo-Json -Compress`
-	wolCmd := exec.Command("powershell", "-NoProfile", "-Command", wolScript)
+	wolCmd := systool.Command(systool.PowerShell, "-NoProfile", "-Command", wolScript)
 	wolOutput, wolErr := wolCmd.CombinedOutput()
 	if wolErr != nil {
 		logMsg("WoL PowerShell query failed: %v", wolErr)

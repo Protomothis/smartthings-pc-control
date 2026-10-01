@@ -9,12 +9,12 @@ package useraction
 //	script   .ps1 → powershell.exe -NoProfile -ExecutionPolicy Bypass -File <path> args…
 //	         .bat/.cmd → cmd.exe /d /v:off /s /c ""<path>" "arg"…"
 //
-// Interpreters are started by absolute path under %SystemRoot%. Every
-// argument is quoted with syscall.EscapeArg (the MSVCRT rules
-// CommandLineToArgvW and PowerShell follow); cmd.exe has rules of its own,
-// so for batch files every argument is double-quoted and the characters
-// quoting cannot neutralise there (" and %) are refused. The launched
-// program is not waited for.
+// Interpreters are started by absolute path under the Windows directory
+// (internal/systool). Every argument is quoted with syscall.EscapeArg (the
+// MSVCRT rules CommandLineToArgvW and PowerShell follow); cmd.exe has rules
+// of its own, so for batch files every argument is double-quoted and the
+// characters quoting cannot neutralise there (" and %) are refused. The
+// launched program is not waited for.
 
 import (
 	"os"
@@ -25,6 +25,8 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // programExts are what a "program" preset may start. A .bat or .cmd given
@@ -107,8 +109,8 @@ func isAbsWindowsPath(p string) bool {
 }
 
 // buildPresetLaunch turns a program or script request into the process to
-// start. systemRoot is %SystemRoot% (C:\Windows), where the interpreters
-// live.
+// start. systemRoot is the Windows directory (C:\Windows,
+// systool.WindowsDir), where the interpreters live.
 func buildPresetLaunch(req Request, systemRoot string) (presetLaunch, error) {
 	if err := ValidatePresetLaunch(req.PresetType, req.Path, req.Args); err != nil {
 		return presetLaunch{}, err
@@ -209,11 +211,7 @@ func handlePreset(req Request) (map[string]any, error) {
 		}
 		return map[string]any{"started": true}, nil
 	}
-	root := os.Getenv("SystemRoot")
-	if root == "" {
-		root = `C:\Windows`
-	}
-	l, err := buildPresetLaunch(req, root)
+	l, err := buildPresetLaunch(req, systool.WindowsDir())
 	if err != nil {
 		return nil, err
 	}
