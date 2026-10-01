@@ -29,6 +29,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -38,38 +40,12 @@ const (
 	esSystemRequired  uint32 = 0x00000001
 	esDisplayRequired uint32 = 0x00000002
 
-	// awakeMaxMinutes caps one keep-awake period at a day; 0 (until turned
-	// off) is the way to ask for longer.
-	awakeMaxMinutes = 1440
-	// awakeDefaultMinutes is awake.default_minutes when the key is missing.
-	awakeDefaultMinutes = 60
 	// awakeCheckEvery re-checks the wall clock. The expiry timer runs on
 	// the monotonic clock, which on Windows stops while the PC sleeps; a
 	// period that ran out during a manual suspend is caught by this tick
 	// (and by every status read) instead of an hour late.
 	awakeCheckEvery = 30 * time.Second
 )
-
-// AwakeConfig is the "awake" object in config.json.
-type AwakeConfig struct {
-	// DefaultMinutes is the period used when a request names none (the
-	// Telegram /awake without an argument, a driver command without a
-	// value). 0 means until turned off. Missing key: 60.
-	DefaultMinutes int `json:"default_minutes"`
-	// KeepDisplay also keeps the display on (ES_DISPLAY_REQUIRED). Off by
-	// default: the point is that the PC keeps working, not the monitor.
-	KeepDisplay bool `json:"keep_display"`
-}
-
-// withDefaults puts an out-of-range period back to the default. 0 is a
-// legitimate value ("until turned off"), so a missing key relies on
-// decoding over defaultConfig like the other numbers.
-func (a AwakeConfig) withDefaults() AwakeConfig {
-	if a.DefaultMinutes < 0 || a.DefaultMinutes > awakeMaxMinutes {
-		a.DefaultMinutes = awakeDefaultMinutes
-	}
-	return a
-}
 
 var procSetThreadExecutionState = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetThreadExecutionState")
 
@@ -227,9 +203,9 @@ func (c *awakeController) viewLocked() awakeView {
 }
 
 // validAwakeMinutes reports whether minutes is a period TurnOn accepts:
-// 0 (until turned off) through awakeMaxMinutes.
+// 0 (until turned off) through config.AwakeMaxMinutes.
 func validAwakeMinutes(minutes int) bool {
-	return minutes >= 0 && minutes <= awakeMaxMinutes
+	return minutes >= 0 && minutes <= config.AwakeMaxMinutes
 }
 
 // TurnOn keeps the PC awake for minutes (0: until turned off). Calling it
@@ -237,7 +213,7 @@ func validAwakeMinutes(minutes int) bool {
 // extended or shortened.
 func (c *awakeController) TurnOn(minutes int) (awakeView, error) {
 	if !validAwakeMinutes(minutes) {
-		return awakeView{}, fmt.Errorf("minutes must be between 0 and %d", awakeMaxMinutes)
+		return awakeView{}, fmt.Errorf("minutes must be between 0 and %d", config.AwakeMaxMinutes)
 	}
 	c.mu.Lock()
 	if err := c.holdLocked(c.wantFlags()); err != nil {
@@ -404,7 +380,7 @@ func awakeMinutesOrDefault(minutes *int) int {
 	if minutes != nil {
 		return *minutes
 	}
-	return getConfig().Awake.withDefaults().DefaultMinutes
+	return getConfig().Awake.WithDefaults().DefaultMinutes
 }
 
 // ---- local API for the desktop app -----------------------------------------
@@ -422,7 +398,7 @@ type awakeAPIView struct {
 }
 
 func awakeAPIBody(v awakeView, cfg Config, now time.Time) awakeAPIView {
-	a := cfg.Awake.withDefaults()
+	a := cfg.Awake.WithDefaults()
 	out := awakeAPIView{
 		Status:         "ok",
 		On:             v.On,
@@ -445,24 +421,13 @@ func awakeAPIBody(v awakeView, cfg Config, now time.Time) awakeAPIView {
 //	POST {"minutes": n}         turn on for n minutes (0 = until turned off,
 //	                            key absent = awake.default_minutes)
 //	DELETE                      turn off
-func handleAwakeAPI(w http.ResponseWriter, r *http.Request) {
+var handleAwakeAPI = apiAuth(serveAwakeAPI, http.MethodGet, http.MethodPost, http.MethodDelete)
+
+func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 	ctl := currentAwake()
-	switch r.Method {
-	case http.MethodGet:
+	if r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, awakeAPIBody(ctl.View(), liveCfg, ctl.now()))
-		return
-	case http.MethodPost, http.MethodDelete:
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !checkCSRF(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	var (
@@ -483,7 +448,7 @@ func handleAwakeAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		minutes := awakeMinutesOrDefault(body.Minutes)
 		if !validAwakeMinutes(minutes) {
-			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("Minutes must be between 0 and %d", awakeMaxMinutes))
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("Minutes must be between 0 and %d", config.AwakeMaxMinutes))
 			return
 		}
 		view, err = ctl.TurnOn(minutes)

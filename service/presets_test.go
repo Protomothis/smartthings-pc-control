@@ -12,6 +12,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 func TestValidatePreset(t *testing.T) {
@@ -25,7 +29,7 @@ func TestValidatePreset(t *testing.T) {
 		{Slot: 6, Name: "Bat", Type: "script", Path: `C:\Scripts\go.bat`},
 	}
 	for _, p := range ok {
-		if err := validatePreset(p); err != nil {
+		if err := config.ValidatePreset(p); err != nil {
 			t.Errorf("%+v: %v", p, err)
 		}
 	}
@@ -56,14 +60,14 @@ func TestValidatePreset(t *testing.T) {
 		"arg control":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: []string{"a\x00"}},
 	}
 	for name, p := range bad {
-		if err := validatePreset(p); err == nil {
+		if err := config.ValidatePreset(p); err == nil {
 			t.Errorf("%s: accepted %+v", name, p)
 		}
 	}
 }
 
 func TestPresetsDefault(t *testing.T) {
-	cfg := defaultConfig.withDefaults()
+	cfg := config.Default().WithDefaults()
 	if cfg.Presets == nil || len(cfg.Presets) != 0 {
 		t.Errorf("presets default = %#v, want []", cfg.Presets)
 	}
@@ -75,21 +79,21 @@ func TestValidatePresetsAndDrop(t *testing.T) {
 	dup := Preset{Slot: 1, Name: "dup", Type: "url", Path: "https://c.example"}
 	invalid := Preset{Slot: 3, Name: "bad", Type: "program", Path: "relative.exe"}
 
-	if msg := validatePresets([]Preset{a, b}); msg != "" {
+	if msg := config.ValidatePresets([]Preset{a, b}); msg != "" {
 		t.Error(msg)
 	}
-	if msg := validatePresets([]Preset{a, dup}); !strings.Contains(msg, "slot 1 is used twice") {
+	if msg := config.ValidatePresets([]Preset{a, dup}); !strings.Contains(msg, "slot 1 is used twice") {
 		t.Errorf("duplicate: %q", msg)
 	}
-	if msg := validatePresets([]Preset{a, invalid}); !strings.Contains(msg, "slot 3") || !strings.Contains(msg, "absolute") {
+	if msg := config.ValidatePresets([]Preset{a, invalid}); !strings.Contains(msg, "slot 3") || !strings.Contains(msg, "absolute") {
 		t.Errorf("invalid: %q", msg)
 	}
 	initLogger()
-	got := dropInvalidPresets([]Preset{a, invalid, dup, b})
+	got := config.DropInvalidPresets([]Preset{a, invalid, dup, b})
 	if !reflect.DeepEqual(got, []Preset{a, b}) {
 		t.Errorf("dropInvalidPresets = %+v", got)
 	}
-	if got := dropInvalidPresets(nil); got == nil || len(got) != 0 {
+	if got := config.DropInvalidPresets(nil); got == nil || len(got) != 0 {
 		t.Errorf("nil list = %#v", got)
 	}
 }
@@ -117,21 +121,21 @@ func TestChangedPresetSlotsAndConfigKey(t *testing.T) {
 	b2.Args = []string{"y"}
 	c := Preset{Slot: 3, Name: "c", Type: "url", Path: "https://c.example"}
 
-	if got := changedPresetSlots([]Preset{a, b}, []Preset{b, a}); len(got) != 0 {
+	if got := config.ChangedPresetSlots([]Preset{a, b}, []Preset{b, a}); len(got) != 0 {
 		t.Errorf("reordered = %v, want no change", got)
 	}
-	if got := changedPresetSlots([]Preset{a, b}, []Preset{b2, c}); !reflect.DeepEqual(got, []int{1, 2, 3}) {
+	if got := config.ChangedPresetSlots([]Preset{a, b}, []Preset{b2, c}); !reflect.DeepEqual(got, []int{1, 2, 3}) {
 		t.Errorf("changed = %v, want [1 2 3]", got)
 	}
-	if got := presetChangeKey([]int{1, 3}); got != "presets[1,3]" {
+	if got := config.PresetChangeKey([]int{1, 3}); got != "presets[1,3]" {
 		t.Errorf("key = %q", got)
 	}
 
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	updated := old
 	updated.Presets = []Preset{b}
 	updated.NotifyPC.Enabled = false
-	keys := strings.Join(configChangedKeys(old, updated), ", ")
+	keys := strings.Join(config.ChangedKeys(old, updated), ", ")
 	if keys != "notify_pc.enabled, presets[2]" {
 		t.Errorf("keys = %q", keys)
 	}
@@ -192,7 +196,7 @@ func fakePresetRun(t *testing.T, reply string, err error) *[][]string {
 		if err != nil {
 			return UserActionResult{}, err
 		}
-		return parseUserActionOutput([]byte(reply))
+		return session.ParseOutput([]byte(reply))
 	}
 	t.Cleanup(func() { presetRun = saved })
 	return &calls

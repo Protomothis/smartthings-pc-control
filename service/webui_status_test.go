@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 // withWebUISession logs a browser in for one test: the cookie it returns
@@ -182,7 +184,7 @@ func TestWebUISessionFollowsExposure(t *testing.T) {
 // save from the browser.
 func TestConfigPostFromPageKeepsAppSettings(t *testing.T) {
 	protectConfigFile(t)
-	cfg := defaultConfig
+	cfg := config.Default()
 	cfg.Port, cfg.Secret, cfg.WebUIRemote = 5001, pageSecret, true
 	cfg.Telegram.PCName = "desk"
 	cfg.Media.NowPlaying = true

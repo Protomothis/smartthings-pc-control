@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 
@@ -19,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/release"
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // checkForUpdates queries GitHub Releases; on a newer version it notifies
@@ -94,7 +94,7 @@ func (u *ui) showUpdateChoice(rel *release.Info, m *release.Manifest, err error)
 	if page == "" {
 		page = release.Page
 	}
-	openPage := func() { _ = exec.Command("cmd", "/c", "start", page).Start() }
+	openPage := func() { _ = systool.Command(systool.Cmd, "/c", "start", page).Start() }
 
 	body := container.NewVBox(widget.NewLabel(fmt.Sprintf(u.t("update.body"), rel.TagName, u.version)))
 	if pageURL, err := url.Parse(page); err == nil {

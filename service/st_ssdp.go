@@ -235,40 +235,18 @@ func resetSSDPLastSearch() {
 
 // ---- per-source rate limit -------------------------------------------------
 
-var (
-	ssdpSeen   = map[string]time.Time{}
-	ssdpSeenMu sync.Mutex
-)
+// ssdpLimiter answers each source at most once per ssdpPerSourceInterval.
+// stNow is shared with the /st/v1 limiter so a test can drive both.
+var ssdpLimiter = newRateLimiter(1, ssdpPerSourceInterval, func() time.Time { return stNow() })
 
-// ssdpAllow reports whether ip may be answered now: at most one response
-// per ssdpPerSourceInterval. stNow is shared with the /st/v1 limiter so a
-// test can drive both.
+// ssdpAllow reports whether ip may be answered now.
 func ssdpAllow(ip string) bool {
-	now := stNow()
-	ssdpSeenMu.Lock()
-	defer ssdpSeenMu.Unlock()
-	if last, ok := ssdpSeen[ip]; ok && now.Sub(last) < ssdpPerSourceInterval {
-		return false
-	}
-	// Probing sources come and go; drop the stale entries rather than
-	// letting the map grow with every host that ever searched.
-	if len(ssdpSeen) > 256 {
-		for k, v := range ssdpSeen {
-			if now.Sub(v) > time.Minute {
-				delete(ssdpSeen, k)
-			}
-		}
-	}
-	ssdpSeen[ip] = now
-	return true
+	ok, _ := ssdpLimiter.allow(ip)
+	return ok
 }
 
 // resetSSDPRateLimit drops every source (tests).
-func resetSSDPRateLimit() {
-	ssdpSeenMu.Lock()
-	ssdpSeen = map[string]time.Time{}
-	ssdpSeenMu.Unlock()
-}
+func resetSSDPRateLimit() { ssdpLimiter.reset() }
 
 // ---- sockets ---------------------------------------------------------------
 

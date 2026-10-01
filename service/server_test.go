@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/power"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
@@ -28,12 +32,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigFromFile(t *testing.T) {
-	// Create a temp config file next to the executable
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	// Create a temp config file in the config folder (TestMain)
+	configPath := filepath.Join(configDir(), "config.json")
 
 	// Backup existing config if any
 	origData, origErr := os.ReadFile(configPath)
@@ -59,11 +59,7 @@ func TestLoadConfigFromFile(t *testing.T) {
 }
 
 func TestLoadConfigInvalidJSON(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
@@ -85,11 +81,7 @@ func TestLoadConfigInvalidJSON(t *testing.T) {
 }
 
 func TestLoadConfigZeroPort(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
@@ -109,26 +101,6 @@ func TestLoadConfigZeroPort(t *testing.T) {
 	}
 	if cfg.Secret != "abc" {
 		t.Errorf("expected secret 'abc', got %q", cfg.Secret)
-	}
-}
-
-func TestMaskSecret(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"", "(none)"},
-		{"ab", "***"},
-		{"abcd", "***"},
-		{"abcde", "ab***de"},
-		{"mysecretkey", "my***ey"},
-	}
-
-	for _, tt := range tests {
-		result := maskSecret(tt.input)
-		if result != tt.expected {
-			t.Errorf("maskSecret(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
 	}
 }
 
@@ -264,11 +236,7 @@ func TestCheckAuth(t *testing.T) {
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 
 	// Backup
 	origData, origErr := os.ReadFile(configPath)
@@ -282,7 +250,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 	// Save
 	testCfg := Config{Port: 7777, Secret: "roundtrip"}
-	err = saveConfig(testCfg)
+	err := saveConfig(testCfg)
 	if err != nil {
 		t.Fatalf("saveConfig failed: %v", err)
 	}
@@ -350,7 +318,7 @@ func TestScheduleOriginWakesTrayApp(t *testing.T) {
 		{originTelegram, false},
 	}
 	for _, c := range cases {
-		if got := c.origin.wakesTrayApp(); got != c.want {
+		if got := c.origin.WakesTrayApp(); got != c.want {
 			t.Errorf("origin %d wakesTrayApp = %v, want %v", c.origin, got, c.want)
 		}
 	}
@@ -359,7 +327,7 @@ func TestScheduleOriginWakesTrayApp(t *testing.T) {
 func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
 	initLogger()
 	calls := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	// Same path the app/WebUI /api/schedule endpoint takes.
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
@@ -374,7 +342,7 @@ func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
 func TestSetScheduleRemoteWakesTrayApp(t *testing.T) {
 	initLogger()
 	calls := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatal(err)
@@ -387,7 +355,7 @@ func TestSetScheduleUnknownCommandDoesNotWakeTrayApp(t *testing.T) {
 	calls := stubTrayLauncher(t, nil)
 
 	if err := setSchedule("no-such-command", 5*time.Minute, originRemote); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("expected error for unknown command")
 	}
 	expectNoTrayLaunch(t, calls)
@@ -397,7 +365,7 @@ func TestTrayLaunchFailureKeepsSchedule(t *testing.T) {
 	// No user logged in / token error must not cancel or fail the command.
 	initLogger()
 	calls := stubTrayLauncher(t, errors.New("no explorer.exe process found"))
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatalf("setSchedule failed because the tray launch failed: %v", err)
@@ -412,7 +380,7 @@ func TestGraceDefersShutdown(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true})
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	// Swap in a stub so a scheduling bug can't actually shut the box down.
 	orig := Commands["shutdown"]
@@ -439,8 +407,8 @@ func TestGraceDefersShutdown(t *testing.T) {
 	if s["command"] != "shutdown" {
 		t.Errorf("scheduled command = %v, want shutdown", s["command"])
 	}
-	if remaining, _ := s["remainingSec"].(int); remaining < defaultGraceSeconds-5 {
-		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], defaultGraceSeconds)
+	if remaining, _ := s["remainingSec"].(int); remaining < config.DefaultGraceSeconds-5 {
+		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], config.DefaultGraceSeconds)
 	}
 
 	select {
@@ -452,7 +420,7 @@ func TestGraceDefersShutdown(t *testing.T) {
 	// A remote grace schedule wakes the tray app so the toast is visible.
 	expectTrayLaunch(t, launches)
 
-	if !cancelSchedule() {
+	if !cancelScheduleBy("api") {
 		t.Fatal("cancelSchedule reported no active schedule")
 	}
 }
@@ -478,7 +446,7 @@ func TestGraceDisabledExecutesImmediately(t *testing.T) {
 		t.Fatal("shutdown did not execute with grace disabled")
 	}
 	if s := getSchedule(); s["active"] == true {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("unexpected schedule created with grace disabled")
 	}
 	// Nothing was scheduled, so there is no toast to wake the tray app for.
@@ -489,7 +457,7 @@ func TestGraceDefaultTrueFromConfig(t *testing.T) {
 	// Missing key in an old config.json must keep the default (true).
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"port": 5001, "secret": ""}`), 0644)
-	cfg := defaultConfig
+	cfg := config.Default()
 	data, _ := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatal(err)
@@ -500,8 +468,8 @@ func TestGraceDefaultTrueFromConfig(t *testing.T) {
 	if cfg.WebUIRemote {
 		t.Error("webui_remote should default to false when missing from config.json")
 	}
-	if cfg.GraceSeconds != defaultGraceSeconds {
-		t.Errorf("grace_seconds = %d, want default %d when missing from config.json", cfg.GraceSeconds, defaultGraceSeconds)
+	if cfg.GraceSeconds != config.DefaultGraceSeconds {
+		t.Errorf("grace_seconds = %d, want default %d when missing from config.json", cfg.GraceSeconds, config.DefaultGraceSeconds)
 	}
 }
 
@@ -509,7 +477,7 @@ func TestGraceUsesConfiguredSeconds(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 30})
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	orig := Commands["restart"]
 	Commands["restart"] = Command{Response: orig.Response, Execute: func() {}}
@@ -532,16 +500,16 @@ func TestGraceUsesConfiguredSeconds(t *testing.T) {
 }
 
 func TestGraceDurationFallsBackWhenInvalid(t *testing.T) {
-	def := time.Duration(defaultGraceSeconds) * time.Second
+	def := time.Duration(config.DefaultGraceSeconds) * time.Second
 	cases := map[int]time.Duration{
-		0:                   def, // key missing from config.json
-		minGraceSeconds:     time.Duration(minGraceSeconds) * time.Second,
-		maxGraceSeconds:     time.Duration(maxGraceSeconds) * time.Second,
-		maxGraceSeconds + 1: def,
-		-5:                  def,
+		0:                          def, // key missing from config.json
+		config.MinGraceSeconds:     time.Duration(config.MinGraceSeconds) * time.Second,
+		config.MaxGraceSeconds:     time.Duration(config.MaxGraceSeconds) * time.Second,
+		config.MaxGraceSeconds + 1: def,
+		-5:                         def,
 	}
 	for sec, want := range cases {
-		if got := (Config{GraceSeconds: sec}).graceDuration(); got != want {
+		if got := (Config{GraceSeconds: sec}).GraceDuration(); got != want {
 			t.Errorf("graceDuration(%d) = %s, want %s", sec, got, want)
 		}
 	}
@@ -550,27 +518,27 @@ func TestGraceDurationFallsBackWhenInvalid(t *testing.T) {
 func TestNormalizeConfigKeepsGraceWhenOmitted(t *testing.T) {
 	current := Config{GraceSeconds: 60}
 	// A client that predates grace_seconds sends 0 → keep the live value.
-	if got := normalizeConfig(Config{ShutdownGrace: true}, current).GraceSeconds; got != 60 {
+	if got := config.Normalize(Config{ShutdownGrace: true}, current).GraceSeconds; got != 60 {
 		t.Errorf("omitted grace_seconds → %d, want 60 (current)", got)
 	}
 	// Explicit values pass through untouched (validation happens later).
-	if got := normalizeConfig(Config{GraceSeconds: 10}, current).GraceSeconds; got != 10 {
+	if got := config.Normalize(Config{GraceSeconds: 10}, current).GraceSeconds; got != 10 {
 		t.Errorf("explicit grace_seconds → %d, want 10", got)
 	}
 	// Nothing to inherit → default.
-	if got := normalizeConfig(Config{}, Config{}).GraceSeconds; got != defaultGraceSeconds {
-		t.Errorf("no current value → %d, want default %d", got, defaultGraceSeconds)
+	if got := config.Normalize(Config{}, Config{}).GraceSeconds; got != config.DefaultGraceSeconds {
+		t.Errorf("no current value → %d, want default %d", got, config.DefaultGraceSeconds)
 	}
 }
 
 func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
 	initLogger()
 	if err := scheduleTask("lock", 0, originUI); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("zero delay accepted")
 	}
 	if err := scheduleTask("lock", -time.Second, originUI); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("negative delay accepted")
 	}
 }
@@ -579,14 +547,14 @@ func TestScheduleTaskRejectsADelayPastTheCeiling(t *testing.T) {
 	// #89: three days is the ceiling every front end offers, and this is the
 	// last guard before the timer is armed.
 	initLogger()
-	if err := scheduleTask("lock", maxScheduleDelay+time.Minute, originUI); err == nil {
-		cancelSchedule()
+	if err := scheduleTask("lock", power.MaxScheduleDelay+time.Minute, originUI); err == nil {
+		cancelScheduleBy("api")
 		t.Fatalf("a delay over %d minutes was accepted", maxScheduleMinutes)
 	}
-	if err := scheduleTask("lock", maxScheduleDelay, originUI); err != nil {
+	if err := scheduleTask("lock", power.MaxScheduleDelay, originUI); err != nil {
 		t.Fatalf("the ceiling itself must be schedulable: %v", err)
 	}
-	cancelSchedule()
+	cancelScheduleBy("api")
 }
 
 func TestFormatDelay(t *testing.T) {
@@ -615,7 +583,7 @@ func TestFormatDelay(t *testing.T) {
 func TestScheduleExposesOriginAndReplacement(t *testing.T) {
 	initLogger()
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)
@@ -692,15 +660,11 @@ func expectNoNotification(t *testing.T, events <-chan notify.Event) {
 	}
 }
 
-// withConfigFile swaps config.json next to the test binary for the test
+// withConfigFile swaps config.json in the config folder (TestMain) for the test
 // and restores whatever was there afterwards.
 func withConfigFile(t *testing.T, content string) string {
 	t.Helper()
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 	origData, origErr := os.ReadFile(configPath)
 	t.Cleanup(func() {
 		if origErr == nil {
@@ -793,11 +757,7 @@ func TestLoadConfigFillsTelegramAndNotifyDefaults(t *testing.T) {
 }
 
 func TestLoadConfigMissingFileHasDefaults(t *testing.T) {
-	exePath, err := os.Executable()
-	if err != nil {
-		t.Skip("cannot determine executable path")
-	}
-	configPath := filepath.Join(filepath.Dir(exePath), "config.json")
+	configPath := filepath.Join(configDir(), "config.json")
 	origData, origErr := os.ReadFile(configPath)
 	defer func() {
 		if origErr == nil {
@@ -820,11 +780,11 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 
 	// Old GUI: the body has no telegram/notify keys at all.
 	body := `{"port": 5001, "secret": "s", "webui_remote": false, "shutdown_grace": true, "grace_seconds": 60}`
-	newCfg := current.forUpdate()
+	newCfg := current.ForUpdate()
 	if err := json.Unmarshal([]byte(body), &newCfg); err != nil {
 		t.Fatal(err)
 	}
-	got := normalizeConfig(newCfg, current)
+	got := config.Normalize(newCfg, current)
 	if !reflect.DeepEqual(got.Telegram, current.Telegram) {
 		t.Errorf("omitted telegram changed:\n got %+v\nwant %+v", got.Telegram, current.Telegram)
 	}
@@ -837,11 +797,11 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 	body = `{"port": 5001, "telegram": {"enabled": false, "bot_token": "", "chat_id": "9", "allowed_chat_ids": [], "detail": "full", "lang": "ko",
 		"quiet_hours": {"enabled": false, "start": "22:00", "end": "07:00", "security_bypass": false, "digest": true}},
 		"notify": {"remote": {"received": true}}}`
-	newCfg = current.forUpdate()
+	newCfg = current.ForUpdate()
 	if err := json.Unmarshal([]byte(body), &newCfg); err != nil {
 		t.Fatal(err)
 	}
-	got = normalizeConfig(newCfg, current)
+	got = config.Normalize(newCfg, current)
 	if got.Telegram.BotToken != "keep-me" {
 		t.Errorf("empty bot_token replaced the stored one: %q", got.Telegram.BotToken)
 	}
@@ -858,9 +818,9 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 		t.Errorf("notify not applied/filled: %v", got.Notify)
 	}
 	// A new token replaces the old one.
-	newCfg = current.forUpdate()
+	newCfg = current.ForUpdate()
 	json.Unmarshal([]byte(`{"telegram": {"bot_token": "new"}}`), &newCfg)
-	if got := normalizeConfig(newCfg, current); got.Telegram.BotToken != "new" || got.Telegram.ChatID != "1" {
+	if got := config.Normalize(newCfg, current); got.Telegram.BotToken != "new" || got.Telegram.ChatID != "1" {
 		t.Errorf("new token / untouched chat_id: %+v", got.Telegram)
 	}
 	// Nothing above may have written into current's map or slice.
@@ -870,9 +830,9 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 }
 
 func TestConfigChangedKeys(t *testing.T) {
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	same := old
-	if keys := configChangedKeys(old, same); len(keys) != 0 {
+	if keys := config.ChangedKeys(old, same); len(keys) != 0 {
 		t.Errorf("identical configs reported %v", keys)
 	}
 	changed := old
@@ -881,7 +841,7 @@ func TestConfigChangedKeys(t *testing.T) {
 	changed.Telegram.BotToken = "9999:ZZZZ"
 	changed.Telegram.QuietHours.Enabled = true
 	changed.Telegram.AllowedChatIDs = []string{"777"}
-	got := strings.Join(configChangedKeys(old, changed), ",")
+	got := strings.Join(config.ChangedKeys(old, changed), ",")
 	want := "secret,telegram.bot_token,telegram.allowed_chat_ids,telegram.quiet_hours"
 	if got != want {
 		t.Errorf("changed keys = %s, want %s", got, want)
@@ -952,7 +912,7 @@ func TestRemoteGraceEmitsScheduledWithActions(t *testing.T) {
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true, GraceSeconds: 300})
 	launches := stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	orig := Commands["shutdown"]
 	Commands["shutdown"] = Command{Response: orig.Response, Execute: func() {}}
@@ -1010,7 +970,7 @@ func TestUISchedulesEmitCreatedAndCancelled(t *testing.T) {
 	setConfig(Config{Port: 5001, Notify: notify.Config{"schedule": {"created": true, "cancelled": true}}})
 	stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)

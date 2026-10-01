@@ -19,6 +19,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/release"
 	"github.com/Protomothis/smartthings-pc-control/internal/secureacl"
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // Self update, stage 2 of issue #40.
@@ -363,7 +364,7 @@ func waitForProcessExit(pid uint32, timeout time.Duration) bool {
 
 // scCommand runs sc.exe with a hidden console window.
 func scCommand(args ...string) *exec.Cmd {
-	cmd := exec.Command("sc", args...)
+	cmd := systool.Command(systool.SC, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd
 }

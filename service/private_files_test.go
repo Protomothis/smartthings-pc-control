@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -16,14 +18,10 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	initLogger()
 	saved := getConfig()
 	t.Cleanup(func() { setConfig(saved) })
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// saveConfig writes next to the test binary; later tests expect the
+	// saveConfig writes into the test run's config folder; later tests expect the
 	// files as they were.
-	for _, name := range []string{configFileName, trayConfigFileName} {
-		path := filepath.Join(filepath.Dir(exe), name)
+	for _, name := range []string{config.FileName, config.TrayFileName} {
+		path := filepath.Join(configDir(), name)
 		orig, origErr := os.ReadFile(path)
 		t.Cleanup(func() {
 			if origErr == nil {
@@ -34,7 +32,7 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 		})
 	}
 
-	cfg := defaultConfig
+	cfg := config.Default()
 	cfg.Port = 5101
 	cfg.Secret = "tray-must-not-see-this"
 	cfg.SmartThings.ExposeSession = true
@@ -44,7 +42,7 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 	if err := saveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), trayConfigFileName))
+	data, err := os.ReadFile(filepath.Join(configDir(), config.TrayFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,13 +71,13 @@ func TestSaveConfigWritesTrayConfig(t *testing.T) {
 }
 
 func TestPrivateFilesOffForPlainUser(t *testing.T) {
-	saved := privateFilesOn
-	t.Cleanup(func() { privateFilesOn = saved })
-	privateFilesOn = func() bool { return false }
+	saved := config.PrivateFilesOn
+	t.Cleanup(func() { config.PrivateFilesOn = saved })
+	config.PrivateFilesOn = func() bool { return false }
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, configFileName)
-	if err := writePrivateFile(path, []byte("{}")); err != nil {
+	path := filepath.Join(dir, config.FileName)
+	if err := config.WritePrivateFile(path, []byte("{}")); err != nil {
 		t.Fatal(err)
 	}
 	if msgs := lockPrivateFiles(dir); msgs != nil {
@@ -98,17 +96,17 @@ func TestLockPrivateFiles(t *testing.T) {
 	}
 	initLogger()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, config.FileName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	msgs := lockPrivateFiles(dir) // state.json is missing: skipped
-	if len(msgs) != 1 || !strings.HasPrefix(msgs[0], configFileName+": access restricted") {
+	if len(msgs) != 1 || !strings.HasPrefix(msgs[0], config.FileName+": access restricted") {
 		t.Errorf("first lock: %v", msgs)
 	}
 	if msgs := lockPrivateFiles(dir); len(msgs) != 0 {
 		t.Errorf("second lock: %v", msgs)
 	}
-	if err := writePrivateFile(filepath.Join(dir, stateFileName), []byte("{}")); err != nil {
+	if err := config.WritePrivateFile(filepath.Join(dir, stateFileName), []byte("{}")); err != nil {
 		t.Fatal(err)
 	}
 	if msgs := lockPrivateFiles(dir); len(msgs) != 0 {

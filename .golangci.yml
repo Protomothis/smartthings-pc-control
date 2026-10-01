@@ -168,7 +168,7 @@ linters:
       # itself (log + notification).
       - path: gui/(gui|tray|toast)\.go
         linters: [errcheck]
-        source: (exec\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
+        source: (systool\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
       # Self-update: the service is restarted best-effort (the new exe starts
       # it again), the helper is reaped in the background, and the log file
       # truncation only bounds its size.
@@ -193,7 +193,8 @@ linters:
       - path: gui/service_control\.go
         linters: [errcheck]
         source: windows\.WaitForSingleObject\(
-      - path: service/server\.go
+      # Log rotation: a backup that is not there yet is the normal case.
+      - path: internal/logx/logx\.go
         linters: [errcheck]
         source: os\.Rename\(src, dst\)
       - path: service/st_push\.go

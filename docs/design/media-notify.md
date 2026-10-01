@@ -53,7 +53,7 @@
   미디어 키는 `SendInput`(VK_MEDIA_*).
   토스트는 go-toast를 **쓰지 않는다**(#106): go-toast는 제목·문구를 PowerShell 큰따옴표 here-string에 그대로
   넣어 `$(…)`가 실행된다. 대신 토스트 XML을 Go에서 이스케이프해 환경 변수로 고정 스크립트(`-EncodedCommand`)에 넘긴다.
-  AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 고정 문구 토스트는 지금처럼 go-toast.
+  AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 유예 토스트도 #127부터 같은 경로(`useraction.ShowToast`, 버튼만 추가)이고 go-toast 의존성은 없앴다.
 
 ### user-action 확정 문법 (#103)
 
@@ -80,7 +80,7 @@
 - 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).
   코드는 `bad_args` · `unsupported`(처리기가 없거나 이 PC에서 못 함) · `failed`.
 - 기능 이슈는 `useraction.Register(action, handler)`로 처리기를 붙인다. 붙기 전에는 `unsupported`.
-- 서비스는 `runUserAction`으로 부른다: 같은 파서로 먼저 검사(잘못된 인자는 프로세스를 띄우지 않음),
+- 서비스는 `runUserAction`(구현은 `service/session`의 `Runner`, 세션 찾기는 같은 패키지의 `WTS.FindUser`)으로 부른다: 같은 파서로 먼저 검사(잘못된 인자는 프로세스를 띄우지 않음),
   3초 제한(넘으면 자식 종료), 출력의 **마지막 비지 않은 줄**을 JSON으로 읽는다. 결과에 `audio`가 있으면 저장값을 갱신한다.
 - 하트비트 본문의 `idle_seconds`와 `audio`는 각각 선택이다. `audio`가 범위를 벗어나면 본문 전체를 400으로 거절한다.
 - (#104) 트레이는 `audio`에 `sampled_at`(RFC3339, 읽은 시각)을 싣고, 저장값의 "더 새 값만" 비교는 받은 시각이 아니라

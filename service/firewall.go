@@ -12,9 +12,10 @@ package service
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"sync/atomic"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // netshRunner runs one netsh invocation and returns its combined output.
@@ -24,7 +25,7 @@ type netshRunner func(args ...string) ([]byte, error)
 
 // runNetsh is the live runner; tests swap it out.
 var runNetsh netshRunner = func(args ...string) ([]byte, error) {
-	return exec.Command("netsh", args...).CombinedOutput()
+	return systool.Command(systool.Netsh, args...).CombinedOutput()
 }
 
 const (

@@ -5,7 +5,7 @@
 [`edge-platform-notes.md`](edge-platform-notes.md)에 있다.
 
 - 드라이버: `edge/` (Lua 5.3)
-- 서비스: `service/st_api.go`, `st_push.go`, `st_ssdp.go`, `st_idle.go`, `firewall.go`
+- 서비스: `service/st_api.go`, `st_push.go`, `st_ssdp.go`, `st_idle.go`, `firewall.go`, 세션 조회는 `service/session`, 예약은 `service/power`
 - 사용자 안내: `edge/README.md`, Wiki [SmartThings Edge 드라이버]
 
 ## 1. 개요와 목표

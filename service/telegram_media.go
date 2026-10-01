@@ -154,8 +154,8 @@ func tgMediaError(err error) (string, *telegram.InlineKeyboard, error) {
 // as what happened; the app name follows with the media.now_playing
 // opt-in. The key path only knows that a key was pressed.
 func tgMediaResult(name string, res UserActionResult, share bool) string {
-	status := res.replyString("status")
-	if res.replyString("via") != "session" || !useraction.ValidMediaStatus(status) {
+	status := res.ReplyString("status")
+	if res.ReplyString("via") != "session" || !useraction.ValidMediaStatus(status) {
 		return tgText("media_sent", tgMediaLabel(name))
 	}
 	var key string
@@ -173,7 +173,7 @@ func tgMediaResult(name string, res UserActionResult, share bool) string {
 		}
 	}
 	reply := tgText(key)
-	if app := res.replyString("app"); share && app != "" {
+	if app := res.ReplyString("app"); share && app != "" {
 		reply += " · " + html.EscapeString(app)
 	}
 	return reply

@@ -11,9 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/useraction"
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
+
+// noConsoleSession is what WTSGetActiveConsoleSessionId returns while the
+// console is between sessions.
+const noConsoleSession = 0xFFFFFFFF
 
 // fakeWTS installs a console session, a session table and the token each
 // session answers with (a missing entry is ERROR_NO_TOKEN). Every lock
@@ -22,12 +27,12 @@ import (
 func fakeWTS(t *testing.T, console uint32, sessions []wtsSession, enumErr error, tokens map[uint32]error) *[]uint32 {
 	t.Helper()
 	var queried []uint32
-	savedConsole, savedQuery, savedEnum, savedLocked := wtsActiveConsoleSession, wtsQueryUserToken, wtsEnumerateSessions, wtsSessionLocked
-	wtsSessionLocked = func(id uint32) (bool, error) {
+	saved := wts
+	wts.Locked = func(id uint32) (bool, error) {
 		return false, fmt.Errorf("lock state of session %d unknown", id)
 	}
-	wtsActiveConsoleSession = func() uint32 { return console }
-	wtsQueryUserToken = func(id uint32) (windows.Token, error) {
+	wts.ConsoleSession = func() uint32 { return console }
+	wts.QueryUserToken = func(id uint32) (windows.Token, error) {
 		queried = append(queried, id)
 		err, ok := tokens[id]
 		if !ok {
@@ -39,11 +44,8 @@ func fakeWTS(t *testing.T, console uint32, sessions []wtsSession, enumErr error,
 		// A real handle so the caller's Close is harmless.
 		return windows.Token(windows.CurrentProcess()), nil
 	}
-	wtsEnumerateSessions = func() ([]wtsSession, error) { return sessions, enumErr }
-	t.Cleanup(func() {
-		wtsActiveConsoleSession, wtsQueryUserToken, wtsEnumerateSessions = savedConsole, savedQuery, savedEnum
-		wtsSessionLocked = savedLocked
-	})
+	wts.Sessions = func() ([]wtsSession, error) { return sessions, enumErr }
+	t.Cleanup(func() { wts = saved })
 	return &queried
 }
 
@@ -51,7 +53,7 @@ func fakeWTS(t *testing.T, console uint32, sessions []wtsSession, enumErr error,
 // false unlocked; a session missing from the map cannot be read.
 func fakeLocks(t *testing.T, locked map[uint32]bool) {
 	t.Helper()
-	wtsSessionLocked = func(id uint32) (bool, error) {
+	wts.Locked = func(id uint32) (bool, error) {
 		l, ok := locked[id]
 		if !ok {
 			return false, windows.ERROR_ACCESS_DENIED
@@ -66,7 +68,7 @@ func fakeLocks(t *testing.T, locked map[uint32]bool) {
 func TestFindUserSessionPrefersUnlocked(t *testing.T) {
 	active := uint32(windows.WTSActive)
 	both := map[uint32]error{1: nil, 2: nil}
-	rdp := []wtsSession{{0, windows.WTSDisconnected}, {1, active}, {2, active}}
+	rdp := []wtsSession{{ID: 0, State: windows.WTSDisconnected}, {ID: 1, State: active}, {ID: 2, State: active}}
 	cases := []struct {
 		name     string
 		sessions []wtsSession
@@ -83,7 +85,7 @@ func TestFindUserSessionPrefersUnlocked(t *testing.T) {
 		{"only the console, locked", nil, map[uint32]error{1: nil}, map[uint32]bool{1: true}, 1},
 		{"only the console, unlocked", nil, map[uint32]error{1: nil}, map[uint32]bool{1: false}, 1},
 		{"console logon screen, rdp locked", rdp, map[uint32]error{2: nil}, map[uint32]bool{2: true}, 2},
-		{"second rdp unlocked", append(rdp, wtsSession{3, active}),
+		{"second rdp unlocked", append(rdp, wtsSession{ID: 3, State: active}),
 			map[uint32]error{1: nil, 2: nil, 3: nil}, map[uint32]bool{1: true, 2: true, 3: false}, 3},
 	}
 	for _, c := range cases {
@@ -98,7 +100,7 @@ func TestFindUserSessionPrefersUnlocked(t *testing.T) {
 
 // An unlocked console answers without enumerating the other sessions.
 func TestFindUserSessionUnlockedConsoleShortcut(t *testing.T) {
-	queried := fakeWTS(t, 1, []wtsSession{{2, windows.WTSActive}}, nil, map[uint32]error{1: nil, 2: nil})
+	queried := fakeWTS(t, 1, []wtsSession{{ID: 2, State: windows.WTSActive}}, nil, map[uint32]error{1: nil, 2: nil})
 	fakeLocks(t, map[uint32]bool{1: false, 2: false})
 	if id, err := getActiveUserSessionID(); err != nil || id != 1 {
 		t.Fatalf("session %d, %v; want 1", id, err)
@@ -119,12 +121,12 @@ func TestFindUserSession(t *testing.T) {
 	}{
 		{"console user", 1, nil, map[uint32]error{1: nil}, 1},
 		{"console preferred over rdp", 1,
-			[]wtsSession{{2, active}}, map[uint32]error{1: nil, 2: nil}, 1},
+			[]wtsSession{{ID: 2, State: active}}, map[uint32]error{1: nil, 2: nil}, 1},
 		{"logon screen, rdp user", 1,
-			[]wtsSession{{0, windows.WTSDisconnected}, {1, windows.WTSConnected}, {3, active}},
+			[]wtsSession{{ID: 0, State: windows.WTSDisconnected}, {ID: 1, State: windows.WTSConnected}, {ID: 3, State: active}},
 			map[uint32]error{3: nil}, 3},
 		{"console detaching", noConsoleSession,
-			[]wtsSession{{4, active}}, map[uint32]error{4: nil}, 4},
+			[]wtsSession{{ID: 4, State: active}}, map[uint32]error{4: nil}, 4},
 	}
 	for _, c := range cases {
 		fakeWTS(t, c.console, c.sessions, nil, c.tokens)
@@ -138,10 +140,10 @@ func TestFindUserSession(t *testing.T) {
 func TestFindUserSessionNobody(t *testing.T) {
 	active := uint32(windows.WTSActive)
 	queried := fakeWTS(t, 1, []wtsSession{
-		{0, active}, // never session 0, whatever it claims
-		{1, active}, // the console, already asked
-		{2, windows.WTSDisconnected},
-		{5, active},
+		{ID: 0, State: active}, // never session 0, whatever it claims
+		{ID: 1, State: active}, // the console, already asked
+		{ID: 2, State: windows.WTSDisconnected},
+		{ID: 5, State: active},
 	}, nil, nil)
 	_, err := getActiveUserSessionID()
 	if !errors.Is(err, errNoUserSession) {
@@ -176,7 +178,7 @@ func TestFindUserSessionOtherErrors(t *testing.T) {
 	}
 
 	// A later session with a user still wins over an earlier odd error.
-	fakeWTS(t, 1, []wtsSession{{2, windows.WTSActive}}, nil,
+	fakeWTS(t, 1, []wtsSession{{ID: 2, State: windows.WTSActive}}, nil,
 		map[uint32]error{1: windows.ERROR_ACCESS_DENIED, 2: nil})
 	if id, err := getActiveUserSessionID(); err != nil || id != 2 {
 		t.Errorf("fallback after an error: %d, %v", id, err)
@@ -196,10 +198,10 @@ func TestFindUserSessionClosesUnusedTokens(t *testing.T) {
 		{"all locked", map[uint32]bool{1: true, 2: true, 3: true}, 1},
 	}
 	for _, c := range cases {
-		fakeWTS(t, 1, []wtsSession{{2, active}, {3, active}}, nil, nil)
+		fakeWTS(t, 1, []wtsSession{{ID: 2, State: active}, {ID: 3, State: active}}, nil, nil)
 		fakeLocks(t, c.locked)
 		opened := map[uint32]windows.Token{}
-		wtsQueryUserToken = func(id uint32) (windows.Token, error) {
+		wts.QueryUserToken = func(id uint32) (windows.Token, error) {
 			var tok windows.Token
 			if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &tok); err != nil {
 				t.Fatalf("OpenProcessToken: %v", err)
@@ -234,7 +236,7 @@ func TestFindUserSessionClosesUnusedTokens(t *testing.T) {
 // or not, and never an RDP session instead.
 func TestFindConsoleUserSession(t *testing.T) {
 	active := uint32(windows.WTSActive)
-	rdp := []wtsSession{{0, windows.WTSDisconnected}, {1, active}, {2, active}}
+	rdp := []wtsSession{{ID: 0, State: windows.WTSDisconnected}, {ID: 1, State: active}, {ID: 2, State: active}}
 	cases := []struct {
 		name    string
 		console uint32
@@ -289,13 +291,13 @@ func screenSessionSetup(t *testing.T, consoleUser bool) (targets *[]sessionTarge
 	if consoleUser {
 		tokens[1] = nil
 	}
-	queried = fakeWTS(t, 1, []wtsSession{{1, windows.WTSActive}, {2, windows.WTSActive}}, nil, tokens)
+	queried = fakeWTS(t, 1, []wtsSession{{ID: 1, State: windows.WTSActive}, {ID: 2, State: windows.WTSActive}}, nil, tokens)
 	fakeLocks(t, map[uint32]bool{1: true, 2: false})
 	fakeUserAction(t, nil)
 	targets, sessions = new([]sessionTarget), new([]uint32)
-	userActionExec = func(_ context.Context, target sessionTarget, _ string, args []string) ([]byte, error) {
+	userActions.Exec = func(_ context.Context, target sessionTarget, _ string, args []string) ([]byte, error) {
 		*targets = append(*targets, target)
-		id, tok, err := target.find()
+		id, tok, err := wts.Find(target)
 		if err != nil {
 			return nil, fmt.Errorf("get session: %w", err)
 		}
@@ -337,9 +339,7 @@ func TestScreenRunsInConsoleSession(t *testing.T) {
 			t.Errorf("queried session %d: the screen commands looked the target up", q)
 		}
 	}
-	targetMu.Lock()
-	last, known := targetLast, targetKnown
-	targetMu.Unlock()
+	last, known := dev.target.Current()
 	if !known || last != 7 {
 		t.Errorf("target = %d (known %v), want 7 untouched", last, known)
 	}
@@ -375,9 +375,7 @@ func TestScreenConsoleLogonScreen(t *testing.T) {
 	if got := getDisplayState(); got != "on" {
 		t.Errorf("display state = %q, want on (unchanged)", got)
 	}
-	targetMu.Lock()
-	known := targetKnown
-	targetMu.Unlock()
+	_, known := dev.target.Current()
 	if known {
 		t.Error("the screen command recorded a target session")
 	}

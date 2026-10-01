@@ -16,6 +16,8 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 func (u *ui) buildLogsTab() fyne.CanvasObject {
@@ -76,12 +78,12 @@ func (u *ui) openServiceLog(folder bool) {
 	if folder {
 		// explorer.exe is a GUI app (no console to hide); build the command
 		// line by hand so the "/select," switch and path stay one argument.
-		cmd = exec.Command("explorer.exe")
+		cmd = exec.Command(systool.Explorer())
 		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: fmt.Sprintf(`explorer.exe /select,"%s"`, path)}
 	} else {
 		// `start "" <file>` opens with the file's associated app; hide the
 		// helper console since the GUI is built with -H=windowsgui.
-		cmd = exec.Command("cmd", "/c", "start", "", path)
+		cmd = systool.Command(systool.Cmd, "/c", "start", "", path)
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	}
 	if err := cmd.Start(); err != nil {

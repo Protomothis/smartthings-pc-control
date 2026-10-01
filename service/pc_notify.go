@@ -8,29 +8,16 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
-
-// NotifyPCConfig is the "notify_pc" object in config.json (§4). The
-// "speak" and "voice" keys of the dropped read-aloud feature (2026-10-01)
-// are not fields: an old config.json that has them loads as usual and the
-// next save writes the object without them.
-type NotifyPCConfig struct {
-	// Enabled allows SmartThings and Telegram to show a toast on this PC
-	// (default on). Off, /st/v1/notify answers 403 notify_disabled.
-	Enabled bool `json:"enabled"`
-}
 
 const (
 	// pcNotifyDefaultTitle is the toast title when a request sends none.
@@ -107,49 +94,9 @@ func prepareNotify(title, text string) (string, string, error) {
 
 // ---- rate limit ---------------------------------------------------------
 
-// notifyLimiter allows pcNotifyPerMinute notifications per source in any
-// sliding window of pcNotifyWindow. now is injectable for the tests.
-type notifyLimiter struct {
-	mu   sync.Mutex
-	now  func() time.Time
-	hits map[string][]time.Time
-}
-
-func newNotifyLimiter(now func() time.Time) *notifyLimiter {
-	return &notifyLimiter{now: now, hits: map[string][]time.Time{}}
-}
-
-// allow records one notification from key, or reports how long until the
-// oldest one in the window expires.
-func (l *notifyLimiter) allow(key string) (bool, time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.now()
-	cutoff := now.Add(-pcNotifyWindow)
-	if len(l.hits) > 256 {
-		// Sources that went quiet are worthless; keep the map small.
-		for k, ts := range l.hits {
-			if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
-				delete(l.hits, k)
-			}
-		}
-	}
-	kept := l.hits[key][:0]
-	for _, t := range l.hits[key] {
-		if t.After(cutoff) {
-			kept = append(kept, t)
-		}
-	}
-	if len(kept) >= pcNotifyPerMinute {
-		l.hits[key] = kept
-		return false, kept[0].Sub(cutoff)
-	}
-	l.hits[key] = append(kept, now)
-	return true, 0
-}
-
-// pcNotifyLimits is the live limiter, replaced by the tests.
-var pcNotifyLimits = newNotifyLimiter(time.Now)
+// pcNotifyLimits allows pcNotifyPerMinute notifications per source in any
+// sliding window of pcNotifyWindow. Replaced by the tests.
+var pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 
 // ---- running -----------------------------------------------------------
 
@@ -202,51 +149,6 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 	return out, nil
 }
 
-// actionErrorStatus maps a sendPCNotify / runPreset error to the HTTP
-// status and wire code of /st/v1 and /api.
-func actionErrorStatus(err error) (int, string, string) {
-	var ne *pcNotifyError
-	var ue *userActionError
-	switch {
-	case errors.As(err, &ne):
-		switch ne.Code {
-		case "notify_disabled":
-			return http.StatusForbidden, ne.Code, ne.Message
-		case "rate_limited":
-			return http.StatusTooManyRequests, ne.Code, ne.Message
-		}
-		return http.StatusBadRequest, ne.Code, ne.Message
-	case errors.Is(err, errNoUserSession):
-		return http.StatusConflict, "no_user_session", "nobody is logged in on this PC"
-	case errors.Is(err, errUserActionTimeout):
-		return http.StatusGatewayTimeout, "timeout", "the user session did not answer in time"
-	case errors.As(err, &ue):
-		switch ue.Code {
-		case useraction.CodeBadArgs:
-			return http.StatusBadRequest, ue.Code, ue.Message
-		case useraction.CodeUnsupported:
-			return http.StatusNotImplemented, ue.Code, ue.Message
-		}
-		return http.StatusBadGateway, useraction.CodeFailed, ue.Message
-	}
-	return http.StatusBadGateway, useraction.CodeFailed, err.Error()
-}
-
-// writeActionError answers with {"error": code, "message": …} and, for a
-// rate limit, Retry-After in whole seconds (at least 1).
-func writeActionError(w http.ResponseWriter, err error) {
-	status, code, msg := actionErrorStatus(err)
-	var ne *pcNotifyError
-	if errors.As(err, &ne) && ne.Code == "rate_limited" {
-		secs := int((ne.RetryAfter + time.Second - 1) / time.Second)
-		if secs < 1 {
-			secs = 1
-		}
-		w.Header().Set("Retry-After", strconv.Itoa(secs))
-	}
-	writeJSON(w, status, map[string]string{"error": code, "message": msg})
-}
-
 // stNotifyRequest is the POST /st/v1/notify body. A "speak" field from an
 // older driver is ignored like any unknown key.
 type stNotifyRequest struct {
@@ -283,10 +185,9 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 // handleNotifyTestAPI serves POST /api/notify/test for the app's
 // [테스트 알림] button. The enabled switch is ignored (testing is how the
 // user decides), the rate limit is not.
-func handleNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handleNotifyTestAPI = apiAuth(serveNotifyTestAPI, "POST")
+
+func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title string `json:"title"`
 		Text  string `json:"text"`

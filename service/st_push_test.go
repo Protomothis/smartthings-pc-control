@@ -560,9 +560,8 @@ func TestStoppingReasonFromLastCommand(t *testing.T) {
 	}
 
 	// A stale hint is ignored.
-	lastPowerCommandMu.Lock()
-	lastPowerCommandAt = time.Now().Add(-2 * powerCommandHintTTL)
-	lastPowerCommandMu.Unlock()
+	powerHint.Now = func() time.Time { return time.Now().Add(4 * time.Minute) }
+	t.Cleanup(func() { powerHint.Now = nil })
 	if got := stoppingReason("shutdown"); got != "shutdown" {
 		t.Errorf("stale hint = %q, want the fallback", got)
 	}

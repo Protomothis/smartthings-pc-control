@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 // wolAdapters is the multi-NIC PC the rules have to cope with: a wired
@@ -34,15 +36,15 @@ func TestNormalizeMAC(t *testing.T) {
 		"b42e9945b4f5",
 		"  b4:2E:99:45:b4:F5  ",
 	} {
-		if got := normalizeMAC(in); got != want {
-			t.Errorf("normalizeMAC(%q) = %q, want %q", in, got, want)
+		if got := config.NormalizeMAC(in); got != want {
+			t.Errorf("config.NormalizeMAC(%q) = %q, want %q", in, got, want)
 		}
 	}
 	// Anything that is not a 6-byte MAC is "no MAC" rather than a value
 	// that could never match an adapter.
 	for _, in := range []string{"", "   ", "B4-2E-99-45-B4", "B4-2E-99-45-B4-F5-00", "not a mac", "B4-2E-99-45-B4-FG", "192.168.1.30"} {
-		if got := normalizeMAC(in); got != "" {
-			t.Errorf("normalizeMAC(%q) = %q, want \"\"", in, got)
+		if got := config.NormalizeMAC(in); got != "" {
+			t.Errorf("config.NormalizeMAC(%q) = %q, want \"\"", in, got)
 		}
 	}
 }
@@ -252,14 +254,14 @@ func TestSmartThingsConfigNormalisesWoLMAC(t *testing.T) {
 		"auto":              "",
 		"B4-2E-99-45-B4":    "",
 	} {
-		if got := (SmartThingsConfig{WoLMAC: in}).withDefaults().WoLMAC; got != want {
+		if got := (SmartThingsConfig{WoLMAC: in}).WithDefaults().WoLMAC; got != want {
 			t.Errorf("withDefaults(%q).WoLMAC = %q, want %q", in, got, want)
 		}
 	}
 	// A changed pin is a config change the security event reports.
 	old := Config{SmartThings: SmartThingsConfig{}}
 	new := Config{SmartThings: SmartThingsConfig{WoLMAC: "B4-2E-99-45-B4-F5"}}
-	if !slices.Contains(configChangedKeys(old, new), "smartthings.wol_mac") {
-		t.Errorf("configChangedKeys = %v, want smartthings.wol_mac", configChangedKeys(old, new))
+	if !slices.Contains(config.ChangedKeys(old, new), "smartthings.wol_mac") {
+		t.Errorf("configChangedKeys = %v, want smartthings.wol_mac", config.ChangedKeys(old, new))
 	}
 }

@@ -49,14 +49,8 @@ var (
 	lastRemoteMu sync.Mutex
 )
 
-// noteRemoteCommand is called by the legacy command handler for every
-// accepted non-ping command.
-func noteRemoteCommand(command, from string) {
-	noteRemoteCommandBy(command, from, "remote")
-}
-
-// noteRemoteCommandBy is noteRemoteCommand for a caller that knows which
-// protocol the command arrived on.
+// noteRemoteCommandBy records the last command and the path it arrived on
+// (recordCommand in dispatch.go decides which commands count).
 func noteRemoteCommandBy(command, from, origin string) {
 	lastRemoteMu.Lock()
 	lastRemote = remoteRecord{Command: command, From: from, Origin: origin, At: time.Now()}
@@ -414,18 +408,12 @@ func tgMenuKeyboard() *telegram.InlineKeyboard {
 
 // ---- actions ------------------------------------------------------------------
 
-// runTelegramCommand executes a registry command in the background, the
-// same way the HTTP handler does.
+// runTelegramCommand executes a registry command in the background through
+// dispatchCommand, at once: the bot asked for a confirmation (or a delay)
+// already. It is neither recorded as last_command nor notified.
 func runTelegramCommand(name string) bool {
-	cmd, ok := Commands[name]
-	if !ok {
-		return false
-	}
-	logMsg("Telegram command: %s", name)
-	if cmd.Execute != nil {
-		go cmd.Execute()
-	}
-	return true
+	_, ok := dispatchCommand(name, "telegram", originTelegram, dispatchImmediate)
+	return ok
 }
 
 // runScheduledNow ends the active schedule (by=telegram) and executes its
@@ -591,7 +579,7 @@ func tgDelay(d time.Duration) string {
 
 // parseAwakeArg reads the /awake argument: none is the configured default,
 // "off" turns keep-awake off, a number is minutes (0 = until turned off, at
-// most awakeMaxMinutes).
+// most config.AwakeMaxMinutes).
 func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
 	if len(args) == 0 {
 		return awakeMinutesOrDefault(nil), false, true
@@ -860,7 +848,7 @@ func tgStatusText() string {
 	ctl := currentAwake()
 	fmt.Fprintf(&b, "\n%s: %s", tgText("st_awake"), tgAwakeStatus(ctl.View(), ctl.now()))
 	// A desktop has no battery, and no line for one.
-	if bat := battery.info(); bat.Present {
+	if bat := battery.Info(); bat.Present {
 		fmt.Fprintf(&b, "\n%s: %s", tgText("st_battery"), tgBatteryStatus(bat))
 	}
 	if line := tgActivityLine(stActivityStatus(getConfig())); line != "" {

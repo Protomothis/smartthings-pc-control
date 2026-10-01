@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-toast/toast"
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // protocolScheme is the custom URI scheme the toast action buttons launch.
@@ -48,28 +48,24 @@ func registerToastProtocol() {
 // to, and without the shortcut toasts still reach the notification center.
 func ensureToastShortcut() { appid.EnsureToastShortcut() }
 
-// graceToast is the grace-period toast: Run now / Cancel buttons, shown
-// under the Start menu shortcut's AUMID (with any other app ID Windows
-// keeps it out of sight in the notification center).
-func graceToast(lang Lang, title, message string) toast.Notification {
-	return toast.Notification{
-		AppID:   appid.AUMID,
-		Title:   title,
-		Message: message,
-		Actions: []toast.Action{
-			{Type: "protocol", Label: T(lang, "toast.runnow"), Arguments: protocolScheme + "://runnow"},
-			{Type: "protocol", Label: T(lang, "toast.cancel"), Arguments: protocolScheme + "://cancel"},
-		},
+// graceToastActions are the grace-period toast's Run now / Cancel buttons,
+// which launch stpc:// back into this exe (registerToastProtocol).
+func graceToastActions(lang Lang) []useraction.ToastAction {
+	return []useraction.ToastAction{
+		{Label: T(lang, "toast.runnow"), Arguments: protocolScheme + "://runnow"},
+		{Label: T(lang, "toast.cancel"), Arguments: protocolScheme + "://cancel"},
 	}
 }
 
 // showGraceToast pops a Windows toast with Run now / Cancel buttons for the
 // scheduled command. title and message are already localised (they differ
-// by origin, see #54). Returns an error so the caller can fall back to a
-// plain Fyne notification.
+// by origin, see #54). It is the PC notification's toast path
+// (useraction.ShowToast): escaped XML, a fixed script, and the Start menu
+// shortcut's AUMID (with any other app ID Windows keeps the toast out of
+// sight in the notification center). Returns an error so the caller can
+// fall back to a plain Fyne notification.
 func showGraceToast(lang Lang, title, message string) error {
-	n := graceToast(lang, title, message)
-	return n.Push()
+	return useraction.ShowToast(title, message, graceToastActions(lang))
 }
 
 // HandleToastAction is invoked as `exe toast stpc://...` when the user

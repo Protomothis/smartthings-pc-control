@@ -16,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -66,7 +70,7 @@ func TestPrepareNotify(t *testing.T) {
 
 func TestNotifyLimiter(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	l := newNotifyLimiter(func() time.Time { return now })
+	l := newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
 	for i := 0; i < pcNotifyPerMinute; i++ {
 		if ok, _ := l.allow("ip 1"); !ok {
 			t.Fatalf("request %d refused", i+1)
@@ -104,9 +108,9 @@ func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 		if err != nil {
 			return UserActionResult{}, err
 		}
-		return parseUserActionOutput([]byte(reply))
+		return session.ParseOutput([]byte(reply))
 	}
-	pcNotifyLimits = newNotifyLimiter(time.Now)
+	pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 	t.Cleanup(func() { pcNotifyRun, pcNotifyLimits = saved, savedLimits })
 	return &calls
 }
@@ -299,7 +303,7 @@ func TestNotifyArgsParse(t *testing.T) {
 }
 
 func TestNotifyPCDefaults(t *testing.T) {
-	cfg := defaultConfig.withDefaults()
+	cfg := config.Default().WithDefaults()
 	if !cfg.NotifyPC.Enabled {
 		t.Errorf("defaults = %+v, want enabled", cfg.NotifyPC)
 	}

@@ -64,6 +64,29 @@ v1.2.0 / Edge 1.1.0 개발로 범위가 크게 늘어난 뒤 코드·테스트·
   속도 제한기 하나(지금 4종), `configChangedKeys`는 json 태그에서 자동 생성.
 - 전역 상태 축소: 테스트용 교체 함수 변수 약 20개 → 의존성 구조체로. 테스트가 바이너리 옆에 `config.json`을 쓰지 않게.
 
+#### 진행 상황 (#127, 2026-10-01)
+
+아래쪽 패키지부터 나눴다. 위 패키지는 아래 패키지만 가져다 쓴다(순환 없음). 줄 수는 테스트 제외 소스.
+
+| 패키지 | 맡는 것 | 줄 |
+|---|---|---|
+| `internal/systool` | 외부 도구(netsh·sc·shutdown·wevtutil·cmd·PowerShell)를 System32 절대 경로로 실행하는 유일한 헬퍼 | 63 |
+| `internal/logx` | `service.log` 열기·회전·쓰기, 시크릿 마스킹 | 140 |
+| `internal/config` | `config.json` 타입·기본값·검증·마이그레이션, Load/Save(DPAPI·#131 비공개 ACL·`tray.json`), 설정 폴더는 인자, 변경 키는 json 태그에서 | 1077 |
+| `service/devstate` | 장치 상태 저장소: 제네릭 `Sample[T]`(새 값이 이김·TTL)·`Value[T]`, 대상 세션 추적, 배터리 모니터 | 290 |
+| `service/session` | WTS 세션 찾기(`WTS` 의존성 구조체), 세션 안 실행, `user-action` 실행기(`Runner`) | 678 |
+| `service/power` | 예약 슬롯(`Scheduler` + `Hooks`), 종료 사유 힌트, `SetSuspendState` | 389 |
+| `service` (루트) | HTTP 표면(`/st/v1`·`/api`·레거시), 텔레그램 제어, 알림 연결, 명령 목록과 조립 | 12344 → 10406 |
+
+루트에서 하나로 합친 것: 명령 실행 경로 `dispatchCommand`(4벌 → 1), `/api` 인증·메서드·CSRF `apiAuth`(19벌 → 1),
+동작 오류→HTTP 매핑 `classifyActionError`(2벌 → 1, 내부 오류 문자열을 내보내지 않음), 키별 슬라이딩 창 `rateLimiter`(4종 → 1;
+실패 횟수로 잠그는 로그인 잠금은 성격이 달라 따로). 오류 **응답 모양**은 드라이버(`{"error"}`)와 앱(`{"status":"error"}`)의
+계약이라 그대로 두고, 만드는 곳만 모았다.
+
+남은 일: `service/stapi`·`service/webui`·`service/tgcontrol`은 아직 루트에 있다. 핸들러가 상태 블록 거의 전부(예약·장치·WoL·
+활동·프리셋·업데이트·awake·last_command)를 읽어서, 나누려면 그 읽기를 인터페이스 하나로 모으는 작업이 먼저다. 교체 함수 변수도
+WTS·실행기·힌트 시계만 구조체로 옮겼고 나머지(`stNow`, `audioNow`, `presetRun` 등 약 20개)는 남아 있다.
+
 ### 3.3 데스크톱 앱
 - **저장 조정자**: 탭마다 `formTab{Fill, Dirty, ApplyTo}`(설정 탭만 아직 모델이 없음)와 하나의 저장 경로.
   저장 후 항상 다시 받아오고 모든 탭의 변경 표시를 다시 계산, 재연결·언어 변경이 저장 안 한 편집을 덮지 않게.

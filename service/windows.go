@@ -3,16 +3,18 @@ package service
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
 	"unsafe"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 const serviceName = "RemoteShutdownService"
@@ -38,7 +40,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	cfg := loadConfig()
 	setConfig(cfg)
 	// The tray finds the port and its switches here, not in config.json.
-	writeTrayConfig(installDir(), cfg)
+	config.WriteTrayFile(installDir(), cfg)
 
 	// Notification bus (#55) must exist before the servers emit. The live
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
@@ -142,7 +144,7 @@ func RunConsole() {
 	// and usually runs from a build or source folder.
 	setConfig(loadConfig())
 	// The tray finds the port in tray.json (#131).
-	writeTrayConfig(installDir(), getConfig())
+	config.WriteTrayFile(installDir(), getConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
@@ -385,7 +387,7 @@ func removeWebUIFirewallRule() error {
 // Falls back to os.Exit(1) if sc.exe fails (e.g., in console mode).
 func restartSelf() {
 	// Try sc.exe stop + start (works when running as a service)
-	stop := exec.Command("sc", "stop", serviceName)
+	stop := systool.Command(systool.SC, "stop", serviceName)
 	if err := stop.Run(); err != nil {
 		logMsg("sc stop failed (console mode?): %v, falling back to os.Exit(1)", err)
 		os.Exit(1)
@@ -393,7 +395,8 @@ func restartSelf() {
 	// The service will be stopped; SCM will not auto-start it.
 	// We need a separate process to start it after stop completes.
 	// Use cmd /c with a delay to start the service after this process exits.
-	start := exec.Command("cmd", "/c", "timeout", "/t", "2", "/nobreak", ">nul", "&&", "sc", "start", serviceName)
+	// Every program on that command line is named by absolute path too.
+	start := systool.Command(systool.Cmd, "/c", systool.Path(systool.Timeout), "/t", "2", "/nobreak", ">nul", "&&", systool.Path(systool.SC), "start", serviceName)
 	start.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: 0x00000008, // DETACHED_PROCESS
 	}

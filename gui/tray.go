@@ -3,11 +3,12 @@ package gui
 import (
 	_ "embed"
 	"fmt"
-	"os/exec"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/systray"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 //go:embed icon.png
@@ -30,7 +31,7 @@ func (u *ui) setupTray() {
 
 	openItem := fyne.NewMenuItem(u.t("tray.open"), u.showWindow)
 	webUIItem := fyne.NewMenuItem(u.t("settings.openwebui"), func() {
-		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
+		systool.Command(systool.Cmd, "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
 
 	// Quick commands (safe ones only — destructive commands live in the

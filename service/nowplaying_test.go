@@ -15,6 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -226,7 +230,7 @@ func TestMediaCommandUpdatesStore(t *testing.T) {
 
 	recordMediaSample(spotifyTrack, now.Add(-time.Second))
 	reply := func(line string) UserActionResult {
-		res, err := parseUserActionOutput([]byte(line))
+		res, err := session.ParseOutput([]byte(line))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,8 +284,8 @@ func TestRunUserActionStoresNowPlaying(t *testing.T) {
 		t.Errorf("not stored: %+v", s)
 	}
 	// A key reply's "media" is a string, not a session.
-	res, _ := parseUserActionOutput([]byte(`{"ok":true,"media":"next","via":"keys"}`))
-	if _, ok := res.nowPlaying(); ok {
+	res, _ := session.ParseOutput([]byte(`{"ok":true,"media":"next","via":"keys"}`))
+	if _, ok := res.NowPlaying(); ok {
 		t.Error("a key reply read as now playing")
 	}
 }
@@ -352,13 +356,13 @@ func TestMediaAPI(t *testing.T) {
 }
 
 func TestMediaConfigNowPlayingDefaultOff(t *testing.T) {
-	if defaultConfig.Media.NowPlaying {
+	if config.Default().Media.NowPlaying {
 		t.Error("media.now_playing defaults to on")
 	}
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	changed := old
 	changed.Media.NowPlaying = true
-	if keys := configChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
+	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
 		t.Errorf("changed keys = %v", keys)
 	}
 }
@@ -423,7 +427,7 @@ func TestTelegramMediaCommandResults(t *testing.T) {
 		return tgBody(html)
 	}
 	reply := func(line string) UserActionResult {
-		res, err := parseUserActionOutput([]byte(line))
+		res, err := session.ParseOutput([]byte(line))
 		if err != nil {
 			t.Fatal(err)
 		}

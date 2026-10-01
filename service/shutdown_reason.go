@@ -5,10 +5,11 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
-	"os/exec"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // Local shutdown vs restart (#87).
@@ -72,7 +73,7 @@ var localShutdownRunner = runLocalShutdownQuery
 // newest-first, /c:1 stops after one, /f:xml prints the raw EventData
 // (the rendered, localised message is not included).
 func runLocalShutdownQuery(ctx context.Context) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "wevtutil", "qe", "System",
+	cmd := systool.CommandContext(ctx, systool.Wevtutil, "qe", "System",
 		"/q:"+localShutdownQuery, "/c:1", "/rd:true", "/f:xml")
 	// A service has no console, but this must never flash one if the
 	// binary is ever stopped from an interactive session.

@@ -32,7 +32,7 @@ func newSettingsView(cfg Config) settingsView {
 		SecretSet:     cfg.Secret != "",
 		WebUIRemote:   cfg.WebUIRemote,
 		ShutdownGrace: cfg.ShutdownGrace,
-		GraceSeconds:  int(cfg.graceDuration() / time.Second),
+		GraceSeconds:  int(cfg.GraceDuration() / time.Second),
 	}
 }
 
@@ -90,7 +90,7 @@ func buildWebUIStatus(cfg Config) webUIStatus {
 		UptimeSeconds: int64(webUIUptime() / time.Second),
 		Display:       getDisplayState(),
 		Session:       webUISession(cfg.SmartThings),
-		Grace:         stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.graceDuration() / time.Second)},
+		Grace:         stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:      getSchedule(),
 	}
 	if seen, ok := hubLastSeenInfo(); ok {
@@ -104,15 +104,9 @@ func buildWebUIStatus(cfg Config) webUIStatus {
 }
 
 // handleWebUIStatusAPI serves GET /api/status behind the session cookie.
-func handleWebUIStatusAPI(w http.ResponseWriter, r *http.Request) {
+var handleWebUIStatusAPI = apiAuth(serveWebUIStatusAPI, http.MethodGet)
+
+func serveWebUIStatusAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	writeJSON(w, http.StatusOK, buildWebUIStatus(liveCfg))
 }

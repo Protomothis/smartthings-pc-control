@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 // fakeAwake is the test harness around an awakeController: a settable
@@ -313,13 +315,13 @@ func TestAwakeRejectsBadMinutesAndSetterFailure(t *testing.T) {
 	initLogger()
 	fa := newFakeAwake()
 	c := fa.ctl
-	for _, m := range []int{-1, awakeMaxMinutes + 1} {
+	for _, m := range []int{-1, config.AwakeMaxMinutes + 1} {
 		if _, err := c.TurnOn(m); err == nil {
 			t.Errorf("TurnOn(%d) accepted", m)
 		}
 	}
-	if _, err := c.TurnOn(awakeMaxMinutes); err != nil {
-		t.Errorf("TurnOn(%d) rejected: %v", awakeMaxMinutes, err)
+	if _, err := c.TurnOn(config.AwakeMaxMinutes); err != nil {
+		t.Errorf("TurnOn(%d) rejected: %v", config.AwakeMaxMinutes, err)
 	}
 	c.TurnOff()
 
@@ -399,25 +401,25 @@ func goroutineID() string {
 }
 
 func TestAwakeConfigDefaults(t *testing.T) {
-	if got := defaultConfig.withDefaults().Awake; got.DefaultMinutes != 60 || got.KeepDisplay {
+	if got := config.Default().WithDefaults().Awake; got.DefaultMinutes != 60 || got.KeepDisplay {
 		t.Errorf("default awake = %+v, want {60 false}", got)
 	}
 	for _, tc := range []struct{ in, want int }{{0, 0}, {30, 30}, {1440, 1440}, {-5, 60}, {1441, 60}} {
-		if got := (AwakeConfig{DefaultMinutes: tc.in}).withDefaults().DefaultMinutes; got != tc.want {
+		if got := (AwakeConfig{DefaultMinutes: tc.in}).WithDefaults().DefaultMinutes; got != tc.want {
 			t.Errorf("withDefaults(%d) = %d, want %d", tc.in, got, tc.want)
 		}
 	}
 	// A config.json without the key keeps the default; one with 0 keeps 0.
-	cfg := defaultConfig
+	cfg := config.Default()
 	if err := json.Unmarshal([]byte(`{"port":5001}`), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.withDefaults().Awake.DefaultMinutes != 60 {
+	if cfg.WithDefaults().Awake.DefaultMinutes != 60 {
 		t.Errorf("missing awake key: %+v", cfg.Awake)
 	}
-	cfg = defaultConfig
+	cfg = config.Default()
 	json.Unmarshal([]byte(`{"awake":{"default_minutes":0,"keep_display":true}}`), &cfg)
-	if a := cfg.withDefaults().Awake; a.DefaultMinutes != 0 || !a.KeepDisplay {
+	if a := cfg.WithDefaults().Awake; a.DefaultMinutes != 0 || !a.KeepDisplay {
 		t.Errorf("explicit awake = %+v", a)
 	}
 }

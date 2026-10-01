@@ -2,12 +2,13 @@ package gui
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 const serviceName = "RemoteShutdownService"
@@ -24,7 +25,7 @@ const (
 // queryServiceState checks the Windows service via `sc query` (no admin
 // rights needed). The GUI runs with -H=windowsgui, so hide the child console.
 func queryServiceState() svcState {
-	cmd := exec.Command("sc", "query", serviceName)
+	cmd := systool.Command(systool.SC, "query", serviceName)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.Output()
 	if err != nil {

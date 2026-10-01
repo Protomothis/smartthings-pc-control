@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/release"
@@ -97,14 +99,15 @@ func takeCleanShutdown(path string) bool {
 // update checker.
 var stateMu sync.Mutex
 
-// statePath returns the state.json path next to the exe, or "" when the exe
-// path is unknown (then the state is simply not persisted).
+// statePath returns the state.json path in the config folder (next to the
+// exe), or "" when that is unknown (then the state is simply not
+// persisted).
 func statePath() string {
-	exePath, err := os.Executable()
-	if err != nil {
+	dir := configDir()
+	if dir == "" {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(exePath), stateFileName)
+	return filepath.Join(dir, stateFileName)
 }
 
 // loadState reads path; a missing or unreadable file is an empty state.
@@ -133,7 +136,7 @@ func saveState(path string, st serviceState) error {
 	if err != nil {
 		return err
 	}
-	return writePrivateFile(path, data) // #131, like config.json
+	return config.WritePrivateFile(path, data) // #131, like config.json
 }
 
 // isReleaseVersion reports whether v is a tagged build ("v1.2.3"); "dev"

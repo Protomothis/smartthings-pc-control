@@ -188,7 +188,7 @@ func sessionUserSID(session uint32) string {
 	if session == 0 {
 		return ""
 	}
-	t, err := wtsQueryUserToken(session)
+	t, err := wts.QueryUserToken(session)
 	if err != nil {
 		return ""
 	}

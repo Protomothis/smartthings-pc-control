@@ -36,9 +36,30 @@ func TestToastXMLEscapesEverything(t *testing.T) {
 	}
 }
 
+// The grace toast (#127, formerly go-toast): a protocol toast with one
+// button per action, every value escaped like the notification text.
+func TestToastDocumentWithActions(t *testing.T) {
+	got := toastDocument(`종료 "예정"`, "30초 뒤 <종료>", []ToastAction{
+		{Label: "지금 실행", Arguments: "stpc://runnow"},
+		{Label: `취소 & "닫기"`, Arguments: "stpc://cancel"},
+	})
+	want := `<toast activationType="protocol" launch="" duration="short"><visual><binding template="ToastGeneric">` +
+		`<text>종료 &#34;예정&#34;</text><text>30초 뒤 &lt;종료&gt;</text></binding></visual>` +
+		`<audio src="ms-winsoundevent:Notification.Default"/><actions>` +
+		`<action activationType="protocol" content="지금 실행" arguments="stpc://runnow"/>` +
+		`<action activationType="protocol" content="취소 &amp; &#34;닫기&#34;" arguments="stpc://cancel"/>` +
+		`</actions></toast>`
+	if got != want {
+		t.Errorf("toastDocument =\n%s\nwant\n%s", got, want)
+	}
+	if toastDocument("t", "x", nil) != toastXML("t", "x") {
+		t.Error("without actions toastDocument must be the PC notification's document")
+	}
+}
+
 func TestToastCommandKeepsTextOutOfTheCommandLine(t *testing.T) {
 	text := "$(calc) 빨래 끝"
-	cmd := toastCommand("SmartThings", text)
+	cmd := toastCommand(toastXML("SmartThings", text))
 	for _, a := range cmd.Args {
 		if strings.Contains(a, "calc") || strings.Contains(a, "빨래") {
 			t.Fatalf("argument %q carries the notification text", a)

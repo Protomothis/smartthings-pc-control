@@ -50,19 +50,6 @@ type retryAfterer interface {
 	RetryAfter() time.Duration
 }
 
-var (
-	pkgLogMu sync.RWMutex
-	pkgLog   func(string, ...any)
-)
-
-// SetLogger sets the package-wide logger used by buses whose Options.Log
-// is nil. The service passes its logMsg here.
-func SetLogger(fn func(string, ...any)) {
-	pkgLogMu.Lock()
-	pkgLog = fn
-	pkgLogMu.Unlock()
-}
-
 // Options configures a Bus. Only Sink is needed for delivery; the nil
 // defaults are DefaultConfig, no quiet hours, time.Now and real timers.
 type Options struct {
@@ -597,12 +584,5 @@ func (b *Bus) sleep(d time.Duration) {
 func (b *Bus) logf(format string, args ...any) {
 	if b.opts.Log != nil {
 		b.opts.Log(format, args...)
-		return
-	}
-	pkgLogMu.RLock()
-	fn := pkgLog
-	pkgLogMu.RUnlock()
-	if fn != nil {
-		fn(format, args...)
 	}
 }

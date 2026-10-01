@@ -6,7 +6,6 @@ package gui
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -17,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
+	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // Grace period choices (seconds) for remote power commands (#51). The
@@ -49,7 +49,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
 	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
-		_ = exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
+		_ = systool.Command(systool.Cmd, "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
 
 	var restartBtn *widget.Button

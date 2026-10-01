@@ -24,18 +24,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// MediaConfig is the "media" object in config.json (§4). There is nothing
-// to normalise: a missing key keeps the default (on) because loadConfig
-// decodes over defaultConfig.
-type MediaConfig struct {
-	// Enabled allows the volume, mute and media-key commands. Default on.
-	Enabled bool `json:"enabled"`
-	// NowPlaying (#117) shares the title, artist, album and app of the
-	// playing media in status, pushes and Telegram. Opt-in, default off;
-	// the playback status alone follows Enabled (nowplaying.go).
-	NowPlaying bool `json:"now_playing"`
-}
-
 // defaultVolumeStep is volumeup/volumedown without a value (§3), and the
 // Windows volume keys' own step.
 const defaultVolumeStep = 5
@@ -229,12 +217,12 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 	}
 	res, err := runMediaCommand(r.Context(), name, body.Value)
 	if err != nil {
-		status, code, msg := mediaErrorStatus(err)
+		f := classifyActionError(err)
 		logMsg("ST API: %s from %s failed: %v", name, from, err)
-		if msg == "" {
-			stError(w, status, code)
+		if f.Detail == "" {
+			stError(w, f.Status, f.Code)
 		} else {
-			writeJSON(w, status, map[string]string{"error": code, "message": msg})
+			writeJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
 		}
 		return
 	}
@@ -247,29 +235,4 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 		resp.Audio = &view
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// mediaErrorStatus maps a runMediaCommand error to its HTTP status, error
-// code and (optional) message.
-func mediaErrorStatus(err error) (status int, code, msg string) {
-	var valErr *errMediaValue
-	var uaErr *userActionError
-	switch {
-	case errors.Is(err, errMediaDisabled):
-		return http.StatusForbidden, "media_disabled", ""
-	case errors.Is(err, errNoUserSession):
-		return http.StatusConflict, "no_user_session", ""
-	case errors.As(err, &valErr):
-		return http.StatusBadRequest, valErr.msg, ""
-	case errors.Is(err, errUserActionTimeout):
-		return http.StatusGatewayTimeout, "timeout", ""
-	case errors.As(err, &uaErr):
-		if uaErr.Code == useraction.CodeUnsupported {
-			return http.StatusNotImplemented, "unsupported", uaErr.Message
-		}
-		return http.StatusBadGateway, "failed", uaErr.Message
-	}
-	// A start failure or unreadable output: the details (paths, child
-	// output) stay in service.log.
-	return http.StatusBadGateway, "failed", ""
 }

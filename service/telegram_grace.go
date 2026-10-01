@@ -31,7 +31,7 @@ const (
 
 // graceMessage is the Telegram message announcing one grace schedule.
 type graceMessage struct {
-	seq    uint64 // schedule it belongs to (ScheduledTask.seq)
+	seq    uint64 // schedule it belongs to (power.Task.Seq)
 	chatID string
 	msgID  int
 	html   string // rendered text as sent, so the edit can keep it
@@ -85,8 +85,8 @@ func takeGraceMessage(chatID string, msgID int) (graceMessage, bool) {
 	return m, true
 }
 
-// finishGraceMessage is called by the schedule code (under scheduleMu)
-// whenever the schedule with seq ends. When a message is stored for that
+// finishGraceMessage is called by the scheduler's hooks (schedule.go, under
+// its lock) whenever the schedule with seq ends. When a message is stored for that
 // schedule it is edited in the background — best effort, never blocking
 // the caller — and forgotten, so the edit happens at most once. by is the
 // cancel/run-now origin (toast, tray, app, webui, api, telegram, timer);
