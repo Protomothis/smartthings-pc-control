@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"sync"
 	"time"
 )
 
@@ -123,16 +124,32 @@ type QuietHours struct {
 
 // Client talks to the service's WebUI API on localhost.
 type Client struct {
-	base string
-	http *http.Client
+	// baseMu guards base, which SetPort moves while the polling goroutines
+	// keep using the same *Client (#121).
+	baseMu sync.RWMutex
+	base   string
+	http   *http.Client
 }
 
 func NewClient(webPort int) *Client {
 	jar, _ := cookiejar.New(nil)
 	return &Client{
-		base: fmt.Sprintf("http://127.0.0.1:%d", webPort),
+		base: webBase(webPort),
 		http: &http.Client{Jar: jar, Timeout: 5 * time.Second},
 	}
+}
+
+func webBase(webPort int) string { return fmt.Sprintf("http://127.0.0.1:%d", webPort) }
+
+// SetPort points the client at another WebUI port, for the service coming
+// back on a new port after a restart (#121). Requests already in flight
+// finish against the old one. The cookie jar is kept: cookies ignore the
+// port, and a restarted service answers the stale session with a 401 like
+// any restart.
+func (c *Client) SetPort(webPort int) {
+	c.baseMu.Lock()
+	c.base = webBase(webPort)
+	c.baseMu.Unlock()
 }
 
 func (c *Client) do(method, path string, body any) (*http.Response, error) {
@@ -142,7 +159,10 @@ func (c *Client) do(method, path string, body any) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	req, err := http.NewRequest(method, c.base+path, &buf)
+	c.baseMu.RLock()
+	base := c.base
+	c.baseMu.RUnlock()
+	req, err := http.NewRequest(method, base+path, &buf)
 	if err != nil {
 		return nil, err
 	}

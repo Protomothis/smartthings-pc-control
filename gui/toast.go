@@ -74,7 +74,8 @@ func showGraceToast(lang Lang, title, message string) error {
 // HandleToastAction is invoked as `exe toast stpc://...` when the user
 // clicks a toast button. It talks to the service API and exits.
 func HandleToastAction(rawURL string) {
-	c := NewClient(webUIPort)
+	// A process of its own (`exe toast …`): Run never set webUIPort here.
+	c := NewClient(localWebUIPort())
 
 	// The schedule API needs a session when a secret is configured; the
 	// secret lives in config.json next to the exe.
@@ -156,8 +157,8 @@ func localNowPlaying() bool { return readLocalConfig().Media.NowPlaying }
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
 // 1, matching service/webui.go), defaulting to 5002 when config.json has
-// no usable port. Read once at startup: a port change needs a service
-// restart anyway.
+// no usable port. Read at startup, and again while the service is
+// unreachable to follow a port change once it has restarted (port.go).
 func localWebUIPort() int {
 	if p := readLocalConfig().Port; p >= 1 && p < 65535 {
 		return p + 1

@@ -33,7 +33,7 @@ func (u *ui) setupTray() {
 		u.win.RequestFocus()
 	})
 	webUIItem := fyne.NewMenuItem(u.t("settings.openwebui"), func() {
-		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", webUIPort)).Start()
+		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
 
 	// Quick commands (safe ones only — destructive commands live in the

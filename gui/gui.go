@@ -35,8 +35,18 @@ var cmdButtonSize = fyne.NewSize(170, 38)
 // port 5001 + 1). The live value comes from localWebUIPort().
 const defaultWebUIPort = 5002
 
-// webUIPort is resolved once at start from config.json next to the exe.
-var webUIPort = defaultWebUIPort
+// webUIPort is the port u.client talks to: resolved at start from
+// config.json next to the exe, and moved by setPort when the service comes
+// back on a new port (#121). Read it with currentWebUIPort.
+var webUIPort atomic.Int32
+
+// currentWebUIPort is webUIPort, or the default before Run has set it.
+func currentWebUIPort() int {
+	if p := webUIPort.Load(); p != 0 {
+		return int(p)
+	}
+	return defaultWebUIPort
+}
 
 // Commands shown on the test panel. Destructive ones ask for confirmation
 // before firing, since a test click acts on this very PC.
@@ -208,10 +218,10 @@ func Run(version string, minimized bool) {
 	a := app.NewWithID("com.protomothis.smartthings-pc-control")
 	a.Settings().SetTheme(newKoreanTheme())
 
-	webUIPort = localWebUIPort()
+	webUIPort.Store(int32(localWebUIPort()))
 	u := &ui{
 		app:     a,
-		client:  NewClient(webUIPort),
+		client:  NewClient(currentWebUIPort()),
 		version: version,
 		quit:    make(chan struct{}),
 	}
@@ -562,7 +572,7 @@ func (u *ui) rebuild() {
 	}
 	u.statusText = u.t(statusKey)
 	if statusKey == "status.unreachable" {
-		u.statusText = fmt.Sprintf(u.statusText, webUIPort)
+		u.statusText = fmt.Sprintf(u.statusText, currentWebUIPort())
 	}
 	u.status = widget.NewLabel(u.statusText)
 	// Never let a long status line (e.g. "command sent: …") widen the window.
@@ -699,7 +709,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.cfgBaseline = nil
 
 	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
-		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", webUIPort)).Start()
+		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
 
 	restartBtn := widget.NewButtonWithIcon(u.t("settings.restart"), theme.ViewRefreshIcon(), func() {
@@ -1287,6 +1297,10 @@ func (u *ui) openServiceLog(folder bool) {
 
 func (u *ui) initialLoad() {
 	cfg, err := u.client.GetConfig()
+	if err != nil && !errors.Is(err, errUnauthorized) && u.followPortChange() {
+		// The service came back on the port saved in the settings (#121).
+		cfg, err = u.client.GetConfig()
+	}
 	fyne.Do(func() {
 		if errors.Is(err, errUnauthorized) {
 			u.connected.Store(false)
@@ -1300,7 +1314,7 @@ func (u *ui) initialLoad() {
 		}
 		if err != nil {
 			u.connected.Store(false)
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), webUIPort))
+			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
 			return
@@ -1650,7 +1664,7 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 	}
 	if u.connected.Swap(false) {
 		fyne.Do(func() {
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), webUIPort))
+			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
 		})
