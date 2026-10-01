@@ -76,7 +76,7 @@ func (awakeControl) TurnOn(minutes int) (status.AwakeView, error) {
 	return currentAwake().TurnOn(minutes)
 }
 func (awakeControl) TurnOff() (status.AwakeView, bool, error) { return currentAwake().TurnOff() }
-func (awakeControl) Now() time.Time                           { return currentAwake().now() }
+func (awakeControl) Now() time.Time                           { return currentAwake().Now() }
 
 // mediaControl runs the volume, mute and media-key commands and reports
 // the state the media card shows.

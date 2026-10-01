@@ -735,7 +735,7 @@ var pushCases = map[string]pushCase{
 	}},
 	"push.awake.changed.json": {trigger: func(t *testing.T, fa *fakeAwake) {
 		// The service's controller reports through emitAwakeChanged.
-		fa.ctl.onChange = emitAwakeChanged
+		fa.ctl.Hooks.OnChange = emitAwakeChanged
 		if _, _, err := fa.ctl.TurnOff(); err != nil {
 			t.Fatal(err)
 		}
