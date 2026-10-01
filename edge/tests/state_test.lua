@@ -134,13 +134,11 @@ local function exposed_status()
   return status
 end
 
-function T.test_apply_status_maps_every_field_in_english()
-  h.assert_deep_equal(events_for(exposed_status(), state.ON, "en"), golden("en"))
-end
-
-function T.test_apply_status_maps_every_field_in_korean()
+function T.test_apply_status_maps_every_field()
   -- §6.8: only the string attributes follow `language`; enums and numbers do not.
-  h.assert_deep_equal(events_for(exposed_status(), state.ON, "ko"), golden("ko"))
+  for _, lang in ipairs({ "en", "ko" }) do
+    h.assert_deep_equal(events_for(exposed_status(), state.ON, lang), golden(lang), lang)
+  end
 end
 
 function T.test_attributes_used_covers_every_emitted_event()
@@ -157,82 +155,30 @@ end
 -- apply_status
 --------------------------------------------------------------------------------
 
-function T.test_apply_status_maps_core_attributes()
-  local events = events_for(sample_status())
-  h.assert_equal(h.event_value(events, state.CAP_SWITCH, "switch"), "on")
-  h.assert_equal(h.event_value(events, caps.POWER_STATE, "powerState"), "on")
-  h.assert_equal(h.event_value(events, caps.STATUS, "connection"), "ok")
-  h.assert_equal(h.event_value(events, caps.STATUS, "serviceVersion"), "v1.1.0")
-  h.assert_equal(h.event_value(events, caps.STATUS, "updateAvailable"), false)
-  h.assert_equal(h.event_value(events, caps.STATUS, "wolReady"), true)
-  h.assert_equal(h.event_value(events, caps.STATUS, "lastSeen"), NOW)
-  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "")
-end
-
-function T.test_apply_status_maps_schedule()
-  local events = events_for(sample_status())
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), true)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.SCHEDULED)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "Shut down")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 240)
-  -- §4: the local clock time, not the RFC3339 string the service sends.
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "23:10")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "SmartThings")
-end
-
-function T.test_apply_status_localises_schedule_strings()
-  local events = events_for(sample_status(), state.ON, "ko")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "종료")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "SmartThings")
-  h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "종료 · SmartThings · 23:05")
-end
-
-function T.test_apply_status_formats_last_command()
-  local events = events_for(sample_status())
-  h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "Shut down · SmartThings · 23:05")
-  -- #86: no last command yet -> a sentence, never an empty string. An empty
-  -- `state` row is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault.
-  local status = sample_status()
-  status.last_command = nil
-  h.assert_equal(h.event_value(events_for(status), caps.COMMAND, "lastCommand"), "None")
-  h.assert_equal(h.event_value(events_for(status, state.ON, "ko"), caps.COMMAND, "lastCommand"),
-    "없음 (None)")
-end
-
-function T.test_apply_status_clears_an_inactive_schedule()
-  local status = sample_status()
-  status.schedule = { active = false }
-  local events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "none")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 0)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "none")
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "none")
-end
-
-function T.test_apply_status_handles_a_missing_schedule_block()
-  local status = sample_status()
-  status.schedule = nil
-  local events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
-  h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
-end
-
-function T.test_the_schedule_status_enum_tracks_active()
-  -- #83: `status` is what the detail-view list reads, so it may never drift
-  -- from `active` - the row would then say "No schedule" over a live one.
-  for _, active in ipairs({ true, false }) do
+-- The golden above has a schedule and a last command. Without them every row
+-- still rests on a value: an inactive or missing schedule block (#83: `status`
+-- never drifts from `active`, or the list would say "No schedule" over a live
+-- one), and no last command is a sentence, never "" (#86: an empty `state`
+-- row is drawn as "-", platform notes "상세 화면(detailView) 위젯").
+function T.test_a_status_without_a_schedule_or_a_last_command()
+  for _, schedule in ipairs({ { active = false }, false }) do
     local status = sample_status()
-    status.schedule = { active = active, command = "shutdown", remaining_seconds = 240 }
+    status.schedule = schedule or nil
+    status.last_command = nil
     local events = events_for(status)
-    h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), active)
-    h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"),
-      active and state.SCHEDULED or state.IDLE)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "active"), false)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "status"), state.IDLE)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "command"), "none")
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "remainingSeconds"), 0)
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "executeAt"), "none")
+    h.assert_equal(h.event_value(events, caps.SCHEDULE, "origin"), "none")
+    h.assert_equal(h.event_value(events, caps.COMMAND, "lastCommand"), "None")
+    h.assert_equal(h.event_value(events_for(status, state.ON, "ko"), caps.COMMAND, "lastCommand"),
+      "없음 (None)")
   end
 end
 
-function T.test_apply_status_emits_session_only_when_exposed()
+function T.test_the_session_rows_are_opt_in()
   local status = sample_status()
   local events = events_for(status)
   -- #78: `exposed` is always emitted so automations can key off it, and the
@@ -245,56 +191,12 @@ function T.test_apply_status_emits_session_only_when_exposed()
     h.assert_nil(h.event_value(events, caps.SESSION, attr),
       "session is opt-in and must not invent " .. attr)
   end
-
-  status.session = { exposed = true, locked = true, idle_seconds = 1200, user = "kim" }
-  events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.SESSION, "exposed"), true)
-  h.assert_equal(h.event_value(events, caps.SESSION, "locked"), true)
-  h.assert_equal(h.event_value(events, caps.SESSION, "idleMinutes"), 20)
-  h.assert_equal(h.event_value(events, caps.SESSION, "user"), "kim")
-end
-
-function T.test_apply_status_session_without_user()
-  local status = sample_status()
+  -- Exposed without the user name (the second opt-in), idle under a minute.
   status.session = { exposed = true, locked = false, idle_seconds = 30 }
-  local events = events_for(status)
+  events = events_for(status)
   h.assert_equal(h.event_value(events, caps.SESSION, "locked"), false)
   h.assert_equal(h.event_value(events, caps.SESSION, "idleMinutes"), 0)
   h.assert_equal(h.event_value(events, caps.SESSION, "user"), "")
-end
-
-function T.test_apply_status_warns_about_a_missing_secret()
-  -- §3.1: no secret is still a healthy connection, but it must be visible.
-  local status = sample_status()
-  status.secret_set = false
-  local events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.STATUS, "connection"), "ok")
-  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "No secret")
-end
-
-function T.test_apply_status_warns_when_wol_is_not_ready()
-  local status = sample_status()
-  status.wol = { ready = false, adapters = {} }
-  local events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.STATUS, "wolReady"), false)
-  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "Wake-on-LAN")
-end
-
-function T.test_apply_status_reports_an_available_update()
-  local status = sample_status()
-  status.update = { available = true, latest = "v1.2.0" }
-  local events = events_for(status)
-  h.assert_equal(h.event_value(events, caps.STATUS, "updateAvailable"), true)
-  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Service update v1.2.0 available")
-  local ko = events_for(status, state.ON, "ko")
-  h.assert_equal(h.event_value(ko, caps.STATUS, "message"), "서비스 업데이트 v1.2.0 사용 가능")
-end
-
-function T.test_an_update_without_a_version_still_says_so()
-  local status = sample_status()
-  status.update = { available = true }
-  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "message"),
-    "A service update is available")
 end
 
 --------------------------------------------------------------------------------
@@ -317,41 +219,17 @@ function T.test_the_versions_row_names_the_two_versions()
   -- #87: the profile name is gone; it was an implementation detail.
   h.assert_equal(state.versions("v1.1.0", "ko"):find(require("profiles").current(), 1, true), nil,
     "the screen name left the version row")
-end
-
-function T.test_the_versions_row_appends_an_update_only_when_there_is_one()
-  local base = state.versions("v1.1.0", "ko")
-  h.assert_equal(state.versions("v1.1.0", "ko", { available = false, latest = "v1.2.0" }), base)
+  -- A PC we have not reached has no service version, and the row still reads
+  -- as something (an attribute never emitted shows "-").
+  h.assert_equal(state.versions(nil, "ko"), "v? · 드라이버 " .. major_minor)
+  h.assert_equal(state.versions("", "en"), "v? · Driver " .. major_minor)
+  -- An update is appended only when there is one, with or without a version.
+  local base = state.versions("v1.1.0", "en")
+  h.assert_equal(state.versions("v1.1.0", "en", { available = false, latest = "v1.2.0" }), base)
+  h.assert_equal(state.versions("v1.1.0", "en", { available = true, latest = "v1.2.0" }), base .. " · Update v1.2.0")
   h.assert_equal(state.versions("v1.1.0", "ko", { available = true, latest = "v1.2.0" }),
-    base .. " · 업데이트 v1.2.0")
-  h.assert_equal(state.versions("v1.1.0", "en", { available = true, latest = "v1.2.0" }),
-    state.versions("v1.1.0", "en") .. " · Update v1.2.0")
-  -- `available` without a usable `latest` still has to say something.
-  h.assert_equal(state.versions("v1.1.0", "en", { available = true }),
-    state.versions("v1.1.0", "en") .. " · Update available")
-end
-
-function T.test_the_versions_row_says_question_mark_before_the_first_answer()
-  -- A PC we have not reached has no service version, and the row still has to
-  -- read as something: an attribute that was never emitted shows "-" (platform notes "상세 화면(detailView) 위젯").
-  local major_minor = require("driver_version"):match("^(%d+%.%d+)")
-  for _, missing in ipairs({ "", "\0nil" }) do
-    local value = state.versions(missing ~= "\0nil" and missing or nil, "ko")
-    h.assert_equal(value, "v? · 드라이버 " .. major_minor)
-  end
-  h.assert_equal(state.versions(nil, "en"), "v? · Driver " .. major_minor)
-end
-
-function T.test_a_status_body_refreshes_the_versions_row()
-  local events = state.apply_status(state.new(state.ON), sample_status(),
-    { now = NOW, lang = "ko" })
-  -- #86: the row on screen is `pcVersion.versions`; `pcInfo.versions` keeps
-  -- being emitted because pcInfo still defines it (platform notes "허브의 정의 캐시") and an attribute that
-  -- is never emitted makes the app report incomplete state.
-  h.assert_equal(h.event_value(events, caps.VERSION, "versions"),
-    state.versions("v1.1.0", "ko"))
-  h.assert_equal(h.event_value(events, caps.STATUS, "versions"),
-    state.versions("v1.1.0", "ko"))
+    state.versions("v1.1.0", "ko") .. " · 업데이트 v1.2.0")
+  h.assert_equal(state.versions("v1.1.0", "en", { available = true }), base .. " · Update available")
 end
 
 function T.test_the_initial_rows_cover_every_row_no_status_body_carries()
@@ -393,42 +271,55 @@ function T.test_the_initial_rows_keep_a_remembered_service_version()
     state.versions(nil, "ko"))
 end
 
-function T.test_status_summary_reads_like_the_issue()
-  -- #82: no power word — the pcPower row sits directly above this one.
-  -- #87: no version either — the pcVersion row is nothing but versions.
-  h.assert_equal(state.status_summary("ok", "ko"), "연결됨")
-  h.assert_equal(state.status_summary("ok", "en"), "Connected")
-  h.assert_equal(state.status_summary(nil, "en"), "Connected")
-  h.assert_equal(state.status_summary("unauthorized", "ko"), "연결 안 됨 · 시크릿 불일치")
-  h.assert_equal(state.status_summary("unauthorized", "en"),
-    "Not connected · Secret mismatch")
-  h.assert_equal(state.status_summary("unreachable", "ko"), "연결 안 됨 · 응답 없음")
-  h.assert_equal(state.status_summary("incompatible", "en"), "Not connected · Version mismatch")
-end
-
-function T.test_status_summary_warns_when_wol_is_off()
-  -- #87: the one notice the row still carries. A PC that answers but cannot be
-  -- woken makes `switch on` do nothing, so the row says so next to "Connected".
-  h.assert_equal(state.status_summary("ok", "ko", true), "연결됨 · WoL 꺼짐")
-  h.assert_equal(state.status_summary("ok", "en", true), "Connected · WoL off")
-  -- A PC we cannot reach is not told off for its adapter as well.
-  h.assert_equal(state.status_summary("unreachable", "en", true), "Not connected · No response")
-end
-
-function T.test_status_summary_names_the_adapter_while_it_fits()
-  -- #97: which NIC to go and open, on the row the user glances at.
-  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷"), "연결됨 · WoL 꺼짐 (이더넷)")
-  -- The row truncates silently, so the name is added only while the line stays
-  -- inside SUMMARY_MAX_CHARS - counted in characters, not in UTF-8 bytes.
+-- `pcInfo.summary`, the row glanced at: the connection (#82: no power word,
+-- the pcPower row sits directly above; #87: no version, the pcVersion row is
+-- nothing but versions), then WoL off - the one notice that changes what
+-- `switch on` does (#87) - with the adapter's name while it fits (#97), then
+-- the uptime (#102). A line that is too long loses them in the reverse order,
+-- counted in characters, not UTF-8 bytes. An unreachable PC says when it was
+-- last seen instead (#102), and is not told off for its adapter as well.
+function T.test_status_summary_goldens()
+  local long_up = { uptime_seconds = 266400 } -- "3일 2시간"
+  local short_up = { uptime_seconds = 300 }   -- "5분"
+  for _, g in ipairs({
+    { { "ok", "ko" }, "연결됨" },
+    { { "ok", "en" }, "Connected" },
+    { { nil, "en" }, "Connected" },
+    { { "unauthorized", "ko" }, "연결 안 됨 · 시크릿 불일치" },
+    { { "unauthorized", "en" }, "Not connected · Secret mismatch" },
+    { { "unreachable", "ko" }, "연결 안 됨 · 응답 없음" },
+    { { "incompatible", "en" }, "Not connected · Version mismatch" },
+    { { "ok", "ko", true }, "연결됨 · WoL 꺼짐" },
+    { { "ok", "en", true }, "Connected · WoL off" },
+    { { "unreachable", "en", true }, "Not connected · No response" },
+    { { "ok", "ko", true, "이더넷" }, "연결됨 · WoL 꺼짐 (이더넷)" },
+    { { "ok", "ko", true, "vEthernet (Default Switch)" }, "연결됨 · WoL 꺼짐" }, -- dropped, not cut off
+    { { "ok", "en", true, "Ethernet" }, "Connected · WoL off" }, -- English is wordier; `message` names it
+    { { "ok", "ko", true, "" }, "연결됨 · WoL 꺼짐" },
+    { { "ok", "ko", false, "이더넷" }, "연결됨" },
+    { { "ok", "ko", false, nil, long_up }, "연결됨 · 3일 2시간" },
+    { { "ok", "en", false, nil, long_up }, "Connected · 3d 2h" },
+    { { "ok", "ko", false, nil, { uptime_seconds = 30 } }, "연결됨" }, -- seconds say nothing
+    { { "ok", "ko", false, nil, {} }, "연결됨" },
+    { { "ok", "ko", true, "이더넷", short_up }, "연결됨 · WoL 꺼짐 (이더넷) · 5분" },
+    { { "ok", "ko", true, "이더넷", long_up }, "연결됨 · WoL 꺼짐 (이더넷)" }, -- the uptime goes first
+    { { "ok", "ko", true, "vEthernet (Default Switch)", long_up }, "연결됨 · WoL 꺼짐" }, -- then the name
+    { { "ok", "ko", true, nil, long_up }, "연결됨 · WoL 꺼짐 · 3일 2시간" },
+    { { "ok", "en", true, nil, long_up }, "Connected · WoL off" },
+    { { "unreachable", "ko", nil, nil, { seen_ago = 720 } }, "응답 없음 · 마지막 확인 12분 전" },
+    { { "unreachable", "en", nil, nil, { seen_ago = 720 } }, "No reply · seen 12m ago" },
+    { { "unreachable", "ko", nil, nil, { seen_ago = 3 * 86400 } }, "응답 없음 · 마지막 확인 3일 전" },
+    { { "unreachable", "ko", nil, nil, {} }, "연결 안 됨 · 응답 없음" }, -- never seen
+    { { "unreachable", "en", nil, nil, { seen_ago = 1000 * 86400 } }, "Not connected · No response" }, -- too long
+    -- A PC that answers wrongly keeps its reason; "last seen" is not its point.
+    { { "unauthorized", "ko", nil, nil, { seen_ago = 720 } }, "연결 안 됨 · 시크릿 불일치" },
+    { { "incompatible", "en", nil, nil, { seen_ago = 720 } }, "Not connected · Version mismatch" },
+  }) do
+    local a = g[1]
+    h.assert_equal(state.status_summary(a[1], a[2], a[3], a[4], a[5]), g[2])
+  end
   h.assert_true(#state.status_summary("ok", "ko", true, "이더넷") > state.SUMMARY_MAX_CHARS,
-    "the Korean line is longer than 24 bytes, which is the point of the count")
-  h.assert_equal(state.status_summary("ok", "ko", true, "vEthernet (Default Switch)"),
-    "연결됨 · WoL 꺼짐", "a long adapter name is dropped rather than cut off")
-  -- English is wordier, so the name rarely fits there; `pcInfo.message` says it.
-  h.assert_equal(state.status_summary("ok", "en", true, "Ethernet"), "Connected · WoL off")
-  -- No name, or WoL fine: exactly what the row said before #97.
-  h.assert_equal(state.status_summary("ok", "ko", true, ""), "연결됨 · WoL 꺼짐")
-  h.assert_equal(state.status_summary("ok", "ko", false, "이더넷"), "연결됨")
+    "the Korean line is longer than the budget in bytes, which is the point of counting characters")
 end
 
 function T.test_status_summary_never_repeats_the_power_state()
@@ -468,8 +359,20 @@ local function chars(s)
   return #(s:gsub("[\128-\191]", ""))
 end
 
-function T.test_uptime_reads_in_the_largest_units_that_fit()
-  -- Under a minute there is nothing worth saying ("0분" reads like a fault).
+function T.test_uptime_and_last_seen_read_in_the_largest_units_that_fit()
+  -- Last seen: one unit, and never "0분 전" - on this line the PC is not
+  -- answering. Nothing for never seen, or a clock that went backwards.
+  h.assert_nil(state.ago_text(nil, "ko"))
+  h.assert_nil(state.ago_text(-5, "ko"))
+  for ago, want in pairs({ [0] = "1분 전", [119] = "1분 전", [720] = "12분 전", [3599] = "59분 전",
+                           [3600] = "1시간 전", [86400] = "1일 전" }) do
+    h.assert_equal(state.ago_text(ago, "ko"), want, "ago " .. ago)
+  end
+  h.assert_equal(state.ago_text(720, "en"), "12m ago")
+  h.assert_equal(state.ago_text(86399, "en"), "23h ago")
+  h.assert_equal(state.ago_text(3 * 86400 + 7200, "en"), "3d ago")
+
+  -- Uptime: under a minute there is nothing worth saying ("0분" reads like a fault).
   h.assert_nil(state.uptime_text(nil, "ko"))
   h.assert_nil(state.uptime_text("soon", "ko"))
   h.assert_nil(state.uptime_text(0, "ko"))
@@ -490,49 +393,10 @@ function T.test_uptime_reads_in_the_largest_units_that_fit()
   h.assert_equal(state.uptime_text(266400 + 1799, "en"), "3d 2h")
 end
 
-function T.test_last_seen_reads_in_one_unit()
-  h.assert_nil(state.ago_text(nil, "ko"), "never seen has no age")
-  h.assert_nil(state.ago_text(-5, "ko"), "a clock that went backwards has no honest age")
-  -- Never "0분 전": on this line the PC is not answering.
-  h.assert_equal(state.ago_text(0, "ko"), "1분 전")
-  h.assert_equal(state.ago_text(119, "ko"), "1분 전")
-  h.assert_equal(state.ago_text(720, "ko"), "12분 전")
-  h.assert_equal(state.ago_text(720, "en"), "12m ago")
-  h.assert_equal(state.ago_text(3599, "ko"), "59분 전")
-  h.assert_equal(state.ago_text(3600, "ko"), "1시간 전")
-  h.assert_equal(state.ago_text(86399, "en"), "23h ago")
-  h.assert_equal(state.ago_text(86400, "ko"), "1일 전")
-  h.assert_equal(state.ago_text(3 * 86400 + 7200, "en"), "3d ago")
-end
-
-function T.test_the_connected_summary_carries_the_uptime()
-  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 266400 }),
-    "연결됨 · 3일 2시간")
-  h.assert_equal(state.status_summary("ok", "en", false, nil, { uptime_seconds = 266400 }),
-    "Connected · 3d 2h")
-  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 7500 }),
-    "연결됨 · 2시간 5분")
-  h.assert_equal(state.status_summary("ok", "ko", false, nil, { uptime_seconds = 30 }),
-    "연결됨", "a PC up for seconds says nothing about it")
-  h.assert_equal(state.status_summary("ok", "ko", false, nil, {}), "연결됨")
-end
-
-function T.test_the_summary_drops_the_uptime_before_the_adapter_name()
-  -- WoL first (it changes what the switch does), then the adapter's name, then
-  -- the uptime - and a line that is too long loses them in the reverse order.
-  local long_up = { uptime_seconds = 266400 } -- "3일 2시간"
-  local short_up = { uptime_seconds = 300 }   -- "5분"
-  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷", short_up),
-    "연결됨 · WoL 꺼짐 (이더넷) · 5분", "everything fits")
-  h.assert_equal(state.status_summary("ok", "ko", true, "이더넷", long_up),
-    "연결됨 · WoL 꺼짐 (이더넷)", "the uptime goes first")
-  h.assert_equal(state.status_summary("ok", "ko", true, "vEthernet (Default Switch)", long_up),
-    "연결됨 · WoL 꺼짐", "then the name")
-  h.assert_equal(state.status_summary("ok", "ko", true, nil, long_up),
-    "연결됨 · WoL 꺼짐 · 3일 2시간", "no name: the uptime has room")
-  h.assert_equal(state.status_summary("ok", "en", true, nil, long_up), "Connected · WoL off",
-    "English runs out of room sooner")
-
+-- Whatever the adapter name, the uptime or the time since the last answer,
+-- the line fits the row (it truncates silently) and the WoL warning is never
+-- the part dropped.
+function T.test_the_summary_always_fits_the_row()
   for _, lang in ipairs({ "ko", "en" }) do
     for _, adapter in ipairs({ false, "이더넷", "Ethernet", "vEthernet (Default Switch)" }) do
       for _, up in ipairs({ 0, 300, 7500, 86399, 266400, 99 * 86400 }) do
@@ -542,28 +406,6 @@ function T.test_the_summary_drops_the_uptime_before_the_adapter_name()
         h.assert_contains(line, i18n.t(lang, "wol_off_short"), "the warning is never dropped")
       end
     end
-  end
-end
-
-function T.test_an_unreachable_pc_says_when_it_was_last_seen()
-  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, { seen_ago = 720 }),
-    "응답 없음 · 마지막 확인 12분 전")
-  h.assert_equal(state.status_summary("unreachable", "en", nil, nil, { seen_ago = 720 }),
-    "No reply · seen 12m ago")
-  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, { seen_ago = 3 * 86400 }),
-    "응답 없음 · 마지막 확인 3일 전")
-  -- Never seen: the words it had before #102.
-  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, {}), "연결 안 됨 · 응답 없음")
-  h.assert_equal(state.status_summary("unreachable", "en"), "Not connected · No response")
-  -- A line the budget cannot hold falls back rather than being cut off.
-  h.assert_equal(state.status_summary("unreachable", "en", nil, nil, { seen_ago = 1000 * 86400 }),
-    "Not connected · No response")
-  -- The PC that answers wrongly keeps its reason; "last seen" is not its point.
-  h.assert_equal(state.status_summary("unauthorized", "ko", nil, nil, { seen_ago = 720 }),
-    "연결 안 됨 · 시크릿 불일치")
-  h.assert_equal(state.status_summary("incompatible", "en", nil, nil, { seen_ago = 720 }),
-    "Not connected · Version mismatch")
-  for _, lang in ipairs({ "ko", "en" }) do
     for _, ago in ipairs({ 0, 59, 3599, 86399, 99 * 86400 }) do
       local line = state.status_summary("unreachable", lang, nil, nil, { seen_ago = ago })
       h.assert_true(chars(line) <= state.SUMMARY_MAX_CHARS,
@@ -572,43 +414,43 @@ function T.test_an_unreachable_pc_says_when_it_was_last_seen()
   end
 end
 
+-- `pcInfo.message` carries the whole notice ladder; of the notices only WoL
+-- off reaches the summary row (#87: "set a secret" and "an update is out" are
+-- things to read, not to do right now). The update shows on the version row
+-- instead, where a version belongs. No notice: the line is the connection and
+-- the uptime (#102), or just the connection from a service that sends none.
+function T.test_the_notices_go_to_the_message_row()
+  local major_minor = require("driver_version"):match("^(%d+%.%d+)")
+  for _, c in ipairs({
+    { "quiet", function() end, "en", "Connected · 3h 25m", "" },
+    { "no uptime", function(s) s.uptime_seconds = nil end, "en", "Connected", "" },
+    { "no secret (§3.1)", function(s) s.secret_set = false end, "ko",
+      "연결됨 · 3시간 25분", "시크릿이 설정되지 않았습니다 · 설정을 권장합니다" },
+    { "an update", function(s) s.update = { available = true, latest = "v1.2.0" } end, "en",
+      "Connected · 3h 25m", "Service update v1.2.0 available",
+      "v1.1.0 · Driver " .. major_minor .. " · Update v1.2.0" },
+    { "an update without a version", function(s) s.update = { available = true } end, "en",
+      "Connected · 3h 25m", "A service update is available" },
+    { "WoL off", function(s) s.wol = { ready = false, adapters = {} } end, "ko",
+      "연결됨 · WoL 꺼짐 · 3시간 25분", "PC의 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인" },
+  }) do
+    local name, tweak, lang, summary, message, versions = c[1], c[2], c[3], c[4], c[5], c[6]
+    local status = sample_status()
+    tweak(status)
+    local events = events_for(status, state.ON, lang)
+    h.assert_equal(h.event_value(events, caps.STATUS, "connection"), "ok", name)
+    h.assert_equal(h.event_value(events, caps.STATUS, "summary"), summary, name)
+    h.assert_equal(h.event_value(events, caps.STATUS, "message"), message, name)
+    if versions then
+      h.assert_equal(h.event_value(events, caps.VERSION, "versions"), versions, name)
+      h.assert_true(h.event_value(events, caps.STATUS, "updateAvailable"), name)
+    end
+  end
+end
+
 --------------------------------------------------------------------------------
 -- what the summary row keeps, and what #87 moved to `message`
 --------------------------------------------------------------------------------
-
-function T.test_the_advice_notices_are_message_only()
-  -- #87: "set a secret" and "an update is out" are things to read, not things
-  -- to do right now, so they left the row that is glanced at. `message` still
-  -- carries the whole ladder.
-  local status = sample_status()
-  status.secret_set = false
-  local events = events_for(status, state.ON, "ko")
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · 3시간 25분")
-  h.assert_equal(h.event_value(events, caps.STATUS, "message"),
-    "시크릿이 설정되지 않았습니다 · 설정을 권장합니다")
-
-  status = sample_status()
-  status.update = { available = true, latest = "v1.2.0" }
-  events = events_for(status, state.ON, "en")
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "Connected · 3h 25m")
-  h.assert_equal(h.event_value(events, caps.STATUS, "message"),
-    "Service update v1.2.0 available")
-  -- The update is on the version row instead, where a version belongs.
-  h.assert_equal(h.event_value(events, caps.VERSION, "versions"),
-    "v1.1.0 · Driver " .. require("driver_version"):match("^(%d+%.%d+)") .. " · Update v1.2.0")
-
-  h.assert_nil(state.status_notice, "#87 removed the short-notice ladder")
-end
-
-function T.test_the_summary_warns_about_a_wol_that_is_off()
-  local status = sample_status()
-  status.wol = { ready = false, adapters = {} }
-  local events = events_for(status, state.ON, "ko")
-  -- #102: the uptime still fits behind the warning.
-  h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 · 3시간 25분")
-  -- The long sentence, with what to do about it, stays in `message`.
-  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "SmartThings 탭")
-end
 
 function T.test_the_wol_warning_follows_the_selected_adapter()
   -- #97: three rows, one answer. The sample PC's Wi-Fi card has WoL on, but
@@ -631,16 +473,6 @@ function T.test_the_wol_warning_follows_the_selected_adapter()
   h.assert_equal(h.event_value(ok, caps.STATUS, "wolReady"), true)
   h.assert_equal(h.event_value(ok, caps.STATUS, "summary"), "연결됨 · 3시간 25분")
   h.assert_equal(h.event_value(ok, caps.STATUS, "message"), "")
-end
-
-function T.test_a_quiet_status_has_no_notice_at_all()
-  -- #102: the uptime is not a notice; without one the line is still just that.
-  h.assert_equal(h.event_value(events_for(sample_status()), caps.STATUS, "summary"),
-    "Connected · 3h 25m")
-  local status = sample_status()
-  status.uptime_seconds = nil
-  h.assert_equal(h.event_value(events_for(status), caps.STATUS, "summary"), "Connected",
-    "a service that sends no uptime gets the line it had before #102")
 end
 
 --------------------------------------------------------------------------------

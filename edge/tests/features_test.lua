@@ -320,15 +320,50 @@ function T.test_the_poll_after_a_volume_change_forces_the_audio_rows()
   end
 end
 
-function T.test_an_old_service_gets_no_command_and_a_note()
-  local device = device_with({ service_version = "v1.1.0" })
-  local calls = with_service(nil, function()
-    handlers_for("audioVolume").volumeUp(driver, device, { args = {} })
+-- A media command that cannot go out, or that the service refused, leaves a
+-- note on the info rows saying why (forced, so the same note twice is seen
+-- twice). A refusal the service words itself is not an unreachable PC: the
+-- connection row is left alone and no answer poll follows. A 403 without a
+-- code is still the allow-list (§3.1).
+function T.test_a_refused_media_command_says_why()
+  local refused = function(kind, code)
+    return { ok = false, kind = kind, body = { error = code } }
+  end
+  for _, c in ipairs({
+    -- name, status the driver knows, language, the service's answer, handler, actions sent, summary
+    { "a v1.1.0 service does not know volumeup", { service_version = "v1.1.0" }, "ko", nil,
+      { "audioVolume", "volumeUp" }, 0, "서비스 v1.2.0 필요" },
+    { "the same in English", { service_version = "v1.1.0" }, "en", nil,
+      { "audioMute", "mute" }, 0, "Requires service v1.2.0" },
+    { "a PC that never answered", nil, "ko", nil,
+      { "mediaPlayback", "pause" }, 0, i18n.t("ko", "unreachable") },
+    { "409 no_user_session", status_v12(), "ko", refused("conflict", "no_user_session"),
+      { "mediaPlayback", "play" }, 1, "사용자 없음" },
+    { "403 media_disabled", status_v12(), "ko", refused("forbidden", "media_disabled"),
+      { "mediaTrackControl", "nextTrack" }, 1, "미디어 제어 꺼짐" },
+  }) do
+    local name, status, lang, reply, handler, actions, summary = table.unpack(c)
+    local device = device_with(status)
+    device.preferences.language = lang
+    local calls = with_service(reply, function()
+      handlers_for(handler[1])[handler[2]](driver, device, { args = {} })
+    end)
+    h.assert_equal(#calls.actions, actions, name)
+    h.assert_equal(info_summary(device), summary, name)
+    h.assert_equal(info_message(device), summary, name)
+    h.assert_true(h.event_forced(h.emitted(device), caps.STATUS, "summary"), name)
+    if reply then
+      h.assert_equal(calls.polls, 0, name .. ": no answer poll")
+      h.assert_nil(h.event_value(h.emitted(device), caps.STATUS, "connection"), name .. ": not unreachable")
+    end
+  end
+
+  local device = device_with(status_v12())
+  with_service(refused("forbidden", "forbidden"), function()
+    handlers_for("audioMute").mute(driver, device, { args = {} })
   end)
-  h.assert_equal(#calls.actions, 0, "a v1.1.0 service does not know volumeup")
-  h.assert_equal(info_summary(device), "서비스 v1.2.0 필요")
-  h.assert_equal(info_message(device), "서비스 v1.2.0 필요")
-  h.assert_true(h.event_forced(h.emitted(device), caps.STATUS, "summary"))
+  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "connection"), "unauthorized")
+  h.assert_equal(info_message(device), i18n.t("ko", "forbidden"))
 end
 
 function T.test_no_user_session_gets_no_command()
@@ -345,35 +380,6 @@ function T.test_no_user_session_gets_no_command()
   h.assert_true(h.event_forced(emitted, "audioVolume", "volume"))
 end
 
-function T.test_a_409_from_the_service_says_no_user()
-  local device = device_with(status_v12())
-  local calls = with_service({ ok = false, kind = "conflict", body = { error = "no_user_session" } }, function()
-    handlers_for("mediaPlayback").play(driver, device, { args = {} })
-  end)
-  h.assert_equal(#calls.actions, 1)
-  h.assert_equal(calls.polls, 0)
-  h.assert_equal(info_summary(device), "사용자 없음")
-  -- Not an unreachable PC: the connection row is left alone.
-  h.assert_nil(h.event_value(h.emitted(device), caps.STATUS, "connection"))
-end
-
-function T.test_media_disabled_on_the_pc_says_so()
-  local device = device_with(status_v12())
-  with_service({ ok = false, kind = "forbidden", body = { error = "media_disabled" } }, function()
-    handlers_for("mediaTrackControl").nextTrack(driver, device, { args = {} })
-  end)
-  h.assert_equal(info_summary(device), "미디어 제어 꺼짐")
-end
-
-function T.test_a_403_without_a_code_is_still_the_allow_list()
-  local device = device_with(status_v12())
-  with_service({ ok = false, kind = "forbidden", body = { error = "forbidden" } }, function()
-    handlers_for("audioMute").mute(driver, device, { args = {} })
-  end)
-  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "connection"), "unauthorized")
-  h.assert_equal(info_message(device), i18n.t("ko", "forbidden"))
-end
-
 function T.test_a_command_before_any_status_asks_first()
   -- The hub restarted and nothing has been read yet: poll once, then decide.
   local device = device_with(nil)
@@ -387,24 +393,6 @@ function T.test_a_command_before_any_status_asks_first()
   h.assert_equal(calls.polls, 2, "one poll to learn the features, one after the command")
   h.assert_equal(#calls.actions, 1)
   h.assert_equal(calls.actions[1].command, "unmute")
-end
-
-function T.test_a_command_to_a_pc_that_never_answered_is_not_sent()
-  local device = device_with(nil)
-  local calls = with_service(nil, function()
-    handlers_for("mediaPlayback").pause(driver, device, { args = {} })
-  end)
-  h.assert_equal(#calls.actions, 0)
-  h.assert_equal(info_summary(device), i18n.t("ko", "unreachable"))
-end
-
-function T.test_the_english_notes()
-  local device = device_with({ service_version = "v1.1.0" })
-  device.preferences.language = "en"
-  with_service(nil, function()
-    handlers_for("audioMute").mute(driver, device, { args = {} })
-  end)
-  h.assert_equal(info_summary(device), "Requires service v1.2.0")
 end
 
 --------------------------------------------------------------------------------
@@ -717,15 +705,14 @@ local CODE = { id = "code.exe", label = "VS Code", running = false }
 local OBS = { id = "obs64.exe", label = "OBS", running = true }
 local DISCORD = { id = "discord.exe", label = "Discord", running = true }
 
-function T.test_the_summary_names_the_highest_priority_app_that_runs()
+-- The PC's one apps row (#123): the highest-priority app that runs, how many
+-- others do, and its own words for nothing running, the option off and a
+-- service older than v1.2.0.
+function T.test_the_apps_summary()
   local status = with_apps({ STEAM, CODE }, { top = "steam.exe" })
-  local events = features.apps_events(status, "ko")
-  h.assert_equal(h.event_value(events, caps.APPS, "summary"), "Steam 실행 중")
+  h.assert_equal(h.event_value(features.apps_events(status, "ko"), caps.APPS, "summary"), "Steam 실행 중")
   h.assert_equal(features.apps_summary(status, "en"), "Steam running")
-end
-
-function T.test_the_summary_counts_the_other_apps_that_run()
-  local status = with_apps({ CODE, STEAM, OBS, DISCORD }, { top = "steam.exe" })
+  status = with_apps({ CODE, STEAM, OBS, DISCORD }, { top = "steam.exe" })
   h.assert_equal(features.apps_summary(status, "ko"), "Steam 실행 중 · 외 2개")
   h.assert_equal(features.apps_summary(status, "en"), "Steam running · 2 more")
   -- `top` that names nothing running: the first running entry, in list order.
@@ -733,9 +720,7 @@ function T.test_the_summary_counts_the_other_apps_that_run()
   h.assert_equal(features.apps_summary(stale, "ko"), "OBS 실행 중 · 외 1개")
   local missing = with_apps({ CODE, OBS }, { top = "" })
   h.assert_equal(features.apps_summary(missing, "ko"), "OBS 실행 중")
-end
 
-function T.test_nothing_running_off_and_an_old_service_each_have_words()
   h.assert_equal(features.apps_summary(with_apps({ CODE }), "ko"), "없음")
   h.assert_equal(features.apps_summary(with_apps({}), "en"), "None")
   -- The service lists "activity" only while the opt-in is on (#110).
@@ -936,15 +921,11 @@ function T.test_a_laptop_reports_its_battery_on_the_battery_component()
   h.assert_equal(h.component_value(events, "battery", "powerSource", "powerSource"), "battery")
   events = features.battery_events(laptop(100, true))
   h.assert_equal(h.component_value(events, "battery", "powerSource", "powerSource"), "mains")
-end
-
-function T.test_an_unknown_percent_is_left_out()
-  local events = features.battery_events(laptop(-1, true))
+  -- An unknown percent is left out, the power source still reported.
+  events = features.battery_events(laptop(-1, true))
   h.assert_nil(h.component_value(events, "battery", "battery", "battery"))
   h.assert_equal(h.component_value(events, "battery", "powerSource", "powerSource"), "mains")
-end
-
-function T.test_a_desktop_reports_nothing()
+  -- A desktop, or a service older than v1.2.0, reports nothing.
   h.assert_equal(#features.battery_events(DESKTOP), 0)
   h.assert_equal(#features.battery_events({ service_version = "v1.1.0" }), 0)
 end
