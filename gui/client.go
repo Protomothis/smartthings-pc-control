@@ -42,9 +42,7 @@ type Config struct {
 
 // NotifyPCConfig mirrors service.NotifyPCConfig.
 type NotifyPCConfig struct {
-	Enabled bool   `json:"enabled"`
-	Speak   bool   `json:"speak"`
-	Voice   string `json:"voice"`
+	Enabled bool `json:"enabled"`
 }
 
 // MediaConfig mirrors service.MediaConfig; the settings tab edits it.

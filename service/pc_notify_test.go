@@ -5,10 +5,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -109,50 +111,49 @@ func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 	return &calls
 }
 
-func notifyCfg(enabled, speak bool, voice string) Config {
-	return Config{Port: 5001, NotifyPC: NotifyPCConfig{Enabled: enabled, Speak: speak, Voice: voice}}
+func notifyCfg(enabled bool) Config {
+	return Config{Port: 5001, NotifyPC: NotifyPCConfig{Enabled: enabled}}
 }
 
 func TestSTNotifyOK(t *testing.T) {
-	stSetup(t, notifyCfg(true, false, "Heami"))
+	stSetup(t, notifyCfg(true))
 	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 
-	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"빨래가 끝났습니다\n","speak":true}`)
+	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"빨래가 끝났습니다\n"}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 	body := stJSON(t, w)
-	if body["ok"] != true || body["toast"] != "shown" || body["spoken"] != false {
+	if !reflect.DeepEqual(body, map[string]any{"ok": true, "toast": "shown"}) {
 		t.Errorf("body = %v", body)
 	}
-	// speak was asked for, but notify_pc.speak is off: no --speak.
 	want := []string{"notify", "--title", "SmartThings", "--text", "빨래가 끝났습니다"}
 	if len(*calls) != 1 || !reflect.DeepEqual((*calls)[0], want) {
 		t.Errorf("args = %q, want %q", *calls, want)
 	}
 }
 
-func TestSTNotifySpeakFollowsConfig(t *testing.T) {
-	stSetup(t, notifyCfg(true, true, "Heami"))
-	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown","spoken":true,"voice_used":"Microsoft Heami Desktop - Korean","voice_found":true}`, nil)
+// An older driver still sends "speak" (read-aloud was dropped on
+// 2026-10-01): the field is ignored and the toast is shown as usual.
+func TestSTNotifyIgnoresSpeak(t *testing.T) {
+	stSetup(t, notifyCfg(true))
+	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 
-	body := stJSON(t, stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"title":"세탁기","text":"끝","speak":true}`))
-	if body["spoken"] != true || body["voice_used"] != "Microsoft Heami Desktop - Korean" || body["voice_found"] != true {
+	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"title":"세탁기","text":"끝","speak":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if body := stJSON(t, w); !reflect.DeepEqual(body, map[string]any{"ok": true, "toast": "shown"}) {
 		t.Errorf("body = %v", body)
 	}
-	want := []string{"notify", "--title", "세탁기", "--text", "끝", "--speak", "--voice", "Heami"}
-	if !reflect.DeepEqual((*calls)[0], want) {
-		t.Errorf("args = %q, want %q", (*calls)[0], want)
-	}
-	// Not asked for: not spoken even though speech is on.
-	stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"조용히"}`)
-	if got := (*calls)[1]; len(got) != 5 {
-		t.Errorf("args without speak = %q", got)
+	want := []string{"notify", "--title", "세탁기", "--text", "끝"}
+	if len(*calls) != 1 || !reflect.DeepEqual((*calls)[0], want) {
+		t.Errorf("args = %q, want %q", *calls, want)
 	}
 }
 
 func TestSTNotifyRefusals(t *testing.T) {
-	stSetup(t, notifyCfg(false, false, ""))
+	stSetup(t, notifyCfg(false))
 	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 
 	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`)
@@ -160,7 +161,7 @@ func TestSTNotifyRefusals(t *testing.T) {
 		t.Errorf("disabled: %d %s", w.Code, w.Body.String())
 	}
 
-	setConfig(notifyCfg(true, false, ""))
+	setConfig(notifyCfg(true))
 	for name, body := range map[string]string{
 		"no text":    `{}`,
 		"blank":      `{"text":" \n "}`,
@@ -181,7 +182,7 @@ func TestSTNotifyRefusals(t *testing.T) {
 }
 
 func TestSTNotifyRateLimit(t *testing.T) {
-	stSetup(t, notifyCfg(true, false, ""))
+	stSetup(t, notifyCfg(true))
 	fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 	for i := 0; i < pcNotifyPerMinute; i++ {
 		resetSTRateLimit() // the per-second /st/v1 bucket is not what is tested
@@ -204,7 +205,7 @@ func TestSTNotifyRateLimit(t *testing.T) {
 }
 
 func TestSTNotifyUserSessionErrors(t *testing.T) {
-	stSetup(t, notifyCfg(true, false, ""))
+	stSetup(t, notifyCfg(true))
 	for _, c := range []struct {
 		err    error
 		status int
@@ -240,35 +241,35 @@ func TestSTNotifyNeedsTheSecret(t *testing.T) {
 }
 
 func TestSTStatusNotifyFeature(t *testing.T) {
-	stSetup(t, notifyCfg(true, false, ""))
+	stSetup(t, notifyCfg(true))
 	stubAwake(t)
 	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
 		t.Errorf("enabled: features = %s, want notify", f)
 	}
 	// Still listed while off: the driver sends, gets 403 notify_disabled and
 	// says "PC 알림 꺼짐" rather than "not supported".
-	setConfig(notifyCfg(false, false, ""))
+	setConfig(notifyCfg(false))
 	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
 		t.Errorf("disabled: features = %s, want notify", f)
 	}
 }
 
 func TestNotifyTestAPI(t *testing.T) {
-	withLiveConfig(t, notifyCfg(false, false, "")) // off: the test button still works
-	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown","spoken":true,"voice_used":"Zira"}`, nil)
+	withLiveConfig(t, notifyCfg(false)) // off: the test button still works
+	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 
 	w := httptest.NewRecorder()
+	// An older app still sends speak/voice: ignored.
 	handleNotifyTestAPI(w, postJSON("/api/notify/test", `{"speak":true,"voice":"Zira"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 	body := decodeBody(t, w)
-	if body["status"] != "ok" || body["spoken"] != true || body["voice_used"] != "Zira" {
+	if body["status"] != "ok" || body["toast"] != "shown" {
 		t.Errorf("body = %v", body)
 	}
-	args := (*calls)[0]
-	if args[len(args)-3] != "--speak" || args[len(args)-1] != "Zira" {
-		t.Errorf("args = %q: the form's speech settings were not used", args)
+	if args := (*calls)[0]; len(args) != 5 || args[0] != "notify" {
+		t.Errorf("args = %q", args)
 	}
 
 	// No CSRF header: refused before anything runs.
@@ -287,40 +288,51 @@ func TestNotifyTestAPI(t *testing.T) {
 }
 
 func TestNotifyArgsParse(t *testing.T) {
-	for _, c := range []struct {
-		speak bool
-		voice string
-	}{{false, ""}, {true, ""}, {true, "Microsoft Heami Desktop - Korean"}, {false, "ignored"}} {
-		args := notifyArgs("SmartThings", "--text is text", c.speak, c.voice)
-		req, err := useraction.Parse(args)
-		if err != nil {
-			t.Errorf("%q: %v", args, err)
-			continue
-		}
-		wantVoice := ""
-		if c.speak {
-			wantVoice = c.voice
-		}
-		if req.Text != "--text is text" || req.Speak != c.speak || req.Voice != wantVoice {
-			t.Errorf("%q parsed as %+v", args, req)
-		}
+	args := notifyArgs("SmartThings", "--text is text")
+	req, err := useraction.Parse(args)
+	if err != nil {
+		t.Fatalf("%q: %v", args, err)
 	}
-}
-
-func TestValidateNotifyPC(t *testing.T) {
-	if msg := validateNotifyPC(NotifyPCConfig{Voice: "Microsoft Heami Desktop - Korean"}); msg != "" {
-		t.Error(msg)
-	}
-	for _, v := range []string{strings.Repeat("a", useraction.MaxVoiceRunes+1), "a\nb"} {
-		if validateNotifyPC(NotifyPCConfig{Voice: v}) == "" {
-			t.Errorf("voice %q accepted", v)
-		}
+	if req.Title != "SmartThings" || req.Text != "--text is text" {
+		t.Errorf("%q parsed as %+v", args, req)
 	}
 }
 
 func TestNotifyPCDefaults(t *testing.T) {
 	cfg := defaultConfig.withDefaults()
-	if !cfg.NotifyPC.Enabled || cfg.NotifyPC.Speak || cfg.NotifyPC.Voice != "" {
-		t.Errorf("defaults = %+v, want enabled, no speech, default voice", cfg.NotifyPC)
+	if !cfg.NotifyPC.Enabled {
+		t.Errorf("defaults = %+v, want enabled", cfg.NotifyPC)
+	}
+}
+
+// TestNotifyPCLegacySpeechKeysDropped: a config.json written while
+// read-aloud existed (notify_pc.speak/voice, dropped 2026-10-01) loads
+// without an error, keeps enabled, and the next save writes notify_pc
+// without the old keys.
+func TestNotifyPCLegacySpeechKeysDropped(t *testing.T) {
+	configPath := withConfigFile(t, `{"port": 5001, "notify_pc": {"enabled": false, "speak": true, "voice": "Heami"}}`)
+
+	cfg := loadConfig()
+	if cfg.NotifyPC.Enabled {
+		t.Error("notify_pc.enabled was lost alongside the retired keys")
+	}
+
+	prev := getConfig()
+	t.Cleanup(func() { setConfig(prev) })
+	if err := saveConfig(cfg); err != nil {
+		t.Fatalf("saveConfig: %v", err)
+	}
+	saved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		NotifyPC map[string]any `json:"notify_pc"`
+	}
+	if err := json.Unmarshal(saved, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(doc.NotifyPC, map[string]any{"enabled": false}) {
+		t.Errorf("saved notify_pc = %v, want only enabled", doc.NotifyPC)
 	}
 }

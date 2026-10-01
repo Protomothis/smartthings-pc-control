@@ -1,8 +1,7 @@
 package service
 
 // PC notification (#106, docs/design/media-notify.md §3·§4·§6·§7): put a
-// toast on the logged-in user's screen — and optionally read it aloud —
-// from SmartThings (POST /st/v1/notify), Telegram (/say) or the app's test
+// toast on the logged-in user's screen from SmartThings (POST /st/v1/notify), Telegram (/say) or the app's test
 // button (POST /api/notify/test). All three share sendPCNotify: the same
 // text rules, the same per-source rate limit and the same user-action run.
 
@@ -23,17 +22,14 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// NotifyPCConfig is the "notify_pc" object in config.json (§4).
+// NotifyPCConfig is the "notify_pc" object in config.json (§4). The
+// "speak" and "voice" keys of the dropped read-aloud feature (2026-10-01)
+// are not fields: an old config.json that has them loads as usual and the
+// next save writes the object without them.
 type NotifyPCConfig struct {
 	// Enabled allows SmartThings and Telegram to show a toast on this PC
 	// (default on). Off, /st/v1/notify answers 403 notify_disabled.
 	Enabled bool `json:"enabled"`
-	// Speak reads the text aloud as well (default off). A request's
-	// "speak" is honoured only while this is on.
-	Speak bool `json:"speak"`
-	// Voice is the SAPI voice to read with, matched against the installed
-	// voices' names (a part is enough). Empty or unknown: the system default.
-	Voice string `json:"voice"`
 }
 
 const (
@@ -48,17 +44,6 @@ const (
 	pcNotifyPerMinute = 10
 	pcNotifyWindow    = time.Minute
 )
-
-// validateNotifyPC checks the settings a client can get wrong.
-func validateNotifyPC(c NotifyPCConfig) string {
-	if utf8.RuneCountInString(c.Voice) > useraction.MaxVoiceRunes {
-		return fmt.Sprintf("notify_pc.voice must be at most %d characters", useraction.MaxVoiceRunes)
-	}
-	if strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
-		return "notify_pc.voice must not contain control characters"
-	}
-	return ""
-}
 
 // cleanNotifyText removes what must not reach a toast: line breaks and
 // tabs become spaces, every other control character and the bidirectional
@@ -173,30 +158,18 @@ var pcNotifyRun = runUserAction
 
 // pcNotifyResult is what the user-action child reported.
 type pcNotifyResult struct {
-	Toast      string `json:"toast"`                 // "shown" or "pending"
-	Spoken     bool   `json:"spoken"`                // reading aloud started
-	VoiceUsed  string `json:"voice_used,omitempty"`  // the voice it reads with
-	VoiceFound *bool  `json:"voice_found,omitempty"` // false: the configured voice is missing, default used
-	SpeakError string `json:"speak_error,omitempty"`
+	Toast string `json:"toast"` // "shown" or "pending"
 }
 
 // notifyArgs is the user-action argument vector for one notification.
-func notifyArgs(title, text string, speak bool, voice string) []string {
-	args := []string{useraction.ActionNotify, "--title", title, "--text", text}
-	if speak {
-		args = append(args, "--speak")
-		if strings.TrimSpace(voice) != "" {
-			args = append(args, "--voice", voice)
-		}
-	}
-	return args
+func notifyArgs(title, text string) []string {
+	return []string{useraction.ActionNotify, "--title", title, "--text", text}
 }
 
 // sendPCNotify shows one notification. source keys the rate limit ("ip
-// 192.168.1.20", "telegram 12345", "app"). speak is the request's wish;
-// it is honoured only when notify_pc.speak is on. checkEnabled is false
-// for the app's test button, which must work before the feature is on.
-func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string, speak bool) (pcNotifyResult, error) {
+// 192.168.1.20", "telegram 12345", "app"). checkEnabled is false for the
+// app's test button, which must work before the feature is on.
+func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (pcNotifyResult, error) {
 	if checkEnabled && !cfg.Enabled {
 		return pcNotifyResult{}, &pcNotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
 	}
@@ -208,30 +181,17 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 		return pcNotifyResult{}, &pcNotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
-	speak = speak && cfg.Speak
-	res, err := pcNotifyRun(ctx, notifyArgs(title, text, speak, cfg.Voice)...)
+	res, err := pcNotifyRun(ctx, notifyArgs(title, text)...)
 	if err != nil {
 		logMsg("PC notify (%s) failed: %v", source, err)
 		return pcNotifyResult{}, err
 	}
 	var out pcNotifyResult
-	for key, dst := range map[string]any{
-		"toast": &out.Toast, "spoken": &out.Spoken, "voice_used": &out.VoiceUsed,
-		"voice_found": &out.VoiceFound, "speak_error": &out.SpeakError,
-	} {
-		if raw, ok := res.Fields[key]; ok {
-			json.Unmarshal(raw, dst)
-		}
+	if raw, ok := res.Fields["toast"]; ok {
+		json.Unmarshal(raw, &out.Toast)
 	}
 	// The text itself is not logged: it is the user's message, not ours.
-	voiceNote := ""
-	if out.VoiceUsed != "" {
-		voiceNote = ", voice " + out.VoiceUsed
-	}
-	logMsg("PC notify (%s): %d chars, toast %s, speak %v%s", source, utf8.RuneCountInString(text), out.Toast, out.Spoken, voiceNote)
-	if out.SpeakError != "" {
-		logMsg("PC notify (%s): not read aloud: %s", source, out.SpeakError)
-	}
+	logMsg("PC notify (%s): %d chars, toast %s", source, utf8.RuneCountInString(text), out.Toast)
 	// Without the Start menu shortcut the toast only reaches the
 	// notification center, no banner (internal/appid).
 	if raw, ok := res.Fields["shortcut"]; ok {
@@ -287,11 +247,11 @@ func writeActionError(w http.ResponseWriter, err error) {
 	writeJSON(w, status, map[string]string{"error": code, "message": msg})
 }
 
-// stNotifyRequest is the POST /st/v1/notify body.
+// stNotifyRequest is the POST /st/v1/notify body. A "speak" field from an
+// older driver is ignored like any unknown key.
 type stNotifyRequest struct {
 	Title string `json:"title"`
 	Text  string `json:"text"`
-	Speak bool   `json:"speak"`
 }
 
 // stNotifyResponse is the 200 answer: the pcNotifyResult plus ok.
@@ -312,7 +272,7 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from := remoteHost(r.RemoteAddr)
-	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text, body.Speak)
+	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text)
 	if err != nil {
 		writeActionError(w, err)
 		return
@@ -321,9 +281,8 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleNotifyTestAPI serves POST /api/notify/test for the app's
-// [테스트 알림] button: {speak, voice} are the form's unsaved values, so the
-// user can hear a voice before saving it. The enabled switch is ignored
-// (testing is how the user decides), the rate limit is not.
+// [테스트 알림] button. The enabled switch is ignored (testing is how the
+// user decides), the rate limit is not.
 func handleNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	if !authTelegramRequest(w, r, "POST") {
 		return
@@ -331,8 +290,6 @@ func handleNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title string `json:"title"`
 		Text  string `json:"text"`
-		Speak bool   `json:"speak"`
-		Voice string `json:"voice"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil && err != io.EOF {
@@ -340,16 +297,11 @@ func handleNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	cfg := NotifyPCConfig{Enabled: true, Speak: body.Speak, Voice: body.Voice}
-	if msg := validateNotifyPC(cfg); msg != "" {
-		writeAPIError(w, http.StatusBadRequest, msg)
-		return
-	}
 	text := body.Text
 	if strings.TrimSpace(text) == "" {
 		text = "PC Control 테스트 알림입니다 · This is a test notification"
 	}
-	res, err := sendPCNotify(r.Context(), cfg, false, "app", body.Title, text, body.Speak)
+	res, err := sendPCNotify(r.Context(), NotifyPCConfig{Enabled: true}, false, "app", body.Title, text)
 	if err != nil {
 		status, code, msg := actionErrorStatus(err)
 		writeJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})

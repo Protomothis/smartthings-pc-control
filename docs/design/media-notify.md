@@ -10,7 +10,7 @@
 | 볼륨 | 슬라이더, 올리기/내리기, 현재 값 표시 | `/vol 30`, `/vol +10` | 기본 재생 장치 기준 |
 | 음소거 | 켜기/끄기, 현재 상태 | `/mute`, `/unmute` | |
 | 미디어 | 재생/일시정지/정지, 다음/이전 곡 | `/play` `/pause` `/next` `/prev` | 미디어 키 전송. 재생 상태는 1차에서 보고하지 않음 |
-| PC 알림 | 루틴 동작 "PC에 알림"(문구) | `/say 문구` | 토스트 기본, 소리내어 읽기는 설정으로 켬 |
+| PC 알림 | 루틴 동작 "PC에 알림"(문구) | `/say 문구` | 토스트만(소리내어 읽기는 2026-10-01에 뺐다) |
 | 프리셋 실행 | 목록에서 슬롯 선택, 슬롯 이름 목록 줄 | `/presets`, `/run 이름` | PC 앱에 등록한 것만 실행 (§10) |
 | 앱 감지 | 활동 줄 "게임 중 · Steam", 루틴 조건 "활동이 게임" | `/status`에 포함 | 옵트인, 감시 목록의 라벨만 보고 (§11) |
 | 잠들지 않기 | 별도 컴포넌트의 스위치 | `/awake [분|off]` | 자동 절전만 막음, 시간 제한 (§12) |
@@ -20,7 +20,7 @@
 
 ## 2. 아키텍처: 세션 0과 사용자 세션
 
-서비스는 세션 0에서 돈다. 볼륨(Core Audio 기본 장치), 미디어 키(SendInput), 토스트, 음성(SAPI)은
+서비스는 세션 0에서 돈다. 볼륨(Core Audio 기본 장치), 미디어 키(SendInput), 토스트는
 **로그인한 사용자의 세션에서만** 의미가 있다.
 
 ```
@@ -34,7 +34,7 @@
   하위 명령 `user-action`을 사용자 세션에서 실행한다. 트레이 앱이 꺼져 있어도 동작한다.
   - `user-action audio get` / `audio set <0-100>` / `audio step <±n>` / `audio mute <on|off|toggle>`
   - `user-action media <playpause|play|pause|stop|next|prev>`
-  - `user-action notify --title … --text … [--speak]`
+  - `user-action notify --title … --text …`
   - 결과는 한 줄 JSON(`{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}`)으로 stdout에 쓴다.
 - **상태 보고:** 볼륨은 사용자가 키보드로도 바꾸므로, 트레이 하트비트(30초)에 `audio` 블록을 실어 보낸다.
   명령 직후에는 `user-action`의 결과로 즉시 갱신하고 푸시로 허브에 알린다.
@@ -43,24 +43,21 @@
 - **구현 선택:** Core Audio는 COM(`IMMDeviceEnumerator` → `IAudioEndpointVolume`)을 Go에서 직접 부른다
   (go-ole 계열). PowerShell + C# Add-Type는 호출마다 1초 가까이 걸려 슬라이더에 부적합하다.
   (#104 구현: go-ole 없이 `useraction/coreaudio.go`가 필요한 vtable 슬롯 몇 개를 `syscall.SyscallN`으로 직접 부른다. 새 의존성 없음.)
-  미디어 키는 `SendInput`(VK_MEDIA_*), 음성은 SAPI `SpVoice`(go-ole, `internal/sapi`).
+  미디어 키는 `SendInput`(VK_MEDIA_*).
   토스트는 go-toast를 **쓰지 않는다**(#106): go-toast는 제목·문구를 PowerShell 큰따옴표 here-string에 그대로
   넣어 `$(…)`가 실행된다. 대신 토스트 XML을 Go에서 이스케이프해 환경 변수로 고정 스크립트(`-EncodedCommand`)에 넘긴다.
   AppID는 트레이 앱과 같은 "SmartThings PC Control". 트레이 앱의 고정 문구 토스트는 지금처럼 go-toast.
 
 ### user-action 확정 문법 (#103)
 
-위 목록에서 `notify --voice`와 `preset`이 늘었고 오류 모양을 정했다. 구현은 `useraction/`.
+위 목록에서 `preset`과 `screen`이 늘었고 오류 모양을 정했다. 구현은 `useraction/`.
 
 - `audio get` · `audio set <0-100>` · `audio step <-100..100>`(`+5`·`-5`·`5`) · `audio mute <on|off|toggle>`
 - `media <playpause|play|pause|stop|next|prev>`
-- `notify --title <t> --text <t> [--speak] [--voice <name>]` — 값은 다음 인자를 그대로 받는다(`--`로 시작해도 문구).
+- `notify --title <t> --text <t>` — 값은 다음 인자를 그대로 받는다(`--`로 시작해도 문구).
   `--text` 1–200자, 제목 100자, 제어 문자는 거절(서비스가 먼저 지운다).
 - `preset --type <program|url|script> --path <p> [--arg <a>]...` — `url`은 http/https만·`--arg` 없음,
   `script`는 `.ps1`/`.bat`/`.cmd`만, `--arg` 최대 32개.
-- `speak --text <t> [--voice <name>]` (#106, 내부용) — `notify --speak`가 토스트를 띄운 뒤 분리해서 띄우는 읽기 프로세스.
-  200자를 읽는 데 3초 제한보다 훨씬 오래 걸리므로 notify는 음성만 정하고(`voice_used`, `voice_found`) 곧바로 답한다.
-  읽기 프로세스는 이름 있는 뮤텍스로 줄을 서서 차례로 읽는다. 서비스는 이 동작을 만들지 않는다.
 - `screen <off|on>` (#121) — `turnscreenoff`·`turnscreenon`. `SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND,
   SC_MONITORPOWER, 2|-1, SMTO_ABORTIFHUNG, 2000ms)`라 응답 없는 창 하나에 막히지 않는다(예전 PowerShell `SendMessage`는
   영원히 막혔다). `on`은 먼저 움직임 0의 마우스 입력을 보낸다 — `-1`을 무시하는 모니터도 입력에는 깨어난다.
@@ -96,12 +93,12 @@
     `features`의 "audio"·"media"는 `media.enabled`일 때만.
   - (#105) `user-action media`는 백엔드 목록(`mediaBackends`)을 차례로 시도해 처음 처리한 쪽이 이긴다. 지금은 SendInput 미디어 키
     하나뿐이고, #117의 WinRT 세션 관리자는 그 앞에 붙어 세션이 없거나 실패하면 키로 넘긴다. 답은 `{"ok":true,"media":"next","via":"keys"}`.
-- **notify**(`POST /st/v1/notify`): `{ "title"?: string, "text": string, "speak"?: bool }`.
+- **notify**(`POST /st/v1/notify`): `{ "title"?: string, "text": string }`. 옛 드라이버가 보내는 `speak`는 무시한다.
   - `text` 1–200자, 제목 기본값은 "SmartThings". 제어 문자 제거.
   - 출처 IP별 분당 10회. 설정에서 끄면 `403 notify_disabled`.
   - 구현(#106): 넘으면 `429 rate_limited` + `Retry-After`(초), 문구 규칙 위반은 `400 bad_text`, 사용자 없음 `409 no_user_session`,
     시간 초과 `504 timeout`. 줄바꿈·탭은 공백으로, 제어 문자와 방향 제어 문자(U+202A–202E, U+2066–2069 등)는 지운다.
-    응답 `{ok:true, toast:"shown"|"pending", spoken, voice_used?, voice_found?}`. `speak`는 `notify_pc.speak`가 켜져 있을 때만.
+    응답 `{ok:true, toast:"shown"|"pending"}`.
     오류 본문은 `{error: <code>, message}`. `features`의 "notify"는 설정과 무관하게 붙는다(media와 다름): 드라이버가 보내고 403을 "PC 알림 꺼짐"으로 보여 준다.
 - 푸시(`/pc/evt`)에 `audio.changed` 이벤트를 더한다.
   - (#104) 명령 결과든 하트비트든 저장된 값(볼륨·음소거·장치)이 바뀌면 보낸다. 서비스 시작 뒤 첫 값은 변화로 치지 않는다.
@@ -111,15 +108,14 @@
 
 ```json
 "media": { "enabled": true },
-"notify_pc": { "enabled": true, "speak": false, "voice": "" }
+"notify_pc": { "enabled": true }
 ```
 
 - `media.enabled`: 볼륨·미디어 명령 허용(기본 켬).
-- `notify_pc.enabled`: 외부에서 PC 화면에 알림을 띄우는 것 허용(기본 켬). `speak`: 소리내어 읽기(기본 끔).
-  `voice`: SAPI 음성 이름, 비우면 시스템 기본(한국어 음성은 Windows 언어 팩에 따라 없을 수 있음).
+- `notify_pc.enabled`: 외부에서 PC 화면에 알림을 띄우는 것 허용(기본 켬).
+- 소리내어 읽기(`notify_pc.speak`·`voice`, SAPI)는 2026-10-01에 뺐다. 그 키가 남은 옛 `config.json`도 그대로 읽히고, 다음 저장에서 빠진다.
 - 데스크톱 앱: **설정 탭의 미디어·알림** 섹션(#106) — 맨 위에 `media.enabled`·`media.now_playing`(#104·#117이 서비스 설정에 두었던 것을 옮김),
-  그 아래 PC 알림 허용 · 소리내어 읽기 · 음성 · [테스트 알림]. 설정 탭의 저장 막대를 같이 쓴다. 음성 목록은 앱이 사용자 세션에서
-  SAPI로 직접 읽는다(서비스는 세션 0이라 사용자의 음성을 볼 수 없다).
+  그 아래 PC 알림 허용 · [테스트 알림]. 설정 탭의 저장 막대를 같이 쓴다.
 
 ## 5. Edge 드라이버 (1.1.0)
 
@@ -138,6 +134,7 @@
   `pc*.v1`은 `KNOWN`에 넣어 자동 이전한다(§6.6 규칙). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
+- **소리내어 읽기는 2026-10-01에 뺐다** — 서비스가 더 이상 읽지 않으므로 아래의 `speak` 명령·"PC에서 소리내어 읽기" 줄도 드라이버에서 없앤다(서비스는 옛 드라이버의 `speak`를 무시하고 토스트만 띄운다).
 - **PC 알림(#108):** `pcMessage.send(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings"),
   `pcMessage.speak(text)` → `{text, speak: true}`. 제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도 —
   정의의 `maxLength`와 입력 줄의 `range [1, 200]`도 같은 200이다). `features`에 "notify"가 있어야 보낸다. 결과는
@@ -305,7 +302,7 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
   - 긴 제목은 한 줄로 자르고 전체는 툴팁.
     (#117 구현) Fyne 2.8에는 툴팁이 없어, 잘렸을 때만 전체 문구를 바로 아래 작은 글씨로 보여 준다. 일반 → 전원 → 미디어 →
     잠들지 않기 순이고, "즉시 실행" 안내는 전원 카드 안으로 옮겼다.
-- **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / 소리내어 읽기 + 음성 / [테스트 알림].
+- **데스크톱 앱 설정의 미디어·알림 섹션** — 미디어 제어 허용 / 재생 정보 공유(옵트인, 설명 한 줄) / PC 알림 허용 / [테스트 알림].
 - **SmartThings 상세 화면** — 상태 카드와 조작 카드 뒤에 미디어 묶음: 곡 정보 → 재생/일시정지·이전/다음 → 볼륨 슬라이더 → 음소거.
   그 뒤 프리셋(목록 + 이름 줄), 활동, PC 메시지 입력 두 줄(`pcMessage`), 잠들지 않기·배터리 컴포넌트.
 

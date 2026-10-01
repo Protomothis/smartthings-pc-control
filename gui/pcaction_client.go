@@ -61,18 +61,13 @@ func (c *Client) actionCall(path string, body, out any) error {
 
 // NotifyResult is the ok reply of /api/notify/test.
 type NotifyResult struct {
-	Toast      string `json:"toast"`
-	Spoken     bool   `json:"spoken"`
-	VoiceUsed  string `json:"voice_used"`
-	VoiceFound *bool  `json:"voice_found"`
-	SpeakError string `json:"speak_error"`
+	Toast string `json:"toast"`
 }
 
-// TestNotify shows a test notification on this PC with the form's
-// (possibly unsaved) speech settings.
-func (c *Client) TestNotify(speak bool, voice string) (NotifyResult, error) {
+// TestNotify shows a test notification on this PC.
+func (c *Client) TestNotify() (NotifyResult, error) {
 	var r NotifyResult
-	err := c.actionCall("/api/notify/test", map[string]any{"speak": speak, "voice": voice}, &r)
+	err := c.actionCall("/api/notify/test", map[string]any{}, &r)
 	return r, err
 }
 

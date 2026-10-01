@@ -28,16 +28,15 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - `/st/v1/status`에 `media: {status, title, artist, album, app, updated_at}`를 더했습니다. `status`는 `playing`·`paused`·`stopped`·`none`이고 `media.enabled`면 늘 옵니다(세션이 없거나, 로그인한 사용자가 없거나, 90초 넘게 새 값이 없으면 `none`). 제목·아티스트·앨범·앱은 옵트인 `media.now_playing`일 때만, 앱이 알려 준 것만 옵니다. 파일 경로·URL·썸네일은 읽지도 보내지도 않습니다. 옵트인이면 `features`에 `"nowplaying"`이 붙고, 저장된 값이 바뀌면 푸시 `media.changed`를 보냅니다(텔레그램 알림은 없음). 미디어 명령 뒤에는 결과 상태를 바로 반영하고 1.2초 뒤 세션을 다시 읽습니다 (#117)
 - 새 설정 `media.now_playing`(기본 꺼짐). WebUI 설정 페이지와 앱 설정 탭에서 바꿀 수 있고, 바꾸면 설정 변경 알림에 `media.now_playing`이 나옵니다 (#117)
 - 트레이 하트비트가 선택 항목 `media: {status, title?, artist?, album?, app?, sampled_at}`을 받습니다(오디오와 같이 더 새 `sampled_at`만 덮어씀). 앱용 로컬 API `GET/POST /api/media`(미디어 카드의 상태와 명령) (#117)
-- **PC 알림.** `POST /st/v1/notify` `{title?, text, speak?}`가 로그인한 사용자의 화면에 토스트를 띄웁니다. 제목을 빼면 `SmartThings`, 문구는 제어 문자·방향 제어 문자를 지우고 줄바꿈을 공백으로 바꾼 뒤 1–200자(제목 100자)여야 합니다. 토스트에는 문구만 있고 링크·동작 버튼은 없습니다. 보내는 곳(IP)마다 분당 10개까지이고 넘으면 `429 rate_limited` + `Retry-After`, 설정에서 끄면 `403 notify_disabled`, 로그인한 사용자가 없으면 `409 no_user_session`입니다. 응답은 `{ok, toast: "shown"|"pending", spoken, voice_used?, voice_found?}` (#106)
-- **소리내어 읽기.** `notify_pc.speak`가 켜져 있을 때만 요청의 `speak`를 따르고, SAPI(`SAPI.SpVoice`)로 `notify_pc.voice`(이름 일부로 찾음, 없으면 시스템 기본) 음성을 씁니다. 읽기는 서비스의 3초 제한과 무관하게 분리된 하위 프로세스가 끝까지 하고, 여러 알림은 차례로 읽습니다 (#106)
+- **PC 알림.** `POST /st/v1/notify` `{title?, text}`가 로그인한 사용자의 화면에 토스트를 띄웁니다. 제목을 빼면 `SmartThings`, 문구는 제어 문자·방향 제어 문자를 지우고 줄바꿈을 공백으로 바꾼 뒤 1–200자(제목 100자)여야 합니다. 토스트에는 문구만 있고 링크·동작 버튼은 없습니다. 보내는 곳(IP)마다 분당 10개까지이고 넘으면 `429 rate_limited` + `Retry-After`, 설정에서 끄면 `403 notify_disabled`, 로그인한 사용자가 없으면 `409 no_user_session`입니다. 응답은 `{ok, toast: "shown"|"pending"}` (#106)
 - 토스트는 사용자 문구를 PowerShell 스크립트에 넣지 않습니다. XML을 Go에서 이스케이프해 환경 변수로 고정 스크립트에 넘기므로 `$(…)` 같은 문구도 글자 그대로 보입니다 (#106)
-- 새 설정 `notify_pc: { enabled: true, speak: false, voice: "" }` (#106)
+- 새 설정 `notify_pc: { enabled: true }` (#106)
 - **프리셋.** 앱에 등록한 동작을 슬롯 번호로 실행합니다. 설정 `presets: [{slot 1–10, name ≤ 30자, type: program|url|script, path, args[] ≤ 32}]`. `program`은 절대 경로의 .exe를 인자 배열 그대로(셸 없이, 작업 폴더 = exe 폴더), `url`은 http/https만 기본 브라우저로, `script`는 .ps1을 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File`, .bat/.cmd를 `cmd.exe /d /v:off /s /c`로 실행합니다. 모든 인자는 `EscapeArg`로 따옴표 처리하고, cmd.exe가 따옴표 안에서도 해석하는 `"`와 `%`는 배치 파일 경로·인자에서 거절합니다. 모두 로그인한 사용자 권한·환경으로 실행하며 끝나기를 기다리지 않습니다 (#109)
 - 규칙에 맞지 않는 프리셋은 저장할 때 400으로 거절하고, 손으로 고친 `config.json`에서 읽을 때는 그 항목만 로그를 남기고 무시합니다 (#109)
 - `POST /st/v1/command`에 `preset`(`value` = 슬롯 1–10)을 더했습니다. 없는 슬롯은 `404 no_such_preset`, 결과는 `last_command`에 `preset: {slot, name}`과 `result`(`started` 또는 오류 코드)로 남고, 시작하면 `remote.received` 알림을 보냅니다. `/st/v1/status`에 `presets: [{slot, name}]`(무엇을 실행하는지는 보내지 않음)를 더했습니다. `features`에는 `"notify"`와 `"presets"`가 붙습니다 — `media`와 달리 설정이 꺼져 있거나 프리셋이 없어도 붙여, 드라이버가 옛 서비스와 "꺼짐"·"빈 슬롯"을 가릅니다 (#106, #109)
-- 보안 알림 `config_changed`에 `notify_pc.enabled`, `notify_pc.speak`와 바뀐 프리셋 슬롯(`presets[1,3]`, 슬롯 번호만)이 포함됩니다 (#106, #109)
+- 보안 알림 `config_changed`에 `notify_pc.enabled`와 바뀐 프리셋 슬롯(`presets[1,3]`, 슬롯 번호만)이 포함됩니다 (#106, #109)
 - 앱용 로컬 API `POST /api/notify/test`, `POST /api/presets/run`, `POST /api/presets/test` (#106, #109)
-- WebUI 설정 페이지에 PC 알림 허용·소리내어 읽기 스위치를 더했습니다 (#106)
+- WebUI 설정 페이지에 PC 알림 허용 스위치를 더했습니다 (#106)
 - 화면 끄기·켜기가 응답 없는 창 하나 때문에 끝나지 않던 문제를 고쳤습니다. PowerShell 없이 창마다 2초 제한으로 보내고, 켜기는 마우스 입력으로도 깨웁니다 (#121)
 
 ### 데스크톱 앱
@@ -50,7 +49,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 설정 탭에 **원격 볼륨·미디어 제어 허용** 체크를 더했습니다(`media.enabled`) (#104)
 - 명령 탭에 **미디어** 카드를 더했습니다(전원 → 미디어 → 잠들지 않기 순). 첫 줄은 재생 정보(`▶ 제목 — 아티스트 · Spotify`, 공유를 끄면 `재생 중`/`일시정지`, 세션이 없으면 `재생 중인 미디어 없음`)로 길면 한 줄로 자르고 전체를 아래 작은 글씨로 보여 줍니다. 그 아래 ⏮ ⏯ ⏭ 버튼, 음소거 토글 · 볼륨 슬라이더(놓을 때 전송) · 값 · 장치 이름이 옵니다. 창이 보이는 동안 3초마다 새로 읽고, 미디어 제어가 꺼져 있거나 로그인한 사용자가 없거나 서비스가 옛 버전이면 이유 한 줄과 함께 비활성입니다 (#117)
 - 트레이 앱이 3초마다 볼륨과 미디어 세션을 확인해 바뀐 부분만 바로 보냅니다(30초 하트비트는 그대로). 곡 정보는 **재생 정보 공유**(`media.now_playing`)를 켰을 때만 보냅니다. 설정 탭에 이 체크를 더했습니다 (#117)
-- 설정 탭에 **미디어·알림** 섹션을 더했습니다. 서비스 설정에 있던 원격 볼륨·미디어 제어 허용과 재생 정보 공유를 이리로 옮기고, 그 아래 PC 알림 허용 · 소리내어 읽기 · 음성 선택(이 PC에 설치된 SAPI 음성, 첫 항목 `시스템 기본`) · [테스트 알림]을 둡니다. 테스트는 저장하지 않은 음성 설정으로도 해 볼 수 있습니다 (#106)
+- 설정 탭에 **미디어·알림** 섹션을 더했습니다. 서비스 설정에 있던 원격 볼륨·미디어 제어 허용과 재생 정보 공유를 이리로 옮기고, 그 아래 PC 알림 허용과 [테스트 알림]을 둡니다. 테스트는 알림을 허용하기 전에도 해 볼 수 있습니다 (#106)
 - 새 **프리셋** 탭(네트워크와 로그 사이)의 편집기: 행마다 슬롯 · 이름 · 종류(프로그램 · URL · 스크립트) · 경로([찾아보기]) · 인자(한 줄, 공백으로 구분, 공백이 든 값은 따옴표) · [테스트] · 삭제. 최대 10개이고 저장 전에 규칙을 확인합니다 (#109)
 - 명령 탭에 저장된 프리셋의 [실행] 버튼(`1 · 게임 모드`)을 더했습니다 (#109)
 - Windows 알림이 배너로 뜨지 않던 문제: 시작 메뉴 바로가기로 앱 ID를 등록한다(시작 메뉴에 SmartThings PC Control이 생김). 앱 ID는 `Protomothis.SmartThingsPCControl`이고, 트레이 앱이 시작할 때와 PC 알림을 띄우기 직전에 바로가기를 만들거나(exe가 옮겨졌으면) 고칩니다. 유예 알림과 PC 알림 모두 이 ID로 띄웁니다. 서비스를 제거하면 바로가기도 지웁니다
@@ -67,7 +66,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - `/play` `/pause` `/stop` `/next` `/prev` — 미디어 키를 보내고 `⏭ 다음 곡 키를 보냈습니다`처럼 답합니다 (#105)
 - `/np` — 지금 재생 중인 미디어: `▶ 제목 — 아티스트 · Spotify`, `⏸ …`, `재생 중인 미디어 없음`. 재생 정보 공유를 끄면 `▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)`. 무언가 재생 중이면 `/status`에 `미디어: ▶ …` 줄이 붙습니다 (#117)
 - `/play` `/pause` 등이 세션으로 처리되면 무엇을 했는지 답합니다: `⏸ 일시정지했습니다 · Spotify`, `⏭ 다음 곡으로 넘겼습니다`(앱 이름은 공유를 켰을 때만). 키로 넘어간 경우는 예전 문구 그대로입니다 (#117)
-- `/say 문구` — PC 화면에 알림을 띄웁니다(SmartThings와 같은 규칙, 채팅마다 분당 10개, `notify_pc.speak`가 켜져 있으면 읽기까지). 답은 `PC에 알림을 띄웠습니다` 또는 꺼짐 · 사용자 없음 · 너무 잦음 같은 이유입니다 (#106)
+- `/say 문구` — PC 화면에 알림을 띄웁니다(SmartThings와 같은 규칙, 채팅마다 분당 10개). 답은 `PC에 알림을 띄웠습니다` 또는 꺼짐 · 사용자 없음 · 너무 잦음 같은 이유입니다 (#106)
 - `/presets`(슬롯 · 이름 · 종류 목록, 경로와 인자는 보이지 않음), `/run 이름|번호` (#109)
 
 ### 보안
@@ -80,7 +79,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 ### 내부
 
 - 사용자 세션 액션 채널을 만들었습니다. 서비스가 같은 exe의 숨은 하위 명령 `user-action`(audio · media · notify · preset)을 로그인한 사용자의 세션에서 셸 없이 실행하고, stdout 마지막 줄의 JSON(`{"ok":true,...}` / `{"ok":false,"error":"bad_args|unsupported|failed",...}`)을 읽습니다. 3초 안에 답이 없으면 종료시키고, 로그인한 사용자가 없으면 `no_user_session`으로 구분합니다. 트레이 하트비트는 선택 항목 `audio: {volume, muted, device}`를 받아 시각과 함께 보관합니다(더 새 값만 덮어씀). 실제 볼륨·미디어·알림·프리셋 동작은 #104 · #105 · #106 · #109에서 붙이며, 그 전까지 모든 동작은 `unsupported`로 답합니다 (#103)
-- `user-action notify`와 `preset` 처리기, 그리고 notify `--speak`가 띄우는 내부 하위 명령 `user-action speak --text … [--voice …]`를 붙였습니다. 서비스가 사용자 세션에 넘기는 환경 변수는 SYSTEM의 것이라, 프리셋이 띄우는 프로그램에는 `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경(APPDATA · TEMP · PATH …)을 줍니다. 새 의존성 `github.com/go-ole/go-ole`(SAPI COM 호출) (#106, #109)
+- `user-action notify`와 `preset` 처리기를 붙였습니다. 서비스가 사용자 세션에 넘기는 환경 변수는 SYSTEM의 것이라, 프리셋이 띄우는 프로그램에는 `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경(APPDATA · TEMP · PATH …)을 줍니다 (#106, #109)
 - CI: `milestone/**` 푸시에도 vet·test, 릴리스 전 vet·test, `-` 붙은 태그는 시험판, Edge 릴리스는 Latest가 되지 않음 (#119)
 - Core Audio·WinRT vtable 호출 래퍼가 unsafe.Pointer 규칙을 어겨 스택 이동 때 메모리를 망가뜨릴 수 있던 것을 `//go:uintptrescapes`로 고쳤습니다 (#121)
 

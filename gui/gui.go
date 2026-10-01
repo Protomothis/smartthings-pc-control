@@ -945,8 +945,8 @@ func (u *ui) updateSaveState() {
 // thread, so work a build starts in the background would race that build.
 var syncBackground = false
 
-// background runs slow work a build kicks off (service state, installed
-// voices) off the UI thread; the work hands its result back with fyne.Do.
+// background runs slow work a build kicks off (the service state) off the
+// UI thread; the work hands its result back with fyne.Do.
 func background(f func()) {
 	if syncBackground {
 		f()

@@ -116,7 +116,7 @@ func TestRowProblemKeysAreTranslated(t *testing.T) {
 func TestPresetsStateRoundTrip(t *testing.T) {
 	base := Config{
 		Port:     5001,
-		NotifyPC: NotifyPCConfig{Enabled: true, Voice: "Heami"},
+		NotifyPC: NotifyPCConfig{Enabled: true},
 		Presets: []Preset{
 			{Slot: 3, Name: "b", Type: "program", Path: `C:\b.exe`, Args: []string{"two words", "-x"}},
 			{Slot: 1, Name: "a", Type: "url", Path: "https://a.example"},
@@ -135,7 +135,7 @@ func TestPresetsStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Telegram.ChatID != "42" || !cfg.Media.Enabled || cfg.NotifyPC.Voice != "Heami" || !presetsEqual(cfg.Presets, base.Presets) {
+	if cfg.Telegram.ChatID != "42" || !cfg.Media.Enabled || !cfg.NotifyPC.Enabled || !presetsEqual(cfg.Presets, base.Presets) {
 		t.Errorf("applyTo changed other fields or the presets: %+v", cfg)
 	}
 

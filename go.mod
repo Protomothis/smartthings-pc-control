@@ -3,7 +3,6 @@ module github.com/Protomothis/smartthings-pc-control
 go 1.26.5
 
 require (
-	github.com/go-ole/go-ole v1.3.0
 	github.com/go-toast/toast v0.0.0-20190211030409-01e6764cf0a4
 	golang.org/x/sys v0.47.0
 )
