@@ -1,0 +1,20 @@
+{
+  "tag": "ko",
+  "label": "PC 앱 상태",
+  "attributes": {
+    "running": {
+      "label": "실행 상태",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

@@ -1,20 +1,39 @@
 {
   "at": "2026-10-01T21:00:05+09:00",
   "data": {
-    "enabled": "true",
-    "kind": "game",
-    "labels": "Steam, OBS"
+    "apps": [
+      {
+        "id": "steam.exe",
+        "label": "Steam",
+        "running": true
+      },
+      {
+        "id": "obs64.exe",
+        "label": "OBS",
+        "running": true
+      }
+    ],
+    "enabled": true,
+    "top": "steam.exe"
   },
   "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
   "protocol": 1,
   "status": {
     "activity": {
+      "apps": [
+        {
+          "id": "steam.exe",
+          "label": "Steam",
+          "running": true
+        },
+        {
+          "id": "obs64.exe",
+          "label": "OBS",
+          "running": true
+        }
+      ],
       "enabled": true,
-      "kind": "game",
-      "labels": [
-        "Steam",
-        "OBS"
-      ]
+      "top": "steam.exe"
     },
     "audio": {
       "available": true,

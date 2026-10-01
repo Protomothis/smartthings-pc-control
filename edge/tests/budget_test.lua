@@ -48,7 +48,7 @@ local function pc_status()
     audio = { available = true, volume = 30, muted = false, device = "스피커" },
     media = { status = "playing", title = "Blinding Lights", artist = "The Weeknd", app = "Spotify" },
     presets = { { slot = 1, name = "게임 모드" }, { slot = 2, name = "방송 시작" } },
-    activity = { enabled = true, kind = "game", labels = { "Steam" } },
+    activity = { enabled = true, apps = { { id = "steam.exe", label = "Steam", running = true } }, top = "steam.exe" },
     awake = { on = false },
     session = { exposed = true, locked = false, idle_seconds = 0, user = "kim" },
     wol = {

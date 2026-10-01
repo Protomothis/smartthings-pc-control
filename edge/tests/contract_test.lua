@@ -138,15 +138,24 @@ function T.test_full_status_is_remembered_for_the_commands()
 end
 
 -- activity (#123) ---------------------------------------------------------------
--- The block becomes per-app child devices in #123; this test, the
--- activity.changed push case below and goldenActivity* in
--- service/contract_golden_test.go are what to rewrite then.
+-- `activity = { enabled, apps = [ { id, label, running } ], top }`: one child
+-- device per app (apps.lua) and one summary row on the PC. The Go side is
+-- goldenActivity* in service/contract_golden_test.go.
 
 function T.test_full_status_activity_rows()
-  local events = rows_of(h.fixture("status.full.json"))
-  h.assert_equal(value(events, caps.ACTIVITY, "activity"), "game", "activity.kind")
-  h.assert_equal(value(events, caps.ACTIVITY, "summary"), i18n.t(LANG, "activity_game") .. " · Steam",
-    "activity.labels")
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  h.assert_equal(value(events, caps.APPS, "summary"), "Steam 실행 중", "activity.top / apps[].label")
+  h.assert_equal(features.apps_summary(status, "en"), "Steam running")
+  h.assert_nil(value(events, caps.APP, "running"), "the children's rows are not the PC's")
+  h.assert_equal(features.apps_mode(status), features.APPS_ON, "activity.enabled + features")
+  h.assert_deep_equal(features.apps_of(status), {
+    { id = "steam.exe", label = "Steam", running = true },
+    { id = "obs64.exe", label = "OBS", running = false },
+  }, "activity.apps[].id/label/running, in priority order")
+  local top, others = features.apps_top(status, features.apps_of(status))
+  h.assert_equal(top.id, "steam.exe", "activity.top")
+  h.assert_equal(others, 0)
 end
 
 --------------------------------------------------------------------------------
@@ -176,8 +185,10 @@ function T.test_minimal_status_has_no_v1_2_features()
   h.assert_equal(features.refusal(s.extras, "preset"), "needs_service")
   h.assert_equal(features.refusal(s.extras, nil, features.NOTIFY), "needs_service")
   h.assert_equal(value(events, caps.PRESET, "names"), i18n.t(LANG, "needs_service"))
-  h.assert_equal(value(events, caps.ACTIVITY, "activity"), "none")
-  h.assert_equal(value(events, caps.ACTIVITY, "summary"), i18n.t(LANG, "activity_off"))
+  -- #123: no watch list on a v1.1 service - the children keep what they had.
+  h.assert_equal(value(events, caps.APPS, "summary"), "서비스 v1.2.0 필요")
+  h.assert_equal(features.apps_mode(status), features.APPS_OLD)
+  h.assert_deep_equal(features.apps_of(status), {})
   h.assert_equal(value(events, features.CAP_SWITCH, "switch", features.AWAKE_COMPONENT), "off")
   h.assert_nil(value(events, features.CAP_VOLUME, "volume"), "no reading, no slider move")
   h.assert_false(h.has_capability(events, features.CAP_BATTERY), "no battery card on a v1.0 PC")
@@ -205,10 +216,21 @@ local PUSHES = {
   ["push.media.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_PLAYBACK, "playbackStatus"), "paused")
   end,
-  -- activity (#123)
-  ["push.activity.changed.json"] = function(events)
-    h.assert_equal(value(events, caps.ACTIVITY, "activity"), "game")
-    h.assert_equal(value(events, caps.ACTIVITY, "summary"), i18n.t(LANG, "activity_game") .. " · Steam, OBS")
+  -- activity (#123): `data` is the status block itself.
+  ["push.activity.changed.json"] = function(events, nxt, event, payload)
+    h.assert_equal(event, "status_ok")
+    h.assert_equal(value(events, caps.APPS, "summary"), "Steam 실행 중 · 외 1개")
+    h.assert_deep_equal(nxt.extras.apps, {
+      { id = "steam.exe", label = "Steam", running = true },
+      { id = "obs64.exe", label = "OBS", running = true },
+    }, "status.activity.apps")
+    local data = payload.data
+    h.assert_true(data.enabled, "data.enabled is a boolean")
+    h.assert_equal(data.top, "steam.exe", "data.top")
+    h.assert_equal(#data.apps, 2, "data.apps")
+    h.assert_equal(data.apps[1].id, "steam.exe", "data.apps[].id")
+    h.assert_equal(data.apps[2].label, "OBS", "data.apps[].label")
+    h.assert_true(data.apps[2].running, "data.apps[].running")
   end,
   ["push.awake.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_SWITCH, "switch", features.AWAKE_COMPONENT), "off")
@@ -274,7 +296,7 @@ function T.test_pushes_route_and_paint()
 
     local nxt, events, event = push.apply(state.new(state.ON), payload, { lang = LANG, now = "21:00" })
     h.assert_true(events ~= nil, name .. " carried no status")
-    local check_ok, err = pcall(check, events, nxt, event)
+    local check_ok, err = pcall(check, events, nxt, event, payload)
     if not check_ok then
       error(name .. ": " .. tostring(err), 0)
     end

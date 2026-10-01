@@ -24,12 +24,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Order matters only for readability; the capabilities are independent.
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity pcToast)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcApps pcApp pcToast)
 
 # Names on the command line create only those - how a capability added after
 # the first run reaches an account that already has the rest (edge-v1.1.0:
 # `./tools/create-capabilities.sh pcPreset`; the PC notification:
-# `./tools/create-capabilities.sh pcToast`). Translations still go up with
+# `./tools/create-capabilities.sh pcToast`; the per-app child devices of #123:
+# `./tools/create-capabilities.sh pcApps pcApp`). Translations still go up with
 # tools/sync-capabilities.sh afterwards.
 if [ "$#" -gt 0 ]; then
   CAPABILITIES=("$@")

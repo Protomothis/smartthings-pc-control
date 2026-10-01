@@ -49,7 +49,7 @@ poll.LAST_SEEN_STEP = 60
 -- then matches. Bump it (to "2", "3", …) whenever a capability id changes or a
 -- new one is added, so `ensure_rows` repaints every already-installed device.
 -- #107: "2" - the move to `pc.v2` brings new capabilities whose rows start
--- unset (the standard audio/media ones now, pcPreset/pcActivity and the
+-- unset (the standard audio/media ones now, pcPreset/pcActivity (#114) and the
 -- awake/battery components with the rest of edge-v1.1.0).
 -- "3" - the move to `pc.v3` (pcMessage in place of the standard notification
 -- pair). pcMessage itself has no attribute to paint, but a device on its new
@@ -59,7 +59,9 @@ poll.LAST_SEEN_STEP = 60
 -- Again nothing new to paint, again a new profile and a new capability set.
 -- "5" - the move to `pc.v5` (pcToast in place of pcNotify), whose
 -- `lastMessage` row starts unset.
-poll.ROWS_VERSION = "5"
+-- "6" - the move to `pc.v6` (#123: pcApps in place of pcActivity), whose
+-- `summary` row starts unset.
+poll.ROWS_VERSION = "6"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status

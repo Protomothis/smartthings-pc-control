@@ -1,0 +1,10 @@
+{
+  "tag": "en",
+  "label": "PC apps",
+  "attributes": {
+    "summary": {
+      "label": "Apps"
+    }
+  },
+  "commands": {}
+}

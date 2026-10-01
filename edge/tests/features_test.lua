@@ -694,72 +694,104 @@ function T.test_without_timers_the_polls_still_put_the_preset_row_back()
 end
 
 --------------------------------------------------------------------------------
--- #114: activity
+-- #123: watched apps (the PC's summary row; the children are apps_test.lua's)
 --------------------------------------------------------------------------------
 
-local function with_activity(block, list)
-  local status = status_v12({ activity = block })
-  if list then
-    status.features = list
+local function with_apps(apps, opts)
+  opts = opts or {}
+  local status = status_v12({ activity = {
+    enabled = opts.enabled ~= false, apps = apps, top = opts.top or "",
+  } })
+  if opts.features then
+    status.features = opts.features
   end
   return status
 end
 
-function T.test_activity_reads_the_kind_and_the_labels()
-  local status = with_activity({ enabled = true, kind = "game", labels = { "Steam" } })
-  local events = features.activity_events(status, "ko")
-  h.assert_equal(h.event_value(events, caps.ACTIVITY, "activity"), "game")
-  h.assert_equal(h.event_value(events, caps.ACTIVITY, "summary"), "게임 중 · Steam")
-  h.assert_equal(features.activity_summary(status, "en"), "Gaming · Steam")
+local STEAM = { id = "steam.exe", label = "Steam", running = true }
+local CODE = { id = "code.exe", label = "VS Code", running = false }
+local OBS = { id = "obs64.exe", label = "OBS", running = true }
+local DISCORD = { id = "discord.exe", label = "Discord", running = true }
+
+function T.test_the_summary_names_the_highest_priority_app_that_runs()
+  local status = with_apps({ STEAM, CODE }, { top = "steam.exe" })
+  local events = features.apps_events(status, "ko")
+  h.assert_equal(h.event_value(events, caps.APPS, "summary"), "Steam 실행 중")
+  h.assert_equal(features.apps_summary(status, "en"), "Steam running")
 end
 
-function T.test_nothing_running_is_none_and_the_opt_in_off_is_off()
-  local idle = with_activity({ enabled = true, kind = "none", labels = {} })
-  h.assert_equal(features.activity_kind(idle), "none")
-  h.assert_equal(features.activity_summary(idle, "ko"), "없음")
+function T.test_the_summary_counts_the_other_apps_that_run()
+  local status = with_apps({ CODE, STEAM, OBS, DISCORD }, { top = "steam.exe" })
+  h.assert_equal(features.apps_summary(status, "ko"), "Steam 실행 중 · 외 2개")
+  h.assert_equal(features.apps_summary(status, "en"), "Steam running · 2 more")
+  -- `top` that names nothing running: the first running entry, in list order.
+  local stale = with_apps({ CODE, OBS, STEAM }, { top = "code.exe" })
+  h.assert_equal(features.apps_summary(stale, "ko"), "OBS 실행 중 · 외 1개")
+  local missing = with_apps({ CODE, OBS }, { top = "" })
+  h.assert_equal(features.apps_summary(missing, "ko"), "OBS 실행 중")
+end
+
+function T.test_nothing_running_off_and_an_old_service_each_have_words()
+  h.assert_equal(features.apps_summary(with_apps({ CODE }), "ko"), "없음")
+  h.assert_equal(features.apps_summary(with_apps({}), "en"), "None")
   -- The service lists "activity" only while the opt-in is on (#110).
-  local off = with_activity({ enabled = false, kind = "none", labels = {} },
-    { "audio", "media", "awake" })
-  h.assert_equal(features.activity_kind(off), "none")
-  h.assert_equal(features.activity_summary(off, "ko"), "꺼짐")
+  local off = with_apps({}, { enabled = false, features = { "audio", "media", "awake" } })
+  h.assert_equal(features.apps_mode(off), features.APPS_OFF)
+  h.assert_equal(features.apps_summary(off, "ko"), "꺼짐")
+  h.assert_equal(features.apps_summary(off, "en"), "Off")
   -- A block that claims to be on without the feature is not trusted either.
-  local stray = with_activity({ enabled = true, kind = "game", labels = { "Steam" } }, { "audio" })
-  h.assert_equal(features.activity_summary(stray, "ko"), "꺼짐")
-  h.assert_equal(features.activity_summary({ service_version = "v1.1.0" }, "ko"), "꺼짐")
+  local stray = with_apps({ STEAM }, { features = { "audio" } })
+  h.assert_equal(features.apps_summary(stray, "ko"), "꺼짐")
+  h.assert_deep_equal(features.apps_of(stray), {}, "and it lists nothing")
+  -- The kind-based block of a #114 Dev build has no `apps`: off, not "none".
+  local kind = status_v12({ activity = { enabled = true, kind = "game", labels = { "Steam" } } })
+  h.assert_equal(features.apps_mode(kind), features.APPS_OFF)
+  -- No `features` at all: a service older than v1.2.0.
+  local old = { service_version = "v1.1.0" }
+  h.assert_equal(features.apps_mode(old), features.APPS_OLD)
+  h.assert_equal(features.apps_summary(old, "ko"), "서비스 v1.2.0 필요")
+  h.assert_equal(features.apps_summary(old, "en"), "Requires service v1.2.0")
 end
 
-function T.test_an_unknown_kind_is_other()
-  local status = with_activity({ enabled = true, kind = "vr", labels = { "SteamVR" } })
-  h.assert_equal(features.activity_kind(status), "other")
-  h.assert_equal(features.activity_summary(status, "ko"), "실행 중 · SteamVR")
+function T.test_the_watch_list_is_read_defensively()
+  local list = {
+    { id = "Steam.EXE", label = " Steam\n", running = true },
+    { id = "steam.exe", label = "twice", running = false },
+    { id = "", label = "no id", running = true },
+    "not an entry",
+    { id = "notepad.exe", running = "yes" },
+    { id = "x.exe", label = string.rep("가", 40), running = false },
+  }
+  for i = 1, 12 do
+    list[#list + 1] = { id = "extra" .. i .. ".exe", label = "E" .. i, running = false }
+  end
+  local apps = features.apps_of(with_apps(list))
+  h.assert_equal(#apps, features.APPS_MAX, "never more than the service's ten")
+  h.assert_deep_equal(apps[1], { id = "steam.exe", label = "Steam", running = true },
+    "the key is lowercased, the label cleaned")
+  h.assert_deep_equal(apps[2], { id = "notepad.exe", label = "notepad.exe", running = false },
+    "a repeated id, an entry without one and a non-table are skipped; a missing label is the id; only true runs")
+  h.assert_equal(apps[3].label, string.rep("가", 29) .. "…", "30 code points at most")
+  h.assert_equal(apps[4].id, "extra1.exe")
 end
 
-function T.test_a_long_activity_line_drops_labels_until_it_fits()
-  local many = with_activity({ enabled = true, kind = "work",
-    labels = { "VS Code", "Figma", "Slack" } })
-  h.assert_equal(features.activity_summary(many, "ko"), "작업 중 · VS Code 외 2")
-  -- 25 code points with the one label: the word alone.
-  local long = with_activity({ enabled = true, kind = "work", labels = { "Visual Studio Code" } })
-  h.assert_equal(features.activity_summary(long, "ko"), "작업 중")
-  local two = with_activity({ enabled = true, kind = "stream", labels = { "OBS", "Discord" } })
-  h.assert_equal(features.activity_summary(two, "ko"), "방송 중 · OBS, Discord")
-  local huge = with_activity({ enabled = true, kind = "media",
-    labels = { string.rep("가", 40), "VLC" } })
-  h.assert_equal(features.activity_summary(huge, "ko"), "감상 중")
-  local fits = with_activity({ enabled = true, kind = "game",
-    labels = { "Steam", "Battle.net", "Epic Games" } })
-  h.assert_equal(features.activity_summary(fits, "en"), "Gaming · Steam +2")
+function T.test_a_long_label_still_fits_the_definition()
+  local long = { id = "a.exe", label = string.rep("가", 30), running = true }
+  local line = features.apps_summary(with_apps({ long, STEAM, OBS }), "ko")
+  h.assert_true(#(line:gsub("[\128-\191]", "")) <= features.APPS_SUMMARY_MAX_CHARS, line)
+  h.assert_contains(line, "외 2개")
 end
 
 function T.test_an_activity_push_repaints_at_once()
   -- activity.changed carries the whole status like every push (#110), so it
   -- goes through the same apply_status as a poll.
   local push = require "push"
-  local status = with_activity({ enabled = true, kind = "game", labels = { "Steam" } })
-  local _, events = push.apply(state.new(state.ON),
+  local status = with_apps({ STEAM }, { top = "steam.exe" })
+  local nxt, events = push.apply(state.new(state.ON),
     { type = "activity.changed", status = status }, { lang = "ko" })
-  h.assert_equal(h.event_value(events, caps.ACTIVITY, "activity"), "game")
-  h.assert_equal(h.event_value(events, caps.ACTIVITY, "summary"), "게임 중 · Steam")
+  h.assert_equal(h.event_value(events, caps.APPS, "summary"), "Steam 실행 중")
+  h.assert_deep_equal(nxt.extras.apps, { STEAM }, "what the children are painted from")
+  h.assert_equal(nxt.extras.apps_mode, features.APPS_ON)
 end
 
 --------------------------------------------------------------------------------
@@ -856,12 +888,12 @@ function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
   -- the keep-awake switch with its never-polled "off" would fire every routine
   -- that watches it, so a repaint uses what the PC last said.
   local device = device_with(status_v12({ awake = { on = true },
-    activity = { enabled = true, kind = "game", labels = { "Steam" } } }))
+    activity = { enabled = true, apps = { { id = "steam.exe", label = "Steam", running = true } }, top = "steam.exe" } }))
   poll.repaint(device)
   local emitted = h.emitted(device)
   h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "on")
   h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
-  h.assert_equal(h.last_value(emitted, nil, caps.ACTIVITY, "activity"), "game")
+  h.assert_equal(h.last_value(emitted, nil, caps.APPS, "summary"), "Steam 실행 중")
   -- A device nothing has been read for gets the resting defaults.
   local fresh = device_with(nil)
   poll.repaint(fresh)
@@ -923,10 +955,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc-tv.v5")
+  local device = device_on_profile("pc-tv.v6")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v5", "the style is kept")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v5" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v6", "the style is kept")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -935,15 +967,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v5")
+  local device = device_on_profile("pc-battery.v6")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v5")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v6")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v5")
+  local device = device_on_profile("pc.v6")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -960,7 +992,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v5")
+  local device = device_on_profile("pc.v6")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -980,35 +1012,35 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v5")
+  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v6")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v5")
+  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v6")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v5")
+  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v6")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v5")
+  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v6")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v5")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v6")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
-  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v5")
+  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v6")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
   plain_v4:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v5")
+  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v6")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v5", "polled-laptop")
+  local device = device_on_profile("pc.v6", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v5")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v6")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -1018,11 +1050,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v5", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v6", "pushed-laptop")
   poll.emit(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v5", "pushed-desktop")
+  local desktop = device_on_profile("pc.v6", "pushed-desktop")
   poll.emit(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
