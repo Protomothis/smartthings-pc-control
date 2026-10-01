@@ -298,19 +298,20 @@ func goldenConfig() Config {
 	}
 }
 
-// ---- activity: redesigned by #123 (per-app child devices). Everything the
-// fixtures say about it comes from these two functions and the
-// activity.changed push case; update them together with the Lua section
-// "activity (#123)" in edge/tests/contract_test.lua.
+// ---- activity (#123: per-app child devices, list order = priority).
+// Everything the fixtures say about it comes from these two functions and
+// the activity.changed push case; update them together with the Lua
+// section "activity (#123)" in edge/tests/contract_test.lua.
 
 func goldenActivityConfig() ActivityConfig {
 	return ActivityConfig{Enabled: true, Watch: []ActivityWatch{
-		{Process: "steam.exe", Label: "Steam", Kind: "game"},
-		{Process: "obs64.exe", Label: "OBS", Kind: "stream"},
+		{Process: "steam.exe", Label: "Steam"},
+		{Process: "obs64.exe", Label: "OBS"},
 	}}
 }
 
-// goldenActivity makes the scanner see Steam running.
+// goldenActivity makes the scanner see Steam running (OBS listed, not
+// running): apps [steam running, obs stopped], top steam.exe.
 func goldenActivity(t *testing.T, cfg Config) {
 	t.Helper()
 	stubProcesses(t, "explorer.exe", "steam.exe")
@@ -727,8 +728,8 @@ var pushCases = map[string]pushCase{
 		paused.Status = "paused"
 		recordMediaSample(paused, goldenNow)
 	}},
-	// activity (#123): OBS starts next to Steam. The kind stays game (it
-	// ranks above stream), the labels grow.
+	// activity (#123): OBS starts next to Steam. Both run, top stays
+	// steam.exe (first on the list); data = status.activity.
 	"push.activity.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
 		processLister = func() ([]string, error) { return []string{"explorer.exe", "steam.exe", "obs64.exe"}, nil }
 		activityTick(getConfig().Activity)

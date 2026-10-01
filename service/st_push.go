@@ -387,9 +387,9 @@ func stPushEventType(ev notify.Event, cfg SmartThingsConfig) (string, bool) {
 		case "updated", "update_available":
 			return ev.Key(), true
 		}
-	// activity.changed (#110) is not gated on activity.enabled: switching
-	// it off is itself a change the hub has to hear about, and the event
-	// carries kinds and labels only, never a process name.
+	// activity.changed (#110, #123) is not gated on activity.enabled:
+	// switching it off is itself a change the hub has to hear about, and
+	// the block names watched programs only, never anything else running.
 	case "display", "awake", "battery", "activity", "audio", "media":
 		if ev.Kind == "changed" {
 			return ev.Key(), true
@@ -500,31 +500,42 @@ func stPushDispatch(ctx context.Context, job stPushJob) {
 // top level so a hub serving several PCs can route the event without
 // parsing status.
 type stPushPayload struct {
-	Protocol  int               `json:"protocol"`
-	MachineID string            `json:"machine_id"`
-	Type      string            `json:"type"`
-	At        string            `json:"at"`
-	Data      map[string]string `json:"data"`
-	Status    stStatusResponse  `json:"status"`
+	Protocol  int    `json:"protocol"`
+	MachineID string `json:"machine_id"`
+	Type      string `json:"type"`
+	At        string `json:"at"`
+	// Data is the event's fields (map[string]string), except for
+	// activity.changed: see stPushBody.
+	Data   any              `json:"data"`
+	Status stStatusResponse `json:"status"`
 }
 
 // stPushBody renders one event, with the full §3.2 status attached so the
 // driver needs no diff. The secret never appears in it (§8): the status
 // only reports whether one is set, and any event field that happens to
 // carry it is dropped.
+//
+// activity.changed is the one event whose data is not its fields: it is
+// the status activity block itself (§11, #123), taken from the same status
+// document so the two can never disagree.
 func stPushBody(job stPushJob) ([]byte, error) {
 	cfg := getConfig()
 	at := job.At
 	if at.IsZero() {
 		at = stPushNow()
 	}
+	status := buildSTStatus(cfg)
+	var data any = stPushData(job.Data, cfg.Secret)
+	if job.Type == "activity.changed" {
+		data = status.Activity
+	}
 	return json.Marshal(stPushPayload{
 		Protocol:  stProtocol,
 		MachineID: machineID(),
 		Type:      job.Type,
 		At:        at.Format(time.RFC3339),
-		Data:      stPushData(job.Data, cfg.Secret),
-		Status:    buildSTStatus(cfg),
+		Data:      data,
+		Status:    status,
 	})
 }
 

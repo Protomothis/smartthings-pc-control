@@ -17,10 +17,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Running-app detection (#110, media-notify doc §11) in the network tab's
-// SmartThings section, next to the session-info opt-in: the on/off toggle
-// and the watch-list editor. It is part of the section's form (stFormState)
-// and saves with it.
+// Running-app detection (#110, #123, media-notify doc §11) in the network
+// tab's SmartThings section, next to the session-info opt-in: the on/off
+// toggle and the watch-list editor. It is part of the section's form
+// (stFormState) and saves with it.
+//
+// The list order is the priority: the first running entry is the one the
+// PC device's activity line shows. The rows have up/down buttons for it.
 //
 // [실행 중인 프로그램에서 고르기] asks the service for the running .exe
 // names (GET /api/processes, loopback only) and shows them in a dialog.
@@ -29,12 +32,9 @@ import (
 
 // Limits shared with the service (service/activity.go).
 const (
-	activityMaxWatch = 20
+	activityMaxWatch = 10
 	activityMaxLabel = 30
 )
-
-// activityKinds are the kinds in priority order, as the service ranks them.
-var activityKinds = []string{"game", "stream", "media", "work", "other"}
 
 // --- Pure form model (unit-tested) -----------------------------------------
 
@@ -52,19 +52,15 @@ func activityDefaultLabel(process string) string {
 }
 
 // normalizeActivity trims the rows, drops rows left completely blank,
-// fills an empty kind/label the way the service does, and never returns a
-// nil list (null would mean "keep the stored list").
+// fills an empty label the way the service does, keeps the order, and
+// never returns a nil list (null would mean "keep the stored list").
 func normalizeActivity(a ActivityConfig) ActivityConfig {
 	out := ActivityConfig{Enabled: a.Enabled, Watch: []ActivityWatch{}}
 	for _, w := range a.Watch {
 		w.Process = strings.TrimSpace(w.Process)
 		w.Label = strings.TrimSpace(w.Label)
-		w.Kind = strings.ToLower(strings.TrimSpace(w.Kind))
 		if w.Process == "" && w.Label == "" {
 			continue
-		}
-		if w.Kind == "" {
-			w.Kind = "other"
 		}
 		if w.Label == "" {
 			w.Label = activityDefaultLabel(w.Process)
@@ -74,7 +70,7 @@ func normalizeActivity(a ActivityConfig) ActivityConfig {
 	return out
 }
 
-// activityEqual compares two configs after normalisation.
+// activityEqual compares two configs after normalisation, order included.
 func activityEqual(a, b ActivityConfig) bool {
 	a, b = normalizeActivity(a), normalizeActivity(b)
 	return a.Enabled == b.Enabled && slices.Equal(a.Watch, b.Watch)
@@ -105,8 +101,6 @@ func activityProblem(l Lang, a ActivityConfig) string {
 			return fmt.Sprintf(T(l, "activity.err.exe"), p)
 		case utf8.RuneCountInString(w.Label) > activityMaxLabel || strings.IndexFunc(w.Label, unicode.IsControl) >= 0:
 			return fmt.Sprintf(T(l, "activity.err.label"), p, activityMaxLabel)
-		case !slices.Contains(activityKinds, w.Kind):
-			return fmt.Sprintf(T(l, "activity.err.kind"), p)
 		}
 		key := strings.ToLower(p)
 		if seen[key] {
@@ -128,16 +122,29 @@ func activityListed(watch []ActivityWatch, process string) bool {
 }
 
 // addActivityProcess appends a row for a picked process — label from its
-// name, kind "other" for the user to change — unless it is listed already
-// or the list is full. ok reports whether a row was added.
+// name, lowest priority — unless it is listed already or the list is full.
+// ok reports whether a row was added.
 func addActivityProcess(watch []ActivityWatch, process string) ([]ActivityWatch, bool) {
 	process = strings.TrimSpace(process)
 	if process == "" || len(watch) >= activityMaxWatch || activityListed(watch, process) {
 		return watch, false
 	}
 	return append(slices.Clone(watch), ActivityWatch{
-		Process: process, Label: activityDefaultLabel(process), Kind: "other",
+		Process: process, Label: activityDefaultLabel(process),
 	}), true
+}
+
+// moveActivity moves row i one place up (delta -1) or down (+1), i.e. one
+// step higher or lower in priority. It returns a new slice and whether
+// anything moved; the first row cannot go up nor the last one down.
+func moveActivity(watch []ActivityWatch, i, delta int) ([]ActivityWatch, bool) {
+	j := i + delta
+	if (delta != -1 && delta != 1) || i < 0 || i >= len(watch) || j < 0 || j >= len(watch) {
+		return watch, false
+	}
+	out := slices.Clone(watch)
+	out[i], out[j] = out[j], out[i]
+	return out, true
 }
 
 // pickerCandidates is what the picker offers: the running names that are
@@ -154,15 +161,6 @@ func pickerCandidates(running []string, watch []ActivityWatch, query string) []s
 			continue
 		}
 		out = append(out, name)
-	}
-	return out
-}
-
-// activityKindLabels are the kind dropdown's options, in activityKinds order.
-func activityKindLabels(l Lang) []string {
-	out := make([]string, len(activityKinds))
-	for i, k := range activityKinds {
-		out[i] = T(l, "activity.kind."+k)
 	}
 	return out
 }
@@ -197,7 +195,7 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 		if len(a.watch) >= activityMaxWatch {
 			return
 		}
-		a.watch = append(a.watch, ActivityWatch{Kind: "other"})
+		a.watch = append(a.watch, ActivityWatch{})
 		u.renderActivityRows()
 		u.updateSTSaveState()
 	})
@@ -205,21 +203,21 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 	u.renderActivityRows()
 
 	bold := fyne.TextStyle{Bold: true}
-	// The rows end in a delete button; an empty box of its size keeps the
-	// column titles above their entries.
+	// The rows end in up/down/delete buttons; an empty box of their size
+	// keeps the column titles above their entries.
 	gap := canvas.NewRectangle(color.Transparent)
-	gap.SetMinSize(widget.NewButtonWithIcon("", theme.DeleteIcon(), nil).MinSize())
+	gap.SetMinSize(activityRowButtons(nil, nil, nil).MinSize())
 	header := container.NewBorder(nil, nil, nil, gap,
-		container.NewGridWithColumns(3,
+		container.NewGridWithColumns(2,
 			widget.NewLabelWithStyle(u.t("activity.col.process"), fyne.TextAlignLeading, bold),
 			widget.NewLabelWithStyle(u.t("activity.col.label"), fyne.TextAlignLeading, bold),
-			widget.NewLabelWithStyle(u.t("activity.col.kind"), fyne.TextAlignLeading, bold),
 		))
 
 	return container.NewVBox(
 		a.toggle,
 		hint(u.t("activity.hint")),
 		widget.NewLabelWithStyle(u.t("activity.watch"), fyne.TextAlignLeading, bold),
+		hint(u.t("activity.priority")),
 		header,
 		a.rows,
 		container.NewHBox(a.addBtn, a.pickBtn, layout.NewSpacer()),
@@ -227,9 +225,18 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 	)
 }
 
+// activityRowButtons is a row's [↑][↓][🗑] group.
+func activityRowButtons(up, down, del func()) *fyne.Container {
+	return container.NewHBox(
+		widget.NewButtonWithIcon("", theme.MoveUpIcon(), up),
+		widget.NewButtonWithIcon("", theme.MoveDownIcon(), down),
+		widget.NewButtonWithIcon("", theme.DeleteIcon(), del),
+	)
+}
+
 // renderActivityRows redraws the editor rows from a.watch. Each row edits
 // its own entry in place, so typing never rebuilds the list (and never
-// steals the focus); adding and removing do. UI thread only.
+// steals the focus); adding, removing and moving do. UI thread only.
 func (u *ui) renderActivityRows() {
 	t := u.st
 	if t == nil || t.activity.rows == nil {
@@ -240,7 +247,13 @@ func (u *ui) renderActivityRows() {
 	if len(a.watch) == 0 {
 		a.rows.Add(hint(u.t("activity.empty")))
 	}
-	kindLabels := activityKindLabels(u.lang)
+	move := func(i, delta int) {
+		if watch, ok := moveActivity(a.watch, i, delta); ok {
+			a.watch = watch
+			u.renderActivityRows()
+			u.updateSTSaveState()
+		}
+	}
 	for i := range a.watch {
 		w := a.watch[i]
 		proc := widget.NewEntry()
@@ -261,26 +274,23 @@ func (u *ui) renderActivityRows() {
 				u.updateSTSaveState()
 			}
 		}
-		kind := widget.NewSelect(kindLabels, nil)
-		if k := slices.Index(activityKinds, w.Kind); k >= 0 {
-			kind.SetSelectedIndex(k)
-		} else {
-			kind.SetSelectedIndex(len(activityKinds) - 1) // other
+		buttons := activityRowButtons(
+			func() { move(i, -1) },
+			func() { move(i, 1) },
+			func() {
+				if i < len(a.watch) {
+					a.watch = slices.Delete(slices.Clone(a.watch), i, i+1)
+					u.renderActivityRows()
+					u.updateSTSaveState()
+				}
+			})
+		if i == 0 {
+			buttons.Objects[0].(*widget.Button).Disable()
 		}
-		kind.OnChanged = func(string) {
-			if k := kind.SelectedIndex(); k >= 0 && i < len(a.watch) {
-				a.watch[i].Kind = activityKinds[k]
-				u.updateSTSaveState()
-			}
+		if i == len(a.watch)-1 {
+			buttons.Objects[1].(*widget.Button).Disable()
 		}
-		del := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-			if i < len(a.watch) {
-				a.watch = slices.Delete(slices.Clone(a.watch), i, i+1)
-				u.renderActivityRows()
-				u.updateSTSaveState()
-			}
-		})
-		a.rows.Add(container.NewBorder(nil, nil, nil, del, container.NewGridWithColumns(3, proc, label, kind)))
+		a.rows.Add(container.NewBorder(nil, nil, nil, buttons, container.NewGridWithColumns(2, proc, label)))
 	}
 	a.rows.Refresh()
 	if len(a.watch) >= activityMaxWatch {

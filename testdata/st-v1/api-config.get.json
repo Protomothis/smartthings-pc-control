@@ -3,12 +3,10 @@
     "enabled": true,
     "watch": [
       {
-        "kind": "game",
         "label": "Steam",
         "process": "steam.exe"
       },
       {
-        "kind": "stream",
         "label": "OBS",
         "process": "obs64.exe"
       }

@@ -8,11 +8,20 @@
   "protocol": 1,
   "status": {
     "activity": {
+      "apps": [
+        {
+          "id": "steam.exe",
+          "label": "Steam",
+          "running": true
+        },
+        {
+          "id": "obs64.exe",
+          "label": "OBS",
+          "running": false
+        }
+      ],
       "enabled": true,
-      "kind": "game",
-      "labels": [
-        "Steam"
-      ]
+      "top": "steam.exe"
     },
     "audio": {
       "available": true,

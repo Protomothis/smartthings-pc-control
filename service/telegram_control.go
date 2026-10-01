@@ -246,13 +246,10 @@ var tgTexts = map[string][2]string{
 	"st_battery_charging": {"충전 중", "charging"},
 	"st_battery_ac":       {"전원 연결됨", "plugged in"},
 	"st_battery_unknown":  {"잔량 알 수 없음", "level unknown"},
-	// running-app detection (#110), "활동: 게임 중 · Steam"
-	"st_activity":          {"활동", "Activity"},
-	"activity_kind_game":   {"게임 중", "Gaming"},
-	"activity_kind_stream": {"방송 중", "Streaming"},
-	"activity_kind_media":  {"미디어 재생 중", "Playing media"},
-	"activity_kind_work":   {"작업 중", "Working"},
-	"activity_kind_other":  {"실행 중", "Running"},
+	// running-app detection (#110, #123), "활동: Steam 실행 중 · 외 1개"
+	"st_activity":      {"활동", "Activity"},
+	"activity_running": {"%s 실행 중", "%s running"},
+	"activity_more":    {"외 %d개", "%d more"},
 	// command and origin labels
 	"cmd_shutdown":       {"종료", "Shut down"},
 	"cmd_restart":        {"재시작", "Restart"},
@@ -883,16 +880,19 @@ func tgStatusText() string {
 	return b.String()
 }
 
-// tgActivityLine is the /status "활동: 게임 중 · Steam" line, or "" while
-// the option is off or nothing watched is running — an idle PC needs no
-// line saying so. Labels are the user's own words, so they are escaped.
+// tgActivityLine is the /status "활동: Steam 실행 중 · 외 1개" line: the
+// highest-priority running app and how many other watched apps run. It is
+// "" while the option is off or nothing watched is running — an idle PC
+// needs no line saying so. Labels are the user's own words, so they are
+// escaped.
 func tgActivityLine(a stActivity) string {
-	if !a.Enabled || a.Kind == activityKindNone {
+	label, others := a.topLabel()
+	if !a.Enabled || label == "" {
 		return ""
 	}
-	line := fmt.Sprintf("%s: %s", tgText("st_activity"), tgText("activity_kind_"+a.Kind))
-	if len(a.Labels) > 0 {
-		line += " · " + html.EscapeString(strings.Join(a.Labels, ", "))
+	line := fmt.Sprintf("%s: %s", tgText("st_activity"), tgText("activity_running", html.EscapeString(label)))
+	if others > 0 {
+		line += " · " + tgText("activity_more", others)
 	}
 	return line
 }

@@ -253,7 +253,8 @@ type stStatusResponse struct {
 	// desktop reports present=false, and "battery" is then left out of
 	// Features so the driver keeps the profile without a battery.
 	Battery batteryInfo `json:"battery"`
-	// Activity is the opt-in running-app block (#110, §11).
+	// Activity is the opt-in running-app block (#110, #123, §11): one
+	// entry per watched program in priority order, and the top one.
 	Activity stActivity `json:"activity"`
 	// Audio is the default playback device's last known state (#104, §3).
 	Audio stAudio `json:"audio"`

@@ -12,13 +12,13 @@ import (
 
 func TestNormalizeActivity(t *testing.T) {
 	got := normalizeActivity(ActivityConfig{Enabled: true, Watch: []ActivityWatch{
-		{Process: " Steam.exe ", Label: "", Kind: ""},
-		{Process: "", Label: " ", Kind: "game"}, // a blank row the user added
-		{Process: "obs64.exe", Label: " OBS ", Kind: "STREAM"},
+		{Process: " Steam.exe ", Label: ""},
+		{Process: "", Label: " "}, // a blank row the user added
+		{Process: "obs64.exe", Label: " OBS "},
 	}})
 	want := []ActivityWatch{
-		{Process: "Steam.exe", Label: "Steam", Kind: "other"},
-		{Process: "obs64.exe", Label: "OBS", Kind: "stream"},
+		{Process: "Steam.exe", Label: "Steam"},
+		{Process: "obs64.exe", Label: "OBS"},
 	}
 	if !got.Enabled || !slices.Equal(got.Watch, want) {
 		t.Errorf("normalized = %+v, want %+v", got, want)
@@ -29,24 +29,27 @@ func TestNormalizeActivity(t *testing.T) {
 }
 
 func TestActivityProblem(t *testing.T) {
-	many := make([]ActivityWatch, 21)
+	if activityMaxWatch != 10 {
+		t.Fatalf("activityMaxWatch = %d, the service caps at 10", activityMaxWatch)
+	}
+	many := make([]ActivityWatch, 11)
 	for i := range many {
-		many[i] = ActivityWatch{Process: strings.Repeat("a", i+1) + ".exe", Kind: "other"}
+		many[i] = ActivityWatch{Process: strings.Repeat("a", i+1) + ".exe"}
 	}
 	for _, tc := range []struct {
 		name  string
 		watch []ActivityWatch
 		key   string // "" = fine
 	}{
-		{"ok", []ActivityWatch{{Process: "steam.exe", Label: "Steam", Kind: "game"}}, ""},
+		{"ok", []ActivityWatch{{Process: "steam.exe", Label: "Steam"}}, ""},
 		{"blank rows are ignored", []ActivityWatch{{}}, ""},
-		{"label only", []ActivityWatch{{Label: "Steam", Kind: "game"}}, "activity.err.process"},
-		{"path", []ActivityWatch{{Process: `C:\Games\steam.exe`, Kind: "game"}}, "activity.err.path"},
-		{"not exe", []ActivityWatch{{Process: "steam", Kind: "game"}}, "activity.err.exe"},
-		{"label too long", []ActivityWatch{{Process: "a.exe", Label: strings.Repeat("x", 31), Kind: "game"}}, "activity.err.label"},
-		{"bad kind", []ActivityWatch{{Process: "a.exe", Kind: "nap"}}, "activity.err.kind"},
-		{"duplicate", []ActivityWatch{{Process: "a.exe", Kind: "game"}, {Process: "A.EXE", Kind: "work"}}, "activity.err.dup"},
-		{"too many", many, "activity.err.max"},
+		{"ten", many[:10], ""},
+		{"label only", []ActivityWatch{{Label: "Steam"}}, "activity.err.process"},
+		{"path", []ActivityWatch{{Process: `C:\Games\steam.exe`}}, "activity.err.path"},
+		{"not exe", []ActivityWatch{{Process: "steam"}}, "activity.err.exe"},
+		{"label too long", []ActivityWatch{{Process: "a.exe", Label: strings.Repeat("x", 31)}}, "activity.err.label"},
+		{"duplicate", []ActivityWatch{{Process: "a.exe"}, {Process: "A.EXE"}}, "activity.err.dup"},
+		{"eleven", many, "activity.err.max"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := activityProblem(LangEn, ActivityConfig{Watch: tc.watch})
@@ -71,10 +74,10 @@ func TestActivityProblem(t *testing.T) {
 }
 
 func TestAddActivityProcess(t *testing.T) {
-	watch := []ActivityWatch{{Process: "steam.exe", Label: "Steam", Kind: "game"}}
+	watch := []ActivityWatch{{Process: "steam.exe", Label: "Steam"}}
 	got, ok := addActivityProcess(watch, "Discord.exe")
-	if !ok || len(got) != 2 || got[1] != (ActivityWatch{Process: "Discord.exe", Label: "Discord", Kind: "other"}) {
-		t.Errorf("added = %+v ok=%v", got, ok)
+	if !ok || len(got) != 2 || got[1] != (ActivityWatch{Process: "Discord.exe", Label: "Discord"}) {
+		t.Errorf("added = %+v ok=%v (a pick goes to the bottom, lowest priority)", got, ok)
 	}
 	if len(watch) != 1 {
 		t.Error("addActivityProcess wrote into its argument")
@@ -85,6 +88,34 @@ func TestAddActivityProcess(t *testing.T) {
 	full := make([]ActivityWatch, activityMaxWatch)
 	if _, ok := addActivityProcess(full, "x.exe"); ok {
 		t.Error("a full list grew")
+	}
+}
+
+func TestMoveActivity(t *testing.T) {
+	a, b, c := ActivityWatch{Process: "a.exe"}, ActivityWatch{Process: "b.exe"}, ActivityWatch{Process: "c.exe"}
+	watch := []ActivityWatch{a, b, c}
+	for _, tc := range []struct {
+		name     string
+		i, delta int
+		want     []ActivityWatch
+		moved    bool
+	}{
+		{"second up", 1, -1, []ActivityWatch{b, a, c}, true},
+		{"second down", 1, 1, []ActivityWatch{a, c, b}, true},
+		{"last up", 2, -1, []ActivityWatch{a, c, b}, true},
+		{"first up", 0, -1, watch, false},
+		{"last down", 2, 1, watch, false},
+		{"out of range", 5, -1, watch, false},
+		{"negative index", -1, 1, watch, false},
+		{"a jump is not a move", 0, 2, watch, false},
+	} {
+		got, moved := moveActivity(watch, tc.i, tc.delta)
+		if moved != tc.moved || !slices.Equal(got, tc.want) {
+			t.Errorf("%s: got %v moved=%v, want %v moved=%v", tc.name, got, moved, tc.want, tc.moved)
+		}
+	}
+	if !slices.Equal(watch, []ActivityWatch{a, b, c}) {
+		t.Error("moveActivity wrote into its argument")
 	}
 }
 
@@ -101,7 +132,10 @@ func TestPickerCandidates(t *testing.T) {
 
 func TestSTFormCarriesActivity(t *testing.T) {
 	base := stBaseConfig()
-	base.Activity = ActivityConfig{Watch: []ActivityWatch{{Process: "steam.exe", Label: "Steam", Kind: "game"}}}
+	base.Activity = ActivityConfig{Watch: []ActivityWatch{
+		{Process: "steam.exe", Label: "Steam"},
+		{Process: "obs64.exe", Label: "OBS"},
+	}}
 	s := stStateFromConfig(base)
 	if s.dirty(base) {
 		t.Fatal("a freshly filled section is dirty")
@@ -112,10 +146,11 @@ func TestSTFormCarriesActivity(t *testing.T) {
 	}
 	for _, mutate := range []func(*stFormState){
 		func(s *stFormState) { s.Activity.Enabled = true },
-		func(s *stFormState) { s.Activity.Watch[0].Kind = "work" },
+		func(s *stFormState) { s.Activity.Watch[0].Label = "Valve" },
+		func(s *stFormState) { s.Activity.Watch, _ = moveActivity(s.Activity.Watch, 1, -1) },
 		func(s *stFormState) { s.Activity.Watch = nil },
 		func(s *stFormState) {
-			s.Activity.Watch, _ = addActivityProcess(s.Activity.Watch, "obs64.exe")
+			s.Activity.Watch, _ = addActivityProcess(s.Activity.Watch, "code.exe")
 		},
 	} {
 		changed := stStateFromConfig(base)
@@ -131,26 +166,33 @@ func TestSTFormCarriesActivity(t *testing.T) {
 			t.Error("applyTo sent a null watch list")
 		}
 	}
+	// The saved order is the edited order.
+	moved := stStateFromConfig(base)
+	moved.Activity.Watch, _ = moveActivity(moved.Activity.Watch, 1, -1)
+	if got := moved.applyTo(base).Activity.Watch; got[0].Process != "obs64.exe" || got[1].Process != "steam.exe" {
+		t.Errorf("saved order = %+v", got)
+	}
 	// A blank row the user added and left empty is not a change.
 	s = stStateFromConfig(base)
-	s.Activity.Watch = append(s.Activity.Watch, ActivityWatch{Kind: "other"})
+	s.Activity.Watch = append(s.Activity.Watch, ActivityWatch{})
 	if s.dirty(base) {
 		t.Error("an empty row counts as a change")
 	}
 }
 
 func TestActivityConfigRoundTrip(t *testing.T) {
-	// The service's JSON shape decodes into the mirror and back unchanged.
-	raw := `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam","kind":"game"}]}}`
+	// The service's JSON shape decodes into the mirror and back unchanged;
+	// a "kind" from a v1.2.0 development service is dropped.
+	raw := `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam","kind":"game"},{"process":"obs64.exe","label":"OBS"}]}}`
 	var cfg Config
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Activity.Enabled || len(cfg.Activity.Watch) != 1 || cfg.Activity.Watch[0].Kind != "game" {
+	if !cfg.Activity.Enabled || len(cfg.Activity.Watch) != 2 || cfg.Activity.Watch[0].Process != "steam.exe" {
 		t.Fatalf("decoded = %+v", cfg.Activity)
 	}
 	out, _ := json.Marshal(cfg)
-	if !strings.Contains(string(out), `"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam","kind":"game"}]}`) {
+	if !strings.Contains(string(out), `"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam"},{"process":"obs64.exe","label":"OBS"}]}`) {
 		t.Errorf("encoded = %s", out)
 	}
 }
@@ -175,16 +217,13 @@ func TestClientRunningProcesses(t *testing.T) {
 
 func TestActivityTranslations(t *testing.T) {
 	keys := []string{
-		"activity.toggle", "activity.hint", "activity.watch", "activity.watch.hint",
-		"activity.col.process", "activity.col.label", "activity.col.kind", "activity.ph.label",
+		"activity.toggle", "activity.hint", "activity.watch", "activity.priority", "activity.watch.hint",
+		"activity.col.process", "activity.col.label", "activity.ph.label",
 		"activity.add", "activity.pick", "activity.empty",
 		"activity.pick.title", "activity.pick.search", "activity.pick.hint", "activity.pick.none",
 		"activity.pick.close", "activity.pick.fail",
 		"activity.err.max", "activity.err.process", "activity.err.path", "activity.err.exe",
-		"activity.err.label", "activity.err.kind", "activity.err.dup",
-	}
-	for _, k := range activityKinds {
-		keys = append(keys, "activity.kind."+k)
+		"activity.err.label", "activity.err.dup",
 	}
 	for _, key := range keys {
 		for _, l := range []Lang{LangKo, LangEn} {
@@ -193,7 +232,16 @@ func TestActivityTranslations(t *testing.T) {
 			}
 		}
 	}
-	if got := activityKindLabels(LangKo); len(got) != len(activityKinds) || got[0] != "게임" {
-		t.Errorf("kind labels = %v", got)
+	// The kind selector is gone, and so are its strings.
+	for _, key := range []string{"activity.col.kind", "activity.err.kind", "activity.kind.game", "activity.kind.other"} {
+		if T(LangKo, key) != key {
+			t.Errorf("%s is still translated", key)
+		}
+	}
+	if !strings.Contains(T(LangKo, "activity.priority"), "위에 있을수록 우선") {
+		t.Errorf("priority hint = %q", T(LangKo, "activity.priority"))
+	}
+	if !strings.Contains(T(LangKo, "activity.watch.hint"), "최대 10개") {
+		t.Errorf("watch hint = %q", T(LangKo, "activity.watch.hint"))
 	}
 }
