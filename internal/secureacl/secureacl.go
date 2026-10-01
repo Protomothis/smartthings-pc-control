@@ -7,7 +7,9 @@
 // or edit the config and get code running as SYSTEM. Apply gives the folder
 // a protected DACL of its own — SYSTEM and Administrators full control,
 // Users read & execute — so nothing from C:\ leaks in, and resets every
-// file and folder below it to inherit only that.
+// file and folder below it to inherit only that. Files made private on
+// purpose (config.json, state.json: private.go, #131) are tighter than the
+// folder and left as they are.
 //
 // LockInstallDir is what the elevated installer and the service call: it
 // first refuses folders that are not the app's own (a drive root, Windows,
