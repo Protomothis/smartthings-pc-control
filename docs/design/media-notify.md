@@ -164,10 +164,10 @@
   표시"라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의 라벨을 바꿀 방법이 없다(플랫폼 노트 "표준
   capability"). "PC에 메시지 보내기"라고 읽히려면 라벨이 우리 번역 파일에 있어야 하므로 커스텀 capability를 만들었다. 모양은
   표준 `notification`을 따르되(`textField` + `argumentType: "string"`, 인자 하나) 상세 화면 줄에 `"value": "lastMessage.value"`를
-  더한다. 프로필은 `pc.v5`다(§14).
+  더한다. `pc.v5`부터의 프로필에 있다(지금은 `pc.v6`, §14).
 - **소리내어 읽기는 없다.** Dev 채널에서는 `pc.v2`가 표준 `notification`·`speechSynthesis`를, `pc.v3`가 `send`·`speak` 둘짜리
   `pcMessage`를, `pc.v4`가 속성 없는 `pcNotify`를 썼다. 정의가 바뀔 때마다 새 id가 됐고(`pcnotify` → `pctoast`), 어느 것도 공개된
-  적이 없으므로 그 핸들러는 남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 v5로 옮겨지고, v2·v3·v4에서 만든
+  적이 없으므로 그 핸들러는 남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 현재 버전(v6)으로 옮겨지고, v2·v3·v4에서 만든
   루틴 동작은 capability가 달라 사라지므로 다시 고른다.
 
 ## 6. 텔레그램
@@ -274,14 +274,15 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
   `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교). 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이고, `profiles/pc.yml`은 v1 장치가 쓰는 고정 파일로 남는다(edge-driver.md §6.6).
 - 루틴 예: "배터리 20% 이하면 충전기 플러그 켜기".
 
-## 14. 프로필 pc.v5 구성
+## 14. 프로필 pc.v6 구성
 
-- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcActivity, pcToast — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
-- Dev 채널에만 있던 `pc.v2`(마지막 두 자리가 표준 `notification`, `speechSynthesis`), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)는 마지막 자리만 다르고 그 밖에는 같다. 셋 다 공개된 적이 없어 파일은 패키지에서 뺐고(`profiles.UNSHIPPED_VERSIONS`), 이름만 `KNOWN`에 남는다(§5)
+- main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcApps, pcToast — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤). `pcApps`(#123)는 요약 줄 하나다("Steam 실행 중 · 외 1개")
+- Dev 채널에만 있던 `pc.v2`(마지막 두 자리가 표준 `notification`, `speechSynthesis`), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)는 마지막 자리만 다르고 그 밖에는 같다. `pc.v5`는 `pcToast`에 kind 방식 `pcActivity`(#114)였다. 넷 다 공개된 적이 없어 파일은 패키지에서 뺐고(`profiles.UNSHIPPED_VERSIONS`), 이름만 `KNOWN`에 남는다(§5)
+- 앱 자식 장치(#123, edge-driver.md §4.2): `pc-app.v1`(`profiles/pc-app.yml`, 생성기 밖) — main: `pcApp`(`running` 실행 중/꺼짐), refresh. 카테고리 Others. 감시 항목마다 하나, PC의 자식(EDGE_CHILD)
 - media(대안 배치만, #118): audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute — `gen-profiles.js --media-component`. 기본은 위의 main 배치
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
-- 이름: `pc.v5`, `pc-<style>.v5`, `pc-battery.v5`, `pc-<style>-battery.v5`. `pc*.v1`~`pc*.v4`는 `KNOWN`으로 자동 이전(v2부터는 배터리 쪽도 이름 그대로).
+- 이름: `pc.v6`, `pc-<style>.v6`, `pc-battery.v6`, `pc-<style>-battery.v6`. `pc*.v1`~`pc*.v5`는 `KNOWN`으로 자동 이전(v2부터는 배터리 쪽도 이름 그대로).
 
 ## 15. 재생 정보와 앱 단위 재생 제어 (#117 / #118)
 
@@ -336,9 +337,9 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 4. **음성 비서(선택, #107)** — SmartThings에 연결된 음성 비서가 이 장치의 볼륨을 인식하는지.
 5. **빈 프리셋 슬롯 숨기기(#113)** — `pcPreset` 목록의 `supportedValues: "supportedSlots.value"`가 등록된 슬롯만 남기는지, 하나도 없을 때(`["none"]`) 목록이 비는지 전체가 보이는지, 슬롯이 바뀌면 다시 그려지는지. 먹지 않으면 빈 슬롯은 "프리셋 7 비어 있음"으로 막힌다(드라이버 가드).
 6. **프리셋 실행 표시(#113)** — "프리셋 3 실행함"이 보였다가 5초쯤 뒤 "프리셋 선택…"으로 돌아오는지, 그 사이 목록을 닫아도 다시 실행되지 않는지. 이름 줄이 상태 카드의 어디(버전 줄 아래?)에 그려지는지.
-7. **활동 줄과 루틴 조건(#114)** — `pcActivity.summary`가 상태 카드의 어디에 그려지는지, 루틴 조건 목록에 "활동"이 병기 문구(`게임 (Game)`)로 나오는지, `activity.changed` 푸시 뒤 루틴이 바로 도는지.
+7. **앱 자식 장치와 루틴 조건(#123)** — 감시 목록을 저장하면 앱마다 자식 장치("Steam")가 생기는지(LAN 드라이버의 `try_create_device` EDGE_CHILD), 아이콘·방 배치, 대시보드 타일과 상세 줄이 "실행 중 (Running)" / "꺼짐 (Stopped)"으로 읽히는지, 루틴 조건에 "실행 상태"가 그 문구로 나오고 "실행 중이 되면 / 꺼짐이 되면"이 `activity.changed` 푸시 뒤 바로 도는지. 목록에서 빼면 자식이 지워지는지(`try_delete_device`, 못 지우면 offline + 메시지 줄 안내), PC를 지우면 자식도 지워지는지, 자식 이름을 바꾼 뒤에도 그대로인지, 자식의 이벤트 예산이 따로인지. PC 쪽 `pcApps.summary`("Steam 실행 중 · 외 1개")가 상태 카드의 어디에 그려지는지.
 8. **잠들지 않기 컴포넌트(#115)** — 프로필 컴포넌트의 `label: 잠들지 않기`가 패키징을 통과하고 화면에 그 이름으로 보이는지(안 되면 컴포넌트 id `awake`만 보인다), 토글이 상세 화면 어디에 그려지는지, 루틴 동작·조건 목록에 "잠들지 않기" 스위치가 따로 나오는지, 대시보드 타일의 토글이 여전히 main(전원)인지.
-9. **배터리 프로필 이동(#116)** — 노트북이 `pc-<style>-battery.v2`로 옮겨진 뒤 배터리 컴포넌트(`label: 배터리`)가 잔량·전원 공급원을 보여 주는지, 옮긴 직후의 빈 줄이 15초·90초 다시 칠하기로 채워지는지, 루틴 조건 "배터리 20% 이하"가 이 장치에서 고를 수 있는지. 데스크톱은 빈 카드 없이 `pc-<style>.v2`에 머무는지.
-10. **PC 메시지(#108, `pcToast`)** — 상세 화면에 "PC에 메시지 보내기" 입력 줄 하나가 우리 라벨로 그려지는지, 루틴 동작 목록에 같은 동작이 나오는지, `range [1, 200]`이 입력 길이를 막는지, 문구를 보낸 뒤 줄이 회전 표시 없이 끝나고 보낸 문구를 보여 주는지(`pcNotify`는 속성이 없어 "네트워크 오류"로 끝났다, 2026-10-01 — 이제 `lastMessage`로 답한다. 같은 문구 두 번, 거절된 문구도 오류 없이 끝나야 한다), 처음 줄 값이 "없음"인지, v2·v3·v4 장치가 첫 `init`에서 같은 아이콘·배터리 쪽의 v5로 옮겨지는지.
-11. **미디어 묶음 배치 비교(#118)** — 기본(main 안)과 `--media-component`(컴포넌트 `media`) 두 패키지로 그려 보고 깔끔한 쪽을 고른다. 두 배치의 프로필 이름이 같으므로(`pc*.v5`) 이미 v5에 올라탄 장치는 패키지를 바꿔도 화면이 굳어 있다(플랫폼 노트 "프로필과 화면 생성") — 배치마다 장치를 지우고 다시 추가해서 본다. 컴포넌트 쪽이면 템플릿의 `@media-*` 블록을 그 배치로 고정하고 프로필 버전을 올린다(pc.v6 — 장치 화면은 프로필 이름으로 굳으므로 같은 v5 이름으로 바꿔 올리면 반영되지 않는다).
+9. **배터리 프로필 이동(#116)** — 노트북이 `pc-<style>-battery.v2`로 옮겨진 뒤 배터리 컴포넌트(`label: 배터리`)가 잔량·전원 공급원을 보여 주는지, 옮긴 직후의 빈 줄이 다시 칠하기(착지 `infoChanged` 포함, #129)로 채워지는지, 루틴 조건 "배터리 20% 이하"가 이 장치에서 고를 수 있는지. 데스크톱은 빈 카드 없이 `pc-<style>.v2`에 머무는지.
+10. **PC 메시지(#108, `pcToast`)** — 상세 화면에 "PC에 메시지 보내기" 입력 줄 하나가 우리 라벨로 그려지는지, 루틴 동작 목록에 같은 동작이 나오는지, `range [1, 200]`이 입력 길이를 막는지, 문구를 보낸 뒤 줄이 회전 표시 없이 끝나고 보낸 문구를 보여 주는지(`pcNotify`는 속성이 없어 "네트워크 오류"로 끝났다, 2026-10-01 — 이제 `lastMessage`로 답한다. 같은 문구 두 번, 거절된 문구도 오류 없이 끝나야 한다), 처음 줄 값이 "없음"인지, v2–v5 장치가 첫 `init`에서 같은 아이콘·배터리 쪽의 v6으로 옮겨지는지.
+11. **미디어 묶음 배치 비교(#118)** — 기본(main 안)과 `--media-component`(컴포넌트 `media`) 두 패키지로 그려 보고 깔끔한 쪽을 고른다. 두 배치의 프로필 이름이 같으므로(`pc*.v6`) 이미 v6에 올라탄 장치는 패키지를 바꿔도 화면이 굳어 있다(플랫폼 노트 "프로필과 화면 생성") — 배치마다 장치를 지우고 다시 추가해서 본다. 컴포넌트 쪽이면 템플릿의 `@media-*` 블록을 그 배치로 고정하고 프로필 버전을 올린다(pc.v7 — 장치 화면은 프로필 이름으로 굳으므로 같은 v6 이름으로 바꿔 올리면 반영되지 않는다).
 12. **곡 정보·재생 상태(#118)** — `audioTrackData`의 제목·아티스트가 어떻게 그려지는지(자리표시 문구 "재생 중인 미디어 없음" 포함), 재생/일시정지 버튼이 `playbackStatus`에 따라 모양을 바꾸는지, `media.changed` 푸시 뒤 바로 바뀌는지.

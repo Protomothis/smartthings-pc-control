@@ -21,7 +21,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. `numbersystem53811.pcactivity`(kind 방식 앱 감지, Dev 채널의 `pc*.v5`, #123에서 `pcapps` + 자식 장치의 `pcapp`로 바뀜)는 개발 장치가 `pc*.v6`으로 옮겨진 뒤 지운다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
 
 ## 프로필과 화면 생성
 
@@ -110,6 +110,25 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - LAN 장치 메타데이터의 프로필 키는 `profile`이다.
 - cosock 소켓은 `reuseaddr` 옵션을 거부한다("unknown variant"). `timeout`·`keepalive`·`tcp-nodelay`만 받는다.
 - `EDGE_CHILD` 장치는 DNI를 지정할 수 없다.
+
+## 자식 장치 (EDGE_CHILD, #123)
+
+허브에서 직접 확인한 것과 lua_libs(api v13의 `st/driver.lua`·`st/device.lua` 소스)에서 읽은 것을 나눠 적는다. 앱 자식 장치(`src/apps.lua`, 설계 §4.2)가 이 위에 서 있다.
+
+- **허브에서 확인**(2026-09-22, #73의 모니터 자식): LAN 드라이버가 `driver:try_create_device{ type = "EDGE_CHILD", parent_device_id, parent_assigned_child_key, … }`로 자식을 만들 수 있다. `device_network_id`를 주면 허브가 경고하고 버린다 — 자식은 `parent_assigned_child_key`로 알아본다.
+- **소스에서 읽음**:
+  - `try_create_device`의 메타데이터 값은 **전부 문자열**이어야 하고(아니면 `error`), `type`·`label`·`profile`이 필수, EDGE_CHILD는 `parent_device_id`가 필수다. `vendor_provided_label`은 LAN에만 실린다(EDGE_CHILD에는 무시). 생성은 비동기다 — 장치는 나중에 `added` lifecycle로 온다.
+  - `driver:try_delete_device(device_uuid)`가 LAN·EDGE_CHILD 장치를 지운다. 지원하지 않는 허브에서는 `nil, "hub does not support device delete functionality"`를 돌려준다. `device:try_delete_device`라는 메서드는 없다(#81의 `remove_legacy_child`가 둘 다 시도하는 이유).
+  - 자식 장치 객체에는 `parent_device_id`와 `parent_assigned_child_key`가 있다. `device:get_child_list()`·`get_child_by_parent_assigned_key(key)`는 `driver:get_devices()`를 훑는다.
+  - `device:get_parent_device()`는 부모의 장치 정보를 막히는 호출로 가져올 수 있어 **`init`·`added` 안에서 쓰지 말라**고 적혀 있다. 그래서 드라이버는 이번 구동에서 본 부모를 메모리에 기억해 쓴다.
+  - `try_update_metadata`가 바꿀 수 있는 것은 `profile`·`provisioning_state`(LAN은 `manufacturer`·`model`·`vendor_provided_label`도)뿐이다. **라벨은 생성 뒤 드라이버가 바꿀 수 없다.**
+  - 자식의 lifecycle(`init`·`added`·`removed`·`infoChanged`·`doConfigure`)과 capability 명령은 부모와 같은 핸들러로 온다. 드라이버가 `parent_assigned_child_key`로 갈라야 한다.
+- **실측 대기**(Dev 채널): `try_delete_device`가 이 허브에서 실제로 지우는지(못 지우면 offline + 안내로 물러선다), 부모를 지울 때 자식이 함께 지워지는지(드라이버도 지우기를 요청한다), 자식 장치의 이벤트 예산이 장치마다 따로인지, 자식의 아이콘·방 배치, 자식의 health가 부모를 따라가는지.
+
+## 상태 캐시와 infoChanged (#129, 소스에서 읽음)
+
+- 장치 객체의 `state_cache`는 드라이버가 마지막으로 내보낸 값을 컴포넌트·capability·속성별로 담고 **재시작을 넘어 보존된다**(persistent store; 플래시 쓰기는 주기적이라 정전에는 잃을 수 있다). `device:get_latest_state(component, capability, attribute)`로 읽는다. 드라이버는 프로필이 그대로인 재시작의 첫 폴링에서 이것을 "이미 보낸 값"으로 쓴다(설계 §6.1).
+- `infoChanged` 핸들러의 `args.old_st_store`는 바뀌기 전 장치 기록이다. 그 `profile`(id·components)을 지금 `device.profile`과 비교하면 프로필이 바뀐 `infoChanged`인지 환경설정·라벨만 바뀐 것인지 가를 수 있다. 실제 허브에서 프로필 이전의 착지 때 id가 달라지는지는 실측 대기다.
 - 장치 health를 offline으로 두면 앱이 스위치를 회색으로 만들어 **Wake-on-LAN을 쓸 수 없다.** PC가 꺼진 것은 health가 아니라 `powerState`·`switch`로 표현하고 health는 online으로 유지한다.
 
 ## 이벤트 예산(rate limit)
@@ -124,4 +143,6 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
   - ⑵ **명령의 응답 폴링을 합친다.** 첫 명령은 바로 폴링하고 1.5초 창(`poll.ANSWER_WINDOW_SECONDS`)을 연다. 창 안에 들어온 명령들은 강제할 줄을 모아 창이 닫힐 때 폴링 한 번으로 답한다. 모든 명령의 줄이 한 창 안에 강제 응답을 받으므로 회전 표시 규칙(위 "값이 바뀌지 않는 명령은 회전 표시 뒤 오류로 끝난다")은 그대로다.
   - ⑶ **잃은 값을 되살린다.** 10분마다(`poll.RESYNC_SECONDS`), 그리고 10초 안에 명령이 셋 이상 오면 60초 뒤 한 번 더, 사용자가 보는 줄 여섯(main switch, `pcPower.powerState`, `audioMute.mute`, `audioVolume.volume`, `mediaPlayback.playbackStatus`, 잠들지 않기 switch)을 마지막으로 보낸 값 그대로 강제로 다시 보낸다. 위 #93 후속의 "같은 값을 주기적으로 다시 내보내지 않는다"가 막는 것은 몇 초 안의 연발이고, 이것은 창마다 한 번, 여섯 개다.
   - ⑷ 드라이버가 10초에 20개를 넘게 내면 logcat에 `event budget` 경고를 한 번 남긴다(버리지는 않는다).
-- 같은 측정 조건의 테스트(`tests/budget_test.lua`)에서 정기 폴링은 39 → 1개, 음소거 명령 넷은 156 → 12개(1.5초 안에 몰아치면 6개)다. 실행의 첫 폴링과 프로필 변경 뒤의 다시 칠하기(`repaint_soon`)는 여전히 줄 전부를 강제로 낸다 — 경고가 찍히는 것이 정상인 유일한 경우다.
+- 같은 측정 조건의 테스트(`tests/budget_test.lua`)에서 정기 폴링은 39 → 1개, 음소거 명령 넷은 156 → 12개(1.5초 안에 몰아치면 6개)다.
+- #129(W2)에서 남은 묶음도 줄였다: ⑴ 다시 칠하기(`repaint_soon`)는 줄마다 강제 한 번이고 15초·90초 후속은 바뀐 줄 + ⑶의 여섯 줄뿐, 10초 안의 두 번째 다시 칠하기는 다음 창으로 미룬다. ⑵ `infoChanged`는 프로필이 바뀌었을 때만 다시 칠한다. ⑶ 프로필이 그대로인 재시작의 첫 폴링은 허브 상태 캐시와 같은 값을 보내지 않는다(위 "상태 캐시"). ⑷ 전원·예약 명령도 응답 창을 함께 쓴다. 테스트 기준: 재시작 첫 폴링 42 → 6, 이전이 있는 구동 시작 83 → 49(후속 69 → 6씩), 환경설정만 바뀐 `infoChanged` 69 → 0.
+- 경고(20개/10초)가 찍히는 것이 정상인 경우는 **새 프로필의 첫 묶음**뿐이다(이전·아이콘·배터리 전환, 상태 캐시가 없는 첫 설치의 첫 폴링, 약 45개). 새 프로필의 클라우드 기록은 비어 있어 줄마다 한 번은 가야 하고, 여러 창으로 나누면 그동안 줄이 "-"이다. 측정에서 잃은 것은 8초에 230개였고, 그 전 드라이버가 명령 없이 30초마다 40개씩 낼 때의 손실은 기록되지 않았다 — 20개/10초는 플랫폼의 한도(모름)가 아니라 드라이버의 경고선이다.
