@@ -38,6 +38,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 보안 알림 `config_changed`에 `notify_pc.enabled`, `notify_pc.speak`와 바뀐 프리셋 슬롯(`presets[1,3]`, 슬롯 번호만)이 포함됩니다 (#106, #109)
 - 앱용 로컬 API `POST /api/notify/test`, `POST /api/presets/run`, `POST /api/presets/test` (#106, #109)
 - WebUI 설정 페이지에 PC 알림 허용·소리내어 읽기 스위치를 더했습니다 (#106)
+- 화면 끄기·켜기가 응답 없는 창 하나 때문에 끝나지 않던 문제를 고쳤습니다. PowerShell 없이 창마다 2초 제한으로 보내고, 켜기는 마우스 입력으로도 깨웁니다 (#121)
 
 ### 데스크톱 앱
 
@@ -53,6 +54,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - 새 **프리셋** 탭(네트워크와 로그 사이)의 편집기: 행마다 슬롯 · 이름 · 종류(프로그램 · URL · 스크립트) · 경로([찾아보기]) · 인자(한 줄, 공백으로 구분, 공백이 든 값은 따옴표) · [테스트] · 삭제. 최대 10개이고 저장 전에 규칙을 확인합니다 (#109)
 - 명령 탭에 저장된 프리셋의 [실행] 버튼(`1 · 게임 모드`)을 더했습니다 (#109)
 - Windows 알림이 배너로 뜨지 않던 문제: 시작 메뉴 바로가기로 앱 ID를 등록한다(시작 메뉴에 SmartThings PC Control이 생김). 앱 ID는 `Protomothis.SmartThingsPCControl`이고, 트레이 앱이 시작할 때와 PC 알림을 띄우기 직전에 바로가기를 만들거나(exe가 옮겨졌으면) 고칩니다. 유예 알림과 PC 알림 모두 이 ID로 띄웁니다. 서비스를 제거하면 바로가기도 지웁니다
+- 설정에서 포트를 바꾸고 서비스를 재시작하면 앱을 다시 켜지 않아도 새 포트로 다시 연결합니다. 알림의 [지금 실행]·[취소]도 바꾼 포트를 씁니다 (#121)
 
 ### 텔레그램
 
@@ -71,6 +73,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 
 - 사용자 세션 액션 채널을 만들었습니다. 서비스가 같은 exe의 숨은 하위 명령 `user-action`(audio · media · notify · preset)을 로그인한 사용자의 세션에서 셸 없이 실행하고, stdout 마지막 줄의 JSON(`{"ok":true,...}` / `{"ok":false,"error":"bad_args|unsupported|failed",...}`)을 읽습니다. 3초 안에 답이 없으면 종료시키고, 로그인한 사용자가 없으면 `no_user_session`으로 구분합니다. 트레이 하트비트는 선택 항목 `audio: {volume, muted, device}`를 받아 시각과 함께 보관합니다(더 새 값만 덮어씀). 실제 볼륨·미디어·알림·프리셋 동작은 #104 · #105 · #106 · #109에서 붙이며, 그 전까지 모든 동작은 `unsupported`로 답합니다 (#103)
 - `user-action notify`와 `preset` 처리기, 그리고 notify `--speak`가 띄우는 내부 하위 명령 `user-action speak --text … [--voice …]`를 붙였습니다. 서비스가 사용자 세션에 넘기는 환경 변수는 SYSTEM의 것이라, 프리셋이 띄우는 프로그램에는 `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경(APPDATA · TEMP · PATH …)을 줍니다. 새 의존성 `github.com/go-ole/go-ole`(SAPI COM 호출) (#106, #109)
+- Core Audio·WinRT vtable 호출 래퍼가 unsafe.Pointer 규칙을 어겨 스택 이동 때 메모리를 망가뜨릴 수 있던 것을 `//go:uintptrescapes`로 고쳤습니다 (#121)
 
 ## [v1.1.2] - 2026-09-28
 
