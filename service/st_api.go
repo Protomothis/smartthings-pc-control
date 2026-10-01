@@ -54,58 +54,21 @@ const (
 
 // ---- rate limiting (§3.1) --------------------------------------------------
 
-// stBucket is one source IP's token bucket: stRatePerSecond tokens per
-// second, burst stRatePerSecond.
-type stBucket struct {
-	tokens float64
-	last   time.Time
-}
+// stNow is time.Now, replaced by tests that drive the /st/v1 and SSDP
+// limiters.
+var stNow = time.Now
 
-var (
-	stBuckets   = map[string]*stBucket{}
-	stBucketsMu sync.Mutex
-	// stNow is time.Now, replaced by tests that drive the bucket.
-	stNow = time.Now
-)
+// stLimiter allows stRatePerSecond requests per source IP in any second.
+var stLimiter = newRateLimiter(stRatePerSecond, time.Second, func() time.Time { return stNow() })
 
 // stAllow reports whether ip may make one more request now.
 func stAllow(ip string) bool {
-	now := stNow()
-	stBucketsMu.Lock()
-	defer stBucketsMu.Unlock()
-
-	b, ok := stBuckets[ip]
-	if !ok {
-		// Keep the map from growing with every probing source: entries
-		// idle for a minute are worthless (they are full again anyway).
-		if len(stBuckets) > 256 {
-			for k, v := range stBuckets {
-				if now.Sub(v.last) > time.Minute {
-					delete(stBuckets, k)
-				}
-			}
-		}
-		stBuckets[ip] = &stBucket{tokens: stRatePerSecond - 1, last: now}
-		return true
-	}
-	b.tokens += now.Sub(b.last).Seconds() * stRatePerSecond
-	if b.tokens > stRatePerSecond {
-		b.tokens = stRatePerSecond
-	}
-	b.last = now
-	if b.tokens < 1 {
-		return false
-	}
-	b.tokens--
-	return true
+	ok, _ := stLimiter.allow(ip)
+	return ok
 }
 
-// resetSTRateLimit drops every bucket (tests, and a config reload).
-func resetSTRateLimit() {
-	stBucketsMu.Lock()
-	stBuckets = map[string]*stBucket{}
-	stBucketsMu.Unlock()
-}
+// resetSTRateLimit forgets every source (tests).
+func resetSTRateLimit() { stLimiter.reset() }
 
 // ---- hub last seen ---------------------------------------------------------
 

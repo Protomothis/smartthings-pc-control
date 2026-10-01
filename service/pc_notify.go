@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -95,49 +94,9 @@ func prepareNotify(title, text string) (string, string, error) {
 
 // ---- rate limit ---------------------------------------------------------
 
-// notifyLimiter allows pcNotifyPerMinute notifications per source in any
-// sliding window of pcNotifyWindow. now is injectable for the tests.
-type notifyLimiter struct {
-	mu   sync.Mutex
-	now  func() time.Time
-	hits map[string][]time.Time
-}
-
-func newNotifyLimiter(now func() time.Time) *notifyLimiter {
-	return &notifyLimiter{now: now, hits: map[string][]time.Time{}}
-}
-
-// allow records one notification from key, or reports how long until the
-// oldest one in the window expires.
-func (l *notifyLimiter) allow(key string) (bool, time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.now()
-	cutoff := now.Add(-pcNotifyWindow)
-	if len(l.hits) > 256 {
-		// Sources that went quiet are worthless; keep the map small.
-		for k, ts := range l.hits {
-			if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
-				delete(l.hits, k)
-			}
-		}
-	}
-	kept := l.hits[key][:0]
-	for _, t := range l.hits[key] {
-		if t.After(cutoff) {
-			kept = append(kept, t)
-		}
-	}
-	if len(kept) >= pcNotifyPerMinute {
-		l.hits[key] = kept
-		return false, kept[0].Sub(cutoff)
-	}
-	l.hits[key] = append(kept, now)
-	return true, 0
-}
-
-// pcNotifyLimits is the live limiter, replaced by the tests.
-var pcNotifyLimits = newNotifyLimiter(time.Now)
+// pcNotifyLimits allows pcNotifyPerMinute notifications per source in any
+// sliding window of pcNotifyWindow. Replaced by the tests.
+var pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 
 // ---- running -----------------------------------------------------------
 

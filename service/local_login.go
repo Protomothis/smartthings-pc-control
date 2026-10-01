@@ -55,7 +55,9 @@ var (
 var (
 	localSessionMu    sync.Mutex
 	localSessionToken string
-	localLoginLimiter windowLimiter
+	// localLoginLimiter is one global limit ("" key): localLoginMax
+	// attempts per localLoginWindow.
+	localLoginLimiter = newRateLimiter(localLoginMax, localLoginWindow, func() time.Time { return localLoginNow() })
 	// localLoginLastRefusal is the last refusal logged, so a tray that
 	// keeps asking costs one log line, not one per attempt.
 	localLoginLastRefusal string
@@ -205,7 +207,7 @@ func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
-	if !localLoginLimiter.allow(localLoginNow()) {
+	if ok, _ := localLoginLimiter.allow(""); !ok {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"status": "error", "code": "rate_limited", "message": "Too many attempts. Try again later."})
 		return
 	}
@@ -235,33 +237,4 @@ func noteLocalLoginRefusal(err error) {
 	if !repeat {
 		logMsg("Local login refused: %s", msg)
 	}
-}
-
-// windowLimiter allows at most localLoginMax events per localLoginWindow.
-type windowLimiter struct {
-	mu    sync.Mutex
-	times []time.Time
-}
-
-func (l *windowLimiter) allow(now time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	keep := l.times[:0]
-	for _, t := range l.times {
-		if now.Sub(t) < localLoginWindow {
-			keep = append(keep, t)
-		}
-	}
-	l.times = keep
-	if len(l.times) >= localLoginMax {
-		return false
-	}
-	l.times = append(l.times, now)
-	return true
-}
-
-func (l *windowLimiter) reset() {
-	l.mu.Lock()
-	l.times = nil
-	l.mu.Unlock()
 }
