@@ -75,3 +75,37 @@ func TestLocaleKeysUsedExist(t *testing.T) {
 		t.Errorf("found only %d literal lookups; is the pattern stale?", seen)
 	}
 }
+
+// The keys built at run time, which TestLocaleKeysUsedExist cannot see:
+// each family exists in both languages, with the verb the code fills in.
+func TestRuntimeLocaleKeysExist(t *testing.T) {
+	want := map[string]string{} // key -> a verb it must carry, or ""
+	for _, s := range []string{"playing", "paused", "stopped"} {
+		want["media."+s] = "" // media_card.go: "media." + status
+	}
+	for _, k := range []string{"st.rel.now", "st.search.fw.ok", "st.search.fw.missing"} {
+		want[k] = ""
+	}
+	for _, k := range []string{"st.rel.sec", "st.rel.min", "st.rel.hour", "st.rel.day"} {
+		want[k] = "%d"
+	}
+	for _, k := range []string{"slot", "name", "namelong", "type", "path", "quote", "args", "url", "urlargs", "abs", "exe", "script", "dup"} {
+		want["presets.err."+k] = "%d" // the row's slot
+	}
+	for _, code := range []string{"no_user_session", "notify_disabled", "rate_limited", "no_such_preset", "timeout", "unsupported", "service_too_old"} {
+		key := actionErrorKey(&actionError{Code: code})
+		if key == "" {
+			t.Errorf("action error %s has no text", code)
+			continue
+		}
+		want[key] = ""
+	}
+	for key, verb := range want {
+		for _, l := range []Lang{LangKo, LangEn} {
+			s, ok := messages[l][key]
+			if !ok || !strings.Contains(s, verb) {
+				t.Errorf("%s (%s) = %q: missing, or without %s", key, l, s, verb)
+			}
+		}
+	}
+}

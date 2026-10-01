@@ -127,16 +127,3 @@ func TestMediaErrorText(t *testing.T) {
 		}
 	}
 }
-
-// Every string the card uses exists in both languages.
-func TestMediaStringsTranslated(t *testing.T) {
-	for _, key := range []string{
-		"settings.nowplaying", "settings.nowplaying.hint", "media.title", "media.none", "media.playing",
-		"media.paused", "media.stopped", "media.audio.waiting", "media.reason.old", "media.reason.disabled",
-		"media.reason.nouser", "media.err.timeout", "media.err.unsupported", "media.err.failed",
-	} {
-		if messages[LangKo][key] == "" || messages[LangEn][key] == "" {
-			t.Errorf("%s is missing a translation", key)
-		}
-	}
-}

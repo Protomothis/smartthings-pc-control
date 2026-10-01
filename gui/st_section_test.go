@@ -476,26 +476,3 @@ func TestSTWoLMACRoundTrip(t *testing.T) {
 		t.Errorf("automatic saved %q, want \"\"", got)
 	}
 }
-
-func TestSTTranslations(t *testing.T) {
-	keys := []string{
-		"st.wol", "st.wol.auto", "st.wol.auto.none", "st.wol.adapter",
-		"st.wol.on", "st.wol.off", "st.wol.na", "st.wol.missing", "st.wol.hint",
-		"st.wol.loading", "st.wol.ready", "st.wol.notready", "st.wol.unsupported", "st.wol.none",
-		"network.wol.section", "st.section", "st.hub.loading", "st.hub.connected", "st.hub.none",
-		"st.rel.now", "st.rel.sec", "st.rel.min", "st.rel.hour", "st.rel.day", "st.rel.unknown",
-		"st.machineid", "st.machineid.unknown", "st.machineid.copy", "st.machineid.copied",
-		"st.search.loading", "st.search.on", "st.search.off", "st.search.fw.ok", "st.search.fw.missing",
-		"st.search.last", "st.search.none", "st.search.hint",
-		"st.session", "st.session.hint",
-		"st.session.user", "st.session.user.hint",
-		"st.hubs", "st.hubs.add", "st.hubs.remove", "st.hubs.empty", "st.hubs.hint", "st.secret.hint",
-	}
-	for _, key := range keys {
-		for _, l := range []Lang{LangKo, LangEn} {
-			if T(l, key) == key {
-				t.Errorf("missing %s translation for %s", l, key)
-			}
-		}
-	}
-}

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 func TestNormalizeActivity(t *testing.T) {
@@ -29,8 +31,8 @@ func TestNormalizeActivity(t *testing.T) {
 }
 
 func TestActivityProblem(t *testing.T) {
-	if activityMaxWatch != 10 {
-		t.Fatalf("activityMaxWatch = %d, the service caps at 10", activityMaxWatch)
+	if activityMaxWatch != config.ActivityMaxWatch {
+		t.Fatalf("activityMaxWatch = %d, the service caps at %d", activityMaxWatch, config.ActivityMaxWatch)
 	}
 	many := make([]ActivityWatch, 11)
 	for i := range many {
@@ -212,36 +214,5 @@ func TestClientRunningProcesses(t *testing.T) {
 	got, err := c.RunningProcesses()
 	if err != nil || !slices.Equal(got, []string{"Code.exe", "steam.exe"}) {
 		t.Errorf("RunningProcesses = %v, %v", got, err)
-	}
-}
-
-func TestActivityTranslations(t *testing.T) {
-	keys := []string{
-		"activity.toggle", "activity.hint", "activity.watch", "activity.priority", "activity.watch.hint",
-		"activity.col.process", "activity.col.label", "activity.ph.label",
-		"activity.add", "activity.pick", "activity.empty",
-		"activity.pick.title", "activity.pick.search", "activity.pick.hint", "activity.pick.none",
-		"activity.pick.close", "activity.pick.fail",
-		"activity.err.max", "activity.err.process", "activity.err.path", "activity.err.exe",
-		"activity.err.label", "activity.err.dup",
-	}
-	for _, key := range keys {
-		for _, l := range []Lang{LangKo, LangEn} {
-			if T(l, key) == key {
-				t.Errorf("missing %s translation for %s", l, key)
-			}
-		}
-	}
-	// The kind selector is gone, and so are its strings.
-	for _, key := range []string{"activity.col.kind", "activity.err.kind", "activity.kind.game", "activity.kind.other"} {
-		if T(LangKo, key) != key {
-			t.Errorf("%s is still translated", key)
-		}
-	}
-	if !strings.Contains(T(LangKo, "activity.priority"), "위에 있을수록 우선") {
-		t.Errorf("priority hint = %q", T(LangKo, "activity.priority"))
-	}
-	if !strings.Contains(T(LangKo, "activity.watch.hint"), "최대 10개") {
-		t.Errorf("watch hint = %q", T(LangKo, "activity.watch.hint"))
 	}
 }

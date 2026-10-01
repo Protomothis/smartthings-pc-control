@@ -24,11 +24,3 @@ func TestNotifyPCStateRoundTrip(t *testing.T) {
 		t.Errorf("applyTo off = %+v", cfg)
 	}
 }
-
-func TestNotifyTestStringsTranslated(t *testing.T) {
-	for _, key := range []string{"notifypc.test", "notifypc.test.sending", "notifypc.test.shown"} {
-		if T(LangKo, key) == key || T(LangEn, key) == key {
-			t.Errorf("%s is not translated", key)
-		}
-	}
-}
