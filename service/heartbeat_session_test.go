@@ -7,9 +7,12 @@ package service
 // the reported state back to unmuted within 20 seconds.
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,7 +119,8 @@ func TestHeartbeatWithoutSessionIDStored(t *testing.T) {
 }
 
 // The target is the session findUserSession picks — the one runUserAction
-// runs the commands in: the console over an RDP login.
+// runs the commands in: the console over an RDP login while neither is
+// known to be unlocked.
 func TestHeartbeatTargetIsCommandSession(t *testing.T) {
 	sessionHeartbeatSetup(t)
 	fakeWTS(t, 1, []wtsSession{{2, windows.WTSActive}}, nil, map[uint32]error{1: nil, 2: nil})
@@ -125,6 +129,73 @@ func TestHeartbeatTargetIsCommandSession(t *testing.T) {
 	}
 	if status, _ := heartbeatStatus(t, `{"idle_seconds":5,"session_id":1}`); status != "ok" {
 		t.Errorf("console session: status = %q, want ok", status)
+	}
+}
+
+// captureLog sends logMsg to a buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	logMu.Lock()
+	saved := logger
+	logger = log.New(&buf, "", 0)
+	logMu.Unlock()
+	t.Cleanup(func() {
+		logMu.Lock()
+		logger = saved
+		logMu.Unlock()
+	})
+	return &buf
+}
+
+// v1.2.0-rc7: next to a locked console the unlocked RDP session is the
+// target, so its tray app's heartbeat is stored and the locked console's
+// is not. Locking and unlocking the RDP session moves the target back and
+// forth, each move dropping the samples once and logging once.
+func TestHeartbeatFromUnlockedRDPAccepted(t *testing.T) {
+	sessionHeartbeatSetup(t)
+	logs := captureLog(t)
+	fakeWTS(t, 1, []wtsSession{{1, windows.WTSActive}, {2, windows.WTSActive}}, nil, map[uint32]error{1: nil, 2: nil})
+	locks := map[uint32]bool{1: true, 2: false}
+	fakeLocks(t, locks)
+
+	if status, _ := heartbeatStatus(t, `{`+fullBeat+`,"session_id":2}`); status != "ok" {
+		t.Errorf("unlocked RDP tray: status = %q, want ok", status)
+	}
+	if s, ok := currentAudio(); !ok || s.Device != "원격 오디오" {
+		t.Errorf("audio = %+v, %v; want the RDP session's", s, ok)
+	}
+	if status, reason := heartbeatStatus(t, `{"idle_seconds":900,"session_id":1}`); status != "ignored" || reason != "other_session" {
+		t.Errorf("locked console tray: reply = %s/%s, want ignored/other_session", status, reason)
+	}
+	if idle, _ := lastIdleSeconds(); idle != 42 {
+		t.Errorf("idle = %d: the locked console overwrote the RDP session's 42", idle)
+	}
+	// Repeated lookups with nothing changing log nothing.
+	for range 5 {
+		heartbeatStatus(t, `{"idle_seconds":42,"session_id":2}`)
+	}
+	if n := strings.Count(logs.String(), "user session changed"); n != 0 {
+		t.Errorf("%d target changes logged while nothing changed:\n%s", n, logs)
+	}
+
+	// The RDP user locks too: nobody is unlocked, the console is the target.
+	locks[2] = true
+	if status, _ := heartbeatStatus(t, `{"idle_seconds":900,"session_id":1}`); status != "ok" {
+		t.Errorf("all locked: console tray status = %q, want ok", status)
+	}
+	if _, ok := currentAudio(); ok {
+		t.Error("the RDP session's audio survived the move to the console")
+	}
+	// And unlocks again.
+	locks[2] = false
+	heartbeatStatus(t, `{"idle_seconds":3,"session_id":2}`)
+	heartbeatStatus(t, `{"idle_seconds":4,"session_id":2}`)
+	if idle, ok := lastIdleSeconds(); !ok || idle != 4 {
+		t.Errorf("after the unlock: idle = %d, %v; want 4", idle, ok)
+	}
+	if n := strings.Count(logs.String(), "user session changed"); n != 2 {
+		t.Errorf("%d target changes logged, want 2 (2→1, 1→2):\n%s", n, logs)
 	}
 }
 

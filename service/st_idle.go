@@ -200,11 +200,11 @@ func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.SessionID != nil {
 		if target, err := heartbeatTargetSession(); err == nil && target != *body.SessionID {
-			// The commands run in target (findUserSession prefers the
-			// console), so this session's idle time, volume and media say
-			// nothing about what they did: a tray app in an RDP session
-			// next to a locked console would undo every mute within one
-			// heartbeat. 200, so the tray app neither retries nor logs in
+			// The commands run in target (findUserSession: the unlocked
+			// session, else the console), so this session's idle time,
+			// volume and media say nothing about what they did: the tray
+			// app of a session nobody acts on would undo every mute within
+			// one heartbeat. 200, so the tray app neither retries nor logs in
 			// again; the reason tells it why nothing was stored.
 			noteIgnoredHeartbeat(*body.SessionID, target)
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "other_session"})
@@ -245,10 +245,12 @@ var (
 
 // targetUserSession is getActiveUserSessionID — the same findUserSession
 // that runUserAction's commands go through — which also notices the target
-// moving to another session (the console user logging on next to an RDP
-// login, say). The idle, audio and media samples then describe a session
-// nothing acts on any more and are forgotten: the audio store has no TTL,
-// so they would otherwise be reported until the next command. The lookup
+// moving to another session (a logon or logoff, or — since the unlocked
+// session wins — one session being locked or unlocked next to another).
+// The change is logged once, not on every lookup. The idle, audio and
+// media samples then describe a session nothing acts on any more and are
+// forgotten: the audio store has no TTL, so they would otherwise be
+// reported until the next command. The lookup
 // is a few WTS calls, cheap enough for every heartbeat and status read.
 func targetUserSession() (uint32, error) {
 	id, err := getActiveUserSessionID()
