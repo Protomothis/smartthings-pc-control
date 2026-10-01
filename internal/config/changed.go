@@ -1,42 +1,124 @@
 package config
 
-import "slices"
+import (
+	"fmt"
+	"reflect"
+	"strings"
+)
+
+// auditedKeys are the security-relevant settings that security.config_changed
+// reports, as config.json paths, in the order the notification lists them.
+// Each path is resolved through the json tags (auditedFields), so a key
+// name can never drift from the file; TestEveryKeyIsClassified makes sure a
+// new setting is either here or in notAuditedKeys.
+//
+// What the hub learns about running programs (activity.*) is
+// privacy-relevant too, and PC notifications and presets let the network
+// act in the user's session (#106, #109). presets is reported separately,
+// by slot (PresetChangeKey), never with what a slot runs.
+var auditedKeys = []string{
+	"secret",
+	"port",
+	"webui_remote",
+	"telegram.enabled",
+	"telegram.bot_token",
+	"telegram.chat_id",
+	"telegram.control_enabled",
+	"telegram.allowed_chat_ids",
+	"telegram.detail",
+	"telegram.lang",
+	"telegram.pc_name",
+	"telegram.quiet_hours",
+	"smartthings.allowed_hubs",
+	"smartthings.expose_session",
+	"smartthings.expose_session_user",
+	"smartthings.wol_mac",
+	"activity.enabled",
+	"activity.watch",
+	"media.enabled",
+	"media.now_playing",
+	"notify_pc.enabled",
+}
+
+// auditedField is one auditedKeys entry resolved to its struct field.
+type auditedField struct {
+	key   string
+	index []int
+}
+
+// auditedFields is auditedKeys resolved once; a path that names no field
+// panics at start-up, so every test of the package catches a typo.
+var auditedFields = func() []auditedField {
+	t := reflect.TypeFor[Config]()
+	out := make([]auditedField, 0, len(auditedKeys))
+	for _, key := range auditedKeys {
+		index, err := jsonFieldIndex(t, key)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, auditedField{key: key, index: index})
+	}
+	return out
+}()
+
+// jsonFieldIndex finds the field a dotted config.json path names.
+func jsonFieldIndex(t reflect.Type, path string) ([]int, error) {
+	var index []int
+	for _, name := range strings.Split(path, ".") {
+		if t.Kind() != reflect.Struct {
+			return nil, fmt.Errorf("config: %q: %s is not an object", path, t)
+		}
+		found := false
+		for i := range t.NumField() {
+			f := t.Field(i)
+			if jsonName(f) == name {
+				index = append(index, i)
+				t = f.Type
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("config: %q names no field", path)
+		}
+	}
+	return index, nil
+}
+
+// jsonName is a field's key in config.json.
+func jsonName(f reflect.StructField) string {
+	name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+	return name
+}
+
+// sameValue compares two settings: lists element by element (a missing
+// list equals an empty one, like slices.Equal), everything else with ==.
+func sameValue(a, b reflect.Value) bool {
+	if a.Kind() == reflect.Slice {
+		if a.Len() != b.Len() {
+			return false
+		}
+		for i := range a.Len() {
+			if !a.Index(i).Equal(b.Index(i)) {
+				return false
+			}
+		}
+		return true
+	}
+	return a.Equal(b)
+}
 
 // ChangedKeys lists the security-relevant settings that differ between
 // old and new, for the security.config_changed event. Values are never
 // included — only key names.
 func ChangedKeys(old, new Config) []string {
 	var keys []string
-	add := func(key string, changed bool) {
-		if changed {
-			keys = append(keys, key)
+	o, n := reflect.ValueOf(old), reflect.ValueOf(new)
+	for _, f := range auditedFields {
+		if !sameValue(o.FieldByIndex(f.index), n.FieldByIndex(f.index)) {
+			keys = append(keys, f.key)
 		}
 	}
-	add("secret", old.Secret != new.Secret)
-	add("port", old.Port != new.Port)
-	add("webui_remote", old.WebUIRemote != new.WebUIRemote)
-	add("telegram.enabled", old.Telegram.Enabled != new.Telegram.Enabled)
-	add("telegram.bot_token", old.Telegram.BotToken != new.Telegram.BotToken)
-	add("telegram.chat_id", old.Telegram.ChatID != new.Telegram.ChatID)
-	add("telegram.control_enabled", old.Telegram.ControlEnabled != new.Telegram.ControlEnabled)
-	add("telegram.allowed_chat_ids", !slices.Equal(old.Telegram.AllowedChatIDs, new.Telegram.AllowedChatIDs))
-	add("telegram.detail", old.Telegram.Detail != new.Telegram.Detail)
-	add("telegram.lang", old.Telegram.Lang != new.Telegram.Lang)
-	add("telegram.pc_name", old.Telegram.PCName != new.Telegram.PCName)
-	add("telegram.quiet_hours", old.Telegram.QuietHours != new.Telegram.QuietHours)
-	add("smartthings.allowed_hubs", !slices.Equal(old.SmartThings.AllowedHubs, new.SmartThings.AllowedHubs))
-	add("smartthings.expose_session", old.SmartThings.ExposeSession != new.SmartThings.ExposeSession)
-	add("smartthings.expose_session_user", old.SmartThings.ExposeSessionUser != new.SmartThings.ExposeSessionUser)
-	add("smartthings.wol_mac", old.SmartThings.WoLMAC != new.SmartThings.WoLMAC)
-	// What the hub learns about running programs is privacy-relevant too.
-	add("activity.enabled", old.Activity.Enabled != new.Activity.Enabled)
-	add("activity.watch", !slices.Equal(old.Activity.Watch, new.Activity.Watch))
-	add("media.enabled", old.Media.Enabled != new.Media.Enabled)
-	add("media.now_playing", old.Media.NowPlaying != new.Media.NowPlaying)
-	// PC notifications and presets let the network act in the user's
-	// session (#106, #109); a preset change names its slots, never what
-	// they run.
-	add("notify_pc.enabled", old.NotifyPC.Enabled != new.NotifyPC.Enabled)
 	if slots := ChangedPresetSlots(old.Presets, new.Presets); len(slots) > 0 {
 		keys = append(keys, PresetChangeKey(slots))
 	}
