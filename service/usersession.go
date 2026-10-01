@@ -21,6 +21,11 @@ var modWtsapi32 = syscall.NewLazyDLL("wtsapi32.dll")
 // Callers test for it with errors.Is and answer 409 no_user_session.
 var errNoUserSession = errors.New("no_user_session")
 
+// errNoConsoleSession means the session attached to the physical console
+// has nobody logged in: the logon screen, or the console between sessions.
+// Only the console-pinned lookup (findConsoleUserSession) returns it.
+var errNoConsoleSession = errors.New("no_console_session")
+
 // errorNoToken is ERROR_NO_TOKEN, what WTSQueryUserToken returns for a
 // session nobody is logged into (the logon screen, a logging-off session).
 const errorNoToken = windows.ERROR_NO_TOKEN
@@ -152,6 +157,62 @@ func findUserSession() (uint32, syscall.Token, error) {
 	return 0, 0, fmt.Errorf("%w: no session has a logged-in user", errNoUserSession)
 }
 
+// findConsoleUserSession returns the session attached to the physical
+// console — the one WTSGetActiveConsoleSessionId names, whose desktop is on
+// the real monitor — and a primary token for its user; the caller closes
+// the token. Unlike findUserSession it ignores the lock state and never
+// picks another session: an RDP session's display is virtual, so a monitor
+// power broadcast there does nothing to the screen on the desk.
+//
+// A console nobody is logged into (the logon screen) is
+// errNoConsoleSession, even when an RDP session has a user. Reaching the
+// logon screen anyway would mean starting a SYSTEM process on its Winlogon
+// desktop — far more privilege than a screen command is worth — and
+// Windows already turns the monitor off there on its own timeout.
+func findConsoleUserSession() (uint32, syscall.Token, error) {
+	console := wtsActiveConsoleSession()
+	// Session 0 is the services' own and never the console since Vista.
+	if console == noConsoleSession || console == 0 {
+		return 0, 0, fmt.Errorf("%w: no session is attached to the console", errNoConsoleSession)
+	}
+	t, err := wtsQueryUserToken(console)
+	if errors.Is(err, errorNoToken) {
+		return 0, 0, fmt.Errorf("%w: console session %d has no logged-in user", errNoConsoleSession, console)
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("WTSQueryUserToken(session %d): %w", console, err)
+	}
+	return console, syscall.Token(t), nil
+}
+
+// sessionTarget says which session a user-session command runs in.
+type sessionTarget int
+
+const (
+	// sessionActiveUser is findUserSession's choice: the target every
+	// command, the heartbeat filter and the status follow.
+	sessionActiveUser sessionTarget = iota
+	// sessionConsole is findConsoleUserSession's: the session on the
+	// physical monitor, for the screen commands only.
+	sessionConsole
+)
+
+func (t sessionTarget) String() string {
+	if t == sessionConsole {
+		return "console"
+	}
+	return "active user"
+}
+
+// find looks the target session up and returns it with a primary token
+// the caller closes.
+func (t sessionTarget) find() (uint32, syscall.Token, error) {
+	if t == sessionConsole {
+		return findConsoleUserSession()
+	}
+	return findUserSession()
+}
+
 // userSessionWaitDelay bounds how long a waited-for user-session command
 // may keep its output pipes open after it exited or was killed — a
 // grandchild that inherited them must not keep CombinedOutput blocked.
@@ -168,16 +229,17 @@ func getActiveUserSessionID() (uint32, error) {
 	return id, nil
 }
 
-// userSessionCommand builds an exec.Cmd that runs under the active user's
-// token, i.e. inside their interactive desktop session. The caller must
-// Close the returned token once the process has been started. The command
-// is killed when ctx is done (exec.CommandContext), and the error wraps
-// errNoUserSession when nobody is logged in.
-func userSessionCommand(ctx context.Context, name string, args ...string) (*exec.Cmd, syscall.Token, error) {
+// userSessionCommand builds an exec.Cmd that runs under the token of the
+// target session's user, i.e. inside their interactive desktop session.
+// The caller must Close the returned token once the process has been
+// started. The command is killed when ctx is done (exec.CommandContext),
+// and the error wraps errNoUserSession (errNoConsoleSession for
+// sessionConsole) when nobody is logged in there.
+func userSessionCommand(ctx context.Context, target sessionTarget, name string, args ...string) (*exec.Cmd, syscall.Token, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err
 	}
-	_, token, err := findUserSession()
+	_, token, err := target.find()
 	if err != nil {
 		return nil, 0, fmt.Errorf("get session: %w", err)
 	}
@@ -189,14 +251,14 @@ func userSessionCommand(ctx context.Context, name string, args ...string) (*exec
 	return cmd, token, nil
 }
 
-// outputInUserSession executes a command in the active user's desktop
+// outputInUserSession executes a command in the target user's desktop
 // session (Session 0 isolation keeps the service off the interactive
 // desktop), waits for it and returns the combined output. The child is
 // killed when ctx is done. The output is returned even when the command
 // fails, since a failing child may still have said why on stdout —
 // user-action does exactly that.
-func outputInUserSession(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd, token, err := userSessionCommand(ctx, name, args...)
+func outputInUserSession(ctx context.Context, target sessionTarget, name string, args ...string) ([]byte, error) {
+	cmd, token, err := userSessionCommand(ctx, target, name, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +276,7 @@ func outputInUserSession(ctx context.Context, name string, args ...string) ([]by
 // session without waiting for it. Used for long-lived processes such as the
 // tray app, where waiting would pin a goroutine for the app's lifetime.
 func startInUserSession(name string, args ...string) error {
-	cmd, token, err := userSessionCommand(context.Background(), name, args...)
+	cmd, token, err := userSessionCommand(context.Background(), sessionActiveUser, name, args...)
 	if err != nil {
 		return err
 	}

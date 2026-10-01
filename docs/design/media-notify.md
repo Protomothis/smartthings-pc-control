@@ -62,6 +62,12 @@
   SC_MONITORPOWER, 2|-1, SMTO_ABORTIFHUNG, 2000ms)`라 응답 없는 창 하나에 막히지 않는다(예전 PowerShell `SendMessage`는
   영원히 막혔다). `on`은 먼저 움직임 0의 마우스 입력을 보낸다 — `-1`을 무시하는 모니터도 입력에는 깨어난다.
   창 하나가 시간을 넘긴 것은 실패가 아니다(모니터는 처음 처리한 창에서 이미 반응).
+  **세션은 늘 실제 모니터가 붙은 콘솔**(`WTSGetActiveConsoleSessionId`)이다 — 아래 "잠기지 않은 세션" 규칙의 예외.
+  RDP 세션의 화면은 가상이라 거기서 보내면 책상 위 모니터는 그대로다. 콘솔이 잠겨 있어도 그 세션에서 보낸다.
+  콘솔이 로그온 화면(토큰 없음)이거나 분리 중이면 RDP 사용자가 있어도 `no_console_session`으로 실패하고 `display`는
+  그대로 둔다(로그온 화면의 Winlogon 데스크톱에는 SYSTEM 프로세스를 띄워야 하는데 화면 명령에 쓸 권한이 아니고,
+  그 화면에서는 Windows가 스스로 모니터를 끈다). 이 실행은 대상 세션 기록(`observeTargetSession`)과 audio·media
+  저장값을 건드리지 않는다(`runUserActionIn(sessionConsole, …)`).
 - 사용자 세션의 자식은 서비스(SYSTEM)의 환경 변수를 물려받는다. 프리셋이 띄우는 프로그램에는
   `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경을 준다(#109).
 - 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).
