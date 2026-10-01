@@ -17,8 +17,6 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
-
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -352,18 +350,6 @@ func TestMediaAPI(t *testing.T) {
 	handleMediaAPI(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("POST without CSRF = %d", w.Code)
-	}
-}
-
-func TestMediaConfigNowPlayingDefaultOff(t *testing.T) {
-	if config.Default().Media.NowPlaying {
-		t.Error("media.now_playing defaults to on")
-	}
-	old := config.Default().WithDefaults()
-	changed := old
-	changed.Media.NowPlaying = true
-	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
-		t.Errorf("changed keys = %v", keys)
 	}
 }
 

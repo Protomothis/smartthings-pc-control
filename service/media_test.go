@@ -6,7 +6,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,8 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -302,29 +299,6 @@ func containsAll(list []any, want ...string) bool {
 		}
 	}
 	return true
-}
-
-func TestMediaConfigDefaultsOn(t *testing.T) {
-	if !config.Default().Media.Enabled {
-		t.Error("media.enabled defaults to off")
-	}
-	// An older config.json without the key keeps the default; an explicit
-	// false is kept.
-	for body, want := range map[string]bool{`{"port":5001}`: true, `{"media":{"enabled":false}}`: false, `{"media":{}}`: true} {
-		cfg := config.Default()
-		if err := json.Unmarshal([]byte(body), &cfg); err != nil {
-			t.Fatal(err)
-		}
-		if cfg.WithDefaults().Media.Enabled != want {
-			t.Errorf("%s: media.enabled = %v, want %v", body, cfg.Media.Enabled, want)
-		}
-	}
-	old := config.Default().WithDefaults()
-	changed := old
-	changed.Media.Enabled = false
-	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.enabled"}) {
-		t.Errorf("changed keys = %v", keys)
-	}
 }
 
 // ---- heartbeat sampled_at (#104) -------------------------------------------

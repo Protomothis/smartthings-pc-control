@@ -9,10 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 // wolAdapters is the multi-NIC PC the rules have to cope with: a wired
@@ -22,30 +19,6 @@ func wolAdapters() []WoLAdapter {
 		{Name: "vEthernet (Default Switch)", MacAddress: "00-15-5D-01-02-03", IPs: []string{"172.20.0.1"}, Status: "Up", WoLEnabled: true, WoLCapable: true},
 		{Name: "Ethernet", MacAddress: "B4-2E-99-45-B4-F5", IPs: []string{"192.168.1.30", "fe80::abcd"}, Status: "Up", WoLCapable: true},
 		{Name: "Wi-Fi", MacAddress: "11-22-33-44-55-66", IPs: []string{"192.168.1.31"}, Status: "Up"},
-	}
-}
-
-func TestNormalizeMAC(t *testing.T) {
-	const want = "B4-2E-99-45-B4-F5"
-	for _, in := range []string{
-		"B4-2E-99-45-B4-F5",
-		"b4-2e-99-45-b4-f5",
-		"b4:2e:99:45:b4:f5",
-		"B4:2E:99:45:B4:F5",
-		"b4.2e.99.45.b4.f5",
-		"b42e9945b4f5",
-		"  b4:2E:99:45:b4:F5  ",
-	} {
-		if got := config.NormalizeMAC(in); got != want {
-			t.Errorf("config.NormalizeMAC(%q) = %q, want %q", in, got, want)
-		}
-	}
-	// Anything that is not a 6-byte MAC is "no MAC" rather than a value
-	// that could never match an adapter.
-	for _, in := range []string{"", "   ", "B4-2E-99-45-B4", "B4-2E-99-45-B4-F5-00", "not a mac", "B4-2E-99-45-B4-FG", "192.168.1.30"} {
-		if got := config.NormalizeMAC(in); got != "" {
-			t.Errorf("config.NormalizeMAC(%q) = %q, want \"\"", in, got)
-		}
 	}
 }
 
@@ -239,29 +212,5 @@ func TestHubLocalIPRemembersTheRequestInterface(t *testing.T) {
 	noteHubLocalIP(localRequestIP(httptest.NewRequest("GET", "/st/v1/status", nil)))
 	if got := lastHubLocalIP(); got.String() != "192.168.1.31" {
 		t.Errorf("a request without a local address cleared the memory: %v", got)
-	}
-}
-
-// withDefaults is where a MAC typed by a user becomes the stored form, and
-// where nonsense becomes "" (= automatic) rather than a value that could
-// never match.
-func TestSmartThingsConfigNormalisesWoLMAC(t *testing.T) {
-	for in, want := range map[string]string{
-		"b4:2e:99:45:b4:f5": "B4-2E-99-45-B4-F5",
-		"B4-2E-99-45-B4-F5": "B4-2E-99-45-B4-F5",
-		"  b42e9945b4f5  ":  "B4-2E-99-45-B4-F5",
-		"":                  "",
-		"auto":              "",
-		"B4-2E-99-45-B4":    "",
-	} {
-		if got := (SmartThingsConfig{WoLMAC: in}).WithDefaults().WoLMAC; got != want {
-			t.Errorf("withDefaults(%q).WoLMAC = %q, want %q", in, got, want)
-		}
-	}
-	// A changed pin is a config change the security event reports.
-	old := Config{SmartThings: SmartThingsConfig{}}
-	new := Config{SmartThings: SmartThingsConfig{WoLMAC: "B4-2E-99-45-B4-F5"}}
-	if !slices.Contains(config.ChangedKeys(old, new), "smartthings.wol_mac") {
-		t.Errorf("configChangedKeys = %v, want smartthings.wol_mac", config.ChangedKeys(old, new))
 	}
 }

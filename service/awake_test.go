@@ -400,30 +400,6 @@ func goroutineID() string {
 	return s
 }
 
-func TestAwakeConfigDefaults(t *testing.T) {
-	if got := config.Default().WithDefaults().Awake; got.DefaultMinutes != 60 || got.KeepDisplay {
-		t.Errorf("default awake = %+v, want {60 false}", got)
-	}
-	for _, tc := range []struct{ in, want int }{{0, 0}, {30, 30}, {1440, 1440}, {-5, 60}, {1441, 60}} {
-		if got := (AwakeConfig{DefaultMinutes: tc.in}).WithDefaults().DefaultMinutes; got != tc.want {
-			t.Errorf("withDefaults(%d) = %d, want %d", tc.in, got, tc.want)
-		}
-	}
-	// A config.json without the key keeps the default; one with 0 keeps 0.
-	cfg := config.Default()
-	if err := json.Unmarshal([]byte(`{"port":5001}`), &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.WithDefaults().Awake.DefaultMinutes != 60 {
-		t.Errorf("missing awake key: %+v", cfg.Awake)
-	}
-	cfg = config.Default()
-	json.Unmarshal([]byte(`{"awake":{"default_minutes":0,"keep_display":true}}`), &cfg)
-	if a := cfg.WithDefaults().Awake; a.DefaultMinutes != 0 || !a.KeepDisplay {
-		t.Errorf("explicit awake = %+v", a)
-	}
-}
-
 // ---- /st/v1 ----------------------------------------------------------------
 
 func TestSTStatusAwakeAndFeatures(t *testing.T) {

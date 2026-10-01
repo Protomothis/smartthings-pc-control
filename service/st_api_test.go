@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
-
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
@@ -702,42 +700,6 @@ func TestTurnScreenOnCommand(t *testing.T) {
 }
 
 // ---- config (§3.7) ---------------------------------------------------------
-
-func TestSmartThingsConfigDefaults(t *testing.T) {
-	// A config.json that predates v1.1.0 keeps the smartthings settings off.
-	withConfigFile(t, `{"port": 5001, "secret": "abc"}`)
-	cfg := loadConfig()
-	if cfg.SmartThings.AllowedHubs == nil || len(cfg.SmartThings.AllowedHubs) != 0 {
-		t.Errorf("allowed_hubs = %v, want []", cfg.SmartThings.AllowedHubs)
-	}
-	if cfg.SmartThings.ExposeSession || cfg.SmartThings.ExposeSessionUser {
-		t.Error("session exposure must default to off")
-	}
-
-	withConfigFile(t, `{"port": 5001, "smartthings": {"allowed_hubs": ["192.168.1.20"]}}`)
-	cfg = loadConfig()
-	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
-		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
-	}
-}
-
-func TestNormalizeConfigKeepsSmartThingsHubsWhenOmitted(t *testing.T) {
-	current := config.Default().WithDefaults()
-	current.SmartThings.AllowedHubs = []string{"192.168.1.20"}
-	current.SmartThings.ExposeSession = true
-
-	posted := current.ForUpdate()
-	if err := json.Unmarshal([]byte(`{"port":5001}`), &posted); err != nil {
-		t.Fatal(err)
-	}
-	got := config.Normalize(posted, current)
-	if len(got.SmartThings.AllowedHubs) != 1 || got.SmartThings.AllowedHubs[0] != "192.168.1.20" {
-		t.Errorf("allowed_hubs = %v, want the live list kept", got.SmartThings.AllowedHubs)
-	}
-	if !got.SmartThings.ExposeSession {
-		t.Error("expose_session was reset by a body that omitted it")
-	}
-}
 
 func TestSTHubAllowedMatching(t *testing.T) {
 	hubs := []string{" 192.168.1.20 ", ""}

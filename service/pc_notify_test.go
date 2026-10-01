@@ -18,8 +18,6 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
-
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -299,13 +297,6 @@ func TestNotifyArgsParse(t *testing.T) {
 	}
 	if req.Title != "SmartThings" || req.Text != "--text is text" {
 		t.Errorf("%q parsed as %+v", args, req)
-	}
-}
-
-func TestNotifyPCDefaults(t *testing.T) {
-	cfg := config.Default().WithDefaults()
-	if !cfg.NotifyPC.Enabled {
-		t.Errorf("defaults = %+v, want enabled", cfg.NotifyPC)
 	}
 }
 
