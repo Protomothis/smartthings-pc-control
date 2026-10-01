@@ -372,8 +372,12 @@ PC가 내보내는 정보 — *세션 정보 노출(잠금·유휴)*, *사용자
 ```
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
-  src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               현재 프로필 20개 pc*-v2.yml(생성물)과 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
+  src/                    Lua 모듈 (설계·모듈 지도: ../docs/design/edge-driver.md §2)
+    handlers/             lifecycle과 capability 명령 처리기
+    device/               방출 규칙(emit), 드라이버가 쓰는 줄(rows), 장치 필드, 시계
+    model/                순수 상태 머신·문장·status → 이벤트 (state.lua가 한 표로 묶는다)
+  profiles/               현재 프로필 20개 pc*-v6.yml(생성물), 앱 장치의 pc-app.yml, 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
+  build/edge/             tools/build.js가 만드는 패키지 트리(주석 뗌, 커밋하지 않음)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
   tools/                  테스트 러너, 프로필 생성기와 템플릿, 배포 스크립트
