@@ -543,11 +543,14 @@ func saveConfig(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	// SYSTEM and Administrators only (#131): it holds the secret.
+	if err := writePrivateFile(configPath, data); err != nil {
 		return err
 	}
 	// Update in-memory config
 	setConfig(cfg)
+	// The tray's non-secret copy follows every save (private_files.go).
+	writeTrayConfig(filepath.Dir(exePath), cfg)
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see telegram_control.go).
 	reconcileTelegramControl()

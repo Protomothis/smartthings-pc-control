@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,12 +76,28 @@ func showGraceToast(lang Lang, title, message string) error {
 // clicks a toast button. It talks to the service API and exits.
 func HandleToastAction(rawURL string) {
 	// A process of its own (`exe toast …`): Run never set webUIPort here.
-	c := NewClient(localWebUIPort())
+	runToastAction(NewClient(localWebUIPort()), rawURL)
+}
 
-	// The schedule API needs a session when a secret is configured; the
-	// secret lives in config.json next to the exe.
-	if secret := localSecret(); secret != "" {
-		c.Login(secret)
+// toastAPI is what the toast buttons use of the service; *Client, or a
+// fake in the tests.
+type toastAPI interface {
+	GetConfig() (Config, error)
+	LocalLogin() error
+	GetSchedule() (Schedule, error)
+	CancelSchedule(by string) error
+	TestCommand(name string) (string, error)
+}
+
+// runToastAction carries out one toast button.
+func runToastAction(c toastAPI, rawURL string) {
+	// The schedule API needs a session when a secret is configured. This
+	// process is the same exe in the same session as the tray, so the
+	// service vouches for it like for the tray (#131); GetConfig only
+	// tells whether a session is needed. Refused, the calls below fail
+	// with 401 and nothing happens — the toast has no window to ask in.
+	if _, err := c.GetConfig(); errors.Is(err, errUnauthorized) {
+		_ = c.LocalLogin() // refused: see above
 	}
 
 	switch {
@@ -98,12 +115,17 @@ func HandleToastAction(rawURL string) {
 	}
 }
 
-// localConfig is the subset of config.json (next to the exe) the GUI needs
-// before it can talk to the service: the secret for the API session and
-// the SmartThings port, because the WebUI/API listens on port+1.
+// trayConfigFile is the service's user-readable copy of the settings the
+// app needs without a session (service/private_files.go). config.json
+// itself, with the secret, is SYSTEM and Administrators only since #131;
+// the app no longer reads it at all.
+const trayConfigFile = "tray.json"
+
+// localConfig is tray.json: what the GUI needs before it can talk to the
+// service — the SmartThings port, because the WebUI/API listens on
+// port+1 — and the heartbeat's switches.
 type localConfig struct {
-	Port   int    `json:"port"`
-	Secret string `json:"secret"`
+	Port int `json:"port"`
 	// SmartThings carries the one flag the idle heartbeat needs (#77);
 	// reading the file is cheaper than an authenticated /api/config call
 	// every 30s, and the service rewrites it on every save.
@@ -120,15 +142,21 @@ type localConfig struct {
 	} `json:"media"`
 }
 
-// readLocalConfig parses config.json next to the exe; zero values when
-// the file is missing or unreadable.
+// readLocalConfig parses tray.json next to the exe; zero values when the
+// file is missing or unreadable (an older service, or one that has not
+// started yet: the default port, and port.go follows the real one later).
 func readLocalConfig() localConfig {
-	var cfg localConfig
 	exe, err := os.Executable()
 	if err != nil {
-		return cfg
+		return localConfig{}
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "config.json"))
+	return readLocalConfigFile(filepath.Join(filepath.Dir(exe), trayConfigFile))
+}
+
+// readLocalConfigFile is readLocalConfig for one path.
+func readLocalConfigFile(path string) localConfig {
+	var cfg localConfig
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg
 	}
@@ -136,16 +164,13 @@ func readLocalConfig() localConfig {
 	return cfg
 }
 
-// localSecret reads the secret from config.json next to the exe.
-func localSecret() string { return readLocalConfig().Secret }
-
 // localExposeSession reports whether the service currently publishes the
 // session block (smartthings.expose_session, edge-driver doc §3.2). A
 // missing key means off, matching the service's default.
 func localExposeSession() bool { return readLocalConfig().SmartThings.ExposeSession }
 
 // localMediaEnabled reports media.enabled (#104); a missing key (or no
-// config.json at all) means on, matching the service's default.
+// tray.json at all) means on, matching the service's default.
 func localMediaEnabled() bool {
 	on := readLocalConfig().Media.Enabled
 	return on == nil || *on
@@ -156,7 +181,7 @@ func localMediaEnabled() bool {
 func localNowPlaying() bool { return readLocalConfig().Media.NowPlaying }
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
-// 1, matching service/webui.go), defaulting to 5002 when config.json has
+// 1, matching service/webui.go), defaulting to 5002 when tray.json has
 // no usable port. Read at startup, and again while the service is
 // unreachable to follow a port change once it has restarted (port.go).
 func localWebUIPort() int {

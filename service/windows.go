@@ -32,9 +32,13 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// Before config.json is read: as SYSTEM the service can always fix its
 	// own folder, which also heals installs made before #126.
 	secureInstallDirAtStart()
+	// config.json and state.json are tighter than the folder (#131).
+	securePrivateFilesAtStart()
 	go cleanupStaleUpdateFiles()
 	cfg := loadConfig()
 	setConfig(cfg)
+	// The tray finds the port and its switches here, not in config.json.
+	writeTrayConfig(installDir(), cfg)
 
 	// Notification bus (#55) must exist before the servers emit. The live
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
@@ -137,6 +141,8 @@ func RunConsole() {
 	// No install-folder lockdown here (#126): console mode is for debugging
 	// and usually runs from a build or source folder.
 	setConfig(loadConfig())
+	// The tray finds the port in tray.json (#131).
+	writeTrayConfig(installDir(), getConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()

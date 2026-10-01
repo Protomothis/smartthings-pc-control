@@ -56,7 +56,23 @@ func checkAuth(r *http.Request, secret string) bool {
 	}
 	sessionMu.RLock()
 	defer sessionMu.RUnlock()
-	return sessionToken != "" && secretEqual(cookie.Value, sessionToken)
+	if sessionToken != "" && secretEqual(cookie.Value, sessionToken) {
+		return true
+	}
+	// The tray's session from POST /api/local-login (#131).
+	return localSessionValid(r, cookie.Value)
+}
+
+// setSessionCookie hands out a session token, from /api/login or
+// /api/local-login (#131) alike.
+func setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
 // checkCSRF validates CSRF protection for POST requests.
@@ -281,13 +297,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		sessionToken = token
 		sessionMu.Unlock()
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "session",
-			Value:    token,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
-		})
+		setSessionCookie(w, token)
 
 		logMsg("WebUI login successful from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json")
@@ -321,6 +331,10 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 
 	// API: SmartThings hub connection state for the GUI (#67, shown by #70)
 	mux.HandleFunc("/api/st/hub", handleSTHubAPI)
+
+	// API: a session for this app's own tray without the secret, for
+	// trusted loopback callers only (#131, see local_login.go)
+	mux.HandleFunc("/api/local-login", handleLocalLoginAPI)
 
 	// API: idle-time heartbeat from the tray app (#77, see st_idle.go)
 	mux.HandleFunc("/api/session/heartbeat", handleSessionHeartbeat)
