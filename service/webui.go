@@ -24,6 +24,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
@@ -519,7 +520,7 @@ func serveCommandAPI(w http.ResponseWriter, r *http.Request) {
 		Command string `json:"command"`
 		By      string `json:"by"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, stapi.MaxBody)).Decode(&body); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
@@ -635,7 +636,7 @@ func serveConfigAPI(w http.ResponseWriter, r *http.Request) {
 
 // stHubView is GET /api/st/hub: what the GUI SmartThings section (#70)
 // shows about the Edge driver's last contact. "connected" means the hub
-// polled within stHubStale (2× the longest poll interval the driver
+// polled within stapi.HubStale (2× the longest poll interval the driver
 // offers). machine_id and ssdp were added for the search diagnostics
 // (#95): they describe this PC, not the hub, so they are filled in even
 // when no hub has ever called — that is exactly the case the user needs
@@ -680,8 +681,8 @@ type stSearchView struct {
 
 // stSSDPStatus assembles the responder block.
 func stSSDPStatus() stSSDPView {
-	out := stSSDPView{Running: ssdpRunning(), FirewallRule: ssdpFirewallRuleOK()}
-	if s, ok := lastSSDPSearch(); ok {
+	out := stSSDPView{Running: stSrv.SSDPRunning(), FirewallRule: ssdpFirewallRuleOK()}
+	if s, ok := stSrv.LastSSDPSearch(); ok {
 		out.LastSearch = &stSearchView{IP: s.IP, At: s.At.Format(time.RFC3339)}
 	}
 	return out
@@ -692,14 +693,14 @@ var handleSTHubAPI = apiAuth(serveSTHubAPI, http.MethodGet)
 
 func serveSTHubAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	wol, auto := stWoLView(liveCfg.SmartThings)
+	wol, auto := stSrv.WoLView(liveCfg.SmartThings)
 	view := stHubView{
 		MachineID: machineID(),
 		SSDP:      stSSDPStatus(),
 		WoL:       stHubWoLView{Selected: wol.Selected, Auto: auto, Adapters: wol.Adapters},
 	}
-	if seen, ok := hubLastSeenInfo(); ok {
-		view.Connected = time.Since(seen.At) <= stHubStale
+	if seen, ok := stSrv.HubLastSeen(); ok {
+		view.Connected = time.Since(seen.At) <= stapi.HubStale
 		view.IP = seen.IP
 		view.DriverVersion = seen.DriverVersion
 		view.LastSeen = seen.At.Format(time.RFC3339)

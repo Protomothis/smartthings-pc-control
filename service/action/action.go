@@ -101,6 +101,16 @@ func Status(err error) (int, string, string) {
 	return f.Status, f.Code, f.Message
 }
 
+// ResultCode is what last_command.result records for a preset run
+// (#109): "started", or the wire error code.
+func ResultCode(err error) string {
+	if err == nil {
+		return "started"
+	}
+	_, code, _ := Status(err)
+	return code
+}
+
 // WriteError answers with {"error": code, "message": …} and, for a rate
 // limit, Retry-After in whole seconds (at least 1).
 func WriteError(w http.ResponseWriter, err error) {

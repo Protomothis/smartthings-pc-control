@@ -18,6 +18,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -39,11 +40,6 @@ var pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 // pcNotifyRun is runUserAction, replaced by the tests.
 var pcNotifyRun = runUserAction
 
-// pcNotifyResult is what the user-action child reported.
-type pcNotifyResult struct {
-	Toast string `json:"toast"` // "shown" or "pending"
-}
-
 // notifyArgs is the user-action argument vector for one notification.
 func notifyArgs(title, text string) []string {
 	return []string{useraction.ActionNotify, "--title", title, "--text", text}
@@ -52,24 +48,24 @@ func notifyArgs(title, text string) []string {
 // sendPCNotify shows one notification. source keys the rate limit ("ip
 // 192.168.1.20", "telegram 12345", "app"). checkEnabled is false for the
 // app's test button, which must work before the feature is on.
-func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (pcNotifyResult, error) {
+func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (action.NotifyResult, error) {
 	if checkEnabled && !cfg.Enabled {
-		return pcNotifyResult{}, &action.NotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
+		return action.NotifyResult{}, &action.NotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
 	}
 	title, text, err := action.PrepareNotify(title, text)
 	if err != nil {
-		return pcNotifyResult{}, err
+		return action.NotifyResult{}, err
 	}
 	if ok, wait := pcNotifyLimits.Allow(source); !ok {
-		return pcNotifyResult{}, &action.NotifyError{Code: "rate_limited", RetryAfter: wait,
+		return action.NotifyResult{}, &action.NotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
 	res, err := pcNotifyRun(ctx, notifyArgs(title, text)...)
 	if err != nil {
 		logMsg("PC notify (%s) failed: %v", source, err)
-		return pcNotifyResult{}, err
+		return action.NotifyResult{}, err
 	}
-	var out pcNotifyResult
+	var out action.NotifyResult
 	if raw, ok := res.Fields["toast"]; ok {
 		json.Unmarshal(raw, &out.Toast)
 	}
@@ -85,39 +81,6 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 	return out, nil
 }
 
-// stNotifyRequest is the POST /st/v1/notify body. A "speak" field from an
-// older driver is ignored like any unknown key.
-type stNotifyRequest struct {
-	Title string `json:"title"`
-	Text  string `json:"text"`
-}
-
-// stNotifyResponse is the 200 answer: the pcNotifyResult plus ok.
-type stNotifyResponse struct {
-	OK bool `json:"ok"`
-	pcNotifyResult
-}
-
-// handleSTNotify serves POST /st/v1/notify (§3).
-func handleSTNotify(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		stError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	var body stNotifyRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil {
-		stError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	from := httpx.RemoteHost(r.RemoteAddr)
-	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text)
-	if err != nil {
-		action.WriteError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, stNotifyResponse{OK: true, pcNotifyResult: res})
-}
-
 // handleNotifyTestAPI serves POST /api/notify/test for the app's
 // [테스트 알림] button. The enabled switch is ignored (testing is how the
 // user decides), the rate limit is not.
@@ -129,7 +92,7 @@ func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 		Text  string `json:"text"`
 	}
 	if r.Body != nil {
-		if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil && err != io.EOF {
+		if err := json.NewDecoder(io.LimitReader(r.Body, stapi.MaxBody)).Decode(&body); err != nil && err != io.EOF {
 			writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
 			return
 		}
@@ -146,6 +109,6 @@ func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, struct {
 		Status string `json:"status"`
-		pcNotifyResult
+		action.NotifyResult
 	}{"ok", res})
 }

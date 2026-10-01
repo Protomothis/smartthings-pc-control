@@ -247,7 +247,7 @@ func stActivityStatus(cfg Config) stActivity {
 }
 
 // activityTick runs one scan and reports a change as activity.changed. The
-// push data is the status block itself, filled in at delivery (stPushBody),
+// push data is the status block itself, filled in at delivery (stapi),
 // so the event carries no fields of its own.
 func activityTick(cfg ActivityConfig) {
 	next, changed := activityScan.scan(cfg)

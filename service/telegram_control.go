@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -583,14 +584,14 @@ func tgDelay(d time.Duration) string {
 // most config.AwakeMaxMinutes).
 func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
 	if len(args) == 0 {
-		return awakeMinutesOrDefault(nil), false, true
+		return getConfig().Awake.Period(nil), false, true
 	}
 	arg := strings.ToLower(strings.TrimSpace(args[0]))
 	if arg == "off" {
 		return 0, true, true
 	}
 	n, err := strconv.Atoi(arg)
-	if err != nil || !validAwakeMinutes(n) {
+	if err != nil || !config.ValidAwakeMinutes(n) {
 		return 0, false, false
 	}
 	return n, false, true

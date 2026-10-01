@@ -169,25 +169,6 @@ func reportExecFailure(command string, err error, output []byte) {
 	emit("system", "exec_failed", map[string]string{"command": command, "error": msg})
 }
 
-// WoLAdapter represents a physical network adapter's WoL status
-type WoLAdapter struct {
-	Name       string   `json:"name"`
-	MacAddress string   `json:"mac"`
-	IPs        []string `json:"ips"`
-	Status     string   `json:"status"` // "Up" or "Down"
-	WoLEnabled bool     `json:"wolEnabled"`
-	WoLCapable bool     `json:"wolCapable"`
-}
-
-// WoLStatus is the response for /api/wol-status
-type WoLStatus struct {
-	Adapters   []WoLAdapter `json:"adapters"`
-	ExternalIP string       `json:"externalIP,omitempty"`
-	Ready      bool         `json:"ready"`             // true if at least one active adapter has WoL enabled
-	Warning    string       `json:"warning,omitempty"` // non-fatal warning (e.g., WoL query failed)
-	Error      string       `json:"error,omitempty"`
-}
-
 // getWoLStatus queries all network adapters for WoL capability using Go net + PowerShell for WoL only
 func getWoLStatus() WoLStatus {
 	result := WoLStatus{}

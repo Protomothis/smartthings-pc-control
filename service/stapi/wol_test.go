@@ -1,4 +1,4 @@
-package service
+package stapi
 
 // Tests for the WoL adapter choice (#96): MAC normalisation, the four-step
 // automatic rule with virtual adapters demoted, the manual override and
@@ -10,12 +10,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
 
 // wolAdapters is the multi-NIC PC the rules have to cope with: a wired
 // card, Wi-Fi, and the pseudo-adapters a developer machine collects.
-func wolAdapters() []WoLAdapter {
-	return []WoLAdapter{
+func wolAdapters() []status.NetAdapter {
+	return []status.NetAdapter{
 		{Name: "vEthernet (Default Switch)", MacAddress: "00-15-5D-01-02-03", IPs: []string{"172.20.0.1"}, Status: "Up", WoLEnabled: true, WoLCapable: true},
 		{Name: "Ethernet", MacAddress: "B4-2E-99-45-B4-F5", IPs: []string{"192.168.1.30", "fe80::abcd"}, Status: "Up", WoLCapable: true},
 		{Name: "Wi-Fi", MacAddress: "11-22-33-44-55-66", IPs: []string{"192.168.1.31"}, Status: "Up"},
@@ -76,7 +79,7 @@ func TestSelectWoLAdapterDemotesVirtualAdapters(t *testing.T) {
 
 	// The demotion is a last resort, not a ban: on a PC whose only
 	// adapters are virtual there is nothing else to pick.
-	only := []WoLAdapter{{Name: "vEthernet (WSL)", MacAddress: "00-15-5D-09-08-07"}}
+	only := []status.NetAdapter{{Name: "vEthernet (WSL)", MacAddress: "00-15-5D-09-08-07"}}
 	if sel, ok := selectWoLAdapter(only, "", nil); !ok || sel.Name != "vEthernet (WSL)" {
 		t.Errorf("selected %+v (ok=%v), want the only adapter there is", sel, ok)
 	}
@@ -91,7 +94,7 @@ func TestSelectWoLAdapterDemotesVirtualAdapters(t *testing.T) {
 // Rule ④: nothing is enabled, nothing is capable — the first real adapter
 // still has to be named, or the driver has no MAC to wake at all.
 func TestSelectWoLAdapterFallsBackToTheFirstMAC(t *testing.T) {
-	adapters := []WoLAdapter{
+	adapters := []status.NetAdapter{
 		{Name: "vEthernet (WSL)", MacAddress: "00-15-5D-09-08-07"},
 		{Name: "Ethernet", MacAddress: "B4-2E-99-45-B4-F5"},
 		{Name: "Wi-Fi", MacAddress: "11-22-33-44-55-66"},
@@ -106,7 +109,7 @@ func TestSelectWoLAdapterFallsBackToTheFirstMAC(t *testing.T) {
 
 	// No MAC anywhere means no selection: §3.2 sends null rather than a
 	// made-up adapter.
-	if _, ok := selectWoLAdapter([]WoLAdapter{{Name: "Ethernet"}}, "", nil); ok {
+	if _, ok := selectWoLAdapter([]status.NetAdapter{{Name: "Ethernet"}}, "", nil); ok {
 		t.Error("an adapter without a MAC was chosen")
 	}
 	if _, ok := selectWoLAdapter(nil, "", nil); ok {
@@ -139,7 +142,6 @@ func TestSelectWoLAdapterManualWins(t *testing.T) {
 // edited by hand) falls back to the automatic choice instead of leaving
 // WoL pointed at an adapter that does not exist.
 func TestSelectWoLAdapterManualMissFallsBackToAuto(t *testing.T) {
-	initLogger()
 	resetMissingWoLMACLog()
 	t.Cleanup(resetMissingWoLMACLog)
 
@@ -179,10 +181,9 @@ func TestMissingWoLMACLoggedOncePerValue(t *testing.T) {
 // A /st/v1 request teaches the service which of its own interfaces the hub
 // reaches it on, and the automatic choice then uses it (rule ①).
 func TestHubLocalIPRemembersTheRequestInterface(t *testing.T) {
-	resetHubLocalIP()
-	t.Cleanup(resetHubLocalIP)
+	s := newTestServer(t, config.Config{Port: 5001})
 
-	if got := lastHubLocalIP(); got != nil {
+	if got := s.lastHubLocalIP(); got != nil {
 		t.Fatalf("lastHubLocalIP = %v before any request, want nil", got)
 	}
 
@@ -191,26 +192,26 @@ func TestHubLocalIPRemembersTheRequestInterface(t *testing.T) {
 	r := httptest.NewRequest("GET", "/st/v1/status", nil)
 	local := &net.TCPAddr{IP: net.ParseIP("192.168.1.31"), Port: 5001}
 	r = r.WithContext(context.WithValue(r.Context(), http.LocalAddrContextKey, net.Addr(local)))
-	noteHubLocalIP(localRequestIP(r))
+	s.NoteHubLocalIP(localRequestIP(r))
 
-	if got := lastHubLocalIP(); got == nil || got.String() != "192.168.1.31" {
+	if got := s.lastHubLocalIP(); got == nil || got.String() != "192.168.1.31" {
 		t.Fatalf("lastHubLocalIP = %v, want 192.168.1.31", got)
 	}
-	if sel, _ := selectWoLAdapter(wolAdapters(), "", lastHubLocalIP()); sel.Name != "Wi-Fi" {
+	if sel, _ := selectWoLAdapter(wolAdapters(), "", s.lastHubLocalIP()); sel.Name != "Wi-Fi" {
 		t.Errorf("selected %+v, want the adapter that owns 192.168.1.31", sel)
 	}
 
 	// A local call (the WebUI, a test client) must not erase that memory:
 	// it says nothing about how the hub gets here.
-	noteHubLocalIP(net.ParseIP("127.0.0.1"))
-	if got := lastHubLocalIP(); got.String() != "192.168.1.31" {
+	s.NoteHubLocalIP(net.ParseIP("127.0.0.1"))
+	if got := s.lastHubLocalIP(); got.String() != "192.168.1.31" {
 		t.Errorf("a loopback request overwrote the hub's interface: %v", got)
 	}
 
 	// A request with no local address on its context (a synthetic one)
 	// leaves the memory alone rather than clearing it.
-	noteHubLocalIP(localRequestIP(httptest.NewRequest("GET", "/st/v1/status", nil)))
-	if got := lastHubLocalIP(); got.String() != "192.168.1.31" {
+	s.NoteHubLocalIP(localRequestIP(httptest.NewRequest("GET", "/st/v1/status", nil)))
+	if got := s.lastHubLocalIP(); got.String() != "192.168.1.31" {
 		t.Errorf("a request without a local address cleared the memory: %v", got)
 	}
 }

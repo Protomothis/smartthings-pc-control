@@ -52,7 +52,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	startTelegramControl()
 	// SSDP discovery (#69): the only way to add the device, so it answers
 	// M-SEARCH for as long as the service runs — there is no setting (#95).
-	startSSDP()
+	stSrv.StartSSDP()
 	// The responder needs inbound UDP 1900; an install made before #69 has
 	// no such rule, so re-check here (#76). Off the startup path: netsh
 	// must never delay the service reaching Running.
@@ -101,7 +101,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// be gone before that goroutine runs.
 			currentAwake().Shutdown()
 			stopTelegramControl()
-			stopSSDP()
+			stSrv.StopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
 			closeLogger()
 			return false, 0
@@ -148,8 +148,8 @@ func RunConsole() {
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
-	startSSDP()
-	defer stopSSDP()
+	stSrv.StartSSDP()
+	defer stSrv.StopSSDP()
 	go ensureSSDPFirewallRuleAtStart()
 	stop := make(chan struct{})
 	go StartWebUI(stop)

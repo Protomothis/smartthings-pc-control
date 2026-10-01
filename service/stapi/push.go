@@ -1,4 +1,4 @@
-package service
+package stapi
 
 // Hub push subscriptions, /st/v1/subscribe (docs/design/edge-driver.md
 // §3.5, issue #68). The Edge driver opens a listener on the hub, subscribes
@@ -9,7 +9,7 @@ package service
 //	POST   /st/v1/subscribe       {callback, ttl_seconds, driver_version}
 //	DELETE /st/v1/subscribe/{id}
 //
-// Both go through stAuth like the rest of /st/v1. Subscriptions live in
+// Both go through auth like the rest of /st/v1. Subscriptions live in
 // memory only: after a service restart the driver's next poll fails and it
 // subscribes again.
 //
@@ -18,7 +18,7 @@ package service
 // category filter and quiet hours must not apply — device state is not a
 // notification. Delivery is handed to a worker goroutine so an emitting
 // path never waits on the network; power.stopping is the exception and is
-// delivered inline, see stPushTap.
+// delivered inline, see PushTap.
 
 import (
 	"bytes"
@@ -34,39 +34,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/power"
 )
 
 const (
 	// TTL bounds and default from §3.5.
-	stSubMinTTL     = 60 * time.Second
-	stSubMaxTTL     = 3600 * time.Second
-	stSubDefaultTTL = 600 * time.Second
-	// stSubSweepEvery is the background expiry sweep; every access sweeps
+	subMinTTL     = 60 * time.Second
+	subMaxTTL     = 3600 * time.Second
+	subDefaultTTL = 600 * time.Second
+	// subSweepEvery is the background expiry sweep; every access sweeps
 	// too, so this only matters while nothing happens.
-	stSubSweepEvery = time.Minute
-	// stPushTimeout bounds one callback POST (§3.5).
-	stPushTimeout = 2 * time.Second
-	// stPushStoppingDeadline bounds the whole synchronous power.stopping
+	subSweepEvery = time.Minute
+	// pushTimeout bounds one callback POST (§3.5).
+	pushTimeout = 2 * time.Second
+	// PushStoppingDeadline bounds the whole synchronous power.stopping
 	// delivery, retry included, before the stop proceeds (§3.5).
-	stPushStoppingDeadline = 1500 * time.Millisecond
-	// stPushMaxFailures removes a subscription after this many consecutive
+	PushStoppingDeadline = 1500 * time.Millisecond
+	// PushMaxFailures removes a subscription after this many consecutive
 	// failed deliveries (§3.5).
-	stPushMaxFailures = 3
-	// stPushQueueCap bounds the asynchronous delivery queue. Events are
+	PushMaxFailures = 3
+	// pushQueueCap bounds the asynchronous delivery queue. Events are
 	// dropped (and logged) rather than blocking the emitter when a hub is
 	// slow enough to fill it.
-	stPushQueueCap = 64
-	// stMaxCallbackLen is a sanity bound on the callback URL.
-	stMaxCallbackLen = 512
+	pushQueueCap = 64
+	// maxCallbackLen is a sanity bound on the callback URL.
+	maxCallbackLen = 512
 )
 
 // ---- subscription store ----------------------------------------------------
 
-// stSubscription is one hub listener. Callback is the key: a driver that
+// subscription is one hub listener. Callback is the key: a driver that
 // subscribes again for the same URL renews rather than piling up (§3.5).
-type stSubscription struct {
+type subscription struct {
 	ID            string
 	Callback      string
 	DriverVersion string
@@ -75,37 +78,37 @@ type stSubscription struct {
 	failures int
 }
 
-// stSubStore holds the live subscriptions. It is the only mutable push
-// state and is reset between tests by stPushReset.
-type stSubStore struct {
+// subStore holds the live subscriptions. It is the only mutable push
+// state.
+type subStore struct {
 	mu     sync.Mutex
-	byID   map[string]*stSubscription
-	byCall map[string]*stSubscription
+	now    func() time.Time
+	byID   map[string]*subscription
+	byCall map[string]*subscription
 	nextID int
 	// sweeper is started on the first subscribe.
 	sweeper sync.Once
 }
 
-var stSubs = &stSubStore{byID: map[string]*stSubscription{}, byCall: map[string]*stSubscription{}}
-
-// stPushNow is time.Now, replaced by tests that drive expiry.
-var stPushNow = time.Now
+func newSubStore(now func() time.Time) *subStore {
+	return &subStore{now: now, byID: map[string]*subscription{}, byCall: map[string]*subscription{}}
+}
 
 // sweepLocked drops everything that has expired. The caller holds mu.
-func (s *stSubStore) sweepLocked(now time.Time) {
+func (s *subStore) sweepLocked(now time.Time) {
 	for id, sub := range s.byID {
 		if !now.Before(sub.ExpiresAt) {
 			delete(s.byID, id)
 			delete(s.byCall, sub.Callback)
-			logMsg("ST push: subscription %s (%s) expired", id, sub.Callback)
+			logx.Printf("ST push: subscription %s (%s) expired", id, sub.Callback)
 		}
 	}
 }
 
 // subscribe registers or renews callback for ttl and reports whether this
 // renewed an existing subscription.
-func (s *stSubStore) subscribe(callback, driverVersion string, ttl time.Duration) (stSubscription, bool) {
-	now := stPushNow()
+func (s *subStore) subscribe(callback, driverVersion string, ttl time.Duration) (subscription, bool) {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked(now)
@@ -120,17 +123,17 @@ func (s *stSubStore) subscribe(callback, driverVersion string, ttl time.Duration
 	// listener behind its old callback is gone. Keeping that subscription
 	// only buys 2s timeouts and retries on every event until it fails out,
 	// so a new callback from the same host replaces the host's old ones.
-	if host := stCallbackHost(callback); host != "" {
+	if host := callbackHost(callback); host != "" {
 		for id, old := range s.byID {
-			if old.Callback != callback && stCallbackHost(old.Callback) == host {
+			if old.Callback != callback && callbackHost(old.Callback) == host {
 				delete(s.byID, id)
 				delete(s.byCall, old.Callback)
-				logMsg("ST push: %s (%s) replaced by a new subscription from %s", id, old.Callback, host)
+				logx.Printf("ST push: %s (%s) replaced by a new subscription from %s", id, old.Callback, host)
 			}
 		}
 	}
 	s.nextID++
-	sub := &stSubscription{
+	sub := &subscription{
 		ID:            "sub-" + strconv.Itoa(s.nextID),
 		Callback:      callback,
 		DriverVersion: driverVersion,
@@ -143,8 +146,8 @@ func (s *stSubStore) subscribe(callback, driverVersion string, ttl time.Duration
 }
 
 // remove drops the subscription with id and reports whether it was there.
-func (s *stSubStore) remove(id string) bool {
-	now := stPushNow()
+func (s *subStore) remove(id string) bool {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked(now)
@@ -158,12 +161,12 @@ func (s *stSubStore) remove(id string) bool {
 }
 
 // active returns the unexpired subscriptions.
-func (s *stSubStore) active() []stSubscription {
-	now := stPushNow()
+func (s *subStore) active() []subscription {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked(now)
-	out := make([]stSubscription, 0, len(s.byID))
+	out := make([]subscription, 0, len(s.byID))
 	for _, sub := range s.byID {
 		out = append(out, *sub)
 	}
@@ -171,8 +174,8 @@ func (s *stSubStore) active() []stSubscription {
 }
 
 // noteResult records one delivery outcome and removes the subscription
-// after stPushMaxFailures consecutive failures (§3.5).
-func (s *stSubStore) noteResult(id string, err error) {
+// after PushMaxFailures consecutive failures (§3.5).
+func (s *subStore) noteResult(id string, err error) {
 	s.mu.Lock()
 	sub, ok := s.byID[id]
 	if !ok {
@@ -186,7 +189,7 @@ func (s *stSubStore) noteResult(id string, err error) {
 	}
 	sub.failures++
 	failures, callback := sub.failures, sub.Callback
-	drop := failures >= stPushMaxFailures
+	drop := failures >= PushMaxFailures
 	if drop {
 		delete(s.byID, id)
 		delete(s.byCall, callback)
@@ -195,38 +198,51 @@ func (s *stSubStore) noteResult(id string, err error) {
 
 	// Bodies are never logged, only the destination and the error (§8).
 	if drop {
-		logMsg("ST push: %s (%s) removed after %d consecutive failures: %v", id, callback, failures, err)
+		logx.Printf("ST push: %s (%s) removed after %d consecutive failures: %v", id, callback, failures, err)
 		return
 	}
-	logMsg("ST push: delivery to %s (%s) failed (%d/%d): %v", id, callback, failures, stPushMaxFailures, err)
+	logx.Printf("ST push: delivery to %s (%s) failed (%d/%d): %v", id, callback, failures, PushMaxFailures, err)
 }
 
 // startSweeper launches the periodic expiry sweep once. Expiry is also
 // applied on every access, so this only keeps a forgotten subscription
 // from lingering in memory (and logs it at the right time).
-func (s *stSubStore) startSweeper() {
+func (s *subStore) startSweeper() {
 	s.sweeper.Do(func() {
 		go func() {
-			for range time.Tick(stSubSweepEvery) {
+			for range time.Tick(subSweepEvery) {
 				s.mu.Lock()
-				s.sweepLocked(stPushNow())
+				s.sweepLocked(s.now())
 				s.mu.Unlock()
 			}
 		}()
 	})
 }
 
-// stPushReset clears every subscription (tests, and a config reload that
-// changes the secret).
-func stPushReset() {
-	stSubs.mu.Lock()
-	stSubs.byID = map[string]*stSubscription{}
-	stSubs.byCall = map[string]*stSubscription{}
-	stSubs.mu.Unlock()
+// reset clears every subscription.
+func (s *subStore) reset(ids bool) {
+	s.mu.Lock()
+	s.byID = map[string]*subscription{}
+	s.byCall = map[string]*subscription{}
+	if ids {
+		s.nextID = 0
+	}
+	s.mu.Unlock()
 }
 
-// stCallbackHost returns the host (without port) of a callback URL, or "".
-func stCallbackHost(raw string) string {
+// ResetSubscriptions clears every subscription (tests, and a config reload
+// that changes the secret).
+func (s *Server) ResetSubscriptions() { s.subs.reset(false) }
+
+// RestartSubscriptionIDs clears every subscription and counts the ids from
+// sub-1 again (tests: ids otherwise count up for the life of the process).
+func (s *Server) RestartSubscriptionIDs() { s.subs.reset(true) }
+
+// Subscriptions is how many unexpired subscriptions there are.
+func (s *Server) Subscriptions() int { return len(s.subs.active()) }
+
+// callbackHost returns the host (without port) of a callback URL, or "".
+func callbackHost(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return ""
@@ -236,15 +252,15 @@ func stCallbackHost(raw string) string {
 
 // ---- callback validation (§3.5, §8) ----------------------------------------
 
-// stValidateCallback checks that raw is an http:// URL whose host is the
-// IP the request came from, and that the address is one the LAN can own.
-// It returns the normalised URL.
-func stValidateCallback(raw, from string) (string, error) {
+// validateCallback checks that raw is an http:// URL whose host is the IP
+// the request came from, and that the address is one the LAN can own. It
+// returns the normalised URL.
+func validateCallback(raw, from string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", fmt.Errorf("callback is required")
 	}
-	if len(raw) > stMaxCallbackLen {
+	if len(raw) > maxCallbackLen {
 		return "", fmt.Errorf("callback is too long")
 	}
 	u, err := url.Parse(raw)
@@ -267,114 +283,108 @@ func stValidateCallback(raw, from string) (string, error) {
 	if src == nil || !ip.Equal(src) {
 		return "", fmt.Errorf("callback host must be the request source IP")
 	}
-	if !stCallbackAddrAllowed(ip) {
+	if !callbackAddrAllowed(ip) {
 		return "", fmt.Errorf("callback host must be a private address")
 	}
 	return u.String(), nil
 }
 
-// stCallbackAddrAllowed reports whether ip is an address a hub on this LAN
+// callbackAddrAllowed reports whether ip is an address a hub on this LAN
 // can legitimately have: RFC1918/ULA private, link-local, or loopback.
 // Loopback needs no extra guard — the host has to equal the request source,
 // so a loopback callback can only come from a loopback request.
-func stCallbackAddrAllowed(ip net.IP) bool {
+func callbackAddrAllowed(ip net.IP) bool {
 	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLoopback()
 }
 
-// stClampTTL turns the requested ttl_seconds into a duration: 0 (absent)
+// clampTTL turns the requested ttl_seconds into a duration: 0 (absent)
 // means the default, anything outside 60..3600 is rejected (§3.5).
-func stClampTTL(seconds int) (time.Duration, error) {
+func clampTTL(seconds int) (time.Duration, error) {
 	if seconds == 0 {
-		return stSubDefaultTTL, nil
+		return subDefaultTTL, nil
 	}
 	ttl := time.Duration(seconds) * time.Second
-	if ttl < stSubMinTTL || ttl > stSubMaxTTL {
+	if ttl < subMinTTL || ttl > subMaxTTL {
 		return 0, fmt.Errorf("ttl_seconds must be between %d and %d",
-			int(stSubMinTTL/time.Second), int(stSubMaxTTL/time.Second))
+			int(subMinTTL/time.Second), int(subMaxTTL/time.Second))
 	}
 	return ttl, nil
 }
 
 // ---- handlers (§3.5) -------------------------------------------------------
 
-type stSubscribeRequest struct {
+// SubscribeRequest is the POST /st/v1/subscribe body.
+type SubscribeRequest struct {
 	Callback      string `json:"callback"`
 	TTLSeconds    int    `json:"ttl_seconds"`
 	DriverVersion string `json:"driver_version"`
 }
 
-type stSubscribeResponse struct {
+type subscribeResponse struct {
 	ID        string `json:"id"`
 	ExpiresAt string `json:"expires_at"`
 }
 
-// handleSTSubscribe serves POST /st/v1/subscribe.
-func handleSTSubscribe(w http.ResponseWriter, r *http.Request) {
+// handleSubscribe serves POST /st/v1/subscribe.
+func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		stError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	var body stSubscribeRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil {
-		stError(w, http.StatusBadRequest, "invalid JSON")
+	var body SubscribeRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, MaxBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	from := httpx.RemoteHost(r.RemoteAddr)
-	callback, err := stValidateCallback(body.Callback, from)
+	callback, err := validateCallback(body.Callback, from)
 	if err != nil {
-		logMsg("ST push: subscribe from %s rejected: %v", from, err)
-		stError(w, http.StatusBadRequest, err.Error())
+		logx.Printf("ST push: subscribe from %s rejected: %v", from, err)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ttl, err := stClampTTL(body.TTLSeconds)
+	ttl, err := clampTTL(body.TTLSeconds)
 	if err != nil {
-		stError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sub, renewed := stSubs.subscribe(callback, httpx.Truncate(strings.TrimSpace(body.DriverVersion), 32), ttl)
+	sub, renewed := s.subs.subscribe(callback, httpx.Truncate(strings.TrimSpace(body.DriverVersion), 32), ttl)
 	verb := "subscribed"
 	if renewed {
 		verb = "renewed"
 	}
-	logMsg("ST push: %s %s → %s for %s (driver %s)", sub.ID, verb, sub.Callback, formatDelay(ttl), sub.DriverVersion)
-	httpx.WriteJSON(w, http.StatusOK, stSubscribeResponse{
+	logx.Printf("ST push: %s %s → %s for %s (driver %s)", sub.ID, verb, sub.Callback, power.FormatDelay(ttl), sub.DriverVersion)
+	httpx.WriteJSON(w, http.StatusOK, subscribeResponse{
 		ID:        sub.ID,
 		ExpiresAt: sub.ExpiresAt.Format(time.RFC3339),
 	})
 }
 
-// handleSTUnsubscribe serves DELETE /st/v1/subscribe/{id}.
-func handleSTUnsubscribe(w http.ResponseWriter, r *http.Request) {
+// handleUnsubscribe serves DELETE /st/v1/subscribe/{id}.
+func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		stError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/st/v1/subscribe/")
 	if id == "" || strings.Contains(id, "/") {
-		stError(w, http.StatusNotFound, "not found")
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	removed := stSubs.remove(id)
+	removed := s.subs.remove(id)
 	if removed {
-		logMsg("ST push: %s removed by the hub", httpx.Truncate(id, 32))
+		logx.Printf("ST push: %s removed by the hub", httpx.Truncate(id, 32))
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"removed": removed})
 }
 
-// registerSTPushRoutes mounts the §3.5 subscription endpoints, wrapped in
-// the same auth/rate limit as the rest of /st/v1. stHandler calls it.
-func registerSTPushRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/st/v1/subscribe", stAuth(handleSTSubscribe))
-	mux.HandleFunc("/st/v1/subscribe/", stAuth(handleSTUnsubscribe))
-}
-
 // ---- event → push mapping (§3.5) -------------------------------------------
 
-// stPushEventType returns the "<category>.<kind>" the hub should be told
+// pushEventType returns the "<category>.<kind>" the hub should be told
 // about, or ok=false when the event is not one of them. session.* is
 // additionally gated on smartthings.expose_session, so turning the option
 // off stops the events as well as the status block.
-func stPushEventType(ev notify.Event, cfg SmartThingsConfig) (string, bool) {
+func pushEventType(ev notify.Event, cfg config.SmartThingsConfig) (string, bool) {
 	switch ev.Category {
 	case "power":
 		switch ev.Kind {
@@ -406,112 +416,139 @@ func stPushEventType(ev notify.Event, cfg SmartThingsConfig) (string, bool) {
 
 // ---- delivery --------------------------------------------------------------
 
-// stPushJob is one event waiting to go out. The status is built at
-// delivery time, not here, so a queued event still carries fresh state.
-type stPushJob struct {
+// pushJob is one event waiting to go out. The status is built at delivery
+// time, not here, so a queued event still carries fresh state.
+type pushJob struct {
 	Type string
 	At   time.Time
 	Data map[string]string
 	// flushed marks a no-op job: the worker closes it once every job
-	// queued before it has been delivered (tests, see stPushFlush).
+	// queued before it has been delivered (see FlushPush).
 	flushed chan struct{}
 }
 
-var (
-	stPushQueue     = make(chan stPushJob, stPushQueueCap)
-	stPushWorkerOne sync.Once
-	stPushClient    = &http.Client{Timeout: stPushTimeout}
-)
+// pusher is the delivery queue and its worker.
+type pusher struct {
+	queue     chan pushJob
+	workerOne sync.Once
+	client    *http.Client
+}
 
-// stPushTap is the notify.Bus raw tap: every event, before the category
+func (p *pusher) init() {
+	p.queue = make(chan pushJob, pushQueueCap)
+	p.client = &http.Client{Timeout: pushTimeout}
+}
+
+// PushTap is the notify.Bus raw tap: every event, before the category
 // filter, aggregation, quiet hours and the throttle (§3.5).
 //
 // It runs on the emitting goroutine, so it hands the work to the delivery
 // worker — except power.stopping, which is delivered inline. That event is
 // emitted from the SCM stop handler and from the suspend broadcast, right
 // before the PC stops answering, and blocking those paths for up to
-// stPushStoppingDeadline is the only way the hub learns the difference
+// PushStoppingDeadline is the only way the hub learns the difference
 // between "shutting down" and "fell off the network". Both call sites are
 // prepared to wait; the stop continues afterwards either way.
-func stPushTap(ev notify.Event) {
-	typ, ok := stPushEventType(ev, getConfig().SmartThings)
+func (s *Server) PushTap(ev notify.Event) {
+	typ, ok := pushEventType(ev, s.d.Config().SmartThings)
 	if !ok {
 		return
 	}
-	if !stPushAnySubscribers() {
+	if s.Subscriptions() == 0 {
+		// The tap costs one mutex on a service nobody subscribed to.
 		return
 	}
-	job := stPushJob{Type: typ, At: ev.At, Data: ev.Fields}
+	job := pushJob{Type: typ, At: ev.At, Data: ev.Fields}
 	if typ == "power.stopping" {
-		ctx, cancel := context.WithTimeout(context.Background(), stPushStoppingDeadline)
+		ctx, cancel := context.WithTimeout(context.Background(), PushStoppingDeadline)
 		defer cancel()
-		stPushDispatch(ctx, job)
+		s.dispatch(ctx, job)
 		return
 	}
-	stPushWorkerOne.Do(func() { go stPushWorker() })
+	s.push.workerOne.Do(func() { go s.pushWorker() })
 	select {
-	case stPushQueue <- job:
+	case s.push.queue <- job:
 	default:
-		logMsg("ST push: queue full, dropping %s", job.Type)
+		logx.Printf("ST push: queue full, dropping %s", job.Type)
 	}
 }
 
-// stPushAnySubscribers reports whether anything is listening, so the tap
-// costs one mutex on a service nobody subscribed to.
-func stPushAnySubscribers() bool {
-	return len(stSubs.active()) > 0
-}
-
-// stPushWorker delivers queued events one at a time, in emit order.
-func stPushWorker() {
-	for job := range stPushQueue {
+// pushWorker delivers queued events one at a time, in emit order.
+func (s *Server) pushWorker() {
+	for job := range s.push.queue {
 		if job.flushed != nil {
 			close(job.flushed)
 			continue
 		}
-		stPushDispatch(context.Background(), job)
+		s.dispatch(context.Background(), job)
 	}
 }
 
-// stPushDispatch renders the body once and posts it to every live
-// subscriber in parallel, waiting for all of them (ctx bounds the whole
-// thing for power.stopping).
-func stPushDispatch(ctx context.Context, job stPushJob) {
-	subs := stSubs.active()
+// FlushPush waits until the delivery worker has sent everything queued so
+// far, or until timeout; false when it did not drain in time (tests: a
+// delivery left over from one test must not read state the next one is
+// rewriting).
+func (s *Server) FlushPush(timeout time.Duration) bool {
+	s.push.workerOne.Do(func() { go s.pushWorker() })
+	done := make(chan struct{})
+	select {
+	case s.push.queue <- pushJob{flushed: done}:
+	case <-time.After(timeout):
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// Deliver sends one push of type typ to every live subscriber now and
+// waits for all of them (tests; PushTap does this for power.stopping).
+func (s *Server) Deliver(ctx context.Context, typ string, at time.Time, data map[string]string) {
+	s.dispatch(ctx, pushJob{Type: typ, At: at, Data: data})
+}
+
+// dispatch renders the body once and posts it to every live subscriber in
+// parallel, waiting for all of them (ctx bounds the whole thing for
+// power.stopping).
+func (s *Server) dispatch(ctx context.Context, job pushJob) {
+	subs := s.subs.active()
 	if len(subs) == 0 {
 		return
 	}
-	body, err := stPushBody(job)
+	body, err := s.pushBody(job)
 	if err != nil {
-		logMsg("ST push: cannot encode %s: %v", job.Type, err)
+		logx.Printf("ST push: cannot encode %s: %v", job.Type, err)
 		return
 	}
 	var wg sync.WaitGroup
 	for _, sub := range subs {
 		wg.Add(1)
-		go func(sub stSubscription) {
+		go func(sub subscription) {
 			defer wg.Done()
-			stSubs.noteResult(sub.ID, stPushPost(ctx, sub.Callback, body))
+			s.subs.noteResult(sub.ID, s.post(ctx, sub.Callback, body))
 		}(sub)
 	}
 	wg.Wait()
 }
 
-// stPushPayload is the §3.5 callback body. machine_id is repeated at the
-// top level so a hub serving several PCs can route the event without
-// parsing status.
-type stPushPayload struct {
+// pushPayload is the §3.5 callback body. machine_id is repeated at the top
+// level so a hub serving several PCs can route the event without parsing
+// status.
+type pushPayload struct {
 	Protocol  int    `json:"protocol"`
 	MachineID string `json:"machine_id"`
 	Type      string `json:"type"`
 	At        string `json:"at"`
 	// Data is the event's fields (map[string]string), except for
-	// activity.changed: see stPushBody.
-	Data   any              `json:"data"`
-	Status stStatusResponse `json:"status"`
+	// activity.changed: see pushBody.
+	Data   any    `json:"data"`
+	Status Status `json:"status"`
 }
 
-// stPushBody renders one event, with the full §3.2 status attached so the
+// pushBody renders one event, with the full §3.2 status attached so the
 // driver needs no diff. The secret never appears in it (§8): the status
 // only reports whether one is set, and any event field that happens to
 // carry it is dropped.
@@ -519,30 +556,30 @@ type stPushPayload struct {
 // activity.changed is the one event whose data is not its fields: it is
 // the status activity block itself (§11, #123), taken from the same status
 // document so the two can never disagree.
-func stPushBody(job stPushJob) ([]byte, error) {
-	cfg := getConfig()
+func (s *Server) pushBody(job pushJob) ([]byte, error) {
+	cfg := s.d.Config()
 	at := job.At
 	if at.IsZero() {
-		at = stPushNow()
+		at = s.PushNow()
 	}
-	status := buildSTStatus(cfg)
-	var data any = stPushData(job.Data, cfg.Secret)
+	st := s.BuildStatus(cfg)
+	var data any = pushData(job.Data, cfg.Secret)
 	if job.Type == "activity.changed" {
-		data = status.Activity
+		data = st.Activity
 	}
-	return json.Marshal(stPushPayload{
-		Protocol:  stProtocol,
-		MachineID: machineID(),
+	return json.Marshal(pushPayload{
+		Protocol:  Protocol,
+		MachineID: s.d.Status.MachineID(),
 		Type:      job.Type,
 		At:        at.Format(time.RFC3339),
 		Data:      data,
-		Status:    status,
+		Status:    st,
 	})
 }
 
-// stPushData copies the event fields, dropping any value equal to the
-// secret so it cannot leak through a notification field.
-func stPushData(fields map[string]string, secret string) map[string]string {
+// pushData copies the event fields, dropping any value equal to the secret
+// so it cannot leak through a notification field.
+func pushData(fields map[string]string, secret string) map[string]string {
 	out := make(map[string]string, len(fields))
 	for k, v := range fields {
 		if secret != "" && v == secret {
@@ -553,25 +590,25 @@ func stPushData(fields map[string]string, secret string) map[string]string {
 	return out
 }
 
-// stPushPost delivers body to callback: one POST with a 2s timeout and one
-// retry (§3.5). ctx can cut both attempts short (power.stopping).
-func stPushPost(ctx context.Context, callback string, body []byte) error {
-	err := stPushPostOnce(ctx, callback, body)
+// post delivers body to callback: one POST with a 2s timeout and one retry
+// (§3.5). ctx can cut both attempts short (power.stopping).
+func (s *Server) post(ctx context.Context, callback string, body []byte) error {
+	err := s.postOnce(ctx, callback, body)
 	if err == nil || ctx.Err() != nil {
 		return err
 	}
-	return stPushPostOnce(ctx, callback, body)
+	return s.postOnce(ctx, callback, body)
 }
 
-// stPushPostOnce is a single attempt.
-func stPushPostOnce(ctx context.Context, callback string, body []byte) error {
+// postOnce is a single attempt.
+func (s *Server) postOnce(ctx context.Context, callback string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, callback, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "smartthings-pc-control/"+Version)
-	resp, err := stPushClient.Do(req)
+	req.Header.Set("User-Agent", "smartthings-pc-control/"+s.d.Version())
+	resp, err := s.push.client.Do(req)
 	if err != nil {
 		return err
 	}

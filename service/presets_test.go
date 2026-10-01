@@ -154,7 +154,7 @@ func TestSTPresetCommandRefusals(t *testing.T) {
 		{`{"command":"preset","value":"3"}`, http.StatusBadRequest, ""},
 		{`{"command":"preset","value":2}`, http.StatusNotFound, "no_such_preset"},
 	} {
-		resetSTRateLimit()
+		stSrv.ResetRateLimit()
 		w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", c.body)
 		if w.Code != c.status || (c.code != "" && stJSON(t, w)["error"] != c.code) {
 			t.Errorf("%s: %d %s", c.body, w.Code, w.Body.String())
@@ -180,12 +180,12 @@ func TestSTPresetCommandUserSessionErrors(t *testing.T) {
 
 	// A reply that does not confirm the start is a failure.
 	fakePresetRun(t, `{"ok":true}`, nil)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	if w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"preset","value":1}`); w.Code != http.StatusBadGateway {
 		t.Errorf("unconfirmed start: %d %s", w.Code, w.Body.String())
 	}
 	fakePresetRun(t, `{"ok":false,"error":"failed","message":"start steam.exe: file not found"}`, nil)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	w = stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"preset","value":3}`)
 	if w.Code != http.StatusBadGateway || stJSON(t, w)["error"] != "failed" {
 		t.Errorf("failed start: %d %s", w.Code, w.Body.String())
@@ -227,17 +227,5 @@ func TestPresetsAPI(t *testing.T) {
 	handlePresetsRunAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("without CSRF header: %d", w.Code)
-	}
-}
-
-func TestFindPresetByName(t *testing.T) {
-	for arg, slot := range map[string]int{"3": 3, " 1 ": 1, "게임 모드": 3, "대시보드": 1, "  게임 모드 ": 3, "2": 0, "게임": 0, "": 0} {
-		p, ok := findPresetByName(testPresets, arg)
-		if (slot == 0) == ok || (ok && p.Slot != slot) {
-			t.Errorf("findPresetByName(%q) = %+v, %v; want slot %d", arg, p, ok, slot)
-		}
-	}
-	if p, ok := findPresetByName([]Preset{{Slot: 1, Name: "Steam"}}, "steam"); !ok || p.Slot != 1 {
-		t.Error("names match without regard to case")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 // netshRunner runs one netsh invocation and returns its combined output.
@@ -97,7 +98,7 @@ func checkSSDPFirewallRule() bool {
 // responder. A nil error means the rule is in place afterwards, whether it
 // was added now or already there.
 func ensureSSDPFirewallRule() error {
-	err := ensureFirewallRule(ssdpFirewallRuleName, firewallProtoUDP, ssdpPort)
+	err := ensureFirewallRule(ssdpFirewallRuleName, firewallProtoUDP, stapi.SSDPPort)
 	ssdpFirewallOK.Store(err == nil)
 	return err
 }
@@ -126,5 +127,5 @@ func ensureSSDPFirewallRuleAtStart() {
 			ssdpFirewallRuleName, err)
 		return
 	}
-	logMsg("SSDP: firewall rule %q added (inbound UDP %d)", ssdpFirewallRuleName, ssdpPort)
+	logMsg("SSDP: firewall rule %q added (inbound UDP %d)", ssdpFirewallRuleName, stapi.SSDPPort)
 }

@@ -1,4 +1,4 @@
-package service
+package stapi
 
 // Choosing the adapter a Wake-on-LAN magic packet must be addressed to
 // (issue #96). A PC with an Ethernet port, a Wi-Fi card and a handful of
@@ -18,6 +18,8 @@ import (
 	"sync"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
 
 // MAC addresses are compared in config.NormalizeMAC's form.
@@ -56,40 +58,36 @@ func isVirtualAdapter(name string) bool {
 
 // ---- the interface the hub talks to ----------------------------------------
 
-// hubLocalIP is the local address of the connection that carried the most
-// recent /st/v1 request, i.e. the IP of the NIC the hub actually reaches
-// this PC on. That is the single best hint about which adapter has to stay
-// awake, so it is rule ① of the automatic choice.
-var (
-	hubLocalIPValue net.IP
-	hubLocalIPMu    sync.RWMutex
-)
+// The Server's hubLocalIP is the local address of the connection that
+// carried the most recent /st/v1 request, i.e. the IP of the NIC the hub
+// actually reaches this PC on. That is the single best hint about which
+// adapter has to stay awake, so it is rule ① of the automatic choice.
 
-// noteHubLocalIP remembers ip as the interface the hub reached us on.
+// NoteHubLocalIP remembers ip as the interface the hub reached us on.
 // Loopback and unusable addresses are ignored: a request from the WebUI or
 // a test client on 127.0.0.1 must not erase the real hub's interface.
-func noteHubLocalIP(ip net.IP) {
+func (s *Server) NoteHubLocalIP(ip net.IP) {
 	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
 		return
 	}
-	hubLocalIPMu.Lock()
-	hubLocalIPValue = ip
-	hubLocalIPMu.Unlock()
+	s.hubMu.Lock()
+	s.hubLocalIP = ip
+	s.hubMu.Unlock()
 }
 
 // lastHubLocalIP returns the remembered interface address, nil before the
 // first request.
-func lastHubLocalIP() net.IP {
-	hubLocalIPMu.RLock()
-	defer hubLocalIPMu.RUnlock()
-	return hubLocalIPValue
+func (s *Server) lastHubLocalIP() net.IP {
+	s.hubMu.RLock()
+	defer s.hubMu.RUnlock()
+	return s.hubLocalIP
 }
 
-// resetHubLocalIP forgets it (tests).
-func resetHubLocalIP() {
-	hubLocalIPMu.Lock()
-	hubLocalIPValue = nil
-	hubLocalIPMu.Unlock()
+// ResetHubLocalIP forgets it (tests).
+func (s *Server) ResetHubLocalIP() {
+	s.hubMu.Lock()
+	s.hubLocalIP = nil
+	s.hubMu.Unlock()
 }
 
 // ---- the choice ------------------------------------------------------------
@@ -109,7 +107,7 @@ type wolSelection struct {
 // ipv4sOf returns the adapter's IPv4 addresses. The scan keeps IPv6 too
 // (the network tab shows them), but the hub reaches this PC over IPv4 and
 // that is what rule ① compares.
-func ipv4sOf(a WoLAdapter) []string {
+func ipv4sOf(a status.NetAdapter) []string {
 	out := []string{}
 	for _, s := range a.IPs {
 		if ip := net.ParseIP(s); ip != nil && ip.To4() != nil {
@@ -121,7 +119,7 @@ func ipv4sOf(a WoLAdapter) []string {
 
 // adapterIPv4 is the adapter's primary address for display, "" when it has
 // none (a disconnected card, or one with IPv6 only).
-func adapterIPv4(a WoLAdapter) string {
+func adapterIPv4(a status.NetAdapter) string {
 	if v4 := ipv4sOf(a); len(v4) > 0 {
 		return v4[0]
 	}
@@ -129,7 +127,7 @@ func adapterIPv4(a WoLAdapter) string {
 }
 
 // adapterOwnsIP reports whether ip is one of the adapter's IPv4 addresses.
-func adapterOwnsIP(a WoLAdapter, ip net.IP) bool {
+func adapterOwnsIP(a status.NetAdapter, ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
@@ -142,7 +140,7 @@ func adapterOwnsIP(a WoLAdapter, ip net.IP) bool {
 }
 
 // selectionOf describes a for the status body.
-func selectionOf(a WoLAdapter, source string) wolSelection {
+func selectionOf(a status.NetAdapter, source string) wolSelection {
 	return wolSelection{
 		Name:       a.Name,
 		MAC:        config.NormalizeMAC(a.MacAddress),
@@ -171,8 +169,8 @@ func selectionOf(a WoLAdapter, source string) wolSelection {
 // adapters first and only fall to the pseudo ones if there are none —
 // "some vEthernet has WakeOnMagicPacket set" is exactly the wrong answer
 // that #96 exists to stop.
-func selectWoLAdapter(adapters []WoLAdapter, manualMAC string, hubIP net.IP) (wolSelection, bool) {
-	var cands []WoLAdapter
+func selectWoLAdapter(adapters []status.NetAdapter, manualMAC string, hubIP net.IP) (wolSelection, bool) {
+	var cands []status.NetAdapter
 	for _, a := range adapters {
 		if config.NormalizeMAC(a.MacAddress) != "" {
 			cands = append(cands, a)
@@ -200,7 +198,7 @@ func selectWoLAdapter(adapters []WoLAdapter, manualMAC string, hubIP net.IP) (wo
 		}
 	}
 
-	real, virtual := []WoLAdapter{}, []WoLAdapter{}
+	real, virtual := []status.NetAdapter{}, []status.NetAdapter{}
 	for _, a := range cands {
 		if isVirtualAdapter(a.Name) {
 			virtual = append(virtual, a)
@@ -208,7 +206,7 @@ func selectWoLAdapter(adapters []WoLAdapter, manualMAC string, hubIP net.IP) (wo
 			real = append(real, a)
 		}
 	}
-	for _, group := range [][]WoLAdapter{real, virtual} {
+	for _, group := range [][]status.NetAdapter{real, virtual} {
 		if len(group) == 0 {
 			continue
 		}
@@ -237,7 +235,7 @@ var (
 
 func noteMissingWoLMAC(mac string) {
 	if firstMissingWoLMAC(mac) {
-		logMsg("WoL: smartthings.wol_mac %s matches no adapter; choosing automatically", config.NormalizeMAC(mac))
+		logx.Printf("WoL: smartthings.wol_mac %s matches no adapter; choosing automatically", config.NormalizeMAC(mac))
 	}
 }
 

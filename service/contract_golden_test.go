@@ -41,6 +41,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -357,21 +358,21 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		{Name: "이더넷", MacAddress: "B4-2E-99-45-B4-F5", IPs: []string{"192.168.1.10", "fe80::1"}, Status: "Up", WoLEnabled: true, WoLCapable: true},
 		{Name: "Wi-Fi", MacAddress: "3C-A9-F4-11-22-33", IPs: []string{"192.168.1.11"}, Status: "Up", WoLEnabled: false, WoLCapable: true},
 	}})
-	resetHubLocalIP()
-	noteHubLocalIP(net.ParseIP("192.168.1.10"))
-	t.Cleanup(resetHubLocalIP)
+	stSrv.ResetHubLocalIP()
+	stSrv.NoteHubLocalIP(net.ParseIP("192.168.1.10"))
+	t.Cleanup(stSrv.ResetHubLocalIP)
 
 	savedDisplay := getDisplayState()
 	setDisplayState("on")
 	t.Cleanup(func() { setDisplayState(savedDisplay) })
 
 	// session: WTS through the seam, idle through the tray heartbeat.
-	savedQuery := stSessionQuery
-	stSessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
+	savedQuery := sources.sessionQuery
+	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
 	idleNow = func() time.Time { return goldenNow }
 	noteIdleHeartbeat(754)
 	t.Cleanup(func() {
-		stSessionQuery = savedQuery
+		sources.sessionQuery = savedQuery
 		idleNow = time.Now
 		resetIdleHeartbeat()
 	})
@@ -591,9 +592,7 @@ var commandCases = map[string]commandCase{
 	"command.subscribe.json": {
 		setup: func(t *testing.T) {
 			// Ids count up for the life of the process; start this one at 1.
-			stSubs.mu.Lock()
-			stSubs.nextID = 0
-			stSubs.mu.Unlock()
+			stSrv.RestartSubscriptionIDs()
 		},
 		volatile: []volatileField{vf("expires_at", "time", "2026-10-01T21:10:00+09:00")},
 	},
@@ -607,11 +606,11 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	var target any
 	switch {
 	case method == "POST" && path == "/st/v1/command":
-		target = &stCommandRequest{}
+		target = &stapi.CommandRequest{}
 	case method == "POST" && path == "/st/v1/notify":
-		target = &stNotifyRequest{}
+		target = &stapi.NotifyRequest{}
 	case method == "POST" && path == "/st/v1/subscribe":
-		target = &stSubscribeRequest{}
+		target = &stapi.SubscribeRequest{}
 	case method == "DELETE":
 		if s := strings.TrimSpace(string(raw)); s != "" && s != "null" {
 			t.Fatalf("%s %s carries no body, the fixture has %s", method, path, s)

@@ -197,7 +197,7 @@ linters:
       - path: internal/logx/logx\.go
         linters: [errcheck]
         source: os\.Rename\(src, dst\)
-      - path: service/st_push\.go
+      - path: service/stapi/push\.go
         linters: [errcheck]
         source: io\.Copy\(io\.Discard
       - path: service/useraction\.go

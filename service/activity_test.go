@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
 // stubProcesses replaces the Toolhelp lister for one test. The returned
@@ -339,7 +337,7 @@ func TestSTStatusActivityBlock(t *testing.T) {
 	cfg := Config{Port: 5001, Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("code.exe", "VS Code"), watch("Steam.exe", "Steam")}}}
 	setConfig(cfg)
 	activityScan.scan(cfg.Activity)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", "")
 	var status struct {
 		Activity json.RawMessage `json:"activity"`
@@ -357,15 +355,6 @@ func TestSTStatusActivityBlock(t *testing.T) {
 	}
 	if body := w.Body.String(); strings.Contains(body, "private") {
 		t.Errorf("status leaks an unlisted process name: %s", body)
-	}
-}
-
-func TestActivityPushEventSelection(t *testing.T) {
-	if typ, ok := stPushEventType(notify.Event{Category: "activity", Kind: "changed"}, SmartThingsConfig{}); !ok || typ != "activity.changed" {
-		t.Errorf("activity.changed pushed = %v (%q)", ok, typ)
-	}
-	if _, ok := stPushEventType(notify.Event{Category: "activity", Kind: "other"}, SmartThingsConfig{}); ok {
-		t.Error("an unknown activity kind is pushed")
 	}
 }
 

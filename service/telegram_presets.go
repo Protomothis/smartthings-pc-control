@@ -14,6 +14,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
@@ -61,14 +62,14 @@ func (telegramControl) runPreset(args []string) (string, *telegram.InlineKeyboar
 	if arg == "" {
 		return tgText("run_usage"), nil, nil
 	}
-	p, ok := findPresetByName(getConfig().Presets, arg)
+	p, ok := config.FindPresetByName(getConfig().Presets, arg)
 	if !ok {
 		return tgText("run_no_such", html.EscapeString(httpx.Truncate(arg, 64))), nil, fmt.Errorf("no preset %q", httpx.Truncate(arg, 64))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
 	defer cancel()
 	err := runPreset(ctx, p, "telegram")
-	notePresetCommand(p, "telegram", "telegram", presetResultCode(err))
+	notePresetCommand(p, "telegram", "telegram", action.ResultCode(err))
 	if err != nil {
 		return tgActionError(err), nil, err
 	}

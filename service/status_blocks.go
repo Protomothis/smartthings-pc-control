@@ -6,17 +6,19 @@ import "github.com/Protomothis/smartthings-pc-control/service/status"
 // always used.
 type (
 	stGrace       = status.Grace
-	stLastCommand = status.LastCommand
 	stUpdate      = status.Update
-	stWoL         = status.WoL
 	stWoLSelected = status.WoLSelected
 	stWoLAdapter  = status.WoLAdapter
 	stSession     = status.Session
 	awakeView     = status.AwakeView
-	stAwake       = status.Awake
 	stActivity    = status.Activity
 	stActivityApp = status.ActivityApp
 	stAudio       = status.Audio
 	stMedia       = status.Media
-	stPresetRef   = status.PresetRef
+)
+
+// The adapter scan (service/status) under its old names.
+type (
+	WoLStatus  = status.WoLStatus
+	WoLAdapter = status.NetAdapter
 )

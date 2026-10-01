@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
 
 // withWebUISession logs a browser in for one test: the cookie it returns
@@ -99,21 +100,17 @@ func TestWebUIStatusAPI(t *testing.T) {
 		SmartThings: SmartThingsConfig{ExposeSession: true}})
 	cookie := withWebUISession(t)
 
-	savedVersion, savedLatest, savedUptime, savedQuery := Version, latestReleaseTag(), webUIUptime, stSessionQuery
+	savedVersion, savedLatest, savedUptime, savedQuery := Version, latestReleaseTag(), webUIUptime, sources.sessionQuery
 	Version = "v1.2.0"
 	noteLatestRelease("v1.2.1")
 	webUIUptime = func() time.Duration { return 90 * time.Minute }
-	stSessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: true, User: "kim"}, nil }
-	hubLastSeenMu.Lock()
-	savedHub := hubLastSeen
-	hubLastSeen = hubSeen{IP: "192.168.1.20", DriverVersion: "1.1.0", At: time.Now().Add(-time.Minute)}
-	hubLastSeenMu.Unlock()
+	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: true, User: "kim"}, nil }
+	savedHub, _ := stSrv.HubLastSeen()
+	stSrv.SetHubLastSeen(status.HubSeen{IP: "192.168.1.20", DriverVersion: "1.1.0", At: time.Now().Add(-time.Minute)})
 	t.Cleanup(func() {
-		Version, webUIUptime, stSessionQuery = savedVersion, savedUptime, savedQuery
+		Version, webUIUptime, sources.sessionQuery = savedVersion, savedUptime, savedQuery
 		latestRelease.Store(savedLatest)
-		hubLastSeenMu.Lock()
-		hubLastSeen = savedHub
-		hubLastSeenMu.Unlock()
+		stSrv.SetHubLastSeen(savedHub)
 	})
 
 	if w := getPage(t, "/api/status", nil, true); w.Code != http.StatusUnauthorized {
@@ -164,9 +161,9 @@ func TestWebUIStatusAPI(t *testing.T) {
 }
 
 func TestWebUISessionFollowsExposure(t *testing.T) {
-	saved := stSessionQuery
-	t.Cleanup(func() { stSessionQuery = saved })
-	stSessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: false, User: "kim"}, nil }
+	saved := sources.sessionQuery
+	t.Cleanup(func() { sources.sessionQuery = saved })
+	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: false, User: "kim"}, nil }
 
 	if s := webUISession(SmartThingsConfig{}); s.Exposed || s.Locked != nil || s.User != "" {
 		t.Errorf("not exposed = %+v, want nothing", s)
@@ -174,7 +171,7 @@ func TestWebUISessionFollowsExposure(t *testing.T) {
 	if s := webUISession(SmartThingsConfig{ExposeSession: true, ExposeSessionUser: true}); !s.Exposed || s.Locked == nil || *s.Locked || s.User != "kim" {
 		t.Errorf("exposed with user = %+v", s)
 	}
-	stSessionQuery = func() (sessionInfo, error) { return sessionInfo{}, errors.New("no session") }
+	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{}, errors.New("no session") }
 	if s := webUISession(SmartThingsConfig{ExposeSession: true}); !s.Exposed || s.Locked != nil {
 		t.Errorf("nobody signed in = %+v, want exposed with locked unset", s)
 	}

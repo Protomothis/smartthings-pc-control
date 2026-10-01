@@ -16,10 +16,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -97,53 +95,4 @@ func stAudioView(s audioSample) stAudio {
 		Device:    &device,
 		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
 	}
-}
-
-// mediaFeatures are the §3 features entries media.enabled turns on, plus
-// "nowplaying" with the media.now_playing opt-in (#117).
-func mediaFeatures(cfg Config) []string {
-	if !cfg.Media.Enabled {
-		return nil
-	}
-	if cfg.Media.NowPlaying {
-		return []string{"audio", "media", "nowplaying"}
-	}
-	return []string{"audio", "media"}
-}
-
-// handleSTMedia runs one volume, mute or media-key command from
-// /st/v1/command. The reply is the usual command response plus, for the
-// audio commands, the audio block after the change:
-//
-//	403 {"error":"media_disabled"}             media.enabled is off
-//	409 {"error":"no_user_session"}            nobody is logged in
-//	400 {"error":"..."}                        value out of range, minutes given
-//	501 {"error":"unsupported","message":...}  no playback device
-//	502 {"error":"failed","message":...}       the action did not work
-//	504 {"error":"timeout"}                    no answer within 3s
-func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stCommandRequest, from string) {
-	if body.Minutes != 0 {
-		stError(w, http.StatusBadRequest, "minutes does not apply to "+name)
-		return
-	}
-	res, err := runMediaCommand(r.Context(), name, body.Value)
-	if err != nil {
-		f := action.Classify(err)
-		logMsg("ST API: %s from %s failed: %v", name, from, err)
-		if f.Detail == "" {
-			stError(w, f.Status, f.Code)
-		} else {
-			httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
-		}
-		return
-	}
-	logMsg("ST API: %s from %s", name, from)
-	resp := stCommandResponse{Accepted: true, Executed: true, Schedule: stScheduleView()}
-	if action.IsAudio(name) && res.Audio != nil {
-		// The reply's own reading, stamped now: the store may hold it or
-		// a newer heartbeat, and the caller asked about this command.
-		view := stAudioView(audioSample{Audio: *res.Audio, UpdatedAt: audioNow()})
-		resp.Audio = &view
-	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
 }

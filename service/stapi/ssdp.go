@@ -1,4 +1,4 @@
-package service
+package stapi
 
 // SSDP discovery for the SmartThings Edge driver (docs/design/edge-driver.md
 // §3.6, issue #69).
@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -30,7 +29,10 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -40,9 +42,9 @@ const (
 	ssdpDeviceST = "urn:smartthings-pc-control:device:pc:1"
 	// ssdpSearchAll is the wildcard target every SSDP device answers.
 	ssdpSearchAll = "ssdp:all"
-	// ssdpGroup/ssdpPort are the SSDP multicast endpoint.
+	// ssdpGroup/SSDPPort are the SSDP multicast endpoint.
 	ssdpGroup = "239.255.255.250"
-	ssdpPort  = 1900
+	SSDPPort  = 1900
 	// ssdpMaxAge is the CACHE-CONTROL lifetime of one response, in seconds.
 	ssdpMaxAge = 1800
 	// ssdpMaxMX caps the MX (maximum wait) a searcher can impose on us.
@@ -60,6 +62,20 @@ const (
 // LAN would otherwise fill service.log. Set STPC_DEBUG in the service
 // environment to see them.
 var ssdpVerbose = os.Getenv("STPC_DEBUG") != ""
+
+// ssdpState is the responder's lifecycle, its per-source limit and the
+// last search it matched.
+type ssdpState struct {
+	limiter *ratelimit.Limiter
+
+	mu      sync.Mutex
+	running bool
+	cancel  context.CancelFunc
+	done    chan struct{}
+
+	lastMu sync.RWMutex
+	last   status.SSDPSearch
+}
 
 // ---- M-SEARCH parsing ------------------------------------------------------
 
@@ -141,25 +157,21 @@ func clampMX(mx int) int {
 	return mx
 }
 
-// ssdpRandFloat is rand.Float64, replaced by tests that want a fixed delay.
-var ssdpRandFloat = rand.Float64
-
 // ssdpDelay spreads the answer over the window the searcher allowed, so a
 // LAN full of devices does not reply in the same millisecond (§3.6: honour
 // MX, capped at ssdpMaxMX).
-func ssdpDelay(mx int) time.Duration {
+func (s *Server) ssdpDelay(mx int) time.Duration {
 	if mx <= 0 {
 		return 0
 	}
-	return time.Duration(ssdpRandFloat() * float64(time.Duration(mx)*time.Second))
+	return time.Duration(s.randFloat() * float64(time.Duration(mx)*time.Second))
 }
 
 // ---- response --------------------------------------------------------------
 
-// ssdpServerOnce caches the SERVER header ("Windows/10.0.22631 UPnP/1.0
-// smartthings-pc-control/v1.1.0"); the OS version never changes while the
-// service runs, but Version is a package var tests replace, so only the
-// OS part is cached.
+// ssdpOSOnce caches the OS part of the SERVER header ("Windows/10.0.22631
+// UPnP/1.0 smartthings-pc-control/v1.1.0"); the OS version never changes
+// while the service runs, but the version is read on every answer.
 var (
 	ssdpOSOnce sync.Once
 	ssdpOSName string
@@ -176,7 +188,7 @@ func ssdpOS() string {
 // ssdpResponseText builds the unicast 200 OK for one M-SEARCH. localIP is
 // the address of the interface the search arrived on, so the searcher gets
 // a LOCATION it can actually reach; port is the live command port.
-func ssdpResponseText(localIP net.IP, port int) string {
+func (s *Server) ssdpResponseText(localIP net.IP, port int) string {
 	location := "http://" + net.JoinHostPort(localIP.String(), strconv.Itoa(port)) + "/st/v1/description"
 	headers := []string{
 		"HTTP/1.1 200 OK",
@@ -184,11 +196,11 @@ func ssdpResponseText(localIP net.IP, port int) string {
 		"DATE: " + time.Now().UTC().Format(http.TimeFormat),
 		"EXT:",
 		"LOCATION: " + location,
-		"SERVER: " + ssdpOS() + " UPnP/1.0 smartthings-pc-control/" + Version,
+		"SERVER: " + ssdpOS() + " UPnP/1.0 smartthings-pc-control/" + s.d.Version(),
 		// Always the concrete target, never "ssdp:all": a responder
 		// answers a wildcard search with what it actually is.
 		"ST: " + ssdpDeviceST,
-		"USN: uuid:" + machineID() + "::" + ssdpDeviceST,
+		"USN: uuid:" + s.d.Status.MachineID() + "::" + ssdpDeviceST,
 	}
 	// One trailing CRLF ends the last header, a second ends the message.
 	return strings.Join(headers, "\r\n") + "\r\n\r\n"
@@ -196,59 +208,40 @@ func ssdpResponseText(localIP net.IP, port int) string {
 
 // ---- last search (#95) -----------------------------------------------------
 
-// ssdpSearch is the last M-SEARCH this PC matched: which address sent it
-// and when. The app shows it as "마지막 검색 요청 192.168.1.105, 12초 전",
-// which is the only evidence a user has that the hub's search reached the
-// PC at all.
-type ssdpSearch struct {
-	IP string
-	At time.Time
-}
-
-var (
-	ssdpLastSearch   ssdpSearch
-	ssdpLastSearchMu sync.RWMutex
-)
-
-// noteSSDPSearch records one M-SEARCH for a target this PC serves. It runs
+// NoteSSDPSearch records one M-SEARCH for a target this PC serves. It runs
 // before the per-source rate limit on purpose: a hub repeats each search
 // two or three times in a burst, and the diagnostic answers "when did a
 // search last arrive", not "when did we last put a packet on the wire".
-func noteSSDPSearch(ip string) {
-	ssdpLastSearchMu.Lock()
-	ssdpLastSearch = ssdpSearch{IP: ip, At: time.Now()}
-	ssdpLastSearchMu.Unlock()
+func (s *Server) NoteSSDPSearch(ip string) {
+	s.ssdp.lastMu.Lock()
+	s.ssdp.last = status.SSDPSearch{IP: ip, At: time.Now()}
+	s.ssdp.lastMu.Unlock()
 }
 
-// lastSSDPSearch returns the last matched search; ok is false before the
+// LastSSDPSearch returns the last matched search; ok is false before the
 // first one.
-func lastSSDPSearch() (ssdpSearch, bool) {
-	ssdpLastSearchMu.RLock()
-	defer ssdpLastSearchMu.RUnlock()
-	return ssdpLastSearch, !ssdpLastSearch.At.IsZero()
+func (s *Server) LastSSDPSearch() (status.SSDPSearch, bool) {
+	s.ssdp.lastMu.RLock()
+	defer s.ssdp.lastMu.RUnlock()
+	return s.ssdp.last, !s.ssdp.last.At.IsZero()
 }
 
-// resetSSDPLastSearch forgets it (tests).
-func resetSSDPLastSearch() {
-	ssdpLastSearchMu.Lock()
-	ssdpLastSearch = ssdpSearch{}
-	ssdpLastSearchMu.Unlock()
+// ResetSSDPLastSearch forgets it (tests).
+func (s *Server) ResetSSDPLastSearch() {
+	s.ssdp.lastMu.Lock()
+	s.ssdp.last = status.SSDPSearch{}
+	s.ssdp.lastMu.Unlock()
 }
 
 // ---- per-source rate limit -------------------------------------------------
 
-// ssdpLimiter answers each source at most once per ssdpPerSourceInterval.
-// stNow is shared with the /st/v1 limiter so a test can drive both.
-var ssdpLimiter = ratelimit.New(1, ssdpPerSourceInterval, func() time.Time { return stNow() })
-
-// ssdpAllow reports whether ip may be answered now.
-func ssdpAllow(ip string) bool {
-	ok, _ := ssdpLimiter.Allow(ip)
+// ssdpAllow reports whether ip may be answered now: once per
+// ssdpPerSourceInterval. Now is shared with the /st/v1 limiter so a test
+// can drive both.
+func (s *Server) ssdpAllow(ip string) bool {
+	ok, _ := s.ssdp.limiter.Allow(ip)
 	return ok
 }
-
-// resetSSDPRateLimit drops every source (tests).
-func resetSSDPRateLimit() { ssdpLimiter.Reset() }
 
 // ---- sockets ---------------------------------------------------------------
 
@@ -269,10 +262,6 @@ func (s *ssdpSocket) close() {
 	s.recv.Close()
 }
 
-// ssdpOpen opens the responder's sockets. Tests replace it with a single
-// loopback socket so they need no multicast-capable interface.
-var ssdpOpen = openSSDPSockets
-
 // openSSDPSockets joins 239.255.255.250:1900 on every usable IPv4
 // interface. A LAN adapter that refuses the join (a VPN tap, a disabled
 // virtual switch) is logged and skipped; only "not one interface worked"
@@ -282,7 +271,7 @@ func openSSDPSockets() ([]*ssdpSocket, error) {
 	if err != nil {
 		return nil, err
 	}
-	group := &net.UDPAddr{IP: net.ParseIP(ssdpGroup), Port: ssdpPort}
+	group := &net.UDPAddr{IP: net.ParseIP(ssdpGroup), Port: SSDPPort}
 	var out []*ssdpSocket
 	for i := range ifaces {
 		ifi := ifaces[i]
@@ -295,7 +284,7 @@ func openSSDPSockets() ([]*ssdpSocket, error) {
 		}
 		recv, err := net.ListenMulticastUDP("udp4", &ifi, group)
 		if err != nil {
-			logMsg("SSDP: %s did not join %s: %v", ifi.Name, ssdpGroup, err)
+			logx.Printf("SSDP: %s did not join %s: %v", ifi.Name, ssdpGroup, err)
 			continue
 		}
 		// The receiving socket is bound to the group address, which is
@@ -303,7 +292,7 @@ func openSSDPSockets() ([]*ssdpSocket, error) {
 		// second socket bound to this interface's own address.
 		send, err := net.ListenUDP("udp4", &net.UDPAddr{IP: ip, Port: 0})
 		if err != nil {
-			logMsg("SSDP: %s has no unicast sender (%v); replying from the group socket", ifi.Name, err)
+			logx.Printf("SSDP: %s has no unicast sender (%v); replying from the group socket", ifi.Name, err)
 			send = recv
 		}
 		out = append(out, &ssdpSocket{name: ifi.Name, localIP: ip, recv: recv, send: send})
@@ -337,100 +326,90 @@ func firstIPv4(ifi *net.Interface) net.IP {
 
 // ---- lifecycle -------------------------------------------------------------
 
-// ssdpRunner owns the responder goroutines: one socket set, opened by
-// startSSDP at service start and closed by stopSSDP at shutdown.
-type ssdpRunner struct {
-	mu      sync.Mutex
-	running bool
-	cancel  context.CancelFunc
-	done    chan struct{}
-}
-
-var ssdpR ssdpRunner
-
-// startSSDP enables the lifecycle and starts the responder. Called once at
-// service start; starting twice is a no-op, so it is safe to repeat.
-func startSSDP() {
-	ssdpR.mu.Lock()
-	defer ssdpR.mu.Unlock()
-	if ssdpR.running {
+// StartSSDP starts the responder. Called once at service start; starting
+// twice is a no-op, so it is safe to repeat.
+func (s *Server) StartSSDP() {
+	s.ssdp.mu.Lock()
+	defer s.ssdp.mu.Unlock()
+	if s.ssdp.running {
 		return
 	}
-	ssdpR.startLocked()
+	s.startSSDPLocked()
 }
 
-// stopSSDP stops the responder (if any) and disables the lifecycle.
-func stopSSDP() {
-	ssdpR.mu.Lock()
-	defer ssdpR.mu.Unlock()
-	ssdpR.stopLocked()
+// StopSSDP stops the responder (if any).
+func (s *Server) StopSSDP() {
+	s.ssdp.mu.Lock()
+	defer s.ssdp.mu.Unlock()
+	s.stopSSDPLocked()
 }
 
-// ssdpRunning reports whether the responder is listening.
-func ssdpRunning() bool {
-	ssdpR.mu.Lock()
-	defer ssdpR.mu.Unlock()
-	return ssdpR.running
+// SSDPRunning reports whether the responder is listening.
+func (s *Server) SSDPRunning() bool {
+	s.ssdp.mu.Lock()
+	defer s.ssdp.mu.Unlock()
+	return s.ssdp.running
 }
 
-// startLocked opens the sockets and serves them. ssdpR.mu is held. A
+// startSSDPLocked opens the sockets and serves them. ssdp.mu is held. A
 // failure leaves running false, which the app reports as "검색 응답기
 // 꺼짐" so the user is not left waiting for a search that can never land.
-func (r *ssdpRunner) startLocked() {
-	socks, err := ssdpOpen()
+func (s *Server) startSSDPLocked() {
+	socks, err := s.openSSDP()
 	if err != nil {
-		logMsg("SSDP: no socket could be opened, this PC will not answer searches: %v", err)
+		logx.Printf("SSDP: no socket could be opened, this PC will not answer searches: %v", err)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	names := make([]string, 0, len(socks))
-	for _, s := range socks {
-		names = append(names, fmt.Sprintf("%s (%s)", s.name, s.localIP))
+	for _, sock := range socks {
+		names = append(names, fmt.Sprintf("%s (%s)", sock.name, sock.localIP))
 		wg.Add(1)
-		go serveSSDP(ctx, s, &wg)
+		go s.serveSSDP(ctx, sock, &wg)
 	}
 	go func() {
 		<-ctx.Done()
 		// Closing unblocks the readers; the delayed answers watch ctx.
-		for _, s := range socks {
-			s.close()
+		for _, sock := range socks {
+			sock.close()
 		}
 		wg.Wait()
 		close(done)
 	}()
-	r.running, r.cancel, r.done = true, cancel, done
-	logMsg("SSDP: discovery responder started on %s", strings.Join(names, ", "))
+	s.ssdp.running, s.ssdp.cancel, s.ssdp.done = true, cancel, done
+	logx.Printf("SSDP: discovery responder started on %s", strings.Join(names, ", "))
 }
 
-// stopLocked cancels the responder and waits briefly for it. ssdpR.mu is held.
-func (r *ssdpRunner) stopLocked() {
-	if r.cancel == nil {
-		r.running = false
+// stopSSDPLocked cancels the responder and waits briefly for it. ssdp.mu
+// is held.
+func (s *Server) stopSSDPLocked() {
+	if s.ssdp.cancel == nil {
+		s.ssdp.running = false
 		return
 	}
-	r.cancel()
+	s.ssdp.cancel()
 	select {
-	case <-r.done:
+	case <-s.ssdp.done:
 	case <-time.After(5 * time.Second):
-		logMsg("SSDP: responder did not stop in time")
+		logx.Printf("SSDP: responder did not stop in time")
 	}
-	r.running, r.cancel, r.done = false, nil, nil
-	resetSSDPRateLimit()
-	logMsg("SSDP: discovery responder stopped")
+	s.ssdp.running, s.ssdp.cancel, s.ssdp.done = false, nil, nil
+	s.ssdp.limiter.Reset()
+	logx.Printf("SSDP: discovery responder stopped")
 }
 
 // serveSSDP reads M-SEARCH datagrams from one socket until ctx is
 // cancelled (which closes the socket and fails the read).
-func serveSSDP(ctx context.Context, s *ssdpSocket, wg *sync.WaitGroup) {
+func (s *Server) serveSSDP(ctx context.Context, sock *ssdpSocket, wg *sync.WaitGroup) {
 	defer wg.Done()
 	buf := make([]byte, ssdpMaxPacket)
 	for {
-		n, src, err := s.recv.ReadFromUDP(buf)
+		n, src, err := sock.recv.ReadFromUDP(buf)
 		if err != nil {
 			if ctx.Err() == nil {
-				logMsg("SSDP: %s read failed: %v", s.name, err)
+				logx.Printf("SSDP: %s read failed: %v", sock.name, err)
 			}
 			return
 		}
@@ -443,20 +422,20 @@ func serveSSDP(ctx context.Context, s *ssdpSocket, wg *sync.WaitGroup) {
 		}
 		// The packet was for us; record it even if the burst limiter
 		// below drops this particular repeat (#95).
-		noteSSDPSearch(src.IP.String())
-		if !ssdpAllow(src.IP.String()) {
+		s.NoteSSDPSearch(src.IP.String())
+		if !s.ssdpAllow(src.IP.String()) {
 			continue
 		}
 		wg.Add(1)
-		go answerSSDP(ctx, s, *src, req, wg)
+		go s.answerSSDP(ctx, sock, *src, req, wg)
 	}
 }
 
 // answerSSDP waits out the searcher's MX window and sends one unicast
 // reply. A late cancel simply drops the answer.
-func answerSSDP(ctx context.Context, s *ssdpSocket, dst net.UDPAddr, req mSearch, wg *sync.WaitGroup) {
+func (s *Server) answerSSDP(ctx context.Context, sock *ssdpSocket, dst net.UDPAddr, req mSearch, wg *sync.WaitGroup) {
 	defer wg.Done()
-	if d := ssdpDelay(req.MX); d > 0 {
+	if d := s.ssdpDelay(req.MX); d > 0 {
 		t := time.NewTimer(d)
 		defer t.Stop()
 		select {
@@ -468,25 +447,25 @@ func answerSSDP(ctx context.Context, s *ssdpSocket, dst net.UDPAddr, req mSearch
 	if ctx.Err() != nil {
 		return
 	}
-	resp := ssdpResponseText(s.localIP, getConfig().Port)
-	if _, err := s.send.WriteToUDP([]byte(resp), &dst); err != nil {
+	resp := s.ssdpResponseText(sock.localIP, s.d.Config().Port)
+	if _, err := sock.send.WriteToUDP([]byte(resp), &dst); err != nil {
 		if ctx.Err() == nil {
-			logMsg("SSDP: reply to %s failed: %v", dst.IP, err)
+			logx.Printf("SSDP: reply to %s failed: %v", dst.IP, err)
 		}
 		return
 	}
 	if ssdpVerbose {
-		logMsg("SSDP: answered %s (ST %s) from %s", dst.IP, req.ST, s.localIP)
+		logx.Printf("SSDP: answered %s (ST %s) from %s", dst.IP, req.ST, sock.localIP)
 	}
 }
 
 // ---- GET /st/v1/description (§3.6) -----------------------------------------
 
-// stDescription is the unauthenticated discovery document. It holds only
+// description is the unauthenticated discovery document. It holds only
 // what the driver needs to create the device plus secret_set, which tells
 // it whether to ask the user for the secret. The secret itself is never
 // part of it.
-type stDescription struct {
+type description struct {
 	Protocol       int    `json:"protocol"`
 	MachineID      string `json:"machine_id"`
 	Hostname       string `json:"hostname"`
@@ -495,34 +474,28 @@ type stDescription struct {
 	SecretSet      bool   `json:"secret_set"`
 }
 
-// handleSTDescription serves GET /st/v1/description. Unlike the rest of
-// /st/v1 it is not wrapped in stAuth — an unconfigured driver has no secret
+// handleDescription serves GET /st/v1/description. Unlike the rest of
+// /st/v1 it is not wrapped in auth — an unconfigured driver has no secret
 // yet — but it keeps the per-source rate limit (§3.1) and never touches the
-// hub-seen state, so an anonymous probe cannot make the GUI claim a hub is
+// hub-seen state, so an anonymous probe cannot make the app claim a hub is
 // connected.
-func handleSTDescription(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		stError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !stAllow(httpx.RemoteHost(r.RemoteAddr)) {
+	if !s.allow(httpx.RemoteHost(r.RemoteAddr)) {
 		w.Header().Set("Retry-After", "1")
-		stError(w, http.StatusTooManyRequests, "rate limited")
+		writeError(w, http.StatusTooManyRequests, "rate limited")
 		return
 	}
-	cfg := getConfig() // live: a config save takes effect without a restart
-	httpx.WriteJSON(w, http.StatusOK, stDescription{
-		Protocol:       stProtocol,
-		MachineID:      machineID(),
-		Hostname:       hostname(),
-		ServiceVersion: Version,
+	cfg := s.d.Config() // live: a config save takes effect without a restart
+	httpx.WriteJSON(w, http.StatusOK, description{
+		Protocol:       Protocol,
+		MachineID:      s.d.Status.MachineID(),
+		Hostname:       s.d.Status.Hostname(),
+		ServiceVersion: s.d.Version(),
 		Port:           cfg.Port,
 		SecretSet:      cfg.Secret != "",
 	})
-}
-
-// registerSTDescriptionRoute mounts the description route on the /st/v1
-// mux. It is separate from stHandler so #69 adds a single line there.
-func registerSTDescriptionRoute(mux *http.ServeMux) {
-	mux.HandleFunc("/st/v1/description", handleSTDescription)
 }

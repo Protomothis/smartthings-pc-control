@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 // fakeNetsh records every invocation and answers "show rule" from a set of
@@ -150,8 +152,8 @@ func TestSSDPRuleUsesUDP1900AndTheDocumentedName(t *testing.T) {
 		t.Fatalf("add rule args = %v", f.calls[1])
 	}
 	// The port comes from the responder's own constant, not a literal.
-	if ssdpPort != 1900 {
-		t.Fatalf("ssdpPort = %d", ssdpPort)
+	if stapi.SSDPPort != 1900 {
+		t.Fatalf("stapi.SSDPPort = %d", stapi.SSDPPort)
 	}
 }
 

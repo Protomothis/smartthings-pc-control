@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"golang.org/x/sys/windows"
 )
 
@@ -71,7 +72,7 @@ func webUISession(cfg SmartThingsConfig) stSession {
 		return stSession{Exposed: false}
 	}
 	out := stSession{Exposed: true}
-	info, err := stSessionQuery()
+	info, err := sources.sessionQuery()
 	if err != nil {
 		return out
 	}
@@ -94,9 +95,9 @@ func buildWebUIStatus(cfg Config) webUIStatus {
 		Grace:         stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:      getSchedule(),
 	}
-	if seen, ok := hubLastSeenInfo(); ok {
+	if seen, ok := stSrv.HubLastSeen(); ok {
 		out.SmartThings = webUIHubState{
-			Connected:     time.Since(seen.At) <= stHubStale,
+			Connected:     time.Since(seen.At) <= stapi.HubStale,
 			LastSeen:      seen.At.Format(time.RFC3339),
 			DriverVersion: seen.DriverVersion,
 		}

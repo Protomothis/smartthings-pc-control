@@ -118,3 +118,19 @@ func TestChangedPresetSlotsAndConfigKey(t *testing.T) {
 		t.Error("config_changed leaks the preset path")
 	}
 }
+
+func TestFindPresetByName(t *testing.T) {
+	presets := []Preset{
+		{Slot: 3, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`},
+		{Slot: 1, Name: "대시보드", Type: "url", Path: "https://example.com/d"},
+	}
+	for arg, slot := range map[string]int{"3": 3, " 1 ": 1, "게임 모드": 3, "대시보드": 1, "  게임 모드 ": 3, "2": 0, "게임": 0, "": 0} {
+		p, ok := FindPresetByName(presets, arg)
+		if (slot == 0) == ok || (ok && p.Slot != slot) {
+			t.Errorf("FindPresetByName(%q) = %+v, %v; want slot %d", arg, p, ok, slot)
+		}
+	}
+	if p, ok := FindPresetByName([]Preset{{Slot: 1, Name: "Steam"}}, "steam"); !ok || p.Slot != 1 {
+		t.Error("names match without regard to case")
+	}
+}

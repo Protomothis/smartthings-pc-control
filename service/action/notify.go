@@ -22,6 +22,12 @@ const (
 	NotifyMaxTitle = useraction.MaxTitleRunes
 )
 
+// NotifyResult is what the user-action child reported for a shown
+// notification.
+type NotifyResult struct {
+	Toast string `json:"toast"` // "shown" or "pending"
+}
+
 // CleanNotifyText removes what must not reach a toast: line breaks and
 // tabs become spaces, every other control character and the bidirectional
 // overrides (which could make a toast read differently from what was sent)

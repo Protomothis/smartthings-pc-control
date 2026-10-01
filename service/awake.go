@@ -181,17 +181,11 @@ func (c *awakeController) viewLocked() awakeView {
 	return awakeView{On: c.on, Until: c.until}
 }
 
-// validAwakeMinutes reports whether minutes is a period TurnOn accepts:
-// 0 (until turned off) through config.AwakeMaxMinutes.
-func validAwakeMinutes(minutes int) bool {
-	return minutes >= 0 && minutes <= config.AwakeMaxMinutes
-}
-
 // TurnOn keeps the PC awake for minutes (0: until turned off). Calling it
 // while already on starts a new period from now — that is how a period is
 // extended or shortened.
 func (c *awakeController) TurnOn(minutes int) (awakeView, error) {
-	if !validAwakeMinutes(minutes) {
+	if !config.ValidAwakeMinutes(minutes) {
 		return awakeView{}, fmt.Errorf("minutes must be between 0 and %d", config.AwakeMaxMinutes)
 	}
 	c.mu.Lock()
@@ -353,15 +347,6 @@ func startAwake(stop <-chan struct{}) {
 	}()
 }
 
-// awakeMinutesOrDefault resolves an optional period: nil means the
-// configured default.
-func awakeMinutesOrDefault(minutes *int) int {
-	if minutes != nil {
-		return *minutes
-	}
-	return getConfig().Awake.WithDefaults().DefaultMinutes
-}
-
 // ---- local API for the desktop app -----------------------------------------
 
 // awakeAPIView is GET/POST/DELETE /api/awake: the state plus what the app's
@@ -425,8 +410,8 @@ func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		minutes := awakeMinutesOrDefault(body.Minutes)
-		if !validAwakeMinutes(minutes) {
+		minutes := getConfig().Awake.Period(body.Minutes)
+		if !config.ValidAwakeMinutes(minutes) {
 			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("Minutes must be between 0 and %d", config.AwakeMaxMinutes))
 			return
 		}

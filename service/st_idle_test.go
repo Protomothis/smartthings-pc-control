@@ -152,7 +152,7 @@ func TestSessionInfoHasNoWTSIdle(t *testing.T) {
 	if err != nil {
 		t.Skipf("no interactive session to query here: %v", err)
 	}
-	out := stSessionInfo(SmartThingsConfig{ExposeSession: true})
+	out := stSrv.BuildStatus(Config{SmartThings: SmartThingsConfig{ExposeSession: true}}).Session
 	if out.Locked == nil || *out.Locked != info.Locked {
 		t.Errorf("locked = %v, want the WTS value %v", out.Locked, info.Locked)
 	}

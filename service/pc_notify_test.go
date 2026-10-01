@@ -142,12 +142,12 @@ func TestSTNotifyRateLimit(t *testing.T) {
 	stSetup(t, notifyCfg(true))
 	fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 	for i := 0; i < pcNotifyPerMinute; i++ {
-		resetSTRateLimit() // the per-second /st/v1 bucket is not what is tested
+		stSrv.ResetRateLimit() // the per-second /st/v1 bucket is not what is tested
 		if w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`); w.Code != http.StatusOK {
 			t.Fatalf("request %d: status %d", i+1, w.Code)
 		}
 	}
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`)
 	if w.Code != http.StatusTooManyRequests || stJSON(t, w)["error"] != "rate_limited" {
 		t.Fatalf("11th: %d %s", w.Code, w.Body.String())
@@ -155,7 +155,7 @@ func TestSTNotifyRateLimit(t *testing.T) {
 	if ra := w.Header().Get("Retry-After"); ra == "" || ra == "0" {
 		t.Errorf("Retry-After = %q", ra)
 	}
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	if w := stDo(t, "POST", "/st/v1/notify", "192.168.1.21", "", `{"text":"hi"}`); w.Code != http.StatusOK {
 		t.Errorf("another hub: status %d", w.Code)
 	}
@@ -175,7 +175,7 @@ func TestSTNotifyUserSessionErrors(t *testing.T) {
 		{errUserActionOutput, http.StatusBadGateway, "failed"},
 	} {
 		fakeNotifyRun(t, "", c.err)
-		resetSTRateLimit()
+		stSrv.ResetRateLimit()
 		w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`)
 		if w.Code != c.status || stJSON(t, w)["error"] != c.code {
 			t.Errorf("%v: %d %s, want %d %s", c.err, w.Code, w.Body.String(), c.status, c.code)

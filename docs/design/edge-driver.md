@@ -5,7 +5,7 @@
 [`edge-platform-notes.md`](edge-platform-notes.md)에 있다.
 
 - 드라이버: `edge/` (Lua 5.3)
-- 서비스: `service/st_api.go`, `st_push.go`, `st_ssdp.go`, `st_idle.go`, `firewall.go`, 세션 조회는 `service/session`, 예약은 `service/power`
+- 서비스: `service/stapi`(`/st/v1`·푸시·SSDP·WoL 선택), `service/st_idle.go`, `firewall.go`, 세션 조회는 `service/session`, 예약은 `service/power`
 - 사용자 안내: `edge/README.md`, Wiki [SmartThings Edge 드라이버]
 
 ## 1. 개요와 목표
@@ -546,7 +546,7 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 
 ## 9. 테스트
 
-- **Go** — `st_api_test.go`(인증·허용 목록·명령 모드·예약·취소·status 스키마), `st_push_test.go`(구독 검증·TTL·연속 실패 제거·`power.stopping` 동기 전송), `st_ssdp_test.go`(M-SEARCH 파싱·응답·레이트 리밋), `firewall_test.go`.
+- **Go** — `st_api_test.go`(인증·허용 목록·명령 모드·예약·취소·status 스키마), `st_push_test.go`(구독 검증·TTL·연속 실패 제거·`power.stopping` 동기 전송), `service/stapi/ssdp_test.go`(M-SEARCH 파싱·응답·레이트 리밋), `firewall_test.go`.
 - **Lua** — `edge/tests/run.lua`가 전 모듈을 돈다. 상태 머신 전이, status→이벤트 매핑, 오류 분류, 푸시 본문 파싱과 갱신 타이밍, WoL 패킷 바이트, 검색 판정, 프로필 이전, i18n.
   `capabilities_test.lua`는 **정의·프레젠테이션·드라이버가 서로 맞는지**를 지킨다: emit 하는 속성이 정의에 있는지, 목록의 키가 인자 스키마를 통과하는지, `state`가 bool에 묶이지 않았는지, 값 라벨이 병기인지, 상태 줄이 빈 문자열로 나가지 않는지.
   `profilegen_test.lua`(#107)는 생성기 규칙을 Lua로 돌려 현재 세대의 `profiles/pc*-vN.yml`과 비교하고, `features_test.lua`(#107~#118, #123)는 v1.2.0 기능의 status → 이벤트, 명령 매핑, 가드와 오류 문구, 컴포넌트 배선, 배터리 프로필 이동, 앱 요약 줄을 본다. `apps_test.lua`(#123)는 앱 자식 장치의 생성·중복 방지·삭제·보존·방출 규칙과 lifecycle을, `budget_test.lua`는 방출 수(§6.1)를 본다.

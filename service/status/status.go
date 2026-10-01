@@ -185,3 +185,39 @@ type PresetRef struct {
 	Slot int    `json:"slot"`
 	Name string `json:"name"`
 }
+
+// WoLStatus is the adapter scan behind the wol block and GET
+// /api/wol-status: every physical adapter with its WoL state.
+type WoLStatus struct {
+	Adapters   []NetAdapter `json:"adapters"`
+	ExternalIP string       `json:"externalIP,omitempty"`
+	Ready      bool         `json:"ready"`             // true if at least one active adapter has WoL enabled
+	Warning    string       `json:"warning,omitempty"` // non-fatal warning (e.g., WoL query failed)
+	Error      string       `json:"error,omitempty"`
+}
+
+// NetAdapter is one physical network adapter of the scan.
+type NetAdapter struct {
+	Name       string   `json:"name"`
+	MacAddress string   `json:"mac"`
+	IPs        []string `json:"ips"`
+	Status     string   `json:"status"` // "Up" or "Down"
+	WoLEnabled bool     `json:"wolEnabled"`
+	WoLCapable bool     `json:"wolCapable"`
+}
+
+// HubSeen is the last authenticated /st/v1 caller. The app's SmartThings
+// section (#70) shows it as "hub 192.168.1.20 · driver v1.0.0 · 3s ago".
+type HubSeen struct {
+	IP            string
+	DriverVersion string
+	At            time.Time
+}
+
+// SSDPSearch is the last M-SEARCH this PC matched: which address sent it
+// and when (#95). The app shows it as "마지막 검색 요청 192.168.1.105, 12초
+// 전", the only evidence a user has that the hub's search reached the PC.
+type SSDPSearch struct {
+	IP string
+	At time.Time
+}

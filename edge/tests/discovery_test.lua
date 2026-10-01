@@ -26,7 +26,7 @@ local function pc_device(dni, prefs)
   return device
 end
 
--- The exact answer service/st_ssdp.go's ssdpResponseText builds.
+-- The exact answer service/stapi/ssdp.go's ssdpResponseText builds.
 local function ssdp_response(ip, port, machine_id)
   return table.concat({
     "HTTP/1.1 200 OK",

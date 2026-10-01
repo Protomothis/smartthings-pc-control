@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 // stDo sends one /st/v1 request through the real handler tree. from is the
@@ -30,9 +31,9 @@ func stDo(t *testing.T, method, path, from, secret, body string) *httptest.Respo
 	if secret != "" {
 		r.Header.Set("X-PC-Secret", secret)
 	}
-	r.Header.Set("User-Agent", stDriverAgent+"/1.0.0")
+	r.Header.Set("User-Agent", stapi.DriverAgent+"/1.0.0")
 	w := httptest.NewRecorder()
-	stHandler().ServeHTTP(w, r)
+	stSrv.Handler().ServeHTTP(w, r)
 	return w
 }
 
@@ -50,17 +51,12 @@ func stJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 // clears the status cache before and after the test.
 func stubWoL(t *testing.T, status WoLStatus) {
 	t.Helper()
-	clear := func() {
-		wolCacheMu.Lock()
-		wolCached, wolCachedAt = WoLStatus{}, time.Time{}
-		wolCacheMu.Unlock()
-	}
-	orig := stWoLProvider
-	stWoLProvider = func() WoLStatus { return status }
-	clear()
+	orig := sources.wolScan
+	sources.wolScan = func() WoLStatus { return status }
+	stSrv.ResetWoLCache()
 	t.Cleanup(func() {
-		stWoLProvider = orig
-		clear()
+		sources.wolScan = orig
+		stSrv.ResetWoLCache()
 	})
 }
 
@@ -70,14 +66,14 @@ func stSetup(t *testing.T, cfg Config) {
 	t.Helper()
 	initLogger()
 	setConfig(cfg)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	stubWoL(t, WoLStatus{Ready: true, Adapters: []WoLAdapter{
 		{Name: "Ethernet", MacAddress: "AA-BB-CC-DD-EE-FF", Status: "Up", WoLEnabled: true, WoLCapable: true},
 	}})
 	cancelScheduleBy("api")
 	t.Cleanup(func() {
 		cancelScheduleBy("api")
-		resetSTRateLimit()
+		stSrv.ResetRateLimit()
 	})
 }
 
@@ -136,7 +132,7 @@ func TestSTAllowedHubsRejectsOtherSources(t *testing.T) {
 	}
 	// An empty list allows everyone (the default).
 	setConfig(Config{Port: 5001, Secret: "s3cr3t"})
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	if w := stDo(t, "GET", "/st/v1/status", "10.0.0.9", "s3cr3t", ""); w.Code != http.StatusOK {
 		t.Errorf("empty allow-list: %d, want 200", w.Code)
 	}
@@ -145,14 +141,14 @@ func TestSTAllowedHubsRejectsOtherSources(t *testing.T) {
 func TestSTRateLimitPerSourceIP(t *testing.T) {
 	stSetup(t, Config{Port: 5001})
 
-	for i := 1; i <= stRatePerSecond; i++ {
+	for i := 1; i <= stapi.RatePerSecond; i++ {
 		if w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""); w.Code != http.StatusOK {
 			t.Fatalf("request %d: %d, want 200", i, w.Code)
 		}
 	}
 	w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", "")
 	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("request %d: %d, want 429", stRatePerSecond+1, w.Code)
+		t.Errorf("request %d: %d, want 429", stapi.RatePerSecond+1, w.Code)
 	}
 	// The bucket is per source: another hub is unaffected.
 	if w := stDo(t, "GET", "/st/v1/status", "192.168.1.21", "", ""); w.Code != http.StatusOK {
@@ -197,7 +193,7 @@ func TestSTStatusShape(t *testing.T) {
 	if _, ok := got["last_command"]; !ok {
 		t.Error("status is missing last_command (null is fine, the key is not)")
 	}
-	if got["protocol"] != float64(stProtocol) || got["power"] != "on" {
+	if got["protocol"] != float64(stapi.Protocol) || got["power"] != "on" {
 		t.Errorf("protocol/power = %v/%v", got["protocol"], got["power"])
 	}
 	if got["secret_set"] != true || got["display"] != "off" {
@@ -534,14 +530,14 @@ func TestSTHubLastSeen(t *testing.T) {
 	stSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
 
 	// An unauthenticated request must not count as a hub contact.
-	before, _ := hubLastSeenInfo()
+	before, _ := stSrv.HubLastSeen()
 	stDo(t, "GET", "/st/v1/status", "10.0.0.9", "wrong", "")
-	if after, _ := hubLastSeenInfo(); after != before {
+	if after, _ := stSrv.HubLastSeen(); after != before {
 		t.Errorf("a rejected request updated hubLastSeen: %+v", after)
 	}
 
 	stDo(t, "GET", "/st/v1/status", "192.168.1.20", "s3cr3t", "")
-	seen, ok := hubLastSeenInfo()
+	seen, ok := stSrv.HubLastSeen()
 	if !ok {
 		t.Fatal("hubLastSeenInfo reports nothing after an authenticated request")
 	}
@@ -575,11 +571,11 @@ func TestSTHubLastSeen(t *testing.T) {
 // present even before a hub has ever called.
 func TestSTHubAPIDiagnostics(t *testing.T) {
 	stSetup(t, Config{Port: 5001})
-	resetSSDPLastSearch()
+	stSrv.ResetSSDPLastSearch()
 	prevOK := ssdpFirewallRuleOK()
 	ssdpFirewallOK.Store(true)
 	t.Cleanup(func() {
-		resetSSDPLastSearch()
+		stSrv.ResetSSDPLastSearch()
 		ssdpFirewallOK.Store(prevOK)
 	})
 
@@ -601,8 +597,8 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 	if !ok {
 		t.Fatalf("no ssdp object: %v", got)
 	}
-	if ssdp["running"] != ssdpRunning() {
-		t.Errorf("ssdp.running = %v, want %v", ssdp["running"], ssdpRunning())
+	if ssdp["running"] != stSrv.SSDPRunning() {
+		t.Errorf("ssdp.running = %v, want %v", ssdp["running"], stSrv.SSDPRunning())
 	}
 	if ssdp["firewall_rule"] != true {
 		t.Errorf("ssdp.firewall_rule = %v, want true", ssdp["firewall_rule"])
@@ -613,7 +609,7 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 		t.Errorf("ssdp.last_search = %v, want null", v)
 	}
 
-	noteSSDPSearch("192.168.1.105")
+	stSrv.NoteSSDPSearch("192.168.1.105")
 	ssdp, _ = hub()["ssdp"].(map[string]any)
 	last, ok := ssdp["last_search"].(map[string]any)
 	if !ok {
@@ -631,19 +627,6 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 	for _, key := range []string{"connected", "ip", "driver_version", "last_seen"} {
 		if _, present := got[key]; !present {
 			t.Errorf("%s is missing from /api/st/hub", key)
-		}
-	}
-}
-
-func TestDriverVersionOf(t *testing.T) {
-	cases := map[string]string{
-		stDriverAgent + "/1.0.0": "1.0.0",
-		"curl/8.4.0":             "curl/8.4.0",
-		"":                       "",
-	}
-	for ua, want := range cases {
-		if got := driverVersionOf(ua); got != want {
-			t.Errorf("driverVersionOf(%q) = %q, want %q", ua, got, want)
 		}
 	}
 }
@@ -700,16 +683,3 @@ func TestTurnScreenOnCommand(t *testing.T) {
 }
 
 // ---- config (§3.7) ---------------------------------------------------------
-
-func TestSTHubAllowedMatching(t *testing.T) {
-	hubs := []string{" 192.168.1.20 ", ""}
-	if !stHubAllowed(hubs, "192.168.1.20") {
-		t.Error("a padded allow-list entry must still match")
-	}
-	if stHubAllowed(hubs, "192.168.1.21") {
-		t.Error("an unlisted source matched")
-	}
-	if !stHubAllowed([]string{"192.168.1.20"}, "::ffff:192.168.1.20") {
-		t.Error("the IPv4-mapped form of an allowed hub must match")
-	}
-}

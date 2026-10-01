@@ -256,8 +256,8 @@ function client.cancel(device, deps)
   return client.request(device, { method = "DELETE", path = "/schedule" }, deps)
 end
 
---- `POST /st/v1/subscribe` (§3.5). Field names are the ones `stSubscribeRequest`
---- in service/st_push.go decodes; the answer is `{ id, expires_at }`.
+--- `POST /st/v1/subscribe` (§3.5). Field names are the ones `SubscribeRequest`
+--- in service/stapi/push.go decodes; the answer is `{ id, expires_at }`.
 -- The service requires the callback host to equal the request source IP, so
 -- `callback` has to be built from the hub address the PC sees (push.lua).
 function client.subscribe(device, callback, ttl, deps)
