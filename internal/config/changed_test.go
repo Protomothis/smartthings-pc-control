@@ -94,6 +94,13 @@ func TestChangedKeysEachKey(t *testing.T) {
 	if got := strings.Join(ChangedKeys(base, all), ","); got != strings.Join(auditedKeys, ",") {
 		t.Errorf("all changed: %s", got)
 	}
+	// The watch list's order is its priority (#123): a reorder alone is a change.
+	a, b := base, base
+	a.Activity.Watch = []ActivityWatch{{Process: "a.exe", Label: "A"}, {Process: "b.exe", Label: "B"}}
+	b.Activity.Watch = []ActivityWatch{{Process: "b.exe", Label: "B"}, {Process: "a.exe", Label: "A"}}
+	if got := ChangedKeys(a, b); !slices.Equal(got, []string{"activity.watch"}) {
+		t.Errorf("reorder: ChangedKeys = %v", got)
+	}
 	// Not audited, and a missing list equals an empty one.
 	quiet := base
 	quiet.ShutdownGrace = !base.ShutdownGrace

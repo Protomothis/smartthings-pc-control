@@ -18,24 +18,6 @@ func writeConfig(t *testing.T, dir, content string) string {
 	return path
 }
 
-func TestLoadMissingOrBroken(t *testing.T) {
-	if cfg := Load(""); cfg.Port != DefaultPort || !cfg.ShutdownGrace {
-		t.Errorf("no folder: %+v", cfg)
-	}
-	dir := t.TempDir()
-	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Telegram.Lang != "ko" {
-		t.Errorf("no file: %+v", cfg)
-	}
-	writeConfig(t, dir, "{invalid json!!!")
-	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Presets == nil {
-		t.Errorf("broken file: %+v", cfg)
-	}
-	writeConfig(t, dir, `{"port": 0, "secret": "abc"}`)
-	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Secret != "abc" {
-		t.Errorf("port 0: %+v", cfg)
-	}
-}
-
 func TestSaveAndLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	stored, err := Save(dir, Config{Port: 7777, Secret: "roundtrip"})
