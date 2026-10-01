@@ -24,7 +24,7 @@ func configServer(t *testing.T, name string, status int) (*httptest.Server, int)
 	return srv, srv.Listener.Addr().(*net.TCPAddr).Port
 }
 
-// withPorts sets the current and the config.json port for one test.
+// withPorts sets the current and the tray.json port for one test.
 func withPorts(t *testing.T, cur int, disk *int) {
 	t.Helper()
 	savedCur, savedDisk := webUIPort.Load(), diskWebUIPort
@@ -86,7 +86,7 @@ func TestFollowPortChange(t *testing.T) {
 	withPorts(t, portA, &disk)
 	u := &ui{client: NewClient(portA)}
 
-	// config.json still names the current port: nothing to follow.
+	// tray.json still names the current port: nothing to follow.
 	if u.followPortChange() {
 		t.Fatal("moved without a port change")
 	}

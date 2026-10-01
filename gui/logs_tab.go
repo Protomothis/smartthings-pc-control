@@ -52,7 +52,7 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 }
 
 // serviceLogPath is service.log next to the exe — the same location the
-// service (and localSecret) use.
+// service uses.
 func serviceLogPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {

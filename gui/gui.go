@@ -21,12 +21,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// defaultWebUIPort is the API port when config.json is absent (SmartThings
+// defaultWebUIPort is the API port when tray.json is absent (SmartThings
 // port 5001 + 1). The live value comes from localWebUIPort().
 const defaultWebUIPort = 5002
 
 // webUIPort is the port u.client talks to: resolved at start from
-// config.json next to the exe, and moved by setPort when the service comes
+// tray.json next to the exe, and moved by setPort when the service comes
 // back on a new port (#121). Read it with currentWebUIPort.
 var webUIPort atomic.Int32
 
@@ -49,7 +49,10 @@ type ui struct {
 	// login is a loginState (login.go): keeps a single login dialog up
 	// and stops connTick from re-prompting over it (#98).
 	login atomic.Int32
-	quit  chan struct{}
+	// localGate holds back the automatic local login after a refusal
+	// (locallogin.go, #131).
+	localGate localLoginGate
+	quit      chan struct{}
 
 	// visible is whether the window was on screen at pollLoop's last look,
 	// shownTab the tab in front (mirrors curTab) — both read by pollLoop.
@@ -514,6 +517,11 @@ func (u *ui) initialLoad() {
 	cfg, err := u.client.GetConfig()
 	if err != nil && !errors.Is(err, errUnauthorized) && u.followPortChange() {
 		// The service came back on the port saved in the settings (#121).
+		cfg, err = u.client.GetConfig()
+	}
+	if errors.Is(err, errUnauthorized) && u.tryLocalLogin() {
+		// The service vouched for this process (#131); the login dialog
+		// below is only for when it does not.
 		cfg, err = u.client.GetConfig()
 	}
 	fyne.Do(func() {

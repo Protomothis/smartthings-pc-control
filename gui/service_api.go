@@ -7,6 +7,8 @@ type serviceAPI interface {
 	// SetPort moves the client to another WebUI port (#121).
 	SetPort(webPort int)
 	Login(secret string) error
+	// LocalLogin is the session without the secret (#131).
+	LocalLogin() error
 
 	GetConfig() (Config, error)
 	SaveConfig(cfg Config) (string, error)

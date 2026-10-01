@@ -86,9 +86,9 @@ var (
 // buildHeartbeat samples what the switches allow; ok is false when there
 // is nothing to send.
 //
-// The switches are re-read from config.json on every tick — the same file
-// localSecret() uses, rewritten by the service whenever a setting changes
-// — so turning smartthings.expose_session or media.enabled off stops that
+// The switches are re-read from tray.json on every tick — the service
+// rewrites it whenever a setting changes (#131: config.json itself is
+// admin-only now) — so turning smartthings.expose_session or media.enabled off stops that
 // part of the post within one interval, without a restart or an API round
 // trip. The two are independent: the audio block serves the volume
 // commands whether or not the session block is published.
@@ -211,10 +211,10 @@ func (u *ui) postHeartbeat(hb Heartbeat) {
 	ignored, err := u.client.SessionHeartbeat(hb)
 	if errors.Is(err, errUnauthorized) {
 		// A secret is configured and this client has no session yet (the
-		// user never opened the window, or the service restarted).
-		// config.json holds the secret, so log in the way the toast handler
-		// does and retry once.
-		if secret := localSecret(); secret != "" && u.client.Login(secret) == nil {
+		// user never opened the window, or the service restarted). Ask the
+		// service to vouch for this process (#131) and retry once; refused,
+		// the post waits for a manual login in the window.
+		if u.tryLocalLogin() {
 			ignored, err = u.client.SessionHeartbeat(hb)
 		}
 	}
