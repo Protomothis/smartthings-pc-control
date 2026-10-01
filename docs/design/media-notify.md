@@ -38,6 +38,13 @@
   - 결과는 한 줄 JSON(`{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}`)으로 stdout에 쓴다.
 - **상태 보고:** 볼륨은 사용자가 키보드로도 바꾸므로, 트레이 하트비트(30초)에 `audio` 블록을 실어 보낸다.
   명령 직후에는 `user-action`의 결과로 즉시 갱신하고 푸시로 허브에 알린다.
+- **하트비트 인증(#131):** 시크릿을 정해 두면 하트비트도 세션이 필요하다. 트레이는 예전처럼 `config.json`의
+  시크릿을 읽지 않고(이제 SYSTEM·Administrators 전용) 루프백 `POST /api/local-login`으로 세션을 받는다.
+  서비스는 연결의 클라이언트 포트를 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_ALL)`로 PID에 매핑해, 그 프로세스가
+  서비스와 같은 exe이고, 세션 0이 아닌 대화형 로그온이며, 그 세션의 사용자 본인이고, 관리자(UAC 필터 토큰 포함)일
+  때만 세션을 준다. 관리자 조건은 `config.json`을 읽을 수 있는 사람과 같게 맞춘 것이다 — 관리자가 아닌 계정의
+  트레이는 앱 창에서 시크릿으로 로그인해야 하트비트가 들어간다. 로컬 세션은 `/api/login`의 세션과 따로이고
+  루프백에서만 유효하다. 트레이가 세션 없이 읽는 포트와 스위치(`expose_session`·`media.*`)는 서비스가 `tray.json`에 쓴다.
 - **사용자 세션이 없을 때:** 로그인한 사용자가 없으면 명령을 `409 no_user_session`으로 거절하고
   status의 `audio.available=false`로 알린다. 드라이버는 요약 줄에 "사용자 없음"을 쓴다.
 - **구현 선택:** Core Audio는 COM(`IMMDeviceEnumerator` → `IAudioEndpointVolume`)을 Go에서 직접 부른다
