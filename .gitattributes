@@ -1,6 +1,37 @@
-# Shell scripts must keep LF endings. This is a Windows project, so a checkout
-# with core.autocrlf=true would otherwise hand bash a script whose every line
-# ends in CR, and bash reports that as `$'\r': command not found` on the very
-# first line. edge/tools/create-capabilities.sh is run from Git Bash on the
-# owner's machine, so this is not theoretical.
-*.sh text eol=lf
+# Line endings are pinned per file type so a checkout looks the same on every
+# machine regardless of core.autocrlf. The repository is Windows-first, and with
+# autocrlf=true (the Git for Windows default, and the windows-latest runner's)
+# the working tree used to get CRLF everywhere, which made a local `gofmt -l`
+# report every Go file and put CRLF into the //go:embed'ed Telegram templates of
+# a local build but not necessarily of a CI one.
+#
+# Everything git detects as text is normalised to LF in the repository.
+* text=auto
+
+# Sources, configs and data that tools read byte for byte: always LF, also in
+# the working tree. Shell scripts in particular: bash reports a CR as
+# `$'\r': command not found` on the very first line, and
+# edge/tools/create-capabilities.sh is run from Git Bash on the owner's machine.
+*.go     text eol=lf
+*.mod    text eol=lf
+*.sum    text eol=lf
+*.lua    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.js     text eol=lf
+*.sh     text eol=lf
+*.tmpl   text eol=lf
+*.golden text eol=lf
+*.html   text eol=lf
+
+# Windows-only scripts keep CRLF (cmd.exe misparses labels/GOTO with LF).
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets, never diffed or converted.
+*.png  binary
+*.ico  binary
+*.syso binary
