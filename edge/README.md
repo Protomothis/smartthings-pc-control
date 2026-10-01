@@ -1,12 +1,13 @@
 # SmartThings Edge 드라이버
 
-PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다. 허브 안에서 로컬로 돌면서
-PC의 `/st/v1` API로 이야기한다.
+PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
+허브 안에서 로컬로 돌면서 PC의 `/st/v1` API로 이야기한다.
 
 - **실제 전원 상태** — 켜짐 · 절전 · 최대 절전 · 꺼짐 · 깨우는 중 · 종료 대기. 스위치가 실제 상태와 어긋나지 않는다.
 - **유예와 예약이 보인다** — 남은 시간, 실행 시각, 출처(SmartThings · 앱 · 텔레그램), 취소.
-- **IP를 손으로 넣지 않는다** — SSDP 자동 검색으로 주소·포트·호스트 이름이 채워진 채 장치가 생긴다. DHCP로 주소가 바뀌어도 따라간다.
-- **Wake-on-LAN** — 스위치를 켜면 매직 패킷을 보내고 결과를 말해 준다.
+- **IP를 손으로 넣지 않는다** — SSDP 검색으로 주소 · 포트 · 호스트 이름이 채워진 채 장치가 생기고, DHCP로 주소가 바뀌어도 따라간다.
+- **Wake-on-LAN** — 스위치를 켜면 PC가 고른 랜카드로 매직 패킷을 보내고 결과를 말해 준다.
+- **미디어 · 프리셋 · 메시지 · 잠들지 않기 · 배터리 · 앱 장치**(드라이버 1.1, 서비스 v1.2.0).
 - **조용한 실패가 없다** — 시크릿 불일치, 연결 불가, 버전 비호환, WoL 미준비를 한 줄로 알려 준다.
 - **여러 PC** — Windows MachineGuid로 구분하므로 허브 하나가 여러 PC를 다뤄도 섞이지 않는다.
 
@@ -15,295 +16,111 @@ PC의 `/st/v1` API로 이야기한다.
 | | |
 |---|---|
 | 허브 | Edge 드라이버를 실행할 수 있는 SmartThings 허브 |
-| 서비스 | PC Control **v1.1.0 이상**. 그보다 낮으면 드라이버가 `버전 불일치`로 표시한다. 드라이버 1.1의 볼륨·미디어·PC 알림·프리셋·앱 감지(앱 장치)·잠들지 않기·배터리는 **v1.2.0**이 필요하다(그 전에는 `서비스 v1.2.0 필요`) |
-| 네트워크 | 허브와 PC가 같은 서브넷/VLAN(자동 검색과 WoL에 필요) |
-| 방화벽 | 인바운드 TCP 5001, 자동 검색을 쓰면 인바운드 **UDP 1900**. 둘 다 `install`이 만든다 |
-| 시크릿 | 필수는 아니지만 권장. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고 드라이버가 경고한다 |
+| 서비스 | PC Control **v1.1.0 이상**(낮으면 `버전 불일치`). 드라이버 1.1의 새 기능은 **v1.2.0**(그 전에는 `서비스 v1.2.0 필요`) |
+| 네트워크 | 허브와 PC가 같은 서브넷/VLAN, PC의 네트워크 프로필은 **개인(Private)** |
+| 방화벽 | 인바운드 TCP 5001, UDP 1900. 둘 다 `install`이 만든다 |
+| 시크릿 | 권장. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고 드라이버가 경고한다 |
 
-네트워크 프로필은 **개인(Private)** 이어야 한다. 공용에서는 규칙과 무관하게 Windows가
-인바운드 멀티캐스트를 막는다. 라우터는 `239.255.255.250`을 구간 사이로 전달하지 않으므로
-허브와 PC가 다른 서브넷에 있으면 검색이 닿지 않는다 — 그리고 **검색이 장치를 추가하는
-유일한 경로다.** 추가만 같은 서브넷에서 끝내면 그 뒤에는 장치 설정의 `PC IP 주소`로
-주소를 고정해 둘 수 있다(명령과 푸시는 그대로 동작한다).
+라우터는 SSDP 멀티캐스트를 서브넷 사이로 전달하지 않는다.
+**검색이 장치를 추가하는 유일한 경로**이므로 추가는 같은 서브넷에서 한다.
+그 뒤에는 장치 설정의 `PC IP 주소`로 주소를 고정할 수 있다.
 
 ## 설치
 
-### 1. 채널 가입
+1. 채널 **Protomothis**의 초대 링크를 열고 [Enroll] → 허브를 고른다: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
+2. 채널의 **SmartThings PC Control**을 [Install] 한다(앱의 *메뉴 → 설정 → 연결된 서비스 → 허브 → 드라이버*에서 확인).
+3. PC의 데스크톱 앱 **설정 탭**에서 시크릿을 정하고, **SmartThings 탭**의 검색 상태가 `검색 응답기 켜짐 · 방화벽 규칙 OK`인지 본다.
+4. **PC와 PC Control이 켜진 상태에서** SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**. 응답한 PC마다 장치가 생긴다.
+5. 장치 설정에 **시크릿만** 넣는다.
 
-채널 이름은 **Protomothis**다.
+장치의 **모델**은 `PC Control · 58bff996`처럼 PC 식별자의 앞 8자를 담는다.
+데스크톱 앱 SmartThings 탭의 **이 PC의 ID**와 같은 값이다.
 
-> **채널 초대 링크:** <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
-
-링크를 열고 → [Enroll] → 허브를 선택한다.
-
-### 2. 드라이버 설치
-
-가입한 **Protomothis** 채널의 **SmartThings PC Control**을 [Install] 한다. 설치된 드라이버는 앱의
-*메뉴 → 설정 → 연결된 서비스 → 허브 → 드라이버*에서 확인할 수 있다.
-
-### 3. PC 준비
-
-1. 데스크톱 앱 **설정 탭**에서 시크릿을 정하고 [저장].
-2. **SmartThings 탭**의 **검색 상태**가 `검색 응답기 켜짐 · 방화벽 규칙 OK`인지 본다(SSDP 검색은 항상 켜져 있다).
-3. WoL로 깨울 계획이면 같은 탭의 **WoL 어댑터**에서 어느 랜카드로 깨울지와 그 어댑터의 WoL 상태를 확인한다.
-
-### 4. 장치 추가
-
-> **검색을 누르기 전에 PC가 켜져 있고 PC Control이 돌고 있어야 한다.** 장치 추가는
-> 이 검색이 **유일한 경로다** — 꺼져 있는 PC는 응답할 수 없고, 응답이 없으면 드라이버는
-> 아무 장치도 만들지 않는다.
-
-SmartThings 앱에서 **[+] → 기기 추가 → 주변 기기 검색**. 드라이버가 LAN에 M-SEARCH를
-보내고 응답한 PC마다 장치를 만든다. **IP·포트·호스트 이름이 채워진 채** 생기므로 장치
-설정에서 **시크릿만** 넣으면 끝이다.
-
-장치의 **모델**은 `PC Control · 58bff996`처럼 PC 식별자의 앞 8자를 담는다(앱의
-*장치 정보* 화면). 이름은 `DESKTOP-ABC 컴퓨터`이고, 어느 PC인지는 이 모델명이 말해 준다.
-
-### 5. 검색이 안 될 때
+### 검색이 안 될 때
 
 응답이 0대면 장치가 생기지 않는다. 순서대로 확인한다.
 
-1. **PC와 PC Control이 켜져 있는가.** 트레이 아이콘, 또는 `smartthings-pc-control.exe status`.
-2. **인바운드 UDP 1900이 열려 있는가.** 방화벽 규칙 *SmartThings PC Control SSDP*(설치가
-   만든다)와 네트워크 프로필이 **개인**인지. SmartThings 탭의 **검색 상태**가
-   `방화벽 규칙 없음`이면 서비스를 다시 시작한다(시작할 때 규칙을 다시 만든다).
-3. **허브의 검색이 PC까지 닿았는가.** 데스크톱 앱 **SmartThings 탭**의
-   **마지막 검색 요청** 시각을 본다(서비스 v1.1.1부터). 검색을 눌렀는데 이 시각이 갱신되지
-   않으면 문제는 PC가 아니라 그 사이 네트워크다 — 같은 서브넷인지, Wi-Fi의 AP·클라이언트
-   격리가 걸려 있지 않은지.
-4. **허브 허용 목록.** 목록이 비어 있지 않은데 이 허브가 없으면 검색 뒤 조회가 막힌다.
-   [현재 허브 추가]를 누르거나 목록을 비운다.
-
-드라이버 로그에는 `응답한 PC가 없습니다 · PC와 PC Control이 켜져 있고 UDP 1900이 열려
-있어야 합니다` 한 줄이 남는다.
+1. PC와 PC Control이 켜져 있는가(트레이 아이콘, 또는 `smartthings-pc-control.exe status`).
+2. 방화벽 규칙 *SmartThings PC Control SSDP*와 네트워크 프로필 **개인**. 검색 상태가 `방화벽 규칙 없음`이면 서비스를 다시 시작한다.
+3. SmartThings 탭의 **마지막 검색 요청** 시각이 검색을 누를 때 갱신되는가. 아니면 PC가 아니라 네트워크 문제다(다른 서브넷, Wi-Fi 클라이언트 격리).
+4. **허브 허용 목록**이 비어 있지 않은데 이 허브가 없으면 [현재 허브 추가]를 누르거나 목록을 비운다.
 
 ## 화면
 
-**대시보드** — 타일에 전원 상태(`켜짐` · `절전` · `최대 절전` · `꺼짐` · `깨우는 중` · `종료 대기`)가 보이고, 토글은 스위치다.
+**대시보드** — 타일에 전원 상태, 토글은 스위치다.
 
-**상세 화면** — 상태 카드가 위, 조작 카드가 아래다.
-
-| 상태 카드 | 보여 주는 것 |
-|---|---|
-| 전원 상태 | 켜짐 · 절전 · 최대 절전 · 꺼짐 · 깨우는 중 · 종료 대기 |
-| 마지막 실행 | `종료 · SmartThings · 23:05`. 아직 없으면 `없음 (None)` |
-| 예약 요약 | `종료 · 4분 후`. 한 시간이 넘으면 `종료 · 2시간 후` · `종료 · 1일 3시간 후`. 없으면 `없음` |
-| 세션 | `잠김 · 유휴 20분 · kim`. 노출을 끄면 `세션 정보 꺼짐` |
-| 상태 | `연결됨 · 3일 2시간`(가동 시간), PC가 응답하지 않으면 `응답 없음 · 마지막 확인 12분 전`, 또는 `연결 안 됨 · 시크릿 불일치`처럼 이유까지. WoL이 꺼져 있으면 `연결됨 · WoL 꺼짐 (이더넷)`이 가동 시간보다 먼저다 |
-| 버전 | `v1.1.0 · 드라이버 1.0`. 업데이트가 있으면 ` · 업데이트 v1.2.0` |
-
-| 조작 카드 | 하는 일 |
-|---|---|
-| 명령 | 깨우기 · 절전 · 최대 절전 · 재시작 · 종료 · 잠금 · 화면 끄기 · 화면 켜기. 목록 자체는 `명령 선택…`에 머물고, PC가 꺼지거나 켜지는 중에는 `종료 진행 중…` 계열이 된다 |
-| 예약할 명령 | 시간만 고르는 예약이 무엇을 실행할지: 종료 · 재시작 · 절전 · 최대 절전 |
-| 예약 시간 | 5 · 10 · 15 · 30 · 45분, 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12시간, 1 · 2 · 3일, 그리고 **취소**. 목록 자체는 `시간 선택…`에 머문다 |
-
-그 아래가 **미디어 묶음**이다(드라이버 1.1, 서비스 v1.2.0 필요). SmartThings 표준
-capability라 모양은 앱이 정한다.
-
-| 미디어 | 하는 일 |
-|---|---|
-| 곡 정보 | 지금 재생 중인 제목 · 아티스트 · 앨범 (`audioTrackData`). PC(데스크톱 앱 공유 탭)에서 **재생 정보 공유**를 켰을 때만. 아무것도 재생하지 않으면 `재생 중인 미디어 없음`, 공유를 끄면 `재생 정보 꺼짐` |
-| 재생 | 재생 · 일시정지 · 정지 (`mediaPlayback`). 서비스가 재생 상태를 알려 주면 버튼이 실제 상태를 따른다 |
-| 곡 이동 | 이전 곡 · 다음 곡 (`mediaTrackControl`) |
-| 볼륨 | 0–100 슬라이더와 올리기·내리기 (`audioVolume`). PC의 기본 재생 장치 기준 |
-| 음소거 | 켜기 · 끄기 (`audioMute`) |
-
-그 뒤로:
+**상세 화면** — 위에서부터 다음 줄이 온다.
 
 | 줄 | 보여 주는 것 / 하는 일 |
 |---|---|
-| 프리셋 | 데스크톱 앱에 등록한 프리셋을 슬롯으로 고른다(`프리셋 1 (Preset 1)`…). 등록되지 않은 슬롯은 목록에서 빠진다(실측 대기). 목록은 `프리셋 선택…`에 머물고, 실행하면 잠깐 `프리셋 3 실행함`이 된다 |
-| 프리셋 목록 | `1 게임 모드 · 2 방송 시작`. 없으면 `없음` |
-| 앱 | 감시 목록에서 실행 중인 앱 중 **목록 맨 위의 것**: `Steam 실행 중`, 여럿이면 `Steam 실행 중 · 외 2개`. 하나도 안 돌면 `없음`, PC에서 감지를 켜지 않았으면 `꺼짐`. 앱마다의 상태는 아래 **앱 장치**가 말한다 |
-| PC에 메시지 보내기 | 문구를 넣으면 PC 화면에 알림(토스트)이 뜬다(`pcToast.send`). 줄에는 마지막으로 보낸 문구가 남고(처음엔 `없음`), 메시지 줄에 `PC에 메시지를 보냈습니다` |
-| 잠들지 않기 | 별도 컴포넌트의 스위치. 켜면 환경설정 `잠들지 않기 시간`(기본 60분) 동안 PC가 자동 절전하지 않는다 |
-| 배터리 | **노트북에만.** 별도 컴포넌트에 잔량(%)과 전원 공급원(전원 어댑터 · 배터리) |
+| 상태 카드 | 전원 상태 · 마지막 실행 · 예약 요약 · 세션(옵트인) · 상태(`연결됨 · 3일 2시간`, `응답 없음 · 마지막 확인 12분 전`) · 버전(`v1.2.0 · 드라이버 1.1`) |
+| 조작 카드 | 명령(깨우기 · 절전 · 최대 절전 · 재시작 · 종료 · 잠금 · 화면 끄기/켜기) · 예약할 명령 · 예약 시간(5분~3일, 취소) |
+| 미디어 | 곡 정보 · 재생/일시정지/정지 · 이전/다음 곡 · 볼륨 · 음소거(SmartThings 표준 capability) |
+| 프리셋 | 슬롯 목록(`프리셋 1`…`프리셋 10`)과 `프리셋 목록` 줄(`1 게임 모드 · 2 방송 시작`) |
+| 앱 | 실행 중인 감시 앱 가운데 목록 맨 위의 것: `Steam 실행 중 · 외 1개`, `없음`, `꺼짐` |
+| PC에 메시지 보내기 | 문구를 넣으면 PC 화면에 알림이 뜬다. 줄에는 마지막으로 보낸 문구가 남는다 |
+| 잠들지 않기 | 별도 카드의 스위치 |
+| 배터리 | **노트북에만.** 잔량(%)과 전원 공급원 |
 
-**앱 장치** (드라이버 1.1, 서비스 v1.2.0) — 데스크톱 앱 **공유 탭**의 감시 목록에 넣은 앱마다
-PC 장치 아래에 장치가 하나씩 생긴다(이름은 앱 라벨, 예: `Steam`). 장치의 줄 하나가
-`실행 중 (Running)` / `꺼짐 (Stopped)`이고, 루틴 조건 **실행 상태**로 쓴다.
-
-- 목록에 넣으면 생기고, 목록에서 빼면 지워진다 — **그 장치를 쓰는 루틴은 깨진다.** 감지를 잠시 끄는 것으로는 지워지지 않는다.
-- 장치 이름은 앱에서 바꿔도 된다. 드라이버는 만든 뒤로 이름을 건드리지 않는다(PC에서 라벨을 바꿔도 장치 이름은 그대로다).
-- PC가 꺼져 있거나 연결이 끊긴 동안, 서비스가 v1.2.0보다 오래됐을 때는 **마지막 값을 그대로 둔다** — 가짜 "꺼지면" 루틴이 돌지 않는다.
-- 앱 장치를 손으로 지우면 다음 상태 확인에서 다시 생긴다. 목록은 PC 앱에서 관리한다.
-- 앱 장치를 당겨서 새로 고치면 PC에 상태를 묻는다.
-
-**프로필 이름이 중요한 이유**: 장치의 화면은 **추가한 시점의 정의로 굳는다.** "왜 아직
-옛날 화면이지?"의 답은 대개 장치가 아직 옛 프로필(`pc.vN`)에 있다는 것이다. 드라이버가
-첫 `init`에서 현재 프로필(`pc.v6`, 아이콘 설정에 따라 `pc-<style>.v6`, 노트북은
-`pc-<style>-battery.v6`)로 옮긴다. 앱 장치는 `pc-app.v1`이다.
+장치의 화면은 **추가한 시점의 프로필로 굳는다.**
+드라이버는 첫 `init`에서 장치를 현재 프로필(`pc*.v6`)로 옮기고, 비는 줄은 20초 안에 다시 채운다.
 
 ## 사용
 
-### 스위치
+**스위치** — 켜면 매직 패킷을 세 번(즉시 · 2초 · 5초) 보내고 상태가 `깨우는 중`이 된다. 90초 안에 응답이 없으면 "깨우기 실패"를 표시한다.
+끄면 환경설정 `스위치 끄기 동작`(기본 종료)을 보내고, PC의 유예를 따른다.
+PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
 
-- **켜기** → 매직 패킷을 즉시 · 2초 뒤 · 5초 뒤 세 번, 포트 7과 9 양쪽으로 보낸다. 상태가 `깨우는 중`이 되고, PC가 응답하면 `켜짐`이 된다. 90초 안에 응답이 없으면 이전 상태로 돌아가고 "깨우기 실패"를 표시한다.
-- **끄기** → 환경설정 `스위치 끄기 동작`의 명령을 보낸다. 기본은 종료이고, PC에 유예가 걸려 있으면 그 유예를 따른다.
+**어느 랜카드로 깨우는가** — PC가 정한다(데스크톱 앱 **SmartThings 탭 → WoL 어댑터**).
+`MAC 주소` 환경설정을 채우면 그 값이 이긴다.
+고른 어댑터의 WoL이 꺼져 있으면 상태 줄이 `연결됨 · WoL 꺼짐 (이더넷)`처럼 어댑터 이름을 댄다.
 
-스위치는 전원 상태가 `켜짐` · `깨우는 중` · `종료 대기`일 때 켜짐으로 보인다. **PC에서
-유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.**
+**명령** — 목록에서 고르면 바로 나간다. 유예를 따를지는 `버튼 실행 방식`이 정한다.
+목록은 늘 `명령 선택…`에 머문다. 화면 켜기·끄기는 로그인된 세션이 있어야 한다.
 
-**어느 랜카드로 깨우는가** — 랜카드가 여럿이면(이더넷 + Wi-Fi, Hyper-V·VPN 가상 어댑터)
-어느 MAC으로 보낼지는 **PC가 정한다**. 데스크톱 앱 **SmartThings 탭 → WoL 어댑터**가 그
-선택이고, 드라이버는 상태 조회에서 그 값을 받아 기억해 둔다(PC가 꺼져 있어도 남는다).
-`MAC 주소` 환경설정을 채워 넣으면 그 값이 언제나 이긴다. 고른 어댑터의 WoL이 꺼져 있으면
-상태 줄이 `연결됨 · WoL 꺼짐 (이더넷)`처럼 **어느 어댑터인지 이름을 대고**, 메시지 줄이
-무엇을 해야 하는지 말해 준다. 이름이 길어 줄에 안 들어가면 요약에서는 빠지고 메시지 줄에만
-남는다.
+**PC가 꺼지거나 켜지는 중** — 명령 목록이 `종료 진행 중…`·`켜는 중…`이 되고 그동안의 명령은 보내지 않는다.
+새로고침, 예약 취소, 스위치 켜기(= 유예 취소)는 통과한다.
+3일 뒤 종료 같은 긴 예약은 전환이 아니라서 아무것도 막지 않는다.
 
-### 명령
+**예약** — **예약할 명령**과 **예약 시간**을 고른다. 예약은 PC당 하나이고 새 예약이 기존 것을 바꾼다.
+자동화에서 `minutes`는 `"30"`처럼 문자열 목록 값이다.
 
-명령 목록에서 하나를 고르면 바로 나간다. 유예를 따를지는 `버튼 실행 방식` 환경설정이
-정한다(기본은 PC에 설정된 유예를 따름). 무엇이 실행됐는지는 **마지막 실행** 줄이 말해
-준다. 목록 자체는 언제나 `명령 선택…`에 머문다 — 목록을 고르지 않고 닫으면 앱이 그 줄의
-현재 값을 그대로 보내기 때문이다.
+**볼륨 · 미디어** — PC에 로그인한 사용자의 세션에서 동작한다.
+보낼 수 없으면 상태 줄이 이유를 말한다: `서비스 v1.2.0 필요` · `사용자 없음` · `미디어 제어 꺼짐` · `이 PC에서 지원 안 함` · `PC에서 실행 실패`.
+곡 정보는 PC 앱 **공유 탭**의 **재생 정보 공유**를 켰을 때만 온다.
 
-화면 켜기·끄기는 **로그인된 세션이 있어야** 동작한다(잠금 화면에서도 된다).
+**프리셋** — 무엇을 실행할지는 PC 앱에만 있고, SmartThings는 슬롯 번호만 보낸다.
+실행하면 목록이 5초 동안 `프리셋 3 실행함`을 보인다. 비어 있는 슬롯은 보내지 않고 `프리셋 7 비어 있음`을 띄운다.
 
-### PC가 꺼지거나 켜지는 중일 때
+**PC에 메시지 보내기** — 상세 화면이나 루틴 동작에 문구(200자까지)를 넣는다. 제목은 `SmartThings`다.
+보내지 못하면 메시지 줄이 `PC 알림 꺼짐` · `사용자 없음` · `잠시 후 다시`(분당 10회) 가운데 하나를 띄운다.
 
-종료 유예가 돌고 있거나, 종료·재시작·절전이 진행 중이거나, 깨우기를 보내 놓고
-응답을 기다리는 동안에는 명령 목록이 **`종료 진행 중…`·`켜는 중…`** 처럼 지금 무슨
-일이 벌어지는지를 보여 주고, 그동안 들어온 명령은 PC로 보내지 않는다. 상태 줄에
-`종료 진행 중 · 끝난 뒤 다시 시도`가 잠깐 뜨고, 전환이 끝나면 목록이 저절로 다시
-열린다.
+**잠들지 않기** — 켜면 `잠들지 않기 시간`(분, 0 = 끌 때까지) 동안 PC가 자동 절전하지 않는다.
+절전·종료 명령은 막지 않는다. 표준 스위치라 루틴의 동작·조건으로 쓴다.
 
-막히지 않는 것: **새로고침**, **예약 취소**(예약 시간 목록의 `취소`), 그리고
-**스위치 켜기**. 종료 유예 중에 스위치를 켜면 유예가 취소되고 PC가 그대로 남는다 —
-이것이 유예 중에 가장 쓸모 있는 동작이라 언제나 통과시킨다.
+**노트북 배터리** — PC가 배터리가 있다고 연속 두 번 알리면 같은 아이콘의 배터리 프로필로 옮긴다. 데스크톱에는 빈 카드가 없다.
 
-> 3일 뒤 종료 같은 **긴 예약은 전환이 아니다.** 예약이 걸려 있어도 PC는 평소처럼
-> 쓸 수 있고 명령 목록도 그대로 열린다. 막히는 것은 **PC에 설정된 유예 길이 안에**
-> 실행될 예약, 즉 방금 누른 끄기가 유예를 기다리는 동안뿐이다. 유예를 5분으로 잡아
-> 두었다면 그 5분이, 기본값 5분이라면 그 5분이 해당한다.
+**앱 장치** — PC 앱 공유 탭의 감시 목록에 넣은 앱마다 PC 아래에 장치(`Steam`)가 생긴다. 줄은 `실행 중` / `꺼짐`이다.
 
-### 볼륨·미디어
-
-볼륨 슬라이더와 음소거, 재생·일시정지·정지와 이전·다음 곡은 **PC에 로그인한 사용자의
-세션에서** 동작한다(기본 재생 장치의 볼륨, 미디어 키). 그래서 다음 경우에는 명령을 PC로
-보내지 않고 상태 줄에 이유를 띄운다. 다음 상태 조회가 원래 문구로 되돌린다.
-
-| 상태 줄 | 뜻 |
-|---|---|
-| `서비스 v1.2.0 필요` | PC Control 서비스가 v1.2.0보다 오래됐다 |
-| `사용자 없음` | PC에 로그인한 사용자가 없다(로그인 화면, 재부팅 직후) |
-| `미디어 제어 꺼짐` | 데스크톱 앱 설정에서 미디어 제어를 껐다 |
-| `이 PC에서 지원 안 함` | 서비스가 이 기능을 제공하지 않는다고 알려 왔다(재생 장치가 없는 PC 등) |
-| `PC에서 실행 실패` | PC는 답했지만 사용자 세션에서 동작이 실패했거나 3초 안에 끝나지 않았다. 서비스 로그에 이유가 남는다 |
-
-볼륨은 키보드로 바꿔도 트레이 앱이 30초마다 알려 주므로 슬라이더가 따라온다. 재생 상태와
-곡 정보는 트레이 앱이 몇 초마다 확인해 바뀌면 바로 알린다(서비스 v1.2.0의 재생 정보 기능).
-곡 제목은 옵트인이고, 브라우저에서는 탭 제목(유튜브 영상 제목)이 제목으로 온다. 그 기능이
-없는 서비스에서는 재생 상태를 보고하지 않고 버튼만 동작한다.
-
-### 프리셋
-
-무엇을 실행할지(프로그램·주소·스크립트)는 **PC의 데스크톱 앱에만** 있다. SmartThings는
-슬롯 번호만 보내므로, 목록 항목도 이름이 아니라 `프리셋 1`…`프리셋 10`이고 이름은 바로 위
-**프리셋 목록** 줄이 알려 준다. 프리셋은 로그인한 사용자의 세션에서 실행된다(`사용자 없음`).
-
-- 실행하면 목록이 잠깐 `프리셋 3 실행함`을 보여 주다가 다음 상태 조회에 `프리셋 선택…`으로
-  돌아온다. 그 사이 목록을 그냥 닫아도 같은 프리셋이 다시 실행되지는 않는다 — 같은 것을
-  연달아 실행하려면 목록이 돌아온 뒤 다시 고른다.
-- 루틴 동작 **프리셋 실행**에서도 슬롯을 고른다. 비어 있는 슬롯이면 PC로 보내지 않고 상태
-  줄에 `프리셋 7 비어 있음`을 띄운다.
-
-### PC에 메시지 보내기
-
-상세 화면이나 루틴 동작의 **PC에 메시지 보내기**에 문구를 넣으면 PC에 토스트가 뜬다. 제목은
-`SmartThings`다. 이 드라이버의 capability `pcToast`다(표준 `notification`은 앱이 "텍스트
-표시"로 보여 주고 장치 쪽에서 문구를 바꿀 수 없어 쓰지 않는다).
-문구는 200자까지이고 넘치면 `…`로 잘린다. 데스크톱 앱 설정에서 PC 알림을 끄면 보내지 않는다.
-상세 화면의 입력 줄에는 마지막으로 보낸 문구가 남는다(아직 없으면 `없음`).
-보내면 메시지 줄에 `PC에 메시지를 보냈습니다`가 뜨고, 안 뜰 때는
-그 줄이 이유를 말한다: `PC 알림 꺼짐` · `사용자 없음` · `잠시 후 다시`(분당 10회 제한) ·
-`서비스 v1.2.0 필요`.
-
-```
-조건(If)  : 현관문이 열림
-동작(Then): PC 의 PC에 메시지 보내기 ("현관문이 열렸습니다")
-```
-
-Dev 채널의 `pc.v2`(표준 **텍스트 표시**), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)에서 만든
-루틴은 장치가 `pc.v5` 이후로 옮겨진 뒤 그 동작이 사라지므로 **PC에 메시지 보내기**로 다시 고른다.
-
-### 잠들지 않기
-
-장치 화면의 **잠들지 않기** 컴포넌트에 스위치가 있다. 켜면 `잠들지 않기 시간`(분) 동안 PC가
-**자동(유휴) 절전**에 들지 않는다. 0이면 끌 때까지다. 절전·종료 명령(이 드라이버·앱·텔레그램)은
-막지 않고, 화면이 꺼지는 것도 막지 않는다. 켜져 있는 동안 다시 켜면 지금부터 새로 센다.
-표준 스위치라 루틴에서 "잠들지 않기 켜기"를 동작으로, "잠들지 않기가 켜져 있으면"을 조건으로
-그대로 쓸 수 있다. PC 앱·텔레그램에서 바꿔도 즉시 따라온다.
-
-### 노트북 배터리
-
-PC가 배터리가 있다고 알려 오면(연속 두 번) 드라이버가 장치를 **배터리 카드가 있는 같은
-아이콘의 프로필**로 옮긴다(`pc-tv.v2` → `pc-tv-battery.v2`). 데스크톱에는 빈 배터리 카드가
-생기지 않는다. 옮긴 직후 잠깐 줄이 비어 보일 수 있지만 곧 다시 채워진다. 표준 `battery`·
-`powerSource`라 루틴에서 **"배터리가 20% 이하면 충전기 플러그 켜기"** 같은 조건을 그대로
-쓴다.
-
-### 예약
-
-**예약할 명령**에서 무엇을 예약할지 고르고, **예약 시간**에서 얼마 뒤인지 고른다.
-5분부터 **3일(72시간)** 까지 고를 수 있다(#89).
-예약은 PC당 하나이고 새 예약이 기존 것을 대체한다. 예약 시간 목록의 **취소**가 예약을
-지운다. 앱·트레이 토스트·텔레그램 어디서 취소해도 즉시 서로 반영된다.
-
-예약 시간 목록도 명령 목록과 같이 언제나 `시간 선택…`에 머문다. 고르지 않고 닫으면 앱이
-그 줄의 현재 값을 보내는데, 그 값이 아무것도 하지 않는 값이어야 하기 때문이다. 그 값은
-**문자열**로 나가므로 예약 시간은 문자열 목록으로 정의돼 있다(#91) — 자동화에서도
-`minutes`는 `30`이 아니라 `"30"`처럼 목록에서 고른 값 그대로다.
+- 목록에서 빼면 장치가 지워지고, **그 장치를 쓰는 루틴은 깨진다.** 감지를 잠시 끄는 것으로는 지워지지 않는다.
+- PC가 꺼져 있거나 연결이 끊기면 마지막 값을 그대로 둔다. 가짜 "꺼지면" 루틴이 돌지 않는다.
+- 장치 이름은 SmartThings 앱에서 바꿔도 된다. 손으로 지운 앱 장치는 다음 상태 확인에서 다시 생긴다.
 
 ### 자동화 예시
-
-**자정 취침 예약** — 잊고 켜 둔 PC를 30분 뒤 종료하되 취소할 여지를 둔다.
 
 ```
 조건(If)  : 시각이 00:00 이고 PC 의 전원 상태가 켜짐
 동작(Then): PC 의 pcDefer.schedule (minutes: 30, command: shutdown)
-```
 
-**외출하면 잠그기**
-
-```
-조건(If)  : 구성원 전원이 집을 떠남
-동작(Then): PC 의 pcRemote.execute (command: lock, mode: immediate)
-```
-
-**책상 주변기기 전원 연동**
-
-```
 조건(If)  : PC 의 전원 상태가 깨우는 중 또는 켜짐 으로 바뀜
 동작(Then): 책상 플러그 켜기
 
-조건(If)  : PC 의 전원 상태가 꺼짐 또는 절전 으로 바뀜
-동작(Then): 책상 플러그 끄기
-```
-
-`깨우는 중`을 조건에 넣으면 WoL로 깨우는 동안 모니터가 미리 켜져 부팅 화면을 놓치지 않는다.
-
-**게임을 켜면 조명 바꾸기** — 데스크톱 앱 공유 탭에서 실행 중 앱 감지를 켜고 감시 목록에
-Steam을 넣어 둔다. PC 장치 아래에 `Steam` 장치가 생긴다.
-
-```
 조건(If)  : Steam 의 실행 상태가 실행 중
 동작(Then): 거실 조명 장면 "게임"
 
-조건(If)  : Steam 의 실행 상태가 꺼짐
-동작(Then): 거실 조명 장면 "기본"
+조건(If)  : 현관문이 열림
+동작(Then): PC 의 PC에 메시지 보내기 ("현관문이 열렸습니다")
 ```
-
-목록 순서가 우선순위다. PC 장치의 `앱` 줄은 실행 중인 것 중 맨 위의 앱을 보여 주고,
-여러 앱이 한꺼번에 바뀌면 위의 것부터 알린다(SmartThings가 루틴을 그 순서로 돌린다는
-보장은 없다). 드라이버가 받는 것은 목록에 넣은 앱의 프로세스 이름과 **라벨**뿐이고
-다른 프로세스 이름은 PC 밖으로 나가지 않는다.
-
-그 밖에 조건으로 쓸 수 있는 것: 예약 상태·예약 여부·예약할 명령, 연결 상태
-(`응답 없음`이면 PC나 네트워크 이상을 알림으로 받을 수 있다), 잠금 여부(세션 노출을 켠 경우).
 
 ## 환경설정
 
@@ -311,189 +128,69 @@ Steam을 넣어 둔다. PC 장치 아래에 `Steam` 장치가 생긴다.
 
 | 설정 | 설명 | 기본값 |
 |---|---|---|
-| PC IP 주소 | PC의 IPv4. **비워 두면** 자동 검색으로 알아낸 주소를 쓴다. 채워 넣으면 언제나 이 값이 이긴다 | `""` |
-| 검색 따라가기 | 자동 검색이 같은 PC를 다른 IP로 알려 오면 따라간다. 끄면 지금 주소에 고정 | 켬 |
+| PC IP 주소 | 비워 두면 검색으로 알아낸 주소를 쓴다. 채우면 이 값이 이긴다 | `""` |
+| 검색 따라가기 | 같은 PC가 다른 IP로 응답하면 따라간다 | 켬 |
 | 서비스 포트 | 서비스의 명령 포트 | `5001` |
-| 시크릿 | 설정 탭의 시크릿. `X-PC-Secret` 헤더로 보낸다. **Edge에는 비밀번호 입력 타입이 없어 입력하는 동안 화면에 그대로 보인다** | `""` |
-| MAC 주소 | WoL용 MAC. **비워 두는 것이 보통이다** — 그러면 PC 쪽에서 고른 WoL 어댑터(데스크톱 앱 SmartThings 탭의 **WoL 어댑터**)의 MAC을 쓴다. 채워 넣으면 언제나 이 값이 이긴다 | `""` |
-| WoL 브로드캐스트 | 매직 패킷을 보낼 주소. 공유기가 `255.255.255.255`를 막으면 서브넷 브로드캐스트(예: `192.168.1.255`) | `255.255.255.255` |
-| 상태 확인 주기 | 10초 / 30초 / 1분 / 5분 | 30초 |
+| 시크릿 | PC 설정 탭의 시크릿. Edge에 비밀번호 입력 타입이 없어 입력 중 화면에 보인다 | `""` |
+| MAC 주소 | 비워 두면 PC가 고른 WoL 어댑터의 MAC | `""` |
+| WoL 브로드캐스트 | 공유기가 `255.255.255.255`를 막으면 서브넷 브로드캐스트(예: `192.168.1.255`) | `255.255.255.255` |
+| 상태 확인 주기 | 10초 / 30초 / 1분 / 5분. 푸시가 즉시 반영을 맡고 폴링은 안전망이다 | 30초 |
 | 스위치 끄기 동작 | 스위치를 끌 때 보낼 명령 | 종료 |
-| 버튼 실행 방식 | 명령 목록이 PC의 유예를 따를지, 즉시 실행할지. 자동화의 `execute`는 자기 `mode`를 따로 가진다 | 설정된 유예 따름 |
-| 문구 언어 | 상태·예약 문구의 언어. 드라이버는 허브 로케일을 읽을 수 없어 자동은 한국어다 | 자동 (한국어) |
-| 아이콘 | 앱에 보이는 장치 아이콘(카테고리): 기타 · 모니터 · 스위치 · 플러그 · TV · 프로젝터 · 네트워크 · 허브 · 홈시어터 · 리모컨. 바꾸면 드라이버가 장치를 카테고리만 다른 프로필로 옮긴다. 화면·설정·자동화는 그대로이고 **다시 추가할 필요가 없다** | 기타 |
-| 잠들지 않기 시간 | 잠들지 않기 스위치를 켰을 때 자동 절전을 막는 시간(분, 최대 1440). 0이면 끌 때까지 | 60 |
-
-**아이콘 설정이 따로 있는 이유**: 앱은 장치 아이콘을 프로필의 카테고리로 정하는데,
-이 드라이버의 기본 카테고리인 `Others`(기타)는 앱에서 아이콘을 고를 수 없고 `Computer`
-카테고리는 SmartThings가 받아 주지 않는다. 그래서 카테고리마다 같은 화면의 프로필을 하나씩
-두고(`pc-monitor.v2` 등), 이 설정으로 갈아탄다. 바꾼 직후 잠깐 몇 줄이 비어 보일 수 있지만
-드라이버가 곧 전부 다시 채운다.
-
-푸시 구독에 성공해도 폴링 주기는 사용자가 정한 값을 유지한다. 푸시가 즉시 반영을
-담당하고 폴링은 안전망이다.
-
-**서비스 쪽 설정**은 데스크톱 앱 **SmartThings 탭**에 있다: 연결된 허브,
-이 PC의 ID, 검색 상태, WoL 어댑터, 허브 허용 목록. SSDP 검색은 항상 켜져 있어 끄는 설정이 없다.
-PC가 내보내는 정보 — *세션 정보 노출(잠금·유휴)*, *사용자 이름 포함*, *재생 정보 공유*,
-*실행 중 앱 감지*와 감시 목록 — 는 **공유 탭**에 있다.
-
-## 여러 PC
-
-- 장치 하나가 PC 하나다. 드라이버는 IP가 아니라 **Windows MachineGuid**로 PC를 구분한다.
-- 그 식별자의 앞 8자는 장치 정보의 **모델**(`PC Control · 58bff996`)에 적혀 있다. 데스크톱 앱의 **SmartThings 탭**이 보여 주는 값과 같으므로, 장치가 여럿일 때 어느 장치가 어느 PC인지 여기서 맞춰 본다.
-- 시크릿·MAC·브로드캐스트·포트는 모두 **장치별** 설정이다.
-- 푸시는 드라이버당 리스너 하나로 모든 PC의 이벤트를 받아 식별자로 나눠 준다.
-- 장치가 여럿이면 폴링 시각을 흩어 같은 초에 모든 PC를 찌르지 않는다.
-- 디스크 이미지로 복제한 PC는 MachineGuid가 같아 **장치 하나로 합쳐진다.** 드라이버가 "같은 식별자인데 호스트 이름이 다르다"를 감지해 경고하므로, 한쪽에서 Sysprep을 돌리거나 레지스트리의 `MachineGuid`를 새로 만든다.
+| 버튼 실행 방식 | 명령 목록이 PC의 유예를 따를지, 즉시 실행할지 | 유예 따름 |
+| 문구 언어 | 상태 문구의 언어. 허브 로케일을 읽을 수 없어 자동은 한국어 | 자동 |
+| 아이콘 | 기타 · 모니터 · 스위치 · 플러그 · TV · 프로젝터 · 네트워크 · 허브 · 홈시어터 · 리모컨. 다시 추가할 필요가 없다 | 기타 |
+| 잠들지 않기 시간 | 분, 최대 1440. 0이면 끌 때까지 | 60 |
 
 ## 문제 해결
 
 | 증상 | 확인할 것 |
 |---|---|
-| **명령을 보내면 회전 표시 뒤 오류** | 드라이버가 오래됐다. 채널에서 드라이버를 업데이트하고 버전 줄의 드라이버 버전을 확인한다 |
-| **줄에 "-"만 보이거나 "상태를 모두 보고하지 않았습니다"** | 프로필 이전 직후 한 번 나타날 수 있다. [새로 고침]을 누르거나 다음 폴링을 기다린다. 계속되면 장치를 지우고 다시 추가한다 |
-| **검색해도 아무것도 안 나옴** | 먼저 PC와 PC Control이 켜져 있는지 — 응답이 없으면 장치는 생기지 않는다. 그다음 UDP 1900 방화벽 규칙과 네트워크 프로필(개인), 앱의 **마지막 검색 요청** 시각, 허브 허용 목록 순으로 본다. 위 [검색이 안 될 때](#5-검색이-안-될-때) 참고 |
-| **`시크릿 불일치`** | 장치 설정의 시크릿과 PC 설정 탭의 시크릿이 같은지. 메시지가 "허브가 허용 목록에 없습니다"라면 시크릿이 아니라 SmartThings 탭의 **허용 목록**이 문제다 — [현재 허브 추가]를 누르거나 목록을 비운다 |
-| **`응답 없음`** | PC가 켜져 있고 서비스가 도는지(`smartthings-pc-control.exe status`). IP·포트가 맞는지. TCP 5001 방화벽. IP가 바뀌었다면 `PC IP 주소`를 비우고 `검색 따라가기`를 켠다 |
-| **`버전 불일치`** | 서비스가 v1.1.0 미만이다. 반대로 "드라이버 업데이트 필요"면 채널에서 드라이버를 올린다 |
-| **스위치 켜기가 안 먹음** | 상태 줄이 WoL 미준비를 말하면 **거기 적힌 어댑터**의 Wake-on-LAN이 꺼져 있다(장치 관리자 → 그 어댑터 → 전원 관리). 엉뚱한 랜카드를 고른 것 같으면 데스크톱 앱 SmartThings 탭의 **WoL 어댑터**에서 바꾼다. 공유기가 `255.255.255.255`를 막으면 `WoL 브로드캐스트`를 서브넷 브로드캐스트로 바꾼다. 절전이 아니라 **완전 종료**에서 깨우려면 메인보드의 "PCIE로 깨우기"와 **빠른 시작 해제**도 필요하다 |
-| **상태가 늦게 갱신됨** | 푸시 구독이 실패하고 폴링만 도는 상태일 수 있다. 서비스 로그에 subscribe `400`이 남았는지 보고, 폴링 주기를 줄여 본다 |
-| **장치가 두 개로 보임** | 예전 버전에서 손으로 추가한 장치가 남아 있고 검색이 같은 PC를 다시 찾은 경우다. 시크릿을 넣어 연결을 성공시키면 식별자를 학습하므로, 그 뒤 남는 쪽을 지운다. 어느 장치가 어느 PC인지는 *장치 정보*의 **모델**(`PC Control · <id 8자>`)로 가린다 |
-| **커스텀 줄이 하나도 안 보임** | 커스텀 capability가 계정에 만들어지지 않았다. 이 경우에도 스위치와 새로 고침은 동작한다 |
+| 명령 뒤 회전 표시 후 오류 | 드라이버가 오래됐다. 채널에서 업데이트하고 버전 줄을 확인한다 |
+| 줄에 "-"만 보임 | 프로필 이전 직후일 수 있다. 몇십 초 기다리거나 [새로 고침]. 계속되면 장치를 지우고 다시 추가한다 |
+| `시크릿 불일치` | 장치 설정과 PC 설정 탭의 시크릿이 같은지. "허브가 허용 목록에 없습니다"면 SmartThings 탭의 허용 목록 문제다 |
+| `응답 없음` | PC와 서비스가 켜져 있는지, IP · 포트 · TCP 5001 방화벽. IP가 바뀌었으면 `PC IP 주소`를 비우고 `검색 따라가기`를 켠다 |
+| `버전 불일치` | 서비스가 v1.1.0 미만이다 |
+| 스위치 켜기가 안 먹음 | 상태 줄에 적힌 어댑터의 WoL 설정, SmartThings 탭의 WoL 어댑터 선택, `WoL 브로드캐스트`. 완전 종료에서 깨우려면 메인보드 설정과 빠른 시작 해제도 필요하다 |
+| 장치가 두 개 | 이미지로 복제한 PC는 MachineGuid가 같다. 한쪽에서 Sysprep을 돌리거나 `MachineGuid`를 새로 만든다 |
+| 커스텀 줄이 안 보임 | 커스텀 capability가 계정에 없다. 스위치와 새로 고침은 그래도 동작한다 |
 
-로그:
-
-- 서비스 — exe 옆 `service.log`, 또는 데스크톱 앱의 **로그 탭**
-- 드라이버 — `smartthings edge:drivers:logcat <driverId> --hub-address <허브IP>`
+로그: 서비스는 exe 옆 `service.log`(데스크톱 앱 로그 탭), 드라이버는 `smartthings edge:drivers:logcat <driverId> --hub-address <허브IP>`.
 
 ## 개발
 
-```
-edge/
-  config.yml              드라이버 메타데이터, permissions(lan, discovery)
-  src/                    Lua 모듈 (설계·모듈 지도: ../docs/design/edge-driver.md §2)
-    handlers/             lifecycle과 capability 명령 처리기
-    device/               방출 규칙(emit), 드라이버가 쓰는 줄(rows), 장치 필드, 시계
-    model/                순수 상태 머신·문장·status → 이벤트 (state.lua가 한 표로 묶는다)
-  profiles/               현재 프로필 20개 pc*-v6.yml(생성물), 앱 장치의 pc-app.yml, 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
-  build/edge/             tools/build.js가 만드는 패키지 트리(주석 뗌, 커밋하지 않음)
-  capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
-  tests/                  fengari로 도는 Lua 5.3 테스트
-  tools/                  테스트 러너, 프로필 생성기와 템플릿, 배포 스크립트
-```
-
-### 테스트
+`src/`는 Lua 5.3 모듈(`handlers/` · `device/` · `model/`), `profiles/`는 프로필, `capabilities/`는 커스텀 capability 정의 · 프레젠테이션 · 번역, `tests/`는 테스트다.
+설계와 모듈 지도는 [`../docs/design/edge-driver.md`](../docs/design/edge-driver.md), 플랫폼 함정은 [`../docs/design/edge-platform-notes.md`](../docs/design/edge-platform-notes.md)에 있다.
 
 ```bash
 cd edge
-npm install                       # fengari 하나뿐
-npm test                          # tests/run.lua
-node tools/lua.js tests/syntax.lua  # src/ 전 모듈 컴파일
-npm run test-build                # 주석 뗀 패키지 트리(build/edge)로 같은 테스트
-```
-
-로컬에서 bun을 쓰면 `bun tools/lua.js tests/run.lua`로 같은 것이 돈다.
-`--src <폴더>`를 붙이면 그 폴더의 모듈로 돈다(`tests/run.lua --src build/edge/src`).
-`capabilities_test.lua`가 정의·프레젠테이션·드라이버의 정합성을 지키므로, 화면을 바꾸면
-여기가 먼저 알려 준다.
-
-### 네임스페이스
-
-capability id는 `<네임스페이스>.<이름>`이고, 네임스페이스는 SmartThings가 계정에
-발급한다. 다른 계정으로 옮기려면:
-
-```bash
-node tools/apply-namespace.js <네임스페이스>   # caps.lua · 프로필 · capabilities/*.json 일괄
-npm test
-```
-
-### capability 업로드
-
-```bash
-./tools/create-capabilities.sh    # 계정에 한 번만: 모든 capability와 프레젠테이션 생성
-./tools/create-capabilities.sh pcPreset pcApps pcApp pcToast   # 나중에 생긴 것만 (드라이버 1.1.0)
-./tools/sync-capabilities.sh      # 이후 변경분 반영(정의·프레젠테이션·번역)
-./tools/sync-capabilities.sh --dry-run
-```
-
-`smartthings` CLI가 필요하다(`npm i -g @smartthings/cli`). CLI 2.x에는 `login` 명령이
-없고, 인증이 필요한 첫 명령에서 브라우저가 열린다.
-
-`sync-capabilities.sh`는 **이미 존재하는** id만 갱신한다. 정의(속성·명령)를 바꿔야 하면
-새 id로 만들어야 한다 — 허브가 capability 정의를 id 단위로 캐시하고 바뀐 정의를 다시
-읽지 않기 때문이다. 자세한 규칙은
-[`../docs/design/edge-platform-notes.md`](../docs/design/edge-platform-notes.md)에 있다.
-
-### 프로필 버전 규칙
-
-장치의 화면은 **생성 시점의 프레젠테이션으로 굳는다.** 같은 이름의 프로필을 다시
-패키징하면 preference 변경만 반영되고 화면은 그대로다. 그래서:
-
-1. **현재 프로필은 손으로 쓰지 않는다.** 아이콘 10종 × 배터리 유무 = 20개(`pc.v6`, `pc-<style>.v6`, `pc-battery.v6`, `pc-<style>-battery.v6`, 파일은 `profiles/pc*-v6.yml`)를 `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 만든다(앱 장치의 `profiles/pc-app.yml`만 손으로 쓴다). 템플릿을 고치고 다시 생성해 함께 커밋한다:
-
-   ```bash
-   bun tools/gen-profiles.js          # node 도 된다
-   bun tools/gen-profiles.js --check  # 어긋난 파일이 있으면 종료 코드 1
-   ```
-
-   `bun tools/gen-profiles.js --media-component`는 미디어 묶음(곡 정보 · 재생 · 곡 이동 · 볼륨 · 음소거)을 main에서 빼 컴포넌트 `미디어`로 옮긴 **대안 배치**를 쓴다. Dev 채널에서 두 화면을 비교할 패키지를 만들 때만 쓰고 커밋하지 않는다(기본은 main, 비교가 끝나면 플래그 없이 다시 생성). `--check`와 테스트는 기본 배치를 지킨다.
-
-   `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
-2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 공개된 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다. 공개되지 않은(Dev 채널만) 생성물은 지우고 `profiles.UNSHIPPED_VERSIONS`에 번호를 넣는다 — 패키지 한도 655360바이트 때문이다.
-3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다(v1 열 개, v2–v6 스무 개씩). `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v6`, `pc-tv-battery.v5` → `pc-tv-battery.v6` — v2부터는 배터리 쪽도 그대로). 앱 장치의 `pc-app.v1`은 `KNOWN`에 없다 — PC 프로필이 아니므로 옮기지 않는다.
-4. 줄 세대 `poll.ROWS_VERSION`은 `profiles.VERSION`에서 나온다. 새 id의 속성은 허브에서 값 없이 시작하고 새 id는 늘 새 프로필 세대와 함께 오므로, 세대가 바뀌면 이미 설치된 장치의 전 줄이 한 번 다시 칠해진다.
-5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다. v2(표준 `notification`·`speechSynthesis`), v3(`pcMessage`), v4(`pcNotify`), v5(`pcActivity`)는 Dev 채널에만 나갔으므로 파일이 없다.
-
-### 패키징
-
-```bash
+npm install && npm test                 # fengari로 Lua 5.3 테스트 (bun tools/lua.js tests/run.lua 도 같다)
+node tools/lua.js tests/syntax.lua      # 전 모듈 컴파일
+npm run test-build                      # 주석 뗀 패키지 트리로 같은 테스트
+node tools/gen-profiles.js --check      # 생성된 프로필이 템플릿과 같은지
 node tools/build.js && smartthings edge:drivers:package build/edge
 smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 ```
 
-패키지는 `src/`가 아니라 `tools/build.js`가 만드는 `build/edge/`다(커밋하지 않는다).
-Lua 주석을 빈 줄로 바꿔 줄 번호를 그대로 두므로 허브 로그의 줄 번호는 `src/`의 줄을
-가리킨다. YAML의 주석 줄도 뗀다. 패키지 한도(655360바이트)는 이 결과에 걸리고,
-`tools/build.js`가 원본과 결과의 크기를 출력한다.
-
-CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야
-하며, 다르면 워크플로가 실패한다.
+- **프로필은 손으로 쓰지 않는다.** 현재 프로필 스무 개는 `tools/profile-template.yml`에서 `tools/gen-profiles.js`가 만든다(앱 장치의 `pc-app.yml`만 손으로 쓴다). 화면을 바꾸면 프로필 버전을 올린다(설계 §6.6).
+- **정의를 바꾸면 새 capability id가 필요하다.** 허브가 정의를 id 단위로 캐시한다. 계정 작업은 `tools/create-capabilities.sh`(최초 생성)와 `tools/sync-capabilities.sh`(갱신), 다른 계정으로 옮길 때는 `tools/apply-namespace.js`.
+- 패키지는 `tools/build.js`가 주석을 빈 줄로 바꿔 만든 `build/edge/`다(커밋하지 않음). 허브 로그의 줄 번호는 `src/`와 같다.
+- CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야 한다.
 
 ---
 
 ## English summary
 
-A purpose-built SmartThings Edge driver for the PC Control service. It runs locally on the
-hub and talks to the PC's `/st/v1` API (service **v1.1.0 or newer**).
+A purpose-built SmartThings Edge driver for the PC Control service.
+It runs locally on the hub and talks to the PC's `/st/v1` API (service **v1.1.0+**; the driver 1.1 features need **v1.2.0**).
 
-- Real power state — on, sleeping, hibernated, off, waking, shutting down. The switch is
-  derived from it, so it never sticks.
-- Grace periods and schedules are visible: remaining time, execute time, origin, cancel.
-- SSDP discovery fills in address, port and hostname — only the secret has to be typed.
-- Wake-on-LAN with retries, and a plain-language reason when it cannot work.
+- Real power state, visible grace periods and schedules, Wake-on-LAN through the adapter the PC picks.
+- SSDP discovery fills in address, port and hostname; only the secret has to be typed.
+- Driver 1.1: media controls, presets, "send a message to the PC", keep awake, laptop battery, and one child device per watched app (running/stopped) for routines.
 - Failures are named: secret mismatch, unreachable, incompatible version, WoL not ready.
-- One device per PC, keyed by Windows MachineGuid, so one hub can drive several PCs.
 
-**Install** — enroll in the channel (link above), install the driver, then *Add device →
-Scan nearby* with the PC and PC Control running — the scan is the only way to add a device.
-Fill in the secret in the device settings. If nothing is found, check the Windows app's
-SmartThings section (discovery responder, firewall rule, last search request).
+**Install** — enroll in the channel (link above), install the driver, then *Add device → Scan nearby* with the PC and PC Control running; the scan is the only way to add a device.
+Enter the secret in the device settings.
+If nothing is found, check the discovery status on the Windows app's SmartThings tab.
 
-**Screen** — a status card (power state, last action, schedule summary, session, status,
-versions) and a control card (command list, what to schedule, when to schedule), then the
-media group on standard capabilities (play/pause/stop, previous/next, volume slider, mute;
-service v1.2.0, a signed-in user).
-Preference labels are Korean with the English term in parentheses; Edge has no per-locale
-preference variants. The *Icon* preference picks the device category (the icon the app
-draws, which it does not let you change for `Others`); the driver moves the device onto a
-profile that differs only in its category, no re-add needed.
-
-**Develop** — `npm test` runs the Lua 5.3 suite under fengari. `tools/apply-namespace.js`
-rewrites the capability namespace, `tools/sync-capabilities.sh` uploads definitions,
-presentations and translations. The twenty current profiles are generated from
-`tools/profile-template.yml` by `tools/gen-profiles.js` (a test fails while they differ). A
-presentation change needs a new profile name; a definition change needs a new capability id. The design contract
-is in [`../docs/design/edge-driver.md`](../docs/design/edge-driver.md) and the measured
-platform behaviour in
-[`../docs/design/edge-platform-notes.md`](../docs/design/edge-platform-notes.md).
+**Develop** — `npm test` runs the Lua 5.3 suite under fengari; `node tools/build.js && smartthings edge:drivers:package build/edge` packages it.
+A presentation change needs a new profile name; a definition change needs a new capability id.
