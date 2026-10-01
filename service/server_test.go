@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
@@ -419,8 +421,8 @@ func TestGraceDefersShutdown(t *testing.T) {
 	if s["command"] != "shutdown" {
 		t.Errorf("scheduled command = %v, want shutdown", s["command"])
 	}
-	if remaining, _ := s["remainingSec"].(int); remaining < defaultGraceSeconds-5 {
-		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], defaultGraceSeconds)
+	if remaining, _ := s["remainingSec"].(int); remaining < config.DefaultGraceSeconds-5 {
+		t.Errorf("remainingSec = %v, want ~%d", s["remainingSec"], config.DefaultGraceSeconds)
 	}
 
 	select {
@@ -469,7 +471,7 @@ func TestGraceDefaultTrueFromConfig(t *testing.T) {
 	// Missing key in an old config.json must keep the default (true).
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"port": 5001, "secret": ""}`), 0644)
-	cfg := defaultConfig
+	cfg := config.Default()
 	data, _ := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatal(err)
@@ -480,8 +482,8 @@ func TestGraceDefaultTrueFromConfig(t *testing.T) {
 	if cfg.WebUIRemote {
 		t.Error("webui_remote should default to false when missing from config.json")
 	}
-	if cfg.GraceSeconds != defaultGraceSeconds {
-		t.Errorf("grace_seconds = %d, want default %d when missing from config.json", cfg.GraceSeconds, defaultGraceSeconds)
+	if cfg.GraceSeconds != config.DefaultGraceSeconds {
+		t.Errorf("grace_seconds = %d, want default %d when missing from config.json", cfg.GraceSeconds, config.DefaultGraceSeconds)
 	}
 }
 
@@ -512,16 +514,16 @@ func TestGraceUsesConfiguredSeconds(t *testing.T) {
 }
 
 func TestGraceDurationFallsBackWhenInvalid(t *testing.T) {
-	def := time.Duration(defaultGraceSeconds) * time.Second
+	def := time.Duration(config.DefaultGraceSeconds) * time.Second
 	cases := map[int]time.Duration{
-		0:                   def, // key missing from config.json
-		minGraceSeconds:     time.Duration(minGraceSeconds) * time.Second,
-		maxGraceSeconds:     time.Duration(maxGraceSeconds) * time.Second,
-		maxGraceSeconds + 1: def,
-		-5:                  def,
+		0:                          def, // key missing from config.json
+		config.MinGraceSeconds:     time.Duration(config.MinGraceSeconds) * time.Second,
+		config.MaxGraceSeconds:     time.Duration(config.MaxGraceSeconds) * time.Second,
+		config.MaxGraceSeconds + 1: def,
+		-5:                         def,
 	}
 	for sec, want := range cases {
-		if got := (Config{GraceSeconds: sec}).graceDuration(); got != want {
+		if got := (Config{GraceSeconds: sec}).GraceDuration(); got != want {
 			t.Errorf("graceDuration(%d) = %s, want %s", sec, got, want)
 		}
 	}
@@ -530,16 +532,16 @@ func TestGraceDurationFallsBackWhenInvalid(t *testing.T) {
 func TestNormalizeConfigKeepsGraceWhenOmitted(t *testing.T) {
 	current := Config{GraceSeconds: 60}
 	// A client that predates grace_seconds sends 0 → keep the live value.
-	if got := normalizeConfig(Config{ShutdownGrace: true}, current).GraceSeconds; got != 60 {
+	if got := config.Normalize(Config{ShutdownGrace: true}, current).GraceSeconds; got != 60 {
 		t.Errorf("omitted grace_seconds → %d, want 60 (current)", got)
 	}
 	// Explicit values pass through untouched (validation happens later).
-	if got := normalizeConfig(Config{GraceSeconds: 10}, current).GraceSeconds; got != 10 {
+	if got := config.Normalize(Config{GraceSeconds: 10}, current).GraceSeconds; got != 10 {
 		t.Errorf("explicit grace_seconds → %d, want 10", got)
 	}
 	// Nothing to inherit → default.
-	if got := normalizeConfig(Config{}, Config{}).GraceSeconds; got != defaultGraceSeconds {
-		t.Errorf("no current value → %d, want default %d", got, defaultGraceSeconds)
+	if got := config.Normalize(Config{}, Config{}).GraceSeconds; got != config.DefaultGraceSeconds {
+		t.Errorf("no current value → %d, want default %d", got, config.DefaultGraceSeconds)
 	}
 }
 
@@ -800,11 +802,11 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 
 	// Old GUI: the body has no telegram/notify keys at all.
 	body := `{"port": 5001, "secret": "s", "webui_remote": false, "shutdown_grace": true, "grace_seconds": 60}`
-	newCfg := current.forUpdate()
+	newCfg := current.ForUpdate()
 	if err := json.Unmarshal([]byte(body), &newCfg); err != nil {
 		t.Fatal(err)
 	}
-	got := normalizeConfig(newCfg, current)
+	got := config.Normalize(newCfg, current)
 	if !reflect.DeepEqual(got.Telegram, current.Telegram) {
 		t.Errorf("omitted telegram changed:\n got %+v\nwant %+v", got.Telegram, current.Telegram)
 	}
@@ -817,11 +819,11 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 	body = `{"port": 5001, "telegram": {"enabled": false, "bot_token": "", "chat_id": "9", "allowed_chat_ids": [], "detail": "full", "lang": "ko",
 		"quiet_hours": {"enabled": false, "start": "22:00", "end": "07:00", "security_bypass": false, "digest": true}},
 		"notify": {"remote": {"received": true}}}`
-	newCfg = current.forUpdate()
+	newCfg = current.ForUpdate()
 	if err := json.Unmarshal([]byte(body), &newCfg); err != nil {
 		t.Fatal(err)
 	}
-	got = normalizeConfig(newCfg, current)
+	got = config.Normalize(newCfg, current)
 	if got.Telegram.BotToken != "keep-me" {
 		t.Errorf("empty bot_token replaced the stored one: %q", got.Telegram.BotToken)
 	}
@@ -838,9 +840,9 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 		t.Errorf("notify not applied/filled: %v", got.Notify)
 	}
 	// A new token replaces the old one.
-	newCfg = current.forUpdate()
+	newCfg = current.ForUpdate()
 	json.Unmarshal([]byte(`{"telegram": {"bot_token": "new"}}`), &newCfg)
-	if got := normalizeConfig(newCfg, current); got.Telegram.BotToken != "new" || got.Telegram.ChatID != "1" {
+	if got := config.Normalize(newCfg, current); got.Telegram.BotToken != "new" || got.Telegram.ChatID != "1" {
 		t.Errorf("new token / untouched chat_id: %+v", got.Telegram)
 	}
 	// Nothing above may have written into current's map or slice.
@@ -850,9 +852,9 @@ func TestNormalizeConfigKeepsBotTokenAndOmittedTelegram(t *testing.T) {
 }
 
 func TestConfigChangedKeys(t *testing.T) {
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	same := old
-	if keys := configChangedKeys(old, same); len(keys) != 0 {
+	if keys := config.ChangedKeys(old, same); len(keys) != 0 {
 		t.Errorf("identical configs reported %v", keys)
 	}
 	changed := old
@@ -861,7 +863,7 @@ func TestConfigChangedKeys(t *testing.T) {
 	changed.Telegram.BotToken = "9999:ZZZZ"
 	changed.Telegram.QuietHours.Enabled = true
 	changed.Telegram.AllowedChatIDs = []string{"777"}
-	got := strings.Join(configChangedKeys(old, changed), ",")
+	got := strings.Join(config.ChangedKeys(old, changed), ",")
 	want := "secret,telegram.bot_token,telegram.allowed_chat_ids,telegram.quiet_hours"
 	if got != want {
 		t.Errorf("changed keys = %s, want %s", got, want)

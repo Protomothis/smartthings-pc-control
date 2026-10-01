@@ -591,7 +591,7 @@ func tgDelay(d time.Duration) string {
 
 // parseAwakeArg reads the /awake argument: none is the configured default,
 // "off" turns keep-awake off, a number is minutes (0 = until turned off, at
-// most awakeMaxMinutes).
+// most config.AwakeMaxMinutes).
 func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
 	if len(args) == 0 {
 		return awakeMinutesOrDefault(nil), false, true

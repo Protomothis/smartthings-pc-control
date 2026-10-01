@@ -32,7 +32,7 @@ func newSettingsView(cfg Config) settingsView {
 		SecretSet:     cfg.Secret != "",
 		WebUIRemote:   cfg.WebUIRemote,
 		ShutdownGrace: cfg.ShutdownGrace,
-		GraceSeconds:  int(cfg.graceDuration() / time.Second),
+		GraceSeconds:  int(cfg.GraceDuration() / time.Second),
 	}
 }
 
@@ -90,7 +90,7 @@ func buildWebUIStatus(cfg Config) webUIStatus {
 		UptimeSeconds: int64(webUIUptime() / time.Second),
 		Display:       getDisplayState(),
 		Session:       webUISession(cfg.SmartThings),
-		Grace:         stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.graceDuration() / time.Second)},
+		Grace:         stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:      getSchedule(),
 	}
 	if seen, ok := hubLastSeenInfo(); ok {

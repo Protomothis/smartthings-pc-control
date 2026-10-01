@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
@@ -268,7 +269,7 @@ func TestSTStatusWoLSelectedManual(t *testing.T) {
 	}})
 
 	// Lower case with colons, as a user would paste it from ipconfig.
-	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{WoLMAC: "11:22:33:44:55:66"}.withDefaults()})
+	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{WoLMAC: "11:22:33:44:55:66"}.WithDefaults()})
 	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
 	wol := got["wol"].(map[string]any)
 	sel := wol["selected"].(map[string]any)
@@ -720,62 +721,16 @@ func TestSmartThingsConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestLegacyDiscoveryKeyIsIgnoredAndDropped is the #95 migration: a
-// config.json still carrying smartthings.discovery loads without an error,
-// the value changes nothing, and the next save writes the key away.
-func TestLegacyDiscoveryKeyIsIgnoredAndDropped(t *testing.T) {
-	configPath := withConfigFile(t, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"], "expose_session": true}}`)
-
-	cfg := loadConfig()
-	// Everything beside the retired key survives the load…
-	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
-		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
-	}
-	if !cfg.SmartThings.ExposeSession {
-		t.Error("expose_session was lost alongside the retired key")
-	}
-	// …and discovery: false cannot stop the responder any more, because
-	// nothing reads it.
-	if !legacyDiscoveryKey([]byte(`{"smartthings":{"discovery":false}}`)) {
-		t.Error("legacyDiscoveryKey missed an explicit false")
-	}
-	for _, doc := range []string{
-		`{"port":5001}`,
-		`{"smartthings":{"allowed_hubs":[]}}`,
-		`not json`,
-	} {
-		if legacyDiscoveryKey([]byte(doc)) {
-			t.Errorf("legacyDiscoveryKey(%s) = true", doc)
-		}
-	}
-
-	prev := getConfig()
-	t.Cleanup(func() { setConfig(prev) })
-	if err := saveConfig(cfg); err != nil {
-		t.Fatalf("saveConfig: %v", err)
-	}
-	saved, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacyDiscoveryKey(saved) {
-		t.Errorf("the save kept smartthings.discovery: %s", saved)
-	}
-	if !strings.Contains(string(saved), `"allowed_hubs"`) {
-		t.Errorf("the save lost allowed_hubs: %s", saved)
-	}
-}
-
 func TestNormalizeConfigKeepsSmartThingsHubsWhenOmitted(t *testing.T) {
-	current := defaultConfig.withDefaults()
+	current := config.Default().WithDefaults()
 	current.SmartThings.AllowedHubs = []string{"192.168.1.20"}
 	current.SmartThings.ExposeSession = true
 
-	posted := current.forUpdate()
+	posted := current.ForUpdate()
 	if err := json.Unmarshal([]byte(`{"port":5001}`), &posted); err != nil {
 		t.Fatal(err)
 	}
-	got := normalizeConfig(posted, current)
+	got := config.Normalize(posted, current)
 	if len(got.SmartThings.AllowedHubs) != 1 || got.SmartThings.AllowedHubs[0] != "192.168.1.20" {
 		t.Errorf("allowed_hubs = %v, want the live list kept", got.SmartThings.AllowedHubs)
 	}

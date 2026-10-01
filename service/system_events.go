@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/release"
@@ -133,7 +135,7 @@ func saveState(path string, st serviceState) error {
 	if err != nil {
 		return err
 	}
-	return writePrivateFile(path, data) // #131, like config.json
+	return config.WritePrivateFile(path, data) // #131, like config.json
 }
 
 // isReleaseVersion reports whether v is a tagged build ("v1.2.3"); "dev"

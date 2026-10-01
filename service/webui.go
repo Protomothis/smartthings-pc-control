@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -611,7 +613,7 @@ func maskedConfig(cfg Config) configView {
 		// decrypt (loadConfig blanks those, so this is defensive) masks fully.
 		plain, err := liveBotToken(cfg.Telegram)
 		if err != nil || plain == "" {
-			tg.BotToken = maskedTokenPrefix
+			tg.BotToken = config.MaskedTokenPrefix
 		} else {
 			tg.BotToken = secret.Mask(plain)
 		}
@@ -637,12 +639,12 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		// Decode over the live config: keys the client omits (an older
 		// GUI sends no telegram/notify at all) keep their current values.
-		newCfg := liveCfg.forUpdate()
+		newCfg := liveCfg.ForUpdate()
 		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if msg := validatePort(newCfg.Port); msg != "" {
+		if msg := config.ValidatePort(newCfg.Port); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -651,18 +653,18 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// normalizeConfig applies the token rules: ""/masked keep, "-" clears.
-		newCfg = normalizeConfig(newCfg, liveCfg)
-		if msg := validateGraceSeconds(newCfg.GraceSeconds); msg != "" {
+		newCfg = config.Normalize(newCfg, liveCfg)
+		if msg := config.ValidateGraceSeconds(newCfg.GraceSeconds); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
-		if msg := validateActivity(newCfg.Activity); msg != "" {
+		if msg := config.ValidateActivity(newCfg.Activity); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
 		// #109: a preset that could never run is rejected here rather
 		// than on use.
-		if msg := validatePresets(newCfg.Presets); msg != "" {
+		if msg := config.ValidatePresets(newCfg.Presets); msg != "" {
 			writeAPIError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -676,7 +678,7 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		// newCfg still holds a replaced token in plaintext while oldCfg holds
 		// the stored (protected) one, so a real change always differs and a
 		// kept token compares equal — configChangedKeys never sees values.
-		if keys := configChangedKeys(oldCfg, newCfg); len(keys) > 0 {
+		if keys := config.ChangedKeys(oldCfg, newCfg); len(keys) > 0 {
 			// The app and the browser share this endpoint; neither can be told apart.
 			emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
 		}
@@ -806,7 +808,7 @@ func decodeTelegramOverride(r *http.Request) (telegramOverride, error) {
 // token" so the GUI can send its form as-is.
 func telegramTarget(tg TelegramConfig, o telegramOverride) (token, chatID string, err error) {
 	token = o.BotToken
-	if token == "" || strings.HasPrefix(token, maskedTokenPrefix) || token == clearTokenSentinel {
+	if token == "" || strings.HasPrefix(token, config.MaskedTokenPrefix) || token == config.ClearTokenSentinel {
 		token, err = liveBotToken(tg)
 		if err != nil {
 			return "", "", err

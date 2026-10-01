@@ -1,0 +1,131 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// writeConfig puts content into dir\config.json.
+func writeConfig(t *testing.T, dir, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, FileName)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadMissingOrBroken(t *testing.T) {
+	if cfg := Load(""); cfg.Port != DefaultPort || !cfg.ShutdownGrace {
+		t.Errorf("no folder: %+v", cfg)
+	}
+	dir := t.TempDir()
+	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Telegram.Lang != "ko" {
+		t.Errorf("no file: %+v", cfg)
+	}
+	writeConfig(t, dir, "{invalid json!!!")
+	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Presets == nil {
+		t.Errorf("broken file: %+v", cfg)
+	}
+	writeConfig(t, dir, `{"port": 0, "secret": "abc"}`)
+	if cfg := Load(dir); cfg.Port != DefaultPort || cfg.Secret != "abc" {
+		t.Errorf("port 0: %+v", cfg)
+	}
+}
+
+func TestSaveAndLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	stored, err := Save(dir, Config{Port: 7777, Secret: "roundtrip"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What was stored is the full, defaulted document.
+	if stored.Telegram.Detail != "full" || stored.Notify == nil || stored.Presets == nil {
+		t.Errorf("stored = %+v", stored)
+	}
+	loaded := Load(dir)
+	if loaded.Port != 7777 || loaded.Secret != "roundtrip" {
+		t.Errorf("loaded = %+v", loaded)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil || raw["port"].(float64) != 7777 {
+		t.Errorf("saved JSON: %s (%v)", data, err)
+	}
+	if _, err := Save("", Config{}); err == nil {
+		t.Error("a save without a folder must fail")
+	}
+}
+
+func TestWriteTrayFileCarriesNoSecret(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Default()
+	cfg.Port = 5101
+	cfg.Secret = "tray-must-not-see-this"
+	cfg.Telegram.BotToken = "123:telegram-token"
+	cfg.SmartThings.ExposeSession = true
+	WriteTrayFile(dir, cfg)
+	data, err := os.ReadFile(filepath.Join(dir, TrayFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"tray-must-not-see-this", "telegram-token", "secret", "bot_token"} {
+		if strings.Contains(string(data), leak) {
+			t.Errorf("tray.json carries %q:\n%s", leak, data)
+		}
+	}
+	if !strings.Contains(string(data), `"port": 5101`) || !strings.Contains(string(data), `"expose_session": true`) {
+		t.Errorf("tray.json = %s", data)
+	}
+}
+
+// TestLegacyDiscoveryKeyIsIgnoredAndDropped is the #95 migration: a
+// config.json still carrying smartthings.discovery loads without an error,
+// the value changes nothing, and the next save writes the key away.
+func TestLegacyDiscoveryKeyIsIgnoredAndDropped(t *testing.T) {
+	dir := t.TempDir()
+	configPath := writeConfig(t, dir, `{"port": 5001, "smartthings": {"discovery": false, "allowed_hubs": ["192.168.1.20"], "expose_session": true}}`)
+
+	cfg := Load(dir)
+	// Everything beside the retired key survives the load…
+	if len(cfg.SmartThings.AllowedHubs) != 1 || cfg.SmartThings.AllowedHubs[0] != "192.168.1.20" {
+		t.Errorf("allowed_hubs = %v", cfg.SmartThings.AllowedHubs)
+	}
+	if !cfg.SmartThings.ExposeSession {
+		t.Error("expose_session was lost alongside the retired key")
+	}
+	// …and discovery: false cannot stop the responder any more, because
+	// nothing reads it.
+	if !legacyDiscoveryKey([]byte(`{"smartthings":{"discovery":false}}`)) {
+		t.Error("legacyDiscoveryKey missed an explicit false")
+	}
+	for _, doc := range []string{
+		`{"port":5001}`,
+		`{"smartthings":{"allowed_hubs":[]}}`,
+		`not json`,
+	} {
+		if legacyDiscoveryKey([]byte(doc)) {
+			t.Errorf("legacyDiscoveryKey(%s) = true", doc)
+		}
+	}
+
+	if _, err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDiscoveryKey(saved) {
+		t.Errorf("the save kept smartthings.discovery: %s", saved)
+	}
+	if !strings.Contains(string(saved), `"allowed_hubs"`) {
+		t.Errorf("the save lost allowed_hubs: %s", saved)
+	}
+}

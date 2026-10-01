@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -352,13 +354,13 @@ func TestMediaAPI(t *testing.T) {
 }
 
 func TestMediaConfigNowPlayingDefaultOff(t *testing.T) {
-	if defaultConfig.Media.NowPlaying {
+	if config.Default().Media.NowPlaying {
 		t.Error("media.now_playing defaults to on")
 	}
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	changed := old
 	changed.Media.NowPlaying = true
-	if keys := configChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
+	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
 		t.Errorf("changed keys = %v", keys)
 	}
 }

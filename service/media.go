@@ -24,18 +24,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// MediaConfig is the "media" object in config.json (§4). There is nothing
-// to normalise: a missing key keeps the default (on) because loadConfig
-// decodes over defaultConfig.
-type MediaConfig struct {
-	// Enabled allows the volume, mute and media-key commands. Default on.
-	Enabled bool `json:"enabled"`
-	// NowPlaying (#117) shares the title, artist, album and app of the
-	// playing media in status, pushes and Telegram. Opt-in, default off;
-	// the playback status alone follows Enabled (nowplaying.go).
-	NowPlaying bool `json:"now_playing"`
-}
-
 // defaultVolumeStep is volumeup/volumedown without a value (§3), and the
 // Windows volume keys' own step.
 const defaultVolumeStep = 5

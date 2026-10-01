@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
 // ---- M-SEARCH parsing ------------------------------------------------------
@@ -534,15 +536,15 @@ func TestConfigAPIRoundTripsSmartThings(t *testing.T) {
 // allow list is what decides who may drive this PC now that discovery has
 // no switch (#95), so a change to it must be listed.
 func TestConfigChangedKeysCoversAllowedHubs(t *testing.T) {
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	updated := old
 	updated.SmartThings.AllowedHubs = []string{"192.168.1.20"}
-	keys := configChangedKeys(old, updated)
+	keys := config.ChangedKeys(old, updated)
 	if len(keys) != 1 || keys[0] != "smartthings.allowed_hubs" {
 		t.Errorf("keys = %v", keys)
 	}
 	// The retired key can no longer produce an event of its own.
-	if slices.Contains(configChangedKeys(old, old), "smartthings.discovery") {
+	if slices.Contains(config.ChangedKeys(old, old), "smartthings.discovery") {
 		t.Error("smartthings.discovery is still a tracked key")
 	}
 }

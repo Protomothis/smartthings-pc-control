@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
@@ -84,8 +86,8 @@ func TestValidateActivity(t *testing.T) {
 		{"duplicate, other case", []ActivityWatch{watch("steam.exe", "Steam"), watch("Steam.EXE", "S")}, "listed twice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a := ActivityConfig{Enabled: true, Watch: tc.watch}.withDefaults()
-			got := validateActivity(a)
+			a := ActivityConfig{Enabled: true, Watch: tc.watch}.WithDefaults()
+			got := config.ValidateActivity(a)
 			switch {
 			case tc.want == "" && got != "":
 				t.Errorf("rejected: %s", got)
@@ -97,14 +99,14 @@ func TestValidateActivity(t *testing.T) {
 }
 
 func TestActivityDefaultsFillLabel(t *testing.T) {
-	a := ActivityConfig{Watch: []ActivityWatch{{Process: "  Discord.exe ", Label: " "}}}.withDefaults()
+	a := ActivityConfig{Watch: []ActivityWatch{{Process: "  Discord.exe ", Label: " "}}}.WithDefaults()
 	if want := watch("Discord.exe", "Discord"); a.Watch[0] != want {
 		t.Errorf("normalized = %+v, want %+v", a.Watch[0], want)
 	}
-	if msg := validateActivity(a); msg != "" {
+	if msg := config.ValidateActivity(a); msg != "" {
 		t.Errorf("a normalized entry is invalid: %s", msg)
 	}
-	if (ActivityConfig{}).withDefaults().Watch == nil {
+	if (ActivityConfig{}).WithDefaults().Watch == nil {
 		t.Error("withDefaults left watch nil (would marshal as null)")
 	}
 }
@@ -120,12 +122,12 @@ func TestSanitizeActivityKeepsOrderAndCaps(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		in.Watch = append(in.Watch, watch(strings.Repeat("p", i+1)+".exe", "P"))
 	}
-	got := sanitizeActivity(in)
+	got := config.SanitizeActivity(in)
 	if !got.Enabled {
 		t.Error("sanitize turned the option off")
 	}
-	if len(got.Watch) != activityMaxWatch || activityMaxWatch != 10 {
-		t.Fatalf("kept %d entries, want the cap 10 (activityMaxWatch = %d)", len(got.Watch), activityMaxWatch)
+	if len(got.Watch) != config.ActivityMaxWatch || config.ActivityMaxWatch != 10 {
+		t.Fatalf("kept %d entries, want the cap 10 (config.ActivityMaxWatch = %d)", len(got.Watch), config.ActivityMaxWatch)
 	}
 	// Order is priority: the valid entries keep theirs, the first ten win.
 	want := []string{"steam.exe", "obs64.exe", "p.exe", "pp.exe", "ppp.exe", "pppp.exe",
@@ -137,7 +139,7 @@ func TestSanitizeActivityKeepsOrderAndCaps(t *testing.T) {
 	if !slices.Equal(procs, want) {
 		t.Errorf("kept %v, want %v", procs, want)
 	}
-	if msg := validateActivity(got); msg != "" {
+	if msg := config.ValidateActivity(got); msg != "" {
 		t.Errorf("sanitized config is still invalid: %s", msg)
 	}
 }
@@ -255,10 +257,10 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 }
 
 func TestConfigChangedKeysCoversActivity(t *testing.T) {
-	old := defaultConfig.withDefaults()
+	old := config.Default().WithDefaults()
 	updated := old
 	updated.Activity = ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam")}}
-	keys := configChangedKeys(old, updated)
+	keys := config.ChangedKeys(old, updated)
 	if !slices.Contains(keys, "activity.enabled") || !slices.Contains(keys, "activity.watch") {
 		t.Errorf("configChangedKeys = %v", keys)
 	}
@@ -271,7 +273,7 @@ func TestConfigChangedKeysCoversActivity(t *testing.T) {
 	a := ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("a.exe", "A"), watch("b.exe", "B")}}
 	b := ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("b.exe", "B"), watch("a.exe", "A")}}
 	old.Activity, updated.Activity = a, b
-	if keys := configChangedKeys(old, updated); !slices.Contains(keys, "activity.watch") {
+	if keys := config.ChangedKeys(old, updated); !slices.Contains(keys, "activity.watch") {
 		t.Errorf("reorder: configChangedKeys = %v", keys)
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
@@ -37,7 +39,7 @@ func init() {
 // tgPresetList is the /presets reply: "1 · 게임 모드 (프로그램)" lines.
 // Paths and arguments are not shown — the chat is a remote, not the PC.
 func tgPresetList() string {
-	ps := normalizePresets(getConfig().Presets)
+	ps := config.NormalizePresets(getConfig().Presets)
 	if len(ps) == 0 {
 		return tgText("presets_none")
 	}

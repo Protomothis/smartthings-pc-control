@@ -22,16 +22,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// NotifyPCConfig is the "notify_pc" object in config.json (§4). The
-// "speak" and "voice" keys of the dropped read-aloud feature (2026-10-01)
-// are not fields: an old config.json that has them loads as usual and the
-// next save writes the object without them.
-type NotifyPCConfig struct {
-	// Enabled allows SmartThings and Telegram to show a toast on this PC
-	// (default on). Off, /st/v1/notify answers 403 notify_disabled.
-	Enabled bool `json:"enabled"`
-}
-
 const (
 	// pcNotifyDefaultTitle is the toast title when a request sends none.
 	pcNotifyDefaultTitle = "SmartThings"

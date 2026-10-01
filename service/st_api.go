@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
@@ -407,7 +409,7 @@ func stWoLView(cfg SmartThingsConfig) (block stWoL, auto *stWoLSelected) {
 		block.Ready = sel.WoLEnabled
 	}
 	for _, a := range status.Adapters {
-		mac := normalizeMAC(a.MacAddress)
+		mac := config.NormalizeMAC(a.MacAddress)
 		block.Adapters = append(block.Adapters, stWoLAdapter{
 			Name:       a.Name,
 			MAC:        a.MacAddress,
@@ -568,7 +570,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		UptimeSeconds:     int64(windows.DurationSinceBoot() / time.Second),
 		LastShutdownClean: lastShutdownClean.Load(),
 		SecretSet:         cfg.Secret != "",
-		Grace:             stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.graceDuration() / time.Second)},
+		Grace:             stGrace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:          stScheduleView(),
 		Update:            stUpdateInfo(),
 		WoL:               stWoLStatus(cfg.SmartThings),
@@ -644,7 +646,7 @@ func handleSTAwake(w http.ResponseWriter, name string, body stCommandRequest, fr
 	} else {
 		minutes := awakeMinutesOrDefault(body.Value)
 		if !validAwakeMinutes(minutes) {
-			stError(w, http.StatusBadRequest, fmt.Sprintf("value must be between 0 and %d", awakeMaxMinutes))
+			stError(w, http.StatusBadRequest, fmt.Sprintf("value must be between 0 and %d", config.AwakeMaxMinutes))
 			return
 		}
 		view, err = ctl.TurnOn(minutes)
@@ -734,7 +736,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	graceWanted := mode != "immediate" && name != "forceshutdown" && graceCommands[name] &&
 		(cfg.ShutdownGrace || mode == "grace")
 	if graceWanted {
-		grace := cfg.graceDuration()
+		grace := cfg.GraceDuration()
 		// originRemote, like the legacy path: this deferral exists so the
 		// tray toast appears, and the GUI already words it as SmartThings.
 		if err := setSchedule(name, grace, originRemote); err == nil {

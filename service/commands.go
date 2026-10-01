@@ -146,15 +146,6 @@ func setScreen(state string) {
 	setDisplayState(state)
 }
 
-// Grace period bounds (seconds). defaultGraceSeconds applies when
-// grace_seconds is missing from config.json; the app offers
-// 10s/30s/1m/5m/10m/30m, the API accepts anything within the bounds.
-const (
-	defaultGraceSeconds = 300
-	minGraceSeconds     = 5
-	maxGraceSeconds     = 3600
-)
-
 // graceCommands are deferred by the grace period. forceshutdown is the
 // escape hatch and always runs immediately; lock/screen-off are harmless.
 var graceCommands = map[string]bool{

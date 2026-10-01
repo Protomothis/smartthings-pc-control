@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -107,7 +109,7 @@ func (f *fakeTelegram) last(t *testing.T) fakeCall {
 func withLiveConfig(t *testing.T, cfg Config) {
 	t.Helper()
 	prev := getConfig()
-	setConfig(cfg.withDefaults())
+	setConfig(cfg.WithDefaults())
 	t.Cleanup(func() { setConfig(prev) })
 }
 
@@ -554,16 +556,16 @@ func TestConfigChangedKeysListsTokenOnlyWhenReplaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := telegramCfg(true, enc).withDefaults()
+	old := telegramCfg(true, enc).WithDefaults()
 
-	kept := normalizeConfig(func() Config { c := old.forUpdate(); c.Telegram.BotToken = "****6789"; return c }(), old)
-	for _, k := range configChangedKeys(old, kept) {
+	kept := config.Normalize(func() Config { c := old.ForUpdate(); c.Telegram.BotToken = "****6789"; return c }(), old)
+	for _, k := range config.ChangedKeys(old, kept) {
 		if k == "telegram.bot_token" {
 			t.Error("kept token reported as changed")
 		}
 	}
-	replaced := normalizeConfig(func() Config { c := old.forUpdate(); c.Telegram.BotToken = "222:other"; return c }(), old)
-	keys := strings.Join(configChangedKeys(old, replaced), ",")
+	replaced := config.Normalize(func() Config { c := old.ForUpdate(); c.Telegram.BotToken = "222:other"; return c }(), old)
+	keys := strings.Join(config.ChangedKeys(old, replaced), ",")
 	if !strings.Contains(keys, "telegram.bot_token") {
 		t.Errorf("replaced token not reported: %s", keys)
 	}

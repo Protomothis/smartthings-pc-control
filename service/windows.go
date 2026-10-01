@@ -8,6 +8,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
+
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -38,7 +40,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	cfg := loadConfig()
 	setConfig(cfg)
 	// The tray finds the port and its switches here, not in config.json.
-	writeTrayConfig(installDir(), cfg)
+	config.WriteTrayFile(installDir(), cfg)
 
 	// Notification bus (#55) must exist before the servers emit. The live
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
@@ -142,7 +144,7 @@ func RunConsole() {
 	// and usually runs from a build or source folder.
 	setConfig(loadConfig())
 	// The tray finds the port in tray.json (#131).
-	writeTrayConfig(installDir(), getConfig())
+	config.WriteTrayFile(installDir(), getConfig())
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	startTelegramControl()
 	defer stopTelegramControl()
