@@ -64,28 +64,44 @@ v1.2.0 / Edge 1.1.0 개발로 범위가 크게 늘어난 뒤 코드·테스트·
   속도 제한기 하나(지금 4종), `configChangedKeys`는 json 태그에서 자동 생성.
 - 전역 상태 축소: 테스트용 교체 함수 변수 약 20개 → 의존성 구조체로. 테스트가 바이너리 옆에 `config.json`을 쓰지 않게.
 
-#### 진행 상황 (#127, 2026-10-01)
+#### 진행 상황 (#127, 2026-10-01 — 완료)
 
-아래쪽 패키지부터 나눴다. 위 패키지는 아래 패키지만 가져다 쓴다(순환 없음). 줄 수는 테스트 제외 소스.
+아래쪽 패키지부터 나눴다. 위 패키지는 아래 패키지만 가져다 쓴다(순환 없음). 세 표면(`stapi`·`webui`·`tgcontrol`)은
+루트를 가져오지 않고, 생성할 때 받은 `Deps`(필드는 작은 인터페이스와 함수)만 읽는다. 줄 수는 테스트 제외 소스.
 
 | 패키지 | 맡는 것 | 줄 |
 |---|---|---|
 | `internal/systool` | 외부 도구(netsh·sc·shutdown·wevtutil·cmd·PowerShell)를 System32 절대 경로로 실행하는 유일한 헬퍼 | 63 |
 | `internal/logx` | `service.log` 열기·회전·쓰기, 시크릿 마스킹 | 140 |
-| `internal/config` | `config.json` 타입·기본값·검증·마이그레이션, Load/Save(DPAPI·#131 비공개 ACL·`tray.json`), 설정 폴더는 인자, 변경 키는 json 태그에서 | 1077 |
+| `internal/httpx` | 표면들이 함께 쓰는 `RemoteHost`·`Truncate`·`WriteJSON` | 36 |
+| `internal/ratelimit` | 키별 슬라이딩 창 `Limiter`, 연속 실패로 잠그는 `Lockout`(WebUI 로그인과 레거시 URL이 하나를 공유) | 150 |
+| `internal/config` | `config.json` 타입·기본값·검증·마이그레이션, Load/Save(DPAPI·#131 비공개 ACL·`tray.json`), 프리셋 찾기, 설정 폴더는 인자 | 1117 |
 | `service/devstate` | 장치 상태 저장소: 제네릭 `Sample[T]`(새 값이 이김·TTL)·`Value[T]`, 대상 세션 추적, 배터리 모니터 | 290 |
 | `service/session` | WTS 세션 찾기(`WTS` 의존성 구조체), 세션 안 실행, `user-action` 실행기(`Runner`) | 678 |
-| `service/power` | 예약 슬롯(`Scheduler` + `Hooks`), 종료 사유 힌트, `SetSuspendState` | 389 |
-| `service` (루트) | HTTP 표면(`/st/v1`·`/api`·레거시), 텔레그램 제어, 알림 연결, 명령 목록과 조립 | 12344 → 10406 |
+| `service/power` | 예약 슬롯(`Scheduler` + `Hooks`), 잠들지 않기(`Awake` + `AwakeHooks`), 종료 사유 힌트, `SetSuspendState` | 708 |
+| `service/status` | 상태 블록의 와이어 타입(grace·last_command·update·wol·session·awake·activity·audio·media·presets, WoL 스캔, 허브 접촉) | 227 |
+| `service/action` | 사용자 세션 동작의 인자 규칙(미디어 명령 표, 알림 문구)과 오류→HTTP 매핑(`Classify`) | 283 |
+| `service/activity` | 실행 중인 앱 대조와 스캐너(`Scanner.List`로 목록을 받음), Toolhelp 목록, 앱 선택 목록 | 263 |
+| `service/wolscan` | 어댑터의 WoL 상태(PowerShell)와 공인 IP | 195 |
+| `service/stapi` | `/st/v1`(status·command·schedule·notify·subscribe), 허브 푸시, SSDP 응답기와 description, WoL 어댑터 선택 | 2330 |
+| `service/webui` | 페이지·`/api` 전체, `apiAuth`·CSRF·세션, Host 검사, 로컬 로그인(TCP 표·프로세스 판정), 템플릿 | 2091 |
+| `service/tgcontrol` | 텔레그램 명령·버튼·문구, 폴러 수명과 409 충돌, 유예 메시지 수정(#62) | 1744 |
+| `service` (루트) | 조립(`sources.go`·`*_wiring.go`), 명령 목록과 `dispatchCommand`, 예약 훅, 장치 저장소 연결, 알림 버스, 시작 훅·state.json, Windows 서비스·설치 | 12344 → 3934 |
 
-루트에서 하나로 합친 것: 명령 실행 경로 `dispatchCommand`(4벌 → 1), `/api` 인증·메서드·CSRF `apiAuth`(19벌 → 1),
-동작 오류→HTTP 매핑 `classifyActionError`(2벌 → 1, 내부 오류 문자열을 내보내지 않음), 키별 슬라이딩 창 `rateLimiter`(4종 → 1;
-실패 횟수로 잠그는 로그인 잠금은 성격이 달라 따로). 오류 **응답 모양**은 드라이버(`{"error"}`)와 앱(`{"status":"error"}`)의
-계약이라 그대로 두고, 만드는 곳만 모았다.
+인터페이스: `stapi.Deps`(`StatusSource`·`Commands`·`Awake`·`Media`·`Presets`·`Notifier`), `webui.Deps`(`Status`·`Hub`·`Commands`·
+`Awake`·`Media`·`Presets`·`Notifier`·`Telegram`·`Heartbeat`), `tgcontrol.Deps`(`Status`·`Commands`·`Awake`·`Media`·`Presets`·
+`Notifier`). 표면마다 필요한 것만 선언하고, 루트의 `sources`와 작은 어댑터(`stCommands`·`uiCommands`·`tgCommands`·
+`awakeControl`·`mediaControl`·`presetControl`·`pcNotifier`·`hubInfo`·`telegramInfo`·`heartbeat`)가 같은 저장소로 채운다.
 
-남은 일: `service/stapi`·`service/webui`·`service/tgcontrol`은 아직 루트에 있다. 핸들러가 상태 블록 거의 전부(예약·장치·WoL·
-활동·프리셋·업데이트·awake·last_command)를 읽어서, 나누려면 그 읽기를 인터페이스 하나로 모으는 작업이 먼저다. 교체 함수 변수도
-WTS·실행기·힌트 시계만 구조체로 옮겼고 나머지(`stNow`, `audioNow`, `presetRun` 등 약 20개)는 남아 있다.
+하나로 합친 것: 명령 실행 경로 `dispatchCommand`(4벌 → 1), `/api` 인증·메서드·CSRF `apiAuth`(19벌 → 1),
+동작 오류→HTTP 매핑 `action.Classify`(2벌 → 1, 내부 오류 문자열을 내보내지 않음), 키별 슬라이딩 창 `ratelimit.Limiter`(4종 → 1).
+오류 **응답 모양**은 드라이버(`{"error"}`)와 앱(`{"status":"error"}`)의 계약이라 그대로 두고, 만드는 곳만 모았다.
+
+교체 함수 변수 28개 → 1개(`configDir`, TestMain이 테스트 폴더로 돌리는 것). 표면 것은 각 서버의 필드(`stSrv.Now`·`PushNow`,
+`webSrv.Uptime`, 로컬 로그인 조회)로, 루트 것은 `sources`·`heartbeat`와 `clock`·`userRun`·`sys` 세 값의 필드로 옮겼다.
+
+테스트: 순수 로직(설정·장치 상태·SSDP·WoL 선택·푸시 매핑·로컬 로그인·문구·잠들지 않기·앱 대조)은 그 패키지로 옮기고
+가짜 `Deps`로 돈다. 저장소까지 엮이는 통합 테스트와 계약 테스트(`testdata/st-v1`)는 루트에서 조립된 핸들러를 그대로 친다.
 
 ### 3.3 데스크톱 앱
 - **저장 조정자**: 탭마다 `formTab{Fill, Dirty, ApplyTo}`(설정 탭만 아직 모델이 없음)와 하나의 저장 경로.
