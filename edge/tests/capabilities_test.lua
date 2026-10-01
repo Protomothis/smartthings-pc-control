@@ -1956,28 +1956,38 @@ end
 
 function T.test_the_package_stays_under_the_upload_limit()
   -- SmartThings rejects a driver whose files add up to more than 655360
-  -- bytes (uncompressed; measured 2026-09-30 when fifty profiles - v1, v2
-  -- and v3 of every icon/battery variant - reached 666 KB). Only published
-  -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS):
-  -- today v1 and v6, plus the app child's pc-app.yml (#123). Read with the
-  -- helpers, so the size is checked under a real Lua 5.3 as well as fengari.
-  local root = tests_dir .. "/.."
+  -- bytes (uncompressed, measured 2026-09-30). What is packaged is the
+  -- comment-stripped tree tools/build.js writes (#129), so the limit applies
+  -- to the suite's run against it (`run.lua --src build/edge/src`, CI). A run
+  -- against edge/src measures the commented source with a looser bound: the
+  -- comments do not ship, but they are no reason to stop looking.
+  local root = h.SRC_DIR .. "/.."
+  -- The stripped tree has no comment line left (the source's init.lua starts
+  -- with one).
+  local built = ("\n" .. h.read_file(h.SRC_DIR .. "/init.lua")):find("\n%s*%-%-") == nil
   local total = 0
-  -- h.read_file / h.list_dir: host.* under fengari, io.* under C Lua.
   local function add(path)
     local text = h.read_file(path)
     h.assert_true(type(text) == "string", "could not read " .. path)
     total = total + #text
   end
   add(root .. "/config.yml")
-  for _, name in ipairs(list_yml()) do add(profiles_dir .. "/" .. name) end
-  local src = {}
-  for _, name in ipairs(h.list_dir(root .. "/src")) do
-    if name:match("%.lua$") then src[#src + 1] = name end
+  local yml = 0
+  for _, name in ipairs(h.list_dir(root .. "/profiles")) do
+    if name:match("%.yml$") then
+      add(root .. "/profiles/" .. name)
+      yml = yml + 1
+    end
   end
-  h.assert_true(#src > 0, "could not list src/")
-  for _, name in ipairs(src) do add(root .. "/src/" .. name) end
-  h.assert_true(total < 600000, "package is " .. total .. " bytes; the upload limit is 655360")
+  h.assert_true(yml > 0, "could not list " .. root .. "/profiles")
+  local src = h.lua_tree(h.SRC_DIR)
+  h.assert_true(#src > 0, "could not list " .. h.SRC_DIR)
+  for _, name in ipairs(src) do add(h.SRC_DIR .. "/" .. name) end
+  if built then
+    h.assert_true(total < 600000, "package is " .. total .. " bytes; the upload limit is 655360")
+  else
+    h.assert_true(total < 800000, "source tree is " .. total .. " bytes")
+  end
 end
 
 return T

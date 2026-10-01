@@ -3,3 +3,5 @@ node_modules/
 # so bun's lockfile is not part of the repository.
 bun.lockb
 bun.lock
+# tools/build.js: the comment-stripped package tree (#129).
+build/

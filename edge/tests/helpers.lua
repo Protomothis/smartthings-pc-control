@@ -232,7 +232,7 @@ function h.fire_last(driver, name)
 end
 
 --- Run live timers named `name` until none is left - a timer may set the
---- next one (the batches of a spread repaint, poll.paint). Newest first,
+--- next one (the batches of a spread repaint, emit.paint). Newest first,
 --- like `fire_last`. Returns how many ran.
 function h.fire_all(driver, name)
   local n = 0
@@ -257,7 +257,7 @@ function h.fake_device(preferences)
   function device:emit_event(event)
     self.emitted[#self.emitted + 1] = event
   end
-  -- #107: what `poll.emit` uses for the `awake` and `battery` components.
+  -- #107: what `emit.rows` uses for the `awake` and `battery` components.
   function device:emit_component_event(component, event)
     local copy = {}
     for k, v in pairs(event) do
@@ -391,6 +391,26 @@ function h.list_dir(dir)
   end
   table.sort(names)
   return names
+end
+
+--- The driver tree the suite runs against: edge/src, or the stripped copy
+--- `run.lua --src` points at (tools/build.js). Set by run.lua.
+h.SRC_DIR = tests_dir .. "/../src"
+
+--- Every `.lua` file under `dir`, as paths relative to it ("device/emit.lua"),
+--- sorted. A name without a dot is taken for a subdirectory.
+function h.lua_tree(dir, prefix, out)
+  out = out or {}
+  for _, name in ipairs(h.list_dir(dir)) do
+    local rel = (prefix and prefix .. "/" or "") .. name
+    if name:match("%.lua$") then
+      out[#out + 1] = rel
+    elseif not name:find(".", 1, true) then
+      h.lua_tree(dir .. "/" .. name, rel, out)
+    end
+  end
+  table.sort(out)
+  return out
 end
 
 --- One fixture of testdata/st-v1, decoded with the st.json mock (the same

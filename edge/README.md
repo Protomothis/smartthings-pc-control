@@ -372,8 +372,12 @@ PC가 내보내는 정보 — *세션 정보 노출(잠금·유휴)*, *사용자
 ```
 edge/
   config.yml              드라이버 메타데이터, permissions(lan, discovery)
-  src/                    Lua 모듈 (설계: ../docs/design/edge-driver.md)
-  profiles/               현재 프로필 20개 pc*-v2.yml(생성물)과 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
+  src/                    Lua 모듈 (설계·모듈 지도: ../docs/design/edge-driver.md §2)
+    handlers/             lifecycle과 capability 명령 처리기
+    device/               방출 규칙(emit), 드라이버가 쓰는 줄(rows), 장치 필드, 시계
+    model/                순수 상태 머신·문장·status → 이벤트 (state.lua가 한 표로 묶는다)
+  profiles/               현재 프로필 20개 pc*-v6.yml(생성물), 앱 장치의 pc-app.yml, 옛 pc.yml·pc-<style>.yml(pc*.v1, 고정)
+  build/edge/             tools/build.js가 만드는 패키지 트리(주석 뗌, 커밋하지 않음)
   capabilities/           커스텀 capability 정의·프레젠테이션·번역(ko/en)
   tests/                  fengari로 도는 Lua 5.3 테스트
   tools/                  테스트 러너, 프로필 생성기와 템플릿, 배포 스크립트
@@ -386,9 +390,11 @@ cd edge
 npm install                       # fengari 하나뿐
 npm test                          # tests/run.lua
 node tools/lua.js tests/syntax.lua  # src/ 전 모듈 컴파일
+npm run test-build                # 주석 뗀 패키지 트리(build/edge)로 같은 테스트
 ```
 
 로컬에서 bun을 쓰면 `bun tools/lua.js tests/run.lua`로 같은 것이 돈다.
+`--src <폴더>`를 붙이면 그 폴더의 모듈로 돈다(`tests/run.lua --src build/edge/src`).
 `capabilities_test.lua`가 정의·프레젠테이션·드라이버의 정합성을 지키므로, 화면을 바꾸면
 여기가 먼저 알려 준다.
 
@@ -436,15 +442,20 @@ npm test
    `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
 2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 공개된 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다. 공개되지 않은(Dev 채널만) 생성물은 지우고 `profiles.UNSHIPPED_VERSIONS`에 번호를 넣는다 — 패키지 한도 655360바이트 때문이다.
 3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다(v1 열 개, v2–v6 스무 개씩). `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v6`, `pc-tv-battery.v5` → `pc-tv-battery.v6` — v2부터는 배터리 쪽도 그대로). 앱 장치의 `pc-app.v1`은 `KNOWN`에 없다 — PC 프로필이 아니므로 옮기지 않는다.
-4. capability id가 바뀌거나 새로 생겼다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
+4. 줄 세대 `poll.ROWS_VERSION`은 `profiles.VERSION`에서 나온다. 새 id의 속성은 허브에서 값 없이 시작하고 새 id는 늘 새 프로필 세대와 함께 오므로, 세대가 바뀌면 이미 설치된 장치의 전 줄이 한 번 다시 칠해진다.
 5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다. v2(표준 `notification`·`speechSynthesis`), v3(`pcMessage`), v4(`pcNotify`), v5(`pcActivity`)는 Dev 채널에만 나갔으므로 파일이 없다.
 
 ### 패키징
 
 ```bash
-smartthings edge:drivers:package .
+node tools/build.js && smartthings edge:drivers:package build/edge
 smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 ```
+
+패키지는 `src/`가 아니라 `tools/build.js`가 만드는 `build/edge/`다(커밋하지 않는다).
+Lua 주석을 빈 줄로 바꿔 줄 번호를 그대로 두므로 허브 로그의 줄 번호는 `src/`의 줄을
+가리킨다. YAML의 주석 줄도 뗀다. 패키지 한도(655360바이트)는 이 결과에 걸리고,
+`tools/build.js`가 원본과 결과의 크기를 출력한다.
 
 CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야
 하며, 다르면 워크플로가 실패한다.

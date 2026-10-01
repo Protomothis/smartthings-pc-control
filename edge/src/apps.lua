@@ -9,7 +9,7 @@
 --
 -- The children are never polled. The parent's poll and push hand every status
 -- to `sync`, which creates the children the list gained, deletes the ones it
--- lost, and emits each child's `running` through `poll.emit` on the CHILD
+-- lost, and emits each child's `running` through `emit.rows` on the CHILD
 -- device - so each child has its own "already sent" cache, its own "first
 -- emit of the run is forced" mark and its own budget count (platform notes
 -- "이벤트 예산"). An unchanged value is never re-sent.
@@ -33,10 +33,14 @@
 -- so this module keeps the parents it has seen and looks them up itself.
 
 local caps = require "caps"
+local clock = require "device.clock"
 local discovery = require "discovery"
+local emit = require "device.emit"
 local features = require "features"
+local fields = require "device.fields"
 local i18n = require "i18n"
 local profiles = require "profiles"
+local rows = require "device.rows"
 
 local apps = {}
 
@@ -46,7 +50,7 @@ local apps = {}
 -- every one of them would ask for the same child once more.
 apps.CREATE_RETRY_SECONDS = 300
 
--- The row key of the child's one row (`poll.row_key`).
+-- The row key of the child's one row (`emit.row_key`).
 apps.ROW = caps.APP .. ".running"
 
 local function logger()
@@ -56,10 +60,6 @@ local function logger()
   end
   local noop = function() end
   return { trace = noop, debug = noop, info = noop, warn = noop, error = noop }
-end
-
-local function poll_module()
-  return require "poll"
 end
 
 -- Per driver run, in memory: the parents seen (weak, so a deleted PC goes),
@@ -79,7 +79,7 @@ local deleting = {}
 
 --- True when `device` is a child device - an app child of this driver, or a
 --- leftover display child of an older one (profiles.is_legacy_child, which
---- init.lua checks first).
+--- handlers/lifecycle.lua checks first).
 function apps.is_child(device)
   if type(device) ~= "table" then
     return false
@@ -250,7 +250,7 @@ function apps.create(driver, parent, app, deps)
   end)
   -- Remembered either way: a hub that refuses is not asked again on every
   -- push for the next `CREATE_RETRY_SECONDS`.
-  pending_of(parent)[app.id] = poll_module().clock(deps)
+  pending_of(parent)[app.id] = clock.epoch(deps)
   if not ok then
     logger().warn(string.format("could not create the child for %s on %s: %s",
       app.id, tostring(parent.id), tostring(err)))
@@ -287,8 +287,7 @@ function apps.delete(driver, parent, child)
     tostring(child.parent_assigned_child_key), tostring(ok and why or result)))
   pcall(function() child:offline() end)
   if parent then
-    local poll = poll_module()
-    poll.emit_message(parent, i18n.t(poll.lang(parent), "app_child_stale", child.label or
+    rows.emit_message(parent, i18n.t(fields.lang(parent), "app_child_stale", child.label or
       child.parent_assigned_child_key))
   end
   return false
@@ -304,11 +303,11 @@ local function online(child)
   pcall(function() child:online() end)
 end
 
---- Emit one child's `running`. Through `poll.emit` on the child: unchanged
+--- Emit one child's `running`. Through `emit.rows` on the child: unchanged
 --- values are not sent, the first of the run is forced.
 function apps.paint(child, app)
   online(child)
-  poll_module().emit(child, features.app_events(app))
+  emit.rows(child, features.app_events(app))
 end
 
 -- The rotation (`poll.rotate_due`, platform notes "이벤트 예산"): a child's
@@ -329,10 +328,9 @@ function apps.rotate(driver, parent, now)
   if not children then
     return nil
   end
-  local poll = poll_module()
   local due, due_key, due_at
   for key, child in pairs(children) do
-    if poll.sent_value(child, apps.ROW) ~= nil then
+    if emit.sent_value(child, apps.ROW) ~= nil then
       local at = rotated[child.id]
       if at == nil or now < at then
         rotated[child.id] = now
@@ -346,8 +344,8 @@ function apps.rotate(driver, parent, now)
     return nil
   end
   rotated[due.id] = now
-  poll.emit(due, { { cap = caps.APP, attr = "running", value = poll.sent_value(due, apps.ROW),
-    force = true } })
+  emit.rows(due, { { cap = caps.APP, attr = "running", value = emit.sent_value(due, apps.ROW) } },
+    { reason = "rotate" })
   return due
 end
 
@@ -370,8 +368,7 @@ function apps.sync(driver, parent, status, deps)
     return { mode = mode, create = {}, delete = {}, paint = {}, held = {} }
   end
 
-  local poll = poll_module()
-  local now = poll.clock(deps)
+  local now = clock.epoch(deps)
   local waiting = pending_of(parent)
   for key in pairs(children) do
     waiting[key] = nil
@@ -387,7 +384,7 @@ function apps.sync(driver, parent, status, deps)
       return at ~= nil and now >= at and now - at < apps.CREATE_RETRY_SECONDS
     end,
     shown = function(child)
-      return poll.sent_value(child, apps.ROW)
+      return emit.sent_value(child, apps.ROW)
     end,
   })
   plan.mode = mode
@@ -429,7 +426,7 @@ function apps.child_init(_driver, child)
   if not parent then
     return false
   end
-  local extras = poll_module().extras(parent) or {}
+  local extras = fields.extras(parent) or {}
   for _, app in ipairs(extras.apps or {}) do
     if app.id == child.parent_assigned_child_key then
       apps.paint(child, app)
@@ -445,15 +442,6 @@ function apps.child_removed(_driver, child)
   rotated[child.id] = nil
   undeletable[child.id] = nil
   deleting[child.id] = nil
-end
-
---- `refresh` on a child: the PC is the one to ask.
-function apps.refresh(driver, child)
-  local parent = apps.parent_of(driver, child)
-  if not parent then
-    return false
-  end
-  return poll_module().once(driver, parent)
 end
 
 --- `removed` of a PC: its children go with it. The platform may already do

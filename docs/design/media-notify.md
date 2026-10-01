@@ -166,7 +166,7 @@
 - **입력 줄은 `lastMessage`에 묶는다.** 앱은 명령을 보낸 뒤 줄이 묶인 속성의 이벤트를 기다린다. 속성 없는 `pcNotify`는 PC에
   토스트가 뜨는데도 줄이 돌다가 "네트워크 오류"로 끝났다(2026-10-01). 그래서 `send`마다 `lastMessage`를 `state_change`로
   내보낸다 — 보냈으면 보낸 문구, 비었거나 거절·실패면 지금 값 그대로. 쉬는 값은 "없음"/"None"(빈 문자열 금지)이고, 보낸 문구는
-  persist 해 재시작 뒤에도 남는다. 폴링·푸시가 강제 없이 다시 내보내 이전된 장치도 첫 폴링에 값이 생긴다(`poll.FIRST_FIELD`).
+  persist 해 재시작 뒤에도 남는다. 폴링·푸시가 강제 없이 다시 내보내 이전된 장치도 첫 폴링에 값이 생긴다(`fields.ROWS_FORCED`).
 - **왜 표준이 아니라 `pcToast`인가:** 처음에는 표준 `notification`(`deviceNotification`, live)으로 충분하다고 보았다 —
   detailView와 `automation.actions`에 `textField`가 있고 속성도 없다. 그런데 휴대폰은 이 줄을 삼성의 번역으로 "텍스트
   표시"라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의 라벨을 바꿀 방법이 없다(플랫폼 노트 "표준

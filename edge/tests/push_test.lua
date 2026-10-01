@@ -4,6 +4,7 @@
 -- Nothing here opens a socket: `push.start` takes an injected socket module and
 -- `push.ensure` an injected http, exactly as client.lua does.
 
+local fields = require "device.fields"
 local h = require "helpers"
 local Driver = require "st.driver"
 local caps = require "caps"
@@ -256,8 +257,8 @@ function T.test_a_push_is_routed_by_machine_id()
 
   local ok = push.route(driver, payload({ type = "power.stopping", data = { reason = "suspend" } }))
   h.assert_true(ok)
-  h.assert_equal(poll.get_state(one).power_state, state.SLEEPING)
-  h.assert_equal(poll.get_state(two).power_state, state.UNKNOWN, "the other PC is untouched")
+  h.assert_equal(fields.state(one).power_state, state.SLEEPING)
+  h.assert_equal(fields.state(two).power_state, state.UNKNOWN, "the other PC is untouched")
   h.assert_equal(#two.emitted, 0)
 end
 
@@ -265,11 +266,11 @@ function T.test_a_manual_device_is_found_by_its_stored_machine_id()
   -- §6.5: DNI stays `manual-...`, the field carries the identity.
   local manual = h.fake_device(PREFS)
   manual.device_network_id = discovery.DNI_PREFIX .. "manual-abc-1"
-  manual:set_field(discovery.MACHINE_FIELD, "9f3c-guid")
+  manual:set_field(fields.MACHINE_ID, "9f3c-guid")
   local driver = fake_driver({ manual })
 
   h.assert_true(push.route(driver, payload()))
-  h.assert_equal(poll.get_state(manual).power_state, state.ON)
+  h.assert_equal(fields.state(manual).power_state, state.ON)
 end
 
 function T.test_an_unknown_machine_id_is_only_logged()
@@ -365,7 +366,7 @@ function T.test_subscribe_sends_the_fields_the_service_decodes()
   h.assert_equal(body.ttl_seconds, 600)
   h.assert_equal(body.driver_version, require "driver_version")
 
-  local sub = device:get_field(push.SUB_FIELD)
+  local sub = device:get_field(fields.PUSH_SUB)
   h.assert_equal(sub.id, "sub-7")
   h.assert_equal(sub.renew_at, 1480)
   -- §3.5: renewal is armed at 80% of the TTL.
@@ -405,7 +406,7 @@ function T.test_an_unauthorized_subscribe_falls_back_to_polling()
   push.start(driver, { socket = fake_socket(41234), hub_ip = "192.168.1.9", spawn = function() end })
   local device = pc_device("9f3c-guid")
   -- A subscription that is due for renewal, so this is the renewal failing.
-  device:set_field(push.SUB_FIELD, { id = "stale", callback = "http://192.168.1.9:41234/pc/evt",
+  device:set_field(fields.PUSH_SUB, { id = "stale", callback = "http://192.168.1.9:41234/pc/evt",
     renew_at = 500 })
 
   local ok, kind = push.ensure(driver, device, {
@@ -413,7 +414,7 @@ function T.test_an_unauthorized_subscribe_falls_back_to_polling()
   })
   h.assert_false(ok)
   h.assert_equal(kind, "unauthorized")
-  h.assert_nil(device:get_field(push.SUB_FIELD), "a refused subscription is dropped")
+  h.assert_nil(device:get_field(fields.PUSH_SUB), "a refused subscription is dropped")
 end
 
 function T.test_without_a_listener_nothing_is_subscribed()
@@ -421,7 +422,7 @@ function T.test_without_a_listener_nothing_is_subscribed()
   local ok, why = push.ensure(fake_driver({}), device, { http = fake_http(200, "{}") })
   h.assert_false(ok)
   h.assert_equal(why, "no listener")
-  h.assert_nil(device:get_field(push.SUB_FIELD))
+  h.assert_nil(device:get_field(fields.PUSH_SUB))
 end
 
 function T.test_stop_unsubscribes_and_forgets()
@@ -433,8 +434,8 @@ function T.test_stop_unsubscribes_and_forgets()
 
   local removed = fake_http(200, '{"removed":true}')
   h.assert_true(push.stop(driver, device, { http = removed }))
-  h.assert_nil(device:get_field(push.SUB_FIELD))
-  h.assert_nil(device:get_field(push.RENEW_TIMER_FIELD))
+  h.assert_nil(device:get_field(fields.PUSH_SUB))
+  h.assert_nil(device:get_field(fields.PUSH_RENEW_TIMER))
   h.assert_equal(captured.method, "POST", "the subscribe request is untouched")
 end
 
@@ -461,11 +462,11 @@ function T.test_the_poll_subscribes_after_a_good_status()
   h.assert_equal(seen[1], "http://192.168.1.20:5001/st/v1/status")
   h.assert_equal(seen[2], "http://192.168.1.20:5001/st/v1/subscribe")
   -- §6.5: the identity is remembered from the status body.
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
-  h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "9f3c-guid")
+  h.assert_equal(device:get_field(fields.HOSTNAME), "DESKTOP-ABC")
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5001/st/v1")
   -- #108: no status carries `pcToast.lastMessage`, so the poll paints it - the
-  -- first time in this run forced (`FIRST_FIELD`), on its rest value.
+  -- first time in this run forced (`fields.ROWS_FORCED`), on its rest value.
   h.assert_equal(h.event_value(h.emitted(device), caps.TOAST, "lastMessage"), "없음")
   h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
 end
@@ -474,7 +475,7 @@ function T.test_a_push_and_a_failed_poll_keep_the_message_row_painted()
   -- #108: like `lastPreset`, the row is owned by poll.lua and goes out with
   -- every push and every poll, the remembered text over the rest value.
   local pushed = pc_device("toast-guid")
-  pushed:set_field(poll.TOAST_FIELD, "세탁 끝")
+  pushed:set_field(fields.LAST_TOAST, "세탁 끝")
   push.route(fake_driver({ pushed }), payload({ machine_id = "toast-guid", type = "power.stopping",
     data = { reason = "suspend" } }))
   h.assert_equal(h.event_value(h.emitted(pushed), caps.TOAST, "lastMessage"), "세탁 끝")

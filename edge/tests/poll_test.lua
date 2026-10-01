@@ -3,10 +3,12 @@
 -- The err_kind mapping and a whole poll cycle live in client_test.lua, which
 -- has the http fakes; this file is about when the polls happen.
 
+local fields = require "device.fields"
 local h = require "helpers"
 local Driver = require "st.driver"
-local discovery = require "discovery"
 local poll = require "poll"
+local emit = require "device.emit"
+local rows = require "device.rows"
 
 local T = {}
 
@@ -105,7 +107,7 @@ function T.test_start_delays_the_schedule_by_the_offset()
 
   fire(driver, "pc-poll-start")
   h.assert_equal(timer_named(driver, "pc-poll").interval, 30)
-  h.assert_nil(device:get_field(poll.START_TIMER_FIELD))
+  h.assert_nil(device:get_field(fields.POLL_START_TIMER))
 end
 
 function T.test_stop_cancels_both_timers()
@@ -118,8 +120,8 @@ function T.test_stop_cancels_both_timers()
 
   poll.stop(driver, device)
   h.assert_true(schedule.cancelled)
-  h.assert_nil(device:get_field(poll.TIMER_FIELD))
-  h.assert_nil(device:get_field(poll.START_TIMER_FIELD))
+  h.assert_nil(device:get_field(fields.POLL_TIMER))
+  h.assert_nil(device:get_field(fields.POLL_START_TIMER))
 
   -- A stop before the offset elapsed cancels the pending start too.
   poll.start(driver, device)
@@ -147,12 +149,12 @@ function T.test_identity_is_remembered_from_a_status_body()
   -- §6.5: this is how a manually added device learns its machine_id.
   local device = h.fake_device({})
   poll.remember_identity(device, { machine_id = "9f3c-guid", hostname = "DESKTOP-ABC" })
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
-  h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "9f3c-guid")
+  h.assert_equal(device:get_field(fields.HOSTNAME), "DESKTOP-ABC")
 
   -- A body without them leaves what is there.
   poll.remember_identity(device, {})
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "9f3c-guid")
 end
 
 function T.test_a_failed_poll_rewrites_the_status_summary()
@@ -161,9 +163,9 @@ function T.test_a_failed_poll_rewrites_the_status_summary()
   local caps = require "caps"
   local state = require "state"
   local device = h.fake_device({ language = "ko" })
-  poll.set_state(device, state.new(state.OFF))
+  fields.set_state(device, state.new(state.OFF))
 
-  poll.emit_connection(device, "unauthorized", "시크릿이 일치하지 않습니다")
+  rows.emit_connection(device, "unauthorized", "시크릿이 일치하지 않습니다")
   local emitted = h.emitted(device)
   h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unauthorized")
   h.assert_equal(h.event_value(emitted, caps.STATUS, "summary"), "연결 안 됨 · 시크릿 불일치")
@@ -182,24 +184,24 @@ function T.test_the_version_row_keeps_the_last_version_the_pc_reported()
   local state = require "state"
   local device = h.fake_device({ language = "ko" })
 
-  h.assert_false(poll.remember_service_version(device, {}),
+  h.assert_false(fields.remember_service_version(device, {}),
     "a status body without a version changes nothing")
-  h.assert_nil(poll.last_service_version(device))
-  h.assert_false(poll.remember_service_version(device, { service_version = "" }),
+  h.assert_nil(fields.service_version(device))
+  h.assert_false(fields.remember_service_version(device, { service_version = "" }),
     "an empty version is not a version")
 
-  h.assert_true(poll.remember_service_version(device, { service_version = "v1.1.0" }))
-  h.assert_equal(device:get_field(poll.SERVICE_VERSION_FIELD), "v1.1.0",
+  h.assert_true(fields.remember_service_version(device, { service_version = "v1.1.0" }))
+  h.assert_equal(device:get_field(fields.SERVICE_VERSION), "v1.1.0",
     "the version survives in the device's field store")
-  h.assert_false(poll.remember_service_version(device, { service_version = "v1.1.0" }),
+  h.assert_false(fields.remember_service_version(device, { service_version = "v1.1.0" }),
     "an unchanged version is not written to the hub again")
-  h.assert_true(poll.remember_service_version(device, { service_version = "v1.2.0" }),
+  h.assert_true(fields.remember_service_version(device, { service_version = "v1.2.0" }),
     "a service update moves it")
-  h.assert_equal(poll.last_service_version(device), "v1.2.0")
+  h.assert_equal(fields.service_version(device), "v1.2.0")
 
   local kept = state.versions("v1.2.0", "ko")
   h.assert_contains(kept, "v1.2.0")
-  poll.emit_connection(device, "unreachable", "응답 없음")
+  rows.emit_connection(device, "unreachable", "응답 없음")
   local emitted = h.emitted(device)
   h.assert_equal(h.event_value(emitted, caps.VERSION, "versions"), kept)
   h.assert_equal(h.event_value(emitted, caps.STATUS, "versions"), kept)
@@ -217,21 +219,21 @@ function T.test_last_seen_is_written_at_most_once_a_minute()
   local device = h.fake_device({})
   local now = 1000000
   local deps = { now = function() return now end }
-  h.assert_nil(poll.last_seen(device), "nothing before the first answer")
+  h.assert_nil(fields.last_seen(device), "nothing before the first answer")
 
-  h.assert_true(poll.remember_last_seen(device, deps))
-  h.assert_equal(device:get_field(poll.LAST_SEEN_FIELD), 1000000)
-  now = now + poll.LAST_SEEN_STEP - 1
-  h.assert_false(poll.remember_last_seen(device, deps), "a 10 s poll does not write every time")
-  h.assert_equal(poll.last_seen(device), 1000000)
-  now = 1000000 + poll.LAST_SEEN_STEP
-  h.assert_true(poll.remember_last_seen(device, deps))
-  h.assert_equal(poll.last_seen(device), now)
+  h.assert_true(fields.remember_last_seen(device, deps.now()))
+  h.assert_equal(device:get_field(fields.LAST_SEEN), 1000000)
+  now = now + fields.LAST_SEEN_STEP - 1
+  h.assert_false(fields.remember_last_seen(device, deps.now()), "a 10 s poll does not write every time")
+  h.assert_equal(fields.last_seen(device), 1000000)
+  now = 1000000 + fields.LAST_SEEN_STEP
+  h.assert_true(fields.remember_last_seen(device, deps.now()))
+  h.assert_equal(fields.last_seen(device), now)
 
   -- A hub clock that was set back is not left pointing into the future.
   now = 500
-  h.assert_true(poll.remember_last_seen(device, deps))
-  h.assert_equal(poll.last_seen(device), 500)
+  h.assert_true(fields.remember_last_seen(device, deps.now()))
+  h.assert_equal(fields.last_seen(device), 500)
 end
 
 function T.test_a_failed_poll_says_when_the_pc_was_last_seen()
@@ -242,19 +244,19 @@ function T.test_a_failed_poll_says_when_the_pc_was_last_seen()
   local now = 2000000
   local deps = { now = function() return now end }
 
-  poll.emit_connection(device, "unreachable", "응답 없음", deps)
+  rows.emit_connection(device, "unreachable", "응답 없음", deps)
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"), "연결 안 됨 · 응답 없음")
 
-  poll.remember_last_seen(device, deps)
+  fields.remember_last_seen(device, deps.now())
   now = now + 12 * 60
   device.emitted = {}
-  poll.emit_connection(device, "unreachable", "응답 없음", deps)
+  rows.emit_connection(device, "unreachable", "응답 없음", deps)
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"),
     "응답 없음 · 마지막 확인 12분 전")
 
   device.preferences.language = "en"
   device.emitted = {}
-  poll.emit_connection(device, "unauthorized", "Secret does not match", deps)
+  rows.emit_connection(device, "unauthorized", "Secret does not match", deps)
   h.assert_equal(h.event_value(h.emitted(device), caps.STATUS, "summary"),
     "Not connected · Secret mismatch", "only `unreachable` says when")
 end
@@ -267,12 +269,12 @@ function T.test_emit_passes_the_state_change_option_through()
   local caps = require "caps"
   local device = h.fake_device()
   -- Both rows have been sent once in this run already (see the next test).
-  poll.emit(device, {
+  emit.rows(device, {
     { cap = caps.COMMAND, attr = "lastAction", value = "none" },
     { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" },
   })
   device.emitted = {}
-  poll.emit(device, {
+  emit.rows(device, {
     { cap = caps.COMMAND, attr = "lastAction", value = "none", force = true },
     -- A changed value: an unchanged one would not be emitted at all.
     { cap = caps.COMMAND, attr = "lastCommand", value = "재시작 · 14:05" },
@@ -293,17 +295,17 @@ function T.test_the_first_emit_of_a_row_in_a_run_is_forced()
   -- the unforced second emit here carries a new value.
   local caps = require "caps"
   local device = h.fake_device()
-  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  emit.rows(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "first emit is forced")
   device.emitted = {}
-  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  emit.rows(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
   h.assert_equal(#device.emitted, 0, "the same value again is not emitted")
-  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "잠금 · 14:05" } })
+  emit.rows(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "잠금 · 14:05" } })
   h.assert_false(h.event_forced(h.emitted(device), caps.COMMAND, "lastCommand"), "second emit is not")
   device.emitted = {}
-  poll.emit(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)", component = "awake" } })
+  emit.rows(device, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)", component = "awake" } })
   local other = h.fake_device()
-  poll.emit(other, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
+  emit.rows(other, { { cap = caps.COMMAND, attr = "lastCommand", value = "없음 (None)" } })
   h.assert_true(h.event_forced(h.emitted(other), caps.COMMAND, "lastCommand"), "a new run starts over")
 end
 
@@ -314,7 +316,7 @@ function T.test_force_rows_marks_only_the_rows_a_command_answers()
     { cap = caps.SCHEDULE, attr = "summary", value = "예약 없음" },
     { cap = caps.STATUS, attr = "summary", value = "연결됨" },
   }
-  poll.force_rows(events, poll.SCHEDULE_ROWS)
+  emit.force_rows(events, rows.SCHEDULE_ROWS)
   h.assert_true(events[1].force, "the schedule list's own row is answered")
   h.assert_true(events[2].force)
   h.assert_nil(events[3].force, "the status summary is an ordinary update")

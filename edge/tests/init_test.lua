@@ -13,9 +13,11 @@ local client = require "client"
 local poll = require "poll"
 local state = require "state"
 local wol = require "wol"
+local rows = require "device.rows"
 
 -- Loading the module registers the handlers and "runs" the driver.
 local driver = require "init"
+local fields = require "device.fields"
 
 local T = {}
 
@@ -313,8 +315,8 @@ function T.test_a_new_device_shows_the_placeholder_and_a_plan_command()
 
   -- ... and only once: neither row is repainted by the next poll.
   local emitted_before = #device.emitted
-  poll.ensure_action(device)
-  poll.ensure_plan_command(device)
+  rows.ensure_action(device)
+  rows.ensure_plan_command(device)
   poll.ensure_rows(device)
   h.assert_equal(#device.emitted, emitted_before, "a row was painted twice")
 end
@@ -361,8 +363,8 @@ function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
   -- of the new ids starts out unset - but the driver's own persisted fields
   -- survive the migration and would otherwise say "already painted".
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
-  device:set_field(poll.ACTION_FIELD, state.ACTION_NONE, { persist = true })
-  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+  device:set_field(fields.LAST_ACTION, state.ACTION_NONE, { persist = true })
+  device:set_field(fields.PLAN_COMMAND, "suspend", { persist = true })
 
   h.assert_true(poll.ensure_rows(device), "a migrated device has to be repainted")
   h.assert_equal(last_action(device), state.ACTION_NONE)
@@ -380,7 +382,7 @@ function T.test_set_plan_command_persists_and_emits()
   handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "restart" } })
   h.assert_equal(plan_command(device), "restart")
-  h.assert_equal(device:get_field(poll.PLAN_FIELD), "restart",
+  h.assert_equal(device:get_field(fields.PLAN_COMMAND), "restart",
     "the choice has to survive a hub restart")
 end
 
@@ -642,7 +644,7 @@ function T.test_schedule_and_cancel_answer_the_rows_the_list_is_bound_to()
   -- #86, measured on the phone: cancelling while nothing is scheduled leaves
   -- every schedule row exactly as it was, so the app's spinner runs out into an
   -- error. The poll that follows the command therefore declares which rows it
-  -- is answering, and `poll.emit` sends those with `state_change = true`.
+  -- is answering, and `emit.rows` sends those with `state_change = true`.
   local function forced_rows(run)
     local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
     local calls = with_service({ cancelled = false }, function() run(device) end)
@@ -692,7 +694,7 @@ local function busy_device(power, schedule)
     -- back to `state.GRACE_SECONDS` for a service too old to send one.
     s.grace_seconds = schedule.grace
   end
-  poll.set_state(device, s)
+  fields.set_state(device, s)
   return device
 end
 
@@ -834,8 +836,8 @@ function T.test_the_grace_length_is_learned_from_the_status_body()
     grace = { enabled = true, seconds = 300 },
     schedule = { active = true, command = "shutdown", remaining_seconds = 240 },
   })
-  poll.set_state(device, s)
-  h.assert_equal(poll.resting_action(device), state.ACTION_BUSY_OFF)
+  fields.set_state(device, s)
+  h.assert_equal(rows.resting_action(device), state.ACTION_BUSY_OFF)
   local calls = with_service(nil, function()
     handlers_for("switch").off(driver, device, { command = "off", args = {} })
   end)
@@ -872,11 +874,11 @@ function T.test_every_blocked_command_still_answers_its_row()
 
   -- The "command to schedule" row: the value it already holds, not the new one.
   local device = busy_device(state.SHUTTING_DOWN)
-  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+  device:set_field(fields.PLAN_COMMAND, "suspend", { persist = true })
   with_service(nil, function() BLOCKED["setPlanCommand(restart)"](device) end)
   h.assert_equal(plan_command(device), "suspend",
     "a refused setPlanCommand must not change the choice (#93)")
-  h.assert_equal(device:get_field(poll.PLAN_FIELD), "suspend")
+  h.assert_equal(device:get_field(fields.PLAN_COMMAND), "suspend")
   h.assert_true(h.event_forced(h.emitted(device), caps.SCHEDULE, "planCommand"))
 end
 
@@ -964,18 +966,18 @@ end
 function T.test_the_command_row_rests_on_busy_and_comes_back_to_none()
   -- The lifecycle of the resting value, which is what the user reads.
   local device = busy_device(state.ON)
-  h.assert_equal(poll.resting_action(device), state.ACTION_NONE)
+  h.assert_equal(rows.resting_action(device), state.ACTION_NONE)
 
   -- Into a transition: the poll's own upkeep moves the row, forced.
-  poll.set_state(device, state.transition(poll.get_state(device), "stopping", "restart"))
-  h.assert_equal(poll.resting_action(device), state.ACTION_BUSY_RESTART)
-  h.assert_true(poll.ensure_action(device), "the row has to be moved to busyRestart")
+  fields.set_state(device, state.transition(fields.state(device), "stopping", "restart"))
+  h.assert_equal(rows.resting_action(device), state.ACTION_BUSY_RESTART)
+  h.assert_true(rows.ensure_action(device), "the row has to be moved to busyRestart")
   h.assert_equal(last_action(device), state.ACTION_BUSY_RESTART)
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"))
 
   -- ... once more on the next poll, in case that one was dropped ...
   device.emitted = {}
-  h.assert_true(poll.ensure_action(device), "the promised repeat has to go out")
+  h.assert_true(rows.ensure_action(device), "the promised repeat has to go out")
   h.assert_equal(all_emits(device), 1)
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"))
 
@@ -984,28 +986,28 @@ function T.test_the_command_row_rests_on_busy_and_comes_back_to_none()
   -- below (see test_a_transition_does_not_repeat_the_busy_value_forever).
   for _ = 1, 5 do
     device.emitted = {}
-    h.assert_false(poll.ensure_action(device), "an unchanged busy value is not re-sent")
+    h.assert_false(rows.ensure_action(device), "an unchanged busy value is not re-sent")
     h.assert_equal(all_emits(device), 0)
   end
 
   -- Out of it: back to `none`, forced, and once more - this is the event that
   -- got lost on the hub, and the row stayed on `busyOff` for 90 s because of it.
-  poll.set_state(device, state.transition(poll.get_state(device), "status_ok"))
+  fields.set_state(device, state.transition(fields.state(device), "status_ok"))
   device.emitted = {}
-  h.assert_true(poll.ensure_action(device), "the row has to come back to `none`")
+  h.assert_true(rows.ensure_action(device), "the row has to come back to `none`")
   h.assert_equal(last_action(device), state.ACTION_NONE)
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"),
     "the `none` that ends a transition must be forced (#93 follow-up)")
 
   device.emitted = {}
-  h.assert_true(poll.ensure_action(device), "and repeated once")
+  h.assert_true(rows.ensure_action(device), "and repeated once")
   h.assert_equal(last_action(device), state.ACTION_NONE)
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"))
 
   -- ... then quiet again, exactly one repeat and no more.
   for _ = 1, 5 do
     device.emitted = {}
-    h.assert_false(poll.ensure_action(device), "an idle row is left alone")
+    h.assert_false(rows.ensure_action(device), "an idle row is left alone")
     h.assert_equal(all_emits(device), 0)
   end
 end
@@ -1021,7 +1023,7 @@ function T.test_a_transition_does_not_repeat_the_busy_value_forever()
   local emits = 0
   for _ = 1, 10 do
     device.emitted = {}
-    poll.ensure_action(device)
+    rows.ensure_action(device)
     emits = emits + all_emits(device)
   end
   h.assert_equal(emits, 2,
@@ -1035,8 +1037,8 @@ function T.test_a_refused_command_re_emits_the_busy_value_exactly_once()
   for name, run in pairs(BLOCKED) do
     local device = busy_device(state.SHUTTING_DOWN)
     -- Settle the row first, so what the refusal itself emits is what is counted.
-    poll.ensure_action(device)
-    poll.ensure_action(device)
+    rows.ensure_action(device)
+    rows.ensure_action(device)
     device.emitted = {}
 
     with_service(nil, function() run(device) end)
@@ -1047,8 +1049,8 @@ function T.test_a_refused_command_re_emits_the_busy_value_exactly_once()
 
   -- ... and for a command that comes in on the command row, exactly one.
   local device = busy_device(state.SHUTTING_DOWN)
-  poll.ensure_action(device)
-  poll.ensure_action(device)
+  rows.ensure_action(device)
+  rows.ensure_action(device)
   device.emitted = {}
   with_service(nil, function() BLOCKED['execute("lock")'](device) end)
   h.assert_equal(all_emits(device), 1,
@@ -1056,7 +1058,7 @@ function T.test_a_refused_command_re_emits_the_busy_value_exactly_once()
   h.assert_true(h.event_forced(h.emitted(device), caps.COMMAND, "lastAction"))
   -- ... and the next poll does not add one either: the answer settled the debt.
   device.emitted = {}
-  h.assert_false(poll.ensure_action(device),
+  h.assert_false(rows.ensure_action(device),
     "the forced answer already was the repeat the row was owed")
 end
 

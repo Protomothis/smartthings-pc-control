@@ -2,8 +2,9 @@
 -- in the table it returns, prints one line per test and exits non-zero on any
 -- failure.
 --
---   bun tools/lua.js tests/run.lua     (local)
---   npm test                           (CI, same runner through node)
+--   bun tools/lua.js tests/run.lua                  (local)
+--   npm test                                        (CI, same runner through node)
+--   lua5.3 tests/run.lua --src build/edge/src       (the stripped package, tools/build.js)
 --
 -- No test framework: the hub has none, and the point is that these modules run
 -- under plain Lua 5.3.
@@ -18,14 +19,25 @@ local edge_dir = tests_dir .. "/.."
 local src_dir = edge_dir .. "/src"
 local mocks_dir = tests_dir .. "/mocks"
 
--- Driver modules require each other flat ("state", "caps", ...), exactly as on
--- the hub where src/ is the package root. Only plain names are used, so the
--- platform's directory separator never enters into it.
+-- `--src <dir>` runs the suite against another copy of the driver - the
+-- comment-stripped package tree tools/build.js writes - relative to the
+-- current directory. Tests, mocks and fixtures stay where they are.
+for i = 1, #(arg or {}) do
+  if arg[i] == "--src" and arg[i + 1] then
+    src_dir = arg[i + 1]
+  end
+end
+
+-- Driver modules are required by name ("state", "device.emit"), as on the hub
+-- where src/ is the package root: a dotted name is a subdirectory.
 package.path = table.concat({
   src_dir .. "/?.lua",
   tests_dir .. "/?.lua",
   package.path,
 }, ";")
+
+-- The driver tree under test, for the package size test.
+require("helpers").SRC_DIR = src_dir
 
 -- Hub-provided modules are preloaded from tests/mocks by explicit path, rather
 -- than via package.path, so that dotted names like "st.json" do not depend on
@@ -123,7 +135,7 @@ for _, file in ipairs(files) do
   end
 end
 
-io.write(string.format("\n%d passed, %d failed (%d files)\n", passed, failed, #files))
+io.write(string.format("\n%d passed, %d failed (%d files, src: %s)\n", passed, failed, #files, src_dir))
 
 if failed > 0 then
   io.write("\nfailures:\n")

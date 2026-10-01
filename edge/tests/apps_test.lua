@@ -17,7 +17,9 @@ local poll = require "poll"
 local profiles = require "profiles"
 local push = require "push"
 local state = require "state"
+local emit = require "device.emit"
 
+local fields = require "device.fields"
 local init_driver = require "init"
 
 local T = {}
@@ -57,9 +59,9 @@ local function new_parent(id)
   local parent = h.fake_device({ ipAddress = "192.168.1.20", secret = "s", language = "ko" })
   parent.id = id or "pc-1"
   parent.device_network_id = discovery.DNI_PREFIX .. MACHINE_ID
-  parent:set_field(discovery.MACHINE_FIELD, MACHINE_ID)
-  parent:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION)
-  poll.set_state(parent, state.new(state.ON))
+  parent:set_field(fields.MACHINE_ID, MACHINE_ID)
+  parent:set_field(fields.ROWS_PAINTED, poll.ROWS_VERSION)
+  fields.set_state(parent, state.new(state.ON))
   return parent
 end
 
@@ -103,7 +105,7 @@ local function world()
   end
   function w.sync(list, opts)
     local status = status_with(list, opts)
-    poll.set_state(w.parent, features.remember(state.new(state.ON), status))
+    fields.set_state(w.parent, features.remember(state.new(state.ON), status))
     return apps.sync(w.driver, w.parent, status, w.deps)
   end
   return w
@@ -266,7 +268,7 @@ function T.test_running_is_sent_only_when_it_flips_and_the_first_is_forced()
   w.sync({ STEAM })
   local child = w.child("steam.exe")
   h.assert_deep_equal(running_rows(child), { { value = "running", forced = true } },
-    "the first emit of a run is forced (poll.FIRST_FIELD)")
+    "the first emit of a run is forced (fields.ROWS_FORCED)")
   -- The same status again (a push, a poll): nothing.
   w.sync({ STEAM })
   w.sync({ STEAM })
@@ -289,7 +291,7 @@ function T.test_each_child_has_its_own_cache_and_the_pc_is_not_told()
   h.assert_deep_equal(running_rows(w.child("steam.exe")), { { value = "running", forced = true } })
   h.assert_deep_equal(running_rows(w.child("obs64.exe")), { { value = "stopped", forced = true } })
   h.assert_false(h.has_capability(h.emitted(w.parent), caps.APP), "the PC has no pcApp row")
-  h.assert_nil(poll.sent_value(w.parent, apps.ROW))
+  h.assert_nil(emit.sent_value(w.parent, apps.ROW))
 end
 
 function T.test_several_flips_go_out_in_priority_order()
@@ -489,8 +491,8 @@ function T.test_a_child_init_runs_none_of_the_pcs_logic()
   lifecycle().infoChanged(w.driver, child, "infoChanged", {})
   h.assert_equal(#w.driver.timers, timers, "no poll timer, no repaint for a child")
   h.assert_equal(#child.metadata_updates, 0, "no profile migration, no icon switch")
-  h.assert_nil(child:get_field(poll.TIMER_FIELD))
-  h.assert_nil(child:get_field(profiles.FIELD))
+  h.assert_nil(child:get_field(fields.POLL_TIMER))
+  h.assert_nil(child:get_field(fields.PROFILE_NAME))
   h.assert_nil(w.driver.deleted, "an app child is no leftover display child")
   h.assert_equal(child.health, "online")
   h.assert_deep_equal(running_rows(child), { { value = "running", forced = true } },

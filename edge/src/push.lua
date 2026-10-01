@@ -6,13 +6,19 @@
 --
 -- The split is the same as everywhere else in this driver: `parse_request`,
 -- `event_for`, `apply` and `renew_delay` are pure and unit-tested, while the
--- socket and the device layer are reached through lazily required modules and
--- injectable `deps`, so loading this module in a test never opens anything.
+-- socket is reached through a lazily required cosock and injectable `deps`, so
+-- loading this module in a test never opens anything.
 
+local apps = require "apps"
 local client = require "client"
+local clock = require "device.clock"
 local discovery = require "discovery"
+local emit = require "device.emit"
 local features = require "features"
+local fields = require "device.fields"
+local rows = require "device.rows"
 local state = require "state"
+local wol = require "wol"
 
 local push = {}
 
@@ -20,8 +26,6 @@ push.PATH = "/pc/evt"
 push.PROTOCOL = 1
 -- §3.5: renew at 80% of the TTL, well before the service expires us.
 push.RENEW_RATIO = 0.8
-push.SUB_FIELD = "push_sub"
-push.RENEW_TIMER_FIELD = "push_renew_timer"
 -- A push body is a status document; 64 KiB is far more than one can be.
 push.MAX_BODY = 64 * 1024
 push.MAX_HEADERS = 64
@@ -445,52 +449,50 @@ function push.route(driver, payload, deps)
   return push.apply_to_device(driver, device, payload, deps)
 end
 
+-- What this module needs from the poll layer above it, handed in by poll.lua
+-- (`push.use`) so that this module does not require it.
+local wired = {}
+
+--- `hooks.follow_battery(driver, device, status)`: poll.follow_battery.
+function push.use(hooks)
+  wired = hooks or {}
+end
+
 --- Apply a payload to one device through the same glue a poll uses (§6.3).
 function push.apply_to_device(driver, device, payload, deps)
   deps = deps or {}
-  local poll = deps.poll or require "poll"
-  local nxt, events, event = push.apply(poll.get_state(device), payload, {
-    now = poll.now(),
-    lang = poll.lang(device),
+  local nxt, events, event = push.apply(fields.state(device), payload, {
+    now = clock.now(),
+    lang = fields.lang(device),
   })
-  poll.set_state(device, nxt)
+  fields.set_state(device, nxt)
 
   if event == "status_ok" then
-    -- A push proves the PC is up, so a pending wake timeout is done with
-    -- (§6.4) and the message it would have written is not wanted.
-    local ok, wol = pcall(require, "wol")
-    if ok then
-      pcall(function() wol.cancel_wake(driver, device) end)
-    end
+    -- A push proves the PC is up: a pending wake timeout is done with (§6.4).
+    pcall(function() wol.cancel_wake(driver, device) end)
   end
-  -- #102: any push is the PC speaking, and `power.stopping` is often the last
-  -- thing it says before it goes - so it counts as "마지막 확인" as much as a
-  -- successful poll does.
-  pcall(function() poll.remember_last_seen(device, deps) end)
+  -- Any push is the PC speaking - `power.stopping` is often the last thing it
+  -- says - so it counts as "마지막 확인" as much as a successful poll.
+  pcall(function() fields.remember_last_seen(device, clock.epoch(deps)) end)
 
   if events then
-    poll.emit(device, events)
-    -- #123: `activity.changed` (and every other push) carries the watch list;
-    -- its child devices follow at once.
-    local synced, sync_err = pcall(function() require("apps").sync(driver, device, payload.status, deps) end)
+    emit.rows(device, events)
+    -- Every push carries the watch list; the app children follow at once.
+    local synced, sync_err = pcall(function() apps.sync(driver, device, payload.status, deps) end)
     if not synced then
       logger().warn("app children not updated: " .. tostring(sync_err))
     end
     pcall(function() device:online() end)
-    -- #116: `battery.changed` and every other push carry the battery block.
-    pcall(function() poll.follow_battery(driver, device, payload.status) end)
+    -- Every push carries the battery block too.
+    pcall(function() wired.follow_battery(driver, device, payload.status) end)
   else
-    poll.emit_power(device, nxt)
+    rows.emit_power(device, nxt)
   end
-  -- #93: a `power.stopping` push is the fastest the driver ever learns that the
-  -- PC is on its way out, so the command list is moved to its "진행 중…" resting
-  -- value right here rather than at the next poll - and back to `none` the same
-  -- way once the PC answers again.
-  pcall(function() poll.ensure_action(device) end)
-  -- #113: and the preset list the same way.
-  pcall(function() poll.ensure_preset(device, deps) end)
-  -- #108: and the message row keeps its value painted.
-  pcall(function() poll.ensure_toast(device) end)
+  -- A `power.stopping` push is the fastest the driver learns that the PC is
+  -- on its way out: the list rows move to their resting values here.
+  pcall(function() rows.ensure_action(device) end)
+  pcall(function() rows.ensure_preset(device, deps) end)
+  pcall(function() rows.ensure_toast(device) end)
 
   return true
 end
@@ -520,7 +522,7 @@ function push.ensure(driver, device, deps)
   end
 
   local now = (deps.now or os.time)()
-  local existing = device:get_field(push.SUB_FIELD)
+  local existing = fields.get(device, fields.PUSH_SUB)
   if push.subscription_live(existing, callback, now) then
     return true, "live"
   end
@@ -530,14 +532,14 @@ function push.ensure(driver, device, deps)
   if not ok then
     -- 401 (secret changed), 400 (callback refused) or unreachable: drop what
     -- we thought we had and rely on polling (§6.3).
-    device:set_field(push.SUB_FIELD, nil)
+    fields.set(device, fields.PUSH_SUB, nil)
     push.cancel_renew(driver, device)
     log.debug(string.format("subscribe failed (%s), polling only", tostring(kind)))
     return false, kind
   end
 
   local sub = push.subscription(body, callback, client.DEFAULT_TTL, now)
-  device:set_field(push.SUB_FIELD, sub)
+  fields.set(device, fields.PUSH_SUB, sub)
   log.info(string.format("subscribed %s to %s", tostring(sub.id), callback))
   push.schedule_renew(driver, device, client.DEFAULT_TTL, deps)
   return true, "subscribed"
@@ -551,30 +553,30 @@ function push.schedule_renew(driver, device, ttl, deps)
   push.cancel_renew(driver, device)
   local ok, timer = pcall(function()
     return driver:call_with_delay(push.renew_delay(ttl), function()
-      device:set_field(push.RENEW_TIMER_FIELD, nil)
+      fields.set(device, fields.PUSH_RENEW_TIMER, nil)
       push.ensure(driver, device, deps)
     end, "pc-push-renew")
   end)
   if ok then
-    device:set_field(push.RENEW_TIMER_FIELD, timer)
+    fields.set(device, fields.PUSH_RENEW_TIMER, timer)
     return timer
   end
   return nil
 end
 
 function push.cancel_renew(driver, device)
-  local timer = device:get_field(push.RENEW_TIMER_FIELD)
+  local timer = fields.get(device, fields.PUSH_RENEW_TIMER)
   if timer then
     pcall(function() driver:cancel_timer(timer) end)
-    device:set_field(push.RENEW_TIMER_FIELD, nil)
+    fields.set(device, fields.PUSH_RENEW_TIMER, nil)
   end
 end
 
 --- Drop the subscription for a device that is going away (§3.5).
 function push.stop(driver, device, deps)
   push.cancel_renew(driver, device)
-  local sub = device:get_field(push.SUB_FIELD)
-  device:set_field(push.SUB_FIELD, nil)
+  local sub = fields.get(device, fields.PUSH_SUB)
+  fields.set(device, fields.PUSH_SUB, nil)
   if type(sub) ~= "table" or not sub.id then
     return false
   end

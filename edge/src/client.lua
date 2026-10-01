@@ -13,6 +13,7 @@
 -- `deps` lets tests inject a fake http/json/ltn12 instead of cosock.
 
 local VERSION = require "driver_version"
+local fields = require "device.fields"
 
 local client = {}
 
@@ -25,12 +26,6 @@ client.BASE_PATH = "/st/v1"
 client.DEFAULT_TTL = 600
 -- The service records this as `hubLastSeen` and shows it in the GUI.
 client.USER_AGENT = "smartthings-pc-control-edge/" .. VERSION
-
--- §6.5: what SSDP last told us about this PC. The `ipAddress` preference wins
--- when it is set (the user declared a fixed address); an empty one means the
--- driver follows discovery, and these fields are where it remembers the answer.
-client.IP_FIELD = "discovered_ip"
-client.PORT_FIELD = "discovered_port"
 
 --- `http://<ip>:<port>/st/v1`, or nil when no IP is known yet.
 -- @param discovered optional `{ ip = ..., port = ... }` fallback used only when
@@ -57,12 +52,7 @@ function client.discovered(device)
   if type(device) ~= "table" or type(device.get_field) ~= "function" then
     return {}
   end
-  local ok, ip = pcall(function() return device:get_field(client.IP_FIELD) end)
-  local _, port = pcall(function() return device:get_field(client.PORT_FIELD) end)
-  if not ok then
-    return {}
-  end
-  return { ip = ip, port = port }
+  return { ip = fields.get(device, fields.DISCOVERED_IP), port = fields.get(device, fields.DISCOVERED_PORT) }
 end
 
 --- `client.base_url` for a device: preference first, discovery second (§6.5).
@@ -130,10 +120,9 @@ function client.classify(code)
     return "incompatible"
   end
   if code == 409 then
-    -- #107: the service is up and understood the command, but it needs a
-    -- logged-in user and there is none (`no_user_session`, media-notify.md
-    -- §2). Not a connection problem - before v1.2.0 no endpoint answered 409,
-    -- and it used to fall through to `unreachable` below.
+    -- The service is up and understood the command, but it needs a logged-in
+    -- user and there is none (`no_user_session`, media-notify.md §2). Not a
+    -- connection problem.
     return "conflict"
   end
   if code == 429 then

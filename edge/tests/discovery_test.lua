@@ -8,6 +8,7 @@ local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
 local i18n = require "i18n"
+local fields = require "device.fields"
 local json = require "st.json"
 
 local T = {}
@@ -127,7 +128,7 @@ function T.test_a_search_that_finds_nothing_leaves_existing_devices_alone()
   local driver = fake_driver({ existing })
   discovery.handle(driver, {}, function() return true end, search_deps({}))
   h.assert_nil(driver.created)
-  h.assert_nil(existing:get_field(client.IP_FIELD), "no hit, no address change")
+  h.assert_nil(existing:get_field(fields.DISCOVERED_IP), "no hit, no address change")
 end
 
 function T.test_the_empty_search_hint_names_the_precondition()
@@ -196,7 +197,7 @@ function T.test_a_device_without_an_identity_keeps_its_model()
   h.assert_false(discovery.ensure_model(manual))
   h.assert_equal(#manual.metadata_updates, 0)
 
-  manual:set_field(discovery.MACHINE_FIELD, "58bff996-1c2d-4e5f")
+  manual:set_field(fields.MACHINE_ID, "58bff996-1c2d-4e5f")
   h.assert_true(discovery.ensure_model(manual))
   h.assert_equal(manual.metadata_updates[1].model, "PC Control · 58bff996")
 end
@@ -207,7 +208,7 @@ function T.test_a_hub_that_refuses_the_update_is_survived()
     error("hub says no")
   end
   h.assert_false(discovery.ensure_model(device))
-  h.assert_nil(device:get_field(discovery.MODEL_FIELD), "so the next run tries again")
+  h.assert_nil(device:get_field(fields.MODEL_ID), "so the next run tries again")
 end
 
 function T.test_the_first_successful_poll_puts_the_id_in_the_model()
@@ -219,7 +220,7 @@ function T.test_the_first_successful_poll_puts_the_id_in_the_model()
   poll.remember_identity(device, { machine_id = "58bff996-1c2d-4e5f",
     hostname = "DESKTOP-ABC" })
   h.assert_equal(device.model, "PC Control · 58bff996")
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "58bff996-1c2d-4e5f")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "58bff996-1c2d-4e5f")
 
   -- Every later poll is a field read and nothing else.
   poll.remember_identity(device, { machine_id = "58bff996-1c2d-4e5f",
@@ -252,9 +253,9 @@ function T.test_a_created_device_adopts_the_address_it_was_found_at()
   -- The device object only exists once the platform created it.
   local device = pc_device("pc-control-guid")
   h.assert_true(discovery.adopt(device))
-  h.assert_equal(device:get_field(client.IP_FIELD), "192.168.1.20")
-  h.assert_equal(device:get_field(client.PORT_FIELD), 5002)
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "guid")
+  h.assert_equal(device:get_field(fields.DISCOVERED_IP), "192.168.1.20")
+  h.assert_equal(device:get_field(fields.DISCOVERED_PORT), 5002)
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "guid")
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5002/st/v1")
   h.assert_false(discovery.adopt(device), "the pending address is taken only once")
 end
@@ -357,12 +358,12 @@ function T.test_machine_id_comes_from_the_field_then_the_dni()
 
   local manual = pc_device("pc-control-manual-abc-1")
   h.assert_nil(discovery.machine_id_of(manual), "a manual DNI carries no identity")
-  manual:set_field(discovery.MACHINE_FIELD, "9f3c-guid")
+  manual:set_field(fields.MACHINE_ID, "9f3c-guid")
   h.assert_equal(discovery.machine_id_of(manual), "9f3c-guid")
 
   -- The field wins, so a device that was renamed on the service keeps working.
   local renamed = pc_device("pc-control-old-guid")
-  renamed:set_field(discovery.MACHINE_FIELD, "new-guid")
+  renamed:set_field(fields.MACHINE_ID, "new-guid")
   h.assert_equal(discovery.machine_id_of(renamed), "new-guid")
 end
 
@@ -375,14 +376,14 @@ function T.test_an_existing_dni_is_never_duplicated()
     ["http://192.168.1.25:5001/st/v1/description"] = description("9f3c-guid", "DESKTOP-ABC"),
   }))
   h.assert_nil(driver.created, "the machine_id is already here")
-  h.assert_equal(existing:get_field(client.IP_FIELD), "192.168.1.25")
-  h.assert_equal(existing:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
+  h.assert_equal(existing:get_field(fields.DISCOVERED_IP), "192.168.1.25")
+  h.assert_equal(existing:get_field(fields.HOSTNAME), "DESKTOP-ABC")
 end
 
 function T.test_a_manual_device_is_adopted_by_its_stored_machine_id()
   -- §6.5: the DNI stays `manual-...`, the device is not duplicated.
   local manual = pc_device("pc-control-manual-abc-1", { ipAddress = "" })
-  manual:set_field(discovery.MACHINE_FIELD, "9f3c-guid")
+  manual:set_field(fields.MACHINE_ID, "9f3c-guid")
   local driver = fake_driver({ manual })
   discovery.handle(driver, {}, function() return true end, search_deps({
     { data = ssdp_response("192.168.1.25", 5001, "9f3c-guid"), from = "192.168.1.25" },
@@ -391,7 +392,7 @@ function T.test_a_manual_device_is_adopted_by_its_stored_machine_id()
   }))
   h.assert_nil(driver.created)
   h.assert_equal(manual.device_network_id, "pc-control-manual-abc-1", "the DNI never changes")
-  h.assert_equal(manual:get_field(client.IP_FIELD), "192.168.1.25")
+  h.assert_equal(manual:get_field(fields.DISCOVERED_IP), "192.168.1.25")
 end
 
 function T.test_a_new_machine_id_is_created()
@@ -413,7 +414,7 @@ end
 
 function T.test_follow_discovery_updates_the_ip_and_repolls()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "" })
-  device:set_field(client.IP_FIELD, "192.168.1.20")
+  device:set_field(fields.DISCOVERED_IP, "192.168.1.20")
   local plan = discovery.plan(device, { machine_id = "9f3c-guid", ip = "192.168.1.25",
     port = 5001, hostname = "DESKTOP-ABC" })
   h.assert_equal(plan.action, "update")
@@ -423,7 +424,7 @@ end
 
 function T.test_an_unchanged_ip_does_not_repoll()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "" })
-  device:set_field(client.IP_FIELD, "192.168.1.20")
+  device:set_field(fields.DISCOVERED_IP, "192.168.1.20")
   local plan = discovery.plan(device, { machine_id = "9f3c-guid", ip = "192.168.1.20" })
   h.assert_nil(plan.ip)
   h.assert_false(plan.repoll)
@@ -431,7 +432,7 @@ end
 
 function T.test_follow_discovery_off_pins_the_address()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "", followDiscovery = false })
-  device:set_field(client.IP_FIELD, "192.168.1.20")
+  device:set_field(fields.DISCOVERED_IP, "192.168.1.20")
   local plan = discovery.plan(device, { machine_id = "9f3c-guid", ip = "192.168.1.25",
     hostname = "DESKTOP-ABC" })
   h.assert_nil(plan.ip, "followDiscovery = false keeps the address it has")
@@ -447,13 +448,13 @@ function T.test_the_ip_preference_always_wins()
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5001/st/v1")
 
   -- And the preference still wins over a field SSDP wrote earlier.
-  device:set_field(client.IP_FIELD, "192.168.1.25")
+  device:set_field(fields.DISCOVERED_IP, "192.168.1.25")
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5001/st/v1")
 end
 
 function T.test_a_hostname_change_on_one_machine_id_warns()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "" })
-  device:set_field(discovery.HOSTNAME_FIELD, "DESKTOP-ABC")
+  device:set_field(fields.HOSTNAME, "DESKTOP-ABC")
   local plan = discovery.plan(device, { machine_id = "9f3c-guid", hostname = "LAPTOP-XYZ" })
   h.assert_equal(plan.warning, "hostname_mismatch")
   h.assert_equal(plan.conflict, "LAPTOP-XYZ")
@@ -461,7 +462,7 @@ end
 
 function T.test_the_hostname_warning_reaches_the_status_message()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "", language = "en" })
-  device:set_field(discovery.HOSTNAME_FIELD, "DESKTOP-ABC")
+  device:set_field(fields.HOSTNAME, "DESKTOP-ABC")
   discovery.apply(fake_driver({ device }), device,
     { machine_id = "9f3c-guid", hostname = "LAPTOP-XYZ" }, {})
   local message = h.event_value(h.emitted(device), caps.STATUS, "message")
@@ -490,7 +491,7 @@ end
 
 function T.test_an_unreachable_device_searches_once_then_waits()
   local device = pc_device("pc-control-9f3c-guid", { ipAddress = "" })
-  device:set_field(client.IP_FIELD, "192.168.1.20")
+  device:set_field(fields.DISCOVERED_IP, "192.168.1.20")
   local driver = fake_driver({ device })
 
   local searches = 0
@@ -513,7 +514,7 @@ function T.test_an_unreachable_device_searches_once_then_waits()
 
   h.assert_true(discovery.refresh(driver, device, deps))
   h.assert_equal(searches, 1)
-  h.assert_equal(device:get_field(client.IP_FIELD), "192.168.1.25")
+  h.assert_equal(device:get_field(fields.DISCOVERED_IP), "192.168.1.25")
 
   local ok, why = discovery.refresh(driver, device, deps)
   h.assert_false(ok)
@@ -526,7 +527,7 @@ function T.test_a_device_without_an_identity_does_not_search()
   local ok, why = discovery.refresh(fake_driver({ manual }), manual, { now = function() return 1 end })
   h.assert_false(ok)
   h.assert_equal(why, "no machine id")
-  h.assert_nil(manual:get_field(discovery.LAST_SEARCH_FIELD),
+  h.assert_nil(manual:get_field(fields.LAST_SSDP),
     "a search that cannot happen does not burn the cooldown")
 end
 
