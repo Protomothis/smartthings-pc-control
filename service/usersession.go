@@ -93,10 +93,6 @@ func enumerateWTSSessions() ([]wtsSession, error) {
 // Nobody logged in is errNoUserSession. Any other WTS failure (a missing
 // privilege, say) is returned as itself so it is not mistaken for an
 // empty machine.
-//
-// This replaced a PowerShell `Get-Process explorer` lookup (#104): that
-// cost most of a second per call, a third of runUserAction's 3s budget,
-// and also missed a user whose shell had crashed.
 func findUserSession() (uint32, syscall.Token, error) {
 	var firstErr error
 	// The first candidate with a user, kept in case none is unlocked.
@@ -196,13 +192,6 @@ const (
 	// physical monitor, for the screen commands only.
 	sessionConsole
 )
-
-func (t sessionTarget) String() string {
-	if t == sessionConsole {
-		return "console"
-	}
-	return "active user"
-}
 
 // find looks the target session up and returns it with a primary token
 // the caller closes.

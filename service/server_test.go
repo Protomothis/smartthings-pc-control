@@ -359,7 +359,7 @@ func TestScheduleOriginWakesTrayApp(t *testing.T) {
 func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
 	initLogger()
 	calls := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	// Same path the app/WebUI /api/schedule endpoint takes.
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
@@ -374,7 +374,7 @@ func TestSetScheduleUIDoesNotWakeTrayApp(t *testing.T) {
 func TestSetScheduleRemoteWakesTrayApp(t *testing.T) {
 	initLogger()
 	calls := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatal(err)
@@ -387,7 +387,7 @@ func TestSetScheduleUnknownCommandDoesNotWakeTrayApp(t *testing.T) {
 	calls := stubTrayLauncher(t, nil)
 
 	if err := setSchedule("no-such-command", 5*time.Minute, originRemote); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("expected error for unknown command")
 	}
 	expectNoTrayLaunch(t, calls)
@@ -397,7 +397,7 @@ func TestTrayLaunchFailureKeepsSchedule(t *testing.T) {
 	// No user logged in / token error must not cancel or fail the command.
 	initLogger()
 	calls := stubTrayLauncher(t, errors.New("no explorer.exe process found"))
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originRemote); err != nil {
 		t.Fatalf("setSchedule failed because the tray launch failed: %v", err)
@@ -412,7 +412,7 @@ func TestGraceDefersShutdown(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true})
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	// Swap in a stub so a scheduling bug can't actually shut the box down.
 	orig := Commands["shutdown"]
@@ -452,7 +452,7 @@ func TestGraceDefersShutdown(t *testing.T) {
 	// A remote grace schedule wakes the tray app so the toast is visible.
 	expectTrayLaunch(t, launches)
 
-	if !cancelSchedule() {
+	if !cancelScheduleBy("api") {
 		t.Fatal("cancelSchedule reported no active schedule")
 	}
 }
@@ -478,7 +478,7 @@ func TestGraceDisabledExecutesImmediately(t *testing.T) {
 		t.Fatal("shutdown did not execute with grace disabled")
 	}
 	if s := getSchedule(); s["active"] == true {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("unexpected schedule created with grace disabled")
 	}
 	// Nothing was scheduled, so there is no toast to wake the tray app for.
@@ -509,7 +509,7 @@ func TestGraceUsesConfiguredSeconds(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 30})
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	orig := Commands["restart"]
 	Commands["restart"] = Command{Response: orig.Response, Execute: func() {}}
@@ -566,11 +566,11 @@ func TestNormalizeConfigKeepsGraceWhenOmitted(t *testing.T) {
 func TestScheduleTaskRejectsNonPositiveDelay(t *testing.T) {
 	initLogger()
 	if err := scheduleTask("lock", 0, originUI); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("zero delay accepted")
 	}
 	if err := scheduleTask("lock", -time.Second, originUI); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatal("negative delay accepted")
 	}
 }
@@ -580,13 +580,13 @@ func TestScheduleTaskRejectsADelayPastTheCeiling(t *testing.T) {
 	// last guard before the timer is armed.
 	initLogger()
 	if err := scheduleTask("lock", maxScheduleDelay+time.Minute, originUI); err == nil {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		t.Fatalf("a delay over %d minutes was accepted", maxScheduleMinutes)
 	}
 	if err := scheduleTask("lock", maxScheduleDelay, originUI); err != nil {
 		t.Fatalf("the ceiling itself must be schedulable: %v", err)
 	}
-	cancelSchedule()
+	cancelScheduleBy("api")
 }
 
 func TestFormatDelay(t *testing.T) {
@@ -615,7 +615,7 @@ func TestFormatDelay(t *testing.T) {
 func TestScheduleExposesOriginAndReplacement(t *testing.T) {
 	initLogger()
 	launches := stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)
@@ -952,7 +952,7 @@ func TestRemoteGraceEmitsScheduledWithActions(t *testing.T) {
 	setConfig(Config{Port: 5001, Secret: "", ShutdownGrace: true, GraceSeconds: 300})
 	launches := stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	orig := Commands["shutdown"]
 	Commands["shutdown"] = Command{Response: orig.Response, Execute: func() {}}
@@ -1010,7 +1010,7 @@ func TestUISchedulesEmitCreatedAndCancelled(t *testing.T) {
 	setConfig(Config{Port: 5001, Notify: notify.Config{"schedule": {"created": true, "cancelled": true}}})
 	stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)

@@ -72,7 +72,7 @@ func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	stubTrayLauncher(t, nil)
 	stubCommand(t, "lock")
 	stubMediaRun(t, UserActionResult{}, errNoUserSession) // /unmute never reaches a real session
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	var h telegramControl
 
 	const header = "🖥 <b>MY&lt;PC&gt;</b>"
@@ -111,7 +111,7 @@ func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko", PCName: "MY<PC>"}})
 	stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	origVersion := Version
 	Version = "v9.9.9-test"
 	defer func() { Version = origVersion }()
@@ -194,7 +194,7 @@ func TestTelegramShutdownWithoutMinutesAsksConfirmation(t *testing.T) {
 	initLogger()
 	setConfig(Config{})
 	shutdown := stubCommand(t, "shutdown")
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	var h telegramControl
 	html, kb, err := h.HandleCommand(context.Background(), "42", "shutdown", nil)
 	if err != nil {
@@ -222,7 +222,7 @@ func TestTelegramShutdownWithMinutesSchedulesAsTelegram(t *testing.T) {
 	setConfig(Config{Port: 5001})
 	launches := stubTrayLauncher(t, nil)
 	shutdown := stubCommand(t, "shutdown")
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	var h telegramControl
 
 	html, kb, err := h.HandleCommand(context.Background(), "42", "shutdown", []string{"30"})
@@ -258,7 +258,7 @@ func TestTelegramCancelAndNow(t *testing.T) {
 	stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
 	lock := stubCommand(t, "lock")
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	var h telegramControl
 
 	html, _, _ := h.HandleCommand(context.Background(), "42", "cancel", nil)
@@ -420,7 +420,7 @@ func TestTelegramCallbackCancelAndRunnowOnGrace(t *testing.T) {
 	stubTrayLauncher(t, nil)
 	events := captureNotifications(t)
 	shutdown := stubCommand(t, "shutdown")
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	var h telegramControl
 
 	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "cancel:")

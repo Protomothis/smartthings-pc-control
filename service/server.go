@@ -1213,12 +1213,6 @@ func formatDelay(d time.Duration) string {
 	}
 }
 
-// cancelSchedule cancels the current scheduled task on behalf of the local
-// API (app/WebUI/toast all go through /api/schedule DELETE).
-func cancelSchedule() bool {
-	return cancelScheduleBy("api")
-}
-
 // cancelScheduleBy cancels the current scheduled task. by says who asked
 // (api/webui/app/toast/tray/telegram) and is reported in the notification:
 // remote.grace_cancelled for a grace deferral, schedule.cancelled otherwise.

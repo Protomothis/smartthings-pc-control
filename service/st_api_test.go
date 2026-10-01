@@ -75,9 +75,9 @@ func stSetup(t *testing.T, cfg Config) {
 	stubWoL(t, WoLStatus{Ready: true, Adapters: []WoLAdapter{
 		{Name: "Ethernet", MacAddress: "AA-BB-CC-DD-EE-FF", Status: "Up", WoLEnabled: true, WoLCapable: true},
 	}})
-	cancelSchedule()
+	cancelScheduleBy("api")
 	t.Cleanup(func() {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		resetSTRateLimit()
 	})
 }
@@ -372,7 +372,7 @@ func TestSTCommandAcceptsTheThreeDayCeiling(t *testing.T) {
 	// definition, but nothing validates the definition against the service.
 	stSetup(t, Config{Port: 5001})
 	stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 
 	w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "",
 		`{"command":"shutdown","minutes":4320}`)

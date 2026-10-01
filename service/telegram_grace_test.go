@@ -32,7 +32,7 @@ func startGraceSink(t *testing.T) {
 	resetGraceMessage()
 	startLiveNotifier()
 	t.Cleanup(func() {
-		cancelSchedule()
+		cancelScheduleBy("api")
 		stopNotifier()
 		resetGraceMessage()
 	})
@@ -233,7 +233,7 @@ func TestGraceMessageNotRememberedWhenScheduleAlreadyGone(t *testing.T) {
 	}
 	// Other events never register, even with a schedule active.
 	stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	if err := setSchedule("shutdown", time.Hour, originRemote); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestGraceMessageNotRememberedWhenScheduleAlreadyGone(t *testing.T) {
 		t.Errorf("stored = %+v", got)
 	}
 	// A UI schedule of the same command is not what the message announced.
-	cancelSchedule()
+	cancelScheduleBy("api")
 	resetGraceMessage()
 	if err := setSchedule("shutdown", time.Hour, originUI); err != nil {
 		t.Fatal(err)
@@ -406,7 +406,7 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 		t.Errorf("cancel:menu without schedule: edit=%q toast=%q", edit, toast)
 	}
 	stubTrayLauncher(t, nil)
-	defer cancelSchedule()
+	defer cancelScheduleBy("api")
 	if err := setSchedule("lock", 30*time.Minute, originUI); err != nil {
 		t.Fatal(err)
 	}
