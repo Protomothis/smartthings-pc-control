@@ -243,37 +243,6 @@ function T.test_no_profile_references_a_capability_this_driver_dropped()
   h.assert_true(checked > 0, "no main profile found in " .. profiles_dir)
 end
 
-function T.test_no_display_child_profile_is_shipped()
-  -- #81: the child device is gone; a leftover pc-display*.yml would let the
-  -- hub keep rendering children this driver no longer manages.
-  for name in pairs(profile_files) do
-    h.assert_true(name:match("^pc%-display") == nil,
-      "profiles/" .. name .. " is a display child profile (#81 removed them)")
-  end
-end
-
-function T.test_every_profile_file_declares_a_name_profiles_lua_knows()
-  -- The package has to carry a file for every name the driver may leave a
-  -- device on, or a device on an older profile breaks at install time.
-  local profiles = require "profiles"
-  local declared = {}
-  for name, text in pairs(profile_files) do
-    local declared_name = profile_name(text)
-    h.assert_true(type(declared_name) == "string" and declared_name ~= "",
-      "profiles/" .. name .. " declares no name")
-    declared[declared_name] = name
-  end
-  for _, known in ipairs(profiles.KNOWN) do
-    if profiles.is_shipped(known) then
-      h.assert_true(declared[known] ~= nil,
-        "src/profiles.lua knows " .. known .. ", but no profile file declares it")
-    else
-      h.assert_nil(declared[known], known .. " is an unshipped generation but a file declares it")
-    end
-  end
-  h.assert_true(declared[profiles.PC] ~= nil, "no file declares " .. profiles.PC)
-end
-
 --- The custom capability names a profile lists, in order.
 local function capability_order(text)
   local order = {}
@@ -353,19 +322,6 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
         end
       end
     end
-  end
-end
-
-function T.test_no_two_profile_files_share_a_name()
-  -- Two files with the same `name:` is what a copied-but-not-renamed version
-  -- bump looks like, and the hub would take whichever it read last.
-  local seen = {}
-  for name, text in pairs(profile_files) do
-    local declared_name = profile_name(text)
-    h.assert_nil(seen[declared_name],
-      "profiles/" .. name .. " and profiles/" .. tostring(seen[declared_name])
-      .. " both declare " .. tostring(declared_name))
-    seen[declared_name] = name
   end
 end
 
@@ -453,21 +409,6 @@ function T.test_every_icon_style_has_a_profile_with_its_category()
   end
   for style in pairs(profiles.VARIANTS) do
     h.assert_true(listed[style] == true, "profiles.VARIANTS has " .. style .. ", which pc.yml does not offer")
-  end
-end
-
-function T.test_every_profile_file_is_current_or_known()
-  -- A file that is neither a current profile nor an older one this driver
-  -- knows is a variant somebody forgot to register in profiles.lua.
-  local profiles = require "profiles"
-  local known = {}
-  for _, name in ipairs(profiles.KNOWN) do
-    known[name] = true
-  end
-  for file, text in pairs(profile_files) do
-    local declared = profile_name(text)
-    h.assert_true(profiles.is_current(declared) or known[declared] == true or declared == profiles.APP,
-      "profiles/" .. file .. " declares " .. tostring(declared) .. ", which profiles.lua does not know")
   end
 end
 

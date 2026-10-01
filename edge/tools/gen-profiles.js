@@ -21,8 +21,8 @@
  *   pc-battery.v6    profiles/pc-battery-v6.yml     others, battery
  *   pc-tv-battery.v6 profiles/pc-tv-battery-v6.yml  tv, battery
  *
- * The rules are deliberately small, because tests/profilegen_test.lua applies
- * the same ones in Lua and compares the result with the files on disk:
+ * The rules are deliberately small; `--check` (CI: npm run check-profiles)
+ * fails when a file on disk is not what they produce:
  *
  *   1. Normalise line endings to LF and drop the template's header - every
  *      line before the first one that starts with `name:`.
@@ -158,7 +158,7 @@ function main() {
   const check = process.argv.includes('--check');
   // #118: the alternative layout, for a Dev channel comparison only. The
   // committed files are the default (media group in main), which is what
-  // --check and tests/profilegen_test.lua hold them to.
+  // --check holds them to (tests/profilegen_test.lua checks the layout rules).
   const mediaComponent = process.argv.includes('--media-component');
   if (check && mediaComponent) {
     process.stderr.write('--check verifies the committed (default) layout; drop --media-component\n');
