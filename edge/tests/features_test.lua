@@ -342,7 +342,7 @@ function T.test_a_refused_media_command_says_why()
     { "403 media_disabled", status_v12(), "ko", refused("forbidden", "media_disabled"),
       { "mediaTrackControl", "nextTrack" }, 1, "미디어 제어 꺼짐" },
   }) do
-    local name, status, lang, reply, handler, actions, summary = table.unpack(c)
+    local name, status, lang, reply, handler, actions, summary = table.unpack(c, 1, 7) -- explicit: rows have nil holes
     local device = device_with(status)
     device.preferences.language = lang
     local calls = with_service(reply, function()

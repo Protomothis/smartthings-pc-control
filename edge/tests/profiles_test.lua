@@ -646,7 +646,7 @@ function T.test_init_moves_a_dev_generation_device_to_v6_keeping_style_and_batte
     { "pc-tv-battery.v4", "tv", "pc-tv-battery.v6", caps.TOAST, "lastMessage" },
     { "pc-hub-battery.v5", "hub", "pc-hub-battery.v6", caps.APPS, "summary" },
   }) do
-    local from, style, to, cap, attr = table.unpack(c)
+    local from, style, to, cap, attr = table.unpack(c, 1, 5)
     profiles.reset()
     local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = style })
     device.id = "init-" .. from
