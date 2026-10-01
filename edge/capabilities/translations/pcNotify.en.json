@@ -1,0 +1,18 @@
+{
+  "tag": "en",
+  "label": "PC notification",
+  "description": "Shows a notification on the PC's screen.",
+  "attributes": {},
+  "commands": {
+    "send": {
+      "label": "Send a message to the PC",
+      "description": "Shows the text as a notification (toast) on the PC. Up to 200 characters.",
+      "arguments": {
+        "text": {
+          "label": "Message",
+          "description": "The text to show on the PC (up to 200 characters)"
+        }
+      }
+    }
+  }
+}

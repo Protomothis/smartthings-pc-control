@@ -222,19 +222,20 @@ function T.test_the_media_group_is_in_main_by_default_in_its_order()
   for k, id in ipairs(MEDIA_GROUP) do
     h.assert_equal(main[at + k], id, "media group position " .. k)
   end
-  -- pcMessage takes the place the standard notification pair had (pc.v2), and
-  -- closes main.
+  -- pcNotify takes the place the standard notification pair had (pc.v2) and
+  -- pcMessage had (pc.v3), and closes main.
   h.assert_deep_equal({ main[at + 6], main[at + 7], main[at + 8] }, {
-    "numbersystem53811.pcpreset", "numbersystem53811.pcactivity", "numbersystem53811.pcmessage",
+    "numbersystem53811.pcpreset", "numbersystem53811.pcactivity", "numbersystem53811.pcnotify",
   })
-  h.assert_equal(#main, at + 8, "pcMessage is the last capability of main")
+  h.assert_equal(#main, at + 8, "pcNotify is the last capability of main")
   h.assert_nil(render("others", false):find("\n  - id: media\n", 1, true), "no media component by default")
 end
 
-function T.test_no_current_profile_carries_the_standard_notification_pair()
-  -- pcMessage: the app labels `notification` "텍스트 표시" and
-  -- `speechSynthesis` "음성 합성", and a device configuration cannot override
-  -- that (platform notes "표준 capability"). Both rows would sit next to ours.
+function T.test_no_current_profile_carries_anything_that_reads_aloud()
+  -- The app labels `notification` "텍스트 표시" and `speechSynthesis` "음성
+  -- 합성", and a device configuration cannot override that (platform notes
+  -- "표준 capability"). Read-aloud was dropped, so pcMessage (send + speak) is
+  -- gone too: only pcNotify's "PC에 메시지 보내기".
   for _, battery in ipairs({ false, true }) do
     for _, style in ipairs(profiles.STYLES) do
       for _, media_component in ipairs({ false, true }) do
@@ -242,28 +243,39 @@ function T.test_no_current_profile_carries_the_standard_notification_pair()
         local name = profiles.for_style(style, battery)
         h.assert_nil(text:find("\n      - id: notification\n", 1, true), name .. " still lists notification")
         h.assert_nil(text:find("\n      - id: speechSynthesis\n", 1, true), name .. " still lists speechSynthesis")
-        h.assert_contains(text, "\n      - id: numbersystem53811.pcmessage\n")
+        h.assert_nil(text:find("pcmessage", 1, true), name .. " still lists pcMessage")
+        h.assert_contains(text, "\n      - id: numbersystem53811.pcnotify\n")
       end
     end
   end
 end
 
-function T.test_the_unreleased_v2_generation_is_not_packaged()
-  -- v2 existed only on the Dev channel; its files were dropped to stay under
-  -- the 655360-byte upload limit (profiles.UNSHIPPED_VERSIONS). Its names stay
-  -- in KNOWN so a development device on v2 still migrates to v3.
-  for _, battery in ipairs({ false, true }) do
-    for _, style in ipairs(profiles.STYLES) do
-      local name = profiles.name_for(style, battery, 2)
-      h.assert_false(profiles.is_shipped(name), name)
-      local on_disk = false
-      for _, f in ipairs(list(edge_dir .. "/profiles")) do
-        if f == file_name(name) then on_disk = true end
+function T.test_the_unreleased_v2_and_v3_generations_are_not_packaged()
+  -- v2 and v3 existed only on the Dev channel; their files were dropped to
+  -- stay under the 655360-byte upload limit (profiles.UNSHIPPED_VERSIONS).
+  -- Their names stay in KNOWN so a development device on either still
+  -- migrates to the v4 of its style and battery half.
+  local on_disk = {}
+  for _, f in ipairs(list(edge_dir .. "/profiles")) do
+    on_disk[f] = true
+  end
+  for _, version in ipairs({ 2, 3 }) do
+    for _, battery in ipairs({ false, true }) do
+      for _, style in ipairs(profiles.STYLES) do
+        local name = profiles.name_for(style, battery, version)
+        h.assert_false(profiles.is_shipped(name), name)
+        h.assert_nil(on_disk[file_name(name)], file_name(name) .. " must not be packaged")
+        h.assert_equal(profiles.migration_for(name), profiles.name_for(style, battery, 4),
+          name .. " must still migrate")
       end
-      h.assert_false(on_disk, file_name(name) .. " must not be packaged")
-      h.assert_true(profiles.migration_for(name, battery) ~= nil, name .. " must still migrate")
     end
   end
+  -- What is packaged: the ten v1 files and the twenty current ones.
+  local count = 0
+  for _ in pairs(on_disk) do
+    count = count + 1
+  end
+  h.assert_equal(count, 30)
 end
 
 function T.test_the_alternative_layout_moves_the_media_group_into_a_component()

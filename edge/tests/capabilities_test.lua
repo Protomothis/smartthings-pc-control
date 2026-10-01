@@ -316,7 +316,7 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   -- its own. A file is read for which of the two it carries rather than by its
   -- number, so a version bump does not have to be spelled out here.
   -- #90 reset the numbering, so at v1.0.0 there was no older file; now the ten
-  -- v1 files and (since pcMessage made pc.v3) the twenty v2 files are frozen.
+  -- v1 files are frozen (v2 and v3 were never published and are not packaged).
   local profiles = require "profiles"
   local version = (caps.VERSION:gsub("^.*%.", ""))
   local info = (caps.STATUS:gsub("^.*%.", ""))
@@ -600,8 +600,8 @@ local EXPECTED_COMMANDS = {
   preset = { run = { "slot" } },
   -- #114: a condition, nothing to command.
   activity = {},
-  -- #108/pcMessage: one text argument each, the same name for both.
-  message = { send = { "text" }, speak = { "text" } },
+  -- #108/pcNotify: one command, one text argument.
+  notify = { send = { "text" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -809,7 +809,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "message" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "notify" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -1506,7 +1506,7 @@ function T.test_no_automation_action_uses_a_push_button()
 end
 
 --------------------------------------------------------------------------------
--- textField rows (#108, pcMessage)
+-- textField rows (#108, pcNotify)
 --------------------------------------------------------------------------------
 
 --- Every `textField` widget of every presentation, detail view and automation
@@ -1537,7 +1537,7 @@ function T.test_every_text_field_sends_one_bounded_string_argument()
   -- text) to the definition's `maxLength`, so the field cannot accept what the
   -- cloud would then reject.
   local fields = text_fields()
-  h.assert_true(#fields >= 4, "pcMessage has two text fields in each place: " .. #fields)
+  h.assert_true(#fields >= 2, "pcNotify has a text field in each place: " .. #fields)
   for _, field in ipairs(fields) do
     local text_field = field.item.textField or {}
     local command = ((definition(field.key).commands or {})[text_field.command or ""]) or nil
@@ -1553,27 +1553,31 @@ function T.test_every_text_field_sends_one_bounded_string_argument()
   end
 end
 
-function T.test_pc_message_is_two_text_fields_and_nothing_else()
-  local detail = presentation("message").detailView
-  h.assert_equal(#detail, 2, "send, speak")
+function T.test_pc_notify_is_one_text_field_and_nothing_else()
+  h.assert_equal(caps.NOTIFY, "numbersystem53811.pcnotify")
+  h.assert_equal(definition("notify").name, "pcNotify")
+  local detail = presentation("notify").detailView
+  h.assert_equal(#detail, 1, "send only - read-aloud was dropped")
   h.assert_equal(detail[1].textField.command, "send")
-  h.assert_equal(detail[2].textField.command, "speak")
-  local actions = presentation("message").automation.actions
-  h.assert_equal(#actions, 2, "the same two in a routine")
+  local actions = presentation("notify").automation.actions
+  h.assert_equal(#actions, 1, "the same one in a routine")
   h.assert_equal(actions[1].textField.command, "send")
-  h.assert_equal(actions[2].textField.command, "speak")
-  h.assert_equal(#presentation("message").automation.conditions, 0, "nothing to react to")
-  h.assert_equal(#presentation("message").dashboard.actions, 0)
+  h.assert_equal(#presentation("notify").automation.conditions, 0, "nothing to react to")
+  h.assert_equal(#presentation("notify").dashboard.actions, 0)
   -- No attribute: nothing to show, so nothing the driver would have to paint -
   -- and nothing that could read "-" (the standard `notification` has none
   -- either).
-  h.assert_nil(next(definition("message").attributes or {}), "pcMessage defines no attribute")
-  -- The service's limit, once, for both commands.
-  local features = require "features"
-  for _, name in ipairs({ "send", "speak" }) do
-    h.assert_equal(definition("message").commands[name].arguments[1].schema.maxLength,
-      features.NOTIFY_MAX_CHARS, name .. "(text) maxLength")
+  h.assert_nil(next(definition("notify").attributes or {}), "pcNotify defines no attribute")
+  local names = {}
+  for name in pairs(definition("notify").commands) do
+    names[#names + 1] = name
   end
+  h.assert_deep_equal(names, { "send" })
+  -- The service's limit.
+  local features = require "features"
+  h.assert_equal(definition("notify").commands.send.arguments[1].schema.maxLength,
+    features.NOTIFY_MAX_CHARS, "send(text) maxLength")
+  h.assert_deep_equal(detail[1].textField.range, { 1, features.NOTIFY_MAX_CHARS })
 end
 
 -- Attributes that are still defined and emitted but no longer have a row of
@@ -1845,17 +1849,19 @@ function T.test_the_versions_row_has_a_label_in_both_languages()
   h.assert_equal(translation("version", "en").label, "PC version")
 end
 
-function T.test_pc_message_reads_as_ours_in_both_languages()
+function T.test_pc_notify_reads_as_ours_in_both_languages()
   -- The whole point of the capability: the words on the phone, instead of the
-  -- app's "텍스트 표시" / "음성 합성" for the standard pair.
-  local ko, en = translation("message", "ko"), translation("message", "en")
+  -- app's "텍스트 표시" for the standard `notification`.
+  local ko, en = translation("notify", "ko"), translation("notify", "en")
+  h.assert_equal(ko.label, "PC 알림")
+  h.assert_equal(en.label, "PC notification")
   h.assert_equal(ko.commands.send.label, "PC에 메시지 보내기")
-  h.assert_equal(ko.commands.speak.label, "PC에서 소리내어 읽기")
   h.assert_equal(en.commands.send.label, "Send a message to the PC")
-  h.assert_equal(en.commands.speak.label, "Read aloud on the PC")
+  h.assert_nil(ko.commands.speak, "read-aloud was dropped")
+  h.assert_nil(en.commands.speak, "read-aloud was dropped")
   for _, doc in ipairs({ ko, en }) do
     h.assert_true(type(doc.description) == "string" and doc.description ~= "", doc.tag .. " description")
-    for _, name in ipairs({ "send", "speak" }) do
+    for _, name in ipairs({ "send" }) do
       h.assert_true(type(doc.commands[name].description) == "string" and doc.commands[name].description ~= "",
         doc.tag .. " " .. name .. " description")
       local argument = doc.commands[name].arguments.text
@@ -1892,7 +1898,8 @@ function T.test_the_package_stays_under_the_upload_limit()
   -- SmartThings rejects a driver whose files add up to more than 655360
   -- bytes (uncompressed; measured 2026-09-30 when fifty profiles - v1, v2
   -- and v3 of every icon/battery variant - reached 666 KB). Only published
-  -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS).
+  -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS):
+  -- today v1 and v4.
   local root = tests_dir .. "/.."
   local total = 0
   local function add(path)

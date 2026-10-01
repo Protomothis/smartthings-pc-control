@@ -256,15 +256,10 @@ function client.action(device, cmd, value, deps)
   return client.request(device, { method = "POST", path = "/command", body = body }, deps)
 end
 
---- #108: `POST /st/v1/notify` (media-notify.md §3): `{ text, speak? }`. No
---- `title` - the service's default ("SmartThings") says where it came from.
---- `speak` is only sent when true, so a toast request stays the plain shape.
-function client.notify(device, text, speak, deps)
-  local body = { text = text }
-  if speak == true then
-    body.speak = true
-  end
-  return client.request(device, { method = "POST", path = "/notify", body = body }, deps)
+--- #108: `POST /st/v1/notify` (media-notify.md §3): `{ text }`. No `title` -
+--- the service's default ("SmartThings") says where it came from.
+function client.notify(device, text, deps)
+  return client.request(device, { method = "POST", path = "/notify", body = { text = text } }, deps)
 end
 
 --- `DELETE /st/v1/schedule` (§3.4).

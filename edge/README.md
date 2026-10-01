@@ -117,15 +117,14 @@ capability라 모양은 앱이 정한다.
 | 프리셋 | 데스크톱 앱에 등록한 프리셋을 슬롯으로 고른다(`프리셋 1 (Preset 1)`…). 등록되지 않은 슬롯은 목록에서 빠진다(실측 대기). 목록은 `프리셋 선택…`에 머물고, 실행하면 잠깐 `프리셋 3 실행함`이 된다 |
 | 프리셋 목록 | `1 게임 모드 · 2 방송 시작`. 없으면 `없음` |
 | 활동 | 감시 목록에 넣은 앱이 실행 중이면 `게임 중 · Steam`, 없으면 `없음`, PC에서 감지를 켜지 않았으면 `꺼짐` |
-| PC에 메시지 보내기 | 문구를 넣으면 PC 화면에 알림(토스트)이 뜬다(`pcMessage.send`). 보내면 메시지 줄에 `PC에 메시지를 보냈습니다` |
-| PC에서 소리내어 읽기 | 같은 문구를 PC가 읽어 준다(`pcMessage.speak`). 읽으면 `PC에서 읽었습니다` |
+| PC에 메시지 보내기 | 문구를 넣으면 PC 화면에 알림(토스트)이 뜬다(`pcNotify.send`). 보내면 메시지 줄에 `PC에 메시지를 보냈습니다` |
 | 잠들지 않기 | 별도 컴포넌트의 스위치. 켜면 환경설정 `잠들지 않기 시간`(기본 60분) 동안 PC가 자동 절전하지 않는다 |
 | 배터리 | **노트북에만.** 별도 컴포넌트에 잔량(%)과 전원 공급원(전원 어댑터 · 배터리) |
 
 **프로필 이름이 중요한 이유**: 장치의 화면은 **추가한 시점의 정의로 굳는다.** "왜 아직
 옛날 화면이지?"의 답은 대개 장치가 아직 옛 프로필(`pc.vN`)에 있다는 것이다. 드라이버가
-첫 `init`에서 현재 프로필(`pc.v3`, 아이콘 설정에 따라 `pc-<style>.v3`, 노트북은
-`pc-<style>-battery.v3`)로 옮긴다.
+첫 `init`에서 현재 프로필(`pc.v4`, 아이콘 설정에 따라 `pc-<style>.v4`, 노트북은
+`pc-<style>-battery.v4`)로 옮긴다.
 
 ## 사용
 
@@ -205,11 +204,10 @@ capability라 모양은 앱이 정한다.
 ### PC에 메시지 보내기
 
 상세 화면이나 루틴 동작의 **PC에 메시지 보내기**에 문구를 넣으면 PC에 토스트가 뜬다. 제목은
-`SmartThings`다. **PC에서 소리내어 읽기**는 같은 문구를 PC가 음성으로 읽는다. 둘 다 이
-드라이버의 capability `pcMessage`다(표준 `notification`·`speechSynthesis`는 앱이 "텍스트
-표시"·"음성 합성"으로 보여 주고 장치 쪽에서 문구를 바꿀 수 없어 쓰지 않는다).
+`SmartThings`다. 이 드라이버의 capability `pcNotify`다(표준 `notification`은 앱이 "텍스트
+표시"로 보여 주고 장치 쪽에서 문구를 바꿀 수 없어 쓰지 않는다).
 문구는 200자까지이고 넘치면 `…`로 잘린다. 데스크톱 앱 설정에서 PC 알림을 끄면 보내지 않는다.
-보내면 메시지 줄에 `PC에 메시지를 보냈습니다`(읽기는 `PC에서 읽었습니다`)가 뜨고, 안 뜰 때는
+보내면 메시지 줄에 `PC에 메시지를 보냈습니다`가 뜨고, 안 뜰 때는
 그 줄이 이유를 말한다: `PC 알림 꺼짐` · `사용자 없음` · `잠시 후 다시`(분당 10회 제한) ·
 `서비스 v1.2.0 필요`.
 
@@ -218,8 +216,8 @@ capability라 모양은 앱이 정한다.
 동작(Then): PC 의 PC에 메시지 보내기 ("현관문이 열렸습니다")
 ```
 
-`pc.v2`에서 표준 **텍스트 표시**로 만든 루틴은 장치가 `pc.v3`으로 옮겨진 뒤 그 동작이 사라지므로
-**PC에 메시지 보내기**로 다시 고른다.
+Dev 채널의 `pc.v2`(표준 **텍스트 표시**)나 `pc.v3`(`pcMessage`)에서 만든 루틴은 장치가
+`pc.v4`로 옮겨진 뒤 그 동작이 사라지므로 **PC에 메시지 보내기**로 다시 고른다.
 
 ### 잠들지 않기
 
@@ -391,7 +389,7 @@ npm test
 
 ```bash
 ./tools/create-capabilities.sh    # 계정에 한 번만: 모든 capability와 프레젠테이션 생성
-./tools/create-capabilities.sh pcPreset pcActivity pcMessage   # 나중에 생긴 것만 (드라이버 1.1.0)
+./tools/create-capabilities.sh pcPreset pcActivity pcNotify   # 나중에 생긴 것만 (드라이버 1.1.0)
 ./tools/sync-capabilities.sh      # 이후 변경분 반영(정의·프레젠테이션·번역)
 ./tools/sync-capabilities.sh --dry-run
 ```
@@ -409,7 +407,7 @@ npm test
 장치의 화면은 **생성 시점의 프레젠테이션으로 굳는다.** 같은 이름의 프로필을 다시
 패키징하면 preference 변경만 반영되고 화면은 그대로다. 그래서:
 
-1. **현재 프로필은 손으로 쓰지 않는다.** 아이콘 10종 × 배터리 유무 = 20개(`pc.v3`, `pc-<style>.v3`, `pc-battery.v3`, `pc-<style>-battery.v3`, 파일은 `profiles/pc*-v3.yml`)를 `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 만든다. 템플릿을 고치고 다시 생성해 함께 커밋한다:
+1. **현재 프로필은 손으로 쓰지 않는다.** 아이콘 10종 × 배터리 유무 = 20개(`pc.v4`, `pc-<style>.v4`, `pc-battery.v4`, `pc-<style>-battery.v4`, 파일은 `profiles/pc*-v4.yml`)를 `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 만든다. 템플릿을 고치고 다시 생성해 함께 커밋한다:
 
    ```bash
    bun tools/gen-profiles.js          # node 도 된다
@@ -419,10 +417,10 @@ npm test
    `bun tools/gen-profiles.js --media-component`는 미디어 묶음(곡 정보 · 재생 · 곡 이동 · 볼륨 · 음소거)을 main에서 빼 컴포넌트 `미디어`로 옮긴 **대안 배치**를 쓴다. Dev 채널에서 두 화면을 비교할 패키지를 만들 때만 쓰고 커밋하지 않는다(기본은 main, 비교가 끝나면 플래그 없이 다시 생성). `--check`와 테스트는 기본 배치를 지킨다.
 
    `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
-2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다.
-3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다(v1 열 개, v2 스무 개, v3 스무 개). `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v3`, `pc-tv-battery.v2` → `pc-tv-battery.v3` — v2부터는 배터리 쪽도 그대로).
+2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 공개된 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다. 공개되지 않은(Dev 채널만) 생성물은 지우고 `profiles.UNSHIPPED_VERSIONS`에 번호를 넣는다 — 패키지 한도 655360바이트 때문이다.
+3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다(v1 열 개, v2 스무 개, v3 스무 개, v4 스무 개). `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v4`, `pc-tv-battery.v3` → `pc-tv-battery.v4` — v2부터는 배터리 쪽도 그대로).
 4. capability id가 바뀌거나 새로 생겼다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
-5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. `profiles/pc*-v2.yml` 스무 개는 표준 `notification`·`speechSynthesis`를 쓰던 화면의 고정 파일이다(Dev 채널). 둘 다 고치지 않는다.
+5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다. v2(표준 `notification`·`speechSynthesis`)와 v3(`pcMessage`)는 Dev 채널에만 나갔으므로 파일이 없다.
 
 ### 패키징
 

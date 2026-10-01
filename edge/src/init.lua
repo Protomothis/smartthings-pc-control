@@ -42,8 +42,8 @@ local function device_init(driver, device)
   end
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
-  -- #107: pc*.v1 -> pc*.v2, with the style kept; pcMessage: pc*.v2 -> pc*.v3,
-  -- with the style and the battery half kept.
+  -- #107: pc*.v1 -> the current pc*.vN, with the style kept; a development
+  -- device on pc*.v2 / pc*.v3 also keeps the battery half (pcNotify: v4).
   local migrated = profiles.ensure(device)
   -- #100: the `iconStyle` preference changed but the driver restarted before
   -- the switch to that style's profile landed (or the hub refused it then).
@@ -625,18 +625,16 @@ end
 -- #108: PC notifications
 --------------------------------------------------------------------------------
 
---- `POST /st/v1/notify` for `pcMessage.send(text)` and `pcMessage.speak(text)`
---- (`speak = true`) - and for the standard `notification.deviceNotification`
---- and `speechSynthesis.speak` of the v2 profiles.
+--- `pcNotify.send(text)` -> `POST /st/v1/notify {text}`.
 --
--- None of these capabilities has an attribute, so there is no row to answer;
--- the outcome goes to `pcInfo.message` only - a routine may send several a
--- minute, and the summary row is the one the user reads the PC's state from.
--- A text that went out says so there ("PC에 메시지를 보냈습니다" / "PC에서
--- 읽었습니다"), a refused one says why. Gated like the other v1.2.0 commands
--- (`features "notify"`), and the text is cleaned and cut to the service's 200
--- characters before it goes out.
-local function send_notification(driver, device, text, speak)
+-- The capability has no attribute, so there is no row to answer; the outcome
+-- goes to `pcInfo.message` only - a routine may send several a minute, and the
+-- summary row is the one the user reads the PC's state from. A text that went
+-- out says so there ("PC에 메시지를 보냈습니다"), a refused one says why. Gated
+-- like the other v1.2.0 commands (`features "notify"`), and the text is cleaned
+-- and cut to the service's 200 characters before it goes out.
+local function handle_notify_send(driver, device, cmd)
+  local text = ((cmd or {}).args or {}).text
   local lang = poll.lang(device)
   local cleaned = features.notify_text(text)
   if not cleaned then
@@ -652,7 +650,7 @@ local function send_notification(driver, device, text, speak)
     log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
     return false
   end
-  local ok, body, kind = client.notify(device, cleaned, speak)
+  local ok, body, kind = client.notify(device, cleaned)
   if not ok then
     local note = features.notify_error_note(kind, body)
     if note then
@@ -662,27 +660,8 @@ local function send_notification(driver, device, text, speak)
     report_error(device, kind, body)
     return false
   end
-  poll.emit_message(device, i18n.t(lang, speak and "notify_spoken" or "notify_sent"))
+  poll.emit_message(device, i18n.t(lang, "notify_sent"))
   return true
-end
-
---- `pcMessage.send(text)` / `pcMessage.speak(text)`.
-local function handle_message_send(driver, device, cmd)
-  return send_notification(driver, device, ((cmd or {}).args or {}).text, false)
-end
-
-local function handle_message_speak(driver, device, cmd)
-  return send_notification(driver, device, ((cmd or {}).args or {}).text, true)
-end
-
---- The standard pair of the v2 profiles (their argument names are the
---- platform's).
-local function handle_device_notification(driver, device, cmd)
-  return send_notification(driver, device, ((cmd or {}).args or {}).notification, false)
-end
-
-local function handle_speak(driver, device, cmd)
-  return send_notification(driver, device, ((cmd or {}).args or {}).phrase, true)
 end
 
 --------------------------------------------------------------------------------
@@ -768,30 +747,6 @@ local capability_handlers = {
   },
 }
 
---- #108: register the handlers of a standard capability that may not resolve
---- on every hub. `speechSynthesis` is `proposed`, not `live`, and indexing
---- `st.capabilities` with an id the hub cannot load raises - which at module
---- level would take the whole driver down. Like `caps.load`, a miss is logged
---- and the rest keeps working. Command names are literals for the same reason.
-local function add_standard(id, handlers)
-  local ok, cap = pcall(function() return capabilities[id] end)
-  if not ok or type(cap) ~= "table" or cap.ID == nil then
-    log.warn("standard capability not available: " .. id)
-    return false
-  end
-  capability_handlers[cap.ID] = handlers
-  return true
-end
-
--- The screen uses `pcMessage` since pc.v3 (registered with the other custom
--- capabilities below). These two stay registered for a device still on a v2
--- profile: `profiles.ensure` moves every v2 device on its first init, but a
--- hub that refuses the move leaves it on v2 for the whole driver run, and its
--- text rows and routines still send the standard commands. Two guarded
--- lookups and two table entries keep such a device working meanwhile.
-add_standard("notification", { deviceNotification = handle_device_notification })
-add_standard("speechSynthesis", { speak = handle_speak })
-
 -- Command names are literals: they are what `capabilities/pcRemote.json` and
 -- `capabilities/pcDefer.json` declare, and the generated capability object
 -- only carries them once the account owner has created the capabilities.
@@ -805,11 +760,8 @@ end
 if custom.preset then
   capability_handlers[custom.preset.ID] = { run = handle_preset_run }
 end
-if custom.message then
-  capability_handlers[custom.message.ID] = {
-    send = handle_message_send,
-    speak = handle_message_speak,
-  }
+if custom.notify then
+  capability_handlers[custom.notify.ID] = { send = handle_notify_send }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

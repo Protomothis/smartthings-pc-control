@@ -79,14 +79,15 @@ caps.PRESET = NAMESPACE .. ".pcpreset"
 -- #114: what the PC is doing, from the opt-in watch list (media-notify.md §11).
 -- New, like pcPreset.
 caps.ACTIVITY = NAMESPACE .. ".pcactivity"
--- #108 follow-up: "PC에 메시지 보내기" and "PC에서 소리내어 읽기". The standard
--- `notification` / `speechSynthesis` did the job, but the app labels them with
--- Samsung's own words ("텍스트 표시", "음성 합성") and an embedded device
--- configuration cannot override a standard capability's labels (platform notes
--- "표준 capability"). Our own capability carries our own labels. New, like
--- pcPreset - no definition cache to fight, the owner creates it once. Commands
--- only: there is nothing to show, so there is no attribute to paint.
-caps.MESSAGE = NAMESPACE .. ".pcmessage"
+-- #108 follow-up: "PC에 메시지 보내기", one command `send(text)`. The standard
+-- `notification` did the job, but the app labels it with Samsung's own words
+-- ("텍스트 표시") and an embedded device configuration cannot override a
+-- standard capability's labels (platform notes "표준 capability"). Our own
+-- capability carries our own label. New, like pcPreset - no definition cache
+-- to fight, the owner creates it once. Commands only: there is nothing to
+-- show, so there is no attribute to paint. (`pcmessage`, which also had a
+-- read-aloud command, was never shipped; read-aloud was dropped.)
+caps.NOTIFY = NAMESPACE .. ".pcnotify"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -98,7 +99,7 @@ caps.ids = {
   version = caps.VERSION,
   preset = caps.PRESET,
   activity = caps.ACTIVITY,
-  message = caps.MESSAGE,
+  notify = caps.NOTIFY,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

@@ -45,6 +45,13 @@
 -- ten v1 ones, their files stay in the package, frozen, and a v2 device lands
 -- on the v3 of the same style and the same battery half.
 --
+-- `pc.v4`: read-aloud was dropped, and `pcMessage` (send + speak) gave way to
+-- `pcNotify` with the one command "PC에 메시지 보내기". A new capability id is
+-- a new capability list, so every name moved to v4. Neither v2 nor v3 was ever
+-- published (`UNSHIPPED_VERSIONS`): their names stay in `KNOWN` so a
+-- development device on one still lands on the v4 of its style and battery
+-- half, but their files are gone from the package.
+--
 -- Everything here is pure except `remember`, `ensure`, `apply_style`,
 -- `apply_battery` and `remove_legacy_child`, which touch the device, and all of
 -- them are guarded: a hub that refuses `try_update_metadata` or
@@ -52,8 +59,8 @@
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v3`, …).
-profiles.VERSION = 3
+-- The profile generation every current name carries (`pc.v4`, …).
+profiles.VERSION = 4
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -80,7 +87,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v3`, `pc-tv.v3`, `pc-battery.v3`, `pc-tv-battery.v3`.
+--- `pc.v4`, `pc-tv.v4`, `pc-battery.v4`, `pc-tv-battery.v4`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -93,7 +100,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v3` once its status says so (#116).
+-- moves to `pc-battery.v4` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -123,8 +130,8 @@ end
 -- Every profile name this driver has ever shipped, oldest first. A name that
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone. #107: the ten v1 names (the default and the nine
--- icon variants of #100), then the twenty v2 names (every style with and
--- without the battery, #116) and then the twenty current ones.
+-- icon variants of #100), then twenty names per later generation (every style
+-- with and without the battery, #116): v2, v3 and the twenty current ones.
 profiles.KNOWN = {}
 for _, style in ipairs(profiles.STYLES) do
   profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, false, 1)
@@ -142,8 +149,9 @@ end
 -- one migrates, but the files are dropped: SmartThings refuses a driver whose
 -- files add up to more than 655360 bytes, and each generation of twenty
 -- profiles is about 165 KB (measured 2026-09-30 when v1+v2+v3 reached 666 KB).
--- v2 lived only on the Dev channel (edge-v1.1.0 development).
-profiles.UNSHIPPED_VERSIONS = { [2] = true }
+-- v2 lived only on the Dev channel (edge-v1.1.0 development), and so did v3
+-- (pcMessage, with read-aloud).
+profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true }
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)
@@ -156,7 +164,7 @@ end
 profiles.FIELD = "profile_name"
 
 -- #116: whether the last settled status said this PC has a battery. Persisted,
--- so a later migration (v2 -> v3) lands a laptop straight on its battery
+-- so a later migration (v1 -> v4) lands a laptop straight on its battery
 -- profile instead of taking the detour through the plain one.
 profiles.BATTERY_FIELD = "has_battery"
 
