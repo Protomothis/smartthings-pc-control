@@ -65,15 +65,6 @@ func tgBody(h string) string {
 	return strings.TrimPrefix(h, header)
 }
 
-// tgStatus is the bot's /status reply. Its first line is the header with
-// the version on it, so the header the bot puts on every reply adds
-// nothing.
-func tgStatus(t *testing.T) string {
-	t.Helper()
-	text, _, _ := tgCtl.HandleCommand(context.Background(), "42", "status", nil)
-	return text
-}
-
 // Every command reply starts with the PC-name header (#75).
 func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	initLogger()
