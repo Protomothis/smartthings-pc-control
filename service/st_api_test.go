@@ -3,11 +3,13 @@ package service
 // Tests for the /st/v1 SmartThings protocol (edge-driver doc §3, #67).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -665,16 +667,36 @@ func TestTurnScreenOnCommand(t *testing.T) {
 	if _, ok := Commands["turnscreenon"]; !ok {
 		t.Fatal("turnscreenon is missing from the command registry")
 	}
-	if got := screenPowerScript(-1); !strings.Contains(got, "SendMessage(-1,0x0112,0xF170,-1)") {
-		t.Errorf("screen-on script = %q", got)
+	var gotArgs [][]string
+	var runErr error
+	saved := screenRun
+	screenRun = func(_ context.Context, args ...string) (UserActionResult, error) {
+		gotArgs = append(gotArgs, args)
+		return UserActionResult{OK: runErr == nil}, runErr
 	}
-	if got := screenPowerScript(2); !strings.Contains(got, "SendMessage(-1,0x0112,0xF170,2)") {
-		t.Errorf("screen-off script = %q", got)
+	t.Cleanup(func() { screenRun = saved; setDisplayState("unknown") })
+	setDisplayState("unknown")
+
+	// The screen commands go through user-action (#121), not a shell.
+	Commands["turnscreenon"].Execute()
+	Commands["turnscreenoff"].Execute()
+	if want := [][]string{{"screen", "on"}, {"screen", "off"}}; !reflect.DeepEqual(gotArgs, want) {
+		t.Errorf("user-action args = %q, want %q", gotArgs, want)
 	}
-	setDisplayState("on")
-	t.Cleanup(func() { setDisplayState("unknown") })
+	if getDisplayState() != "off" {
+		t.Errorf("display state = %q, want off", getDisplayState())
+	}
+
+	// A timed-out broadcast still counts; nobody logged in does not.
+	runErr = fmt.Errorf("%w after 3s", errUserActionTimeout)
+	Commands["turnscreenon"].Execute()
 	if getDisplayState() != "on" {
-		t.Errorf("display state = %q", getDisplayState())
+		t.Errorf("after a timeout: display state = %q, want on", getDisplayState())
+	}
+	runErr = errNoUserSession
+	Commands["turnscreenoff"].Execute()
+	if getDisplayState() != "on" {
+		t.Errorf("without a user session: display state = %q, want on (unchanged)", getDisplayState())
 	}
 }
 

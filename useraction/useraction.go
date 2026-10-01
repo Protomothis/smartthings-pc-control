@@ -16,6 +16,7 @@
 //	user-action notify --title <t> --text <t> [--speak] [--voice <name>]
 //	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
 //	user-action speak --text <t> [--voice <name>]
+//	user-action screen <off|on>
 //
 // speak is internal to notify (#106): the service never builds it. A
 // notify with --speak shows its toast, answers at once and leaves the
@@ -31,7 +32,7 @@
 //
 // This package owns the parsing, the validation and the output; the actual
 // work is done by handlers that the feature issues register (audio #104,
-// media #105, notify #106, preset #109). An action nobody has registered
+// media #105, notify #106, preset #109, screen #121). An action nobody has registered
 // answers "unsupported", which is what every action does until then.
 package useraction
 
@@ -66,6 +67,8 @@ const (
 	ActionPreset = "preset"
 	// ActionSpeak is the detached reader a notify --speak starts (#106).
 	ActionSpeak = "speak"
+	// ActionScreen turns the monitors off or on (#121).
+	ActionScreen = "screen"
 )
 
 // Validation limits. The service applies its own (stricter or equal)
@@ -109,7 +112,8 @@ type Request struct {
 	Action string // ActionAudio, ActionMedia, ActionNotify or ActionPreset
 
 	// Verb is the audio verb (get, set, step, mute), the media key
-	// (playpause, play, pause, stop, next, prev) or MediaInfo.
+	// (playpause, play, pause, stop, next, prev), MediaInfo, or the screen
+	// state (off, on).
 	Verb string
 	// Value is the audio set level (0..100) or step (-100..100).
 	Value int
@@ -166,7 +170,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionSpeak:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionSpeak, ActionScreen:
 		return true
 	}
 	return false
@@ -223,6 +227,8 @@ func Parse(args []string) (Request, error) {
 		return parsePreset(rest)
 	case ActionSpeak:
 		return parseSpeak(rest)
+	case ActionScreen:
+		return parseScreen(rest)
 	default:
 		return Request{}, badArgs("unknown action %q", action)
 	}
@@ -313,6 +319,15 @@ func parseMedia(args []string) (Request, error) {
 		}
 	}
 	return req, badArgs("media: unknown key %q", args[0])
+}
+
+func parseScreen(args []string) (Request, error) {
+	req := Request{Action: ActionScreen}
+	if len(args) != 1 || (args[0] != "off" && args[0] != "on") {
+		return req, badArgs("usage: screen <off|on>")
+	}
+	req.Verb = args[0]
+	return req, nil
 }
 
 // flagSet reads "--name value" and bare "--name" flags. A value is always

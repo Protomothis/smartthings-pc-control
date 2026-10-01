@@ -151,19 +151,12 @@ func userSessionCommand(ctx context.Context, name string, args ...string) (*exec
 	return cmd, token, nil
 }
 
-// runInUserSession executes a command in the active user's desktop session
-// and waits for it to finish. This is needed for commands like turnscreenoff
-// that require access to the interactive desktop (Session 0 isolation
-// prevents services from accessing it).
-func runInUserSession(name string, args ...string) error {
-	_, err := outputInUserSession(context.Background(), name, args...)
-	return err
-}
-
-// outputInUserSession is runInUserSession that also returns the combined
-// output and kills the child when ctx is done. The output is returned even
-// when the command fails, since a failing child may still have said why on
-// stdout — user-action does exactly that.
+// outputInUserSession executes a command in the active user's desktop
+// session (Session 0 isolation keeps the service off the interactive
+// desktop), waits for it and returns the combined output. The child is
+// killed when ctx is done. The output is returned even when the command
+// fails, since a failing child may still have said why on stdout —
+// user-action does exactly that.
 func outputInUserSession(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd, token, err := userSessionCommand(ctx, name, args...)
 	if err != nil {
@@ -206,14 +199,4 @@ func launchTrayApp() error {
 		return fmt.Errorf("get executable: %w", err)
 	}
 	return startInUserSession(exe, "gui", "--minimized")
-}
-
-// runPowerShellInUserSession runs a PowerShell script in the active user's session.
-func runPowerShellInUserSession(script string) {
-	err := runInUserSession("powershell", "-NoProfile", "-Command", script)
-	if err != nil {
-		logMsg("powershell (user session) error: %v", err)
-	} else {
-		logMsg("powershell (user session) ok")
-	}
 }
