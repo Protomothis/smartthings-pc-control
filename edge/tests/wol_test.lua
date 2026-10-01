@@ -183,12 +183,12 @@ function T.test_wake_warns_about_the_adapter_it_knows_has_wol_off()
   local ok, _, sockets, messages = wake(device)
   h.assert_true(ok, "the packet goes out anyway")
   h.assert_equal(#sockets, 1)
-  h.assert_equal(messages[1], "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+  h.assert_equal(messages[1], "이더넷 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인")
 
   -- A service too old to name one still gets the general sentence.
   device:set_field("wol_adapter", nil)
   local _, _, _, plain = wake(device)
-  h.assert_equal(plain[1], "PC의 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+  h.assert_equal(plain[1], "PC의 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인")
 
   -- And a healthy adapter says nothing at all.
   device:set_field("wol_ready", true)

@@ -607,7 +607,7 @@ function T.test_the_summary_warns_about_a_wol_that_is_off()
   -- #102: the uptime still fits behind the warning.
   h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 · 3시간 25분")
   -- The long sentence, with what to do about it, stays in `message`.
-  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "네트워크 탭")
+  h.assert_contains(h.event_value(events, caps.STATUS, "message"), "SmartThings 탭")
 end
 
 function T.test_the_wol_warning_follows_the_selected_adapter()
@@ -622,7 +622,7 @@ function T.test_the_wol_warning_follows_the_selected_adapter()
   -- goes and the adapter's name stays.
   h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (Ethernet)")
   h.assert_equal(h.event_value(events, caps.STATUS, "message"),
-    "Ethernet 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+    "Ethernet 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인")
 
   -- And the other way round: `wol.ready` says no, the chosen adapter says yes.
   status.wol.selected.wol_enabled = true

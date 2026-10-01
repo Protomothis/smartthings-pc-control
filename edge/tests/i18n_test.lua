@@ -29,9 +29,9 @@ function T.test_formats_arguments()
   h.assert_contains(i18n.t("en", "wol_bad_mac", "zz:zz"), "zz:zz")
   -- #97: the adapter name is the one argument both WoL warnings take.
   h.assert_equal(i18n.t("ko", "wol_not_ready_on", "이더넷"),
-    "이더넷 어댑터에 WoL이 꺼져 있습니다 · 네트워크 탭 확인")
+    "이더넷 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인")
   h.assert_equal(i18n.t("en", "wol_not_ready_on", "Ethernet"),
-    "Wake-on-LAN is off on Ethernet · check the Network tab")
+    "Wake-on-LAN is off on Ethernet · check the SmartThings tab")
   h.assert_equal(i18n.t("ko", "wol_off_short_on", "이더넷"), "WoL 꺼짐 (이더넷)")
   h.assert_equal(i18n.t("en", "wol_off_short_on", "Ethernet"), "WoL off (Ethernet)")
 end
