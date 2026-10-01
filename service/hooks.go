@@ -10,6 +10,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/activity"
 	"github.com/Protomothis/smartthings-pc-control/service/power"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 )
@@ -73,7 +74,7 @@ var sys = struct {
 	disconnect:     session.Disconnect,
 	shutdownLog:    runLocalShutdownQuery,
 	trayLaunch:     launchTrayApp,
-	processes:      toolhelpProcessNames,
+	processes:      activity.ToolhelpNames,
 	sessionPresent: userSessionPresent,
 	mediaRefresh:   refreshMediaSoon,
 }

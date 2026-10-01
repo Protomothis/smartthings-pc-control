@@ -30,7 +30,7 @@ import (
 // That list exists only inside the dialog: nothing but the picked name is
 // kept, and it only goes anywhere once the user saves it as an entry.
 
-// Limits shared with the service (service/activity.go).
+// Limits shared with the service (internal/config/activity.go).
 const (
 	activityMaxWatch = 10
 	activityMaxLabel = 30

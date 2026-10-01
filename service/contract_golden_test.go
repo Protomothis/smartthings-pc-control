@@ -316,7 +316,7 @@ func goldenActivityConfig() ActivityConfig {
 func goldenActivity(t *testing.T, cfg Config) {
 	t.Helper()
 	stubProcesses(t, "explorer.exe", "steam.exe")
-	activityScan.scan(cfg.Activity)
+	activityScan.Scan(cfg.Activity)
 }
 
 // ---- end of the activity section.
