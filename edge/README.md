@@ -438,7 +438,7 @@ npm test
    `tests/profilegen_test.lua`가 같은 규칙을 Lua로 돌려 디스크의 파일과 비교하므로, 템플릿만 고치고 생성을 잊거나 생성물을 손으로 고치면 테스트가 실패한다. 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이다.
 2. 프레젠테이션이나 capability 목록을 바꾸면 버전을 올린다: 템플릿과 생성기의 `VERSION`, `src/profiles.lua`의 `profiles.VERSION`을 함께. 공개된 옛 생성물은 **패키지에 남긴다.** 아직 옮겨지지 않은 장치가 참조한다. 공개되지 않은(Dev 채널만) 생성물은 지우고 `profiles.UNSHIPPED_VERSIONS`에 번호를 넣는다 — 패키지 한도 655360바이트 때문이다.
 3. `KNOWN`은 옛 이름 전부와 현재 이름 전부다(v1 열 개, v2–v6 스무 개씩). `init`/`added`가 옛 이름의 장치를 같은 아이콘의 새 버전으로 옮긴다(`pc-monitor.v1` → `pc-monitor.v6`, `pc-tv-battery.v5` → `pc-tv-battery.v6` — v2부터는 배터리 쪽도 그대로). 앱 장치의 `pc-app.v1`은 `KNOWN`에 없다 — PC 프로필이 아니므로 옮기지 않는다.
-4. capability id가 바뀌거나 새로 생겼다면 `poll.ROWS_VERSION`도 올린다. 새 id의 속성은 허브에서 값 없이 시작하므로 한 번 다시 칠해야 한다.
+4. 줄 세대 `poll.ROWS_VERSION`은 `profiles.VERSION`에서 나온다. 새 id의 속성은 허브에서 값 없이 시작하고 새 id는 늘 새 프로필 세대와 함께 오므로, 세대가 바뀌면 이미 설치된 장치의 전 줄이 한 번 다시 칠해진다.
 5. `pc.yml`(`pc.v1`)과 `pc-<style>.yml`(`pc-<style>.v1`)은 edge-v1.0.x의 고정 파일이다. 고치지 않는다. v2(표준 `notification`·`speechSynthesis`), v3(`pcMessage`), v4(`pcNotify`), v5(`pcActivity`)는 Dev 채널에만 나갔으므로 파일이 없다.
 
 ### 패키징

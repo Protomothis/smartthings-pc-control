@@ -43,25 +43,11 @@ poll.LAST_SEEN_FIELD = "last_seen"
 -- again. The row only ever says whole minutes, and a persisted field is a hub
 -- write, so a 10-second poll interval does not become six writes a minute.
 poll.LAST_SEEN_STEP = 60
--- The generation stamp itself. #90: it starts fresh at the first channel
--- release, because no device outside development ever carried an older one -
--- every device installed from the channel paints its rows once on `added` and
--- then matches. Bump it (to "2", "3", …) whenever a capability id changes or a
--- new one is added, so `ensure_rows` repaints every already-installed device.
--- #107: "2" - the move to `pc.v2` brings new capabilities whose rows start
--- unset (the standard audio/media ones now, pcPreset/pcActivity (#114) and the
--- awake/battery components with the rest of edge-v1.1.0).
--- "3" - the move to `pc.v3` (pcMessage in place of the standard notification
--- pair). pcMessage itself has no attribute to paint, but a device on its new
--- profile starts with an empty cloud record, and the rule is one generation per
--- capability set, so every row goes out once more.
--- "4" - the move to `pc.v4` (pcNotify, send only, in place of pcMessage).
--- Again nothing new to paint, again a new profile and a new capability set.
--- "5" - the move to `pc.v5` (pcToast in place of pcNotify), whose
--- `lastMessage` row starts unset.
--- "6" - the move to `pc.v6` (#123: pcApps in place of pcActivity), whose
--- `summary` row starts unset.
-poll.ROWS_VERSION = "6"
+-- The generation stamp itself: the profile generation. A new capability id
+-- always comes with a new profile generation, and a device on a new profile
+-- starts with an empty cloud record, so every row is painted once per
+-- generation (`ensure_rows`).
+poll.ROWS_VERSION = tostring(profiles.VERSION)
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status

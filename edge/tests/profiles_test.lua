@@ -625,6 +625,8 @@ function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
   h.assert_equal(device:get_field(profiles.FIELD), "pc.v6")
   h.assert_equal(device:get_field(poll.ROWS_FIELD), poll.ROWS_VERSION,
     "the rows of the new capabilities start unset and are painted once")
+  -- #129: the row generation is the profile generation.
+  h.assert_equal(poll.ROWS_VERSION, tostring(profiles.VERSION))
   h.assert_equal(poll.ROWS_VERSION, "6")
 end
 
