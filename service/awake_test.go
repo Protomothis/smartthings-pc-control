@@ -218,7 +218,7 @@ func TestAwakeIndefiniteAndExplicitOff(t *testing.T) {
 	if len(fa.timers) != 0 {
 		t.Errorf("an indefinite period armed a timer: %+v", fa.timers)
 	}
-	if w := v.wire(); w.On != true || w.Until != "" {
+	if w := v.Wire(); w.On != true || w.Until != "" {
 		t.Errorf("wire = %+v, want {on:true until:\"\"}", w)
 	}
 	// A day later it is still on.
@@ -235,7 +235,7 @@ func TestAwakeIndefiniteAndExplicitOff(t *testing.T) {
 	if got := fa.callLog(); !equalFlags(got, []uint32{flagsOn, esContinuous}) {
 		t.Errorf("setState calls = %#x", got)
 	}
-	if w := c.View().wire(); w.On || w.Until != "" {
+	if w := c.View().Wire(); w.On || w.Until != "" {
 		t.Errorf("off wire = %+v", w)
 	}
 }

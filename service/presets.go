@@ -47,12 +47,6 @@ func findPresetByName(ps []Preset, arg string) (Preset, bool) {
 	return Preset{}, false
 }
 
-// stPresetRef is one {slot, name} of status "presets" (§10).
-type stPresetRef struct {
-	Slot int    `json:"slot"`
-	Name string `json:"name"`
-}
-
 // stPresetList is the status "presets" array: slot order, never null.
 func stPresetList(ps []Preset) []stPresetRef {
 	out := make([]stPresetRef, 0, len(ps))

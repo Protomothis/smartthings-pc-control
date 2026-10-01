@@ -875,7 +875,7 @@ func tgStatusText() string {
 // needs no line saying so. Labels are the user's own words, so they are
 // escaped.
 func tgActivityLine(a stActivity) string {
-	label, others := a.topLabel()
+	label, others := a.TopLabel()
 	if !a.Enabled || label == "" {
 		return ""
 	}

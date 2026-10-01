@@ -177,10 +177,10 @@ func TestActivityTopLabel(t *testing.T) {
 	a := stActivity{Enabled: true, Top: "obs64.exe", Apps: []stActivityApp{
 		app("steam.exe", "Steam", false), app("obs64.exe", "OBS", true), app("code.exe", "VS Code", true), app("x.exe", "X", true),
 	}}
-	if label, others := a.topLabel(); label != "OBS" || others != 2 {
+	if label, others := a.TopLabel(); label != "OBS" || others != 2 {
 		t.Errorf("topLabel = %q, %d", label, others)
 	}
-	if label, others := activityOff().topLabel(); label != "" || others != 0 {
+	if label, others := activityOff().TopLabel(); label != "" || others != 0 {
 		t.Errorf("off topLabel = %q, %d", label, others)
 	}
 }

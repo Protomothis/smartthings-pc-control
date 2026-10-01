@@ -52,22 +52,6 @@ const (
 
 // ---- matcher ---------------------------------------------------------------
 
-// stActivity is the §11 status block, also the activity.changed push data.
-type stActivity struct {
-	Enabled bool `json:"enabled"`
-	// Apps has one entry per watch entry, in priority order; never null.
-	Apps []stActivityApp `json:"apps"`
-	// Top is the id of the highest-priority running app, "" when none.
-	Top string `json:"top"`
-}
-
-// stActivityApp is one watched program in the status block.
-type stActivityApp struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Running bool   `json:"running"`
-}
-
 // activityOff is the block while the option is off.
 func activityOff() stActivity {
 	return stActivity{Enabled: false, Apps: []stActivityApp{}, Top: ""}
@@ -106,35 +90,6 @@ func matchActivity(watch []ActivityWatch, running []string) stActivity {
 		out.Apps = append(out.Apps, app)
 	}
 	return out
-}
-
-// equal compares two blocks, apps in order.
-func (a stActivity) equal(b stActivity) bool {
-	return a.Enabled == b.Enabled && a.Top == b.Top && slices.Equal(a.Apps, b.Apps)
-}
-
-// clone copies the block so a caller cannot alias the scanner's slice.
-func (a stActivity) clone() stActivity {
-	a.Apps = slices.Clone(a.Apps)
-	if a.Apps == nil {
-		a.Apps = []stActivityApp{}
-	}
-	return a
-}
-
-// topLabel is the label of the top app and how many others run.
-func (a stActivity) topLabel() (label string, others int) {
-	for _, app := range a.Apps {
-		if !app.Running {
-			continue
-		}
-		if app.ID == a.Top && label == "" {
-			label = app.Label
-			continue
-		}
-		others++
-	}
-	return label, others
 }
 
 // ---- process list ----------------------------------------------------------
@@ -238,7 +193,7 @@ func (s *activityScanner) scan(cfg ActivityConfig) (stActivity, bool) {
 		wasFailing := s.failing
 		s.failing = err != nil
 		keep := s.known && s.sig == sig
-		last := s.last.clone()
+		last := s.last.Clone()
 		s.mu.Unlock()
 		switch {
 		case err == nil:
@@ -255,11 +210,11 @@ func (s *activityScanner) scan(cfg ActivityConfig) (stActivity, bool) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	changed := s.known && !s.last.equal(next)
+	changed := s.known && !s.last.Equal(next)
 	s.last = next
 	s.sig = sig
 	s.known = true
-	return next.clone(), changed
+	return next.Clone(), changed
 }
 
 // current is the block for cfg from the last scan. It never scans itself —
@@ -276,7 +231,7 @@ func (s *activityScanner) current(cfg ActivityConfig) stActivity {
 	if !s.known || s.sig != activitySig(cfg) {
 		return activityListed(cfg.Watch)
 	}
-	return s.last.clone()
+	return s.last.Clone()
 }
 
 // reset forgets the last scan (tests).

@@ -148,19 +148,6 @@ func readNowPlayingNow(ctx context.Context) (useraction.NowPlaying, error) {
 
 // ---- status ----------------------------------------------------------------
 
-// stMedia is the §15 status block. status is always there: "none" while no
-// session plays and also while nothing trustworthy is known (media.enabled
-// off, nobody logged in, no fresh sample). The text fields appear only with
-// the media.now_playing opt-in and only when the app set them.
-type stMedia struct {
-	Status    string `json:"status"`
-	Title     string `json:"title,omitempty"`
-	Artist    string `json:"artist,omitempty"`
-	Album     string `json:"album,omitempty"`
-	App       string `json:"app,omitempty"`
-	UpdatedAt string `json:"updated_at,omitempty"`
-}
-
 // stMediaStatus builds the media block for cfg.
 func stMediaStatus(cfg Config) stMedia {
 	if !cfg.Media.Enabled {

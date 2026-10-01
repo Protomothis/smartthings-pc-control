@@ -258,67 +258,6 @@ func stFeatures(b batteryInfo, cfg Config) []string {
 	return features
 }
 
-type stGrace struct {
-	Enabled bool `json:"enabled"`
-	Seconds int  `json:"seconds"`
-}
-
-type stLastCommand struct {
-	Command string `json:"command"`
-	Origin  string `json:"origin"`
-	At      string `json:"at"`
-	// Preset and Result are set for a preset command (#109): which slot
-	// ran and "started" or the error code.
-	Preset *stPresetRef `json:"preset,omitempty"`
-	Result string       `json:"result,omitempty"`
-}
-
-type stUpdate struct {
-	Available bool   `json:"available"`
-	Latest    string `json:"latest"`
-}
-
-// stWoL is the §3.2 wol block. Selected is the adapter the driver must
-// address its magic packet to (#96, #97); it is null only when this PC has
-// no adapter with a MAC at all, and Ready describes that one adapter
-// rather than "any adapter somewhere".
-type stWoL struct {
-	Ready    bool           `json:"ready"`
-	Selected *stWoLSelected `json:"selected"`
-	Adapters []stWoLAdapter `json:"adapters"`
-}
-
-// stWoLSelected names the chosen adapter and says who chose it:
-// "manual" when smartthings.wol_mac matched it, "auto" otherwise.
-type stWoLSelected struct {
-	Name       string `json:"name"`
-	MAC        string `json:"mac"`
-	IP         string `json:"ip"`
-	WoLEnabled bool   `json:"wol_enabled"`
-	WoLCapable bool   `json:"wol_capable"`
-	Source     string `json:"source"`
-}
-
-type stWoLAdapter struct {
-	Name       string `json:"name"`
-	MAC        string `json:"mac"`
-	IP         string `json:"ip"`
-	WoLEnabled bool   `json:"wol_enabled"`
-	WoLCapable bool   `json:"wol_capable"`
-	Selected   bool   `json:"selected"`
-}
-
-// stSession is the opt-in session block (§3.2). Everything but Exposed is
-// omitted while smartthings.expose_session is off; Locked is null when the
-// service cannot read the session state, and IdleSeconds is null unless the
-// tray app posted a heartbeat within idleHeartbeatTTL (#77).
-type stSession struct {
-	Exposed     bool   `json:"exposed"`
-	Locked      *bool  `json:"locked,omitempty"`
-	IdleSeconds *int64 `json:"idle_seconds,omitempty"`
-	User        string `json:"user,omitempty"`
-}
-
 // stWoLProvider is getWoLStatus, replaced in tests (the real one shells out
 // to PowerShell and queries the public IP).
 var stWoLProvider = getWoLStatus
@@ -543,7 +482,7 @@ func buildSTStatus(cfg Config) stStatusResponse {
 		Display:           getDisplayState(),
 		Session:           stSessionInfo(cfg.SmartThings),
 		Features:          stFeatures(bat, cfg),
-		Awake:             currentAwake().View().wire(),
+		Awake:             currentAwake().View().Wire(),
 		Battery:           bat,
 		Activity:          stActivityStatus(cfg),
 		Audio:             stAudioStatus(cfg),
@@ -623,7 +562,7 @@ func handleSTAwake(w http.ResponseWriter, name string, body stCommandRequest, fr
 		return
 	}
 	logMsg("ST API: %s from %s", name, from)
-	wire := view.wire()
+	wire := view.Wire()
 	httpx.WriteJSON(w, http.StatusOK, stCommandResponse{
 		Accepted: true,
 		Executed: true,

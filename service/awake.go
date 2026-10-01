@@ -60,28 +60,6 @@ func setThreadExecutionState(flags uint32) error {
 	return nil
 }
 
-// awakeView is the state as the API reports it. Until is zero while off and
-// while on without a time limit.
-type awakeView struct {
-	On    bool
-	Until time.Time
-}
-
-// stAwake is the /st/v1/status "awake" block: until is RFC3339, or "" when
-// off or on until turned off.
-type stAwake struct {
-	On    bool   `json:"on"`
-	Until string `json:"until"`
-}
-
-func (v awakeView) wire() stAwake {
-	out := stAwake{On: v.On}
-	if v.On && !v.Until.IsZero() {
-		out.Until = v.Until.Format(time.RFC3339)
-	}
-	return out
-}
-
 // awakeReq is one change for the owning goroutine.
 type awakeReq struct {
 	flags uint32
@@ -349,7 +327,7 @@ func (c *awakeController) changed(v awakeView) {
 // emitAwakeChanged is the awake.changed push (§3.5 taps only: device state,
 // not a notification).
 func emitAwakeChanged(v awakeView) {
-	w := v.wire()
+	w := v.Wire()
 	on := "false"
 	if w.On {
 		on = "true"
@@ -403,7 +381,7 @@ func awakeAPIBody(v awakeView, cfg Config, now time.Time) awakeAPIView {
 	out := awakeAPIView{
 		Status:         "ok",
 		On:             v.On,
-		Until:          v.wire().Until,
+		Until:          v.Wire().Until,
 		DefaultMinutes: a.DefaultMinutes,
 		KeepDisplay:    a.KeepDisplay,
 	}

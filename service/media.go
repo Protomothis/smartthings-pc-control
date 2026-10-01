@@ -144,19 +144,6 @@ func readAudioNow(ctx context.Context) (useraction.Audio, error) {
 
 // ---- /st/v1 ----------------------------------------------------------------
 
-// stAudio is the §3 status block. Available is false — and every other
-// key absent — while there is nothing trustworthy to report: nobody is
-// logged in, no sample has arrived since the service started, or
-// media.enabled is off. Device is a pointer so that a device without a
-// name still reports "" rather than dropping the key.
-type stAudio struct {
-	Available bool    `json:"available"`
-	Volume    *int    `json:"volume,omitempty"`
-	Muted     *bool   `json:"muted,omitempty"`
-	Device    *string `json:"device,omitempty"`
-	UpdatedAt string  `json:"updated_at,omitempty"`
-}
-
 // audioSessionPresent reports whether someone is logged in; a var so the
 // status tests do not depend on the machine they run on. It goes through
 // targetUserSession, so a status read also drops the samples of a session
