@@ -87,7 +87,7 @@ for name in "${CAPABILITIES[@]}"; do
   fi
 
   echo "==> creating presentation for ${id} (version ${version})"
-  smartthings capabilities:presentation:create "$id" "$version" -i "capabilities/${name}.presentation.json"
+  smartthings capabilities:presentation:create "$id" --capability-version "$version" -i "capabilities/${name}.presentation.json"
   echo
 done
 
