@@ -107,19 +107,31 @@ func resetPowerCommandHint() {
 	lastPowerCommandMu.Unlock()
 }
 
-// screenRun is runUserAction, replaced by the tests.
-var screenRun = runUserAction
+// screenRun is runUserActionIn pinned to the console session, replaced by
+// the tests.
+var screenRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+	return runUserActionIn(ctx, sessionConsole, args...)
+}
 
 // setScreen runs `user-action screen <state>` ("off" or "on") in the
-// user's session — a service has no interactive desktop (session 0
-// isolation) — and records the display state. It replaced a PowerShell
-// SendMessage(HWND_BROADCAST) that one hung window could block forever
-// (#121); the child now uses SendMessageTimeoutW and runUserAction bounds
-// the whole run (userActionTimeout, child killed when it runs out).
+// session on the physical console — a service has no interactive desktop
+// (session 0 isolation) — and records the display state. It replaced a
+// PowerShell SendMessage(HWND_BROADCAST) that one hung window could block
+// forever (#121); the child now uses SendMessageTimeoutW and runUserAction
+// bounds the whole run (userActionTimeout, child killed when it runs out).
+//
+// Unlike the other user actions it never follows the unlocked-session
+// target: next to a locked console that is an RDP session, whose display
+// is virtual, so SC_MONITORPOWER there leaves the real monitor alone. A
+// locked console is used as it is, as before the unlocked-session target
+// existed: the broadcast goes to its own desktop's windows. A
+// console at the logon screen is errNoConsoleSession (see
+// findConsoleUserSession), logged and not retried elsewhere.
 //
 // A run that timed out still counts: the broadcast was under way and the
 // monitor reacts to the first window that handles it. Any other failure
-// (nobody logged in, the child could not start) leaves the state alone.
+// (nobody logged in at the console, the child could not start) leaves the
+// state alone.
 func setScreen(state string) {
 	_, err := screenRun(context.Background(), useraction.ActionScreen, state)
 	switch {

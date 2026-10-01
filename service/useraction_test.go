@@ -75,7 +75,9 @@ func TestParseUserActionOutput(t *testing.T) {
 func fakeUserAction(t *testing.T, run func(ctx context.Context, exe string, args []string) ([]byte, error)) {
 	t.Helper()
 	savedExec, savedExe, savedTimeout := userActionExec, userActionExe, userActionTimeout
-	userActionExec = run
+	userActionExec = func(ctx context.Context, _ sessionTarget, exe string, args []string) ([]byte, error) {
+		return run(ctx, exe, args)
+	}
 	userActionExe = func() (string, error) { return `C:\PC Control\SmartThingsPCControl.exe`, nil }
 	resetAudioSample()
 	t.Cleanup(func() {

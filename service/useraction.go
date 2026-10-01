@@ -58,12 +58,12 @@ type UserActionResult struct {
 	Fields map[string]json.RawMessage `json:"-"`
 }
 
-// userActionExec runs the executable with the given arguments in the user
-// session and returns its combined output; the output is returned even
-// when the process fails. It must stop when ctx is done. The tests replace
-// it; the real one never touches a shell.
-var userActionExec = func(ctx context.Context, exe string, args []string) ([]byte, error) {
-	return outputInUserSession(ctx, exe, args...)
+// userActionExec runs the executable with the given arguments in the
+// target user session and returns its combined output; the output is
+// returned even when the process fails. It must stop when ctx is done. The
+// tests replace it; the real one never touches a shell.
+var userActionExec = func(ctx context.Context, target sessionTarget, exe string, args []string) ([]byte, error) {
+	return outputInUserSession(ctx, target, exe, args...)
 }
 
 // userActionExe is os.Executable, replaced by the tests.
@@ -81,6 +81,20 @@ var userActionExe = os.Executable
 // result is visible in status before the next tray heartbeat; a `media
 // info` reply updates the now-playing store the same way (#117).
 func runUserAction(ctx context.Context, args ...string) (UserActionResult, error) {
+	return runUserActionIn(ctx, sessionActiveUser, args...)
+}
+
+// runUserActionIn is runUserAction in the given session: sessionActiveUser
+// is runUserAction itself; sessionConsole runs in the session on the
+// physical monitor (the screen commands) and answers errNoConsoleSession
+// when nobody is logged in there.
+//
+// Only a sessionActiveUser run touches the target bookkeeping: it looks
+// the target up first (targetUserSession) and stores the reply's audio and
+// now-playing. A console run does neither — the console is not "the
+// target" just because a screen command ran there, and what it reads
+// would describe a session the heartbeat filter may be ignoring.
+func runUserActionIn(ctx context.Context, target sessionTarget, args ...string) (UserActionResult, error) {
 	if _, err := useraction.Parse(args); err != nil {
 		var ue *useraction.Error
 		errors.As(err, &ue)
@@ -92,17 +106,23 @@ func runUserAction(ctx context.Context, args ...string) (UserActionResult, error
 		return UserActionResult{}, fmt.Errorf("get executable: %w", err)
 	}
 
-	// Look at the target session first: when it moved, the samples of the
-	// old one are dropped now, not after this reply has been stored.
-	targetUserSession()
+	tracksTarget := target == sessionActiveUser
+	if tracksTarget {
+		// Look at the target session first: when it moved, the samples of
+		// the old one are dropped now, not after this reply has been stored.
+		targetUserSession()
+	}
 
 	runCtx, cancel := context.WithTimeout(ctx, userActionTimeout)
 	defer cancel()
-	out, runErr := userActionExec(runCtx, exe, append([]string{"user-action"}, args...))
+	out, runErr := userActionExec(runCtx, target, exe, append([]string{"user-action"}, args...))
 
 	switch {
 	case errors.Is(runErr, errNoUserSession):
 		return UserActionResult{}, errNoUserSession
+	case errors.Is(runErr, errNoConsoleSession):
+		// Kept whole: it says whether the console is at the logon screen.
+		return UserActionResult{}, runErr
 	case ctx.Err() != nil:
 		// The caller gave up (service stopping, request gone).
 		return UserActionResult{}, ctx.Err()
@@ -119,6 +139,9 @@ func runUserAction(ctx context.Context, args ...string) (UserActionResult, error
 	}
 	if !res.OK {
 		return res, &userActionError{Code: res.Error, Message: res.Message}
+	}
+	if !tracksTarget {
+		return res, nil
 	}
 	if res.Audio != nil {
 		if err := res.Audio.Validate(); err != nil {
