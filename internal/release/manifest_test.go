@@ -257,6 +257,9 @@ func TestAllows(t *testing.T) {
 		{min, "", true},
 		{nil, "v0.1.0", true},
 		{&Manifest{MinVersion: "garbage"}, "v0.1.0", true},
+		// An rc install is older than its release (#119).
+		{&Manifest{MinVersion: "v1.2.0"}, "v1.2.0-rc4", false},
+		{&Manifest{MinVersion: "v1.2.0-rc2"}, "v1.2.0-rc10", true},
 	}
 	for _, c := range cases {
 		if got := c.m.Allows(c.current); got != c.want {

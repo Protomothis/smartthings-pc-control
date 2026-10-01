@@ -32,11 +32,23 @@ jobs:
           path: |
             ~\AppData\Local\go-build
             ~\go\pkg\mod
-          # Must match ci.yml so a tag build reuses the cache CI warmed on develop/main.
+          # Must match ci.yml so a tag build reuses the cache CI warmed on main/milestone.
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ hashFiles('**/*.go') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
             ${{ runner.os }}-go-
+
+      # A tag can sit on a commit CI never checked (e.g. pushed straight to a
+      # milestone branch), so the release build gates on vet/test itself.
+      - name: Vet
+        env:
+          CGO_ENABLED: 1
+        run: go vet ./...
+
+      - name: Test
+        env:
+          CGO_ENABLED: 1
+        run: go test ./...
 
       - name: Build
         env:
@@ -57,16 +69,26 @@ jobs:
       - name: Verify update manifest against embedded key
         run: go run ./internal/tools/signmanifest verify update.json update.json.sig
 
+      # The body is the tag's CHANGELOG.md section only (no generated commit
+      # list). An rc tag has no section of its own yet, so it gets
+      # [Unreleased] - what the rc is a candidate for.
       - name: Extract release notes
         id: notes
         run: |
           $tag = "${{ github.ref_name }}"
           $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?s)## \[$tag\].*?(?=## \[|$)"
-          $match = [regex]::Match($content, $pattern)
-          $match.Value | Out-File -FilePath release_notes.txt -Encoding utf8
+          $match = [regex]::Match($content, "(?s)## \[$([regex]::Escape($tag))\].*?(?=## \[|$)")
+          if (-not $match.Success -and $tag.Contains('-')) {
+            $match = [regex]::Match($content, "(?s)## \[Unreleased\].*?(?=## \[|$)")
+          }
+          $notes = $match.Value
+          if (-not $match.Success) { $notes = "_CHANGELOG.md has no [$tag] section._" }
+          $notes | Out-File -FilePath release_notes.txt -Encoding utf8
         shell: pwsh
 
+      # A tag with a suffix (v1.2.0-rc1) is a prerelease and never Latest:
+      # the updater only offers plain vX.Y.Z releases that are not marked
+      # prerelease (#119), so an rc reaches nobody's auto-update.
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -75,4 +97,5 @@ jobs:
             update.json
             update.json.sig
           body_path: release_notes.txt
-          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
