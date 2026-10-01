@@ -143,9 +143,9 @@ func TestClientLoginStatus(t *testing.T) {
 		switch {
 		case tc.want == nil && err != nil:
 			t.Errorf("HTTP %d: err = %v, want nil", tc.status, err)
-		case tc.want == errOther && (err == nil || errors.Is(err, errLoginInvalid) || errors.Is(err, errLoginLimited)):
+		case errors.Is(tc.want, errOther) && (err == nil || errors.Is(err, errLoginInvalid) || errors.Is(err, errLoginLimited)):
 			t.Errorf("HTTP %d: err = %v, want a generic error", tc.status, err)
-		case tc.want != nil && tc.want != errOther && !errors.Is(err, tc.want):
+		case tc.want != nil && !errors.Is(tc.want, errOther) && !errors.Is(err, tc.want):
 			t.Errorf("HTTP %d: err = %v, want %v", tc.status, err, tc.want)
 		}
 	}

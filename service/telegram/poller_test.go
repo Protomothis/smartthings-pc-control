@@ -118,7 +118,6 @@ type fakeHandler struct {
 	commands  []string // "chat cmd args..."
 	callbacks []string // "chat msgID data|msgText"
 	unauth    []string // "chat user text"
-	withKB    bool     // implement EditKeyboarder behaviour for confirm:
 }
 
 func (h *fakeHandler) HandleCommand(_ context.Context, chatID, cmd string, args []string) (string, *InlineKeyboard, error) {

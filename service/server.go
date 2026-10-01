@@ -26,6 +26,9 @@ const (
 	maskedTokenPrefix = "****"
 	// clearTokenSentinel in a POSTed bot_token removes the stored token.
 	clearTokenSentinel = "-"
+	// httpReadHeaderTimeout is how long the command and WebUI servers wait
+	// for a client to finish sending its request headers.
+	httpReadHeaderTimeout = 10 * time.Second
 )
 
 var (
@@ -687,6 +690,10 @@ func StartHTTPServer(stop chan struct{}) {
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
 		Handler: mux,
+		// Bounds only the request headers (gosec G112, Slowloris): a LAN
+		// client that opens a connection and never finishes its headers no
+		// longer holds it forever. Bodies and responses are not limited.
+		ReadHeaderTimeout: httpReadHeaderTimeout,
 	}
 
 	go func() {
@@ -726,16 +733,6 @@ func reportExecFailure(command string, err error, output []byte) {
 		msg += ": " + truncate(strings.TrimSpace(line), 200)
 	}
 	emit("system", "exec_failed", map[string]string{"command": command, "error": msg})
-}
-
-func executeCommandWithLog(label string, name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logMsg("exec [%s] error: %v - output: %s", label, err, string(output))
-	} else {
-		logMsg("exec [%s] ok - output: %s", label, string(output))
-	}
 }
 
 // executePowerShell runs script for the catalogue command `command`; see
@@ -947,7 +944,11 @@ func getExternalIP() string {
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("https://api.ipify.org")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://api.ipify.org", nil)
+	if err != nil {
+		return cachedExternalIP
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		// Return stale cache if available
 		return cachedExternalIP

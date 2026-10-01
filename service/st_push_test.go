@@ -379,7 +379,7 @@ func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001})
 	cb := newCallbackServer(t)
 	cb.status.Store(http.StatusInternalServerError)
-	id := subscribeTo(t, cb, 600)
+	subscribeTo(t, cb, 600)
 
 	job := stPushJob{Type: "remote.received", At: time.Now(), Data: map[string]string{"command": "ping"}}
 	for i := 1; i <= stPushMaxFailures; i++ {
@@ -399,7 +399,7 @@ func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	// A success in between resets the counter.
 	stPushReset()
 	cb.status.Store(http.StatusOK)
-	id = subscribeTo(t, cb, 600)
+	id := subscribeTo(t, cb, 600)
 	stPushDispatch(context.Background(), job)
 	cb.status.Store(http.StatusInternalServerError)
 	stPushDispatch(context.Background(), job)

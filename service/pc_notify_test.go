@@ -21,15 +21,15 @@ import (
 
 func TestCleanNotifyText(t *testing.T) {
 	for in, want := range map[string]string{
-		"빨래 끝":                       "빨래 끝",
-		"  a  b  ":                   "a b",
-		"line1\nline2\r\nline3\tx":   "line1 line2 line3 x",
-		"bell\a esc\x1b[2J null\x00": "bell esc[2J null",
-		"del\x7f c1\u0085":           "del c1", // U+0085 is a space to Go, and a control
-		"rtl ‮evil‬ mark‏":           "rtl evil mark",
-		"\xff\xfeok":                 "ok",
-		"\n\t ":                      "",
-		"$(calc) & <b>":              "$(calc) & <b>", // not ours to escape: the toast XML does
+		"빨래 끝":                            "빨래 끝",
+		"  a  b  ":                        "a b",
+		"line1\nline2\r\nline3\tx":        "line1 line2 line3 x",
+		"bell\a esc\x1b[2J null\x00":      "bell esc[2J null",
+		"del\x7f c1\u0085":                "del c1", // U+0085 is a space to Go, and a control
+		"rtl \u202eevil\u202c mark\u200f": "rtl evil mark",
+		"\xff\xfeok":                      "ok",
+		"\n\t ":                           "",
+		"$(calc) & <b>":                   "$(calc) & <b>", // not ours to escape: the toast XML does
 	} {
 		if got := cleanNotifyText(in); got != want {
 			t.Errorf("cleanNotifyText(%q) = %q, want %q", in, got, want)
