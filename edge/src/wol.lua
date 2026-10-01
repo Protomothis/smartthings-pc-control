@@ -5,6 +5,7 @@
 -- their socket and device-layer dependencies lazily so loading this module in a
 -- test never pulls in cosock or st.*.
 
+local fields = require "device.fields"
 local i18n = require "i18n"
 
 local wol = {}
@@ -91,10 +92,10 @@ end
 
 --- Cancel a pending wake timeout (called when a poll succeeds while waking).
 function wol.cancel_wake(driver, device)
-  local timer = device:get_field("wake_timer")
+  local timer = fields.get(device, fields.WAKE_TIMER)
   if timer then
     pcall(function() driver:cancel_timer(timer) end)
-    device:set_field("wake_timer", nil)
+    fields.set(device, fields.WAKE_TIMER, nil)
   end
 end
 
@@ -118,7 +119,7 @@ function wol.wake(driver, device, deps)
   -- `status.wol.adapters` when the service is older than that.
   local mac = prefs.macAddress
   if mac == nil or mac == "" then
-    mac = device:get_field("wol_mac")
+    mac = fields.get(device, fields.WOL_MAC)
   end
   if mac == nil or mac == "" then
     devices.emit_message(device, i18n.t(lang, "wol_no_mac"))
@@ -132,9 +133,9 @@ function wol.wake(driver, device, deps)
   -- §6.4: a PC whose adapter has WoL turned off is still sent the packet, but
   -- the last poll already knew it would probably not work, so say so now
   -- rather than at the next poll.
-  if device:get_field("wol_ready") == false then
+  if fields.get(device, fields.WOL_READY) == false then
     -- #97: naming the chosen adapter, when the last poll learned one.
-    local adapter = device:get_field("wol_adapter")
+    local adapter = fields.get(device, fields.WOL_ADAPTER)
     if type(adapter) == "string" and adapter ~= "" then
       devices.emit_message(device, i18n.t(lang, "wol_not_ready_on", adapter))
     else
@@ -161,7 +162,7 @@ function wol.wake(driver, device, deps)
 
   wol.cancel_wake(driver, device)
   local timer = driver:call_with_delay(wol.WAKE_TIMEOUT, function()
-    device:set_field("wake_timer", nil)
+    fields.set(device, fields.WAKE_TIMER, nil)
     local st = devices.get_state(device)
     local nxt = devices.transition(st, "wake_timeout")
     devices.set_state(device, nxt)
@@ -171,7 +172,7 @@ function wol.wake(driver, device, deps)
     devices.ensure_action(device)
     devices.emit_message(device, i18n.t(lang, "wake_failed"))
   end, "wol-timeout")
-  device:set_field("wake_timer", timer)
+  fields.set(device, fields.WAKE_TIMER, timer)
 
   return true, nil
 end

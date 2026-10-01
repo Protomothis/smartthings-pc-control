@@ -10,6 +10,7 @@ local h = require "helpers"
 local caps = require "caps"
 local client = require "client"
 local features = require "features"
+local fields = require "device.fields"
 local i18n = require "i18n"
 local poll = require "poll"
 local state = require "state"
@@ -948,7 +949,7 @@ end
 local function device_on_profile(name, id)
   local device = device_with(status_v12())
   device.id = id or ("battery-" .. name)
-  device:set_field(profiles.FIELD, name)
+  device:set_field(fields.PROFILE_NAME, name)
   device.profile = { id = "abc", name = name, components = h.components_for(name) }
   return device
 end
@@ -1011,10 +1012,10 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   -- before the update.
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
-  device:set_field(profiles.BATTERY_FIELD, true)
+  device:set_field(fields.HAS_BATTERY, true)
   h.assert_equal(profiles.ensure(device), "pc-hub-battery.v6")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
-  plain:set_field(profiles.BATTERY_FIELD, true)
+  plain:set_field(fields.HAS_BATTERY, true)
   h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v6")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
@@ -1022,13 +1023,13 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
   h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v6")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
-  plain_v3:set_field(profiles.BATTERY_FIELD, true)
+  plain_v3:set_field(fields.HAS_BATTERY, true)
   h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v6")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
   h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v6")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
-  plain_v4:set_field(profiles.BATTERY_FIELD, true)
+  plain_v4:set_field(fields.HAS_BATTERY, true)
   h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v6")
 end
 
@@ -1109,7 +1110,7 @@ function T.test_pc_toast_send_is_a_toast()
   -- nothing spun into "네트워크 오류").
   h.assert_equal(toast_value(device), "현관문이 열렸습니다")
   h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
-  h.assert_equal(device:get_field(poll.TOAST_FIELD), "현관문이 열렸습니다", "remembered")
+  h.assert_equal(device:get_field(fields.LAST_TOAST), "현관문이 열렸습니다", "remembered")
 end
 
 function T.test_the_same_text_twice_is_answered_twice()
@@ -1215,13 +1216,13 @@ function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
     -- did not go out - or it spins into "네트워크 오류".
     h.assert_equal(toast_value(device), "없음", "case " .. i .. " row value")
     h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"), "case " .. i .. " forced")
-    h.assert_nil(device:get_field(poll.TOAST_FIELD), "case " .. i .. " remembered a text that was not sent")
+    h.assert_nil(device:get_field(fields.LAST_TOAST), "case " .. i .. " remembered a text that was not sent")
   end
 end
 
 function T.test_a_refused_message_keeps_the_last_one_on_the_row()
   local device = device_with(status_v12())
-  device:set_field(poll.TOAST_FIELD, "세탁 끝")
+  device:set_field(fields.LAST_TOAST, "세탁 끝")
   with_notify({ ok = false, kind = "ratelimited" }, function()
     handlers_for(caps.TOAST).send(driver, device, { args = { text = "또 보냄" } })
   end)
@@ -1268,7 +1269,7 @@ function T.test_the_message_row_is_never_empty()
     local device = device_with(status_v12())
     device.preferences.language = lang
     h.assert_equal(poll.shown_toast(device), lang == "ko" and "없음" or "None")
-    device:set_field(poll.TOAST_FIELD, "")
+    device:set_field(fields.LAST_TOAST, "")
     h.assert_true(poll.shown_toast(device) ~= "", lang)
     -- An empty text is never remembered either.
     poll.emit_toast(device, "")
@@ -1279,11 +1280,11 @@ end
 
 function T.test_the_message_row_is_painted_once_per_run_and_by_a_repaint()
   -- `ensure_toast` runs with every poll and push unforced, and the first of
-  -- them in a driver run is forced (`FIRST_FIELD`) - which is what gives a
+  -- them in a driver run is forced (`fields.ROWS_FORCED`) - which is what gives a
   -- device just moved onto pcToast its value. After that the unchanged value
   -- is not emitted at all (the event budget). A repaint forces it as well.
   local device = device_with(status_v12())
-  device:set_field(poll.TOAST_FIELD, "안녕")
+  device:set_field(fields.LAST_TOAST, "안녕")
   poll.ensure_toast(device)
   poll.ensure_toast(device)
   local forced = {}

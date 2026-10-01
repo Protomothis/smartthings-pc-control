@@ -12,6 +12,7 @@
 
 local client = require "client"
 local i18n = require "i18n"
+local fields = require "device.fields"
 local profiles = require "profiles"
 
 local discovery = {}
@@ -43,13 +44,9 @@ discovery.SEARCH_COOLDOWN = 300
 -- Device fields. The machine_id is the identity (§6.5); hostname is kept to
 -- notice two PCs sharing one MachineGuid, and the last search time enforces
 -- the cooldown above.
-discovery.MACHINE_FIELD = "machine_id"
-discovery.HOSTNAME_FIELD = "hostname"
-discovery.LAST_SEARCH_FIELD = "last_ssdp"
 -- #94: the short id already written into this device's `model`. A device
 -- created before #94 has "PC Control" there, so the update runs once per
 -- device and the field stops it from running on every poll afterwards.
-discovery.MODEL_FIELD = "model_id"
 
 local function logger()
   local ok, log = pcall(require, "log")
@@ -171,22 +168,11 @@ function discovery.model_for(machine_id)
   return discovery.MODEL .. discovery.MODEL_SEPARATOR .. short
 end
 
-local function get_field(device, name)
-  if type(device) ~= "table" or type(device.get_field) ~= "function" then
-    return nil
-  end
-  local ok, value = pcall(function() return device:get_field(name) end)
-  if ok then
-    return value
-  end
-  return nil
-end
-
 --- The machine_id of a device: the stored field first (a manual device adopts
 --- one on its first successful status, §6.5), then the DNI for a device that
 --- SSDP created.
 function discovery.machine_id_of(device)
-  local field = get_field(device, discovery.MACHINE_FIELD)
+  local field = fields.get(device, fields.MACHINE_ID)
   if type(field) == "string" and field ~= "" then
     return field
   end
@@ -271,7 +257,7 @@ function discovery.plan(device, found)
   local pinned = type(prefs.ipAddress) == "string" and prefs.ipAddress ~= ""
   local out = { action = "update", repoll = false }
 
-  local known_host = get_field(device, discovery.HOSTNAME_FIELD)
+  local known_host = fields.get(device, fields.HOSTNAME)
   if found.hostname and found.hostname ~= "" then
     if type(known_host) == "string" and known_host ~= "" and known_host ~= found.hostname then
       -- §6.5: same machine_id, different hostname.
@@ -286,17 +272,17 @@ function discovery.plan(device, found)
   end
 
   -- §6.5: a manual device adopts the machine_id it was matched on.
-  if get_field(device, discovery.MACHINE_FIELD) == nil and found.machine_id then
+  if fields.get(device, fields.MACHINE_ID) == nil and found.machine_id then
     out.machine_id = found.machine_id
   end
 
   if follow and not pinned then
-    local current = get_field(device, client.IP_FIELD)
+    local current = fields.get(device, fields.DISCOVERED_IP)
     if found.ip and found.ip ~= "" and found.ip ~= current then
       out.ip = found.ip
       out.repoll = true
     end
-    if found.port and found.port ~= get_field(device, client.PORT_FIELD) then
+    if found.port and found.port ~= fields.get(device, fields.DISCOVERED_PORT) then
       out.port = found.port
     end
   end
@@ -411,9 +397,10 @@ end
 -- applying a hit to the driver
 --------------------------------------------------------------------------------
 
+-- A plan leaves out what it does not change; nil is "keep", never "clear".
 local function set_field(device, name, value)
   if value ~= nil then
-    pcall(function() device:set_field(name, value, { persist = true }) end)
+    fields.set(device, name, value)
   end
 end
 
@@ -423,10 +410,10 @@ function discovery.apply(driver, device, found, deps)
   local plan = discovery.plan(device, found)
   local log = logger()
 
-  set_field(device, discovery.HOSTNAME_FIELD, plan.hostname)
-  set_field(device, discovery.MACHINE_FIELD, plan.machine_id)
-  set_field(device, client.IP_FIELD, plan.ip)
-  set_field(device, client.PORT_FIELD, plan.port)
+  set_field(device, fields.HOSTNAME, plan.hostname)
+  set_field(device, fields.MACHINE_ID, plan.machine_id)
+  set_field(device, fields.DISCOVERED_IP, plan.ip)
+  set_field(device, fields.DISCOVERED_PORT, plan.port)
 
   local poll = deps.poll or require "poll"
   local lang = poll.lang(device)
@@ -496,13 +483,13 @@ function discovery.adopt(device)
   if not info then
     return false
   end
-  set_field(device, client.IP_FIELD, info.ip)
-  set_field(device, client.PORT_FIELD, info.port)
-  set_field(device, discovery.MACHINE_FIELD, info.machine_id)
-  set_field(device, discovery.HOSTNAME_FIELD, info.hostname)
+  set_field(device, fields.DISCOVERED_IP, info.ip)
+  set_field(device, fields.DISCOVERED_PORT, info.port)
+  set_field(device, fields.MACHINE_ID, info.machine_id)
+  set_field(device, fields.HOSTNAME, info.hostname)
   -- #94: this device was created with the id already in its model, so the
   -- one-time update has nothing to do.
-  set_field(device, discovery.MODEL_FIELD, discovery.short_id(info.machine_id))
+  set_field(device, fields.MODEL_ID, discovery.short_id(info.machine_id))
   return true
 end
 
@@ -518,13 +505,13 @@ function discovery.ensure_model(device)
     -- No identity yet: the first successful poll learns it (§6.5).
     return false
   end
-  if get_field(device, discovery.MODEL_FIELD) == short then
+  if fields.get(device, fields.MODEL_ID) == short then
     return false
   end
   local current = (device or {}).model
   if type(current) == "string" and current:find(short, 1, true) then
     -- Created with it (or updated by an earlier driver run).
-    set_field(device, discovery.MODEL_FIELD, short)
+    set_field(device, fields.MODEL_ID, short)
     return false
   end
   local model = discovery.model_for(discovery.machine_id_of(device))
@@ -533,7 +520,7 @@ function discovery.ensure_model(device)
     logger().warn("could not put the PC id in the device model: " .. tostring(model))
     return false
   end
-  set_field(device, discovery.MODEL_FIELD, short)
+  set_field(device, fields.MODEL_ID, short)
   logger().info("device model is now " .. model)
   return true
 end
@@ -549,10 +536,10 @@ function discovery.refresh(driver, device, deps)
     return false, "no machine id"
   end
   local now = (deps.now or os.time)()
-  if not discovery.should_search(get_field(device, discovery.LAST_SEARCH_FIELD), now) then
+  if not discovery.should_search(fields.get(device, fields.LAST_SSDP), now) then
     return false, "cooldown"
   end
-  device:set_field(discovery.LAST_SEARCH_FIELD, now)
+  fields.set(device, fields.LAST_SSDP, now)
 
   for _, found in ipairs(discovery.ssdp_search(discovery.SSDP_TIMEOUT, deps) or {}) do
     if found.machine_id == machine_id then

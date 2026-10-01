@@ -31,6 +31,7 @@ local VERSION = require "driver_version"
 
 -- The handlers, as the hub calls them.
 local driver = require "init"
+local fields = require "device.fields"
 
 local T = {}
 
@@ -72,8 +73,8 @@ function T.test_full_status_identity_and_wol()
   h.assert_equal(status.protocol, client.PROTOCOL, "protocol")
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
   poll.remember_identity(device, status)
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), MACHINE_ID, "machine_id")
-  h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "GOLDEN-PC", "hostname")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), MACHINE_ID, "machine_id")
+  h.assert_equal(device:get_field(fields.HOSTNAME), "GOLDEN-PC", "hostname")
   -- #96/#97: the adapter the service chose, not the driver's own guess.
   h.assert_equal(state.wol_mac(status), "B4-2E-99-45-B4-F5", "wol.selected.mac")
   h.assert_equal(state.wol_adapter(status), "이더넷", "wol.selected.name")

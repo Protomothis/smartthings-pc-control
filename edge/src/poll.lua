@@ -8,51 +8,21 @@
 local caps = require "caps"
 local client = require "client"
 local features = require "features"
+local fields = require "device.fields"
 local i18n = require "i18n"
 local profiles = require "profiles"
 local state = require "state"
 
 local poll = {}
 
-poll.STATE_FIELD = "pc_state"
-poll.TIMER_FIELD = "poll_timer"
-poll.START_TIMER_FIELD = "poll_start_timer"
-poll.MAC_FIELD = "wol_mac"
--- #82: the last `pcRemote.lastAction` value emitted for this device.
-poll.ACTION_FIELD = "last_action"
--- #93 follow-up: a `lastAction` value that changed is re-sent once more on the
--- next poll, and this is what remembers that the repeat is owed. Measured on
--- the hub: a forced event can be dropped between hub and cloud, and the one
--- that must not be is the `none` that says a transition is over.
-poll.ACTION_CONFIRM_FIELD = "last_action_confirm"
--- #84: the `pcDefer.planCommand` the user picked for the schedule row.
-poll.PLAN_FIELD = "plan_command"
--- #85: which generation of capability ids this device's rows were painted for.
--- A renamed capability (pcRun -> pcExec, pcPlan -> pcPlanner) starts with
--- every attribute unset on the hub, so the persisted "already painted" fields
--- would otherwise skip a device that has been migrated (platform notes "허브의 정의 캐시").
-poll.ROWS_FIELD = "rows_painted"
--- #92: the last `service_version` a successful poll saw. Persisted, because the
--- whole point is to still know it after the hub restarts while the PC is off.
-poll.SERVICE_VERSION_FIELD = "service_version"
--- #102: when the PC last answered a poll, in epoch seconds (`poll.clock`).
--- Persisted for the same reason as the version: "마지막 확인 12분 전" is read
--- while the PC is off, which is when a hub restart would otherwise forget it.
-poll.LAST_SEEN_FIELD = "last_seen"
--- #102: how stale the stored time may get before a successful poll writes it
--- again. The row only ever says whole minutes, and a persisted field is a hub
--- write, so a 10-second poll interval does not become six writes a minute.
+-- How stale the stored last-seen time may get before a successful poll writes
+-- it again: the row says whole minutes, and the field is a flash write.
 poll.LAST_SEEN_STEP = 60
--- The generation stamp itself: the profile generation. A new capability id
--- always comes with a new profile generation, and a device on a new profile
--- starts with an empty cloud record, so every row is painted once per
--- generation (`ensure_rows`).
+-- The row generation (`fields.ROWS_PAINTED`) is the profile generation: a new
+-- capability id always comes with one, and a device on a new profile starts
+-- with an empty cloud record, so every row is painted once per generation
+-- (`ensure_rows`; platform notes "허브의 정의 캐시").
 poll.ROWS_VERSION = tostring(profiles.VERSION)
-poll.WOL_READY_FIELD = "wol_ready"
--- #97: the name of the adapter the service chose for WoL, so the message the
--- wake sequence writes can name it while the PC is off and there is no status
--- body to read (state.wol_adapter).
-poll.WOL_ADAPTER_FIELD = "wol_adapter"
 poll.DEFAULT_INTERVAL = 30
 -- First service release that speaks protocol 1 (§3).
 poll.MIN_SERVICE_VERSION = "1.1.0"
@@ -111,11 +81,11 @@ end
 
 --- Runtime state for `device`, created on first use.
 function poll.get_state(device)
-  return device:get_field(poll.STATE_FIELD) or state.new()
+  return fields.get(device, fields.STATE) or state.new()
 end
 
 function poll.set_state(device, s)
-  device:set_field(poll.STATE_FIELD, s)
+  fields.set(device, fields.STATE, s)
 end
 
 --- Re-exported so wol.lua does not have to require state.lua as well.
@@ -204,7 +174,7 @@ end
 -- `force` marks an emit that answers a command from the app: it goes out with
 -- `{ state_change = true }` so the platform delivers it even when the value did
 -- not change. Ordinary poll updates stay unforced, and one whose value equals
--- what this run last emitted on the row is not emitted at all (`SENT_FIELD`,
+-- what this run last emitted on the row is not emitted at all (`fields.ROWS_SENT`,
 -- the event budget).
 -- #107: `component` names a component other than `main` (`awake`, `battery`).
 -- Such an event goes out with `emit_component_event`, and only when the
@@ -217,11 +187,10 @@ end
 -- app then warns that the device does not report all its state) until a
 -- forced emit. So the first emit of every row in a run is forced; after that
 -- the hub's own dedup is fine, because the cloud has seen the value once.
-poll.FIRST_FIELD = "rows_forced_this_run"
 
 local function first_emit(device, key)
   local seen
-  pcall(function() seen = device:get_field(poll.FIRST_FIELD) end)
+  seen = fields.get(device, fields.ROWS_FORCED)
   if type(seen) ~= "table" then
     seen = {}
   end
@@ -229,7 +198,7 @@ local function first_emit(device, key)
     return false
   end
   seen[key] = true
-  pcall(function() device:set_field(poll.FIRST_FIELD, seen) end)
+  fields.set(device, fields.ROWS_FORCED, seen)
   return true
 end
 
@@ -245,19 +214,17 @@ end
 -- dropped values, so the unforced repeats of the right value that followed
 -- were deduplicated by the hub and the cloud stayed wrong.
 --
--- So the driver deduplicates itself: `SENT_FIELD` holds, per row key, a
+-- So the driver deduplicates itself: `fields.ROWS_SENT` holds, per row key, a
 -- canonical serialization of the last value this driver run emitted, and an
 -- unforced record whose value matches is not emitted at all. Forced records
 -- always go out (they answer a command, or repaint a new profile) and update
 -- the cache. In memory only: a new run starts empty, and its first emit of
--- every row is forced anyway (`FIRST_FIELD`).
-poll.SENT_FIELD = "rows_sent_this_run"
+-- every row is forced anyway (`fields.ROWS_FORCED`).
 
 -- The budget guard: how many emits in how many seconds the driver itself may
 -- make before it says so in logcat. Log only - nothing is dropped here.
 poll.BUDGET_EVENTS = 20
 poll.BUDGET_SECONDS = 10
-poll.BUDGET_FIELD = "emit_budget"
 
 -- Turn a value into a string that is equal exactly when the value is: tables
 -- by sorted keys, numbers so that 30 and 30.0 agree, strings quoted so that
@@ -304,25 +271,25 @@ poll.signature = signature
 
 local function sent_cache(device)
   local sent
-  pcall(function() sent = device:get_field(poll.SENT_FIELD) end)
+  sent = fields.get(device, fields.ROWS_SENT)
   if type(sent) ~= "table" then
     sent = {}
-    pcall(function() device:set_field(poll.SENT_FIELD, sent) end)
+    fields.set(device, fields.ROWS_SENT, sent)
   end
   return sent
 end
 
 --- Forget what this run has emitted for `device`, so every row goes out again
 --- once (a profile change: the cloud record of the new profile is empty).
--- #129 (W2): and start a new "first emit is forced" generation (`FIRST_FIELD`)
--- with the hub's record no longer trusted (`SEED_FIELD`): a row the repaint
+-- #129 (W2): and start a new "first emit is forced" generation (`fields.ROWS_FORCED`)
+-- with the hub's record no longer trusted (`fields.ROWS_SEED_OFF`): a row the repaint
 -- does not carry itself is forced by the poll that follows it, instead of
 -- that poll forcing every row a second time.
 function poll.forget_sent(device)
   pcall(function()
-    device:set_field(poll.SENT_FIELD, nil)
-    device:set_field(poll.FIRST_FIELD, nil)
-    device:set_field(poll.SEED_FIELD, true)
+    fields.set(device, fields.ROWS_SENT, nil)
+    fields.set(device, fields.ROWS_FORCED, nil)
+    fields.set(device, fields.ROWS_SEED_OFF, true)
   end)
 end
 
@@ -338,7 +305,7 @@ end
 --   - after a profile change or a new generation of rows (`poll.repaint`,
 --     which sets this field) the cache is no evidence: the new profile's cloud
 --     record is empty (the 2026-09-30 v1 -> v2 measurement), so every row's
---     first emit is forced again (`FIRST_FIELD`)
+--     first emit is forced again (`fields.ROWS_FORCED`)
 --   - the rows whose loss the user notices (`RESYNC_ROWS`) are never seeded:
 --     they go out forced once per run whatever the cache says, because the
 --     cache can hold a value the cloud never stored (an event lost to the
@@ -353,7 +320,6 @@ end
 -- cycle, so a wrong cache costs at most that long, while dropping the skip
 -- would put the ~40-event burst back on every restart, and a burst is what
 -- loses events in the first place.
-poll.SEED_FIELD = "rows_seed_off"
 
 local function loss_matters(key)
   for _, k in ipairs(poll.RESYNC_ROWS or {}) do
@@ -365,7 +331,7 @@ local function loss_matters(key)
 end
 
 --- True when this run may take the hub's state cache as "already sent" for
---- `device` (see `SEED_FIELD`).
+--- `device` (see `fields.ROWS_SEED_OFF`).
 function poll.seeding(device)
   if type(device) ~= "table" then
     return false
@@ -375,7 +341,7 @@ function poll.seeding(device)
     return false
   end
   local off
-  pcall(function() off = device:get_field(poll.SEED_FIELD) end)
+  off = fields.get(device, fields.ROWS_SEED_OFF)
   return off ~= true
 end
 
@@ -403,10 +369,10 @@ end
 local function spend(device, log)
   local now = poll.clock()
   local budget
-  pcall(function() budget = device:get_field(poll.BUDGET_FIELD) end)
+  budget = fields.get(device, fields.EMIT_BUDGET)
   if type(budget) ~= "table" or now < budget.start or now - budget.start >= poll.BUDGET_SECONDS then
     budget = { start = now, count = 0, warned = false }
-    pcall(function() device:set_field(poll.BUDGET_FIELD, budget) end)
+    fields.set(device, fields.EMIT_BUDGET, budget)
   end
   budget.count = budget.count + 1
   if budget.count > poll.BUDGET_EVENTS and not budget.warned then
@@ -463,9 +429,8 @@ end
 -- generation has not sent at all, such as the status rows of the poll that
 -- follows the repaint - only updates the value that batch will carry; a
 -- forced one (a command's answer) goes out at once and leaves the queue.
--- Every row's first emit of the generation is still forced (`FIRST_FIELD`):
+-- Every row's first emit of the generation is still forced (`fields.ROWS_FORCED`):
 -- it is the batch's.
-poll.PAINT_FIELD = "paint_queue"
 poll.PAINT_BATCH = 9
 poll.PAINT_SECONDS = 5
 poll.PAINT_FIRST = {
@@ -498,7 +463,7 @@ end
 --- The paint queue of `device` while a spread repaint is under way, else nil.
 function poll.painting(device)
   local queue
-  pcall(function() queue = device:get_field(poll.PAINT_FIELD) end)
+  queue = fields.get(device, fields.PAINT_QUEUE)
   if type(queue) == "table" then
     return queue
   end
@@ -545,7 +510,7 @@ local function paint_all(device, queue, batch)
   for _, record in ipairs(take(queue, math.huge)) do
     batch[#batch + 1] = record
   end
-  pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+  fields.set(device, fields.PAINT_QUEUE, nil)
   return batch
 end
 
@@ -578,7 +543,7 @@ paint_next = function(driver, device)
   queue.started = true
   local batch = take(queue, poll.PAINT_BATCH)
   if next(queue.rows) == nil then
-    pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+    fields.set(device, fields.PAINT_QUEUE, nil)
   elseif not paint_timer(driver, device, queue, poll.PAINT_SECONDS) then
     paint_all(device, queue, batch)
   end
@@ -600,7 +565,7 @@ function poll.paint(driver, device, events)
   if not driver then
     -- A queue's pending timer finds itself replaced and does nothing.
     if queue then
-      pcall(function() device:set_field(poll.PAINT_FIELD, nil) end)
+      fields.set(device, fields.PAINT_QUEUE, nil)
     end
     poll.emit(device, poll.force_all(events))
     return #(events or {})
@@ -612,7 +577,7 @@ function poll.paint(driver, device, events)
       enqueue(queue, poll.row_key(e), e)
     end
   end
-  pcall(function() device:set_field(poll.PAINT_FIELD, queue) end)
+  fields.set(device, fields.PAINT_QUEUE, queue)
   if fresh and not paint_timer(driver, device, queue, poll.PAINT_START_SECONDS) then
     local batch = paint_all(device, queue, {})
     poll.emit(device, batch)
@@ -650,7 +615,7 @@ function poll.emit(device, events)
       local last = sent[key]
       if not last and not e.force and not loss_matters(key) and poll.seeding(device) then
         -- #129 (W2): the first time this run meets the row, and the hub's
-        -- persisted record already says exactly this (`SEED_FIELD`).
+        -- persisted record already says exactly this (`fields.ROWS_SEED_OFF`).
         local cached = cached_state(device, cap, e, component)
         if cached ~= nil and signature(cached) == sig then
           last = { sig = sig, value = e.value, cap = e.cap, attr = e.attr, component = e.component }
@@ -772,7 +737,7 @@ end
 --- device has never answered one.
 function poll.last_service_version(device)
   local seen
-  pcall(function() seen = device:get_field(poll.SERVICE_VERSION_FIELD) end)
+  seen = fields.get(device, fields.SERVICE_VERSION)
   if type(seen) == "string" and seen ~= "" then
     return seen
   end
@@ -792,7 +757,7 @@ function poll.remember_service_version(device, body)
     return false
   end
   pcall(function()
-    device:set_field(poll.SERVICE_VERSION_FIELD, version, { persist = true })
+    fields.set(device, fields.SERVICE_VERSION, version)
   end)
   return true
 end
@@ -801,7 +766,7 @@ end
 --- never has.
 function poll.last_seen(device)
   local seen
-  pcall(function() seen = device:get_field(poll.LAST_SEEN_FIELD) end)
+  seen = fields.get(device, fields.LAST_SEEN)
   seen = tonumber(seen)
   if seen and seen > 0 then
     return seen
@@ -822,7 +787,7 @@ function poll.remember_last_seen(device, deps)
     return false
   end
   pcall(function()
-    device:set_field(poll.LAST_SEEN_FIELD, now, { persist = true })
+    fields.set(device, fields.LAST_SEEN, now)
   end)
   return true
 end
@@ -844,7 +809,7 @@ end
 --   errors out (platform notes "상세 화면(detailView) 위젯").
 function poll.emit_action(device, action, force)
   local value = state.is_action(action) and action or state.ACTION_NONE
-  pcall(function() device:set_field(poll.ACTION_FIELD, value, { persist = true }) end)
+  fields.set(device, fields.LAST_ACTION, value)
   poll.emit(device, {
     { cap = caps.COMMAND, attr = "lastAction", value = value, force = force == true },
   })
@@ -899,7 +864,7 @@ end
 --    poll.** Forcing a changed value costs nothing (`state_change` only adds
 --    "deliver this even if it looks unchanged") and it is the one event that
 --    must not be dropped - especially the `none` that ends a transition, which
---    is what got lost. `ACTION_CONFIRM_FIELD` remembers that one repeat is
+--    is what got lost. `fields.LAST_ACTION_CONFIRM` remembers that one repeat is
 --    owed, so the next poll sends it again and then stops.
 --
 -- The repeat is a field rather than a timer on purpose: a timer needs a
@@ -908,7 +873,7 @@ end
 -- Returns true when something was emitted.
 function poll.ensure_action(device)
   local seen
-  pcall(function() seen = device:get_field(poll.ACTION_FIELD) end)
+  seen = fields.get(device, fields.LAST_ACTION)
   local resting = poll.resting_action(device)
 
   if seen ~= resting then
@@ -921,7 +886,7 @@ function poll.ensure_action(device)
   -- Unchanged. Nothing to say - except the one repeat promised above, which is
   -- what makes a dropped "the transition is over" recoverable.
   local owed
-  pcall(function() owed = device:get_field(poll.ACTION_CONFIRM_FIELD) end)
+  owed = fields.get(device, fields.LAST_ACTION_CONFIRM)
   if owed ~= nil and owed == resting then
     poll.owe_action_repeat(device, nil)
     poll.emit_action(device, resting, true)
@@ -935,7 +900,7 @@ end
 -- Not persisted: it is worth one extra event on the next poll, not a hub write,
 -- and a driver that restarted mid-transition repaints everything anyway.
 function poll.owe_action_repeat(device, value)
-  pcall(function() device:set_field(poll.ACTION_CONFIRM_FIELD, value) end)
+  fields.set(device, fields.LAST_ACTION_CONFIRM, value)
   return value
 end
 
@@ -947,9 +912,6 @@ end
 -- when it started showing a slot (epoch seconds), and whether one forced
 -- repeat of the return to "none" is owed - the same two rules as `lastAction`
 -- (`ensure_action`, platform notes "강제 이벤트 연발").
-poll.PRESET_FIELD = "last_preset"
-poll.PRESET_AT_FIELD = "last_preset_at"
-poll.PRESET_CONFIRM_FIELD = "last_preset_confirm"
 -- How long the row says "프리셋 3 실행함" before it goes back on "none".
 -- `hold_preset`'s timer ends the flash after exactly this long; a poll or push
 -- that comes first leaves the row alone until it is this old. That check is
@@ -962,12 +924,11 @@ poll.PRESET_HOLD_SECONDS = 5
 -- timer of its own, instead of waiting for the next poll (up to 30 s).
 poll.PRESET_REPEAT_SECONDS = 2
 -- The device's pending reset or repeat timer (`hold_preset`). Not persisted.
-poll.PRESET_TIMER_FIELD = "last_preset_timer"
 
 --- The value the preset list shows now.
 function poll.shown_preset(device)
   local shown
-  pcall(function() shown = device:get_field(poll.PRESET_FIELD) end)
+  shown = fields.get(device, fields.LAST_PRESET)
   if shown == features.PRESET_NONE or features.is_preset_slot(shown) then
     return shown
   end
@@ -981,8 +942,8 @@ function poll.emit_preset(device, value, force, deps)
     value = features.PRESET_NONE
   end
   pcall(function()
-    device:set_field(poll.PRESET_FIELD, value)
-    device:set_field(poll.PRESET_AT_FIELD, value ~= features.PRESET_NONE and poll.clock(deps) or nil)
+    fields.set(device, fields.LAST_PRESET, value)
+    fields.set(device, fields.LAST_PRESET_AT, value ~= features.PRESET_NONE and poll.clock(deps) or nil)
   end)
   poll.emit(device, {
     { cap = caps.PRESET, attr = "lastPreset", value = value, force = force == true },
@@ -992,7 +953,7 @@ end
 
 --- Answer a `run` on the row the app is watching: the value it shows, forced.
 function poll.answer_preset(device)
-  pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+  fields.set(device, fields.LAST_PRESET_CONFIRM, nil)
   local shown = poll.shown_preset(device)
   poll.emit(device, {
     { cap = caps.PRESET, attr = "lastPreset", value = shown, force = true },
@@ -1012,20 +973,20 @@ function poll.ensure_preset(device, deps, held)
   local shown = poll.shown_preset(device)
   if shown ~= features.PRESET_NONE then
     local at
-    pcall(function() at = device:get_field(poll.PRESET_AT_FIELD) end)
+    at = fields.get(device, fields.LAST_PRESET_AT)
     at = tonumber(at)
     if not held and at and poll.clock(deps) - at < poll.PRESET_HOLD_SECONDS
         and poll.clock(deps) >= at then
       return false
     end
     poll.emit_preset(device, features.PRESET_NONE, true, deps)
-    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, true) end)
+    fields.set(device, fields.LAST_PRESET_CONFIRM, true)
     return true
   end
   local owed
-  pcall(function() owed = device:get_field(poll.PRESET_CONFIRM_FIELD) end)
+  owed = fields.get(device, fields.LAST_PRESET_CONFIRM)
   if owed then
-    pcall(function() device:set_field(poll.PRESET_CONFIRM_FIELD, nil) end)
+    fields.set(device, fields.LAST_PRESET_CONFIRM, nil)
     poll.emit_preset(device, features.PRESET_NONE, true, deps)
     return true
   end
@@ -1036,20 +997,20 @@ end
 -- one it replaces; `fn` runs only while it is still the current one.
 local function preset_timer(driver, device, delay, name, fn)
   local previous
-  pcall(function() previous = device:get_field(poll.PRESET_TIMER_FIELD) end)
+  previous = fields.get(device, fields.LAST_PRESET_TIMER)
   if type(previous) == "table" and previous.timer then
     pcall(function() driver:cancel_timer(previous.timer) end)
   end
-  pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, nil) end)
+  fields.set(device, fields.LAST_PRESET_TIMER, nil)
   local token = {}
   local ok, timer = pcall(function()
     return driver:call_with_delay(delay, function()
       local current
-      pcall(function() current = device:get_field(poll.PRESET_TIMER_FIELD) end)
+      current = fields.get(device, fields.LAST_PRESET_TIMER)
       if current ~= token then
         return
       end
-      pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, nil) end)
+      fields.set(device, fields.LAST_PRESET_TIMER, nil)
       fn()
     end, name)
   end)
@@ -1057,7 +1018,7 @@ local function preset_timer(driver, device, delay, name, fn)
     return false
   end
   token.timer = timer
-  pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, token) end)
+  fields.set(device, fields.LAST_PRESET_TIMER, token)
   return true
 end
 
@@ -1077,7 +1038,7 @@ function poll.hold_preset(driver, device)
     poll.ensure_preset(device, nil, true)
     -- A poll that got there first leaves only the repeat, just sent above.
     local owed
-    pcall(function() owed = device:get_field(poll.PRESET_CONFIRM_FIELD) end)
+    owed = fields.get(device, fields.LAST_PRESET_CONFIRM)
     if owed then
       preset_timer(driver, device, poll.PRESET_REPEAT_SECONDS, "preset-repeat", function()
         poll.ensure_preset(device)
@@ -1092,15 +1053,14 @@ end
 
 -- The last text `send` delivered to the PC. Persisted: the row shows it, and
 -- a driver restart must not put "없음" back over a message the cloud already
--- shows (every row's first emit in a run is forced, `FIRST_FIELD`).
-poll.TOAST_FIELD = "last_toast"
+-- shows (every row's first emit in a run is forced, `fields.ROWS_FORCED`).
 
 --- What `pcToast.lastMessage` shows now: the last text that went out, else
 --- the translated "없음" - never "" (the cloud would record null and the row
 --- would read "-", platform notes "상세 화면(detailView) 위젯").
 function poll.shown_toast(device)
   local sent
-  pcall(function() sent = device:get_field(poll.TOAST_FIELD) end)
+  sent = fields.get(device, fields.LAST_TOAST)
   if type(sent) == "string" and sent ~= "" then
     return sent
   end
@@ -1118,7 +1078,7 @@ end
 --- changes nothing the hub would otherwise pass on.
 function poll.emit_toast(device, text)
   if type(text) == "string" and text ~= "" then
-    pcall(function() device:set_field(poll.TOAST_FIELD, text, { persist = true }) end)
+    fields.set(device, fields.LAST_TOAST, text)
   end
   local value = poll.shown_toast(device)
   poll.emit(device, { poll.toast_row(device, value, true) })
@@ -1135,7 +1095,7 @@ function poll.answer_toast(device)
 end
 
 --- Keep the row painted: unforced, so after the first emit of a driver run
---- (forced by `FIRST_FIELD`, which is what gives a migrated device its value)
+--- (forced by `fields.ROWS_FORCED`, which is what gives a migrated device its value)
 --- the hub drops the unchanged repeats. Called with every poll and push.
 function poll.ensure_toast(device)
   poll.emit(device, { poll.toast_row(device) })
@@ -1155,7 +1115,7 @@ end
 -- change it will never see.
 function poll.emit_plan_command(device, command, force)
   local value = state.plan_command_for(command)
-  pcall(function() device:set_field(poll.PLAN_FIELD, value, { persist = true }) end)
+  fields.set(device, fields.PLAN_COMMAND, value)
   poll.emit(device, {
     { cap = caps.SCHEDULE, attr = "planCommand", value = value, force = force == true },
   })
@@ -1181,7 +1141,7 @@ end
 --- the `offAction` preference when that is schedulable, else `shutdown`.
 function poll.plan_command(device)
   local picked
-  pcall(function() picked = device:get_field(poll.PLAN_FIELD) end)
+  picked = fields.get(device, fields.PLAN_COMMAND)
   return state.plan_command_for(picked, ((device or {}).preferences or {}).offAction)
 end
 
@@ -1190,7 +1150,7 @@ end
 --- a list, which does not open at all without a value (platform notes "상세 화면(detailView) 위젯").
 function poll.ensure_plan_command(device)
   local seen
-  pcall(function() seen = device:get_field(poll.PLAN_FIELD) end)
+  seen = fields.get(device, fields.PLAN_COMMAND)
   if state.is_plan_command(seen) then
     return false
   end
@@ -1209,11 +1169,11 @@ end
 -- `driver` (optional) spreads the repaint over batches (`poll.paint`).
 function poll.ensure_rows(device, driver)
   local painted
-  pcall(function() painted = device:get_field(poll.ROWS_FIELD) end)
+  painted = fields.get(device, fields.ROWS_PAINTED)
   if painted == poll.ROWS_VERSION then
     return false
   end
-  pcall(function() device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION, { persist = true }) end)
+  fields.set(device, fields.ROWS_PAINTED, poll.ROWS_VERSION)
 
   poll.repaint(device, driver)
   return true
@@ -1246,7 +1206,6 @@ end
 --     the two do not add up to two bursts. Until the paint was spread, the
 --     second repaint waited out the first one's budget window instead.
 poll.LATE_REPAINT_SECONDS = { 30, 90 }
-poll.LATE_TIMERS_FIELD = "repaint_late_timers"
 function poll.repaint_soon(driver, device, opts)
   opts = opts or {}
   if not opts.painted then
@@ -1256,7 +1215,7 @@ function poll.repaint_soon(driver, device, opts)
   -- (`once` starts the paint itself; this is for a poll that raised.)
   poll.paint_start(driver, device)
   local previous
-  pcall(function() previous = device:get_field(poll.LATE_TIMERS_FIELD) end)
+  previous = fields.get(device, fields.REPAINT_LATE_TIMERS)
   for _, timer in ipairs(type(previous) == "table" and previous or {}) do
     pcall(function() driver:cancel_timer(timer) end)
   end
@@ -1272,7 +1231,7 @@ function poll.repaint_soon(driver, device, opts)
       timers[#timers + 1] = timer
     end
   end
-  pcall(function() device:set_field(poll.LATE_TIMERS_FIELD, timers) end)
+  fields.set(device, fields.REPAINT_LATE_TIMERS, timers)
 end
 
 --------------------------------------------------------------------------------
@@ -1286,15 +1245,12 @@ end
 -- which opens the next window. So a burst of commands costs at most one poll
 -- per window, and every command's rows still get their forced emit within one
 -- window (the spinner, platform notes "상세 화면(detailView) 위젯").
-poll.ANSWER_FIELD = "answer_window"
 poll.ANSWER_WINDOW_SECONDS = 1.5
 
 -- A burst of commands (`BURST_COMMANDS` inside `BURST_SECONDS`) is when the
 -- budget is most likely to have run out, so `BURST_RESYNC_SECONDS` after one
 -- the rows whose loss the user notices go out once more (`resync`), well
 -- ahead of their turn in the rotation below.
-poll.COMMANDS_FIELD = "recent_commands"
-poll.BURST_TIMER_FIELD = "burst_resync_timer"
 poll.BURST_COMMANDS = 3
 poll.BURST_SECONDS = 10
 poll.BURST_RESYNC_SECONDS = 60
@@ -1305,7 +1261,7 @@ poll.BURST_RESYNC_SECONDS = 60
 -- the rows the user notices first: a burst of commands (above) and the
 -- follow-ups of a repaint re-send them, forced, with the value this run last
 -- emitted on them, and a restart never takes them from the hub's cache
--- (`SEED_FIELD`). Six events at most. Every other row waits for its turn in
+-- (`fields.ROWS_SEED_OFF`). Six events at most. Every other row waits for its turn in
 -- the rotation.
 poll.RESYNC_ROWS = {
   state.CAP_SWITCH .. ".switch",
@@ -1337,7 +1293,7 @@ end
 -- On the Dev hub's v5 -> v6 migration `pcApps.summary` was lost in the
 -- repaint's burst after the hub's state cache had taken it, and it stayed
 -- null in the cloud through a `refresh` and a driver restart: this run's own
--- dedupe (`SENT_FIELD`) and the restart's (`SEED_FIELD`, the hub's cache)
+-- dedupe (`fields.ROWS_SENT`) and the restart's (`fields.ROWS_SEED_OFF`, the hub's cache)
 -- both took it as sent, and the six `RESYNC_ROWS`, then re-sent every ten
 -- minutes, did not include it. So no row's "sent" is trusted for longer than
 -- one cycle. Each step re-sends the next few rows of everything this run has
@@ -1351,14 +1307,12 @@ end
 -- A step runs at most once per poll interval (less a fifth, for timer
 -- jitter), not on every poll: the answer polls of a command burst add none.
 -- The first step of a run only starts the clock (a run's first emits are
--- forced anyway, `FIRST_FIELD`, or taken from the hub's cache, which the
+-- forced anyway, `fields.ROWS_FORCED`, or taken from the hub's cache, which the
 -- rotation then corrects within a cycle). No step while a paint is under
 -- way: it is sending every row already. App children (#123) take part
 -- through `apps.rotate`: one child per step, each at most once per cycle.
 poll.ROTATE_SECONDS = 600
 poll.ROTATE_MAX = 5
-poll.ROTATE_AT_FIELD = "rotate_at"
-poll.ROTATE_CURSOR_FIELD = "rotate_cursor"
 
 --- How many rows a rotation step re-sends: `rows` rows round in
 --- `ROTATE_SECONDS` at `interval` seconds per step, at least 1, at most
@@ -1387,7 +1341,7 @@ function poll.rotate(device)
   table.sort(keys)
   local size = poll.rotate_size(#keys, poll.interval((device or {}).preferences))
   local cursor
-  pcall(function() cursor = device:get_field(poll.ROTATE_CURSOR_FIELD) end)
+  cursor = fields.get(device, fields.ROTATE_CURSOR)
   -- The first key after the cursor; past the last one, round to the first.
   local start = 1
   if type(cursor) == "string" then
@@ -1413,7 +1367,7 @@ function poll.rotate(device)
         component = entry.component, force = true }
     end
   end
-  pcall(function() device:set_field(poll.ROTATE_CURSOR_FIELD, last) end)
+  fields.set(device, fields.ROTATE_CURSOR, last)
   poll.emit(device, events)
   return #events
 end
@@ -1427,15 +1381,15 @@ function poll.rotate_due(driver, device, deps)
   end
   local now = poll.clock(deps)
   local at
-  pcall(function() at = tonumber(device:get_field(poll.ROTATE_AT_FIELD)) end)
+  pcall(function() at = tonumber(fields.get(device, fields.ROTATE_AT)) end)
   if not at or now < at then
-    pcall(function() device:set_field(poll.ROTATE_AT_FIELD, now) end)
+    fields.set(device, fields.ROTATE_AT, now)
     return 0
   end
   if now - at < poll.interval((device or {}).preferences) * 4 / 5 then
     return 0
   end
-  pcall(function() device:set_field(poll.ROTATE_AT_FIELD, now) end)
+  fields.set(device, fields.ROTATE_AT, now)
   local n = poll.rotate(device)
   local ok, err = pcall(function() require("apps").rotate(driver, device, now) end)
   if not ok then
@@ -1448,7 +1402,7 @@ end
 function poll.note_command(driver, device)
   local now = poll.clock()
   local times
-  pcall(function() times = device:get_field(poll.COMMANDS_FIELD) end)
+  times = fields.get(device, fields.RECENT_COMMANDS)
   local kept = {}
   for _, t in ipairs(type(times) == "table" and times or {}) do
     if now >= t and now - t < poll.BURST_SECONDS then
@@ -1456,23 +1410,23 @@ function poll.note_command(driver, device)
     end
   end
   kept[#kept + 1] = now
-  pcall(function() device:set_field(poll.COMMANDS_FIELD, kept) end)
+  fields.set(device, fields.RECENT_COMMANDS, kept)
   if #kept < poll.BURST_COMMANDS or not driver then
     return false
   end
   local pending
-  pcall(function() pending = device:get_field(poll.BURST_TIMER_FIELD) end)
+  pending = fields.get(device, fields.BURST_TIMER)
   if pending then
     return false
   end
   local ok, timer = pcall(function()
     return driver:call_with_delay(poll.BURST_RESYNC_SECONDS, function()
-      pcall(function() device:set_field(poll.BURST_TIMER_FIELD, nil) end)
+      fields.set(device, fields.BURST_TIMER, nil)
       poll.resync(device)
     end, "resync-burst")
   end)
   if ok then
-    pcall(function() device:set_field(poll.BURST_TIMER_FIELD, timer or true) end)
+    fields.set(device, fields.BURST_TIMER, timer or true)
   end
   return ok
 end
@@ -1499,11 +1453,11 @@ local function open_window(driver, device)
   local ok = pcall(function()
     driver:call_with_delay(poll.ANSWER_WINDOW_SECONDS, function()
       local current
-      pcall(function() current = device:get_field(poll.ANSWER_FIELD) end)
+      current = fields.get(device, fields.ANSWER_WINDOW)
       if current ~= window then
         return
       end
-      pcall(function() device:set_field(poll.ANSWER_FIELD, nil) end)
+      fields.set(device, fields.ANSWER_WINDOW, nil)
       if window.owed then
         open_window(driver, device)
         pcall(poll.once, driver, device, { force = window.rows, note = window.note })
@@ -1511,7 +1465,7 @@ local function open_window(driver, device)
     end, "answer-poll")
   end)
   if ok then
-    pcall(function() device:set_field(poll.ANSWER_FIELD, window) end)
+    fields.set(device, fields.ANSWER_WINDOW, window)
   end
   return ok
 end
@@ -1528,7 +1482,7 @@ end
 function poll.answer(driver, device, rows, note)
   poll.note_command(driver, device)
   local window
-  pcall(function() window = device:get_field(poll.ANSWER_FIELD) end)
+  window = fields.get(device, fields.ANSWER_WINDOW)
   if type(window) == "table" then
     merge_rows(window.rows, rows)
     if note ~= nil then
@@ -1686,19 +1640,19 @@ local function once(driver, device, opts)
     if mac then
       -- Persisted: the MAC must survive a hub or driver restart while the PC
       -- is off, or "wake" has nothing to send to.
-      device:set_field(poll.MAC_FIELD, mac, { persist = true })
+      fields.set(device, fields.WOL_MAC, mac)
     end
     -- §6.4: remembered so `switch on` can say "WoL is off on the adapter"
     -- right away instead of at the next poll. #97: about the chosen adapter,
     -- and with its name, so the warning points at the NIC to go and open.
-    device:set_field(poll.WOL_READY_FIELD, not state.wol_off(body))
+    fields.set(device, fields.WOL_READY, not state.wol_off(body))
     local adapter = state.wol_adapter(body)
     if adapter then
       -- Persisted for the same reason as the MAC: the wake happens while the
       -- PC is off, which is exactly when no status body is available. Only
       -- written when there is a name, so a service too old to send one leaves
       -- the last known name rather than a blank.
-      device:set_field(poll.WOL_ADAPTER_FIELD, adapter, { persist = true })
+      fields.set(device, fields.WOL_ADAPTER, adapter)
     end
     -- §6.5: the identity. A manually added device learns its machine_id here,
     -- so SSDP can later recognise it instead of creating a duplicate.
@@ -1804,13 +1758,13 @@ function poll.remember_identity(device, body)
   local discovery = require "discovery"
   local changed = false
   if type(body.machine_id) == "string" and body.machine_id ~= ""
-      and device:get_field(discovery.MACHINE_FIELD) ~= body.machine_id then
-    device:set_field(discovery.MACHINE_FIELD, body.machine_id, { persist = true })
+      and fields.get(device, fields.MACHINE_ID) ~= body.machine_id then
+    fields.set(device, fields.MACHINE_ID, body.machine_id)
     changed = true
   end
   if type(body.hostname) == "string" and body.hostname ~= ""
-      and device:get_field(discovery.HOSTNAME_FIELD) ~= body.hostname then
-    device:set_field(discovery.HOSTNAME_FIELD, body.hostname, { persist = true })
+      and fields.get(device, fields.HOSTNAME) ~= body.hostname then
+    fields.set(device, fields.HOSTNAME, body.hostname)
     changed = true
   end
   -- #94: with the identity confirmed, put its first eight characters in the
@@ -1855,11 +1809,11 @@ function poll.offset(dni, interval)
 end
 
 function poll.stop(driver, device)
-  for _, field in ipairs({ poll.TIMER_FIELD, poll.START_TIMER_FIELD }) do
-    local timer = device:get_field(field)
+  for _, field in ipairs({ fields.POLL_TIMER, fields.POLL_START_TIMER }) do
+    local timer = fields.get(device, field)
     if timer then
       pcall(function() driver:cancel_timer(timer) end)
-      device:set_field(field, nil)
+      fields.set(device, field, nil)
     end
   end
 end
@@ -1871,11 +1825,11 @@ function poll.start(driver, device)
   local offset = poll.offset(device.device_network_id, interval)
 
   local function begin()
-    device:set_field(poll.START_TIMER_FIELD, nil)
+    fields.set(device, fields.POLL_START_TIMER, nil)
     local timer = driver:call_on_schedule(interval, function()
       poll.once(driver, device)
     end, "pc-poll")
-    device:set_field(poll.TIMER_FIELD, timer)
+    fields.set(device, fields.POLL_TIMER, timer)
     return timer
   end
 
@@ -1883,7 +1837,7 @@ function poll.start(driver, device)
     -- The schedule itself starts late; the first poll below still happens now,
     -- so the tiles do not wait for the offset.
     local starter = driver:call_with_delay(offset, begin, "pc-poll-start")
-    device:set_field(poll.START_TIMER_FIELD, starter)
+    fields.set(device, fields.POLL_START_TIMER, starter)
   else
     begin()
   end
@@ -1892,7 +1846,7 @@ function poll.start(driver, device)
   driver:call_with_delay(1, function()
     poll.once(driver, device)
   end, "pc-poll-initial")
-  return device:get_field(poll.TIMER_FIELD)
+  return fields.get(device, fields.POLL_TIMER)
 end
 
 return poll

@@ -3,7 +3,7 @@
 -- Measured on the hub 2026-10-01: the platform counts every `emit_event`
 -- against a per-device budget, including the ones the hub then drops as
 -- unchanged, and once it is spent it drops events after the hub's state cache
--- has taken them. So the driver deduplicates itself (`poll.SENT_FIELD`),
+-- has taken them. So the driver deduplicates itself (`fields.ROWS_SENT`),
 -- commands share their answer polls (`poll.answer`), and the rows a lost
 -- event matters on are re-sent forced after a burst (`poll.resync`).
 -- 2026-10-01 (the v5 -> v6 migration lost `pcApps.summary` for good): every
@@ -22,6 +22,7 @@ local log = require "log"
 local poll = require "poll"
 local state = require "state"
 
+local fields = require "device.fields"
 local init_driver = require "init"
 
 local T = {}
@@ -72,10 +73,10 @@ local function new_device()
   device.id = "budget-device"
   -- An installed device on the current generation of rows: no repaint of its
   -- own on the first poll, so the counts below are the polls' alone.
-  device:set_field(poll.ROWS_FIELD, poll.ROWS_VERSION)
+  device:set_field(fields.ROWS_PAINTED, poll.ROWS_VERSION)
   -- ...and with the command list resting where it was left (persisted), so
   -- `ensure_action` owes no repeat (#93 follow-up) that would show up below.
-  device:set_field(poll.ACTION_FIELD, state.ACTION_NONE)
+  device:set_field(fields.LAST_ACTION, state.ACTION_NONE)
   poll.set_state(device, state.new(state.ON))
   return device
 end
@@ -154,8 +155,8 @@ local LAST_SEEN = caps.STATUS .. ".lastSeen"
 local APPS_SUMMARY = caps.APPS .. ".summary"
 
 -- What a hub keeps over a driver restart (`set_field(…, { persist = true })`).
-local PERSISTED = { poll.ROWS_FIELD, poll.ACTION_FIELD, poll.PLAN_FIELD, poll.SERVICE_VERSION_FIELD,
-  poll.LAST_SEEN_FIELD }
+local PERSISTED = { fields.ROWS_PAINTED, fields.LAST_ACTION, fields.PLAN_COMMAND, fields.SERVICE_VERSION,
+  fields.LAST_SEEN }
 
 --------------------------------------------------------------------------------
 -- a clock for whole minutes of driver life
@@ -457,7 +458,7 @@ end
 --- The row keys this run has sent on `device` (the rotation's set).
 local function sent_keys(device)
   local out = {}
-  for key in pairs(device:get_field(poll.SENT_FIELD) or {}) do
+  for key in pairs(device:get_field(fields.ROWS_SENT) or {}) do
     out[#out + 1] = key
   end
   table.sort(out)
@@ -583,7 +584,7 @@ function T.test_the_rotation_skips_a_row_this_poll_just_sent()
     local rows = sent_keys(device)
     for i, key in ipairs(rows) do
       if key == LAST_SEEN then
-        device:set_field(poll.ROTATE_CURSOR_FIELD, rows[i - 1])
+        device:set_field(fields.ROTATE_CURSOR, rows[i - 1])
       end
     end
     pc.now = pc.now + 30
@@ -747,7 +748,7 @@ function T.test_after_a_profile_change_the_cache_is_no_evidence()
     -- A new generation of rows (`ensure_rows`) repaints, and the poll after
     -- it adds every row the repaint did not carry - all of it forced, in
     -- batches.
-    device:set_field(poll.ROWS_FIELD, "1")
+    device:set_field(fields.ROWS_PAINTED, "1")
     local mark = #device.emitted
     poll.once(d, device)
     h.fire_all(d, "repaint-batch")
@@ -818,12 +819,12 @@ local function migrate(pc, minutes, landing)
   local profiles = require "profiles"
   local device = new_device()
   device.profile = { id = "v5", name = "pc-monitor.v5", components = h.components_for("pc-monitor.v5") }
-  device:set_field(poll.ROWS_FIELD, "5")
+  device:set_field(fields.ROWS_PAINTED, "5")
   local trace = stamped(device, pc)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(profiles.FIELD), "pc-monitor.v6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v6")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",

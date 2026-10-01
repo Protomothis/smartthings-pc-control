@@ -67,6 +67,8 @@
 -- them are guarded: a hub that refuses `try_update_metadata` or
 -- `try_delete_device` must not take the lifecycle handler down with it.
 
+local fields = require "device.fields"
+
 local profiles = {}
 
 -- The profile generation every current name carries (`pc.v6`, …).
@@ -178,12 +180,10 @@ end
 
 -- The profile name is written here at creation time and after a migration,
 -- because `device.profile` does not always carry a name (see `name_of`).
-profiles.FIELD = "profile_name"
 
 -- #116: whether the last settled status said this PC has a battery. Persisted,
 -- so a later migration (v1 -> v5) lands a laptop straight on its battery
 -- profile instead of taking the detour through the plain one.
-profiles.BATTERY_FIELD = "has_battery"
 
 -- What a device with neither a name nor the field is assumed to be on: the
 -- oldest name this driver ever created a device with.
@@ -346,8 +346,8 @@ local function stored_name(device)
   if type(device) ~= "table" or type(device.get_field) ~= "function" then
     return nil
   end
-  local ok, value = pcall(function() return device:get_field(profiles.FIELD) end)
-  if ok and type(value) == "string" and value ~= "" then
+  local value = fields.get(device, fields.PROFILE_NAME)
+  if type(value) == "string" and value ~= "" then
     return value
   end
   return nil
@@ -381,7 +381,7 @@ function profiles.remember(device, name)
     return nil
   end
   name = name or profiles.current()
-  pcall(function() device:set_field(profiles.FIELD, name, { persist = true }) end)
+  fields.set(device, fields.PROFILE_NAME, name)
   return name
 end
 
@@ -438,7 +438,7 @@ function profiles.ensure(device)
   local name = profiles.name_of(device)
   -- #107: a v1 device lands on the current profile of its style. Whether it
   -- has a battery is only known once a status has said so (#116:
-  -- `BATTERY_FIELD`, which a v1 device never wrote), so it lands on the plain
+  -- `fields.HAS_BATTERY`, which a v1 device never wrote), so it lands on the plain
   -- one and the first statuses move a laptop on (`apply_battery`). A v2 device
   -- keeps its battery half (`migration_for`).
   local target = profiles.migration_for(name, profiles.has_battery(device))
@@ -525,16 +525,14 @@ local battery_votes = {}
 profiles.BATTERY_VOTES = 2
 
 --- #116: whether the last settled status said this PC has a battery (the
---- persisted `BATTERY_FIELD`), false when none has.
+--- persisted `fields.HAS_BATTERY`), false when none has.
 function profiles.has_battery(device)
-  local value
-  pcall(function() value = device:get_field(profiles.BATTERY_FIELD) end)
-  return value == true
+  return fields.get(device, fields.HAS_BATTERY) == true
 end
 
 local function remember_battery(device, present)
   if profiles.has_battery(device) ~= present then
-    pcall(function() device:set_field(profiles.BATTERY_FIELD, present, { persist = true }) end)
+    fields.set(device, fields.HAS_BATTERY, present)
   end
 end
 
@@ -547,7 +545,7 @@ end
 -- for the switch - one each way at most per real change. The style is the one
 -- the current name carries (`iconStyle` is `apply_style`'s business), and a
 -- device that is not on a current profile is left to `ensure`. The answer is
--- persisted (`BATTERY_FIELD`) so the next migration lands on the right side.
+-- persisted (`fields.HAS_BATTERY`) so the next migration lands on the right side.
 function profiles.apply_battery(device, present)
   if type(device) ~= "table" then
     return nil

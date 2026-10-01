@@ -12,6 +12,7 @@
 local client = require "client"
 local discovery = require "discovery"
 local features = require "features"
+local fields = require "device.fields"
 local state = require "state"
 
 local push = {}
@@ -20,8 +21,6 @@ push.PATH = "/pc/evt"
 push.PROTOCOL = 1
 -- §3.5: renew at 80% of the TTL, well before the service expires us.
 push.RENEW_RATIO = 0.8
-push.SUB_FIELD = "push_sub"
-push.RENEW_TIMER_FIELD = "push_renew_timer"
 -- A push body is a status document; 64 KiB is far more than one can be.
 push.MAX_BODY = 64 * 1024
 push.MAX_HEADERS = 64
@@ -520,7 +519,7 @@ function push.ensure(driver, device, deps)
   end
 
   local now = (deps.now or os.time)()
-  local existing = device:get_field(push.SUB_FIELD)
+  local existing = fields.get(device, fields.PUSH_SUB)
   if push.subscription_live(existing, callback, now) then
     return true, "live"
   end
@@ -530,14 +529,14 @@ function push.ensure(driver, device, deps)
   if not ok then
     -- 401 (secret changed), 400 (callback refused) or unreachable: drop what
     -- we thought we had and rely on polling (§6.3).
-    device:set_field(push.SUB_FIELD, nil)
+    fields.set(device, fields.PUSH_SUB, nil)
     push.cancel_renew(driver, device)
     log.debug(string.format("subscribe failed (%s), polling only", tostring(kind)))
     return false, kind
   end
 
   local sub = push.subscription(body, callback, client.DEFAULT_TTL, now)
-  device:set_field(push.SUB_FIELD, sub)
+  fields.set(device, fields.PUSH_SUB, sub)
   log.info(string.format("subscribed %s to %s", tostring(sub.id), callback))
   push.schedule_renew(driver, device, client.DEFAULT_TTL, deps)
   return true, "subscribed"
@@ -551,30 +550,30 @@ function push.schedule_renew(driver, device, ttl, deps)
   push.cancel_renew(driver, device)
   local ok, timer = pcall(function()
     return driver:call_with_delay(push.renew_delay(ttl), function()
-      device:set_field(push.RENEW_TIMER_FIELD, nil)
+      fields.set(device, fields.PUSH_RENEW_TIMER, nil)
       push.ensure(driver, device, deps)
     end, "pc-push-renew")
   end)
   if ok then
-    device:set_field(push.RENEW_TIMER_FIELD, timer)
+    fields.set(device, fields.PUSH_RENEW_TIMER, timer)
     return timer
   end
   return nil
 end
 
 function push.cancel_renew(driver, device)
-  local timer = device:get_field(push.RENEW_TIMER_FIELD)
+  local timer = fields.get(device, fields.PUSH_RENEW_TIMER)
   if timer then
     pcall(function() driver:cancel_timer(timer) end)
-    device:set_field(push.RENEW_TIMER_FIELD, nil)
+    fields.set(device, fields.PUSH_RENEW_TIMER, nil)
   end
 end
 
 --- Drop the subscription for a device that is going away (§3.5).
 function push.stop(driver, device, deps)
   push.cancel_renew(driver, device)
-  local sub = device:get_field(push.SUB_FIELD)
-  device:set_field(push.SUB_FIELD, nil)
+  local sub = fields.get(device, fields.PUSH_SUB)
+  fields.set(device, fields.PUSH_SUB, nil)
   if type(sub) ~= "table" or not sub.id then
     return false
   end

@@ -13,6 +13,7 @@
 -- (`with_fake_versions`), which exercises the same machinery without depending
 -- on which names happen to be current.
 
+local fields = require "device.fields"
 local h = require "helpers"
 local discovery = require "discovery"
 local profiles = require "profiles"
@@ -23,7 +24,7 @@ local function device_on(profile_name, id)
   local device = h.fake_device({})
   device.id = id or ("device-" .. tostring(profile_name))
   if profile_name then
-    device:set_field(profiles.FIELD, profile_name)
+    device:set_field(fields.PROFILE_NAME, profile_name)
   end
   return device
 end
@@ -287,7 +288,7 @@ function T.test_no_variant_is_ever_migrated()
     local device = device_on(name, "variant-" .. style)
     h.assert_nil(profiles.ensure(device))
     h.assert_equal(#device.metadata_updates, 0, name .. " was moved")
-    h.assert_equal(device:get_field(profiles.FIELD), name)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), name)
   end
 end
 
@@ -316,7 +317,7 @@ function T.test_apply_style_switches_once_and_remembers()
   device.preferences.iconStyle = "monitor"
   h.assert_equal(profiles.apply_style(device), "pc-monitor.v6")
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc-monitor.v6" } })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc-monitor.v6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v6")
   h.assert_nil(profiles.apply_style(device), "the same preference asks for nothing")
   h.assert_equal(#device.metadata_updates, 1)
 end
@@ -364,7 +365,7 @@ function T.test_apply_style_survives_a_hub_that_refuses_the_update()
     error("no such profile", 0)
   end
   h.assert_nil(profiles.apply_style(device))
-  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC,
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC,
     "a refused switch must not be recorded as done")
   -- Not asked again for the same value in this run...
   h.assert_nil(profiles.apply_style(device))
@@ -477,7 +478,7 @@ function T.test_ensure_moves_an_old_device_and_records_it()
     h.assert_equal(profiles.ensure(device), NEW)
     h.assert_equal(#device.metadata_updates, 1)
     h.assert_deep_equal(device.metadata_updates[1], { profile = NEW })
-    h.assert_equal(device:get_field(profiles.FIELD), NEW,
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), NEW,
       "the new profile name has to be persisted, or init would retry forever")
   end)
 end
@@ -499,7 +500,7 @@ function T.test_ensure_moves_every_v1_device_once_and_keeps_its_style()
     local device = device_on(old, "v1-" .. old)
     h.assert_equal(profiles.ensure(device), new, old)
     h.assert_deep_equal(device.metadata_updates, { { profile = new } })
-    h.assert_equal(device:get_field(profiles.FIELD), new)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), new)
   end
   -- Neither a current device nor a development name moves.
   for _, name in ipairs({ "pc.v6", "pc-tv-battery.v6", "pc.v17" }) do
@@ -518,7 +519,7 @@ function T.test_ensure_moves_every_v2_v3_and_v4_device_once_and_keeps_style_and_
     local device = device_on(old, "dev-" .. old)
     h.assert_equal(profiles.ensure(device), new, old)
     h.assert_deep_equal(device.metadata_updates, { { profile = new } })
-    h.assert_equal(device:get_field(profiles.FIELD), new)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), new)
     h.assert_nil(profiles.ensure(device), "one attempt per device per run")
   end
 end
@@ -555,7 +556,7 @@ function T.test_ensure_does_nothing_for_a_current_device()
   local device = device_on(profiles.PC, "current-pc")
   h.assert_nil(profiles.ensure(device))
   h.assert_equal(#device.metadata_updates, 0)
-  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)
 end
 
 function T.test_ensure_leaves_a_foreign_profile_alone()
@@ -563,7 +564,7 @@ function T.test_ensure_leaves_a_foreign_profile_alone()
   local device = device_on("someone-else.v1", "foreign")
   h.assert_nil(profiles.ensure(device))
   h.assert_equal(#device.metadata_updates, 0)
-  h.assert_equal(device:get_field(profiles.FIELD), "someone-else.v1",
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "someone-else.v1",
     "a foreign name must not be overwritten with ours")
 end
 
@@ -576,7 +577,7 @@ function T.test_ensure_survives_a_hub_that_refuses_the_update()
     end
     h.assert_nil(profiles.ensure(device))
     -- The field still says the old name, so the next driver start tries again.
-    h.assert_equal(device:get_field(profiles.FIELD), OLD)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), OLD)
   end)
 end
 
@@ -605,7 +606,7 @@ function T.test_init_migrates_a_device_left_on_an_older_profile()
     device.profile = { id = "abc-123", components = { { id = "main" } } }
     lifecycle().init(fake_driver({ device }), device)
     h.assert_deep_equal(device.metadata_updates[1], { profile = NEW })
-    h.assert_equal(device:get_field(profiles.FIELD), NEW)
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), NEW)
   end)
 end
 
@@ -619,11 +620,11 @@ function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
   device.id = "init-pc-v1"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-3"
   device.profile = { id = "abc-123", components = { { id = "main" } } }
-  device:set_field(poll.ROWS_FIELD, "1")
+  device:set_field(fields.ROWS_PAINTED, "1")
   lifecycle().init(fake_driver({ device }), device)
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v6" } })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc.v6")
-  h.assert_equal(device:get_field(poll.ROWS_FIELD), poll.ROWS_VERSION,
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v6")
+  h.assert_equal(device:get_field(fields.ROWS_PAINTED), poll.ROWS_VERSION,
     "the rows of the new capabilities start unset and are painted once")
   -- #129: the row generation is the profile generation.
   h.assert_equal(poll.ROWS_VERSION, tostring(profiles.VERSION))
@@ -641,11 +642,11 @@ function T.test_init_moves_a_v2_device_to_v6_and_repaints_it()
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-5"
   device.profile = { id = "abc-123", name = "pc-battery.v2",
     components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(poll.ROWS_FIELD, "2")
+  device:set_field(fields.ROWS_PAINTED, "2")
   lifecycle().init(fake_driver({ device }), device)
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v6" } })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc-battery.v6")
-  h.assert_equal(device:get_field(poll.ROWS_FIELD), "6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-battery.v6")
+  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
 end
 
 function T.test_init_moves_a_v3_device_to_v6_and_repaints_it()
@@ -660,11 +661,11 @@ function T.test_init_moves_a_v3_device_to_v6_and_repaints_it()
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-6"
   device.profile = { id = "abc-123", name = "pc-tv-battery.v3",
     components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(poll.ROWS_FIELD, "3")
+  device:set_field(fields.ROWS_PAINTED, "3")
   lifecycle().init(fake_driver({ device }), device)
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc-tv-battery.v6")
-  h.assert_equal(device:get_field(poll.ROWS_FIELD), "6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-tv-battery.v6")
+  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
 end
 
 function T.test_init_moves_a_v4_device_to_v6_and_paints_the_message_row()
@@ -680,10 +681,10 @@ function T.test_init_moves_a_v4_device_to_v6_and_paints_the_message_row()
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-7"
   device.profile = { id = "abc-123", name = "pc-tv-battery.v4",
     components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(poll.ROWS_FIELD, "4")
+  device:set_field(fields.ROWS_PAINTED, "4")
   lifecycle().init(fake_driver({ device }), device)
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
-  h.assert_equal(device:get_field(poll.ROWS_FIELD), "6")
+  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
   local events = h.emitted(device)
   h.assert_equal(h.event_value(events, caps.TOAST, "lastMessage"), "없음")
   h.assert_true(h.event_forced(events, caps.TOAST, "lastMessage"))
@@ -702,11 +703,11 @@ function T.test_init_moves_a_v5_device_to_v6_keeping_style_and_battery()
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-8"
   device.profile = { id = "abc-123", name = "pc-hub-battery.v5",
     components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
-  device:set_field(poll.ROWS_FIELD, "5")
+  device:set_field(fields.ROWS_PAINTED, "5")
   lifecycle().init(fake_driver({ device }), device)
   h.assert_deep_equal(device.metadata_updates, { { profile = "pc-hub-battery.v6" } })
-  h.assert_equal(device:get_field(profiles.FIELD), "pc-hub-battery.v6")
-  h.assert_equal(device:get_field(poll.ROWS_FIELD), "6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-hub-battery.v6")
+  h.assert_equal(device:get_field(fields.ROWS_PAINTED), "6")
   local events = h.emitted(device)
   h.assert_equal(h.event_value(events, caps.APPS, "summary"), "없음")
   h.assert_true(h.event_forced(events, caps.APPS, "summary"))
@@ -723,7 +724,7 @@ function T.test_init_leaves_a_v6_device_where_it_is()
   device.profile = { id = "abc-123", name = "pc.v6", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
   h.assert_equal(#device.metadata_updates, 0)
-  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)
 end
 
 function T.test_init_deletes_a_leftover_display_child()
@@ -752,7 +753,7 @@ function T.test_added_records_the_profile_and_migrates_nothing()
   device.id = "added-pc"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-2"
   lifecycle().added(fake_driver({ device }), device)
-  h.assert_equal(device:get_field(profiles.FIELD), profiles.PC)
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)
   h.assert_equal(#device.metadata_updates, 0,
     "a brand new device is already on the current profile")
 end
@@ -783,9 +784,9 @@ local function styled_device(id, style)
   device.id = id
   device.device_network_id = discovery.DNI_PREFIX .. "manual-" .. id
   device.profile = { id = "abc-123", name = profiles.PC, components = {} }
-  device:set_field(profiles.FIELD, profiles.PC)
+  device:set_field(fields.PROFILE_NAME, profiles.PC)
   -- Rows already painted, so any repaint below comes from the icon switch.
-  device:set_field((require "poll").ROWS_FIELD, (require "poll").ROWS_VERSION)
+  device:set_field(fields.ROWS_PAINTED, (require "poll").ROWS_VERSION)
   return device
 end
 
@@ -796,7 +797,7 @@ function T.test_info_changed_switches_the_profile_once_and_repaints()
     local driver = fake_driver({ device })
     lifecycle().infoChanged(driver, device, "infoChanged", {})
     h.assert_deep_equal(device.metadata_updates, { { profile = "pc-projector.v6" } })
-    h.assert_equal(device:get_field(profiles.FIELD), "pc-projector.v6")
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-projector.v6")
     h.assert_equal(#repaints, 1, "the new profile starts with empty rows")
     -- The switch landing fires infoChanged again: no second update.
     lifecycle().infoChanged(driver, device, "infoChanged", {})
@@ -843,7 +844,7 @@ function T.test_init_leaves_a_matching_style_alone()
   counting_repaints(function(repaints)
     local device = styled_device("settled-pc", "remote")
     device.profile.name = "pc-remote.v6"
-    device:set_field(profiles.FIELD, "pc-remote.v6")
+    device:set_field(fields.PROFILE_NAME, "pc-remote.v6")
     lifecycle().init(fake_driver({ device }), device)
     h.assert_equal(#device.metadata_updates, 0)
     h.assert_equal(#repaints, 0, "nothing changed, nothing to repaint")

@@ -16,6 +16,7 @@ local wol = require "wol"
 
 -- Loading the module registers the handlers and "runs" the driver.
 local driver = require "init"
+local fields = require "device.fields"
 
 local T = {}
 
@@ -361,8 +362,8 @@ function T.test_a_migrated_device_repaints_the_rows_the_old_ids_held()
   -- of the new ids starts out unset - but the driver's own persisted fields
   -- survive the migration and would otherwise say "already painted".
   local device = device_with({ ipAddress = "192.168.1.20", offAction = "shutdown" })
-  device:set_field(poll.ACTION_FIELD, state.ACTION_NONE, { persist = true })
-  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+  device:set_field(fields.LAST_ACTION, state.ACTION_NONE, { persist = true })
+  device:set_field(fields.PLAN_COMMAND, "suspend", { persist = true })
 
   h.assert_true(poll.ensure_rows(device), "a migrated device has to be repainted")
   h.assert_equal(last_action(device), state.ACTION_NONE)
@@ -380,7 +381,7 @@ function T.test_set_plan_command_persists_and_emits()
   handlers_for(caps.SCHEDULE).setPlanCommand(driver, device,
     { command = "setPlanCommand", args = { command = "restart" } })
   h.assert_equal(plan_command(device), "restart")
-  h.assert_equal(device:get_field(poll.PLAN_FIELD), "restart",
+  h.assert_equal(device:get_field(fields.PLAN_COMMAND), "restart",
     "the choice has to survive a hub restart")
 end
 
@@ -872,11 +873,11 @@ function T.test_every_blocked_command_still_answers_its_row()
 
   -- The "command to schedule" row: the value it already holds, not the new one.
   local device = busy_device(state.SHUTTING_DOWN)
-  device:set_field(poll.PLAN_FIELD, "suspend", { persist = true })
+  device:set_field(fields.PLAN_COMMAND, "suspend", { persist = true })
   with_service(nil, function() BLOCKED["setPlanCommand(restart)"](device) end)
   h.assert_equal(plan_command(device), "suspend",
     "a refused setPlanCommand must not change the choice (#93)")
-  h.assert_equal(device:get_field(poll.PLAN_FIELD), "suspend")
+  h.assert_equal(device:get_field(fields.PLAN_COMMAND), "suspend")
   h.assert_true(h.event_forced(h.emitted(device), caps.SCHEDULE, "planCommand"))
 end
 

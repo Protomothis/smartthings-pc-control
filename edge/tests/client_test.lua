@@ -4,6 +4,7 @@ local json = require "st.json"
 -- The other half of error classification (err_kind -> connection/message,
 -- §3.1) lives in poll.lua, so the two are asserted together.
 local caps = require "caps"
+local fields = require "device.fields"
 local poll = require "poll"
 local state = require "state"
 
@@ -313,7 +314,7 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
   h.assert_nil(poll.last_service_version(d), "nothing is remembered before the first poll")
 
   h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, status_body()) } }))
-  h.assert_equal(d:get_field(poll.SERVICE_VERSION_FIELD), "v1.1.0",
+  h.assert_equal(d:get_field(fields.SERVICE_VERSION), "v1.1.0",
     "a successful poll persists the service version")
 
   local ok = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
@@ -331,7 +332,7 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
 end
 
 function T.test_the_last_seen_time_survives_a_failed_poll()
-  -- #102: a successful poll remembers when (persisted, poll.LAST_SEEN_FIELD),
+  -- #102: a successful poll remembers when (persisted, fields.LAST_SEEN),
   -- and the failures after it read it back instead of overwriting it.
   local d = device({ language = "ko" })
   local now = 3000000
@@ -346,7 +347,7 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
   h.assert_true(poll.once(nil, d, {
     deps = { http = fake_http(200, status_body({ uptime_seconds = 266400 })), now = clock },
   }))
-  h.assert_equal(d:get_field(poll.LAST_SEEN_FIELD), 3000000)
+  h.assert_equal(d:get_field(fields.LAST_SEEN), 3000000)
   h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결됨 · 3일 2시간")
 
   for _, minutes in ipairs({ 5, 12 }) do
@@ -366,9 +367,9 @@ function T.test_a_poll_remembers_the_mac_the_service_chose()
   -- Ethernet one, and that is the MAC the magic packet goes to.
   local d = device()
   h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, status_body()) } }))
-  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
-  h.assert_equal(d:get_field(poll.WOL_ADAPTER_FIELD), "Ethernet")
-  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), true)
+  h.assert_equal(d:get_field(fields.WOL_MAC), "AA:BB:CC:DD:EE:FF")
+  h.assert_equal(d:get_field(fields.WOL_ADAPTER), "Ethernet")
+  h.assert_equal(d:get_field(fields.WOL_READY), true)
 
   -- The chosen adapter has WoL off: the warning is about that adapter, even
   -- though `wol.ready` and the other NIC both say everything is fine.
@@ -380,8 +381,8 @@ function T.test_a_poll_remembers_the_mac_the_service_chose()
     },
   })
   h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, off) } }))
-  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), false)
-  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
+  h.assert_equal(d:get_field(fields.WOL_READY), false)
+  h.assert_equal(d:get_field(fields.WOL_MAC), "AA:BB:CC:DD:EE:FF")
 end
 
 function T.test_a_poll_falls_back_to_the_old_adapter_guess()
@@ -398,9 +399,9 @@ function T.test_a_poll_falls_back_to_the_old_adapter_guess()
     },
   })
   h.assert_true(poll.once(nil, d, { deps = { http = fake_http(200, body) } }))
-  h.assert_equal(d:get_field(poll.MAC_FIELD), "AA:BB:CC:DD:EE:FF")
-  h.assert_nil(d:get_field(poll.WOL_ADAPTER_FIELD), "nothing to name the adapter with")
-  h.assert_equal(d:get_field(poll.WOL_READY_FIELD), true)
+  h.assert_equal(d:get_field(fields.WOL_MAC), "AA:BB:CC:DD:EE:FF")
+  h.assert_nil(d:get_field(fields.WOL_ADAPTER), "nothing to name the adapter with")
+  h.assert_equal(d:get_field(fields.WOL_READY), true)
 end
 
 function T.test_5xx_is_unreachable()

@@ -3,6 +3,7 @@
 -- The err_kind mapping and a whole poll cycle live in client_test.lua, which
 -- has the http fakes; this file is about when the polls happen.
 
+local fields = require "device.fields"
 local h = require "helpers"
 local Driver = require "st.driver"
 local discovery = require "discovery"
@@ -105,7 +106,7 @@ function T.test_start_delays_the_schedule_by_the_offset()
 
   fire(driver, "pc-poll-start")
   h.assert_equal(timer_named(driver, "pc-poll").interval, 30)
-  h.assert_nil(device:get_field(poll.START_TIMER_FIELD))
+  h.assert_nil(device:get_field(fields.POLL_START_TIMER))
 end
 
 function T.test_stop_cancels_both_timers()
@@ -118,8 +119,8 @@ function T.test_stop_cancels_both_timers()
 
   poll.stop(driver, device)
   h.assert_true(schedule.cancelled)
-  h.assert_nil(device:get_field(poll.TIMER_FIELD))
-  h.assert_nil(device:get_field(poll.START_TIMER_FIELD))
+  h.assert_nil(device:get_field(fields.POLL_TIMER))
+  h.assert_nil(device:get_field(fields.POLL_START_TIMER))
 
   -- A stop before the offset elapsed cancels the pending start too.
   poll.start(driver, device)
@@ -147,12 +148,12 @@ function T.test_identity_is_remembered_from_a_status_body()
   -- §6.5: this is how a manually added device learns its machine_id.
   local device = h.fake_device({})
   poll.remember_identity(device, { machine_id = "9f3c-guid", hostname = "DESKTOP-ABC" })
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
-  h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "9f3c-guid")
+  h.assert_equal(device:get_field(fields.HOSTNAME), "DESKTOP-ABC")
 
   -- A body without them leaves what is there.
   poll.remember_identity(device, {})
-  h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
+  h.assert_equal(device:get_field(fields.MACHINE_ID), "9f3c-guid")
 end
 
 function T.test_a_failed_poll_rewrites_the_status_summary()
@@ -189,7 +190,7 @@ function T.test_the_version_row_keeps_the_last_version_the_pc_reported()
     "an empty version is not a version")
 
   h.assert_true(poll.remember_service_version(device, { service_version = "v1.1.0" }))
-  h.assert_equal(device:get_field(poll.SERVICE_VERSION_FIELD), "v1.1.0",
+  h.assert_equal(device:get_field(fields.SERVICE_VERSION), "v1.1.0",
     "the version survives in the device's field store")
   h.assert_false(poll.remember_service_version(device, { service_version = "v1.1.0" }),
     "an unchanged version is not written to the hub again")
@@ -220,7 +221,7 @@ function T.test_last_seen_is_written_at_most_once_a_minute()
   h.assert_nil(poll.last_seen(device), "nothing before the first answer")
 
   h.assert_true(poll.remember_last_seen(device, deps))
-  h.assert_equal(device:get_field(poll.LAST_SEEN_FIELD), 1000000)
+  h.assert_equal(device:get_field(fields.LAST_SEEN), 1000000)
   now = now + poll.LAST_SEEN_STEP - 1
   h.assert_false(poll.remember_last_seen(device, deps), "a 10 s poll does not write every time")
   h.assert_equal(poll.last_seen(device), 1000000)

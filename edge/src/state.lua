@@ -692,7 +692,7 @@ end
 -- another rename and would make the app report missing state if left unset).
 --
 -- `service_version` is whatever the status body carried - or, off the connected
--- path since #92, the last one a successful poll saw (`poll.SERVICE_VERSION_FIELD`):
+-- path since #92, the last one a successful poll saw (`fields.SERVICE_VERSION`):
 -- a PC that is off has not changed its version, so there is no reason for the
 -- row to forget it. Only a PC we have never reached has none, and the row still
 -- has to say something (an attribute that was never emitted reads as "-",
