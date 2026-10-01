@@ -69,7 +69,7 @@ for name in "${CAPABILITIES[@]}"; do
   printf '%s\n' "$created"
 
   id=$(json_field id "$created")
-  version=$(json_field version "$created")
+  version=$(json_field version "$created" || true)
   # `version` comes back as a number in the JSON, so json_field misses it;
   # a freshly created capability is always version 1.
   [ -n "$version" ] || version=1
