@@ -23,7 +23,18 @@ var (
 	modWtsapi32                     = windows.NewLazySystemDLL("wtsapi32.dll")
 	procWTSQuerySessionInformationW = modWtsapi32.NewProc("WTSQuerySessionInformationW")
 	procWTSFreeMemory               = modWtsapi32.NewProc("WTSFreeMemory")
+	procWTSDisconnectSession        = modWtsapi32.NewProc("WTSDisconnectSession")
 )
+
+// Disconnect is WTSDisconnectSession on the local server without waiting,
+// the call behind `tsdiscon <session>`: the console goes to the lock
+// screen, an RDP connection ends, and the user's programs keep running.
+func Disconnect(sessionID uint32) error {
+	if r, _, err := procWTSDisconnectSession.Call(0, uintptr(sessionID), 0); r == 0 {
+		return err
+	}
+	return nil
+}
 
 const (
 	// wtsSessionInfoEx is WTS_INFO_CLASS.WTSSessionInfoEx.

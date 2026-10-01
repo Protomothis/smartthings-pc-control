@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/power"
+
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
@@ -316,7 +318,7 @@ func TestScheduleOriginWakesTrayApp(t *testing.T) {
 		{originTelegram, false},
 	}
 	for _, c := range cases {
-		if got := c.origin.wakesTrayApp(); got != c.want {
+		if got := c.origin.WakesTrayApp(); got != c.want {
 			t.Errorf("origin %d wakesTrayApp = %v, want %v", c.origin, got, c.want)
 		}
 	}
@@ -545,11 +547,11 @@ func TestScheduleTaskRejectsADelayPastTheCeiling(t *testing.T) {
 	// #89: three days is the ceiling every front end offers, and this is the
 	// last guard before the timer is armed.
 	initLogger()
-	if err := scheduleTask("lock", maxScheduleDelay+time.Minute, originUI); err == nil {
+	if err := scheduleTask("lock", power.MaxScheduleDelay+time.Minute, originUI); err == nil {
 		cancelScheduleBy("api")
 		t.Fatalf("a delay over %d minutes was accepted", maxScheduleMinutes)
 	}
-	if err := scheduleTask("lock", maxScheduleDelay, originUI); err != nil {
+	if err := scheduleTask("lock", power.MaxScheduleDelay, originUI); err != nil {
 		t.Fatalf("the ceiling itself must be schedulable: %v", err)
 	}
 	cancelScheduleBy("api")
