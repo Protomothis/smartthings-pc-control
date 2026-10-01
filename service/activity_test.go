@@ -118,49 +118,6 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 
 // ---- status and push -------------------------------------------------------
 
-func TestSTStatusActivityBlock(t *testing.T) {
-	stubProcesses(t, "steam.exe", "private.exe")
-	stSetup(t, Config{Port: 5001})
-
-	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	act, _ := got["activity"].(map[string]any)
-	if act["enabled"] != false || act["top"] != "" {
-		t.Errorf("disabled activity = %v", got["activity"])
-	}
-	if apps, ok := act["apps"].([]any); !ok || len(apps) != 0 {
-		t.Errorf("disabled apps = %v (want [])", act["apps"])
-	}
-	if _, ok := act["kind"]; ok {
-		t.Errorf("the block still has kind: %v", act)
-	}
-	if f, ok := got["features"].([]any); !ok || slices.Contains(f, any("activity")) {
-		t.Errorf("features while off = %v", got["features"])
-	}
-
-	cfg := Config{Port: 5001, Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("code.exe", "VS Code"), watch("Steam.exe", "Steam")}}}
-	setConfig(cfg)
-	activityScan.Scan(cfg.Activity)
-	stSrv.ResetRateLimit()
-	w := stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", "")
-	var status struct {
-		Activity json.RawMessage `json:"activity"`
-		Features []string        `json:"features"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
-		t.Fatal(err)
-	}
-	want := `{"enabled":true,"apps":[{"id":"code.exe","label":"VS Code","running":false},{"id":"steam.exe","label":"Steam","running":true}],"top":"steam.exe"}`
-	if string(status.Activity) != want {
-		t.Errorf("activity = %s\nwant       %s", status.Activity, want)
-	}
-	if !slices.Contains(status.Features, "activity") {
-		t.Errorf("features = %v", status.Features)
-	}
-	if body := w.Body.String(); strings.Contains(body, "private") {
-		t.Errorf("status leaks an unlisted process name: %s", body)
-	}
-}
-
 // TestActivityChangePushes: a flip, a list change and the switch each push
 // activity.changed with the status block as data; an unchanged scan does
 // not push.

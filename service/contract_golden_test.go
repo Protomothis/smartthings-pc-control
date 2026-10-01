@@ -41,6 +41,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -465,6 +466,89 @@ func TestContractStatusMinimalStillServed(t *testing.T) {
 		t.Fatal("status.minimal-1.0.json grew a features key; it must stay the pre-v1.2.0 shape")
 	}
 	assertShapeKept(t, "status", old, goldenStatus(t))
+}
+
+// offWorld is a fresh install on a desktop: the defaults for every v1.2.0
+// option (config.Default plus a secret), nothing sampled yet, keep-awake
+// off, no schedule, no remote command so far, the screen turned off and the
+// one adapter without WoL. Steam is running but not on any watch list.
+func offWorld(t *testing.T) {
+	t.Helper()
+	cfg := config.Default()
+	cfg.Secret = goldenSecret
+	stSetup(t, cfg)
+
+	savedVersion, savedLatest := Version, latestReleaseTag()
+	Version = "v1.2.0"
+	latestRelease.Store("")
+	machineID()
+	savedID := machineIDValue
+	machineIDValue = goldenMachineID
+	savedClean := lastShutdownClean.Load()
+	lastShutdownClean.Store(false)
+	t.Cleanup(func() {
+		Version = savedVersion
+		latestRelease.Store(savedLatest)
+		machineIDValue = savedID
+		lastShutdownClean.Store(savedClean)
+	})
+
+	stubWoL(t, WoLStatus{Adapters: []WoLAdapter{
+		{Name: "이더넷", MacAddress: "B4-2E-99-45-B4-F5", IPs: []string{"192.168.1.10"}, Status: "Up", WoLCapable: true},
+	}})
+	stSrv.ResetHubLocalIP()
+
+	savedDisplay := getDisplayState()
+	setDisplayState("off")
+	t.Cleanup(func() { setDisplayState(savedDisplay) })
+
+	stubAwake(t)
+	stubBattery(t, &batteryMonitor{
+		Last:  batteryInfo{Present: false, Percent: -1, AC: true},
+		Known: true,
+		Read: func() (systemPowerStatus, error) {
+			return systemPowerStatus{}, fmt.Errorf("not read in the off world")
+		},
+	})
+	stubProcesses(t, "explorer.exe", "steam.exe")
+	activityScan.Scan(cfg.Activity)
+
+	resetAudioSample()
+	resetMediaSample()
+	resetIdleHeartbeat()
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	t.Cleanup(func() { sys.sessionPresent = savedPresent })
+
+	lastRemoteMu.Lock()
+	savedRemote := lastRemote
+	lastRemote = remoteRecord{}
+	lastRemoteMu.Unlock()
+	t.Cleanup(func() {
+		lastRemoteMu.Lock()
+		lastRemote = savedRemote
+		lastRemoteMu.Unlock()
+	})
+}
+
+// TestContractStatusOff pins the other end from status.full.json: what a
+// driver sees from a PC where every option is still at its default. Each
+// block is present in its "off" form (activity disabled with no apps, audio
+// unavailable, media none, awake off, the desktop battery, the session
+// block reduced to exposed:false), features lists what the defaults turn
+// on (no battery, activity or nowplaying), and nothing the user did not opt
+// into leaks (no user, no idle time, no process name).
+func TestContractStatusOff(t *testing.T) {
+	offWorld(t)
+	w := stDo(t, "GET", "/st/v1/status", goldenHub, goldenSecret, "")
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("content type = %q", ct)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d (%s)", w.Code, w.Body.String())
+	}
+	got := normalize(t, decodeAny(t, w.Body.Bytes(), "status"), statusVolatile("", false)...)
+	compareGolden(t, "status.off.json", got)
 }
 
 func jsonKindOf(v any) string {

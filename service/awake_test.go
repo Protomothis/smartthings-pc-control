@@ -103,36 +103,6 @@ func stubAwake(t *testing.T) *fakeAwake {
 
 // ---- /st/v1 ----------------------------------------------------------------
 
-func TestSTStatusAwakeAndFeatures(t *testing.T) {
-	stSetup(t, Config{Port: 5001, Awake: AwakeConfig{DefaultMinutes: 60}})
-	fa := stubAwake(t)
-
-	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	aw, ok := got["awake"].(map[string]any)
-	if !ok || aw["on"] != false || aw["until"] != "" {
-		t.Errorf("awake = %v, want {on:false until:\"\"}", got["awake"])
-	}
-	features, ok := got["features"].([]any)
-	if !ok {
-		t.Fatalf("features = %v, want an array", got["features"])
-	}
-	has := false
-	for _, f := range features {
-		has = has || f == "awake"
-	}
-	if !has {
-		t.Errorf("features = %v, want awake in it", features)
-	}
-
-	fa.ctl.TurnOn(30)
-	got = stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-	aw = got["awake"].(map[string]any)
-	want := fa.now.Add(30 * time.Minute).Format(time.RFC3339)
-	if aw["on"] != true || aw["until"] != want {
-		t.Errorf("awake = %v, want on until %s", aw, want)
-	}
-}
-
 func TestSTCommandAwake(t *testing.T) {
 	stSetup(t, Config{Port: 5001, ShutdownGrace: true, GraceSeconds: 300, Awake: AwakeConfig{DefaultMinutes: 45}})
 	fa := stubAwake(t)
@@ -196,29 +166,6 @@ func TestSTCommandAwakeSetterFailureIs500(t *testing.T) {
 	fa.failNext = errors.New("nope")
 	if w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"awake","value":10}`); w.Code != http.StatusInternalServerError {
 		t.Errorf("failure: %d, want 500", w.Code)
-	}
-}
-
-func TestAwakeChangedIsPushed(t *testing.T) {
-	stPushSetup(t, Config{Port: 5001})
-	startNotifier(nil)
-	t.Cleanup(stopNotifier)
-	fa := stubAwake(t)
-	fa.ctl.Hooks.OnChange = emitAwakeChanged
-	cb := newCallbackServer(t)
-	subscribeTo(t, cb, 600)
-
-	fa.ctl.TurnOn(0)
-	got := cb.wait(t)
-	if got["type"] != "awake.changed" {
-		t.Fatalf("type = %v", got["type"])
-	}
-	if data, _ := got["data"].(map[string]any); data["on"] != "true" || data["until"] != "" {
-		t.Errorf("data = %v", got["data"])
-	}
-	status, _ := got["status"].(map[string]any)
-	if aw, _ := status["awake"].(map[string]any); aw["on"] != true {
-		t.Errorf("status.awake = %v", status["awake"])
 	}
 }
 

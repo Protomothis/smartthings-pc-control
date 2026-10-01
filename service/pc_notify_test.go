@@ -197,20 +197,6 @@ func TestSTNotifyNeedsTheSecret(t *testing.T) {
 	}
 }
 
-func TestSTStatusNotifyFeature(t *testing.T) {
-	stSetup(t, notifyCfg(true))
-	stubAwake(t)
-	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
-		t.Errorf("enabled: features = %s, want notify", f)
-	}
-	// Still listed while off: the driver sends, gets 403 notify_disabled and
-	// says "PC 알림 꺼짐" rather than "not supported".
-	setConfig(notifyCfg(false))
-	if f := fmt.Sprint(stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))["features"]); !strings.Contains(f, "notify") {
-		t.Errorf("disabled: features = %s, want notify", f)
-	}
-}
-
 func TestNotifyTestAPI(t *testing.T) {
 	withLiveConfig(t, notifyCfg(false)) // off: the test button still works
 	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)

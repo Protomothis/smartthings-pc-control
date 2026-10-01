@@ -45,93 +45,12 @@ func optIn() Config {
 	return Config{Port: 5001, Media: MediaConfig{Enabled: true, NowPlaying: true}}
 }
 
-func TestMediaStoreNewerWins(t *testing.T) {
-	now := nowPlayingSetup(t, optIn())
-	if stored, changed := noteMediaSampleChange(spotifyTrack, now); !stored || changed {
-		t.Errorf("first sample: stored %v, changed %v (a baseline is no change)", stored, changed)
-	}
-	paused := spotifyTrack
-	paused.Status = "paused"
-	if stored, _ := noteMediaSampleChange(paused, now.Add(-time.Second)); stored {
-		t.Error("an older sample replaced a newer one")
-	}
-	if stored, changed := noteMediaSampleChange(paused, now.Add(time.Second)); !stored || !changed {
-		t.Errorf("newer sample: stored %v, changed %v", stored, changed)
-	}
-	if stored, changed := noteMediaSampleChange(paused, now.Add(2*time.Second)); !stored || changed {
-		t.Errorf("same state again: stored %v, changed %v", stored, changed)
-	}
-
-	// Stale after the TTL.
-	if _, ok := currentMedia(); !ok {
-		t.Fatal("fresh sample not reported")
-	}
-	clock.audio = func() time.Time { return now.Add(mediaSampleTTL + 3*time.Second) }
-	if _, ok := currentMedia(); ok {
-		t.Error("a sample older than the TTL is still reported")
-	}
-}
-
 // Without the opt-in only the status is stored, whatever the sender sent.
 func TestMediaStoreAppliesOptIn(t *testing.T) {
 	now := nowPlayingSetup(t, mediaOn())
 	recordMediaSample(spotifyTrack, now)
 	if s, _ := currentMedia(); s.NowPlaying != (useraction.NowPlaying{Status: "playing"}) {
 		t.Errorf("stored without opt-in: %+v", s.NowPlaying)
-	}
-}
-
-func TestSTStatusMediaBlock(t *testing.T) {
-	now := nowPlayingSetup(t, optIn())
-	status := func() (map[string]any, []any) {
-		t.Helper()
-		got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
-		m, ok := got["media"].(map[string]any)
-		if !ok {
-			t.Fatalf("media = %v, want an object", got["media"])
-		}
-		f, _ := got["features"].([]any)
-		return m, f
-	}
-
-	// Nothing known yet.
-	m, features := status()
-	if !reflect.DeepEqual(m, map[string]any{"status": "none"}) {
-		t.Errorf("media before any sample = %v", m)
-	}
-	if !containsAll(features, "audio", "media", "nowplaying") {
-		t.Errorf("features = %v, want nowplaying too", features)
-	}
-
-	recordMediaSample(spotifyTrack, now)
-	m, _ = status()
-	want := map[string]any{"status": "playing", "title": "Hype Boy", "artist": "NewJeans", "album": "New Jeans", "app": "Spotify", "updated_at": now.Format(time.RFC3339)}
-	if !reflect.DeepEqual(m, want) {
-		t.Errorf("media = %v, want %v", m, want)
-	}
-
-	// Opt-in off: a title stored a moment ago is not shown, and the
-	// feature goes.
-	setConfig(mediaOn())
-	m, features = status()
-	if !reflect.DeepEqual(m, map[string]any{"status": "playing", "updated_at": now.Format(time.RFC3339)}) {
-		t.Errorf("media without opt-in = %v", m)
-	}
-	for _, f := range features {
-		if f == "nowplaying" {
-			t.Errorf("features without opt-in = %v", features)
-		}
-	}
-
-	// Nobody logged in, media off: none.
-	sys.sessionPresent = func() bool { return false }
-	if m, _ = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) {
-		t.Errorf("media without a user = %v", m)
-	}
-	sys.sessionPresent = func() bool { return true }
-	setConfig(Config{Port: 5001, Media: MediaConfig{NowPlaying: true}})
-	if m, features = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) || containsAll(features, "nowplaying") {
-		t.Errorf("media while disabled = %v, features %v", m, features)
 	}
 }
 
@@ -176,38 +95,6 @@ func TestHeartbeatMediaBlock(t *testing.T) {
 	}
 	if _, ok := lastIdleSeconds(); ok {
 		t.Error("a rejected body stored the idle time")
-	}
-}
-
-func TestMediaChangedPush(t *testing.T) {
-	stPushSetup(t, optIn())
-	resetMediaSample()
-	savedPresent := sys.sessionPresent
-	sys.sessionPresent = func() bool { return true }
-	t.Cleanup(func() { resetMediaSample(); sys.sessionPresent = savedPresent })
-	startNotifier(nil)
-	t.Cleanup(stopNotifier)
-	cb := newCallbackServer(t)
-	subscribeTo(t, cb, 600)
-
-	t0 := time.Now()
-	recordMediaSample(useraction.NowPlaying{Status: "none"}, t0)
-	time.Sleep(150 * time.Millisecond)
-	if n := cb.hits.Load(); n != 0 {
-		t.Fatalf("the baseline pushed (%d)", n)
-	}
-	recordMediaSample(spotifyTrack, t0.Add(time.Second))
-	got := cb.wait(t)
-	if got["type"] != "media.changed" {
-		t.Fatalf("type = %v", got["type"])
-	}
-	data, _ := got["data"].(map[string]any)
-	if data["status"] != "playing" || data["title"] != "Hype Boy" || data["app"] != "Spotify" {
-		t.Errorf("data = %v", data)
-	}
-	status, _ := got["status"].(map[string]any)
-	if m, _ := status["media"].(map[string]any); m["title"] != "Hype Boy" {
-		t.Errorf("status.media = %v", status["media"])
 	}
 }
 

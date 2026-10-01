@@ -14,6 +14,7 @@
 | 파일 | 내용 | 누가 쓰나 |
 |---|---|---|
 | `status.full.json` | `GET /st/v1/status` — v1.2.0 블록을 전부 채운 상태(세션, features, audio, media+재생 정보, awake, 배터리, activity, presets, WoL 어댑터 2개, 진행 중 예약, 유예, 업데이트, display, last_command) | Go가 생성 |
+| `status.off.json` | `GET /st/v1/status` — 모든 설정이 기본값인 데스크톱(배터리 없음, activity 꺼짐, 재생 정보 동의 없음, 세션 비공개, awake 꺼짐, 예약·최근 명령 없음, WoL 꺼진 어댑터 1개, 화면 꺼짐). 각 블록의 "꺼진" 모양 | Go가 생성 |
 | `status.minimal-1.0.json` | v1.2.0 이전 서비스(v1.1.x, 드라이버 1.0.x 시절)가 보내던 모양. `features`와 v1.2 블록이 없다 | **손으로 작성**, 갱신하지 않음 |
 | `command.<이름>.json` | 드라이버가 보내는 요청(`request`)과 서비스의 응답(`response.code`, `response.body`) | `request`는 손으로, `response`는 Go가 생성 |
 | `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`) | 위와 같음 |
