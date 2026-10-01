@@ -11,9 +11,9 @@ on:
   # Deliberately no `paths:` on push. A `paths:` filter alongside `tags:`
   # applies to tag pushes as well, and a release tag that happens to sit on a
   # commit touching nothing under edge/ would then be filtered out and publish
-  # nothing at all - silently. The job is a checkout, one npm package and two
-  # fengari runs, well under a minute, so running it on a push that changed
-  # only Go code costs less than that failure mode.
+  # nothing at all - silently. The job is a checkout, one npm package, two apt
+  # packages and a handful of Lua runs, about a minute, so running it on a push
+  # that changed only Go code costs less than that failure mode.
   push:
     branches:
       - main
@@ -24,9 +24,12 @@ on:
   # Note for branch protection: if `test` is ever made a required check, this
   # filter means it never reports on a PR that does not touch edge/, which
   # blocks the merge. Drop the filter before requiring the check.
+  # testdata/st-v1 is the /st/v1 contract golden the Lua suite reads too
+  # (edge/tests/contract_test.lua), so a change there must run it.
   pull_request:
     paths:
       - 'edge/**'
+      - 'testdata/st-v1/**'
       - '.github/workflows/edge.yml'
 
 permissions:
@@ -70,6 +73,33 @@ jobs:
       # error in a file no test happens to require.
       - name: Syntax check
         run: node tools/lua.js tests/syntax.lua
+
+      # The hub runs C Lua 5.3, not fengari, so the same suite runs under the
+      # real interpreter as well: integer/float formatting, string library
+      # corners and error messages are where the two could disagree. Run from
+      # edge/ (the job's working directory): the runner and the contract
+      # tests resolve tests/, src/ and ../testdata relative to it.
+      - name: Install Lua 5.3 and luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lua5.3 lua-check
+          lua5.3 -v
+          luacheck --version
+
+      - name: Test (Lua 5.3)
+        run: lua5.3 tests/run.lua
+
+      - name: Syntax check (Lua 5.3)
+        run: lua5.3 tests/syntax.lua
+
+      # Settings, globals and the reasons for them are in edge/.luacheckrc.
+      - name: luacheck
+        run: luacheck --codes src tests
+
+      # profiles/*.yml are generated from tools/profile-template.yml; a hand
+      # edit on one side only would ship a profile the template disagrees with.
+      - name: Profiles in sync with the template
+        run: npm run check-profiles
 
   package:
     # Only ever runs for an `edge-v*` tag. The `paths:` filter above does not

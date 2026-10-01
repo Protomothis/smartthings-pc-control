@@ -64,7 +64,7 @@ local function device_init(driver, device)
   poll.start(driver, device)
 end
 
-local function device_added(driver, device)
+local function device_added(_driver, device)
   log.info("added " .. device.id)
   -- A device that is being added was created by this driver run, so it is on
   -- the current profile: record the name now (platform notes "프로필과 화면 생성", the hub does not always
