@@ -92,6 +92,7 @@ Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드
 - CI: `milestone/**` 푸시에도 vet·test, 릴리스 전 vet·test, `-` 붙은 태그는 시험판, Edge 릴리스는 Latest가 되지 않음 (#119)
 - Core Audio·WinRT vtable 호출 래퍼가 unsafe.Pointer 규칙을 어겨 스택 이동 때 메모리를 망가뜨릴 수 있던 것을 `//go:uintptrescapes`로 고쳤습니다 (#121)
 - 앱: 탭마다 `formTab` + 저장 경로 하나(`forms.go`), 클릭으로 시작하는 서비스 호출은 `runAsync` 하나, `gui.go`를 탭별 파일로 나누고 서비스 클라이언트를 인터페이스 뒤로, 번역은 `gui/locales/{ko,en}.json`(키·서식 일치 테스트). 고루틴의 위젯 읽기 경합도 고쳤습니다 (#128)
+- 서비스: 설정·로그·장치 상태·사용자 세션·예약을 `internal/config` · `internal/logx` · `service/devstate` · `service/session` · `service/power`로 나누고, 명령 경로·`/api` 인증·동작 오류 매핑·속도 제한기를 하나씩으로 합쳤습니다. 절전·잠금은 PowerShell 대신 `SetSuspendState`·`WTSDisconnectSession`, 남은 외부 도구는 System32 절대 경로로 실행하고, 유예 토스트도 PC 알림과 같은 경로로 띄워 go-toast를 뺐습니다 (#127)
 
 ## [v1.1.2] - 2026-09-28
 
