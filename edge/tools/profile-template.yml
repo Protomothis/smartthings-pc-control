@@ -10,7 +10,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v3, pc-tv.v3, pc-battery.v3, pc-tv-battery.v3
+#   __NAME__       the profile name - pc.v4, pc-tv.v4, pc-battery.v4, pc-tv-battery.v4
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -25,10 +25,10 @@
 #
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
-# twenty-first one with a placeholder for a name. The older generations stay
-# in profiles/, frozen, for the devices not yet migrated: the v1 files (pc.yml
-# and pc-<style>.yml) and the twenty v2 files (pc*-v2.yml), which this template
-# made until pcMessage replaced the standard notification pair (pc.v3).
+# twenty-first one with a placeholder for a name. The published older
+# generation stays in profiles/, frozen, for the devices not yet migrated: the
+# v1 files (pc.yml and pc-<style>.yml). The v2 and v3 files this template made
+# were never published and are gone (profiles.UNSHIPPED_VERSIONS).
 #
 # The capability ORDER below is the reading order on screen: the app collects
 # every state-only row of our own capabilities into one card and every
@@ -88,12 +88,11 @@ components:
       # #114: what runs on the PC (the opt-in watch list).
       - id: numbersystem53811.pcactivity
         version: 1
-      # #108: "PC에 메시지 보내기" and "PC에서 소리내어 읽기" - two text fields
-      # on the detail view and in the routine actions. Our own capability
-      # since pc.v3: the standard `notification` / `speechSynthesis` of pc.v2
-      # showed Samsung's labels ("텍스트 표시", "음성 합성"), which a device
-      # configuration cannot override (platform notes "표준 capability").
-      - id: numbersystem53811.pcmessage
+      # #108: "PC에 메시지 보내기" - one text field on the detail view and in
+      # the routine actions. Our own capability: the standard `notification`
+      # showed Samsung's label ("텍스트 표시"), which a device configuration
+      # cannot override (platform notes "표준 capability").
+      - id: numbersystem53811.pcnotify
         version: 1
     categories:
       - name: __CATEGORY__

@@ -128,7 +128,7 @@
 | 볼륨 | `audioVolume` | 표준 | 상세 화면 슬라이더 |
 | 음소거 | `audioMute` | 표준 | 토글 |
 | 미디어 | `mediaPlayback` + `mediaTrackControl` | 표준 | 재생/일시정지, 이전/다음 버튼 |
-| PC 알림 | 커스텀 `pcMessage`(`numbersystem53811.pcmessage`): `send(text)` · `speak(text)`, 속성 없음. 처음 계획한 표준 `notification`·`speechSynthesis`는 앱이 "텍스트 표시"·"음성 합성"으로 보여 줘서 바꿨다(아래) | 커스텀 | 루틴 동작과 상세 화면의 문구 입력 줄 둘: "PC에 메시지 보내기", "PC에서 소리내어 읽기" |
+| PC 알림 | 커스텀 `pcNotify`(`numbersystem53811.pcnotify`): `send(text)`, 속성 없음. 처음 계획한 표준 `notification`은 앱이 "텍스트 표시"로 보여 줘서 바꿨다(아래) | 커스텀 | 루틴 동작과 상세 화면의 문구 입력 줄 하나: "PC에 메시지 보내기" |
 
 - 표준 capability는 정의 캐시 문제가 없고 앱 기본 UI를 그대로 쓴다. SmartThings에 연결된 음성 비서가
   볼륨을 인식하는지는 Dev 채널에서 확인한다.
@@ -138,20 +138,20 @@
   `pc*.v1`은 `KNOWN`에 넣어 자동 이전한다(§6.6 규칙). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
-- **PC 알림(#108):** `pcMessage.send(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings"),
-  `pcMessage.speak(text)` → `{text, speak: true}`. 제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도 —
-  정의의 `maxLength`와 입력 줄의 `range [1, 200]`도 같은 200이다). `features`에 "notify"가 있어야 보낸다. 결과는
-  `pcInfo.message`에만 쓴다(루틴이 자주 보낼 수 있어 요약 줄을 덮지 않는다): 보냈으면 "PC에 메시지를 보냈습니다"(읽기는
-  "PC에서 읽었습니다"), 옛 서비스 "서비스 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐", `409 no_user_session` "사용자 없음",
-  `429` "잠시 후 다시". 속성이 없어 칠할 줄이 없다.
-- **왜 표준이 아니라 `pcMessage`인가:** 처음에는 표준 `notification`(`deviceNotification`, live)과 `speechSynthesis`(`speak`,
-  proposed)로 충분하다고 보았다 — 둘 다 detailView와 `automation.actions`에 `textField`가 있고 속성도 없다. 그런데 휴대폰은
-  이 줄을 삼성의 번역으로 "텍스트 표시", "음성 합성"이라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의
-  라벨을 바꿀 방법이 없다(플랫폼 노트 "표준 capability"). "PC에 메시지 보내기"라고 읽히려면 라벨이 우리 번역 파일에 있어야
-  하므로 명령 둘짜리 커스텀 capability를 만들었다. 모양은 표준 `notification`을 그대로 따른다(`textField` + `argumentType:
-  "string"`, 인자 하나). 새로 만드는 capability라 정의 캐시 문제는 없다. 화면이 바뀌므로 프로필은 `pc.v3`이다(§14).
-- `pc.v2`(Dev 채널)의 장치를 위해 드라이버는 표준 두 명령의 핸들러도 계속 등록한다. 첫 `init`에서 v3로 옮겨지지만, 허브가
-  이전을 거절하면 그 구동 동안은 v2에 남기 때문이다. v2의 루틴 동작 "텍스트 표시"는 v3로 옮긴 뒤 사라지므로 다시 고른다.
+- **PC 알림(#108):** `pcNotify.send(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings").
+  제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도 — 정의의 `maxLength`와 입력 줄의 `range [1, 200]`도
+  같은 200이다). `features`에 "notify"가 있어야 보낸다. 결과는 `pcInfo.message`에만 쓴다(루틴이 자주 보낼 수 있어 요약 줄을
+  덮지 않는다): 보냈으면 "PC에 메시지를 보냈습니다", 옛 서비스 "서비스 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐",
+  `409 no_user_session` "사용자 없음", `429` "잠시 후 다시". 속성이 없어 칠할 줄이 없다.
+- **왜 표준이 아니라 `pcNotify`인가:** 처음에는 표준 `notification`(`deviceNotification`, live)으로 충분하다고 보았다 —
+  detailView와 `automation.actions`에 `textField`가 있고 속성도 없다. 그런데 휴대폰은 이 줄을 삼성의 번역으로 "텍스트
+  표시"라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의 라벨을 바꿀 방법이 없다(플랫폼 노트 "표준
+  capability"). "PC에 메시지 보내기"라고 읽히려면 라벨이 우리 번역 파일에 있어야 하므로 명령 하나짜리 커스텀 capability를
+  만들었다. 모양은 표준 `notification`을 그대로 따른다(`textField` + `argumentType: "string"`, 인자 하나). 새로 만드는
+  capability라 정의 캐시 문제는 없다. 프로필은 `pc.v4`다(§14).
+- **소리내어 읽기는 없다.** Dev 채널에서는 `pc.v2`가 표준 `notification`·`speechSynthesis`를, `pc.v3`가 `send`·`speak` 둘짜리
+  `pcMessage`를 썼지만 읽기 기능을 없애기로 하면서 정의가 바뀌어 새 id `pcnotify`가 됐다. 둘 다 공개된 적이 없으므로 그 핸들러는
+  남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 v4로 옮겨지고, 그 루틴 동작은 사라지므로 다시 고른다.
 
 ## 6. 텔레그램
 

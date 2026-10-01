@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcmessage",
+  "id": "numbersystem53811.pcnotify",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -14,15 +14,6 @@
         "argumentType": "string",
         "range": [1, 200]
       }
-    },
-    {
-      "label": "{{i18n.commands.speak.label}}",
-      "displayType": "textField",
-      "textField": {
-        "command": "speak",
-        "argumentType": "string",
-        "range": [1, 200]
-      }
     }
   ],
   "automation": {
@@ -33,15 +24,6 @@
         "displayType": "textField",
         "textField": {
           "command": "send",
-          "argumentType": "string",
-          "range": [1, 200]
-        }
-      },
-      {
-        "label": "{{i18n.commands.speak.label}}",
-        "displayType": "textField",
-        "textField": {
-          "command": "speak",
           "argumentType": "string",
           "range": [1, 200]
         }

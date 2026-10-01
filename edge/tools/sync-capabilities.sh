@@ -36,6 +36,11 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
+# and, once the development device has moved from `pc*.v3` to `pc*.v4`
+# (pcMessage, with read-aloud, gave way to pcNotify; it was never published):
+#
+#   smartthings capabilities:delete numbersystem53811.pcmessage
+#
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
 #   - authenticated (CLI 2.x has no `login`; the first command opens a browser),
@@ -45,7 +50,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity pcMessage)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity pcNotify)
 VERSION=1
 TAGS=(ko en)
 

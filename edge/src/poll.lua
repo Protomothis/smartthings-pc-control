@@ -55,7 +55,9 @@ poll.LAST_SEEN_STEP = 60
 -- pair). pcMessage itself has no attribute to paint, but a device on its new
 -- profile starts with an empty cloud record, and the rule is one generation per
 -- capability set, so every row goes out once more.
-poll.ROWS_VERSION = "3"
+-- "4" - the move to `pc.v4` (pcNotify, send only, in place of pcMessage).
+-- Again nothing new to paint, again a new profile and a new capability set.
+poll.ROWS_VERSION = "4"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status

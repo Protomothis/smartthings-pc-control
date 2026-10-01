@@ -165,14 +165,10 @@ local STRINGS = {
     en = "Nothing to send",
   },
   -- The confirmation a message that went out leaves on `pcInfo.message`:
-  -- `pcMessage` has no row of its own to answer on.
+  -- `pcNotify` has no row of its own to answer on.
   notify_sent = {
     ko = "PC에 메시지를 보냈습니다",
     en = "Message sent to the PC",
-  },
-  notify_spoken = {
-    ko = "PC에서 읽었습니다",
-    en = "Read aloud on the PC",
   },
 
   -- #113: a routine (or a stale list) asked for a slot the PC has no preset in.

@@ -768,10 +768,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc-tv.v3")
+  local device = device_on_profile("pc-tv.v4")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v3", "the style is kept")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v3" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v4", "the style is kept")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v4" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -780,15 +780,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v3")
+  local device = device_on_profile("pc-battery.v4")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v3")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v4")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v3")
+  local device = device_on_profile("pc.v4")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -805,7 +805,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v3")
+  local device = device_on_profile("pc.v4")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -820,29 +820,34 @@ end
 
 function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   -- The persisted answer is what `ensure` reads for a name without a battery
-  -- half: a v1 name, or a plain v2 name whose statuses said "battery" just
+  -- half: a v1 name, or a plain v2/v3 name whose statuses said "battery" just
   -- before the update.
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v3")
+  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v4")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v3")
-  -- pcMessage: a v2 battery name keeps its half without the field.
+  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v4")
+  -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v3")
+  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v4")
+  local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
+  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v4")
+  local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
+  plain_v3:set_field(profiles.BATTERY_FIELD, true)
+  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v4")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v3", "polled-laptop")
+  local device = device_on_profile("pc.v4", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v3")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v4")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -852,11 +857,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v3", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v4", "pushed-laptop")
   poll.emit(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v3", "pushed-desktop")
+  local desktop = device_on_profile("pc.v4", "pushed-desktop")
   poll.emit(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
@@ -870,8 +875,8 @@ local function with_notify(opts, fn)
   opts = opts or {}
   local sent = {}
   local original_notify, original_once = client.notify, poll.once
-  client.notify = function(_, text, speak)
-    sent[#sent + 1] = { text = text, speak = speak }
+  client.notify = function(_, text, ...)
+    sent[#sent + 1] = { text = text, extra = select("#", ...) }
     if opts.ok == false then
       return false, opts.body, opts.kind
     end
@@ -897,20 +902,14 @@ function T.test_the_text_is_cleaned_and_cut_to_the_services_limit()
   h.assert_equal(long:sub(-3), "…")
 end
 
-function T.test_pc_message_send_is_a_toast_and_speak_reads_it_aloud()
-  -- The screen's two text fields: `pcMessage.send(text)` and `.speak(text)`.
+function T.test_pc_notify_send_is_a_toast()
+  -- The screen's one text field: `pcNotify.send(text)`, text only.
   local device = device_with(status_v12())
-  local handlers = handlers_for(caps.MESSAGE)
   local sent = with_notify(nil, function()
-    handlers.send(driver, device, { args = { text = "현관문이 열렸습니다" } })
-    h.assert_equal(info_message(device), "PC에 메시지를 보냈습니다")
-    handlers.speak(driver, device, { args = { text = "저녁 먹자" } })
-    h.assert_equal(info_message(device), "PC에서 읽었습니다")
+    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "현관문이 열렸습니다" } })
   end)
-  h.assert_deep_equal(sent, {
-    { text = "현관문이 열렸습니다", speak = false },
-    { text = "저녁 먹자", speak = true },
-  })
+  h.assert_deep_equal(sent, { { text = "현관문이 열렸습니다", extra = 0 } })
+  h.assert_equal(info_message(device), "PC에 메시지를 보냈습니다")
   h.assert_nil(info_summary(device), "a sent message leaves the summary row alone")
 end
 
@@ -918,61 +917,53 @@ function T.test_the_confirmation_follows_the_language()
   local device = device_with(status_v12())
   device.preferences.language = "en"
   with_notify(nil, function()
-    handlers_for(caps.MESSAGE).send(driver, device, { args = { text = "hi" } })
+    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "hi" } })
     h.assert_equal(info_message(device), "Message sent to the PC")
-    handlers_for(caps.MESSAGE).speak(driver, device, { args = { text = "hi" } })
-    h.assert_equal(info_message(device), "Read aloud on the PC")
   end)
 end
 
-function T.test_pc_message_handles_exactly_its_two_commands()
+function T.test_pc_notify_handles_exactly_its_one_command()
   local names = {}
-  for name in pairs(handlers_for(caps.MESSAGE)) do
+  for name in pairs(handlers_for(caps.NOTIFY)) do
     names[#names + 1] = name
   end
   table.sort(names)
-  h.assert_deep_equal(names, { "send", "speak" })
+  h.assert_deep_equal(names, { "send" })
+end
+
+function T.test_no_read_aloud_or_standard_notification_handler_is_left()
+  -- Read-aloud is gone, and with it pcMessage and the standard pair of the
+  -- unpublished v2 profiles: nothing the driver registers can speak.
+  local handlers = driver.capability_handlers or {}
+  h.assert_nil(handlers["notification"], "the standard notification of pc.v2")
+  h.assert_nil(handlers["speechSynthesis"], "the standard speechSynthesis of pc.v2")
+  h.assert_nil(handlers["numbersystem53811.pcmessage"], "pcMessage of pc.v3")
+  for id, by_command in pairs(handlers) do
+    h.assert_nil(by_command.speak, tostring(id) .. " still handles speak")
+  end
 end
 
 function T.test_a_long_message_is_cut_to_the_services_limit_before_it_goes_out()
   -- The capability caps the text at 200 too, but the driver cuts after
-  -- cleaning whatever arrives - and the v2 standard pair allows 255 and 1000.
+  -- cleaning whatever arrives.
   local device = device_with(status_v12())
   local sent = with_notify(nil, function()
-    handlers_for(caps.MESSAGE).send(driver, device, { args = { text = string.rep("가", 250) } })
-    handlers_for("speechSynthesis").speak(driver, device, { args = { phrase = string.rep("a", 900) } })
+    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = string.rep("가", 250) } })
   end)
-  h.assert_equal(#sent, 2)
-  for _, message in ipairs(sent) do
-    local count = select(2, message.text:gsub("[\1-\127\194-\244][\128-\191]*", ""))
-    h.assert_equal(count, 200)
-    h.assert_equal(message.text:sub(-3), "…")
-  end
+  h.assert_equal(#sent, 1)
+  local count = select(2, sent[1].text:gsub("[\1-\127\194-\244][\128-\191]*", ""))
+  h.assert_equal(count, 200)
+  h.assert_equal(sent[1].text:sub(-3), "…")
 end
 
-function T.test_the_standard_pair_of_the_v2_profiles_still_goes_out()
-  -- A device the hub refused to move off v2 keeps its old text rows, and they
-  -- send the standard commands with the platform's argument names.
-  local device = device_with(status_v12())
-  local sent = with_notify(nil, function()
-    handlers_for("notification").deviceNotification(driver, device,
-      { args = { notification = "현관문이 열렸습니다" } })
-    handlers_for("speechSynthesis").speak(driver, device, { args = { phrase = "저녁 먹자" } })
-  end)
-  h.assert_deep_equal(sent, {
-    { text = "현관문이 열렸습니다", speak = false },
-    { text = "저녁 먹자", speak = true },
-  })
-end
-
-function T.test_the_notify_body_has_no_title_and_speak_only_when_asked()
+function T.test_the_notify_body_is_the_text_alone()
+  -- No `title` (the service's default "SmartThings" says where it came from)
+  -- and never `speak`.
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
   local deps, sent = recording_http('{"ok":true}')
-  client.notify(device, "안녕", false, deps)
-  client.notify(device, "안녕", true, deps)
+  client.notify(device, "안녕", deps)
   h.assert_equal(sent.urls[1], "http://192.168.1.20:5001/st/v1/notify")
   h.assert_deep_equal(sent.bodies[1], { text = "안녕" })
-  h.assert_deep_equal(sent.bodies[2], { text = "안녕", speak = true })
 end
 
 function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
@@ -988,7 +979,7 @@ function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
   for i, case in ipairs(cases) do
     local device = device_with(case.status)
     local sent = with_notify(case.service, function()
-      handlers_for(caps.MESSAGE).send(driver, device, { args = { text = "hi" } })
+      handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "hi" } })
     end)
     h.assert_equal(#sent, case.sends, "case " .. i .. " sends")
     h.assert_equal(info_message(device), case.message, "case " .. i)
@@ -999,8 +990,8 @@ end
 function T.test_an_empty_notification_is_not_sent()
   local device = device_with(status_v12())
   local sent = with_notify(nil, function()
-    handlers_for(caps.MESSAGE).speak(driver, device, { args = { text = " \n " } })
-    handlers_for(caps.MESSAGE).send(driver, device, { args = {} })
+    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = " \n " } })
+    handlers_for(caps.NOTIFY).send(driver, device, { args = {} })
   end)
   h.assert_equal(#sent, 0)
   h.assert_equal(info_message(device), "보낼 문구 없음")

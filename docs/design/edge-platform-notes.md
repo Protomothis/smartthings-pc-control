@@ -21,7 +21,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`.
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`, `pcnotify`로 바뀜)도 개발 장치가 `pc*.v4`로 옮겨진 뒤 지운다.
 
 ## 프로필과 화면 생성
 
@@ -90,9 +90,9 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - **`notification`**(status `live`): 명령 `deviceNotification(notification: string, maxLength 255)`, 속성 없음. 프레젠테이션에 detailView `textField`(라벨 "텍스트 표시")와 `automation.actions`의 `textField`가 **둘 다** 있다 — 루틴 동작으로도, 장치 화면의 입력 줄로도 나온다.
 - **`speechSynthesis`**(status `proposed`): 명령 `speak(phrase: string, maxLength 1000)`, 속성 없음. 프레젠테이션은 detailView `textField` + `automation.actions` `textField`. `proposed`라 루틴 동작 목록에 실제로 나오는지는 Dev 채널 실측 대기(media-notify.md §16).
 - **표준 capability의 라벨은 장치 쪽에서 바꿀 수 없다**(2026-09-30, 문서 확인). 휴대폰은 표준 capability의 줄·루틴 동작 이름을 삼성의 번역으로 쓴다 — `notification`은 "텍스트 표시", `speechSynthesis`는 "음성 합성". 프로필에도, 임베디드 장치 구성(device configuration)에도 표준 capability의 라벨이나 i18n을 덮어쓰는 자리가 없다. 우리가 문구를 정할 수 있는 것은 번역 파일을 올리는 자기 네임스페이스의 capability뿐이다.
-- 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"·"PC에서 소리내어 읽기"는 커스텀 `pcMessage`(`send(text)`, `speak(text)`, 속성 없음)로 옮겼다(media-notify.md §5). 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. **속성이 없는 커스텀 capability도 정의로 받아들여진다고 보고 만든다**(표준 `notification`이 그렇다) — 계정에서 거절되면 쉬는 값 `"none"`인 문자열 속성(`lastMessage`)을 더한다. 빈 문자열은 쓰지 않는다.
+- 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"는 커스텀 `pcNotify`(`send(text)`, 속성 없음)로 옮겼다(media-notify.md §5). 소리내어 읽기(`speak`)까지 있던 `pcMessage`는 Dev 채널에서만 쓰였고, 읽기 기능을 없애면서 정의가 바뀌므로 새 id가 됐다. 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. **속성이 없는 커스텀 capability도 정의로 받아들여진다고 보고 만든다**(표준 `notification`이 그렇다) — 계정에서 거절되면 쉬는 값 `"none"`인 문자열 속성(`lastMessage`)을 더한다. 빈 문자열은 쓰지 않는다.
 - 표준은 문구가 앱의 것이어도 괜찮은 곳(스위치, 볼륨, 미디어 버튼, 배터리)에만 쓴다.
-- `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고, 드라이버는 핸들러 등록을 pcall로 감싼다(init.lua `add_standard`). v2 장치를 위해 남겨 둔 `notification`·`speechSynthesis` 핸들러가 이 길로 등록된다.
+- `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고 등록을 pcall로 감싸야 한다. (v2 장치용으로 남겼던 `notification`·`speechSynthesis` 핸들러는 v2가 공개되지 않아 지웠다.)
 
 ## 번역
 

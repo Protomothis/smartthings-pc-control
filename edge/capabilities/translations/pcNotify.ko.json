@@ -1,0 +1,18 @@
+{
+  "tag": "ko",
+  "label": "PC 알림",
+  "description": "PC 화면에 알림을 띄웁니다.",
+  "attributes": {},
+  "commands": {
+    "send": {
+      "label": "PC에 메시지 보내기",
+      "description": "문구를 PC 화면에 알림(토스트)으로 띄웁니다. 200자까지.",
+      "arguments": {
+        "text": {
+          "label": "메시지",
+          "description": "PC에 띄울 문구(200자까지)"
+        }
+      }
+    }
+  }
+}
