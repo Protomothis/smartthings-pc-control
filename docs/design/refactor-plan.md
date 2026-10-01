@@ -111,14 +111,14 @@ v1.2.0 / Edge 1.1.0 개발로 범위가 크게 늘어난 뒤 코드·테스트·
 |---|---|---|
 | Go (서비스) | 유지 | 단일 exe, Windows 서비스·API 바인딩에 적합 |
 | Fyne (데스크톱 앱) | **유지, v2.0에서 재검토** | 안정적으로 동작하고 상태 모델 분리가 이미 시작됨. 단점: cgo/MinGW 필요, OpenGL 필요(RDP·GPU 없는 VM 위험), 스위치·접근성 약함 |
-| WebUI (`service/web/settings.html`) | 역할 결정 필요 | 데스크톱 앱과 설정 화면이 중복. 당장은 원격 필수 기능으로 동결 권장. v2.0에서 WebView2로 단일 UI 통합 PoC |
+| WebUI (`service/web/settings.html`) | **원격 접속용으로 축소** (2026-10-01 결정) | 정본 설정 화면은 데스크톱 앱. WebUI는 다른 기기의 브라우저에서 꼭 필요한 것(상태, 전원 명령, 예약, 핵심 설정)만 컴팩트하게 남기고 나머지는 제거. v1.3.0 작업 |
 | PowerShell 호출(14곳) | 단계적 제거 | 느리고(호출당 약 1초), SYSTEM에서 PATH 탐색. Windows API로 대체 |
 | go-toast | 제거 | 방치됨, 문자열 삽입 방식 |
 | go-ole | 당분간 유지 | SAPI에서만 사용. COM 공통 코드를 `internal/winapi/com` 하나로 합친 뒤 재검토 |
 | Lua Edge 드라이버 | 유지(필수) | SmartThings 요구 |
 | fengari + bun (Lua 테스트) | 유지 + 실제 Lua CI 추가 | 로컬은 빠르고 충분, 허브와의 차이는 CI의 lua5.3이 잡는다 |
 | 릴리스 파이프라인(서명 매니페스트) | 유지 | 0-1, 0-2만 고치면 된다. Authenticode 서명(SmartScreen 경고 제거)은 비용 대비 별도 결정 |
-| 브랜치 흐름 | 단순화 | develop 제거, main + 마일스톤 + feature |
+| 브랜치 흐름 | 단순화 (완료) | develop 제거, main + 마일스톤 + feature. 병합된 워크트리 54개·로컬 브랜치 91개·원격 브랜치 8개 정리(2026-10-01) |
 
 ## 5. 권장 순서
 
