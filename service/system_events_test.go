@@ -121,7 +121,10 @@ func newFakeReleaseServer(t *testing.T, tag string) *fakeReleaseServer {
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.hits.Add(1)
 		tag := s.tag.Load().(string)
-		w.Write([]byte(`{"tag_name":"` + tag + `","html_url":"https://x/releases/` + tag + `","assets":[]}`))
+		// The release list, newest first, as GET /releases returns it: an
+		// Edge driver release on top must not hide the app's own (#119).
+		w.Write([]byte(`[{"tag_name":"edge-v9.9.9","html_url":"https://x/releases/edge","assets":[]},` +
+			`{"tag_name":"` + tag + `","html_url":"https://x/releases/` + tag + `","assets":[]}]`))
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -165,8 +168,9 @@ func TestUpdateCheckerNotifiesOncePerTag(t *testing.T) {
 	c.check(context.Background())
 	expectNoNotification(t, events)
 
-	// An older or equal tag never notifies and does not touch the state.
-	for _, tag := range []string{"v0.3.4", "v0.3.0", "garbage"} {
+	// An older or equal tag never notifies and does not touch the state,
+	// and neither does a newer rc tag (only plain vX.Y.Z is offered, #119).
+	for _, tag := range []string{"v0.3.4", "v0.3.0", "garbage", "v0.9.0-rc1"} {
 		srv.tag.Store(tag)
 		if c.check(context.Background()) {
 			t.Errorf("tag %q emitted", tag)
@@ -175,6 +179,20 @@ func TestUpdateCheckerNotifiesOncePerTag(t *testing.T) {
 	expectNoNotification(t, events)
 	if st := loadState(path); st.LastNotifiedTag != "v0.4.1" {
 		t.Errorf("last_notified_tag after older tags = %q", st.LastNotifiedTag)
+	}
+}
+
+// An rc install is offered its final release (#119).
+func TestUpdateCheckerOffersReleaseToRC(t *testing.T) {
+	srv := newFakeReleaseServer(t, "v0.4.0")
+	events := captureNotifications(t)
+	c := newUpdateChecker(filepath.Join(t.TempDir(), "state.json"), "v0.4.0-rc3")
+	c.url = srv.URL
+	if !c.check(context.Background()) {
+		t.Fatalf("v0.4.0 not offered to v0.4.0-rc3")
+	}
+	if ev := expectNotification(t, events, "system.update_available"); ev.Fields["version"] != "v0.4.0" || ev.Fields["current"] != "v0.4.0-rc3" {
+		t.Errorf("fields = %v", ev.Fields)
 	}
 }
 

@@ -22,9 +22,10 @@ import (
 // fast, but a stalled connection must not hang the progress dialog forever).
 const downloadTimeout = 10 * time.Minute
 
-// checkLatestRelease asks GitHub for the newest published release. The
-// request, asset lookup and version comparison live in internal/release so
-// the service can share them for system.update_available.
+// checkLatestRelease asks GitHub for the newest published app release
+// (plain vX.Y.Z, no prerelease, no Edge driver tag; #119). The request,
+// selection, asset lookup and version comparison live in internal/release
+// so the service can share them for system.update_available.
 func checkLatestRelease() (*release.Info, error) {
 	return release.Latest(context.Background(), &http.Client{Timeout: 8 * time.Second})
 }

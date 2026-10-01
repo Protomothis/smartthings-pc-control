@@ -1,18 +1,26 @@
 name: CI
 
 # Runs vet/test and the same cgo build as the release workflow on every push
-# to develop/main and on pull requests. Besides catching regressions early,
-# this keeps the Go build/module cache warm so a later v* tag build (release.yml)
-# restores it instead of compiling Fyne + cgo from scratch (~8 min cold).
+# to main and the milestone/* integration branches, and on pull requests to
+# main. Besides catching regressions early, this keeps the Go build/module
+# cache warm so a later v* tag build (release.yml) restores it instead of
+# compiling Fyne + cgo from scratch (~8 min cold).
 on:
   push:
     branches:
-      - develop
       - main
+      - 'milestone/**'
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
+
+# A new push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:

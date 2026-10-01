@@ -16,7 +16,6 @@ on:
   # only Go code costs less than that failure mode.
   push:
     branches:
-      - develop
       - main
       - 'milestone/**'
     tags:
@@ -192,6 +191,10 @@ jobs:
           # `edge-v1.1.0-rc1` and friends are channel test builds, not the
           # version users are pointed at.
           prerelease: ${{ contains(github.ref_name, '-rc') }}
+          # Never GitHub's "Latest": that slot belongs to the app's v* release
+          # (/releases/latest, the README badge). An Edge release there hid
+          # v1.1.2 from v1.1.1 apps (#119).
+          make_latest: false
           name: Edge driver ${{ github.ref_name }}
           body_path: release-notes.md
           fail_on_unmatched_files: false
