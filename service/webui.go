@@ -61,7 +61,7 @@ func checkAuth(r *http.Request, secret string) bool {
 
 // checkCSRF validates CSRF protection for POST requests.
 func checkCSRF(r *http.Request) bool {
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		return true
 	}
 	return r.Header.Get("X-Requested-With") == "XMLHttpRequest"
@@ -173,8 +173,9 @@ func StartWebUI(stop chan struct{}) {
 	}
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", bindAddr, webPort),
-		Handler: webUIHandler(webPort, pagesEnabled),
+		Addr:              fmt.Sprintf("%s:%d", bindAddr, webPort),
+		Handler:           webUIHandler(webPort, pagesEnabled),
+		ReadHeaderTimeout: httpReadHeaderTimeout, // gosec G112, see server.go
 	}
 
 	go func() {
@@ -228,7 +229,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
-		if r.Method == "GET" {
+		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprint(w, loginPage)
 			return
@@ -238,7 +239,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 
 	// Login API
 	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -362,7 +363,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -430,11 +431,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		}
 		w.Header().Set("Content-Type", "application/json")
 
-		if r.Method == "GET" {
+		if r.Method == http.MethodGet {
 			json.NewEncoder(w).Encode(getSchedule())
 			return
 		}
-		if r.Method == "POST" {
+		if r.Method == http.MethodPost {
 			if !checkCSRF(r) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
@@ -467,7 +468,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
 			return
 		}
-		if r.Method == "DELETE" {
+		if r.Method == http.MethodDelete {
 			if !checkCSRF(r) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
@@ -609,11 +610,11 @@ func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method == "GET" {
+	if r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, maskedConfig(liveCfg))
 		return
 	}
-	if r.Method == "POST" {
+	if r.Method == http.MethodPost {
 		if !checkCSRF(r) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -736,7 +737,7 @@ func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -769,7 +770,7 @@ type telegramOverride struct {
 // non-POST request yields the zero value.
 func decodeTelegramOverride(r *http.Request) (telegramOverride, error) {
 	var o telegramOverride
-	if r.Method != "POST" || r.Body == nil {
+	if r.Method != http.MethodPost || r.Body == nil {
 		return o, nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))

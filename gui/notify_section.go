@@ -26,7 +26,7 @@ func notifyPCStateFromConfig(cfg Config) notifyPCState {
 
 // applyTo writes the state into cfg.
 func (s notifyPCState) applyTo(cfg *Config) {
-	cfg.NotifyPC = NotifyPCConfig{Enabled: s.Enabled}
+	cfg.NotifyPC = NotifyPCConfig(s)
 }
 
 // dirty reports whether saving would change base.

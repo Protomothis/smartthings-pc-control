@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"syscall"
 	"unsafe"
 
@@ -11,18 +12,13 @@ import (
 // existing window by title and bring it to the front.
 const windowTitle = "SmartThings PC Control"
 
-// instanceMutex is held for the lifetime of the process.
-var instanceMutex windows.Handle
-
 // acquireSingleInstance returns false when another GUI instance is running.
+// The mutex handle is never closed, so the mutex is held for the lifetime
+// of the process.
 func acquireSingleInstance() bool {
 	name, _ := windows.UTF16PtrFromString("SmartThingsPCControl-GUI")
-	h, err := windows.CreateMutex(nil, false, name)
-	if err == windows.ERROR_ALREADY_EXISTS {
-		return false
-	}
-	instanceMutex = h
-	return true
+	_, err := windows.CreateMutex(nil, false, name)
+	return !errors.Is(err, windows.ERROR_ALREADY_EXISTS)
 }
 
 // focusExistingWindow restores and foregrounds the already-running GUI.

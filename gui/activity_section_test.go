@@ -157,7 +157,7 @@ func TestActivityConfigRoundTrip(t *testing.T) {
 
 func TestClientRunningProcesses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/processes" || r.Method != "GET" {
+		if r.URL.Path != "/api/processes" || r.Method != http.MethodGet {
 			http.NotFound(w, r)
 			return
 		}

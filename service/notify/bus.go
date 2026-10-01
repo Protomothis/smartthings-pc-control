@@ -14,8 +14,6 @@ const (
 	// mergeThreshold: once more than this many events are pending, events
 	// with the same Category.Kind are merged into the newest one.
 	mergeThreshold = 50
-	// minSendGap is the throttle: at most one Send per bus per second.
-	minSendGap = time.Second
 	// maxRetries after a failed Send, with backoff below.
 	maxRetries = 3
 	// heldCapacity bounds the quiet-hours/mute backlog (oldest dropped); the
@@ -25,6 +23,13 @@ const (
 	// before cancelling in-flight sends.
 	closeGrace = 5 * time.Second
 )
+
+// MinSendGap is the throttle: at most one Send per bus per MinSendGap
+// (one second, Telegram's per-chat limit). It is a variable only so the
+// service package's tests, which drive a real bus against a fake Bot API,
+// can lower it from an init function; buses read it on every send, so it
+// must not be changed while one is running.
+var MinSendGap = time.Second
 
 // backoff between attempts (attempt n waits backoff[n]) unless the error
 // carries a RetryAfter.
@@ -451,7 +456,7 @@ func (b *Bus) muted(now time.Time) bool {
 	return !b.mutedUntil.IsZero() && now.Before(b.mutedUntil)
 }
 
-// deliver sends ev, spacing sends at least minSendGap apart and retrying
+// deliver sends ev, spacing sends at least MinSendGap apart and retrying
 // failures with backoff (or the error's RetryAfter). It gives up after
 // maxRetries retries or when the bus is cancelled.
 func (b *Bus) deliver(ev Event) {
@@ -485,12 +490,12 @@ func (b *Bus) deliver(ev Event) {
 	}
 }
 
-// throttle waits until minSendGap has passed since the previous send.
+// throttle waits until MinSendGap has passed since the previous send.
 func (b *Bus) throttle() {
 	if b.lastSend.IsZero() {
 		return
 	}
-	if wait := minSendGap - b.now().Sub(b.lastSend); wait > 0 {
+	if wait := MinSendGap - b.now().Sub(b.lastSend); wait > 0 {
 		b.sleep(wait)
 	}
 }

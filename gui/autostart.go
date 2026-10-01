@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -46,7 +47,7 @@ func SetAutostart(on bool) error {
 	}
 	defer k.Close()
 	if !on {
-		if err := k.DeleteValue(runValueName); err != nil && err != registry.ErrNotExist {
+		if err := k.DeleteValue(runValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
 			return err
 		}
 		return nil

@@ -195,14 +195,14 @@ func at(hhmm string) time.Time {
 func TestDefaultConfigCatalogue(t *testing.T) {
 	def := DefaultConfig()
 	on := map[string]bool{
-		"remote.received":         true,
-		"remote.grace_scheduled":  true,
-		"schedule.created":        false,
-		"schedule.cancelled":      false,
-		"schedule.executed":       true,
-		"power.started":           true,
+		"remote.received":        true,
+		"remote.grace_scheduled": true,
+		"schedule.created":       false,
+		"schedule.cancelled":     false,
+		"schedule.executed":      true,
+		"power.started":          true,
 		// #87: on by default now that the message names the reason.
-		"power.stopping": true,
+		"power.stopping":          true,
 		"security.unauthorized":   true,
 		"security.unknown_chat":   true,
 		"system.update_available": true,
