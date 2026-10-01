@@ -33,7 +33,7 @@ func withPorts(t *testing.T, cur int, disk *int) {
 	t.Cleanup(func() { webUIPort.Store(savedCur); diskWebUIPort = savedDisk })
 }
 
-func answeredBy(t *testing.T, c *Client) string {
+func answeredBy(t *testing.T, c serviceAPI) string {
 	t.Helper()
 	cfg, err := c.GetConfig()
 	if err != nil {

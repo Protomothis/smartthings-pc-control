@@ -97,7 +97,7 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 			return
 		}
 		// A new duration while on starts a new period from now.
-		go u.sendAwake(true)
+		u.sendAwake(true)
 	})
 	row.sel.SetSelectedIndex(awakePresetIndex(defaultAwakePreset))
 
@@ -105,7 +105,7 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 		if row.syncing {
 			return
 		}
-		go u.sendAwake(on)
+		u.sendAwake(on)
 	})
 	row.status = widget.NewLabel("")
 	row.status.Importance = widget.LowImportance
@@ -130,37 +130,37 @@ func (u *ui) selectedAwakeMinutes() int {
 	return defaultAwakePreset
 }
 
-// sendAwake turns keep-awake on (for the selected duration) or off. Runs
-// off the UI thread.
+// sendAwake turns keep-awake on (for the selected duration) or off. UI
+// goroutine only: the select is read here, and the request runs through
+// runAsync with the row busy.
 func (u *ui) sendAwake(on bool) {
-	var (
-		a   Awake
-		err error
-	)
-	if on {
-		a, err = u.client.SetAwake(u.selectedAwakeMinutes())
-	} else {
-		a, err = u.client.AwakeOff()
+	minutes := u.selectedAwakeMinutes()
+	var busy func(bool)
+	if row := u.awake; row != nil {
+		busy = busyControls(row.toggle, row.sel)
 	}
-	if err != nil {
-		fyne.Do(func() {
+	runAsync(busy, func() (Awake, error) {
+		if on {
+			return u.client.SetAwake(minutes)
+		}
+		return u.client.AwakeOff()
+	}, func(a Awake, err error) {
+		if err != nil {
 			if errors.Is(err, errAwakeUnsupported) {
 				err = errors.New(u.t("awake.unsupported"))
 			}
 			dialog.ShowError(err, u.win)
-		})
-		// Put the toggle back to whatever the service says.
-		u.loadAwake()
-		return
-	}
-	fyne.Do(func() { u.applyAwake(a) })
+			// Put the toggle back to whatever the service says.
+			background(u.loadAwake)
+			return
+		}
+		u.applyAwake(a)
+	})
 }
 
-// loadAwake polls the service. Runs off the UI thread.
+// loadAwake polls the service. Runs off the UI thread, so u.awake (rebuilt
+// on a language change) is only looked at inside the fyne.Do callbacks.
 func (u *ui) loadAwake() {
-	if u.awake == nil {
-		return
-	}
 	a, err := u.client.GetAwake()
 	if err != nil {
 		if errors.Is(err, errAwakeUnsupported) {

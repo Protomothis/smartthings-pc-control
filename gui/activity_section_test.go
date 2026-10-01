@@ -130,13 +130,13 @@ func TestPickerCandidates(t *testing.T) {
 	}
 }
 
-func TestSTFormCarriesActivity(t *testing.T) {
+func TestShareFormCarriesActivity(t *testing.T) {
 	base := stBaseConfig()
 	base.Activity = ActivityConfig{Watch: []ActivityWatch{
 		{Process: "steam.exe", Label: "Steam"},
 		{Process: "obs64.exe", Label: "OBS"},
 	}}
-	s := stStateFromConfig(base)
+	s := shareStateFromConfig(base)
 	if s.dirty(base) {
 		t.Fatal("a freshly filled section is dirty")
 	}
@@ -144,16 +144,16 @@ func TestSTFormCarriesActivity(t *testing.T) {
 	if base.Activity.Watch[0].Label != "Steam" {
 		t.Error("editing the form wrote into the baseline")
 	}
-	for _, mutate := range []func(*stFormState){
-		func(s *stFormState) { s.Activity.Enabled = true },
-		func(s *stFormState) { s.Activity.Watch[0].Label = "Valve" },
-		func(s *stFormState) { s.Activity.Watch, _ = moveActivity(s.Activity.Watch, 1, -1) },
-		func(s *stFormState) { s.Activity.Watch = nil },
-		func(s *stFormState) {
+	for _, mutate := range []func(*shareFormState){
+		func(s *shareFormState) { s.Activity.Enabled = true },
+		func(s *shareFormState) { s.Activity.Watch[0].Label = "Valve" },
+		func(s *shareFormState) { s.Activity.Watch, _ = moveActivity(s.Activity.Watch, 1, -1) },
+		func(s *shareFormState) { s.Activity.Watch = nil },
+		func(s *shareFormState) {
 			s.Activity.Watch, _ = addActivityProcess(s.Activity.Watch, "code.exe")
 		},
 	} {
-		changed := stStateFromConfig(base)
+		changed := shareStateFromConfig(base)
 		mutate(&changed)
 		if !changed.dirty(base) {
 			t.Errorf("an edit went unnoticed: %+v", changed.Activity)
@@ -167,13 +167,13 @@ func TestSTFormCarriesActivity(t *testing.T) {
 		}
 	}
 	// The saved order is the edited order.
-	moved := stStateFromConfig(base)
+	moved := shareStateFromConfig(base)
 	moved.Activity.Watch, _ = moveActivity(moved.Activity.Watch, 1, -1)
 	if got := moved.applyTo(base).Activity.Watch; got[0].Process != "obs64.exe" || got[1].Process != "steam.exe" {
 		t.Errorf("saved order = %+v", got)
 	}
 	// A blank row the user added and left empty is not a change.
-	s = stStateFromConfig(base)
+	s = shareStateFromConfig(base)
 	s.Activity.Watch = append(s.Activity.Watch, ActivityWatch{})
 	if s.dirty(base) {
 		t.Error("an empty row counts as a change")

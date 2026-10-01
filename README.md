@@ -31,13 +31,13 @@
 - **전환 중 보호** — PC가 꺼지거나 켜지는 동안에는 명령 목록이 `종료 진행 중…`처럼 바뀌고 명령을 보내지 않습니다.
 - **잠들지 않기** — 정한 시간(기본 1시간, 최대 24시간 또는 끌 때까지) 동안 자동 절전을 막습니다. 직접 보낸 종료·절전은 그대로 실행됩니다. 기본 시간은 `config.json`의 `awake.default_minutes`(0 = 끌 때까지), 화면까지 켜 두려면 `awake.keep_display: true`.
 - **노트북 배터리** — 배터리가 있는 PC는 잔량과 충전 상태를 SmartThings · 텔레그램 `/status` · 앱 상태 줄에 보고합니다.
-- **실행 중 앱 감지(선택)** — 감시 목록에 넣은 프로그램이 실행 중이면 `게임 중 · Steam`처럼 종류와 라벨을 SmartThings · 텔레그램 `/status`에 알립니다. 기본은 꺼짐이고, 앱의 네트워크 탭 SmartThings 섹션에서 켜고 목록을 편집합니다(실행 중인 프로그램에서 고르기 지원). `config.json`에서는 `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process`는 경로 없는 `.exe` 파일 이름(대소문자 무시), `label`은 30자 이하, `kind`는 `game` · `stream` · `media` · `work` · `other`, 최대 20개입니다.
+- **실행 중 앱 감지(선택)** — 감시 목록에 넣은 프로그램이 실행 중이면 `게임 중 · Steam`처럼 종류와 라벨을 SmartThings · 텔레그램 `/status`에 알립니다. 기본은 꺼짐이고, 앱의 **공유 탭**에서 켜고 목록을 편집합니다(실행 중인 프로그램에서 고르기 지원). `config.json`에서는 `activity: { enabled, watch: [{ process: "steam.exe", label: "Steam", kind: "game" }] }` — `process`는 경로 없는 `.exe` 파일 이름(대소문자 무시), `label`은 30자 이하, `kind`는 `game` · `stream` · `media` · `work` · `other`, 최대 20개입니다.
 - **볼륨 · 음소거 · 미디어** — 기본 재생 장치의 볼륨(0–100, 올리기/내리기 기본 5)과 음소거를 바꾸고 현재 값을 보고하며, 재생/일시정지 · 정지 · 다음/이전 곡 키를 보냅니다. 로그인한 사용자가 있을 때만 동작합니다(없으면 `409 no_user_session`). 재생 명령은 Windows 미디어 세션(미디어 플라이아웃에 보이는 앱)에 직접 보내므로 `play`와 `pause`가 구분되고, 세션이 없으면 미디어 키로 대신합니다. `/st/v1/command`의 `volume`(value 0–100) · `volumeup`/`volumedown`(value 1–100, 기본 5) · `mute` · `unmute` · `play` · `pause` · `playpause` · `stop` · `next` · `prev`. 끄려면 `config.json`의 `media.enabled: false`(기본 켬, 앱 설정 탭에도 있음). 앱 명령 탭의 **미디어** 카드에서 재생 정보 · ⏮ ⏯ ⏭ · 볼륨 · 음소거를 한곳에서 다룹니다.
-- **재생 정보(선택)** — 재생 중인 미디어의 제목 · 아티스트 · 앨범 · 앱 이름을 SmartThings와 텔레그램 `/np`에 알립니다. 기본은 꺼짐이고, 꺼져 있으면 재생 중/일시정지 여부만 보냅니다. 브라우저는 탭 제목(유튜브 영상 제목 등)이 제목으로 갑니다. 파일 경로 · URL · 썸네일은 보내지 않습니다. `config.json`의 `media.now_playing: true`, 또는 앱 설정 탭의 **재생 정보 공유**. `/st/v1/status`의 `media: {status, title, artist, album, app, updated_at}`, `features`의 `"nowplaying"`.
+- **재생 정보(선택)** — 재생 중인 미디어의 제목 · 아티스트 · 앨범 · 앱 이름을 SmartThings와 텔레그램 `/np`에 알립니다. 기본은 꺼짐이고, 꺼져 있으면 재생 중/일시정지 여부만 보냅니다. 브라우저는 탭 제목(유튜브 영상 제목 등)이 제목으로 갑니다. 파일 경로 · URL · 썸네일은 보내지 않습니다. `config.json`의 `media.now_playing: true`, 또는 앱 **공유 탭**의 **재생 정보 공유**. `/st/v1/status`의 `media: {status, title, artist, album, app, updated_at}`, `features`의 `"nowplaying"`.
 - **PC 알림** — SmartThings 루틴이나 텔레그램 `/say 문구`로 PC 화면에 알림(문구만, 링크·버튼 없음)을 띄웁니다. `config.json`의 `notify_pc: { enabled }`(기본 켬), 앱 **설정 탭 → 미디어·알림**에서 켜고 끄며 [테스트 알림]으로 확인합니다.
 - **프리셋** — 앱 **프리셋 탭**에 등록한 동작(프로그램 · URL · 스크립트, 최대 10개)을 SmartThings나 텔레그램 `/presets` · `/run 이름|번호`에서 슬롯 번호로 실행합니다. 원격은 번호만 보내고 무엇을 실행할지는 이 PC에만 있으며, 로그인한 사용자 권한으로 셸 없이 실행합니다. `config.json`의 `presets: [{slot, name, type, path, args}]` — `program`/`script`는 절대 경로, `url`은 http/https만, 스크립트는 .ps1 · .bat · .cmd.
 - **텔레그램** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다(선택).
-- **데스크톱 앱** — 설정 · 명령 · 예약 · 알림 · 네트워크 · 프리셋 · 로그 탭, 트레이 상주, 한국어/English.
+- **데스크톱 앱** — 명령 · 예약 · 프리셋 · 공유 · SmartThings · 텔레그램 · 설정 · 로그 탭, 트레이 상주, 한국어/English.
 - **서명된 자동 업데이트** — Ed25519 서명 매니페스트로 검증한 릴리스만 설치하고, 실패하면 롤백합니다.
 
 ### 설치
@@ -57,13 +57,13 @@
 
 1. **PC가 켜져 있고 PC Control이 돌고 있는 상태에서** SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**을 누릅니다. 장치를 추가하는 방법은 이 검색뿐입니다.
 2. IP · 포트 · 호스트 이름이 채워진 채 장치가 생기므로, 장치 설정에 **시크릿만** 넣으면 끝입니다.
-3. 장치 정보의 모델 `PC Control · <id 8자리>`는 앱 네트워크 탭의 **이 PC의 ID**와 같은 값이라, PC가 여럿일 때 어느 장치가 어느 PC인지 여기서 맞춰 봅니다.
+3. 장치 정보의 모델 `PC Control · <id 8자리>`는 앱 **SmartThings 탭**의 **이 PC의 ID**와 같은 값이라, PC가 여럿일 때 어느 장치가 어느 PC인지 여기서 맞춰 봅니다.
 
-드라이버는 서비스 **v1.1.0 이상**이 필요하고, **v1.1.1**을 권장합니다(네트워크 탭의 검색 상태 표시와 WoL 어댑터 선택). 허브와 PC는 같은 서브넷에 있어야 하고 네트워크 프로필은 **개인**이어야 합니다. 검색이 안 되면 앱 **네트워크 탭 → SmartThings**의 검색 상태와 마지막 검색 요청 시각부터 확인하세요.
+드라이버는 서비스 **v1.1.0 이상**이 필요하고, **v1.1.1**을 권장합니다(SmartThings 탭의 검색 상태 표시와 WoL 어댑터 선택). 허브와 PC는 같은 서브넷에 있어야 하고 네트워크 프로필은 **개인**이어야 합니다. 검색이 안 되면 앱 **SmartThings 탭**의 검색 상태와 마지막 검색 요청 시각부터 확인하세요.
 
 ### 텔레그램 (선택)
 
-[@BotFather](https://t.me/BotFather)로 봇을 만들고, 앱 **알림 탭**에 토큰을 넣은 뒤 [Chat ID 찾기]로 채팅을 고릅니다. 알림과 명령 제어는 각각 따로 켭니다. 포트 개방이나 웹훅은 필요 없고, **봇 하나에 PC 하나**를 씁니다(같은 토큰을 공유하면 한 PC만 명령을 받습니다).
+[@BotFather](https://t.me/BotFather)로 봇을 만들고, 앱 **텔레그램 탭**에 토큰을 넣은 뒤 [Chat ID 찾기]로 채팅을 고릅니다. 알림과 명령 제어는 각각 따로 켭니다. 포트 개방이나 웹훅은 필요 없고, **봇 하나에 PC 하나**를 씁니다(같은 토큰을 공유하면 한 PC만 명령을 받습니다).
 
 볼륨과 미디어 명령은 `/vol`(현재 값: `볼륨 30% · 음소거 꺼짐 · 스피커`) · `/vol 30` · `/vol +10` · `/vol -10` · `/mute` · `/unmute` · `/play` · `/pause` · `/stop` · `/next` · `/prev` · `/np`(지금 재생 중)입니다. 알림 일시 중지는 `/quiet 30m|2h|off`로 옮겼고, `/mute 2h`처럼 시간을 붙이면 예전처럼 알림을 멈춥니다.
 

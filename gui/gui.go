@@ -1,35 +1,25 @@
 package gui
 
+// The desktop app: the window, its status bar and tabs, and the loops that
+// keep them current. Each tab lives in a file of its own (settings_tab.go,
+// commands_tab.go, schedule_tab.go, notify_tab.go, network_tab.go,
+// presets_tab.go, logs_tab.go); the forms they share are coordinated in
+// forms.go, and every click that calls the service goes through runAsync
+// (async.go) against serviceAPI (service_api.go).
+
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strconv"
-	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/appid"
-	"github.com/Protomothis/smartthings-pc-control/internal/release"
 )
-
-// cmdButtonSize keeps command buttons compact instead of stretching full-width.
-var cmdButtonSize = fyne.NewSize(170, 38)
 
 // defaultWebUIPort is the API port when config.json is absent (SmartThings
 // port 5001 + 1). The live value comes from localWebUIPort().
@@ -48,61 +38,10 @@ func currentWebUIPort() int {
 	return defaultWebUIPort
 }
 
-// Commands shown on the test panel. Destructive ones ask for confirmation
-// before firing, since a test click acts on this very PC.
-var testCommands = []struct {
-	Name        string
-	LabelKey    string
-	Icon        func() fyne.Resource
-	Destructive bool
-}{
-	{"ping", "cmd.ping", theme.ConfirmIcon, false},
-	{"lock", "cmd.lock", theme.AccountIcon, false},
-	{"turnscreenoff", "cmd.screenoff", theme.VisibilityOffIcon, false},
-	{"turnscreenon", "cmd.screenon", theme.VisibilityIcon, false},
-	{"suspend", "cmd.suspend", theme.MediaPauseIcon, true},
-	{"hibernate", "cmd.hibernate", theme.MediaStopIcon, true},
-	{"restart", "cmd.restart", theme.ViewRefreshIcon, true},
-	{"shutdown", "cmd.shutdown", theme.LogoutIcon, true},
-	{"forceshutdown", "cmd.forceshutdown", theme.WarningIcon, true},
-}
-
-// Preset delays (minutes) on the schedule tab. These are the only choices:
-// free-form minute entry was dropped in v0.3.4 (#52).
-//
-// #89: the same sixteen the Edge driver's list offers, up to three days
-// (maxScheduleMinutes in service/server.go). Sixteen radio buttons do not fit
-// on a row, so the tab shows them in a dropdown.
-var schedulePresets = []int{5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320}
-
-// defaultSchedulePreset is preselected on the schedule tab.
-const defaultSchedulePreset = 30
-
-// Grace period choices (seconds) for remote power commands (#51). The
-// settings select shows "Off" first, then these.
-var graceOptions = []int{10, 30, 60, 300, 600, 1800}
-
-// fallbackGraceSeconds is used when the service reports grace enabled but
-// no period (an older service) — matches the service default.
-const fallbackGraceSeconds = 300
-
-// Commands offered for scheduling.
-var scheduleCommands = []struct {
-	Name     string
-	LabelKey string
-}{
-	{"shutdown", "cmd.shutdown"},
-	{"forceshutdown", "cmd.forceshutdown"},
-	{"restart", "cmd.restart"},
-	{"hibernate", "cmd.hibernate"},
-	{"suspend", "cmd.suspend"},
-	{"lock", "cmd.lock"},
-}
-
 type ui struct {
 	app     fyne.App
 	win     fyne.Window
-	client  *Client
+	client  serviceAPI
 	lang    Lang
 	version string
 
@@ -111,6 +50,14 @@ type ui struct {
 	// and stops connTick from re-prompting over it (#98).
 	login atomic.Int32
 	quit  chan struct{}
+
+	// visible is whether the window was on screen at pollLoop's last look,
+	// shownTab the tab in front (mirrors curTab) — both read by pollLoop.
+	// deferContent is set while a minimized start has not shown the window
+	// yet: until then only the tray exists (visibility.go).
+	visible      atomic.Bool
+	shownTab     atomic.Int32
+	deferContent bool
 
 	// Widgets the background pollers update. Rebuilt on language change.
 	status      *widget.Label
@@ -121,6 +68,9 @@ type ui struct {
 	logsLabel   *widget.Label
 	logsScroll  *container.Scroll
 	logsAuto    *widget.Check
+	// logsAutoOn mirrors logsAuto.Checked for pollLoop, which must not read
+	// the widget off the UI goroutine.
+	logsAutoOn atomic.Bool
 	// Schedule tab: big remaining time, the command line under it, and the
 	// cancel button that is only enabled while a schedule is active.
 	schedBig       *widget.RichText
@@ -147,17 +97,18 @@ type ui struct {
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
 	lastBattery  Battery
-	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
-	// SmartThings hub list changes) and the SmartThings section (#70).
-	networkBox  *fyne.Container
-	networkRoot *fyne.Container
-	st          *stSection
+	// SmartThings tab: the WoL/adapter list, the tab root (re-laid out when
+	// the hub list changes) and the SmartThings section (#70); the sharing
+	// tab (share_tab.go).
+	networkBox *fyne.Container
+	stRoot     *fyne.Container
+	st         *stSection
+	share      *shareTab
+	// Settings tab: the service box, browser access and media.enabled
+	// (#104: volume and media-key commands).
 	svcBox      *fyne.Container
 	remoteCheck *toggle
-	// mediaCheck is media.enabled (#104): volume and media-key commands.
-	mediaCheck *toggle
-	// nowPlayingCheck is the media.now_playing opt-in (#117).
-	nowPlayingCheck *toggle
+	mediaCheck  *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -180,19 +131,18 @@ type ui struct {
 	schedText  string
 	trayShown  string
 
-	// Settings: the config as last loaded/saved. Save is enabled only while
-	// the form differs from it; nil until the first successful load. The
-	// notify tab (notify_tab.go) shares the baseline: each tab's Save starts
-	// from it and overwrites only its own fields.
-	settingsBar *saveBar
-	cfgBaseline *Config
-	notify      *notifyTab
+	// forms is the save coordinator (forms.go): the config as last loaded
+	// or saved, and the tabs that edit it. It survives a rebuild.
+	forms  *forms
+	notify *notifyTab
 	// Tab titles without the "•" unsaved marker, the tab shown before the
 	// current selection, and a guard for programmatic SelectIndex calls
-	// (see savebar.go).
+	// (see savebar.go). returnTab is the tab (+1; 0 = none) to go back to
+	// when the service answers again after a forced switch to settings.
 	tabTitles []string
 	curTab    int
 	switching bool
+	returnTab int
 
 	// Logs: every line from the last fetch; the label shows the subset
 	// matching logsFilter. Both touched on the UI thread only.
@@ -250,9 +200,14 @@ func Run(version string, minimized bool) {
 	// scrollbar in either language; see #53.
 	u.win.Resize(fyne.NewSize(640, 800))
 	// Closing the window hides to the system tray (after an unsaved-changes
-	// prompt when needed); Exit lives in the tray menu.
-	u.win.SetCloseIntercept(u.onCloseRequest)
-
+	// prompt when needed, installed by rebuild); Exit lives in the tray menu.
+	//
+	// A minimized start keeps the content out of the window until it is
+	// first shown, so nothing measures text (and loads the fonts) before
+	// someone looks. Gaining focus is the catch-all for every way of
+	// showing it; the tray entries and pollLoop call ensureContent too.
+	u.deferContent = minimized
+	a.Lifecycle().SetOnEnteredForeground(u.ensureContent)
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
@@ -269,207 +224,6 @@ func Run(version string, minimized bool) {
 		u.win.ShowAndRun()
 	}
 	close(u.quit)
-}
-
-// checkForUpdates queries GitHub Releases; on a newer version it notifies
-// the user (dialog on startup, tray notification on periodic checks).
-func (u *ui) checkForUpdates(startup bool) {
-	rel, err := checkLatestRelease()
-	if err != nil || !release.IsNewer(u.version, rel.TagName) {
-		return
-	}
-	// Notify once per discovered version on periodic checks.
-	if !startup && u.app.Preferences().String("update_notified") == rel.TagName {
-		return
-	}
-	u.app.Preferences().SetString("update_notified", rel.TagName)
-
-	fyne.Do(func() {
-		body := fmt.Sprintf(u.t("update.body"), rel.TagName, u.version)
-		u.app.SendNotification(fyne.NewNotification(u.t("update.title"), body))
-		if startup {
-			u.showUpdateDialog(rel)
-		}
-	})
-}
-
-// checkForUpdatesManual is the "Check for updates" button: always reports
-// a result — newer release (update dialog), up to date, or the error.
-// Safe to call from the UI goroutine.
-func (u *ui) checkForUpdatesManual() {
-	go func() {
-		rel, err := checkLatestRelease()
-		fyne.Do(func() {
-			switch {
-			case err != nil:
-				dialog.ShowError(errors.New(u.t("update.checkfailed")+err.Error()), u.win)
-			case release.IsNewer(u.version, rel.TagName):
-				u.showUpdateDialog(rel)
-			case !u.canSelfUpdate():
-				// dev build: version comparison is meaningless, but the
-				// user asked — offer the release page.
-				u.showUpdateDialog(rel)
-			default:
-				dialog.ShowInformation(u.t("update.title"), fmt.Sprintf(u.t("update.uptodate"), u.version), u.win)
-			}
-		})
-	}()
-}
-
-// canSelfUpdate is false for "dev"/empty builds — those may check for
-// releases but must never overwrite themselves.
-func (u *ui) canSelfUpdate() bool {
-	_, ok := release.ParseVersion(u.version)
-	return ok
-}
-
-// showUpdateDialog fetches and verifies the release's signed update
-// manifest (#66) off the UI goroutine, then offers "Update now" when this
-// is a release build and the manifest names an asset for this arch that the
-// installed version may update to. Anything else — dev build, unsigned
-// release, bad signature, min_version gate — falls back to opening the
-// release page. Must be called on the UI goroutine.
-func (u *ui) showUpdateDialog(rel *release.Info) {
-	if !u.canSelfUpdate() {
-		u.showUpdateChoice(rel, nil, nil)
-		return
-	}
-	go func() {
-		m, err := fetchManifest(rel)
-		fyne.Do(func() { u.showUpdateChoice(rel, m, err) })
-	}()
-}
-
-// showUpdateChoice renders the update dialog for rel given the manifest
-// fetch result (m/err both nil for dev builds, which only get the release
-// page). Must run on the UI goroutine.
-func (u *ui) showUpdateChoice(rel *release.Info, m *release.Manifest, err error) {
-	page := rel.HTMLURL
-	if page == "" {
-		page = release.Page
-	}
-	openPage := func() { exec.Command("cmd", "/c", "start", page).Start() }
-
-	body := container.NewVBox(widget.NewLabel(fmt.Sprintf(u.t("update.body"), rel.TagName, u.version)))
-	if pageURL, err := url.Parse(page); err == nil {
-		body.Add(widget.NewHyperlink(u.t("update.releasepage"), pageURL))
-	}
-	note := func(text string) {
-		l := widget.NewLabel(text)
-		l.Wrapping = fyne.TextWrapWord
-		body.Add(l)
-	}
-	pageOnly := func() {
-		dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.open"), u.t("update.later"), body,
-			func(ok bool) {
-				if ok {
-					openPage()
-				}
-			}, u.win)
-	}
-
-	var asset *release.ManifestAsset
-	var assetURL string
-	switch {
-	case !u.canSelfUpdate():
-		// dev build: version comparison is meaningless, never overwrite.
-	case errors.Is(err, release.ErrNoManifest):
-		note(u.t("update.unsigned"))
-	case errors.Is(err, release.ErrBadSignature):
-		note(u.t("update.badsig"))
-	case err != nil:
-		note(u.t("update.checkfailed") + err.Error())
-	case !m.Allows(u.version):
-		note(fmt.Sprintf(u.t("update.minversion"), m.MinVersion))
-	default:
-		var ok bool
-		asset, ok = m.AssetFor(runtime.GOARCH)
-		if ok {
-			assetURL = release.AssetURL(rel, asset.Name)
-		}
-		if !ok || assetURL == "" {
-			asset = nil
-			note(u.t("update.noasset"))
-		}
-	}
-	if asset == nil {
-		pageOnly()
-		return
-	}
-	dialog.ShowCustomConfirm(u.t("update.title"), u.t("update.now"), u.t("update.later"), body,
-		func(ok bool) {
-			if ok {
-				u.startSelfUpdate(rel, m, asset, assetURL)
-			}
-		}, u.win)
-}
-
-// startSelfUpdate downloads the manifest's asset behind a progress dialog,
-// checks its SHA-256/size against the signed manifest, runs the exe's own
-// version check, then hands over to the elevated updater (see
-// selfupdate.go) and quits — the updater waits for this process to exit
-// before swapping the binary. Download errors, a hash mismatch and a
-// declined UAC prompt leave the app running.
-func (u *ui) startSelfUpdate(rel *release.Info, m *release.Manifest, asset *release.ManifestAsset, assetURL string) {
-	status := widget.NewLabel(u.t("update.downloading"))
-	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
-	bar := widget.NewProgressBar()
-	ctx, cancel := context.WithCancel(context.Background())
-	d := dialog.NewCustom(u.t("update.title"), u.t("update.cancel"), container.NewVBox(status, bar), u.win)
-	d.SetOnClosed(cancel)
-	d.Resize(fyne.NewSize(440, 200))
-	d.Show()
-
-	go func() {
-		path, err := downloadUpdate(ctx, assetURL, stagingDir(), rel.TagName, func(done, total int64) {
-			fyne.Do(func() {
-				if total > 0 {
-					bar.SetValue(float64(done) / float64(total))
-					status.SetText(fmt.Sprintf("%s  %s / %s", u.t("update.downloading"), formatBytes(done), formatBytes(total)))
-				} else {
-					status.SetText(fmt.Sprintf("%s  %s", u.t("update.downloading"), formatBytes(done)))
-				}
-			})
-		})
-		if err == nil {
-			// First gate: the bytes must be exactly what the signed
-			// manifest promised. Nothing has executed yet.
-			fyne.Do(func() { status.SetText(u.t("update.checking")) })
-			err = verifyDownloadedHash(path, asset)
-		}
-		if err == nil {
-			fyne.Do(func() { status.SetText(u.t("update.verifying")) })
-			err = verifyDownloadedExe(path, rel.TagName)
-			if err != nil {
-				os.Remove(path)
-			}
-		}
-		if err == nil {
-			// The elevated updater re-verifies everything itself from its
-			// own admin-only copies (#126), so it gets the signed manifest
-			// too.
-			fyne.Do(func() { status.SetText(u.t("update.applying")) })
-			var man, sig string
-			if man, sig, err = stageManifest(filepath.Dir(path), m); err == nil {
-				err = runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d "%s" "%s"`, path, os.Getpid(), man, sig))
-			}
-		}
-		fyne.Do(func() {
-			d.Hide()
-			if err != nil {
-				if ctx.Err() == nil { // user cancel is not an error worth a dialog
-					msg := u.t("update.failed") + err.Error()
-					if errors.Is(err, errHashMismatch) {
-						msg = u.t("update.hashmismatch")
-					}
-					dialog.ShowError(errors.New(msg), u.win)
-				}
-				return
-			}
-			// The elevated updater is waiting for this pid to exit.
-			u.app.Quit()
-		})
-	}()
 }
 
 func (u *ui) t(key string) string { return T(u.lang, key) }
@@ -565,6 +319,27 @@ func (u *ui) setConn(s connState) {
 
 // rebuild recreates the whole window content in the current language.
 func (u *ui) rebuild() {
+	// The form tabs are rebuilt too; their unsaved edits are carried over
+	// as drafts and written into the new widgets below.
+	if u.forms == nil {
+		u.forms = &forms{}
+	}
+	if u.deferContent {
+		// A minimized start: only the tray until the window is first shown
+		// (ensureContent builds the rest). Every setter of a widget creates
+		// its renderer and measures text, so nothing else is built yet.
+		if u.statusText == "" {
+			u.statusText = u.t("status.connecting")
+		}
+		u.setupTray()
+		u.win.SetCloseIntercept(u.onCloseRequest)
+		u.refreshTrayStatus()
+		u.applyConnected(u.connected.Load())
+		return
+	}
+	drafts := u.forms.drafts()
+	u.forms.tabs = nil
+
 	// Only the very first build is "connecting"; on a rebuild (language
 	// change) show the known state so the bar doesn't flash back to it.
 	statusKey := "status.connecting"
@@ -598,13 +373,16 @@ func (u *ui) rebuild() {
 		}
 		u.lang = newLang
 		u.app.Preferences().SetString("lang", string(newLang))
-		// rebuild() replaces every widget with empty ones; keep the
-		// current tab and reload config/status/logs/schedule so the
-		// window doesn't fall back to blank fields and "Connecting...".
+		// rebuild() replaces every widget (the forms keep their edits);
+		// keep the current tab and reload status/logs/schedule so the
+		// window doesn't fall back to "Connecting...". The switch back is
+		// not the user leaving a tab, so it asks nothing.
 		selected := u.tabs.SelectedIndex()
 		u.rebuild()
 		if u.connected.Load() && selected >= 0 && selected < len(u.tabs.Items) {
+			u.switching = true
 			u.tabs.SelectIndex(selected)
+			u.switching = false
 		}
 		go u.initialLoad()
 	})
@@ -635,45 +413,88 @@ func (u *ui) rebuild() {
 	// width is left (and truncates) instead of dictating the window width.
 	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel, langSelect), u.status)
 
-	// Order matters: tabSettings / tabNotify in savebar.go index into this.
-	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.presets"), u.t("tab.logs")}
-	u.tabs = container.NewAppTabs(
-		container.NewTabItemWithIcon(u.tabTitles[0], theme.SettingsIcon(), u.buildSettingsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[1], theme.MediaPlayIcon(), u.buildCommandsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[2], theme.HistoryIcon(), u.buildScheduleTab()),
-		container.NewTabItemWithIcon(u.tabTitles[3], theme.MailSendIcon(), u.buildNotifyTab()),
-		container.NewTabItemWithIcon(u.tabTitles[4], theme.ComputerIcon(), u.buildNetworkTab()),
-		container.NewTabItemWithIcon(u.tabTitles[5], theme.GridIcon(), u.buildPresetsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[6], theme.ListIcon(), u.buildLogsTab()),
-	)
-	u.curTab = 0
+	// In the order of the tab* constants (savebar.go). Titles only, no
+	// icons: eight tabs with icons need about 640 px in Korean and more
+	// than the window's 640 in English; without them both fit (#128).
+	u.tabTitles = make([]string, len(tabKeys))
+	items := make([]*container.TabItem, len(tabKeys))
+	builders := []func() fyne.CanvasObject{
+		tabCommands:    u.buildCommandsTab,
+		tabSchedule:    u.buildScheduleTab,
+		tabPresets:     u.buildPresetsTab,
+		tabShare:       u.buildShareTab,
+		tabSmartThings: u.buildSmartThingsTab,
+		tabTelegram:    u.buildNotifyTab,
+		tabSettings:    u.buildSettingsTab,
+		tabLogs:        u.buildLogsTab,
+	}
+	for i, key := range tabKeys {
+		u.tabTitles[i] = u.t(key)
+		items[i] = container.NewTabItem(u.tabTitles[i], builders[i]())
+	}
+	u.tabs = container.NewAppTabs(items...)
+	u.curTab = tabCommands
+	u.shownTab.Store(tabCommands)
 	u.tabs.OnSelected = u.onTabSelected
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
 	u.setupTray()
+	// SetSystemTrayWindow (in setupTray) installs a plain Hide as the
+	// close intercept; put the unsaved-changes prompt back in front of it.
+	u.win.SetCloseIntercept(u.onCloseRequest)
 	u.refreshTrayStatus()
 	u.applyConnected(u.connected.Load())
+
+	u.forms.restore(drafts)
+	if u.forms.base != nil {
+		u.onConfig(*u.forms.base)
+	}
+	u.refreshDirty()
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
 // the Settings tab (install/start lives there) and basic tray entries stay
 // usable. Must be called on the UI thread.
 func (u *ui) applyConnected(on bool) {
-	for i := 1; i < len(u.tabs.Items); i++ {
+	for _, item := range u.trayNeedsConn {
+		item.Disabled = !on
+	}
+	if u.trayMenu != nil {
+		u.trayMenu.Refresh()
+	}
+	if u.tabs == nil {
+		return // only the tray so far (a minimized start)
+	}
+	// Forced switches, so no unsaved-changes prompt: to the settings tab
+	// while the service is gone, and back to where the user was (the
+	// commands tab after a start) once it answers. The tab is noted before
+	// disabling: AppTabs moves off a tab that gets disabled.
+	if !on && u.curTab != tabSettings && u.returnTab == 0 {
+		u.returnTab = u.curTab + 1
+	}
+	u.switching = true
+	for i := range u.tabs.Items {
+		if i == tabSettings {
+			continue
+		}
 		if on {
 			u.tabs.EnableIndex(i)
 		} else {
 			u.tabs.DisableIndex(i)
 		}
 	}
-	if !on {
+	u.switching = false
+	switch {
+	case !on:
 		// The battery reading comes from the service; without it, say nothing.
 		u.applyBattery(Battery{})
-		// Forced switch: no unsaved-changes prompt (the service is gone).
-		u.switching = true
-		u.tabs.SelectIndex(0)
-		u.switching = false
-		u.curTab = 0
+		u.selectTab(tabSettings)
+	case u.returnTab != 0:
+		back := u.returnTab - 1
+		u.returnTab = 0
+		if u.curTab == tabSettings {
+			u.selectTab(back)
+		}
 	}
 	if u.settingsExtra != nil {
 		if on {
@@ -684,620 +505,6 @@ func (u *ui) applyConnected(on bool) {
 		if u.settingsRoot != nil {
 			u.settingsRoot.Refresh()
 		}
-	}
-	for _, item := range u.trayNeedsConn {
-		item.Disabled = !on
-	}
-	if u.trayMenu != nil {
-		u.trayMenu.Refresh()
-	}
-}
-
-// --- Tabs ---
-
-func (u *ui) buildSettingsTab() fyne.CanvasObject {
-	u.portEntry = widget.NewEntry()
-	u.secretEntry = widget.NewPasswordEntry()
-	// Every edit re-evaluates whether the form differs from the baseline.
-	onEdit := func(string) { u.updateSaveState() }
-	onToggle := func(bool) { u.updateSaveState() }
-	u.portEntry.OnChanged = onEdit
-	u.secretEntry.OnChanged = onEdit
-	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
-	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
-	u.nowPlayingCheck = newToggle(u.t("settings.nowplaying"), onToggle)
-	u.graceValues = append([]int{0}, graceOptions...)
-	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.updateSaveState() })
-
-	u.settingsBar = newSaveBar(u, func() { u.saveSettings(false) })
-	// Nothing to compare against until initialLoad fills the form (the
-	// fields are empty on a language-change rebuild too).
-	u.cfgBaseline = nil
-
-	openWebUI := widget.NewButtonWithIcon(u.t("settings.openwebui"), theme.ComputerIcon(), func() {
-		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
-	})
-
-	restartBtn := widget.NewButtonWithIcon(u.t("settings.restart"), theme.ViewRefreshIcon(), func() {
-		dialog.ShowConfirm(u.t("cmd.confirm.title"), u.t("settings.restart.confirm"), func(ok bool) {
-			if !ok {
-				return
-			}
-			if err := u.client.RestartService(); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.setStatus(u.t("settings.restarting"))
-			u.setConn(connPending)
-		}, u.win)
-	})
-
-	form := widget.NewForm(
-		widget.NewFormItem(u.t("settings.port"), u.portEntry),
-		widget.NewFormItem(u.t("settings.secret"), u.secretEntry),
-		widget.NewFormItem(u.t("settings.grace"), u.graceSelect),
-	)
-
-	settingsBody := container.NewVBox(
-		form,
-		hint(u.t("settings.grace.hint")),
-		u.remoteCheck,
-		hint(u.t("settings.remote.hint")),
-	)
-	// The media switches (media.enabled #104, media.now_playing #117) head
-	// the 미디어·알림 section, above the PC notification ones (#106,
-	// notify_section.go).
-	mediaNotifyBody := u.buildMediaNotifySection(
-		u.mediaCheck, hint(u.t("settings.media.hint")),
-		u.nowPlayingCheck, hint(u.t("settings.nowplaying.hint")),
-	)
-
-	u.svcBox = container.NewVBox()
-	u.refreshSvcBox()
-
-	updateCheck := newToggle(u.t("update.check"), func(b bool) {
-		u.app.Preferences().SetBool("check_updates", b)
-	})
-	updateCheck.SetChecked(u.app.Preferences().BoolWithFallback("check_updates", true))
-
-	autostartCheck := newToggle(u.t("autostart.check"), func(b bool) {
-		u.app.Preferences().SetBool("autostart", b)
-		if err := SetAutostart(b); err != nil {
-			dialog.ShowError(err, u.win)
-		}
-	})
-	autostartCheck.SetChecked(AutostartEnabled())
-
-	// Everything below service management is meaningless until the
-	// service is reachable — hidden via applyConnected.
-	u.settingsExtra = container.NewVBox(
-		widget.NewSeparator(),
-		section(u.t("settings.service"), settingsBody),
-		widget.NewSeparator(),
-		section(u.t("settings.medianotify"), mediaNotifyBody),
-		widget.NewSeparator(),
-		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
-		widget.NewSeparator(),
-		section(u.t("settings.app"), container.NewVBox(
-			autostartCheck,
-			container.NewHBox(updateCheck, widget.NewButtonWithIcon(u.t("update.manual"), theme.DownloadIcon(), u.checkForUpdatesManual), layout.NewSpacer()),
-		)),
-		// Trailing padding so the last row never sits flush against the
-		// window edge when the tab fits without scrolling.
-		widget.NewLabel(""),
-	)
-
-	u.settingsRoot = container.NewVBox(
-		section(u.t("svc.section"), u.svcBox),
-		u.settingsExtra,
-	)
-	return withSaveBar(u.settingsRoot, u.settingsBar)
-}
-
-// saveSettings validates and posts the settings-tab fields over the
-// baseline. quiet skips the "Saved" dialog (used by the unsaved-changes
-// prompt). Returns false when nothing was saved. UI thread only.
-func (u *ui) saveSettings(quiet bool) bool {
-	if u.cfgBaseline == nil {
-		return false // Save is only enabled once a baseline exists
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(u.portEntry.Text))
-	if err != nil {
-		dialog.ShowError(errors.New(u.t("settings.invalidport")+u.portEntry.Text), u.win)
-		return false
-	}
-	if u.remoteCheck.Checked && u.secretEntry.Text == "" {
-		dialog.ShowError(errors.New(u.t("settings.remote.needsecret")), u.win)
-		return false
-	}
-	graceOn, graceSec := u.graceFromSelection()
-	// Start from the baseline so the telegram/notify values (owned by the
-	// notify tab) round-trip unchanged: the masked token means "keep" to
-	// the service, and any unsaved notify-tab edits stay dirty against the
-	// new baseline instead of being lost.
-	cfg := *u.cfgBaseline
-	oldSecret := cfg.Secret
-	cfg.Port = port
-	cfg.Secret = u.secretEntry.Text
-	cfg.WebUIRemote = u.remoteCheck.Checked
-	cfg.Media.Enabled = u.mediaCheck.Checked
-	cfg.Media.NowPlaying = u.nowPlayingCheck.Checked
-	if u.pcNotify != nil {
-		u.notifySectionState().applyTo(&cfg) // the 미디어·알림 section (#106)
-	}
-	cfg.ShutdownGrace = graceOn
-	cfg.GraceSeconds = graceSec
-	msg, err := u.client.SaveConfig(cfg)
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return false
-	}
-	// What was just saved is the new "unchanged" state.
-	u.cfgBaseline = &cfg
-	u.updateSaveState()
-	u.updateNotifySaveState()
-	// A new secret (notably the first one) leaves this client without a
-	// valid session; log in with it now rather than letting the next poll
-	// hit a 401 and pop the login dialog (#98). Only prompt if that fails.
-	var reloginErr error
-	if shouldReloginAfterSave(oldSecret, cfg.Secret) {
-		reloginErr = u.client.Login(cfg.Secret)
-	}
-	if !quiet {
-		dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
-	}
-	if reloginErr != nil {
-		u.promptLogin(func() { go u.initialLoad() })
-	}
-	return true
-}
-
-// fillSettingsTab writes cfg into the settings-tab fields (used on load and
-// when discarding edits). Must be called on the UI thread with cfgBaseline
-// already set.
-func (u *ui) fillSettingsTab(cfg Config) {
-	u.portEntry.SetText(strconv.Itoa(cfg.Port))
-	u.secretEntry.SetText(cfg.Secret)
-	u.remoteCheck.SetChecked(cfg.WebUIRemote)
-	u.mediaCheck.SetChecked(cfg.Media.Enabled)
-	u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
-	u.setGraceSelection(cfg)
-	u.fillNotifySection(cfg)
-	u.updateSaveState()
-}
-
-// graceLabels renders graceValues for the select: "Off" for 0, then the
-// periods ("30초", "5분", ...).
-func (u *ui) graceLabels() []string {
-	labels := make([]string, len(u.graceValues))
-	for i, sec := range u.graceValues {
-		if sec == 0 {
-			labels[i] = u.t("settings.grace.off")
-		} else {
-			labels[i] = u.formatSeconds(sec)
-		}
-	}
-	return labels
-}
-
-// setGraceSelection points the select at cfg. A period outside the presets
-// (set through the API) is appended as an extra option so saving other
-// settings does not silently change it. Must be called on the UI thread.
-func (u *ui) setGraceSelection(cfg Config) {
-	if !cfg.ShutdownGrace {
-		u.graceSelect.SetSelectedIndex(0)
-		return
-	}
-	sec := cfg.GraceSeconds
-	if sec <= 0 {
-		sec = fallbackGraceSeconds
-	}
-	for i, v := range u.graceValues {
-		if v == sec {
-			u.graceSelect.SetSelectedIndex(i)
-			return
-		}
-	}
-	u.graceValues = append(u.graceValues, sec)
-	u.graceSelect.Options = u.graceLabels()
-	u.graceSelect.SetSelectedIndex(len(u.graceValues) - 1)
-}
-
-// graceFromSelection maps the select back to the config pair. "Off" keeps
-// the last known period, so switching it back on restores the old value.
-func (u *ui) graceFromSelection() (on bool, seconds int) {
-	i := u.graceSelect.SelectedIndex()
-	if i > 0 && i < len(u.graceValues) {
-		return true, u.graceValues[i]
-	}
-	seconds = fallbackGraceSeconds
-	if u.cfgBaseline != nil && u.cfgBaseline.GraceSeconds > 0 {
-		seconds = u.cfgBaseline.GraceSeconds
-	}
-	return false, seconds
-}
-
-// settingsDirty reports whether the form differs from the loaded/saved
-// config. False (nothing to save) until a baseline exists.
-func (u *ui) settingsDirty() bool {
-	b := u.cfgBaseline
-	if b == nil {
-		return false
-	}
-	graceOn, graceSec := u.graceFromSelection()
-	return strings.TrimSpace(u.portEntry.Text) != strconv.Itoa(b.Port) ||
-		u.secretEntry.Text != b.Secret ||
-		u.remoteCheck.Checked != b.WebUIRemote ||
-		u.mediaCheck.Checked != b.Media.Enabled ||
-		u.nowPlayingCheck.Checked != b.Media.NowPlaying ||
-		graceOn != b.ShutdownGrace ||
-		(graceOn && graceSec != b.GraceSeconds) ||
-		u.notifySectionDirty(*b)
-}
-
-// updateSaveState enables Save, the pulsing indicator and the tab marker
-// only while there is something to save. Must be called on the UI thread.
-func (u *ui) updateSaveState() {
-	if u.settingsBar == nil {
-		return
-	}
-	dirty := u.settingsDirty()
-	u.settingsBar.setDirty(dirty)
-	u.markTab(tabSettings, dirty)
-}
-
-// syncBackground makes background() run its work inline. Tests set it:
-// Fyne's test driver runs fyne.Do on the calling goroutine instead of the UI
-// thread, so work a build starts in the background would race that build.
-var syncBackground = false
-
-// background runs slow work a build kicks off (the service state) off the
-// UI thread; the work hands its result back with fyne.Do.
-func background(f func()) {
-	if syncBackground {
-		f()
-		return
-	}
-	go f()
-}
-
-// refreshSvcBox re-queries the Windows service state and redraws the
-// management section.
-func (u *ui) refreshSvcBox() {
-	background(func() {
-		state := queryServiceState()
-		fyne.Do(func() { u.fillSvcBox(state) })
-	})
-}
-
-func (u *ui) fillSvcBox(state svcState) {
-	if u.svcBox == nil {
-		return
-	}
-
-	// Elevated actions block until the spawned process exits (UAC included),
-	// then the state and connection refresh immediately — no manual refresh.
-	elevated := func(run func() error) {
-		go func() {
-			if err := run(); err != nil {
-				fyne.Do(func() { dialog.ShowError(err, u.win) })
-			}
-			// Give the freshly (un)installed service a moment to settle
-			// before re-checking state and connectivity.
-			time.Sleep(1500 * time.Millisecond)
-			u.refreshSvcBox()
-			go u.initialLoad()
-		}()
-	}
-
-	var stateText string
-	var buttons []fyne.CanvasObject
-
-	installBtn := widget.NewButtonWithIcon(u.t("svc.install"), theme.DownloadIcon(), func() {
-		install := func() {
-			elevated(func() error { return runElevatedSelfWait("install --gui") })
-		}
-		// config.json / service.log land next to the exe and the service
-		// points at this path, so installing from Downloads, Desktop, a
-		// temp folder etc. breaks as soon as the file is tidied away. A
-		// folder ordinary users can modify gets locked down on install
-		// (#126); say so, since files kept there become admin-only.
-		exeDir, risk := exeInstallDirRisk()
-		if risk == installDirOK {
-			install()
-			return
-		}
-		body := widget.NewLabel(fmt.Sprintf(u.t(installDirRiskBodyKey[risk]), exeDir, recommendedInstallDir))
-		body.Wrapping = fyne.TextWrapWord
-		d := dialog.NewCustomConfirm(u.t("svc.location.title"), u.t("svc.location.anyway"), u.t("login.cancel"),
-			body, func(ok bool) {
-				if ok {
-					install()
-				}
-			}, u.win)
-		d.Resize(fyne.NewSize(460, 0))
-		d.Show()
-	})
-	installBtn.Importance = widget.HighImportance
-	startBtn := widget.NewButtonWithIcon(u.t("svc.start"), theme.MediaPlayIcon(), func() {
-		elevated(func() error { return runElevatedWait("sc.exe", "start "+serviceName) })
-	})
-	startBtn.Importance = widget.HighImportance
-	uninstallBtn := widget.NewButtonWithIcon(u.t("svc.uninstall"), theme.DeleteIcon(), func() {
-		dialog.ShowConfirm(u.t("cmd.confirm.title"), u.t("svc.uninstall.confirm"), func(ok bool) {
-			if !ok {
-				return
-			}
-			elevated(func() error {
-				if err := runElevatedSelfWait("uninstall"); err != nil {
-					return err
-				}
-				// The Start menu shortcut is this user's (the elevated
-				// child may run as another admin), so it goes here, once
-				// the service is really gone. Best effort; the next tray
-				// start makes it again.
-				if queryServiceState() == svcNotInstalled {
-					appid.RemoveToastShortcut()
-				}
-				return nil
-			})
-		}, u.win)
-	})
-
-	switch state {
-	case svcRunning:
-		stateText = "✓ " + u.t("svc.state.running")
-		buttons = []fyne.CanvasObject{uninstallBtn}
-	case svcStopped:
-		stateText = "■ " + u.t("svc.state.stopped")
-		buttons = []fyne.CanvasObject{startBtn, uninstallBtn}
-	default:
-		stateText = "✗ " + u.t("svc.state.notinstalled")
-		buttons = []fyne.CanvasObject{installBtn}
-	}
-
-	u.svcBox.RemoveAll()
-	u.svcBox.Add(widget.NewLabelWithStyle(stateText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-	u.svcBox.Add(container.NewHBox(append(buttons, layout.NewSpacer())...))
-	u.svcBox.Refresh()
-	// The box grew after the tab was laid out (the state query is async);
-	// without re-laying out the parent, the sections below stay where they
-	// were and this one paints over them — visible right after a language
-	// change (#53).
-	if u.settingsRoot != nil {
-		u.settingsRoot.Refresh()
-	}
-}
-
-func (u *ui) buildCommandsTab() fyne.CanvasObject {
-	makeButton := func(name, label string, icon fyne.Resource, destructive bool) fyne.CanvasObject {
-		run := func() {
-			if _, err := u.client.TestCommand(name); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.setStatus(fmt.Sprintf(u.t("cmd.sent"), label))
-		}
-		btn := widget.NewButtonWithIcon(label, icon, func() {
-			if destructive {
-				dialog.ShowConfirm(u.t("cmd.confirm.title"), fmt.Sprintf(u.t("cmd.confirm.body"), label), func(ok bool) {
-					if ok {
-						run()
-					}
-				}, u.win)
-				return
-			}
-			run()
-		})
-		if destructive {
-			btn.Importance = widget.DangerImportance
-		}
-		return btn
-	}
-
-	var safe, power []fyne.CanvasObject
-	for _, tc := range testCommands {
-		btn := makeButton(tc.Name, u.t(tc.LabelKey), tc.Icon(), tc.Destructive)
-		if tc.Destructive {
-			power = append(power, btn)
-		} else {
-			safe = append(safe, btn)
-		}
-	}
-
-	note := widget.NewLabel(u.t("cmd.immediate.note"))
-	note.Wrapping = fyne.TextWrapWord
-	note.Importance = widget.LowImportance
-
-	// Cards: general, power (with the note on what "immediately" means),
-	// media (#117), keep-awake, presets (#109).
-	return container.NewVScroll(container.NewPadded(container.NewVBox(
-		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
-		widget.NewSeparator(),
-		section(u.t("cmd.group.power"), container.NewVBox(container.NewGridWrap(cmdButtonSize, power...), note)),
-		widget.NewSeparator(),
-		u.buildMediaCard(),
-		widget.NewSeparator(),
-		u.buildAwakeRow(),
-		widget.NewSeparator(),
-		u.buildPresetButtons(),
-	)))
-}
-
-func (u *ui) buildScheduleTab() fyne.CanvasObject {
-	// Countdown block: the remaining time in large type, the command it
-	// belongs to underneath. Both are filled by loadSchedule.
-	seg := &widget.TextSegment{Text: u.t("schedule.idle"), Style: widget.RichTextStyleHeading}
-	seg.Style.Alignment = fyne.TextAlignCenter
-	seg.Style.SizeName = sizeNameCountdown
-	u.schedBig = widget.NewRichText(seg)
-	u.scheduleLabel = widget.NewLabel(u.t("schedule.none"))
-	u.scheduleLabel.Alignment = fyne.TextAlignCenter
-	u.scheduleLabel.Wrapping = fyne.TextWrapWord
-
-	labels := make([]string, len(scheduleCommands))
-	for i, sc := range scheduleCommands {
-		labels[i] = u.t(sc.LabelKey)
-	}
-	cmdSelect := widget.NewSelect(labels, nil)
-	cmdSelect.SetSelectedIndex(0)
-
-	// Delay is preset-only (#52): one entry per preset. #89 grew the list to
-	// sixteen (5 minutes … 3 days), which is a dropdown rather than a row of
-	// radio buttons.
-	presetLabels := make([]string, len(schedulePresets))
-	defaultLabel := ""
-	for i, m := range schedulePresets {
-		presetLabels[i] = u.formatMinutes(m)
-		if m == defaultSchedulePreset {
-			defaultLabel = presetLabels[i]
-		}
-	}
-	delaySelect := widget.NewSelect(presetLabels, nil)
-	delaySelect.SetSelected(defaultLabel)
-
-	startBtn := widget.NewButtonWithIcon(u.t("schedule.start"), theme.MediaPlayIcon(), func() {
-		minutes := defaultSchedulePreset
-		for i, l := range presetLabels {
-			if l == delaySelect.Selected {
-				minutes = schedulePresets[i]
-			}
-		}
-		name := scheduleCommands[cmdSelect.SelectedIndex()].Name
-		label := u.t(scheduleCommands[cmdSelect.SelectedIndex()].LabelKey)
-		dialog.ShowConfirm(u.t("cmd.confirm.title"), fmt.Sprintf(u.t("cmd.confirm.body"), label), func(ok bool) {
-			if !ok {
-				return
-			}
-			if err := u.client.SetSchedule(name, minutes); err != nil {
-				dialog.ShowError(err, u.win)
-				return
-			}
-			u.refreshNow()
-		}, u.win)
-	})
-	startBtn.Importance = widget.HighImportance
-
-	u.schedCancelBtn = widget.NewButtonWithIcon(u.t("schedule.cancel"), theme.CancelIcon(), func() {
-		if err := u.client.CancelSchedule("app"); err != nil {
-			dialog.ShowError(err, u.win)
-			return
-		}
-		u.refreshNow()
-	})
-	u.schedCancelBtn.Disable() // enabled by loadSchedule while a schedule is active
-
-	form := widget.NewForm(
-		widget.NewFormItem(u.t("schedule.command"), cmdSelect),
-		widget.NewFormItem(u.t("schedule.delay"), delaySelect),
-	)
-
-	return container.NewVScroll(container.NewPadded(container.NewVBox(
-		container.NewPadded(container.NewVBox(u.schedBig, u.scheduleLabel)),
-		widget.NewSeparator(),
-		form,
-		container.NewHBox(layout.NewSpacer(), startBtn, u.schedCancelBtn),
-	)))
-}
-
-func (u *ui) buildNetworkTab() fyne.CanvasObject {
-	u.networkBox = container.NewVBox(widget.NewLabel(u.t("network.loading")))
-	// One button for the whole tab: the SmartThings hub state and the WoL
-	// adapter list are both re-read (the tab has no polling loop of its own,
-	// so it also refreshes whenever it is shown — see setCurTab).
-	refreshBtn := widget.NewButtonWithIcon(u.t("network.refresh"), theme.ViewRefreshIcon(), u.refreshNetwork)
-	stBody := u.buildSTSection()
-
-	// Save lives in the fixed footer (savebar.go), enabled only while the
-	// SmartThings section differs from cfgBaseline.
-	u.st.bar = newSaveBar(u, func() { u.saveSTSection(false) })
-
-	u.networkRoot = container.NewVBox(
-		container.NewHBox(layout.NewSpacer(), refreshBtn),
-		section(u.t("st.section"), stBody),
-		widget.NewSeparator(),
-		section(u.t("network.wol.section"), u.networkBox),
-		// Trailing padding so the last row never sits flush against the
-		// footer (same as the settings and notifications tabs).
-		widget.NewLabel(""),
-	)
-	u.refreshNetwork()
-	return withSaveBar(u.networkRoot, u.st.bar)
-}
-
-// refreshNetwork re-reads both halves of the network tab off the UI thread.
-func (u *ui) refreshNetwork() {
-	go u.loadNetwork()
-	go u.loadSTHub()
-}
-
-func (u *ui) buildLogsTab() fyne.CanvasObject {
-	u.logsLabel = widget.NewLabel(u.t("logs.empty"))
-	u.logsLabel.Wrapping = fyne.TextWrapBreak
-	u.logsLabel.TextStyle = fyne.TextStyle{Monospace: true}
-	u.logsScroll = container.NewVScroll(u.logsLabel)
-
-	u.logsAuto = widget.NewCheck(u.t("logs.autorefresh"), nil)
-	u.logsAuto.SetChecked(true)
-	refreshBtn := widget.NewButtonWithIcon(u.t("logs.refresh"), theme.ViewRefreshIcon(), func() { go u.loadLogs() })
-
-	// Case-insensitive substring filter over the cached lines; re-rendered
-	// on every keystroke, and applied by loadLogs on each refresh.
-	u.logsFilter = widget.NewEntry()
-	u.logsFilter.SetPlaceHolder(u.t("logs.filter"))
-	u.logsFilter.OnChanged = func(string) { u.renderLogs() }
-	u.logLines = nil
-
-	openFileBtn := widget.NewButtonWithIcon(u.t("logs.openfile"), theme.DocumentIcon(), func() {
-		u.openServiceLog(false)
-	})
-	openDirBtn := widget.NewButtonWithIcon(u.t("logs.openfolder"), theme.FolderOpenIcon(), func() {
-		u.openServiceLog(true)
-	})
-
-	// Toolbar on one row, filter on its own row: a single row of five
-	// controls plus the entry would push the window's minimum width past
-	// its default size (and differently per language, see #53).
-	toolbar := container.NewHBox(u.logsAuto, refreshBtn, layout.NewSpacer(), openFileBtn, openDirBtn)
-	top := container.NewVBox(toolbar, u.logsFilter)
-	return container.NewBorder(top, nil, nil, nil, u.logsScroll)
-}
-
-// serviceLogPath is service.log next to the exe — the same location the
-// service (and localSecret) use.
-func serviceLogPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(exe), "service.log"), nil
-}
-
-// openServiceLog opens service.log in the default viewer, or reveals it in
-// Explorer when folder is set. Shows an error if the file does not exist.
-func (u *ui) openServiceLog(folder bool) {
-	path, err := serviceLogPath()
-	if err == nil {
-		_, err = os.Stat(path)
-	}
-	if err != nil {
-		dialog.ShowError(fmt.Errorf(u.t("logs.notfound"), path), u.win)
-		return
-	}
-	var cmd *exec.Cmd
-	if folder {
-		// explorer.exe is a GUI app (no console to hide); build the command
-		// line by hand so the "/select," switch and path stay one argument.
-		cmd = exec.Command("explorer.exe")
-		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: fmt.Sprintf(`explorer.exe /select,"%s"`, path)}
-	} else {
-		// `start "" <file>` opens with the file's associated app; hide the
-		// helper console since the GUI is built with -H=windowsgui.
-		cmd = exec.Command("cmd", "/c", "start", "", path)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	}
-	if err := cmd.Start(); err != nil {
-		dialog.ShowError(err, u.win)
 	}
 }
 
@@ -1331,30 +538,18 @@ func (u *ui) initialLoad() {
 		u.setStatus(u.t("status.connected"))
 		u.setConn(connOK)
 		u.applyConnected(true)
-		// Baseline first: SetText/SetChecked/SetSelectedIndex fire OnChanged,
-		// which compares against it; once everything matches, Save ends up
-		// disabled.
-		cfg = withGraceFallback(cfg)
-		u.cfgBaseline = &cfg
-		u.portEntry.SetText(strconv.Itoa(cfg.Port))
-		u.secretEntry.SetText(cfg.Secret)
-		u.remoteCheck.SetChecked(cfg.WebUIRemote)
-		u.mediaCheck.SetChecked(cfg.Media.Enabled)
-		u.nowPlayingCheck.SetChecked(cfg.Media.NowPlaying)
-		u.setGraceSelection(cfg)
-		u.fillNotifySection(cfg)
-		u.updateSaveState()
-		u.fillNotifyTab(cfg)
-		u.fillSTSection(cfg)
-		u.fillPresetsTab(cfg)
+		// A reconnect or a language switch lands here too: tabs with
+		// unsaved edits keep them (compared against the old baseline) and
+		// only the others follow the service.
+		u.adoptConfig(cfg, u.forms.base)
 	})
 	if err == nil {
-		u.loadLogs()
+		// The schedule feeds the tray too; the rest only matters on screen
+		// and comes with the window otherwise (checkVisible).
 		u.loadSchedule()
-		u.loadSTHub()
-		u.loadAwake()
-		u.loadBattery()
-		u.loadMedia()
+		if u.onScreen() || windowOnScreen() {
+			u.loadShown()
+		}
 	}
 }
 
@@ -1381,6 +576,8 @@ func (u *ui) pollLoop() {
 	defer batteryTick.Stop()
 	mediaTick := time.NewTicker(mediaWatchInterval)
 	defer mediaTick.Stop()
+	visTick := time.NewTicker(visibleCheckInterval)
+	defer visTick.Stop()
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
@@ -1395,20 +592,24 @@ func (u *ui) pollLoop() {
 			if u.app.Preferences().BoolWithFallback("check_updates", true) {
 				go u.checkForUpdates(false)
 			}
+		case <-visTick.C:
+			u.checkVisible()
 		case <-logsTick.C:
-			if u.connected.Load() && u.logsAuto != nil && u.logsAuto.Checked {
+			if u.logsPollWanted() {
 				u.loadLogs()
 			}
 		case <-schedTick.C:
+			// Hidden too: the tray entry and tooltip show the countdown,
+			// and a new schedule raises the grace toast.
 			if u.connected.Load() {
 				u.loadSchedule()
 			}
 		case <-awakeTick.C:
-			if u.connected.Load() {
+			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
 			}
 		case <-batteryTick.C:
-			if u.connected.Load() {
+			if u.connected.Load() && u.onScreen() {
 				go u.loadBattery()
 			}
 		case <-mediaTick.C:
@@ -1434,235 +635,6 @@ func (u *ui) pollLoop() {
 func (u *ui) refreshNow() {
 	go u.loadSchedule()
 	go u.loadLogs()
-}
-
-func (u *ui) loadLogs() {
-	lines, err := u.client.Logs()
-	if err != nil {
-		u.markDisconnectedOnNetError(err)
-		return
-	}
-	fyne.Do(func() {
-		u.logLines = lines
-		u.renderLogs()
-	})
-}
-
-// renderLogs shows the cached lines that match the filter, keeping the
-// view pinned to the end when it already was. Must be called on the UI
-// thread.
-func (u *ui) renderLogs() {
-	var filter string
-	if u.logsFilter != nil {
-		filter = strings.ToLower(strings.TrimSpace(u.logsFilter.Text))
-	}
-	var shown []string
-	for _, line := range u.logLines {
-		if filter == "" || strings.Contains(strings.ToLower(line), filter) {
-			shown = append(shown, line)
-		}
-	}
-	if len(shown) == 0 {
-		if filter != "" && len(u.logLines) > 0 {
-			u.logsLabel.SetText(u.t("logs.nomatch"))
-		} else {
-			u.logsLabel.SetText(u.t("logs.empty"))
-		}
-		return
-	}
-	atBottom := u.logsScroll.Offset.Y >= u.logsScroll.Content.Size().Height-u.logsScroll.Size().Height-20
-	u.logsLabel.SetText(strings.Join(shown, "\n"))
-	if atBottom {
-		u.logsScroll.ScrollToBottom()
-	}
-}
-
-// setCountdown replaces the large remaining-time text on the schedule tab.
-// Must be called on the UI thread.
-func (u *ui) setCountdown(text string) {
-	if u.schedBig == nil || len(u.schedBig.Segments) == 0 {
-		return
-	}
-	if seg, ok := u.schedBig.Segments[0].(*widget.TextSegment); ok && seg.Text != text {
-		seg.Text = text
-		u.schedBig.Refresh()
-	}
-}
-
-func (u *ui) loadSchedule() {
-	s, err := u.client.GetSchedule()
-	if err != nil {
-		u.markDisconnectedOnNetError(err)
-		return
-	}
-	fyne.Do(func() {
-		if !s.Active {
-			u.lastSchedCmd = ""
-			u.setCountdown(u.t("schedule.idle"))
-			u.scheduleLabel.SetText(u.t("schedule.none"))
-			u.setOriginStyle(false)
-			u.schedCancelBtn.Disable()
-			u.setScheduleText("")
-			return
-		}
-		// #89: a schedule can be three days out, so the countdown carries the
-		// days in front of hh:mm:ss ("2일 3:15:00") instead of running up to
-		// "72:00:00".
-		remain := u.formatCountdown(time.Duration(s.RemainingSec) * time.Second)
-		cmdLabel := u.commandLabel(s.Command)
-		// Origin decides the wording everywhere (#54): a remote grace
-		// deferral is "SmartThings … grace period", a timer set here is
-		// "scheduled from this app".
-		countdownKey, titleKey, originKey := "schedule.countdown", "notify.schedule.title", "schedule.origin.ui"
-		switch s.Origin {
-		case "remote":
-			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
-		case "telegram":
-			originKey = "schedule.origin.telegram"
-		case "smartthings":
-			originKey = "schedule.origin.smartthings"
-		}
-		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
-		u.setCountdown(remain)
-		detail := u.t(originKey) + "\n" + fmt.Sprintf(u.t("schedule.for"), cmdLabel)
-		if s.Replaced != nil {
-			detail += "\n" + fmt.Sprintf(u.t("schedule.replaced"), u.commandLabel(s.Replaced.Command), u.t(u.originShortKey(s.Replaced.Origin)))
-		}
-		u.scheduleLabel.SetText(detail)
-		u.setOriginStyle(s.IsRemote())
-		u.schedCancelBtn.Enable()
-		// Tray entry and icon tooltip carry the one-line form.
-		u.setScheduleText(countdown)
-
-		// A schedule appeared or changed hands (a remote grace deferral
-		// replacing a local timer, or vice versa) — notify with Run now /
-		// Cancel buttons so it can be handled straight from the toast.
-		key := s.Origin + ":" + s.Command
-		if key != u.lastSchedCmd {
-			u.lastSchedCmd = key
-			lang := u.lang
-			title := u.t(titleKey)
-			go func() {
-				if err := showGraceToast(lang, title, countdown); err != nil {
-					// Toast failed (e.g. PowerShell unavailable) — plain notification.
-					u.app.SendNotification(fyne.NewNotification(title,
-						fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)))
-				}
-			}()
-		}
-	})
-}
-
-// commandLabel returns the localised name of a scheduleable command,
-// falling back to the raw name.
-func (u *ui) commandLabel(name string) string {
-	for _, sc := range scheduleCommands {
-		if sc.Name == name {
-			return u.t(sc.LabelKey)
-		}
-	}
-	return name
-}
-
-// originShortKey maps a wire origin to the i18n key of its short label.
-func (u *ui) originShortKey(origin string) string {
-	switch origin {
-	case "remote":
-		return "origin.remote.short"
-	case "telegram":
-		return "origin.telegram.short"
-	case "smartthings":
-		return "origin.smartthings.short"
-	}
-	return "origin.ui.short"
-}
-
-// setOriginStyle tints the schedule detail line: remote deferrals get the
-// warning colour so a countdown the user did not start stands out. Must be
-// called on the UI thread.
-func (u *ui) setOriginStyle(remote bool) {
-	if remote {
-		u.scheduleLabel.Importance = widget.WarningImportance
-	} else {
-		u.scheduleLabel.Importance = widget.MediumImportance
-	}
-	u.scheduleLabel.Refresh()
-}
-
-func (u *ui) loadNetwork() {
-	s, err := u.client.GetWoLStatus()
-	if err != nil {
-		u.markDisconnectedOnNetError(err)
-		return
-	}
-	fyne.Do(func() {
-		// Every free-text line wraps: adapter names, warnings and especially
-		// IPv6 address lists would otherwise set the window's minimum width
-		// once they load (a few seconds after start) and make it jump.
-		wrapped := func(text string) *widget.Label {
-			l := widget.NewLabel(text)
-			l.Wrapping = fyne.TextWrapWord
-			return l
-		}
-		// The adapter list is the last section of the tab root, so it has to
-		// re-lay out the parent once it grows (like fillSvcBox, #53).
-		defer func() {
-			if u.networkRoot != nil {
-				u.networkRoot.Refresh()
-			}
-		}()
-		u.networkBox.RemoveAll()
-		if s.Error != "" {
-			u.networkBox.Add(wrapped(s.Error))
-			return
-		}
-		// The summary is about the adapter WoL will actually use (#96), and
-		// names it, rather than saying "some adapter has WoL on" — which is
-		// no help on a PC with an Ethernet port, Wi-Fi and three pseudo
-		// adapters. The SmartThings section below polls that choice; until
-		// it has, fall back to the old wording.
-		ready, summary := s.Ready, "network.wolready"
-		if !ready {
-			summary = "network.wolnotready"
-		}
-		line := u.t(summary)
-		if u.st != nil && u.st.wolLoaded {
-			sel := stWoLPick(u.st.hub.WoL, u.st.wolMAC)
-			ready = sel != nil && sel.WoLEnabled
-			line = stWoLLine(u.lang, sel)
-		}
-		mark := "✗ "
-		if ready {
-			mark = "✓ "
-		}
-		u.networkBox.Add(widget.NewLabelWithStyle(mark+line, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-		if s.Warning != "" {
-			u.networkBox.Add(wrapped(s.Warning))
-		}
-		if s.ExternalIP != "" {
-			u.networkBox.Add(wrapped(u.t("network.externalip") + ": " + s.ExternalIP))
-		}
-		u.networkBox.Add(widget.NewSeparator())
-		for _, ad := range s.Adapters {
-			state := u.t("network.adapter.down")
-			if ad.Status == "Up" {
-				state = u.t("network.adapter.up")
-			}
-			wol := u.t("network.wol.off")
-			if ad.WoLEnabled {
-				wol = u.t("network.wol.on")
-			}
-			title := fmt.Sprintf("%s — %s / %s", ad.Name, state, wol)
-			detail := "MAC: " + ad.MacAddress
-			if len(ad.IPs) > 0 {
-				detail += "\nIP: " + strings.Join(ad.IPs, ", ")
-			}
-			head := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-			head.Wrapping = fyne.TextWrapWord
-			u.networkBox.Add(container.NewVBox(head, wrapped(detail)))
-			u.networkBox.Add(widget.NewSeparator())
-		}
-	})
 }
 
 // markDisconnectedOnNetError flips the status bar when the service goes away.

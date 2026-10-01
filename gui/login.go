@@ -127,10 +127,8 @@ func (u *ui) promptLogin(onSuccess func()) {
 			u.promptLogin(onSuccess)
 			return
 		}
-		go func() {
-			err := u.client.Login(secret)
-			fyne.Do(func() { u.finishLogin(err, onSuccess) })
-		}()
+		runAsyncErr(nil, func() error { return u.client.Login(secret) },
+			func(err error) { u.finishLogin(err, onSuccess) })
 	}, u.win)
 	entry.OnSubmitted = func(string) { d.Submit() } // Enter; ignored while invalid
 	d.Resize(fyne.NewSize(360, 0))
