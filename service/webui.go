@@ -309,39 +309,11 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		settingsTmpl.Execute(w, struct {
-			Port          int
-			Secret        string
-			WebUIRemote   bool
-			ShutdownGrace bool
-			Version       string
-			// SmartThings is shown as plain form fields (#70); the desktop
-			// app's network tab is the designed UI for these.
-			SmartThings SmartThingsConfig
-			AllowedHubs string
-			// telegram.pc_name is the one Telegram setting this page edits
-			// (#75); the token and the chat id belong to the app's
-			// notifications tab, and are deliberately not handed to the
-			// template. Hostname is the entry's placeholder: what an empty
-			// pc_name falls back to.
-			PCName   string
-			Hostname string
-			// ActivityEnabled is the running-app detection switch (#110);
-			// the watch list itself is edited in the desktop app, whose
-			// picker reads the process list this page must not see.
-			ActivityEnabled bool
-			// MediaEnabled is media.enabled (#104).
-			MediaEnabled bool
-			// NowPlaying is the media.now_playing opt-in (#117).
-			NowPlaying bool
-			// NotifyPC mirrors the app's PC-notification switch (#106); the
-			// preset editor stays in the app.
-			NotifyPC NotifyPCConfig
-		}{liveCfg.Port, liveCfg.Secret, liveCfg.WebUIRemote, liveCfg.ShutdownGrace, Version,
-			liveCfg.SmartThings, strings.Join(liveCfg.SmartThings.AllowedHubs, ", "),
-			liveCfg.Telegram.PCName, hostname(), liveCfg.Activity.Enabled, liveCfg.Media.Enabled,
-			liveCfg.Media.NowPlaying, liveCfg.NotifyPC})
+		settingsTmpl.Execute(w, newSettingsView(liveCfg))
 	})
+
+	// API: the browser page's status card (#122); WebUI only.
+	mux.HandleFunc("/api/status", handleWebUIStatusAPI)
 
 	// API: Get/update config (token masking rules: design doc §10)
 	mux.HandleFunc("/api/config", handleConfigAPI)
