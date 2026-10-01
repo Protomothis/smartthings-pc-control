@@ -160,7 +160,7 @@ linters:
         source: json\.NewDecoder\(.*\)\.Decode\(
       # Optional/lenient JSON fields: a malformed value is ignored on purpose
       # and the field keeps its default.
-      - path: (gui/toast|service/nowplaying|service/pc_notify|service/presets|service/server)\.go
+      - path: (gui/toast|service/pc_notify|service/presets|service/wolscan/wolscan)\.go
         linters: [errcheck]
         source: json\.Unmarshal\(
       # Fire-and-forget UI actions: opening the browser, the toast protocol

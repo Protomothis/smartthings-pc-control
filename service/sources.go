@@ -10,6 +10,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
+	"github.com/Protomothis/smartthings-pc-control/service/wolscan"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -21,14 +22,14 @@ type serviceSources struct {
 	// The contract tests replace it: the real one asks WTS about whatever
 	// session the machine running the tests happens to have.
 	sessionQuery func() (sessionInfo, error)
-	// wolScan is the adapter scan (getWoLStatus), which shells out to
+	// wolScan is the adapter scan (wolscan.Scan), which shells out to
 	// PowerShell and queries the public IP.
 	wolScan func() WoLStatus
 }
 
 var sources = &serviceSources{
 	sessionQuery: querySessionInfo,
-	wolScan:      getWoLStatus,
+	wolScan:      wolscan.Scan,
 }
 
 func (*serviceSources) MachineID() string                { return machineID() }
