@@ -35,9 +35,6 @@ type audioSample struct {
 	UpdatedAt time.Time
 }
 
-// audioNow is time.Now, replaced by the tests.
-var audioNow = time.Now
-
 // noteAudioSample stores a reading taken at at, unless the stored one is
 // newer: a heartbeat and a command reply can race, and the older of the
 // two must not overwrite the newer. It reports whether the sample was

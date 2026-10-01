@@ -55,8 +55,8 @@ func TestNotifyLimiter(t *testing.T) {
 func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
-	saved, savedLimits := pcNotifyRun, pcNotifyLimits
-	pcNotifyRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+	saved, savedLimits := userRun.notify, pcNotifyLimits
+	userRun.notify = func(ctx context.Context, args ...string) (UserActionResult, error) {
 		calls = append(calls, args)
 		if err != nil {
 			return UserActionResult{}, err
@@ -64,7 +64,7 @@ func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 		return session.ParseOutput([]byte(reply))
 	}
 	pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
-	t.Cleanup(func() { pcNotifyRun, pcNotifyLimits = saved, savedLimits })
+	t.Cleanup(func() { userRun.notify, pcNotifyLimits = saved, savedLimits })
 	return &calls
 }
 

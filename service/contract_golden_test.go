@@ -369,11 +369,11 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	// session: WTS through the seam, idle through the tray heartbeat.
 	savedQuery := sources.sessionQuery
 	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
-	idleNow = func() time.Time { return goldenNow }
+	clock.idle = func() time.Time { return goldenNow }
 	noteIdleHeartbeat(754)
 	t.Cleanup(func() {
 		sources.sessionQuery = savedQuery
-		idleNow = time.Now
+		clock.idle = time.Now
 		resetIdleHeartbeat()
 	})
 
@@ -401,14 +401,14 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	// audio and media: one reading each, fresh against the golden clock.
 	resetAudioSample()
 	resetMediaSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	audioNow = func() time.Time { return goldenNow }
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	clock.audio = func() time.Time { return goldenNow }
 	t.Cleanup(func() {
 		resetAudioSample()
 		resetMediaSample()
-		audioNow = time.Now
-		audioSessionPresent = savedPresent
+		clock.audio = time.Now
+		sys.sessionPresent = savedPresent
 	})
 	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
 	noteMediaSampleChange(goldenTrack, goldenNow.Add(-20*time.Second))
@@ -730,7 +730,7 @@ var pushCases = map[string]pushCase{
 	// activity (#123): OBS starts next to Steam. Both run, top stays
 	// steam.exe (first on the list); data = status.activity.
 	"push.activity.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
-		processLister = func() ([]string, error) { return []string{"explorer.exe", "steam.exe", "obs64.exe"}, nil }
+		sys.processes = func() ([]string, error) { return []string{"explorer.exe", "steam.exe", "obs64.exe"}, nil }
 		activityTick(getConfig().Activity)
 	}},
 	"push.awake.changed.json": {trigger: func(t *testing.T, fa *fakeAwake) {

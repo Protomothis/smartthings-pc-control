@@ -78,7 +78,7 @@ func mediaEventFields(np useraction.NowPlaying) map[string]string {
 // currentMedia returns the newest reading while it is fresh (see
 // mediaSampleTTL); ok is false otherwise.
 func currentMedia() (mediaSample, bool) {
-	np, at, ok := dev.media.Fresh(audioNow(), mediaSampleTTL)
+	np, at, ok := dev.media.Fresh(clock.audio(), mediaSampleTTL)
 	return mediaSample{NowPlaying: np, UpdatedAt: at}, ok
 }
 
@@ -103,7 +103,7 @@ func noteMediaCommand(res UserActionResult) {
 		}
 	}
 	if np.Validate() == nil {
-		recordMediaSample(np, audioNow())
+		recordMediaSample(np, clock.audio())
 	}
 }
 
@@ -111,10 +111,10 @@ func noteMediaCommand(res UserActionResult) {
 // again: a player takes a moment to publish the next track's title.
 const mediaRefreshDelay = 1200 * time.Millisecond
 
-// scheduleMediaRefresh reads the session once more after a media command
+// refreshMediaSoon reads the session once more after a media command
 // (`media info`, stored by runUserAction), so the new track reaches status
-// and the hub even when no tray app is running. Tests replace it.
-var scheduleMediaRefresh = func() {
+// and the hub even when no tray app is running (sys.mediaRefresh).
+func refreshMediaSoon() {
 	go func() {
 		time.Sleep(mediaRefreshDelay)
 		ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
@@ -132,7 +132,7 @@ func readNowPlayingNow(ctx context.Context) (useraction.NowPlaying, error) {
 	if !getConfig().Media.Enabled {
 		return useraction.NowPlaying{}, action.ErrMediaDisabled
 	}
-	res, err := runUserActionFn(ctx, "media", useraction.MediaInfo)
+	res, err := userRun.media(ctx, "media", useraction.MediaInfo)
 	if err != nil {
 		return useraction.NowPlaying{}, err
 	}
@@ -151,7 +151,7 @@ func stMediaStatus(cfg Config) stMedia {
 		return stMedia{Status: useraction.MediaNone}
 	}
 	s, ok := currentMedia()
-	if !ok || !audioSessionPresent() {
+	if !ok || !sys.sessionPresent() {
 		return stMedia{Status: useraction.MediaNone}
 	}
 	np := shareNowPlaying(s.NowPlaying, cfg)

@@ -34,7 +34,7 @@ func idleSetup(t *testing.T) {
 	resetIdleHeartbeat()
 	t.Cleanup(func() {
 		resetIdleHeartbeat()
-		idleNow = time.Now
+		clock.idle = time.Now
 		webSrv.SetSessionToken("")
 	})
 }
@@ -111,14 +111,14 @@ func TestSTStatusIdleFromHeartbeat(t *testing.T) {
 
 	// Older than idleHeartbeatTTL: back to null rather than to a number
 	// nobody has confirmed since.
-	idleNow = func() time.Time { return time.Now().Add(idleHeartbeatTTL + time.Second) }
+	clock.idle = func() time.Time { return time.Now().Add(idleHeartbeatTTL + time.Second) }
 	if sess := stStatusSession(t); sess["idle_seconds"] != nil {
 		t.Errorf("idle_seconds = %v for a stale heartbeat, want null", sess["idle_seconds"])
 	}
 
 	// The opt-in still gates the whole block.
 	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{ExposeSession: false}})
-	idleNow = time.Now
+	clock.idle = time.Now
 	heartbeatDo(t, `{"idle_seconds":136}`, true, true)
 	if sess := stStatusSession(t); len(sess) != 1 || sess["exposed"] != false {
 		t.Errorf("session = %v with the opt-in off, want only {exposed:false}", sess)

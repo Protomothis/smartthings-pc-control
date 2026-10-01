@@ -21,18 +21,15 @@ import (
 // or a suspended machine look like.
 const idleHeartbeatTTL = 90 * time.Second
 
-// idleNow is time.Now, replaced by the staleness tests.
-var idleNow = time.Now
-
 // noteIdleHeartbeat records one sample from the user session, stamped
 // with the receive time (dev.idle).
-func noteIdleHeartbeat(seconds int64) { dev.idle.Set(seconds, idleNow()) }
+func noteIdleHeartbeat(seconds int64) { dev.idle.Set(seconds, clock.idle()) }
 
 // lastIdleSeconds returns the idle time of the interactive session; ok is
 // false when no heartbeat has arrived, or the newest one is older than
 // idleHeartbeatTTL, in which case the status block reports null.
 func lastIdleSeconds() (int64, bool) {
-	s, _, ok := dev.idle.Fresh(idleNow(), idleHeartbeatTTL)
+	s, _, ok := dev.idle.Fresh(clock.idle(), idleHeartbeatTTL)
 	return s, ok
 }
 

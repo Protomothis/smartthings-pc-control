@@ -24,8 +24,8 @@ import (
 // "show rule" matches nothing, which is how rule existence is detected).
 type netshRunner func(args ...string) ([]byte, error)
 
-// runNetsh is the live runner; tests swap it out.
-var runNetsh netshRunner = func(args ...string) ([]byte, error) {
+// runNetshCommand is the live runner (sys.netsh).
+func runNetshCommand(args ...string) ([]byte, error) {
 	return systool.Command(systool.Netsh, args...).CombinedOutput()
 }
 
@@ -43,7 +43,7 @@ const ssdpFirewallRuleName = "SmartThings PC Control SSDP"
 // netsh exits non-zero with "No rules match the specified criteria" when it
 // is not, so the exit status carries the answer in any UI language.
 func firewallRuleExists(name string) bool {
-	_, err := runNetsh("advfirewall", "firewall", "show", "rule", "name="+name)
+	_, err := sys.netsh("advfirewall", "firewall", "show", "rule", "name="+name)
 	return err == nil
 }
 
@@ -55,7 +55,7 @@ func ensureFirewallRule(name, proto string, port int) error {
 	if firewallRuleExists(name) {
 		return nil
 	}
-	output, err := runNetsh("advfirewall", "firewall", "add", "rule",
+	output, err := sys.netsh("advfirewall", "firewall", "add", "rule",
 		"name="+name,
 		"dir=in", "action=allow", "protocol="+proto,
 		"localport="+strconv.Itoa(port))
@@ -67,7 +67,7 @@ func ensureFirewallRule(name, proto string, port int) error {
 
 // deleteFirewallRule removes every rule of that name.
 func deleteFirewallRule(name string) error {
-	output, err := runNetsh("advfirewall", "firewall", "delete", "rule",
+	output, err := sys.netsh("advfirewall", "firewall", "delete", "rule",
 		"name="+name)
 	if err != nil {
 		return fmt.Errorf("netsh delete rule %q failed: %v - output: %s", name, err, string(output))

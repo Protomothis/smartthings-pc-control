@@ -88,10 +88,10 @@ func (mediaControl) Run(ctx context.Context, name string, value *int) (UserActio
 
 // AudioView stamps a command reply's own reading with the audio clock.
 func (mediaControl) AudioView(a useraction.Audio) status.Audio {
-	return stAudioView(audioSample{Audio: a, UpdatedAt: audioNow()})
+	return stAudioView(audioSample{Audio: a, UpdatedAt: clock.audio()})
 }
 
-func (mediaControl) SessionPresent() bool     { return audioSessionPresent() }
+func (mediaControl) SessionPresent() bool     { return sys.sessionPresent() }
 func (mediaControl) Audio(cfg Config) stAudio { return stAudioStatus(cfg) }
 func (mediaControl) Media(cfg Config) stMedia { return stMediaStatus(cfg) }
 

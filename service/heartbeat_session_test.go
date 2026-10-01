@@ -59,7 +59,7 @@ func TestHeartbeatFromOtherSessionIgnored(t *testing.T) {
 	sessionHeartbeatSetup(t)
 	fakeTarget(t, 1, nil)
 	// The mute command's reply, from session 1.
-	recordAudioSample(useraction.Audio{Volume: 30, Muted: true, Device: "스피커"}, audioNow().Add(-20*time.Second))
+	recordAudioSample(useraction.Audio{Volume: 30, Muted: true, Device: "스피커"}, clock.audio().Add(-20*time.Second))
 
 	status, reason := heartbeatStatus(t, `{`+fullBeat+`,"session_id":2}`)
 	if status != "ignored" || reason != "other_session" {
@@ -197,8 +197,8 @@ func TestTargetSessionChangeClearsSamples(t *testing.T) {
 	sessionHeartbeatSetup(t)
 	store := func() {
 		noteIdleHeartbeat(10)
-		recordAudioSample(useraction.Audio{Volume: 30, Device: "원격 오디오"}, audioNow())
-		recordMediaSample(useraction.NowPlaying{Status: "playing"}, audioNow())
+		recordAudioSample(useraction.Audio{Volume: 30, Device: "원격 오디오"}, clock.audio())
+		recordMediaSample(useraction.NowPlaying{Status: "playing"}, clock.audio())
 	}
 	// stored counts the samples present: idle, audio, media.
 	stored := func() int {

@@ -140,7 +140,7 @@ func StartHTTPServer(stop chan struct{}) {
 // failure also raises system.exec_failed naming that command.
 func executeCommand(command string, tool string, args ...string) {
 	notePowerCommand(command) // hint for power.stopping's reason (§3.5)
-	output, err := runTool(tool, args...)
+	output, err := sys.tool(tool, args...)
 	if err != nil {
 		logMsg("exec [%s %v] error: %v - output: %s", tool, args, err, string(output))
 		reportExecFailure(command, err, output)
@@ -149,9 +149,9 @@ func executeCommand(command string, tool string, args ...string) {
 	}
 }
 
-// runTool runs a System32 tool by absolute path (internal/systool) and
-// returns its combined output. Replaced by the tests.
-var runTool = func(tool string, args ...string) ([]byte, error) {
+// runSystemTool runs a System32 tool by absolute path (internal/systool) and
+// returns its combined output (sys.tool).
+func runSystemTool(tool string, args ...string) ([]byte, error) {
 	return systool.Command(tool, args...).CombinedOutput()
 }
 

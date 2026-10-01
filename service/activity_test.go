@@ -20,14 +20,14 @@ import (
 func stubProcesses(t *testing.T, names ...string) *atomic.Int32 {
 	t.Helper()
 	calls := &atomic.Int32{}
-	orig := processLister
-	processLister = func() ([]string, error) {
+	orig := sys.processes
+	sys.processes = func() ([]string, error) {
 		calls.Add(1)
 		return slices.Clone(names), nil
 	}
 	activityScan.reset()
 	t.Cleanup(func() {
-		processLister = orig
+		sys.processes = orig
 		activityScan.reset()
 	})
 	return calls
@@ -36,10 +36,10 @@ func stubProcesses(t *testing.T, names ...string) *atomic.Int32 {
 // stubRunning drives the lister from a variable the test changes.
 func stubRunning(t *testing.T, running *[]string) {
 	t.Helper()
-	orig := processLister
-	processLister = func() ([]string, error) { return slices.Clone(*running), nil }
+	orig := sys.processes
+	sys.processes = func() ([]string, error) { return slices.Clone(*running), nil }
 	activityScan.reset()
-	t.Cleanup(func() { processLister = orig; activityScan.reset() })
+	t.Cleanup(func() { sys.processes = orig; activityScan.reset() })
 }
 
 func watch(process, label string) ActivityWatch {
@@ -268,15 +268,15 @@ func TestActivityStatusIgnoresScanForAnotherList(t *testing.T) {
 func TestActivityScannerListFailureKeepsLastResult(t *testing.T) {
 	initLogger()
 	fail := false
-	orig := processLister
-	processLister = func() ([]string, error) {
+	orig := sys.processes
+	sys.processes = func() ([]string, error) {
 		if fail {
 			return nil, errors.New("snapshot refused")
 		}
 		return []string{"steam.exe"}, nil
 	}
 	activityScan.reset()
-	t.Cleanup(func() { processLister = orig; activityScan.reset() })
+	t.Cleanup(func() { sys.processes = orig; activityScan.reset() })
 
 	// No earlier scan: listed, nothing running.
 	fail = true

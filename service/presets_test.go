@@ -77,15 +77,15 @@ func TestConfigAPIPresets(t *testing.T) {
 func fakePresetRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
-	saved := presetRun
-	presetRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+	saved := userRun.preset
+	userRun.preset = func(ctx context.Context, args ...string) (UserActionResult, error) {
 		calls = append(calls, args)
 		if err != nil {
 			return UserActionResult{}, err
 		}
 		return session.ParseOutput([]byte(reply))
 	}
-	t.Cleanup(func() { presetRun = saved })
+	t.Cleanup(func() { userRun.preset = saved })
 	return &calls
 }
 

@@ -101,10 +101,10 @@ func TestParseShutdownReasonWithoutATimestamp(t *testing.T) {
 }
 
 func TestLocalShutdownReasonUsesTheRunner(t *testing.T) {
-	orig := localShutdownRunner
-	t.Cleanup(func() { localShutdownRunner = orig })
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig })
 
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		return sampleEvent1074(time.Now(), "restart"), nil
 	}
 	if got, ok := localShutdownReason(); !ok || got != "restart" {
@@ -113,7 +113,7 @@ func TestLocalShutdownReasonUsesTheRunner(t *testing.T) {
 
 	// wevtutil missing, the query timing out, an empty System log: all of
 	// them leave the caller on its own fallback.
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		return nil, errors.New("exec: wevtutil: executable file not found in %PATH%")
 	}
 	if got, ok := localShutdownReason(); ok {
@@ -122,11 +122,11 @@ func TestLocalShutdownReasonUsesTheRunner(t *testing.T) {
 }
 
 func TestLocalShutdownReasonHonoursItsDeadline(t *testing.T) {
-	orig := localShutdownRunner
-	t.Cleanup(func() { localShutdownRunner = orig })
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig })
 
 	var deadline time.Time
-	localShutdownRunner = func(ctx context.Context) ([]byte, error) {
+	sys.shutdownLog = func(ctx context.Context) ([]byte, error) {
 		deadline, _ = ctx.Deadline()
 		return nil, ctx.Err()
 	}
@@ -142,13 +142,13 @@ func TestLocalShutdownReasonHonoursItsDeadline(t *testing.T) {
 // ---- the whole ladder (§6.2) ---------------------------------------------
 
 func TestStopReasonPrefersTheCommandHint(t *testing.T) {
-	orig := localShutdownRunner
-	t.Cleanup(func() { localShutdownRunner = orig; resetPowerCommandHint() })
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig; resetPowerCommandHint() })
 
 	// The event log says restart; the command this service ran says
 	// suspend. Only the command knows about suspend at all, and 1074 is
 	// not even written for one, so the hint wins.
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		return sampleEvent1074(time.Now(), "restart"), nil
 	}
 	resetPowerCommandHint()
@@ -159,18 +159,18 @@ func TestStopReasonPrefersTheCommandHint(t *testing.T) {
 }
 
 func TestStopReasonReadsTheEventLogWithoutAHint(t *testing.T) {
-	orig := localShutdownRunner
-	t.Cleanup(func() { localShutdownRunner = orig; resetPowerCommandHint() })
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig; resetPowerCommandHint() })
 	resetPowerCommandHint()
 
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		return sampleEvent1074(time.Now(), "restart"), nil
 	}
 	if got := stopReason(true); got != "restart" {
 		t.Errorf("stopReason(shutdown) = %q, want restart (from event 1074)", got)
 	}
 
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		return sampleEvent1074(time.Now(), "power off"), nil
 	}
 	if got := stopReason(true); got != "shutdown" {
@@ -179,12 +179,12 @@ func TestStopReasonReadsTheEventLogWithoutAHint(t *testing.T) {
 }
 
 func TestStopReasonFallsBackWhenTheLogSaysNothing(t *testing.T) {
-	orig := localShutdownRunner
-	t.Cleanup(func() { localShutdownRunner = orig; resetPowerCommandHint() })
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig; resetPowerCommandHint() })
 	resetPowerCommandHint()
 
 	called := 0
-	localShutdownRunner = func(context.Context) ([]byte, error) {
+	sys.shutdownLog = func(context.Context) ([]byte, error) {
 		called++
 		return nil, errors.New("no events")
 	}

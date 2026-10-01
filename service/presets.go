@@ -14,13 +14,10 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// presetRun is runUserAction, replaced by the tests.
-var presetRun = runUserAction
-
 // runPreset starts p in the user session. It does not wait for the
 // program; nil means it was started.
 func runPreset(ctx context.Context, p Preset, by string) error {
-	res, err := presetRun(ctx, p.Argv()...)
+	res, err := userRun.preset(ctx, p.Argv()...)
 	if err != nil {
 		logMsg("Preset %d (%s) via %s failed: %v", p.Slot, p.Name, by, err)
 		return err

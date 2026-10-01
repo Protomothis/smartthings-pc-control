@@ -651,12 +651,12 @@ func TestTurnScreenOnCommand(t *testing.T) {
 	}
 	var gotArgs [][]string
 	var runErr error
-	saved := screenRun
-	screenRun = func(_ context.Context, args ...string) (UserActionResult, error) {
+	saved := userRun.screen
+	userRun.screen = func(_ context.Context, args ...string) (UserActionResult, error) {
 		gotArgs = append(gotArgs, args)
 		return UserActionResult{OK: runErr == nil}, runErr
 	}
-	t.Cleanup(func() { screenRun = saved; setDisplayState("unknown") })
+	t.Cleanup(func() { userRun.screen = saved; setDisplayState("unknown") })
 	setDisplayState("unknown")
 
 	// The screen commands go through user-action (#121), not a shell.

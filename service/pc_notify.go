@@ -32,9 +32,6 @@ var pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 
 // ---- running -----------------------------------------------------------
 
-// pcNotifyRun is runUserAction, replaced by the tests.
-var pcNotifyRun = runUserAction
-
 // notifyArgs is the user-action argument vector for one notification.
 func notifyArgs(title, text string) []string {
 	return []string{useraction.ActionNotify, "--title", title, "--text", text}
@@ -55,7 +52,7 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 		return action.NotifyResult{}, &action.NotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
-	res, err := pcNotifyRun(ctx, notifyArgs(title, text)...)
+	res, err := userRun.notify(ctx, notifyArgs(title, text)...)
 	if err != nil {
 		logMsg("PC notify (%s) failed: %v", source, err)
 		return action.NotifyResult{}, err

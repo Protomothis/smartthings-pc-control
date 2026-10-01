@@ -20,7 +20,7 @@ import (
 
 func intp(n int) *int { return &n }
 
-// fakeMediaRun replaces runUserActionFn and records the argument vectors.
+// fakeMediaRun replaces userRun.media and records the argument vectors.
 type fakeMediaRun struct {
 	mu    sync.Mutex
 	calls [][]string
@@ -31,14 +31,14 @@ type fakeMediaRun struct {
 func stubMediaRun(t *testing.T, res UserActionResult, err error) *fakeMediaRun {
 	t.Helper()
 	f := &fakeMediaRun{res: res, err: err}
-	saved := runUserActionFn
-	runUserActionFn = func(_ context.Context, args ...string) (UserActionResult, error) {
+	saved := userRun.media
+	userRun.media = func(_ context.Context, args ...string) (UserActionResult, error) {
 		f.mu.Lock()
 		f.calls = append(f.calls, args)
 		f.mu.Unlock()
 		return f.res, f.err
 	}
-	t.Cleanup(func() { runUserActionFn = saved })
+	t.Cleanup(func() { userRun.media = saved })
 	return f
 }
 
@@ -54,12 +54,12 @@ func mediaSetup(t *testing.T, cfg Config) {
 	t.Helper()
 	stSetup(t, cfg)
 	resetAudioSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
 	t.Cleanup(func() {
 		resetAudioSample()
-		audioNow = time.Now
-		audioSessionPresent = savedPresent
+		clock.audio = time.Now
+		sys.sessionPresent = savedPresent
 	})
 }
 
@@ -204,11 +204,11 @@ func TestSTStatusAudioBlock(t *testing.T) {
 	}
 
 	// Nobody logged in: the stored sample is not reported.
-	audioSessionPresent = func() bool { return false }
+	sys.sessionPresent = func() bool { return false }
 	if a, _ = status(); a["available"] != false || len(a) != 1 {
 		t.Errorf("audio without a user = %v", a)
 	}
-	audioSessionPresent = func() bool { return true }
+	sys.sessionPresent = func() bool { return true }
 
 	// media.enabled off: neither the block nor the features.
 	setConfig(Config{Port: 5001})
@@ -245,8 +245,8 @@ func TestHeartbeatSampledAtOrdering(t *testing.T) {
 	idleSetup(t)
 	resetAudioSample()
 	received := time.Date(2026, 9, 30, 12, 0, 10, 0, time.UTC)
-	audioNow = func() time.Time { return received }
-	t.Cleanup(func() { resetAudioSample(); audioNow = time.Now })
+	clock.audio = func() time.Time { return received }
+	t.Cleanup(func() { resetAudioSample(); clock.audio = time.Now })
 
 	post := func(body string) int {
 		t.Helper()
@@ -303,9 +303,9 @@ func TestHeartbeatSampledAtOrdering(t *testing.T) {
 func TestAudioChangedPush(t *testing.T) {
 	stPushSetup(t, mediaOn())
 	resetAudioSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	t.Cleanup(func() { resetAudioSample(); audioSessionPresent = savedPresent })
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	t.Cleanup(func() { resetAudioSample(); sys.sessionPresent = savedPresent })
 	startNotifier(nil)
 	t.Cleanup(stopNotifier)
 	cb := newCallbackServer(t)

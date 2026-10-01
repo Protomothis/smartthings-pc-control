@@ -152,7 +152,7 @@ type heartbeatStore struct {
 
 var heartbeat = &heartbeatStore{target: targetUserSession}
 
-func (h *heartbeatStore) Now() time.Time                         { return audioNow() }
+func (h *heartbeatStore) Now() time.Time                         { return clock.audio() }
 func (h *heartbeatStore) Target() (uint32, error)                { return h.target() }
 func (h *heartbeatStore) Ignored(from, target uint32)            { noteIgnoredHeartbeat(from, target) }
 func (h *heartbeatStore) Idle(seconds int64)                     { noteIdleHeartbeat(seconds) }

@@ -22,9 +22,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// runUserActionFn is runUserAction, replaced by the tests.
-var runUserActionFn = runUserAction
-
 // runMediaCommand checks media.enabled, builds the arguments and runs them
 // in the user session. err is action.ErrMediaDisabled, *action.ValueError, or one of
 // runUserAction's errors (errNoUserSession, errUserActionTimeout,
@@ -37,12 +34,12 @@ func runMediaCommand(ctx context.Context, name string, value *int) (UserActionRe
 	if err != nil {
 		return UserActionResult{}, err
 	}
-	res, err := runUserActionFn(ctx, args...)
+	res, err := userRun.media(ctx, args...)
 	if err == nil && !action.IsAudio(name) {
 		// A media key changes what plays: show the new state at once and
 		// read the session again once the player has caught up (#117).
 		noteMediaCommand(res)
-		scheduleMediaRefresh()
+		sys.mediaRefresh()
 	}
 	return res, err
 }
@@ -53,7 +50,7 @@ func readAudioNow(ctx context.Context) (useraction.Audio, error) {
 	if !getConfig().Media.Enabled {
 		return useraction.Audio{}, action.ErrMediaDisabled
 	}
-	res, err := runUserActionFn(ctx, "audio", "get")
+	res, err := userRun.media(ctx, "audio", "get")
 	if err != nil {
 		return useraction.Audio{}, err
 	}
@@ -65,11 +62,11 @@ func readAudioNow(ctx context.Context) (useraction.Audio, error) {
 
 // ---- status ----------------------------------------------------------------
 
-// audioSessionPresent reports whether someone is logged in; a var so the
-// status tests do not depend on the machine they run on. It goes through
+// userSessionPresent reports whether someone is logged in (sys.sessionPresent,
+// so the status tests do not depend on the machine they run on). It goes through
 // targetUserSession, so a status read also drops the samples of a session
 // the commands no longer act on.
-var audioSessionPresent = func() bool {
+func userSessionPresent() bool {
 	_, err := targetUserSession()
 	return err == nil
 }
@@ -80,7 +77,7 @@ func stAudioStatus(cfg Config) stAudio {
 		return stAudio{}
 	}
 	s, ok := currentAudio()
-	if !ok || !audioSessionPresent() {
+	if !ok || !sys.sessionPresent() {
 		return stAudio{}
 	}
 	return stAudioView(s)

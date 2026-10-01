@@ -85,9 +85,9 @@ func (f *fakeNetsh) verbs() []string {
 // withFakeNetsh installs f for the duration of the test.
 func withFakeNetsh(t *testing.T, f *fakeNetsh) {
 	t.Helper()
-	prev := runNetsh
-	runNetsh = f.run
-	t.Cleanup(func() { runNetsh = prev })
+	prev := sys.netsh
+	sys.netsh = f.run
+	t.Cleanup(func() { sys.netsh = prev })
 }
 
 // hasArgs reports whether call contains every want argument.

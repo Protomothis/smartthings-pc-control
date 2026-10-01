@@ -48,9 +48,9 @@ func stoppingReason(fallback string) string { return powerHint.Reason(fallback) 
 // resetPowerCommandHint forgets the hint (tests).
 func resetPowerCommandHint() { powerHint.Reset() }
 
-// screenRun is runUserActionIn pinned to the console session, replaced by
-// the tests.
-var screenRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+// consoleUserAction is runUserActionIn pinned to the console session
+// (userRun.screen).
+func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, error) {
 	return runUserActionIn(ctx, sessionConsole, args...)
 }
 
@@ -74,7 +74,7 @@ var screenRun = func(ctx context.Context, args ...string) (UserActionResult, err
 // (nobody logged in at the console, the child could not start) leaves the
 // state alone.
 func setScreen(state string) {
-	_, err := screenRun(context.Background(), useraction.ActionScreen, state)
+	_, err := userRun.screen(context.Background(), useraction.ActionScreen, state)
 	switch {
 	case err == nil:
 	case errors.Is(err, errUserActionTimeout):

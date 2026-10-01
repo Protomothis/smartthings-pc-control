@@ -22,9 +22,9 @@ import (
 )
 
 // No test may start the delayed `media info` refresh: it would outlive the
-// test and call whatever runUserActionFn is by then.
+// test and call whatever userRun.media is by then.
 func init() {
-	scheduleMediaRefresh = func() {}
+	sys.mediaRefresh = func() {}
 }
 
 var spotifyTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", Album: "New Jeans", App: "Spotify"}
@@ -36,7 +36,7 @@ func nowPlayingSetup(t *testing.T, cfg Config) time.Time {
 	mediaSetup(t, cfg)
 	resetMediaSample()
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	audioNow = func() time.Time { return now }
+	clock.audio = func() time.Time { return now }
 	t.Cleanup(resetMediaSample)
 	return now
 }
@@ -66,7 +66,7 @@ func TestMediaStoreNewerWins(t *testing.T) {
 	if _, ok := currentMedia(); !ok {
 		t.Fatal("fresh sample not reported")
 	}
-	audioNow = func() time.Time { return now.Add(mediaSampleTTL + 3*time.Second) }
+	clock.audio = func() time.Time { return now.Add(mediaSampleTTL + 3*time.Second) }
 	if _, ok := currentMedia(); ok {
 		t.Error("a sample older than the TTL is still reported")
 	}
@@ -124,11 +124,11 @@ func TestSTStatusMediaBlock(t *testing.T) {
 	}
 
 	// Nobody logged in, media off: none.
-	audioSessionPresent = func() bool { return false }
+	sys.sessionPresent = func() bool { return false }
 	if m, _ = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) {
 		t.Errorf("media without a user = %v", m)
 	}
-	audioSessionPresent = func() bool { return true }
+	sys.sessionPresent = func() bool { return true }
 	setConfig(Config{Port: 5001, Media: MediaConfig{NowPlaying: true}})
 	if m, features = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) || containsAll(features, "nowplaying") {
 		t.Errorf("media while disabled = %v, features %v", m, features)
@@ -140,8 +140,8 @@ func TestHeartbeatMediaBlock(t *testing.T) {
 	idleSetup(t)
 	resetMediaSample()
 	received := time.Date(2026, 9, 30, 12, 0, 10, 0, time.UTC)
-	audioNow = func() time.Time { return received }
-	t.Cleanup(func() { resetMediaSample(); audioNow = time.Now })
+	clock.audio = func() time.Time { return received }
+	t.Cleanup(func() { resetMediaSample(); clock.audio = time.Now })
 	post := func(body string) int {
 		t.Helper()
 		return heartbeatDo(t, body, true, true).Code
@@ -182,9 +182,9 @@ func TestHeartbeatMediaBlock(t *testing.T) {
 func TestMediaChangedPush(t *testing.T) {
 	stPushSetup(t, optIn())
 	resetMediaSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	t.Cleanup(func() { resetMediaSample(); audioSessionPresent = savedPresent })
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	t.Cleanup(func() { resetMediaSample(); sys.sessionPresent = savedPresent })
 	startNotifier(nil)
 	t.Cleanup(stopNotifier)
 	cb := newCallbackServer(t)
@@ -223,9 +223,9 @@ func TestMediaEventFieldsOmitUnknown(t *testing.T) {
 func TestMediaCommandUpdatesStore(t *testing.T) {
 	now := nowPlayingSetup(t, optIn())
 	var refreshes atomic.Int32
-	saved := scheduleMediaRefresh
-	scheduleMediaRefresh = func() { refreshes.Add(1) }
-	t.Cleanup(func() { scheduleMediaRefresh = saved })
+	saved := sys.mediaRefresh
+	sys.mediaRefresh = func() { refreshes.Add(1) }
+	t.Cleanup(func() { sys.mediaRefresh = saved })
 
 	recordMediaSample(spotifyTrack, now.Add(-time.Second))
 	reply := func(line string) UserActionResult {

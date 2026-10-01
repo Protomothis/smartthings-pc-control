@@ -364,7 +364,7 @@ func TestScreenConsoleLogonScreen(t *testing.T) {
 	targets, sessions, _ := screenSessionSetup(t, false)
 	setDisplayState("on")
 
-	_, err := screenRun(context.Background(), useraction.ActionScreen, "off")
+	_, err := userRun.screen(context.Background(), useraction.ActionScreen, "off")
 	if !errors.Is(err, errNoConsoleSession) {
 		t.Errorf("err = %v, want errNoConsoleSession", err)
 	}

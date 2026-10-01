@@ -149,12 +149,12 @@ func TestSaveAndLoadConfig(t *testing.T) {
 func stubTrayLauncher(t *testing.T, launchErr error) <-chan struct{} {
 	t.Helper()
 	calls := make(chan struct{}, 8)
-	orig := trayAppLauncher
-	trayAppLauncher = func() error {
+	orig := sys.trayLaunch
+	sys.trayLaunch = func() error {
 		calls <- struct{}{}
 		return launchErr
 	}
-	t.Cleanup(func() { trayAppLauncher = orig })
+	t.Cleanup(func() { sys.trayLaunch = orig })
 	return calls
 }
 

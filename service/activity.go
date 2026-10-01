@@ -91,10 +91,6 @@ func matchActivity(watch []ActivityWatch, running []string) stActivity {
 
 // ---- process list ----------------------------------------------------------
 
-// processLister returns the file names of the running processes. It is a
-// variable so the tests can drive the scanner without Toolhelp.
-var processLister = toolhelpProcessNames
-
 // toolhelpProcessNames reads every process in every session with one
 // Toolhelp snapshot. The service runs as LocalSystem, so it sees the user
 // session's programs as well as its own. The names only live in the
@@ -185,7 +181,7 @@ func (s *activityScanner) scan(cfg ActivityConfig) (stActivity, bool) {
 	sig := activitySig(cfg)
 	next := activityOff()
 	if cfg.Enabled {
-		names, err := processLister()
+		names, err := sys.processes()
 		s.mu.Lock()
 		wasFailing := s.failing
 		s.failing = err != nil
@@ -296,7 +292,7 @@ func watchActivity(stop <-chan struct{}) {
 // case-insensitively. Names that could not go on the watch list anyway
 // ("System", "Registry", "[System Process]") are left out.
 func runningProcessNames() ([]string, error) {
-	names, err := processLister()
+	names, err := sys.processes()
 	if err != nil {
 		return nil, err
 	}

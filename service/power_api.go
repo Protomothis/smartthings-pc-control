@@ -15,29 +15,19 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/Protomothis/smartthings-pc-control/service/power"
-	"github.com/Protomothis/smartthings-pc-control/service/session"
 )
-
-// setSuspendState is power.SetSuspendState. Replaced by the tests, which
-// must never suspend the machine they run on.
-var setSuspendState = power.SetSuspendState
 
 // suspendPC is the suspend command: SetSuspendState, logged, with
 // system.exec_failed on failure like the commands that run a tool.
 func suspendPC() {
 	notePowerCommand("suspend") // hint for power.stopping's reason (§3.5)
-	if err := setSuspendState(false); err != nil {
+	if err := sys.suspend(false); err != nil {
 		logMsg("suspend error: %v", err)
 		reportExecFailure("suspend", err, nil)
 		return
 	}
 	logMsg("suspend ok (resumed)")
 }
-
-// wtsDisconnectSession is session.Disconnect. Replaced by the tests.
-var wtsDisconnectSession = session.Disconnect
 
 // lockAllSessions locks the PC: every session with a user (wts.LoggedOn:
 // the console and any RDP login; a session at the logon screen has
@@ -56,7 +46,7 @@ func lockAllSessions() {
 	var lines []string
 	var errs []error
 	for _, id := range ids {
-		if err := wtsDisconnectSession(id); err != nil {
+		if err := sys.disconnect(id); err != nil {
 			errs = append(errs, fmt.Errorf("session %d: %w", id, err))
 			lines = append(lines, fmt.Sprintf("session %d: %v", id, err))
 			continue
