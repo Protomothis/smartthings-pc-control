@@ -421,24 +421,13 @@ func awakeAPIBody(v awakeView, cfg Config, now time.Time) awakeAPIView {
 //	POST {"minutes": n}         turn on for n minutes (0 = until turned off,
 //	                            key absent = awake.default_minutes)
 //	DELETE                      turn off
-func handleAwakeAPI(w http.ResponseWriter, r *http.Request) {
+var handleAwakeAPI = apiAuth(serveAwakeAPI, http.MethodGet, http.MethodPost, http.MethodDelete)
+
+func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 	ctl := currentAwake()
-	switch r.Method {
-	case http.MethodGet:
+	if r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, awakeAPIBody(ctl.View(), liveCfg, ctl.now()))
-		return
-	case http.MethodPost, http.MethodDelete:
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !checkCSRF(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	var (

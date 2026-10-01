@@ -374,20 +374,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 	mux.HandleFunc("/api/command", handleCommandAPI)
 
 	// API: Restart service (exit with code 1 to trigger Recovery Action)
-	mux.HandleFunc("/api/restart-service", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !checkCSRF(r) {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
+	mux.HandleFunc("/api/restart-service", apiAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Service restarting..."})
 		logMsg("Service restart requested via WebUI")
@@ -396,15 +383,10 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			// Use sc.exe to cleanly restart the service (avoids Recovery Action side effects)
 			restartSelf()
 		}()
-	})
+	}, http.MethodPost))
 
 	// API: Log viewer (tail last 100 lines)
-	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+	mux.HandleFunc("/api/logs", apiAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		logPath := logx.Path()
@@ -426,27 +408,17 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			lines = lines[len(lines)-maxLines:]
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"lines": lines})
-	})
+	}))
 
 	// API: WoL status
-	mux.HandleFunc("/api/wol-status", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+	mux.HandleFunc("/api/wol-status", apiAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		status := getWoLStatus()
 		json.NewEncoder(w).Encode(status)
-	})
+	}))
 
 	// API: Schedule command
-	mux.HandleFunc("/api/schedule", func(w http.ResponseWriter, r *http.Request) {
-		liveCfg := getConfig()
-		if !checkAuth(r, liveCfg.Secret) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+	mux.HandleFunc("/api/schedule", apiAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		if r.Method == http.MethodGet {
@@ -454,10 +426,6 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			return
 		}
 		if r.Method == http.MethodPost {
-			if !checkCSRF(r) {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
 			var body struct {
 				Command string `json:"command"`
 				Minutes int    `json:"minutes"`
@@ -486,30 +454,45 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": msg})
 			return
 		}
-		if r.Method == http.MethodDelete {
-			if !checkCSRF(r) {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-			// ?by=app|tray|toast|webui|smartthings says which UI the user
-			// cancelled from; it only affects the notification wording
-			// (default "api").
-			by := "api"
-			switch v := r.URL.Query().Get("by"); v {
-			case "app", "tray", "toast", "webui", "smartthings":
-				by = v
-			}
-			if cancelScheduleBy(by) {
-				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Schedule cancelled"})
-			} else {
-				json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "No active schedule"})
-			}
-			return
+		// DELETE. ?by=app|tray|toast|webui|smartthings says which UI the
+		// user cancelled from; it only affects the notification wording
+		// (default "api").
+		by := "api"
+		switch v := r.URL.Query().Get("by"); v {
+		case "app", "tray", "toast", "webui", "smartthings":
+			by = v
 		}
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	})
+		if cancelScheduleBy(by) {
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Schedule cancelled"})
+		} else {
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "No active schedule"})
+		}
+	}, http.MethodGet, http.MethodPost, http.MethodDelete))
 
 	return mux
+}
+
+// apiAuth wraps an /api handler in the checks every one of them shares,
+// in this order: the session (checkAuth — the WebUI login, or the tray's
+// local session from loopback, #131; 401), the method when methods are
+// given (405), and the CSRF header on a POST (checkCSRF; 403). The replies
+// are the plain-text http.Error ones the app has always seen.
+func apiAuth(next http.HandlerFunc, methods ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkAuth(r, getConfig().Secret) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if len(methods) > 0 && !slices.Contains(methods, r.Method) {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !checkCSRF(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // writeJSON encodes v with the JSON content type and the given status.
@@ -535,10 +518,9 @@ var commandCallers = map[string]bool{"app": true, "tray": true, "toast": true, "
 // as last_command (origin "ui") and notified like a remote command, so a
 // command nobody at the PC asked for still shows up. An unknown command is
 // a 404.
-func handleCommandAPI(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handleCommandAPI = apiAuth(serveCommandAPI, "POST")
+
+func serveCommandAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Command string `json:"command"`
 		By      string `json:"by"`
@@ -595,74 +577,64 @@ func maskedConfig(cfg Config) configView {
 }
 
 // handleConfigAPI serves GET/POST /api/config.
-func handleConfigAPI(w http.ResponseWriter, r *http.Request) {
+var handleConfigAPI = apiAuth(serveConfigAPI, http.MethodGet, http.MethodPost)
+
+func serveConfigAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 	if r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, maskedConfig(liveCfg))
 		return
 	}
-	if r.Method == http.MethodPost {
-		if !checkCSRF(r) {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-		// Decode over the live config: keys the client omits (an older
-		// GUI sends no telegram/notify at all) keep their current values.
-		newCfg := liveCfg.ForUpdate()
-		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if msg := config.ValidatePort(newCfg.Port); msg != "" {
-			writeAPIError(w, http.StatusBadRequest, msg)
-			return
-		}
-		if newCfg.WebUIRemote && newCfg.Secret == "" {
-			writeAPIError(w, http.StatusBadRequest, "Remote WebUI access requires a secret. Set a secret first.")
-			return
-		}
-		// normalizeConfig applies the token rules: ""/masked keep, "-" clears.
-		newCfg = config.Normalize(newCfg, liveCfg)
-		if msg := config.ValidateGraceSeconds(newCfg.GraceSeconds); msg != "" {
-			writeAPIError(w, http.StatusBadRequest, msg)
-			return
-		}
-		if msg := config.ValidateActivity(newCfg.Activity); msg != "" {
-			writeAPIError(w, http.StatusBadRequest, msg)
-			return
-		}
-		// #109: a preset that could never run is rejected here rather
-		// than on use.
-		if msg := config.ValidatePresets(newCfg.Presets); msg != "" {
-			writeAPIError(w, http.StatusBadRequest, msg)
-			return
-		}
-		oldCfg := liveCfg
-		if err := saveConfig(newCfg); err != nil {
-			http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d, telegram=%v",
-			newCfg.Port, logx.MaskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds, newCfg.Telegram.Enabled)
-		// newCfg still holds a replaced token in plaintext while oldCfg holds
-		// the stored (protected) one, so a real change always differs and a
-		// kept token compares equal — configChangedKeys never sees values.
-		if keys := config.ChangedKeys(oldCfg, newCfg); len(keys) > 0 {
-			// The app and the browser share this endpoint; neither can be told apart.
-			emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
-		}
-		msg := "Settings saved."
-		if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
-			msg = "Settings saved. Restart service to apply port/remote-access changes."
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
+	// POST. Decode over the live config: keys the client omits (an older
+	// GUI sends no telegram/notify at all) keep their current values.
+	newCfg := liveCfg.ForUpdate()
+	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if msg := config.ValidatePort(newCfg.Port); msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if newCfg.WebUIRemote && newCfg.Secret == "" {
+		writeAPIError(w, http.StatusBadRequest, "Remote WebUI access requires a secret. Set a secret first.")
+		return
+	}
+	// normalizeConfig applies the token rules: ""/masked keep, "-" clears.
+	newCfg = config.Normalize(newCfg, liveCfg)
+	if msg := config.ValidateGraceSeconds(newCfg.GraceSeconds); msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if msg := config.ValidateActivity(newCfg.Activity); msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
+	// #109: a preset that could never run is rejected here rather
+	// than on use.
+	if msg := config.ValidatePresets(newCfg.Presets); msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
+	oldCfg := liveCfg
+	if err := saveConfig(newCfg); err != nil {
+		http.Error(w, "Failed to save: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	logMsg("Config updated via WebUI: port=%d, secret=%s, webui_remote=%v, shutdown_grace=%v, grace_seconds=%d, telegram=%v",
+		newCfg.Port, logx.MaskSecret(newCfg.Secret), newCfg.WebUIRemote, newCfg.ShutdownGrace, newCfg.GraceSeconds, newCfg.Telegram.Enabled)
+	// newCfg still holds a replaced token in plaintext while oldCfg holds
+	// the stored (protected) one, so a real change always differs and a
+	// kept token compares equal — configChangedKeys never sees values.
+	if keys := config.ChangedKeys(oldCfg, newCfg); len(keys) > 0 {
+		// The app and the browser share this endpoint; neither can be told apart.
+		emit("security", "config_changed", map[string]string{"keys": strings.Join(keys, ", "), "by": "api"})
+	}
+	msg := "Settings saved."
+	if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
+		msg = "Settings saved. Restart service to apply port/remote-access changes."
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
 }
 
 // ---- SmartThings hub state (#67) -------------------------------------------
@@ -722,16 +694,10 @@ func stSSDPStatus() stSSDPView {
 }
 
 // handleSTHubAPI serves GET /api/st/hub.
-func handleSTHubAPI(w http.ResponseWriter, r *http.Request) {
+var handleSTHubAPI = apiAuth(serveSTHubAPI, http.MethodGet)
+
+func serveSTHubAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	wol, auto := stWoLView(liveCfg.SmartThings)
 	view := stHubView{
 		MachineID: machineID(),
@@ -819,35 +785,15 @@ func telegramErrorMessage(err error) string {
 	return err.Error()
 }
 
-// authTelegramRequest runs the shared checks; it reports false after
-// writing the response when the request must not proceed.
-func authTelegramRequest(w http.ResponseWriter, r *http.Request, methods ...string) bool {
-	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	if !slices.Contains(methods, r.Method) {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return false
-	}
-	if !checkCSRF(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
 // handleTelegramTest serves POST /api/telegram/test: one system.test event
 // straight through a telegram.Sink (bypassing the bus so quiet hours or a
 // mute cannot swallow it). Body {bot_token, chat_id} is optional and lets
 // the GUI test unsaved values; otherwise the live config is used. The
 // telegram.enabled flag is deliberately ignored here — testing is how the
 // user decides whether to enable it.
-func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handleTelegramTest = apiAuth(serveTelegramTest, "POST")
+
+func serveTelegramTest(w http.ResponseWriter, r *http.Request) {
 	o, err := decodeTelegramOverride(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
@@ -887,10 +833,9 @@ func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 
 // handleTelegramMe serves GET /api/telegram/me with the live token:
 // {status:"ok", username, name}. The token never comes from the URL.
-func handleTelegramMe(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "GET") {
-		return
-	}
+var handleTelegramMe = apiAuth(serveTelegramMe, "GET")
+
+func serveTelegramMe(w http.ResponseWriter, r *http.Request) {
 	token, err := liveBotToken(getConfig().Telegram)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "Bot token cannot be decrypted on this machine; enter it again.")
@@ -922,10 +867,9 @@ func handleTelegramMe(w http.ResponseWriter, r *http.Request) {
 // conflict is true while getUpdates keeps answering 409 because another PC
 // shares this bot token (#75); since is when that started and is omitted
 // otherwise. The GUI notify tab shows a warning for it.
-func handleTelegramState(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "GET") {
-		return
-	}
+var handleTelegramState = apiAuth(serveTelegramState, "GET")
+
+func serveTelegramState(w http.ResponseWriter, r *http.Request) {
 	conflict, since := telegramConflictState()
 	out := map[string]any{
 		"status":   "ok",
@@ -950,10 +894,9 @@ type telegramChat struct {
 // {bot_token}) /api/telegram/chats: getUpdates(offset 0, timeout 0) reduced
 // to the distinct chats that wrote to the bot, in first-seen order:
 // {status:"ok", chats:[{chat_id, title, username, type}]}.
-func handleTelegramChats(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "GET", "POST") {
-		return
-	}
+var handleTelegramChats = apiAuth(serveTelegramChats, "GET", "POST")
+
+func serveTelegramChats(w http.ResponseWriter, r *http.Request) {
 	o, err := decodeTelegramOverride(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")

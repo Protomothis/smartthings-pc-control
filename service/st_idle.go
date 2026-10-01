@@ -149,20 +149,9 @@ func heartbeatSampleTime(sampledAt string, received time.Time) (time.Time, bool)
 // stored whatever smartthings.expose_session says — the flag decides what
 // /st/v1/status publishes, and the tray app already stops posting when it
 // is off, so a stale flag never turns into a stale reading.
-func handleSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
-	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !checkCSRF(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
+var handleSessionHeartbeat = apiAuth(serveSessionHeartbeat, http.MethodPost)
+
+func serveSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var body idleHeartbeatRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, idleHeartbeatMaxBody)).Decode(&body); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid JSON")

@@ -177,14 +177,8 @@ func startBatteryMonitor(stop <-chan struct{}) {
 
 // handleBatteryAPI serves GET /api/battery for the app's status bar, behind
 // the same session check as the other /api routes.
-func handleBatteryAPI(w http.ResponseWriter, r *http.Request) {
-	if !checkAuth(r, getConfig().Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+var handleBatteryAPI = apiAuth(serveBatteryAPI, http.MethodGet)
+
+func serveBatteryAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, battery.info())
 }

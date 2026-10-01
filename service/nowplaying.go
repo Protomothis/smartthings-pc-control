@@ -258,22 +258,11 @@ func mediaAPIView(cfg Config) mediaAPIBody {
 // The commands are the /st/v1 ones (mediaCommandKinds) with the same
 // ranges, switch and errors: 403 media_disabled, 409 no_user_session,
 // 400, 501 unsupported, 502 failed, 504 timeout.
-func handleMediaAPI(w http.ResponseWriter, r *http.Request) {
-	if !checkAuth(r, getConfig().Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
+var handleMediaAPI = apiAuth(serveMediaAPI, http.MethodGet, http.MethodPost)
+
+func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, mediaAPIView(getConfig()))
-		return
-	case http.MethodPost:
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !checkCSRF(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	var body struct {

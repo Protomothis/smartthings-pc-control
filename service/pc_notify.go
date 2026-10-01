@@ -273,10 +273,9 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 // handleNotifyTestAPI serves POST /api/notify/test for the app's
 // [테스트 알림] button. The enabled switch is ignored (testing is how the
 // user decides), the rate limit is not.
-func handleNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handleNotifyTestAPI = apiAuth(serveNotifyTestAPI, "POST")
+
+func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title string `json:"title"`
 		Text  string `json:"text"`

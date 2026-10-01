@@ -146,10 +146,9 @@ func handleSTPreset(w http.ResponseWriter, r *http.Request, body stCommandReques
 
 // handlePresetsRunAPI serves POST /api/presets/run {slot} — the command
 // tab's [실행] buttons, which run a saved preset.
-func handlePresetsRunAPI(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handlePresetsRunAPI = apiAuth(servePresetsRunAPI, "POST")
+
+func servePresetsRunAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Slot int `json:"slot"`
 	}
@@ -169,10 +168,9 @@ func handlePresetsRunAPI(w http.ResponseWriter, r *http.Request) {
 // handlePresetsTestAPI serves POST /api/presets/test {slot, name, type,
 // path, args} — the editor's [테스트] button, which runs the row as typed,
 // before it is saved. It passes the same validation a save does.
-func handlePresetsTestAPI(w http.ResponseWriter, r *http.Request) {
-	if !authTelegramRequest(w, r, "POST") {
-		return
-	}
+var handlePresetsTestAPI = apiAuth(servePresetsTestAPI, "POST")
+
+func servePresetsTestAPI(w http.ResponseWriter, r *http.Request) {
 	var p Preset
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&p); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "Invalid JSON")

@@ -104,15 +104,9 @@ func buildWebUIStatus(cfg Config) webUIStatus {
 }
 
 // handleWebUIStatusAPI serves GET /api/status behind the session cookie.
-func handleWebUIStatusAPI(w http.ResponseWriter, r *http.Request) {
+var handleWebUIStatusAPI = apiAuth(serveWebUIStatusAPI, http.MethodGet)
+
+func serveWebUIStatusAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	if !checkAuth(r, liveCfg.Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	writeJSON(w, http.StatusOK, buildWebUIStatus(liveCfg))
 }

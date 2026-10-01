@@ -381,15 +381,9 @@ func isLoopbackRequest(r *http.Request) bool {
 // refuses anything but a loopback caller: the WebUI may be open to the LAN
 // (webui_remote), and the process list is meant for this PC's screen only.
 // Nothing is logged about the names.
-func handleProcessesAPI(w http.ResponseWriter, r *http.Request) {
-	if !checkAuth(r, getConfig().Secret) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+var handleProcessesAPI = apiAuth(serveProcessesAPI, http.MethodGet)
+
+func serveProcessesAPI(w http.ResponseWriter, r *http.Request) {
 	if !isLoopbackRequest(r) {
 		writeAPIError(w, http.StatusForbidden, "The process list is only available on this PC.")
 		return
