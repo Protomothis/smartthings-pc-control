@@ -10,44 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-)
 
-func TestDecodeBattery(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		in   systemPowerStatus
-		want batteryInfo
-	}{
-		{"desktop: no system battery", systemPowerStatus{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255},
-			batteryInfo{Present: false, Percent: -1, AC: true}},
-		{"no battery flag with other bits and a stray percent", systemPowerStatus{ACLineStatus: 1, BatteryFlag: 128 | 8, BatteryLifePercent: 100},
-			batteryInfo{Present: false, Percent: -1, AC: true}},
-		{"high, on battery", systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 80},
-			batteryInfo{Present: true, Percent: 80}},
-		{"charging bit on AC", systemPowerStatus{ACLineStatus: 1, BatteryFlag: 8 | 1, BatteryLifePercent: 80},
-			batteryInfo{Present: true, Percent: 80, Charging: true, AC: true}},
-		{"low and charging", systemPowerStatus{ACLineStatus: 1, BatteryFlag: 8 | 2, BatteryLifePercent: 12},
-			batteryInfo{Present: true, Percent: 12, Charging: true, AC: true}},
-		{"critical", systemPowerStatus{ACLineStatus: 0, BatteryFlag: 4, BatteryLifePercent: 3},
-			batteryInfo{Present: true, Percent: 3}},
-		{"full on AC, not charging", systemPowerStatus{ACLineStatus: 1, BatteryFlag: 1, BatteryLifePercent: 100},
-			batteryInfo{Present: true, Percent: 100, AC: true}},
-		{"flag 0 (between high and low)", systemPowerStatus{ACLineStatus: 0, BatteryFlag: 0, BatteryLifePercent: 50},
-			batteryInfo{Present: true, Percent: 50}},
-		{"battery with unknown percent", systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 255},
-			batteryInfo{Present: true, Percent: -1}},
-		{"flag unknown, percent known", systemPowerStatus{ACLineStatus: 255, BatteryFlag: 255, BatteryLifePercent: 64},
-			batteryInfo{Present: true, Percent: 64}},
-		{"flag unknown, percent unknown (VM)", systemPowerStatus{ACLineStatus: 255, BatteryFlag: 255, BatteryLifePercent: 255},
-			batteryInfo{Present: false, Percent: -1}},
-		{"AC unknown reads as false", systemPowerStatus{ACLineStatus: 255, BatteryFlag: 1, BatteryLifePercent: 90},
-			batteryInfo{Present: true, Percent: 90}},
-	} {
-		if got := decodeBattery(tc.in); got != tc.want {
-			t.Errorf("%s: decodeBattery(%+v) = %+v, want %+v", tc.name, tc.in, got, tc.want)
-		}
-	}
-}
+	"github.com/Protomothis/smartthings-pc-control/service/devstate"
+)
 
 // fakeBattery is a monitor fed from a slice, recording the changes it
 // reports.
@@ -59,8 +24,8 @@ type fakeBattery struct {
 
 func (f *fakeBattery) monitor() *batteryMonitor {
 	return &batteryMonitor{
-		last: unknownBattery,
-		read: func() (systemPowerStatus, error) {
+		Last: devstate.UnknownBattery,
+		Read: func() (systemPowerStatus, error) {
 			if f.err != nil {
 				return systemPowerStatus{}, f.err
 			}
@@ -70,7 +35,7 @@ func (f *fakeBattery) monitor() *batteryMonitor {
 			}
 			return s, nil
 		},
-		onChange: func(b batteryInfo) { f.changes = append(f.changes, b) },
+		OnChange: func(b batteryInfo) { f.changes = append(f.changes, b) },
 	}
 }
 
@@ -99,12 +64,12 @@ func TestBatteryChangeDetection(t *testing.T) {
 		laptop(79, true),
 	}}
 	m := f.monitor()
-	if got := m.info(); got != unknownBattery {
+	if got := m.Info(); got != devstate.UnknownBattery {
 		t.Errorf("before the first reading = %+v", got)
 	}
 	var changed []bool
 	for i := 0; i < 5; i++ {
-		changed = append(changed, m.poll())
+		changed = append(changed, m.Poll())
 	}
 	want := []bool{false, false, true, true, false}
 	for i := range want {
@@ -115,17 +80,17 @@ func TestBatteryChangeDetection(t *testing.T) {
 	if len(f.changes) != 2 || f.changes[0].Percent != 79 || f.changes[0].Charging || !f.changes[1].Charging {
 		t.Errorf("changes = %+v", f.changes)
 	}
-	if got := m.info(); got != (batteryInfo{Present: true, Percent: 79, Charging: true, AC: true}) {
+	if got := m.Info(); got != (batteryInfo{Present: true, Percent: 79, Charging: true, AC: true}) {
 		t.Errorf("info = %+v", got)
 	}
 
 	// A failed read keeps the last value and is not a change.
 	f.err = errors.New("nope")
-	if m.poll() {
+	if m.Poll() {
 		t.Error("a failed read reported a change")
 	}
-	if m.info().Percent != 79 {
-		t.Errorf("a failed read lost the last value: %+v", m.info())
+	if m.Info().Percent != 79 {
+		t.Errorf("a failed read lost the last value: %+v", m.Info())
 	}
 }
 
@@ -135,7 +100,7 @@ func TestBatteryDesktopNeverChanges(t *testing.T) {
 	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255}}}
 	m := f.monitor()
 	for i := 0; i < 3; i++ {
-		m.poll()
+		m.Poll()
 	}
 	if len(f.changes) != 0 {
 		t.Errorf("desktop changes = %+v", f.changes)
@@ -149,7 +114,7 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	// Desktop: the block is there, "battery" is not in features.
 	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255}}}
 	m := f.monitor()
-	m.poll()
+	m.Poll()
 	stubBattery(t, m)
 	got := stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
 	bat, ok := got["battery"].(map[string]any)
@@ -163,7 +128,7 @@ func TestSTStatusBatteryAndFeatures(t *testing.T) {
 	// Laptop: "battery" joins features.
 	f = &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 1 | 8, BatteryLifePercent: 80}}}
 	m = f.monitor()
-	m.poll()
+	m.Poll()
 	stubBattery(t, m)
 	got = stJSON(t, stDo(t, "GET", "/st/v1/status", "192.168.1.20", "", ""))
 	bat = got["battery"].(map[string]any)
@@ -184,13 +149,13 @@ func TestBatteryChangedIsPushed(t *testing.T) {
 		{ACLineStatus: 0, BatteryFlag: 2, BatteryLifePercent: 20},
 	}}
 	m := f.monitor()
-	m.onChange = emitBatteryChanged
+	m.OnChange = emitBatteryChanged
 	stubBattery(t, m)
 	cb := newCallbackServer(t)
 	subscribeTo(t, cb, 600)
 
-	m.poll()
-	m.poll()
+	m.Poll()
+	m.Poll()
 	got := cb.wait(t)
 	if got["type"] != "battery.changed" {
 		t.Fatalf("type = %v", got["type"])
@@ -225,7 +190,7 @@ func TestTelegramStatusBatteryLine(t *testing.T) {
 	} {
 		f := &fakeBattery{readings: []systemPowerStatus{tc.raw}}
 		m := f.monitor()
-		m.poll()
+		m.Poll()
 		stubBattery(t, m)
 		status, _, _ := h.HandleCommand(context.Background(), "42", "status", nil)
 		if tc.want == "" {
@@ -242,7 +207,7 @@ func TestTelegramStatusBatteryLine(t *testing.T) {
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
 	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 8, BatteryLifePercent: 42}}}
 	m := f.monitor()
-	m.poll()
+	m.Poll()
 	stubBattery(t, m)
 	status, _, _ := h.HandleCommand(context.Background(), "42", "status", nil)
 	if !strings.Contains(status, "Battery: 42% · charging") {
@@ -256,7 +221,7 @@ func TestBatteryAPI(t *testing.T) {
 	t.Cleanup(func() { setConfig(prev) })
 	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 55}}}
 	m := f.monitor()
-	m.poll()
+	m.Poll()
 	stubBattery(t, m)
 
 	w := httptest.NewRecorder()

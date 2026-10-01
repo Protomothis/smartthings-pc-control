@@ -848,7 +848,7 @@ func tgStatusText() string {
 	ctl := currentAwake()
 	fmt.Fprintf(&b, "\n%s: %s", tgText("st_awake"), tgAwakeStatus(ctl.View(), ctl.now()))
 	// A desktop has no battery, and no line for one.
-	if bat := battery.info(); bat.Present {
+	if bat := battery.Info(); bat.Present {
 		fmt.Fprintf(&b, "\n%s: %s", tgText("st_battery"), tgBatteryStatus(bat))
 	}
 	if line := tgActivityLine(stActivityStatus(getConfig())); line != "" {

@@ -9,11 +9,25 @@ package service
 
 import (
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/devstate"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
+
+// dev is what the service knows about the PC's devices between readings
+// (service/devstate): one value for what used to be a mutex and a variable
+// per store. The battery monitor is the battery variable (battery.go).
+var dev = struct {
+	audio   devstate.Sample[useraction.Audio]
+	media   devstate.Sample[useraction.NowPlaying]
+	idle    devstate.Sample[int64]
+	display *devstate.Value[string]
+	target  devstate.SessionTracker
+}{
+	// "unknown" until a screen command has run in this process.
+	display: devstate.NewValue("unknown"),
+}
 
 // audioSample is one stored reading and when it was taken.
 type audioSample struct {
@@ -21,45 +35,29 @@ type audioSample struct {
 	UpdatedAt time.Time
 }
 
-var (
-	audioMu   sync.Mutex
-	audioLast audioSample
-	// audioNow is time.Now, replaced by the tests.
-	audioNow = time.Now
-)
+// audioNow is time.Now, replaced by the tests.
+var audioNow = time.Now
 
 // noteAudioSample stores a reading taken at at, unless the stored one is
 // newer: a heartbeat and a command reply can race, and the older of the
 // two must not overwrite the newer. It reports whether the sample was
 // stored. Equal times store (the later call wins).
 func noteAudioSample(a useraction.Audio, at time.Time) bool {
-	stored, _ := noteAudioSampleChange(a, at)
+	stored, _ := dev.audio.Note(a, at)
 	return stored
-}
-
-// noteAudioSampleChange is noteAudioSample that also reports whether the
-// stored state changed: a stored sample whose volume, mute or device
-// differs from the one before it. The first sample since the service
-// started is a baseline, not a change.
-func noteAudioSampleChange(a useraction.Audio, at time.Time) (stored, changed bool) {
-	audioMu.Lock()
-	defer audioMu.Unlock()
-	if !audioLast.UpdatedAt.IsZero() && at.Before(audioLast.UpdatedAt) {
-		return false, false
-	}
-	changed = !audioLast.UpdatedAt.IsZero() && audioLast.Audio != a
-	audioLast = audioSample{Audio: a, UpdatedAt: at}
-	return true, changed
 }
 
 // recordAudioSample stores a reading (newer wins, see noteAudioSample) and
 // pushes audio.changed to the hub when the state it stored is different
-// (#104). The heartbeat and the command replies both come through here,
-// so a volume changed with the keyboard reaches the SmartThings slider
-// within one heartbeat, and a command's effect at once. Like the display
-// state it is device state: bus taps only, never a Telegram notification.
+// (#104): a stored sample whose volume, mute or device differs from the
+// one before it — the first sample since the service started is a
+// baseline, not a change. The heartbeat and the command replies both come
+// through here, so a volume changed with the keyboard reaches the
+// SmartThings slider within one heartbeat, and a command's effect at once.
+// Like the display state it is device state: bus taps only, never a
+// Telegram notification.
 func recordAudioSample(a useraction.Audio, at time.Time) bool {
-	stored, changed := noteAudioSampleChange(a, at)
+	stored, changed := dev.audio.Note(a, at)
 	if changed {
 		emitDevice("audio", "changed", map[string]string{
 			"volume": strconv.Itoa(a.Volume),
@@ -74,14 +72,9 @@ func recordAudioSample(a useraction.Audio, at time.Time) bool {
 // none since the service started. How old is too old to report is the
 // caller's decision (UpdatedAt is there for it).
 func currentAudio() (audioSample, bool) {
-	audioMu.Lock()
-	defer audioMu.Unlock()
-	return audioLast, !audioLast.UpdatedAt.IsZero()
+	a, at, ok := dev.audio.Last()
+	return audioSample{Audio: a, UpdatedAt: at}, ok
 }
 
 // resetAudioSample forgets the stored reading (tests).
-func resetAudioSample() {
-	audioMu.Lock()
-	audioLast = audioSample{}
-	audioMu.Unlock()
-}
+func resetAudioSample() { dev.audio.Reset() }

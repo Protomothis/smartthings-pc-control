@@ -387,12 +387,12 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 
 	// battery: a charging laptop at 76%.
 	stubBattery(t, &batteryMonitor{
-		last:  batteryInfo{Present: true, Percent: 76, Charging: true, AC: true},
-		known: true,
-		read: func() (systemPowerStatus, error) {
+		Last:  batteryInfo{Present: true, Percent: 76, Charging: true, AC: true},
+		Known: true,
+		Read: func() (systemPowerStatus, error) {
 			return systemPowerStatus{}, fmt.Errorf("not read in the golden world")
 		},
-		onChange: emitBatteryChanged,
+		OnChange: emitBatteryChanged,
 	})
 
 	goldenActivity(t, cfg)
@@ -743,10 +743,10 @@ var pushCases = map[string]pushCase{
 	}},
 	"push.battery.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
 		// Unplugged at 75%: BatteryFlag 1 (high), AC offline.
-		battery.read = func() (systemPowerStatus, error) {
+		battery.Read = func() (systemPowerStatus, error) {
 			return systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: 75}, nil
 		}
-		if !battery.poll() {
+		if !battery.Poll() {
 			t.Fatal("the battery reading did not change")
 		}
 	}},

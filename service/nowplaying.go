@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
@@ -40,11 +39,6 @@ type mediaSample struct {
 	UpdatedAt time.Time
 }
 
-var (
-	mediaMu   sync.Mutex
-	mediaLast mediaSample
-)
-
 // shareNowPlaying applies the opt-in: np as it may be stored and shown.
 func shareNowPlaying(np useraction.NowPlaying, cfg Config) useraction.NowPlaying {
 	if !cfg.Media.NowPlaying {
@@ -58,14 +52,7 @@ func shareNowPlaying(np useraction.NowPlaying, cfg Config) useraction.NowPlaying
 // stored state. The first sample since the service started is a baseline,
 // not a change.
 func noteMediaSampleChange(np useraction.NowPlaying, at time.Time) (stored, changed bool) {
-	mediaMu.Lock()
-	defer mediaMu.Unlock()
-	if !mediaLast.UpdatedAt.IsZero() && at.Before(mediaLast.UpdatedAt) {
-		return false, false
-	}
-	changed = !mediaLast.UpdatedAt.IsZero() && mediaLast.NowPlaying != np
-	mediaLast = mediaSample{NowPlaying: np, UpdatedAt: at}
-	return true, changed
+	return dev.media.Note(np, at)
 }
 
 // recordMediaSample stores a reading (opt-in applied, newer wins) and
@@ -94,20 +81,12 @@ func mediaEventFields(np useraction.NowPlaying) map[string]string {
 // currentMedia returns the newest reading while it is fresh (see
 // mediaSampleTTL); ok is false otherwise.
 func currentMedia() (mediaSample, bool) {
-	mediaMu.Lock()
-	defer mediaMu.Unlock()
-	if mediaLast.UpdatedAt.IsZero() || audioNow().Sub(mediaLast.UpdatedAt) > mediaSampleTTL {
-		return mediaSample{}, false
-	}
-	return mediaLast, true
+	np, at, ok := dev.media.Fresh(audioNow(), mediaSampleTTL)
+	return mediaSample{NowPlaying: np, UpdatedAt: at}, ok
 }
 
 // resetMediaSample forgets the stored reading (tests).
-func resetMediaSample() {
-	mediaMu.Lock()
-	mediaLast = mediaSample{}
-	mediaMu.Unlock()
-}
+func resetMediaSample() { dev.media.Reset() }
 
 // nowPlaying reads the "media" object of a `media info` reply. A media key
 // reply has a string there ("media":"next") and reads as ok=false, as does

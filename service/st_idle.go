@@ -20,7 +20,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
@@ -40,44 +39,23 @@ const (
 	idleHeartbeatMax = int64(365 * 24 * 60 * 60)
 )
 
-// idleHeartbeat is the last sample the tray app posted.
-type idleHeartbeat struct {
-	Seconds int64
-	At      time.Time
-}
+// idleNow is time.Now, replaced by the staleness tests.
+var idleNow = time.Now
 
-var (
-	idleBeat   idleHeartbeat
-	idleBeatMu sync.Mutex
-	// idleNow is time.Now, replaced by the staleness tests.
-	idleNow = time.Now
-)
-
-// noteIdleHeartbeat records one sample from the user session.
-func noteIdleHeartbeat(seconds int64) {
-	idleBeatMu.Lock()
-	idleBeat = idleHeartbeat{Seconds: seconds, At: idleNow()}
-	idleBeatMu.Unlock()
-}
+// noteIdleHeartbeat records one sample from the user session, stamped
+// with the receive time (dev.idle).
+func noteIdleHeartbeat(seconds int64) { dev.idle.Set(seconds, idleNow()) }
 
 // lastIdleSeconds returns the idle time of the interactive session; ok is
 // false when no heartbeat has arrived, or the newest one is older than
 // idleHeartbeatTTL, in which case the status block reports null.
 func lastIdleSeconds() (int64, bool) {
-	idleBeatMu.Lock()
-	defer idleBeatMu.Unlock()
-	if idleBeat.At.IsZero() || idleNow().Sub(idleBeat.At) > idleHeartbeatTTL {
-		return 0, false
-	}
-	return idleBeat.Seconds, true
+	s, _, ok := dev.idle.Fresh(idleNow(), idleHeartbeatTTL)
+	return s, ok
 }
 
 // resetIdleHeartbeat forgets the stored sample (tests).
-func resetIdleHeartbeat() {
-	idleBeatMu.Lock()
-	idleBeat = idleHeartbeat{}
-	idleBeatMu.Unlock()
-}
+func resetIdleHeartbeat() { dev.idle.Reset() }
 
 // idleHeartbeatRequest is the body of POST /api/session/heartbeat. Both
 // parts are optional and stored independently: idle_seconds follows the
@@ -220,18 +198,6 @@ func serveSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 // heartbeats are stored. A var so the tests need no real sessions.
 var heartbeatTargetSession = targetUserSession
 
-var (
-	targetMu sync.Mutex
-	// targetLast is the target session last seen (0 = nobody logged in);
-	// targetKnown is false until the first lookup.
-	targetLast  uint32
-	targetKnown bool
-	// ignoredFrom and ignoredFor are the source and target of the last
-	// ignored heartbeat logged: a foreign tray app costs one log line, not
-	// one per post.
-	ignoredFrom, ignoredFor uint32
-)
-
 // targetUserSession is getActiveUserSessionID — the same findUserSession
 // that runUserAction's commands go through — which also notices the target
 // moving to another session (a logon or logoff, or — since the unlocked
@@ -252,14 +218,10 @@ func targetUserSession() (uint32, error) {
 	return id, err
 }
 
-// observeTargetSession records the target session and drops the stored
-// samples when it differs from the one seen before.
+// observeTargetSession records the target session (0 = nobody logged in)
+// and drops the stored samples when it differs from the one seen before.
 func observeTargetSession(id uint32) {
-	targetMu.Lock()
-	prev, changed := targetLast, targetKnown && targetLast != id
-	targetLast, targetKnown = id, true
-	targetMu.Unlock()
-	if changed {
+	if prev, changed := dev.target.Observe(id); changed {
 		resetIdleHeartbeat()
 		resetAudioSample()
 		resetMediaSample()
@@ -269,18 +231,10 @@ func observeTargetSession(id uint32) {
 
 // noteIgnoredHeartbeat logs an ignored heartbeat once per source and target.
 func noteIgnoredHeartbeat(from, target uint32) {
-	targetMu.Lock()
-	first := ignoredFrom != from || ignoredFor != target
-	ignoredFrom, ignoredFor = from, target
-	targetMu.Unlock()
-	if first {
+	if dev.target.NoteIgnored(from, target) {
 		logMsg("heartbeat from session %d ignored: commands act on session %d", from, target)
 	}
 }
 
 // resetTargetSession forgets the target session (tests).
-func resetTargetSession() {
-	targetMu.Lock()
-	targetLast, targetKnown, ignoredFrom, ignoredFor = 0, false, 0, 0
-	targetMu.Unlock()
-}
+func resetTargetSession() { dev.target.Reset() }

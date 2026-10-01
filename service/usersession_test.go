@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/useraction"
 	"golang.org/x/sys/windows"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // fakeWTS installs a console session, a session table and the token each
@@ -337,9 +338,7 @@ func TestScreenRunsInConsoleSession(t *testing.T) {
 			t.Errorf("queried session %d: the screen commands looked the target up", q)
 		}
 	}
-	targetMu.Lock()
-	last, known := targetLast, targetKnown
-	targetMu.Unlock()
+	last, known := dev.target.Current()
 	if !known || last != 7 {
 		t.Errorf("target = %d (known %v), want 7 untouched", last, known)
 	}
@@ -375,9 +374,7 @@ func TestScreenConsoleLogonScreen(t *testing.T) {
 	if got := getDisplayState(); got != "on" {
 		t.Errorf("display state = %q, want on (unchanged)", got)
 	}
-	targetMu.Lock()
-	known := targetKnown
-	targetMu.Unlock()
+	_, known := dev.target.Current()
 	if known {
 		t.Error("the screen command recorded a target session")
 	}

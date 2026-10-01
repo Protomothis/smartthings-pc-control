@@ -519,7 +519,7 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 // buildSTStatus assembles the §3.2 status document for cfg. Push bodies
 // carry the very same object (§3.5), so the driver never needs a diff.
 func buildSTStatus(cfg Config) stStatusResponse {
-	bat := battery.info()
+	bat := battery.Info()
 	resp := stStatusResponse{
 		Protocol:       stProtocol,
 		ServiceVersion: Version,

@@ -18,33 +18,21 @@ type Command struct {
 
 // Display state (edge-driver doc §3.2 "display"). The service cannot ask the
 // monitor what it is doing, so this is simply the last screen command it
-// sent: "on" after turnscreenon, "off" after turnscreenoff, "unknown"
-// until either has run in this process.
-var (
-	displayState   = "unknown"
-	displayStateMu sync.RWMutex
-)
+// sent (dev.display): "on" after turnscreenon, "off" after turnscreenoff,
+// "unknown" until either has run in this process.
 
 // setDisplayState records the effect of a screen command and, when the
 // state actually changed, pushes display.changed to the SmartThings hub
 // (edge-driver doc §3.5). It is device state, not a notification, so it
 // goes to the bus taps only and never to Telegram.
 func setDisplayState(state string) {
-	displayStateMu.Lock()
-	changed := displayState != state
-	displayState = state
-	displayStateMu.Unlock()
-	if changed {
+	if dev.display.Set(state) {
 		emitDevice("display", "changed", map[string]string{"display": state})
 	}
 }
 
 // getDisplayState returns "on", "off" or "unknown".
-func getDisplayState() string {
-	displayStateMu.RLock()
-	defer displayStateMu.RUnlock()
-	return displayState
-}
+func getDisplayState() string { return dev.display.Get() }
 
 // Last executed power command (edge-driver doc §3.5, "power.stopping"
 // data.reason). Windows tells the service that it is stopping, and that
