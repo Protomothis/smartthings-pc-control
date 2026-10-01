@@ -28,10 +28,31 @@ func stPushSetup(t *testing.T, cfg Config) {
 	resetPowerCommandHint()
 	orig := stPushNow
 	t.Cleanup(func() {
+		stPushFlush(t)
 		stPushNow = orig
 		stPushReset()
 		resetPowerCommandHint()
 	})
+}
+
+// stPushFlush waits until the async push worker has delivered everything
+// queued so far, so a delivery left over from this test cannot read
+// package state (Version, the config) that the next test is rewriting.
+func stPushFlush(t *testing.T) {
+	t.Helper()
+	stPushWorkerOne.Do(func() { go stPushWorker() })
+	done := make(chan struct{})
+	select {
+	case stPushQueue <- stPushJob{flushed: done}:
+	case <-time.After(5 * time.Second):
+		t.Error("ST push queue still full after 5s")
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("ST push worker did not drain within 5s")
+	}
 }
 
 // subscribeBody builds a POST /st/v1/subscribe body.
@@ -358,7 +379,7 @@ func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001})
 	cb := newCallbackServer(t)
 	cb.status.Store(http.StatusInternalServerError)
-	id := subscribeTo(t, cb, 600)
+	subscribeTo(t, cb, 600)
 
 	job := stPushJob{Type: "remote.received", At: time.Now(), Data: map[string]string{"command": "ping"}}
 	for i := 1; i <= stPushMaxFailures; i++ {
@@ -378,7 +399,7 @@ func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	// A success in between resets the counter.
 	stPushReset()
 	cb.status.Store(http.StatusOK)
-	id = subscribeTo(t, cb, 600)
+	id := subscribeTo(t, cb, 600)
 	stPushDispatch(context.Background(), job)
 	cb.status.Store(http.StatusInternalServerError)
 	stPushDispatch(context.Background(), job)

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -109,7 +110,7 @@ func TestFollowPortChange(t *testing.T) {
 	if currentWebUIPort() != portB {
 		t.Errorf("port = %d, want %d", currentWebUIPort(), portB)
 	}
-	if _, err := u.client.GetConfig(); err != errUnauthorized {
+	if _, err := u.client.GetConfig(); !errors.Is(err, errUnauthorized) {
 		t.Errorf("GetConfig on the new port: %v, want errUnauthorized", err)
 	}
 }

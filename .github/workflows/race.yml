@@ -1,0 +1,50 @@
+name: Race detector
+
+# `go test -race ./...` once a week. The race detector needs cgo, which the
+# windows-latest image provides (MinGW gcc, the same toolchain the Fyne build
+# uses), but the instrumented run is several times slower than ci.yml's tests,
+# so it is not on the push path.
+#
+# GitHub runs scheduled workflows on the default branch (main) only. To race a
+# milestone branch before it is merged, start this workflow by hand from the
+# Actions tab and pick the branch (workflow_dispatch).
+on:
+  schedule:
+    - cron: '17 3 * * 1' # Mondays 03:17 UTC (12:17 KST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: race-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  race:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+
+      # Restore only: ci.yml owns these keys, and saving the race-instrumented
+      # build cache under them would bloat what release builds restore.
+      - name: Restore Go build and module cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ hashFiles('**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-
+
+      - name: Test with the race detector
+        env:
+          CGO_ENABLED: 1
+        run: go test -race -count=1 ./...

@@ -325,7 +325,7 @@ func (u *ui) savePresetsTab(quiet bool) bool {
 	}
 	s := t.state()
 	if key, slot := rowsProblem(s.Rows); key != "" {
-		dialog.ShowError(errors.New(fmt.Sprintf(u.t(key), slot)), u.win)
+		dialog.ShowError(fmt.Errorf(u.t(key), slot), u.win)
 		return false
 	}
 	cfg, err := s.applyTo(*u.cfgBaseline)

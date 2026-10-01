@@ -2,6 +2,7 @@ package gui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -161,7 +162,7 @@ func (c *Client) do(method, path string, body any) (*http.Response, error) {
 	c.baseMu.RLock()
 	base := c.base
 	c.baseMu.RUnlock()
-	req, err := http.NewRequest(method, base+path, &buf)
+	req, err := http.NewRequestWithContext(context.Background(), method, base+path, &buf)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -143,7 +144,7 @@ func parseShutdownReason(out []byte, now time.Time) (string, bool) {
 	dec := xml.NewDecoder(strings.NewReader(string(out)))
 	for {
 		tok, err := dec.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return "", false
 		}
 		if err != nil {
