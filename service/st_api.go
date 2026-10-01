@@ -693,8 +693,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		handleSTMedia(w, r, name, body, from)
 		return
 	}
-	cmd, ok := Commands[name]
-	if !ok {
+	if _, ok := Commands[name]; !ok {
 		logMsg("ST API: unknown command from %s", from)
 		emit("security", "unknown_command", map[string]string{"from": from, "command": truncate(name, 64)})
 		stError(w, http.StatusBadRequest, "unknown command")
@@ -711,14 +710,11 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusBadRequest, fmt.Sprintf("minutes must be between 0 and %d", stMaxMinutes))
 		return
 	}
-	if name != "ping" {
-		// Shown by the Telegram /status command and as last_command above.
-		noteRemoteCommandBy(name, from, "smartthings")
-	}
-
 	// An explicit delay is a schedule the user set from their phone, so it
-	// carries its own origin and needs no tray toast (§3.3).
+	// carries its own origin and needs no tray toast (§3.3). It is still
+	// the last command, like one that runs now (dispatchCommand).
 	if body.Minutes > 0 {
+		recordCommand(name, from, originSmartThings)
 		delay := time.Duration(body.Minutes) * time.Minute
 		if err := setSchedule(name, delay, originSmartThings); err != nil {
 			logMsg("ST API: scheduling %s failed: %v", name, err)
@@ -732,36 +728,16 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 
 	// No delay: run now, or defer by the configured grace period so the
 	// user at the PC can cancel. forceshutdown is always immediate (§3.3).
-	cfg := getConfig()
-	graceWanted := mode != "immediate" && name != "forceshutdown" && graceCommands[name] &&
-		(cfg.ShutdownGrace || mode == "grace")
-	if graceWanted {
-		grace := cfg.GraceDuration()
-		// originRemote, like the legacy path: this deferral exists so the
-		// tray toast appears, and the GUI already words it as SmartThings.
-		if err := setSchedule(name, grace, originRemote); err == nil {
-			logMsg("ST API: %s deferred %s (grace period)", name, formatDelay(grace))
-			emit("remote", "grace_scheduled", map[string]string{
-				"command":    name,
-				"from":       from,
-				"delay":      formatDelay(grace),
-				"execute_at": time.Now().Add(grace).Format("15:04:05"),
-			}, graceActions()...)
-			writeJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
-			return
-		}
-		logMsg("WARNING: ST API grace scheduling failed for %s, executing immediately", name)
+	dm := dispatchDefault
+	switch mode {
+	case "immediate":
+		dm = dispatchImmediate
+	case "grace":
+		dm = dispatchGrace
 	}
-
-	logMsg("ST API: %s from %s", name, from)
-	switch {
-	case name == "forceshutdown":
-		emit("remote", "force", map[string]string{"from": from})
-	case name != "ping": // ping is never notified
-		emit("remote", "received", map[string]string{"command": name, "from": from})
-	}
-	if cmd.Execute != nil {
-		go cmd.Execute()
+	if deferred, _ := dispatchCommand(name, from, originSmartThings, dm); deferred > 0 {
+		writeJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
+		return
 	}
 	writeJSON(w, http.StatusOK, stCommandResponse{
 		Accepted: true,

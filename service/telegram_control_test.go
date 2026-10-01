@@ -134,7 +134,7 @@ func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
 	if err := setSchedule("lock", 30*time.Minute, originTelegram); err != nil {
 		t.Fatal(err)
 	}
-	noteRemoteCommand("shutdown", "10.0.0.5")
+	noteRemoteCommandBy("shutdown", "10.0.0.5", "remote")
 	html, _, _ = h.HandleCommand(context.Background(), "42", "status", nil)
 	for _, want := range []string{"예약: 잠금 · 텔레그램 · ", "s 남음 (", "마지막 원격 명령: 종료 · <code>10.0.0.5</code>"} {
 		if !strings.Contains(html, want) {

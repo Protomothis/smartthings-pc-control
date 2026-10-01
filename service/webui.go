@@ -524,14 +524,9 @@ func writeAPIError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"status": "error", "message": msg})
 }
 
-// commandCallers are the UIs POST /api/command may name in "by", with the
-// wording the log uses. Anything else counts as the desktop app.
-var commandCallers = map[string]string{
-	"app":   "desktop app",
-	"tray":  "tray menu",
-	"toast": "toast",
-	"webui": "WebUI",
-}
+// commandCallers are the UIs POST /api/command may name in "by". Anything
+// else counts as the desktop app.
+var commandCallers = map[string]bool{"app": true, "tray": true, "toast": true, "webui": true}
 
 // handleCommandAPI serves POST /api/command {"command": "lock", "by": "app"}
 // for the UIs on this PC (#120): auth, POST only and the CSRF header, like
@@ -554,38 +549,16 @@ func handleCommandAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.ToLower(strings.TrimSpace(body.Command))
 	by := body.By
-	if _, ok := commandCallers[by]; !ok {
+	if !commandCallers[by] {
 		by = "app"
 	}
-	cmd, ok := Commands[name]
-	if !ok {
+	// Recorded as last_command (origin "ui"); notified only from the
+	// WebUI (notifiesCommand).
+	if _, ok := dispatchCommand(name, by, originUI, dispatchImmediate); !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"status": "error", "command": truncate(name, 64), "message": "Unknown command"})
 		return
 	}
-	runLocalCommand(name, cmd, by)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "command": name, "message": "Command sent"})
-}
-
-// runLocalCommand executes cmd for a UI on this PC (by is a commandCallers
-// key). ping is logged but, as on every path, never recorded or notified.
-func runLocalCommand(name string, cmd Command, by string) {
-	logMsg("Command from %s: %s", commandCallers[by], name)
-	if name != "ping" {
-		noteRemoteCommandBy(name, by, originUI.String())
-		// Only the WebUI can be another device. A command pressed in the
-		// desktop app, the tray menu or a toast comes from the person at the
-		// PC, and telling them on Telegram what they just did is noise.
-		if by == "webui" {
-			if name == "forceshutdown" {
-				emit("remote", "force", map[string]string{"from": by})
-			} else {
-				emit("remote", "received", map[string]string{"command": name, "from": by})
-			}
-		}
-	}
-	if cmd.Execute != nil {
-		go cmd.Execute()
-	}
 }
 
 // configView is what GET /api/config returns: the live Config with the

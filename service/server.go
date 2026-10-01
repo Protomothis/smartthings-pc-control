@@ -82,41 +82,13 @@ func newCommandHandler() http.HandlerFunc {
 			emit("security", "unknown_command", map[string]string{"from": from, "command": truncate(command, 64)})
 			return
 		}
-		if name != "ping" {
-			noteRemoteCommand(name, from) // shown by the Telegram /status command
-		}
 
+		// The reply is the same whether the command runs now or waits out
+		// the grace period (the user can cancel from the tray app), and it
+		// goes out first, as it always has for the Edge driver.
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, cmd.Response)
-
-		// Grace period: defer disruptive commands so the user can cancel
-		// from the tray app. The HTTP response stays immediate for Edge
-		// driver compatibility.
-		if liveCfg.ShutdownGrace && graceCommands[name] {
-			grace := liveCfg.GraceDuration()
-			if err := setSchedule(name, grace, originRemote); err == nil {
-				logMsg("Command: %s deferred %s (grace period — cancel from the app or tray)", name, formatDelay(grace))
-				emit("remote", "grace_scheduled", map[string]string{
-					"command":    name,
-					"from":       from,
-					"delay":      formatDelay(grace),
-					"execute_at": time.Now().Add(grace).Format("15:04:05"),
-				}, graceActions()...)
-				return
-			}
-			logMsg("WARNING: grace scheduling failed for %s, executing immediately", name)
-		}
-
-		logMsg("Command: %s", name)
-		switch {
-		case name == "forceshutdown":
-			emit("remote", "force", map[string]string{"from": from})
-		case name != "ping": // ping is never notified
-			emit("remote", "received", map[string]string{"command": name, "from": from})
-		}
-		if cmd.Execute != nil {
-			go cmd.Execute()
-		}
+		dispatchCommand(name, from, originRemote, dispatchDefault)
 	}
 }
 
