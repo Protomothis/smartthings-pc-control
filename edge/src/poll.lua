@@ -328,8 +328,71 @@ end
 
 --- Forget what this run has emitted for `device`, so every row goes out again
 --- once (a profile change: the cloud record of the new profile is empty).
+-- #129 (W2): and start a new "first emit is forced" generation (`FIRST_FIELD`)
+-- with the hub's record no longer trusted (`SEED_FIELD`): a row the repaint
+-- does not carry itself is forced by the poll that follows it, instead of
+-- that poll forcing every row a second time.
 function poll.forget_sent(device)
-  pcall(function() device:set_field(poll.SENT_FIELD, nil) end)
+  pcall(function()
+    device:set_field(poll.SENT_FIELD, nil)
+    device:set_field(poll.FIRST_FIELD, nil)
+    device:set_field(poll.SEED_FIELD, true)
+  end)
+end
+
+-- #129 (W2): the first poll of a run used to send every row, forced - about
+-- forty events in one go on every driver start, hub reboot or driver update,
+-- although nothing about the device's profile had changed and the cloud
+-- already held all of them. The hub keeps what this driver emitted last in a
+-- persistent state cache (`device:get_latest_state`, lua_libs st/device.lua:
+-- "persisted through restart"), so on such a start a row whose value is the
+-- one in that cache is taken as already sent and not emitted at all.
+--
+-- What is kept, and why:
+--   - after a profile change or a new generation of rows (`poll.repaint`,
+--     which sets this field) the cache is no evidence: the new profile's cloud
+--     record is empty (the 2026-09-30 v1 -> v2 measurement), so every row's
+--     first emit is forced again (`FIRST_FIELD`)
+--   - the rows whose loss the user notices (`RESYNC_ROWS`) are never seeded:
+--     they go out forced once per run whatever the cache says, because the
+--     cache can hold a value the cloud never stored (an event lost to the
+--     budget, or a flash write lost to a power cut)
+--   - a value that differs from the cache is the first emit of the run, forced
+--   - an app child (#123) is never seeded: its one row is forced once per run
+poll.SEED_FIELD = "rows_seed_off"
+
+local function loss_matters(key)
+  for _, k in ipairs(poll.RESYNC_ROWS or {}) do
+    if k == key then
+      return true
+    end
+  end
+  return false
+end
+
+--- True when this run may take the hub's state cache as "already sent" for
+--- `device` (see `SEED_FIELD`).
+function poll.seeding(device)
+  if type(device) ~= "table" then
+    return false
+  end
+  local key = device.parent_assigned_child_key
+  if type(key) == "string" and key ~= "" then
+    return false
+  end
+  local off
+  pcall(function() off = device:get_field(poll.SEED_FIELD) end)
+  return off ~= true
+end
+
+-- The value the hub's state cache holds for one row, or nil.
+local function cached_state(device, cap, e, component)
+  local value
+  pcall(function()
+    value = device:get_latest_state(component and component.id or "main",
+      cap.ID or e.cap, e.attr)
+  end)
+  return value
 end
 
 --- The value this run last emitted on `key` (`poll.row_key`), or nil.
@@ -383,6 +446,15 @@ function poll.emit(device, events)
       local key = poll.row_key(e)
       local sig = signature(e.value)
       local last = sent[key]
+      if not last and not e.force and not loss_matters(key) and poll.seeding(device) then
+        -- #129 (W2): the first time this run meets the row, and the hub's
+        -- persisted record already says exactly this (`SEED_FIELD`).
+        local cached = cached_state(device, cap, e, component)
+        if cached ~= nil and signature(cached) == sig then
+          last = { sig = sig, value = e.value, cap = e.cap, attr = e.attr, component = e.component }
+          sent[key] = last
+        end
+      end
       -- Unchanged and not answering anything: the hub would drop it, but it
       -- would still cost budget (see above), so it is not emitted. Not even
       -- logged - that is most rows of every poll.
@@ -620,11 +692,9 @@ end
 --    is what got lost. `ACTION_CONFIRM_FIELD` remembers that one repeat is
 --    owed, so the next poll sends it again and then stops.
 --
--- The repeat is a field rather than a timer on purpose: `repaint_soon`'s 15 s
--- and 90 s follow-ups would do it, but each of them repaints every row of every
--- card and fires a forced poll besides - far too much machinery for one
--- attribute, and it needs a `driver` this function is not given (it is called
--- from push.lua and wol.lua as well).
+-- The repeat is a field rather than a timer on purpose: a timer needs a
+-- `driver` this function is not given (it is called from push.lua and wol.lua
+-- as well), and the next poll is never far away.
 -- Returns true when something was emitted.
 function poll.ensure_action(device)
   local seen
@@ -938,22 +1008,85 @@ function poll.ensure_rows(device)
   return true
 end
 
---- Repaint now and again a little later. The immediate repaint can race the
---- cloud applying a new profile (events for the new capabilities are then
---- dropped without a hub warning), so the same forced rows go out once more
---- after LATE_REPAINT_SECONDS, together with a forced poll.
+--- Repaint now and look again a little later (a profile change: migration,
+--- icon or battery switch).
+--
+-- #129 (W2): every row is forced ONCE. Before, this was three whole forced
+-- batches in the same second - `ensure_rows`' repaint, this repaint and a
+-- `force = true` poll, about 80 events - and the same repaint plus forced poll
+-- again at 15 s and at 90 s (about 70 each). Now:
+--   - now: the repaint forces every row it carries (`repaint`, which also
+--     starts a new "first emit is forced" generation), then an ordinary poll
+--     sends what the status says on top of that: rows the repaint did not
+--     carry go out forced as the first of the generation, rows it painted with
+--     the same value are not sent again. `opts.painted` skips the repaint when
+--     the caller has just done it (`ensure_rows` in `init`).
+--   - at 15 s and 90 s: an ordinary poll (what changed) and `resync` - the
+--     rows whose loss the user notices (`RESYNC_ROWS`), forced. The follow-ups
+--     exist because the first batch can race the cloud applying the new
+--     profile; the profile's landing fires `infoChanged`, which repaints
+--     once more anyway.
+--   - a repaint_soon cancels the follow-ups of the one before it, so two
+--     profile changes in a row (a migration, then its landing) do not stack
+--     their timers.
+--   - and one that comes less than `REPAINT_SPACING_SECONDS` after the last
+--     whole repaint waits until that many seconds have passed: the
+--     migration's repaint in `init` and the repaint of its landing
+--     (`infoChanged`) are both needed - the second is the one the new profile
+--     keeps - but not in the same budget window. A second deferred request
+--     replaces the first.
 poll.LATE_REPAINT_SECONDS = { 15, 90 }
-function poll.repaint_soon(driver, device)
-  poll.repaint(device)
-  pcall(poll.once, driver, device, { force = true })
+poll.LATE_TIMERS_FIELD = "repaint_late_timers"
+poll.REPAINT_SPACING_SECONDS = poll.BUDGET_SECONDS
+poll.REPAINT_AT_FIELD = "repaint_at"
+poll.REPAINT_DEFERRED_FIELD = "repaint_deferred_timer"
+function poll.repaint_soon(driver, device, opts)
+  opts = opts or {}
+  local now = poll.clock()
+  local last
+  pcall(function() last = tonumber(device:get_field(poll.REPAINT_AT_FIELD)) end)
+  local pending
+  pcall(function() pending = device:get_field(poll.REPAINT_DEFERRED_FIELD) end)
+  if pending then
+    pcall(function() driver:cancel_timer(pending) end)
+    pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, nil) end)
+  end
+  if not opts.painted and driver and last and now >= last
+      and now - last < poll.REPAINT_SPACING_SECONDS then
+    local ok, timer = pcall(function()
+      return driver:call_with_delay(poll.REPAINT_SPACING_SECONDS - (now - last), function()
+        pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, nil) end)
+        poll.repaint_soon(driver, device)
+      end, "repaint-deferred")
+    end)
+    if ok then
+      pcall(function() device:set_field(poll.REPAINT_DEFERRED_FIELD, timer) end)
+      return
+    end
+  end
+  pcall(function() device:set_field(poll.REPAINT_AT_FIELD, now) end)
+  if not opts.painted then
+    poll.repaint(device)
+  end
+  pcall(poll.once, driver, device)
+  local previous
+  pcall(function() previous = device:get_field(poll.LATE_TIMERS_FIELD) end)
+  for _, timer in ipairs(type(previous) == "table" and previous or {}) do
+    pcall(function() driver:cancel_timer(timer) end)
+  end
+  local timers = {}
   for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
-    pcall(function()
-      driver:call_with_delay(delay, function()
-        poll.repaint(device)
-        pcall(poll.once, driver, device, { force = true })
+    local ok, timer = pcall(function()
+      return driver:call_with_delay(delay, function()
+        pcall(poll.once, driver, device)
+        poll.resync(device)
       end, "repaint-late-" .. delay)
     end)
+    if ok and timer then
+      timers[#timers + 1] = timer
+    end
   end
+  pcall(function() device:set_field(poll.LATE_TIMERS_FIELD, timers) end)
 end
 
 --------------------------------------------------------------------------------
@@ -1091,7 +1224,7 @@ local function open_window(driver, device)
       pcall(function() device:set_field(poll.ANSWER_FIELD, nil) end)
       if window.owed then
         open_window(driver, device)
-        pcall(poll.once, driver, device, { force = window.rows })
+        pcall(poll.once, driver, device, { force = window.rows, note = window.note })
       end
     end, "answer-poll")
   end)
@@ -1103,19 +1236,27 @@ end
 
 --- The poll that answers a command that went out (event budget, part 2).
 -- `rows` are the row keys (`row_key`) the app is watching; they go out forced.
+-- #129 (W2): `note` is the one-off confirmation `poll.once` puts on
+-- `pcInfo.message` ("예약을 취소했습니다"); in a shared window the last
+-- command's note is the one shown. Every command takes this path now - the
+-- power commands, `switch off`, `schedule` and `cancel` as well as the v1.2.0
+-- ones - so a routine that fires several at once shares one answer poll.
 -- Returns what the poll returned, or true when the command joined a window
 -- whose poll is still to come.
-function poll.answer(driver, device, rows)
+function poll.answer(driver, device, rows, note)
   poll.note_command(driver, device)
   local window
   pcall(function() window = device:get_field(poll.ANSWER_FIELD) end)
   if type(window) == "table" then
     merge_rows(window.rows, rows)
+    if note ~= nil then
+      window.note = note
+    end
     window.owed = true
     return true
   end
   open_window(driver, device)
-  return poll.once(driver, device, { force = rows })
+  return poll.once(driver, device, { force = rows, note = note })
 end
 
 --- #116: follow `status.battery.present` onto the plain or the `-battery`
@@ -1147,9 +1288,7 @@ function poll.repaint(device)
   poll.forget_sent(device)
   -- #93: the resting value, not the remembered one - a repaint in the middle of
   -- a transition has to leave the row saying "in progress". A repeat
-  -- `ensure_action` still owed is settled here too: `repaint_soon` sends this
-  -- same forced event again at 15 s and at 90 s, which is more than the one
-  -- extra emit the debt was worth.
+  -- `ensure_action` still owed is settled here too: this forced event is it.
   poll.owe_action_repeat(device, nil)
   poll.emit_action(device, poll.resting_action(device), true)
   poll.emit_plan_command(device, poll.plan_command(device), true)
