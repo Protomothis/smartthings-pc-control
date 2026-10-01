@@ -96,8 +96,9 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 		if row.syncing || row.toggle == nil || !row.toggle.Checked {
 			return
 		}
-		// A new duration while on starts a new period from now.
-		go u.sendAwake(true)
+		// A new duration while on starts a new period from now. The
+		// minutes are read here, on the UI goroutine, not in sendAwake.
+		go u.sendAwake(true, u.selectedAwakeMinutes())
 	})
 	row.sel.SetSelectedIndex(awakePresetIndex(defaultAwakePreset))
 
@@ -105,7 +106,7 @@ func (u *ui) buildAwakeRow() fyne.CanvasObject {
 		if row.syncing {
 			return
 		}
-		go u.sendAwake(on)
+		go u.sendAwake(on, u.selectedAwakeMinutes())
 	})
 	row.status = widget.NewLabel("")
 	row.status.Importance = widget.LowImportance
@@ -130,15 +131,15 @@ func (u *ui) selectedAwakeMinutes() int {
 	return defaultAwakePreset
 }
 
-// sendAwake turns keep-awake on (for the selected duration) or off. Runs
-// off the UI thread.
-func (u *ui) sendAwake(on bool) {
+// sendAwake turns keep-awake on (for minutes) or off. Runs off the UI
+// thread, so the caller reads the select and passes the minutes in.
+func (u *ui) sendAwake(on bool, minutes int) {
 	var (
 		a   Awake
 		err error
 	)
 	if on {
-		a, err = u.client.SetAwake(u.selectedAwakeMinutes())
+		a, err = u.client.SetAwake(minutes)
 	} else {
 		a, err = u.client.AwakeOff()
 	}
@@ -156,11 +157,9 @@ func (u *ui) sendAwake(on bool) {
 	fyne.Do(func() { u.applyAwake(a) })
 }
 
-// loadAwake polls the service. Runs off the UI thread.
+// loadAwake polls the service. Runs off the UI thread, so u.awake (rebuilt
+// on a language change) is only looked at inside the fyne.Do callbacks.
 func (u *ui) loadAwake() {
-	if u.awake == nil {
-		return
-	}
 	a, err := u.client.GetAwake()
 	if err != nil {
 		if errors.Is(err, errAwakeUnsupported) {

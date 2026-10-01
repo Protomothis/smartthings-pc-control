@@ -121,6 +121,9 @@ type ui struct {
 	logsLabel   *widget.Label
 	logsScroll  *container.Scroll
 	logsAuto    *widget.Check
+	// logsAutoOn mirrors logsAuto.Checked for pollLoop, which must not read
+	// the widget off the UI goroutine.
+	logsAutoOn atomic.Bool
 	// Schedule tab: big remaining time, the command line under it, and the
 	// cancel button that is only enabled while a schedule is active.
 	schedBig       *widget.RichText
@@ -1237,8 +1240,9 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 	u.logsLabel.TextStyle = fyne.TextStyle{Monospace: true}
 	u.logsScroll = container.NewVScroll(u.logsLabel)
 
-	u.logsAuto = widget.NewCheck(u.t("logs.autorefresh"), nil)
+	u.logsAuto = widget.NewCheck(u.t("logs.autorefresh"), func(on bool) { u.logsAutoOn.Store(on) })
 	u.logsAuto.SetChecked(true)
+	u.logsAutoOn.Store(true)
 	refreshBtn := widget.NewButtonWithIcon(u.t("logs.refresh"), theme.ViewRefreshIcon(), func() { go u.loadLogs() })
 
 	// Case-insensitive substring filter over the cached lines; re-rendered
@@ -1396,7 +1400,7 @@ func (u *ui) pollLoop() {
 				go u.checkForUpdates(false)
 			}
 		case <-logsTick.C:
-			if u.connected.Load() && u.logsAuto != nil && u.logsAuto.Checked {
+			if u.connected.Load() && u.logsAutoOn.Load() {
 				u.loadLogs()
 			}
 		case <-schedTick.C:
@@ -1544,9 +1548,11 @@ func (u *ui) loadSchedule() {
 			title := u.t(titleKey)
 			go func() {
 				if err := showGraceToast(lang, title, countdown); err != nil {
-					// Toast failed (e.g. PowerShell unavailable) — plain notification.
-					u.app.SendNotification(fyne.NewNotification(title,
-						fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)))
+					// Toast failed (e.g. PowerShell unavailable) — plain
+					// notification, sent from the UI goroutine like every
+					// other Fyne call.
+					body := fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)
+					fyne.Do(func() { u.app.SendNotification(fyne.NewNotification(title, body)) })
 				}
 			}()
 		}
