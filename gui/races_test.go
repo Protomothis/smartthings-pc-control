@@ -14,7 +14,11 @@ import (
 func newTestUI(t *testing.T, lang Lang, client serviceAPI) *ui {
 	t.Helper()
 	syncBackground = true
-	t.Cleanup(func() { syncBackground = false })
+	// The real app may be open on the machine running the tests; its
+	// window is not this one.
+	savedOnScreen := windowOnScreen
+	windowOnScreen = func() bool { return false }
+	t.Cleanup(func() { syncBackground = false; windowOnScreen = savedOnScreen })
 	a := test.NewTempApp(t)
 	if client == nil {
 		client = NewClient(1)
