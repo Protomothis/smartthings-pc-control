@@ -170,7 +170,7 @@ func stAuth(next http.HandlerFunc) http.HandlerFunc {
 			stError(w, http.StatusForbidden, "hub not allowed")
 			return
 		}
-		if cfg.Secret != "" && r.Header.Get("X-PC-Secret") != cfg.Secret {
+		if cfg.Secret != "" && !secretEqual(r.Header.Get("X-PC-Secret"), cfg.Secret) {
 			// The attempted value is deliberately not logged or notified.
 			logMsg("ST API: %s %s from %s (UNAUTHORIZED)", r.Method, r.URL.Path, from)
 			emit("security", "unauthorized", map[string]string{

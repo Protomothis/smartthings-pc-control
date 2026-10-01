@@ -567,8 +567,17 @@ func newCommandHandler() http.HandlerFunc {
 		from := remoteHost(r.RemoteAddr)
 
 		if liveCfg.Secret != "" {
-			// With secret: /{secret}/{command}
-			if len(parts) < 2 || parts[0] != liveCfg.Secret {
+			// With secret: /{secret}/{command}. A wrong secret counts like
+			// a failed WebUI login (#120): five in a row lock the address
+			// out for a minute, so the secret cannot be guessed at line rate.
+			if !checkRateLimit(r.RemoteAddr) {
+				logMsg("Request: %s /***/... from %s (RATE LIMITED)", r.Method, r.RemoteAddr)
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(loginLockDuration/time.Second)))
+				http.Error(w, "Too many attempts", http.StatusTooManyRequests)
+				return
+			}
+			if len(parts) < 2 || !secretEqual(parts[0], liveCfg.Secret) {
+				recordLoginFailure(r.RemoteAddr)
 				logMsg("Request: %s /***/%s from %s (UNAUTHORIZED)", r.Method, strings.Join(parts[1:], "/"), r.RemoteAddr)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				// count/window are filled by the aggregation stage (#58).
@@ -578,6 +587,7 @@ func newCommandHandler() http.HandlerFunc {
 				})
 				return
 			}
+			resetLoginAttempts(r.RemoteAddr)
 			command = parts[1]
 		} else {
 			// No secret: /{command}
