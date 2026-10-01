@@ -1,10 +1,11 @@
-package service
+package tgcontrol
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"html"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,68 +13,20 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
-	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
+	"github.com/Protomothis/smartthings-pc-control/service/power"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
 // This file is the service side of inbound Telegram control (design doc §9):
-// telegramControl implements telegram.CommandHandler, and the lifecycle
-// functions at the bottom run the telegram.Poller while control is enabled.
-// Message edits after a button press keep the original text and append a
-// result line (#62); the grace-message lifecycle lives in telegram_grace.go.
+// Control implements telegram.CommandHandler, and the lifecycle functions
+// at the bottom run the telegram.Poller while control is enabled. Message
+// edits after a button press keep the original text and append a result
+// line (#62); the grace-message lifecycle lives in grace.go.
 
-// serviceStartedAt approximates process start for the /status uptime line.
-var serviceStartedAt = time.Now()
-
-// remoteRecord is the last SmartThings command, for /status.
-type remoteRecord struct {
-	Command string
-	From    string
-	// Origin is the path it arrived on: "remote" for the legacy
-	// /{secret}/{command} URL, "smartthings" for /st/v1/command (#67).
-	Origin string
-	At     time.Time
-	// Preset is set for a "preset" command (#109): which slot ran, under
-	// which name, and the outcome ("started" or an error code).
-	Preset *presetRecord
-}
-
-// presetRecord is the preset part of a remoteRecord.
-type presetRecord struct {
-	Slot   int
-	Name   string
-	Result string
-}
-
-var (
-	lastRemote   remoteRecord
-	lastRemoteMu sync.Mutex
-)
-
-// noteRemoteCommandBy records the last command and the path it arrived on
-// (recordCommand in dispatch.go decides which commands count).
-func noteRemoteCommandBy(command, from, origin string) {
-	lastRemoteMu.Lock()
-	lastRemote = remoteRecord{Command: command, From: from, Origin: origin, At: time.Now()}
-	lastRemoteMu.Unlock()
-}
-
-// notePresetCommand records a preset run as the last remote command.
-func notePresetCommand(p Preset, from, origin, result string) {
-	lastRemoteMu.Lock()
-	lastRemote = remoteRecord{Command: "preset", From: from, Origin: origin, At: time.Now(),
-		Preset: &presetRecord{Slot: p.Slot, Name: p.Name, Result: result}}
-	lastRemoteMu.Unlock()
-}
-
-func getLastRemote() remoteRecord {
-	lastRemoteMu.Lock()
-	defer lastRemoteMu.Unlock()
-	return lastRemote
-}
-
-// telegramAliases maps slash-command names to Commands keys.
+// telegramAliases maps slash-command names to catalogue commands.
 var telegramAliases = map[string]string{
 	"lock":      "lock",
 	"screenoff": "turnscreenoff",
@@ -87,27 +40,33 @@ var telegramAliases = map[string]string{
 // telegramSafeCommands run from a button without confirmation.
 var telegramSafeCommands = map[string]bool{"lock": true, "turnscreenoff": true, "turnscreenon": true}
 
-// telegramCommandNames are the Commands keys the bot may run at all; the
-// power commands need a confirmation (or a delay), see graceCommands.
-func telegramCommandName(arg string) (string, bool) {
+// commandName resolves arg to a catalogue command the bot may run at all;
+// the power commands need a confirmation (or a delay), see isGrace.
+func (c *Control) commandName(arg string) (string, bool) {
 	name := strings.ToLower(strings.TrimSpace(arg))
 	if alias, ok := telegramAliases[name]; ok {
 		name = alias
 	}
-	if !telegramSafeCommands[name] && !graceCommands[name] {
+	if !telegramSafeCommands[name] && !c.isGrace(name) {
 		return "", false
 	}
-	if _, ok := Commands[name]; !ok {
+	if !c.d.Commands.Known(name) {
 		return "", false
 	}
 	return name, true
 }
 
+// isGrace reports whether name is one of the power commands the grace
+// period defers (shutdown, restart, suspend, hibernate).
+func (c *Control) isGrace(name string) bool {
+	return slices.Contains(c.d.Commands.GraceCommands(), name)
+}
+
 // ---- texts ----------------------------------------------------------------
 
-// tgTexts holds every reply string, ko then en. Values are Telegram HTML;
-// %-verbs are filled by tgText. Dynamic values are escaped by the callers.
-var tgTexts = map[string][2]string{
+// texts holds every reply string, ko then en. Values are Telegram HTML;
+// %-verbs are filled by text. Dynamic values are escaped by the callers.
+var texts = map[string][2]string{
 	"help": {
 		"<b>명령</b>\n" +
 			"/status – 상태\n" +
@@ -150,7 +109,7 @@ var tgTexts = map[string][2]string{
 	},
 	"unknown_command": {"알 수 없는 명령: <code>%s</code>", "Unknown command: <code>%s</code>"},
 	// The PC name is no longer part of this text: every reply gets the
-	// "🖥 <b>name</b>" header from tgWithHeader (#75).
+	// "🖥 <b>name</b>" header from WithHeader (#75).
 	"menu_title":      {"무엇을 할까요?", "What should I do?"},
 	"executed":        {"✅ %s 실행", "✅ %s executed"},
 	"confirm_q":       {"⚠️ <b>%s</b> – 지금 바로 실행할까요?", "⚠️ <b>%s</b> – run it right now?"},
@@ -261,15 +220,15 @@ var tgTexts = map[string][2]string{
 	"origin_smartthings": {"SmartThings", "SmartThings"},
 }
 
-// tgText returns the ko/en string for key (telegram.lang), formatted with
+// text returns the ko/en string for key (telegram.lang), formatted with
 // args when given.
-func tgText(key string, args ...any) string {
-	pair, ok := tgTexts[key]
+func (c *Control) text(key string, args ...any) string {
+	pair, ok := texts[key]
 	if !ok {
 		return key
 	}
 	s := pair[0]
-	if getConfig().Telegram.Lang == "en" {
+	if c.d.Config().Telegram.Lang == "en" {
 		s = pair[1]
 	}
 	if len(args) > 0 {
@@ -278,50 +237,54 @@ func tgText(key string, args ...any) string {
 	return s
 }
 
-// tgCommandLabel names a Commands key for humans; unknown keys are
+// Text is the bot's wording for key in the configured language, formatted
+// with args when given.
+func (c *Control) Text(key string, args ...any) string { return c.text(key, args...) }
+
+// commandLabel names a Commands key for humans; unknown keys are
 // escaped verbatim.
-func tgCommandLabel(name string) string {
-	if _, ok := tgTexts["cmd_"+name]; ok {
-		return tgText("cmd_" + name)
+func (c *Control) commandLabel(name string) string {
+	if _, ok := texts["cmd_"+name]; ok {
+		return c.text("cmd_" + name)
 	}
 	return html.EscapeString(name)
 }
 
-func tgOriginLabel(origin string) string {
-	if _, ok := tgTexts["origin_"+origin]; ok {
-		return tgText("origin_" + origin)
+func (c *Control) originLabel(origin string) string {
+	if _, ok := texts["origin_"+origin]; ok {
+		return c.text("origin_" + origin)
 	}
 	return html.EscapeString(origin)
 }
 
-// tgStamp is the result line an edited message ends with when a Telegram
+// stamp is the result line an edited message ends with when a Telegram
 // button or command did the work: "✅ 실행됨 · 14:32 · 텔레그램".
-func tgStamp(key string) string {
-	return tgStampBy(key, "telegram")
+func (c *Control) stamp(key string) string {
+	return c.stampBy(key, "telegram")
 }
 
-// tgStampBy is tgStamp for any origin: "✅ 취소됨 · 14:32 · 트레이". An empty
+// stampBy is stamp for any origin: "✅ 취소됨 · 14:32 · 트레이". An empty
 // by (a replaced schedule) leaves the origin off.
-func tgStampBy(key, by string) string {
-	line := tgText(key) + " · " + time.Now().Format("15:04")
+func (c *Control) stampBy(key, by string) string {
+	line := c.text(key) + " · " + time.Now().Format("15:04")
 	if by != "" {
-		line += " · " + tgByLabel(by)
+		line += " · " + c.byLabel(by)
 	}
 	return line
 }
 
-// tgByLabel names a cancel/run origin (toast, tray, app, webui, api,
+// byLabel names a cancel/run origin (toast, tray, app, webui, api,
 // telegram, timer); unknown values are escaped verbatim.
-func tgByLabel(by string) string {
-	if _, ok := tgTexts["by_"+by]; ok {
-		return tgText("by_" + by)
+func (c *Control) byLabel(by string) string {
+	if _, ok := texts["by_"+by]; ok {
+		return c.text("by_" + by)
 	}
 	return html.EscapeString(by)
 }
 
-// tgPlain is what Telegram hands back as message.text for the HTML h: tags
+// Plain is what Telegram hands back as message.text for the HTML h: tags
 // stripped, entities decoded. Used to recognise the bot's own messages.
-func tgPlain(h string) string {
+func Plain(h string) string {
 	var b strings.Builder
 	inTag := false
 	for _, r := range h {
@@ -337,96 +300,97 @@ func tgPlain(h string) string {
 	return html.UnescapeString(b.String())
 }
 
-// tgKeep returns the HTML to keep when editing a message whose plain text
+// keep returns the HTML to keep when editing a message whose plain text
 // is msgText: the matching candidate when the text is one of the bot's own
 // (formatting preserved), otherwise msgText escaped. "" stays "".
-func tgKeep(msgText string, candidates ...string) string {
+func keep(msgText string, candidates ...string) string {
 	if msgText == "" {
 		return ""
 	}
 	for _, c := range candidates {
-		if tgPlain(c) == msgText {
+		if Plain(c) == msgText {
 			return c
 		}
 	}
 	return html.EscapeString(msgText)
 }
 
-// tgPromptCandidates are every confirmation prompt the bot can have sent,
+// promptCandidates are every confirmation prompt the bot can have sent,
 // on its own (/shutdown) or appended to the /menu (confirm:<cmd>). Both the
 // headered form (#75) and the bare one are listed so a prompt sent by an
 // older version is still recognised when its button is pressed.
-func tgPromptCandidates() []string {
-	menu := tgMenuTitle()
+func (c *Control) promptCandidates() []string {
+	menu := c.menuTitle()
 	var out []string
-	for name := range graceCommands {
-		q := tgText("confirm_q", tgCommandLabel(name))
-		out = append(out, tgWithHeader(q), q, menu+"\n\n"+q)
+	for _, name := range c.d.Commands.GraceCommands() {
+		q := c.text("confirm_q", c.commandLabel(name))
+		out = append(out, c.WithHeader(q), q, menu+"\n\n"+q)
 	}
 	return out
 }
 
-func tgPCName() string {
-	if n := getConfig().Telegram.PCName; n != "" {
+// PCName is the name the bot's messages carry: telegram.pc_name, else the
+// hostname.
+func (c *Control) PCName() string {
+	if n := c.d.Config().Telegram.PCName; n != "" {
 		return n
 	}
-	return hostname()
+	return c.d.Status.Hostname()
 }
 
-// tgHeader is the "🖥 <b>name</b>" line every message from this PC starts
+// Header is the "🖥 <b>name</b>" line every message from this PC starts
 // with (#75, hub-agent doc §1).
-func tgHeader() string { return telegram.Header(tgPCName()) }
+func (c *Control) Header() string { return telegram.Header(c.PCName()) }
 
-// tgWithHeader prefixes tgHeader() to a reply that does not already carry
+// WithHeader prefixes c.Header() to a reply that does not already carry
 // one — including text read back from Telegram, where the tags are gone but
 // the 🖥 icon is not.
-func tgWithHeader(h string) string { return telegram.WithHeader(tgPCName(), h) }
+func (c *Control) WithHeader(h string) string { return telegram.WithHeader(c.PCName(), h) }
 
 // ---- keyboards --------------------------------------------------------------
 
-func tgButton(textKey, data string) telegram.InlineButton {
-	return telegram.InlineButton{Text: tgText(textKey), CallbackData: data}
+func (c *Control) button(textKey, data string) telegram.InlineButton {
+	return telegram.InlineButton{Text: c.text(textKey), CallbackData: data}
 }
 
-// tgConfirmKeyboard is [확인](exec:<cmd>) [취소](dismiss:).
-func tgConfirmKeyboard(name string) *telegram.InlineKeyboard {
+// confirmKeyboard is [확인](exec:<cmd>) [취소](dismiss:).
+func (c *Control) confirmKeyboard(name string) *telegram.InlineKeyboard {
 	return &telegram.InlineKeyboard{InlineKeyboard: [][]telegram.InlineButton{{
-		tgButton("btn_confirm", "exec:"+name),
-		tgButton("btn_cancel", "dismiss:"),
+		c.button("btn_confirm", "exec:"+name),
+		c.button("btn_cancel", "dismiss:"),
 	}}}
 }
 
-// tgMenuKeyboard is the /menu layout: safe commands run at once (cmd:),
+// menuKeyboard is the /menu layout: safe commands run at once (cmd:),
 // power commands go through confirm:, and the last row cancels a schedule.
 // cancel:menu (rather than the grace message's bare cancel:) tells
 // HandleCallback the press came from the menu, which stays usable.
-func tgMenuKeyboard() *telegram.InlineKeyboard {
+func (c *Control) menuKeyboard() *telegram.InlineKeyboard {
 	return &telegram.InlineKeyboard{InlineKeyboard: [][]telegram.InlineButton{
-		{tgButton("btn_lock", "cmd:lock"), tgButton("btn_screenoff", "cmd:turnscreenoff")},
-		{tgButton("btn_sleep", "confirm:suspend"), tgButton("btn_restart", "confirm:restart")},
-		{tgButton("btn_shutdown", "confirm:shutdown"), tgButton("btn_cancel_sch", "cancel:menu")},
+		{c.button("btn_lock", "cmd:lock"), c.button("btn_screenoff", "cmd:turnscreenoff")},
+		{c.button("btn_sleep", "confirm:suspend"), c.button("btn_restart", "confirm:restart")},
+		{c.button("btn_shutdown", "confirm:shutdown"), c.button("btn_cancel_sch", "cancel:menu")},
 	}}
 }
 
 // ---- actions ------------------------------------------------------------------
 
-// runTelegramCommand executes a registry command in the background through
-// dispatchCommand, at once: the bot asked for a confirmation (or a delay)
-// already. It is neither recorded as last_command nor notified.
-func runTelegramCommand(name string) bool {
-	_, ok := dispatchCommand(name, "telegram", originTelegram, dispatchImmediate)
-	return ok
+// runCommand executes a catalogue command in the background, at once: the
+// bot asked for a confirmation (or a delay) already. It is neither
+// recorded as last_command nor notified.
+func (c *Control) runCommand(name string) bool {
+	return c.d.Commands.RunNow(name)
 }
 
 // runScheduledNow ends the active schedule (by=telegram) and executes its
 // command immediately; ok is false when nothing was scheduled.
-func runScheduledNow() (string, bool) {
-	name, ok := takeScheduleForRun("telegram")
+func (c *Control) runScheduledNow() (string, bool) {
+	name, ok := c.d.Commands.TakeForRun("telegram")
 	if !ok {
 		return "", false
 	}
-	logMsg("Telegram: running scheduled %s now", name)
-	runTelegramCommand(name)
+	logx.Printf("Telegram: running scheduled %s now", name)
+	c.runCommand(name)
 	return name, true
 }
 
@@ -453,56 +417,52 @@ func parseMuteDuration(arg string) (time.Duration, bool) {
 
 // ---- telegram.CommandHandler ----------------------------------------------------
 
-// telegramControl implements telegram.CommandHandler (and EditKeyboarder)
-// on top of the service's schedule and command registry.
-type telegramControl struct{}
-
 // HandleCommand answers a slash command from an allowed chat. Every reply
 // carries the PC-name header (#75); the work is done by handleCommand.
-func (c telegramControl) HandleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
+func (c *Control) HandleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
 	h, kb, err := c.handleCommand(ctx, chatID, cmd, args)
-	return tgWithHeader(h), kb, err
+	return c.WithHeader(h), kb, err
 }
 
-func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
+func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, args []string) (string, *telegram.InlineKeyboard, error) {
 	switch cmd {
 	case "help", "start":
-		return tgText("help"), nil, nil
+		return c.text("help"), nil, nil
 	case telegram.StaleCommand:
 		// Sent while the PC was asleep / offline; the poller already logged it.
 		text := ""
 		if len(args) > 0 {
 			text = args[0]
 		}
-		return tgText("stale", html.EscapeString(text)), nil, nil
+		return c.text("stale", html.EscapeString(text)), nil, nil
 	case "status":
-		return tgStatusText(), nil, nil
+		return c.statusText(), nil, nil
 	case "menu":
-		return tgMenuTitle(), tgMenuKeyboard(), nil
+		return c.menuTitle(), c.menuKeyboard(), nil
 	case "lock", "screenoff", "screenon":
 		name := telegramAliases[cmd]
-		runTelegramCommand(name)
-		return tgText("executed", tgCommandLabel(name)), nil, nil
+		c.runCommand(name)
+		return c.text("executed", c.commandLabel(name)), nil, nil
 	case "sleep", "hibernate", "restart", "shutdown":
 		return c.powerCommand(telegramAliases[cmd], args)
 	case "cancel":
-		if name, ok := takeSchedule("telegram"); ok {
-			return tgText("cancelled", tgCommandLabel(name)), nil, nil
+		if name, ok := c.d.Commands.Take("telegram"); ok {
+			return c.text("cancelled", c.commandLabel(name)), nil, nil
 		}
-		return tgText("no_schedule"), nil, nil
+		return c.text("no_schedule"), nil, nil
 	case "now":
-		if name, ok := runScheduledNow(); ok {
-			return tgText("run_now", tgCommandLabel(name)), nil, nil
+		if name, ok := c.runScheduledNow(); ok {
+			return c.text("run_now", c.commandLabel(name)), nil, nil
 		}
-		return tgText("no_schedule"), nil, nil
+		return c.text("no_schedule"), nil, nil
 	case "awake":
 		return c.awake(args)
 	case "vol":
-		return tgVolume(ctx, args)
+		return c.volume(ctx, args)
 	case "say":
 		return c.say(chatID, args)
 	case "presets":
-		return tgPresetList(), nil, nil
+		return c.presetList(), nil, nil
 	case "run":
 		return c.runPreset(args)
 	case "mute":
@@ -511,53 +471,53 @@ func (c telegramControl) handleCommand(ctx context.Context, chatID string, cmd s
 		if len(args) > 0 {
 			return c.mute(args)
 		}
-		return tgMediaCommand(ctx, "mute", nil)
+		return c.mediaCommand(ctx, "mute", nil)
 	case "unmute":
-		return tgMediaCommand(ctx, "unmute", nil)
+		return c.mediaCommand(ctx, "unmute", nil)
 	case "play", "pause", "stop", "next", "prev":
-		return tgMediaCommand(ctx, cmd, nil)
+		return c.mediaCommand(ctx, cmd, nil)
 	case "np":
-		return tgNowPlaying(ctx)
+		return c.nowPlaying(ctx)
 	case "quiet":
 		if len(args) > 0 && strings.EqualFold(args[0], "off") {
-			b := currentBus()
+			b := c.d.Bus()
 			if b == nil {
-				return tgText("notify_off"), nil, nil
+				return c.text("notify_off"), nil, nil
 			}
 			b.Unmute()
-			logMsg("Telegram: notifications unmuted")
-			return tgText("unmuted"), nil, nil
+			logx.Printf("Telegram: notifications unmuted")
+			return c.text("unmuted"), nil, nil
 		}
 		return c.mute(args)
 	}
-	return tgText("unknown_command", html.EscapeString("/"+cmd)) + "\n\n" + tgText("help"), nil, nil
+	return c.text("unknown_command", html.EscapeString("/"+cmd)) + "\n\n" + c.text("help"), nil, nil
 }
 
 // powerCommand handles /sleep /hibernate /restart /shutdown [minutes]:
 // without minutes it asks for confirmation, with minutes it schedules.
-func (telegramControl) powerCommand(name string, args []string) (string, *telegram.InlineKeyboard, error) {
-	label := tgCommandLabel(name)
+func (c *Control) powerCommand(name string, args []string) (string, *telegram.InlineKeyboard, error) {
+	label := c.commandLabel(name)
 	if len(args) == 0 {
-		return tgText("confirm_q", label), tgConfirmKeyboard(name), nil
+		return c.text("confirm_q", label), c.confirmKeyboard(name), nil
 	}
 	minutes, err := strconv.Atoi(args[0])
 	// #89: up to three days, the same ceiling /st/v1 and the app carry.
-	if err != nil || minutes < 1 || minutes > maxScheduleMinutes {
-		return tgText("bad_minutes"), nil, fmt.Errorf("invalid minutes %q", args[0])
+	if err != nil || minutes < 1 || minutes > power.MaxScheduleMinutes {
+		return c.text("bad_minutes"), nil, fmt.Errorf("invalid minutes %q", args[0])
 	}
 	delay := time.Duration(minutes) * time.Minute
-	if err := setSchedule(name, delay, originTelegram); err != nil {
-		return tgText("schedule_failed", html.EscapeString(err.Error())), nil, err
+	if err := c.d.Commands.Schedule(name, delay); err != nil {
+		return c.text("schedule_failed", html.EscapeString(err.Error())), nil, err
 	}
-	return tgText("scheduled", label, tgDelay(delay), time.Now().Add(delay).Format("15:04")), nil, nil
+	return c.text("scheduled", label, c.delay(delay), time.Now().Add(delay).Format("15:04")), nil, nil
 }
 
-// tgDelay names a schedule delay in the bot's language: "30분", "2시간",
+// delay names a schedule delay in the bot's language: "30분", "2시간",
 // "1시간 30분", "1일 3시간" — and formatDelay's "1 d 3 h" in English (#89).
 // "4320분 후" is not a sentence anyone reads as three days.
-func tgDelay(d time.Duration) string {
-	if getConfig().Telegram.Lang == "en" {
-		return formatDelay(d)
+func (c *Control) delay(d time.Duration) string {
+	if c.d.Config().Telegram.Lang == "en" {
+		return power.FormatDelay(d)
 	}
 	minutes := int(d / time.Minute)
 	switch {
@@ -582,9 +542,9 @@ func tgDelay(d time.Duration) string {
 // parseAwakeArg reads the /awake argument: none is the configured default,
 // "off" turns keep-awake off, a number is minutes (0 = until turned off, at
 // most config.AwakeMaxMinutes).
-func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
+func (c *Control) parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
 	if len(args) == 0 {
-		return getConfig().Awake.Period(nil), false, true
+		return c.d.Config().Awake.Period(nil), false, true
 	}
 	arg := strings.ToLower(strings.TrimSpace(args[0]))
 	if arg == "off" {
@@ -598,83 +558,83 @@ func parseAwakeArg(args []string) (minutes int, off bool, ok bool) {
 }
 
 // awake handles /awake [minutes|off] (#111).
-func (telegramControl) awake(args []string) (string, *telegram.InlineKeyboard, error) {
-	minutes, off, ok := parseAwakeArg(args)
+func (c *Control) awake(args []string) (string, *telegram.InlineKeyboard, error) {
+	minutes, off, ok := c.parseAwakeArg(args)
 	if !ok {
-		return tgText("awake_usage"), nil, fmt.Errorf("invalid /awake argument %q", args[0])
+		return c.text("awake_usage"), nil, fmt.Errorf("invalid /awake argument %q", args[0])
 	}
-	ctl := currentAwake()
+	ctl := c.d.Awake
 	if off {
 		_, wasOn, err := ctl.TurnOff()
 		if err != nil {
-			return tgText("awake_failed", html.EscapeString(err.Error())), nil, err
+			return c.text("awake_failed", html.EscapeString(err.Error())), nil, err
 		}
 		if !wasOn {
-			return tgText("awake_already_off"), nil, nil
+			return c.text("awake_already_off"), nil, nil
 		}
-		logMsg("Telegram: keep-awake off")
-		return tgText("awake_off"), nil, nil
+		logx.Printf("Telegram: keep-awake off")
+		return c.text("awake_off"), nil, nil
 	}
 	v, err := ctl.TurnOn(minutes)
 	if err != nil {
-		return tgText("awake_failed", html.EscapeString(err.Error())), nil, err
+		return c.text("awake_failed", html.EscapeString(err.Error())), nil, err
 	}
-	logMsg("Telegram: keep-awake on (%d min)", minutes)
-	return tgText("awake_on", tgAwakeSpan(v, ctl.now())), nil, nil
+	logx.Printf("Telegram: keep-awake on (%d min)", minutes)
+	return c.text("awake_on", c.awakeSpan(v, ctl.Now())), nil, nil
 }
 
-// tgAwakeSpan is how long keep-awake lasts: "14:30까지", "내일 09:10까지"
+// awakeSpan is how long keep-awake lasts: "14:30까지", "내일 09:10까지"
 // (a period reaches a day at most) or "끌 때까지".
-func tgAwakeSpan(v awakeView, now time.Time) string {
+func (c *Control) awakeSpan(v status.AwakeView, now time.Time) string {
 	if v.Until.IsZero() {
-		return tgText("st_awake_forever")
+		return c.text("st_awake_forever")
 	}
 	at := v.Until.Format("15:04")
 	if y, m, d := v.Until.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
-		at = tgText("st_tomorrow", at)
+		at = c.text("st_tomorrow", at)
 	}
-	return tgText("st_until", at)
+	return c.text("st_until", at)
 }
 
-// tgAwakeStatus is the /status value: "켜짐 · 14:30까지" or "꺼짐".
-func tgAwakeStatus(v awakeView, now time.Time) string {
+// awakeStatus is the /status value: "켜짐 · 14:30까지" or "꺼짐".
+func (c *Control) awakeStatus(v status.AwakeView, now time.Time) string {
 	if !v.On {
-		return tgText("st_off")
+		return c.text("st_off")
 	}
-	return tgText("st_on") + " · " + tgAwakeSpan(v, now)
+	return c.text("st_on") + " · " + c.awakeSpan(v, now)
 }
 
-// tgBatteryStatus is the /status value: "80% · 충전 중", "100% · 전원 연결됨"
+// batteryStatus is the /status value: "80% · 충전 중", "100% · 전원 연결됨"
 // or, on battery, just "80%".
-func tgBatteryStatus(b batteryInfo) string {
-	level := tgText("st_battery_unknown")
+func (c *Control) batteryStatus(b status.Battery) string {
+	level := c.text("st_battery_unknown")
 	if b.Percent >= 0 {
 		level = strconv.Itoa(b.Percent) + "%"
 	}
 	switch {
 	case b.Charging:
-		return level + " · " + tgText("st_battery_charging")
+		return level + " · " + c.text("st_battery_charging")
 	case b.AC:
-		return level + " · " + tgText("st_battery_ac")
+		return level + " · " + c.text("st_battery_ac")
 	}
 	return level
 }
 
-func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, error) {
+func (c *Control) mute(args []string) (string, *telegram.InlineKeyboard, error) {
 	if len(args) == 0 {
-		return tgText("mute_usage"), nil, nil
+		return c.text("mute_usage"), nil, nil
 	}
 	d, ok := parseMuteDuration(args[0])
 	if !ok {
-		return tgText("mute_usage"), nil, fmt.Errorf("invalid mute duration %q", args[0])
+		return c.text("mute_usage"), nil, fmt.Errorf("invalid mute duration %q", args[0])
 	}
-	b := currentBus()
+	b := c.d.Bus()
 	if b == nil {
-		return tgText("notify_off"), nil, nil
+		return c.text("notify_off"), nil, nil
 	}
 	b.Mute(d)
-	logMsg("Telegram: notifications muted for %s", d)
-	return tgText("muted", time.Now().Add(d).Format("15:04")), nil, nil
+	logx.Printf("Telegram: notifications muted for %s", d)
+	return c.text("muted", time.Now().Add(d).Format("15:04")), nil, nil
 }
 
 // HandleCallback acts on an inline button. Verbs:
@@ -691,84 +651,84 @@ func (telegramControl) mute(args []string) (string, *telegram.InlineKeyboard, er
 // known) and append a result line. A cancel:/runnow: press on a message
 // whose schedule is gone marks it "already handled" and drops the buttons.
 // The edited text keeps (or gains) the PC-name header (#75).
-func (c telegramControl) HandleCallback(ctx context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
+func (c *Control) HandleCallback(ctx context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	h, toast, err := c.handleCallback(ctx, chatID, msgID, msgText, data)
-	return tgWithHeader(h), toast, err
+	return c.WithHeader(h), toast, err
 }
 
-func (telegramControl) handleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
+func (c *Control) handleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
 	case "exec":
-		name, ok := telegramCommandName(arg)
+		name, ok := c.commandName(arg)
 		if !ok {
-			return "", tgText("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
+			return "", c.text("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
 		}
-		runTelegramCommand(name)
-		return tgAppend(tgKeep(msgText, tgPromptCandidates()...), tgCommandLabel(name), tgStamp("stamp_executed")), tgText("toast_executed"), nil
+		c.runCommand(name)
+		return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
 	case "cmd":
-		name, ok := telegramCommandName(arg)
+		name, ok := c.commandName(arg)
 		if !ok {
-			return "", tgText("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
+			return "", c.text("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
 		}
 		if !telegramSafeCommands[name] {
-			return "", tgText("confirm_needed"), nil
+			return "", c.text("confirm_needed"), nil
 		}
-		runTelegramCommand(name)
-		return tgAppend(tgKeep(msgText, tgMenuTitle()), tgCommandLabel(name), tgStamp("stamp_executed")), tgText("toast_executed"), nil
+		c.runCommand(name)
+		return appendStamp(keep(msgText, c.menuTitle()), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
 	case "confirm":
-		name, ok := telegramCommandName(arg)
-		if !ok || !graceCommands[name] {
-			return "", tgText("unknown_button"), fmt.Errorf("callback %q: not a power command", data)
+		name, ok := c.commandName(arg)
+		if !ok || !c.isGrace(name) {
+			return "", c.text("unknown_button"), fmt.Errorf("callback %q: not a power command", data)
 		}
-		q := tgText("confirm_q", tgCommandLabel(name))
-		if kept := tgKeep(msgText, tgMenuTitle()); kept != "" {
+		q := c.text("confirm_q", c.commandLabel(name))
+		if kept := keep(msgText, c.menuTitle()); kept != "" {
 			return kept + "\n\n" + q, "", nil
 		}
 		return q, "", nil
 	case "dismiss":
-		return tgAppend(tgKeep(msgText, tgPromptCandidates()...), "", tgStamp("stamp_dismissed")), "", nil
+		return appendStamp(keep(msgText, c.promptCandidates()...), "", c.stamp("stamp_dismissed")), "", nil
 	case "cancel":
 		if arg == "menu" {
-			name, ok := takeSchedule("telegram")
+			name, ok := c.d.Commands.Take("telegram")
 			if !ok {
-				return "", tgText("no_schedule"), nil
+				return "", c.text("no_schedule"), nil
 			}
-			return tgMenuTitle() + "\n" + tgText("cancelled", tgCommandLabel(name)), tgText("toast_cancelled"), nil
+			return c.menuTitle() + "\n" + c.text("cancelled", c.commandLabel(name)), c.text("toast_cancelled"), nil
 		}
-		grace, mine := takeGraceMessage(chatID, msgID)
-		name, ok := takeSchedule("telegram")
+		grace, mine := c.takeGraceMessage(chatID, msgID)
+		name, ok := c.d.Commands.Take("telegram")
 		if !ok {
-			return tgStale(msgText), tgText("no_schedule"), nil
+			return c.stale(msgText), c.text("no_schedule"), nil
 		}
 		if mine {
-			return grace.html + "\n" + tgStamp("stamp_cancelled"), tgText("toast_cancelled"), nil
+			return grace.html + "\n" + c.stamp("stamp_cancelled"), c.text("toast_cancelled"), nil
 		}
-		return tgAppend(tgKeep(msgText), tgCommandLabel(name), tgStamp("stamp_cancelled")), tgText("toast_cancelled"), nil
+		return appendStamp(keep(msgText), c.commandLabel(name), c.stamp("stamp_cancelled")), c.text("toast_cancelled"), nil
 	case "runnow":
-		grace, mine := takeGraceMessage(chatID, msgID)
-		name, ok := runScheduledNow()
+		grace, mine := c.takeGraceMessage(chatID, msgID)
+		name, ok := c.runScheduledNow()
 		if !ok {
-			return tgStale(msgText), tgText("no_schedule"), nil
+			return c.stale(msgText), c.text("no_schedule"), nil
 		}
 		if mine {
-			return grace.html + "\n" + tgStamp("stamp_ran"), tgText("toast_executed"), nil
+			return grace.html + "\n" + c.stamp("stamp_ran"), c.text("toast_executed"), nil
 		}
-		return tgAppend(tgKeep(msgText), tgCommandLabel(name), tgStamp("stamp_ran")), tgText("toast_executed"), nil
+		return appendStamp(keep(msgText), c.commandLabel(name), c.stamp("stamp_ran")), c.text("toast_executed"), nil
 	}
-	return "", tgText("unknown_button"), fmt.Errorf("unknown callback %q", data)
+	return "", c.text("unknown_button"), fmt.Errorf("unknown callback %q", data)
 }
 
-// tgMenuTitle is the /menu text, header included, so tgKeep recognises it
+// menuTitle is the /menu text, header included, so keep recognises it
 // in the plain text Telegram hands back on a button press.
-func tgMenuTitle() string {
-	return tgWithHeader(tgText("menu_title"))
+func (c *Control) menuTitle() string {
+	return c.WithHeader(c.text("menu_title"))
 }
 
-// tgAppend builds an edit: the kept text (when any) followed by the result
+// appendStamp builds an edit: the kept text (when any) followed by the result
 // line. Without kept text the command label heads the message so the
 // result is still readable on its own.
-func tgAppend(kept, label, stamp string) string {
+func appendStamp(kept, label, stamp string) string {
 	if kept != "" {
 		return kept + "\n" + stamp
 	}
@@ -778,52 +738,52 @@ func tgAppend(kept, label, stamp string) string {
 	return stamp
 }
 
-// tgStale is the edit for a cancel:/runnow: press whose schedule no longer
+// stale is the edit for a cancel:/runnow: press whose schedule no longer
 // exists: the text stays, the buttons go, "⏹ 이미 처리됨" is appended. When
 // the poller had no text (no message), nothing is edited.
-func tgStale(msgText string) string {
+func (c *Control) stale(msgText string) string {
 	if msgText == "" {
 		return ""
 	}
-	return tgKeep(msgText) + "\n" + tgText("stamp_stale")
+	return keep(msgText) + "\n" + c.text("stamp_stale")
 }
 
 // EditKeyboard implements telegram.EditKeyboarder: a confirm:<cmd> edit
 // keeps [확인][취소] buttons, cancel:menu keeps the menu, every other edit
 // drops the keyboard.
-func (telegramControl) EditKeyboard(data string) *telegram.InlineKeyboard {
+func (c *Control) EditKeyboard(data string) *telegram.InlineKeyboard {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
 	case "confirm":
-		if name, ok := telegramCommandName(arg); ok && graceCommands[name] {
-			return tgConfirmKeyboard(name)
+		if name, ok := c.commandName(arg); ok && c.isGrace(name) {
+			return c.confirmKeyboard(name)
 		}
 	case "cancel":
 		if arg == "menu" {
-			return tgMenuKeyboard()
+			return c.menuKeyboard()
 		}
 	}
 	return nil
 }
 
 // Unauthorized raises security.unknown_chat for traffic from other chats.
-func (telegramControl) Unauthorized(chatID, username, text string) {
-	logMsg("Telegram: ignored message from unknown chat %s (%s): %s", chatID, username, httpx.Truncate(text, 64))
-	emit("security", "unknown_chat", map[string]string{
+func (c *Control) Unauthorized(chatID, username, text string) {
+	logx.Printf("Telegram: ignored message from unknown chat %s (%s): %s", chatID, username, httpx.Truncate(text, 64))
+	c.d.Emit("security", "unknown_chat", map[string]string{
 		"chat_id":  chatID,
 		"username": httpx.Truncate(username, 64),
 		"text":     httpx.Truncate(text, 64),
 	})
 }
 
-// tgStatusText builds the /status reply.
-func tgStatusText() string {
+// statusText builds the /status reply.
+func (c *Control) statusText() string {
 	var b strings.Builder
 	// The header line doubles as the /status title, with the version on it.
-	fmt.Fprintf(&b, "%s · %s\n", tgHeader(), html.EscapeString(Version))
-	fmt.Fprintf(&b, "%s: %s\n", tgText("st_uptime"), formatUptime(time.Since(serviceStartedAt)))
+	fmt.Fprintf(&b, "%s · %s\n", c.Header(), html.EscapeString(c.d.Version()))
+	fmt.Fprintf(&b, "%s: %s\n", c.text("st_uptime"), formatUptime(time.Since(c.d.StartedAt)))
 
-	s := getSchedule()
+	s := c.d.Status.Schedule()
 	if s["active"] == true {
 		command, _ := s["command"].(string)
 		origin, _ := s["origin"].(string)
@@ -834,55 +794,55 @@ func tgStatusText() string {
 				at = t.Format("15:04")
 			}
 		}
-		fmt.Fprintf(&b, "%s: %s\n", tgText("st_schedule"),
-			tgText("st_remaining", tgCommandLabel(command), tgOriginLabel(origin), formatUptime(time.Duration(remaining)*time.Second), at))
+		fmt.Fprintf(&b, "%s: %s\n", c.text("st_schedule"),
+			c.text("st_remaining", c.commandLabel(command), c.originLabel(origin), formatUptime(time.Duration(remaining)*time.Second), at))
 	} else {
-		fmt.Fprintf(&b, "%s: %s\n", tgText("st_schedule"), tgText("st_none"))
+		fmt.Fprintf(&b, "%s: %s\n", c.text("st_schedule"), c.text("st_none"))
 	}
 
-	if lr := getLastRemote(); lr.Command != "" {
-		fmt.Fprintf(&b, "%s: %s · <code>%s</code> · %s", tgText("st_remote"),
-			tgCommandLabel(lr.Command), html.EscapeString(lr.From), lr.At.Format("15:04:05"))
+	if lr := c.d.Status.LastRemote(); lr.Command != "" {
+		fmt.Fprintf(&b, "%s: %s · <code>%s</code> · %s", c.text("st_remote"),
+			c.commandLabel(lr.Command), html.EscapeString(lr.From), lr.At.Format("15:04:05"))
 	} else {
-		fmt.Fprintf(&b, "%s: %s", tgText("st_remote"), tgText("st_none"))
+		fmt.Fprintf(&b, "%s: %s", c.text("st_remote"), c.text("st_none"))
 	}
 
-	ctl := currentAwake()
-	fmt.Fprintf(&b, "\n%s: %s", tgText("st_awake"), tgAwakeStatus(ctl.View(), ctl.now()))
+	ctl := c.d.Awake
+	fmt.Fprintf(&b, "\n%s: %s", c.text("st_awake"), c.awakeStatus(ctl.View(), ctl.Now()))
 	// A desktop has no battery, and no line for one.
-	if bat := battery.Info(); bat.Present {
-		fmt.Fprintf(&b, "\n%s: %s", tgText("st_battery"), tgBatteryStatus(bat))
+	if bat := c.d.Status.Battery(); bat.Present {
+		fmt.Fprintf(&b, "\n%s: %s", c.text("st_battery"), c.batteryStatus(bat))
 	}
-	if line := tgActivityLine(stActivityStatus(getConfig())); line != "" {
+	if line := c.activityLine(c.d.Status.Activity(c.d.Config())); line != "" {
 		b.WriteString("\n" + line)
 	}
-	if cfg := getConfig(); cfg.Media.Enabled {
-		if line := tgMediaLine(stMediaStatus(cfg), cfg.Media.NowPlaying); line != "" {
+	if cfg := c.d.Config(); cfg.Media.Enabled {
+		if line := c.mediaLine(c.d.Status.Media(cfg), cfg.Media.NowPlaying); line != "" {
 			b.WriteString("\n" + line)
 		}
 	}
 
-	if bus := currentBus(); bus != nil {
+	if bus := c.d.Bus(); bus != nil {
 		if until := bus.MutedUntil(); !until.IsZero() {
-			fmt.Fprintf(&b, "\n%s: %s", tgText("st_muted"), tgText("st_until", until.Format("15:04")))
+			fmt.Fprintf(&b, "\n%s: %s", c.text("st_muted"), c.text("st_until", until.Format("15:04")))
 		}
 	}
 	return b.String()
 }
 
-// tgActivityLine is the /status "활동: Steam 실행 중 · 외 1개" line: the
+// activityLine is the /status "활동: Steam 실행 중 · 외 1개" line: the
 // highest-priority running app and how many other watched apps run. It is
 // "" while the option is off or nothing watched is running — an idle PC
 // needs no line saying so. Labels are the user's own words, so they are
 // escaped.
-func tgActivityLine(a stActivity) string {
+func (c *Control) activityLine(a status.Activity) string {
 	label, others := a.TopLabel()
 	if !a.Enabled || label == "" {
 		return ""
 	}
-	line := fmt.Sprintf("%s: %s", tgText("st_activity"), tgText("activity_running", html.EscapeString(label)))
+	line := fmt.Sprintf("%s: %s", c.text("st_activity"), c.text("activity_running", html.EscapeString(label)))
 	if others > 0 {
-		line += " · " + tgText("activity_more", others)
+		line += " · " + c.text("activity_more", others)
 	}
 	return line
 }
@@ -903,10 +863,9 @@ func formatUptime(d time.Duration) string {
 
 // ---- lifecycle -------------------------------------------------------------------
 
-// telegramRunner owns the running poller. managed is set between
-// startTelegramControl and stopTelegramControl so that saveConfig in the
-// installer or in tests never spins up a poller.
-type telegramRunner struct {
+// runner owns the running poller. managed is set between Start and Stop so
+// that a config save in the installer or in tests never spins up a poller.
+type runner struct {
 	mu      sync.Mutex
 	managed bool
 	key     string // settings the running poller was built from
@@ -914,100 +873,99 @@ type telegramRunner struct {
 	done    chan struct{}
 }
 
-var tgRunner telegramRunner
+// conflict is the 409 state: Telegram hands long polling to one client per
+// bot token, so a second PC sharing the token gets 409 for every
+// getUpdates (#75). The poller reports the state here; /api/telegram/state
+// and the app's notify tab show it.
+type conflict struct {
+	mu     sync.Mutex
+	active bool
+	since  time.Time
+}
 
-// Telegram hands long polling to one client per bot token, so a second PC
-// sharing the token gets 409 for every getUpdates (#75). The poller reports
-// the state here; /api/telegram/state and the GUI notify tab show it.
-var (
-	tgConflictMu          sync.Mutex
-	telegramConflict      bool
-	telegramConflictSince time.Time
-)
-
-// setTelegramConflict records a 409 state change from the poller. Since is
-// the moment the conflict started and survives repeated true calls.
-func setTelegramConflict(active bool) {
-	tgConflictMu.Lock()
-	defer tgConflictMu.Unlock()
-	if active == telegramConflict {
+// SetConflict records a 409 state change from the poller. Since is the
+// moment the conflict started and survives repeated true calls.
+func (c *Control) SetConflict(active bool) {
+	c.conflict.mu.Lock()
+	defer c.conflict.mu.Unlock()
+	if active == c.conflict.active {
 		return
 	}
-	telegramConflict = active
+	c.conflict.active = active
 	if active {
-		telegramConflictSince = time.Now()
-		logMsg("Telegram control: another PC is polling this bot; use a separate bot per PC or the hub agent")
+		c.conflict.since = time.Now()
+		logx.Printf("Telegram control: another PC is polling this bot; use a separate bot per PC or the hub agent")
 	} else {
-		telegramConflictSince = time.Time{}
+		c.conflict.since = time.Time{}
 	}
 }
 
-// telegramConflictState is what /api/telegram/state reports.
-func telegramConflictState() (bool, time.Time) {
-	tgConflictMu.Lock()
-	defer tgConflictMu.Unlock()
-	return telegramConflict, telegramConflictSince
+// Conflict is what /api/telegram/state reports.
+func (c *Control) Conflict() (bool, time.Time) {
+	c.conflict.mu.Lock()
+	defer c.conflict.mu.Unlock()
+	return c.conflict.active, c.conflict.since
 }
 
-// startTelegramControl enables the lifecycle and starts polling when the
-// current config asks for it. Called once at service start.
-func startTelegramControl() {
-	tgRunner.mu.Lock()
-	tgRunner.managed = true
-	tgRunner.mu.Unlock()
-	reconcileTelegramControl()
+// Start enables the lifecycle and starts polling when the current config
+// asks for it. Called once at service start.
+func (c *Control) Start() {
+	c.runner.mu.Lock()
+	c.runner.managed = true
+	c.runner.mu.Unlock()
+	c.Reconcile()
 }
 
-// stopTelegramControl stops the poller (if any) and disables the lifecycle.
-func stopTelegramControl() {
-	tgRunner.mu.Lock()
-	defer tgRunner.mu.Unlock()
-	tgRunner.managed = false
-	tgRunner.stopLocked()
+// Stop stops the poller (if any) and disables the lifecycle.
+func (c *Control) Stop() {
+	c.runner.mu.Lock()
+	defer c.runner.mu.Unlock()
+	c.runner.managed = false
+	c.stopLocked()
 }
 
-// reconcileTelegramControl (re)starts or stops the poller so it matches the
-// live config. saveConfig calls it after every save; it is a no-op until
-// startTelegramControl has run.
-func reconcileTelegramControl() {
-	tgRunner.mu.Lock()
-	defer tgRunner.mu.Unlock()
-	if !tgRunner.managed {
+// Reconcile (re)starts or stops the poller so it matches the live config.
+// The service calls it after every config save; it is a no-op until Start
+// has run.
+func (c *Control) Reconcile() {
+	c.runner.mu.Lock()
+	defer c.runner.mu.Unlock()
+	if !c.runner.managed {
 		return
 	}
-	cfg := getConfig().Telegram
-	key := telegramControlKey(cfg)
-	if key == tgRunner.key {
+	cfg := c.d.Config().Telegram
+	key := controlKey(cfg)
+	if key == c.runner.key {
 		return
 	}
-	tgRunner.stopLocked()
+	c.stopLocked()
 	if key == "" {
 		return
 	}
-	tgRunner.startLocked(cfg, key)
+	c.startLocked(cfg, key)
 }
 
-// telegramControlRunning reports whether a poller goroutine is alive.
-func telegramControlRunning() bool {
-	tgRunner.mu.Lock()
-	defer tgRunner.mu.Unlock()
-	return tgRunner.done != nil
+// Running reports whether a poller goroutine is alive.
+func (c *Control) Running() bool {
+	c.runner.mu.Lock()
+	defer c.runner.mu.Unlock()
+	return c.runner.done != nil
 }
 
-// telegramControlKey summarises the settings that require a poller restart;
+// controlKey summarises the settings that require a poller restart;
 // "" means control must be off. AllowedChatIDs are read live, so they are
 // not part of the key.
-func telegramControlKey(cfg TelegramConfig) string {
+func controlKey(cfg config.TelegramConfig) string {
 	if !cfg.Enabled || !cfg.ControlEnabled || cfg.BotToken == "" || cfg.ChatID == "" {
 		return ""
 	}
 	return cfg.BotToken + "\x00" + cfg.ChatID + "\x00" + cfg.Lang
 }
 
-// telegramAllowedChatIDs is the poller's allow-list: allowed_chat_ids, or
+// allowedChatIDs is the poller's allow-list: allowed_chat_ids, or
 // just chat_id when that list is empty.
-func telegramAllowedChatIDs() []string {
-	cfg := getConfig().Telegram
+func (c *Control) allowedChatIDs() []string {
+	cfg := c.d.Config().Telegram
 	ids := make([]string, 0, len(cfg.AllowedChatIDs)+1)
 	for _, id := range cfg.AllowedChatIDs {
 		if id = strings.TrimSpace(id); id != "" {
@@ -1020,8 +978,8 @@ func telegramAllowedChatIDs() []string {
 	return ids
 }
 
-// telegramBotCommands is the setMyCommands menu (design doc §9).
-func telegramBotCommands(lang string) []telegram.BotCommand {
+// botCommands is the setMyCommands menu (design doc §9).
+func botCommands(lang string) []telegram.BotCommand {
 	ko := lang != "en"
 	pick := func(k, e string) string {
 		if ko {
@@ -1059,39 +1017,40 @@ func telegramBotCommands(lang string) []telegram.BotCommand {
 	}
 }
 
-// startLocked builds the client and runs the poller. tgRunner.mu is held.
-func (r *telegramRunner) startLocked(cfg TelegramConfig, key string) {
+// startLocked builds the client and runs the poller. runner.mu is held.
+func (c *Control) startLocked(cfg config.TelegramConfig, key string) {
 	token, err := secret.Unprotect(cfg.BotToken)
 	if err != nil || token == "" {
-		logMsg("Telegram control: cannot read bot token (%v); control stays off", err)
+		logx.Printf("Telegram control: cannot read bot token (%v); control stays off", err)
 		return
 	}
-	cli := telegram.NewClient(token, telegram.WithBaseURL(telegramBaseURL))
+	cli := telegram.NewClient(token, telegram.WithBaseURL(c.d.BaseURL()))
 	poller := telegram.NewPoller(cli, telegram.PollerOptions{
-		AllowedChatIDs: telegramAllowedChatIDs,
-		Handler:        telegramControl{},
-		Log:            logMsg,
-		OnConflict:     setTelegramConflict,
+		AllowedChatIDs: c.allowedChatIDs,
+		Handler:        c,
+		Log:            logx.Printf,
+		OnConflict:     c.SetConflict,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	r.key, r.cancel, r.done = key, cancel, done
+	c.runner.key, c.runner.cancel, c.runner.done = key, cancel, done
 	lang := cfg.Lang
 	go func() {
 		defer close(done)
-		if err := cli.SetMyCommands(ctx, telegramBotCommands(lang)); err != nil && ctx.Err() == nil {
-			logMsg("Telegram control: setMyCommands failed: %v", err)
+		if err := cli.SetMyCommands(ctx, botCommands(lang)); err != nil && ctx.Err() == nil {
+			logx.Printf("Telegram control: setMyCommands failed: %v", err)
 		}
-		logMsg("Telegram control: polling started")
+		logx.Printf("Telegram control: polling started")
 		if err := poller.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			logMsg("Telegram control: poller stopped: %v", err)
+			logx.Printf("Telegram control: poller stopped: %v", err)
 		}
-		logMsg("Telegram control: polling stopped")
+		logx.Printf("Telegram control: polling stopped")
 	}()
 }
 
-// stopLocked cancels the poller and waits briefly for it. tgRunner.mu is held.
-func (r *telegramRunner) stopLocked() {
+// stopLocked cancels the poller and waits briefly for it. runner.mu is held.
+func (c *Control) stopLocked() {
+	r := &c.runner
 	if r.cancel == nil {
 		return
 	}
@@ -1099,17 +1058,10 @@ func (r *telegramRunner) stopLocked() {
 	select {
 	case <-r.done:
 	case <-time.After(5 * time.Second):
-		logMsg("Telegram control: poller did not stop in time")
+		logx.Printf("Telegram control: poller did not stop in time")
 	}
 	r.key, r.cancel, r.done = "", nil, nil
 	// No poller, no conflict — the warning must not outlive it even if the
 	// goroutine was still sleeping out its 409 back-off.
-	setTelegramConflict(false)
-}
-
-// currentBus returns the notification bus or nil (before startNotifier).
-func currentBus() *notify.Bus {
-	busMu.RLock()
-	defer busMu.RUnlock()
-	return bus
+	c.SetConflict(false)
 }

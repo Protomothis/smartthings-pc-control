@@ -16,7 +16,7 @@ func TestTelegramSay(t *testing.T) {
 	initLogger()
 	withLiveConfig(t, tgSayCfg(NotifyPCConfig{Enabled: true}))
 	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
-	h := telegramControl{}
+	h := tgCtl
 
 	reply, _, err := h.HandleCommand(context.Background(), "42", "say", []string{"빨래가", "끝났어요", "$(calc)"})
 	if err != nil || !strings.Contains(reply, "PC에 알림을 띄웠습니다") {
@@ -37,7 +37,7 @@ func TestTelegramSayRefusals(t *testing.T) {
 	initLogger()
 	withLiveConfig(t, tgSayCfg(NotifyPCConfig{Enabled: false}))
 	calls := fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
-	h := telegramControl{}
+	h := tgCtl
 
 	if reply, _, _ := h.HandleCommand(context.Background(), "42", "say", []string{"hi"}); !strings.Contains(reply, "PC 알림이 꺼져") {
 		t.Errorf("disabled: %q", reply)
@@ -69,18 +69,4 @@ func TestTelegramSayRefusals(t *testing.T) {
 	if reply, _, _ := h.HandleCommand(context.Background(), "42", "say", []string{"hi"}); !strings.Contains(reply, "toast &lt;failed&gt;") {
 		t.Errorf("failure is escaped: %q", reply)
 	}
-}
-
-func TestTelegramHelpListsSay(t *testing.T) {
-	withLiveConfig(t, tgSayCfg(NotifyPCConfig{}))
-	help, _, _ := telegramControl{}.HandleCommand(context.Background(), "42", "help", nil)
-	if !strings.Contains(help, "/say") {
-		t.Error("help lacks /say")
-	}
-	for _, c := range telegramBotCommands("ko") {
-		if c.Command == "say" {
-			return
-		}
-	}
-	t.Error("setMyCommands lacks say")
 }

@@ -153,3 +153,12 @@ func (s *liveSink) noteState(disabled bool) {
 		logMsg("Telegram notifications are off or incomplete (enabled/bot_token/chat_id); events are dropped")
 	}
 }
+
+// startLiveNotifier installs the Telegram sink behind the notification bus
+// with the grace-message hook attached (tgCtl.RememberGraceMessage).
+// windows.go calls it at service start; tests wire the pieces themselves.
+func startLiveNotifier() {
+	s := newLiveSink()
+	s.SetOnSent(tgCtl.RememberGraceMessage)
+	startNotifier(s)
+}

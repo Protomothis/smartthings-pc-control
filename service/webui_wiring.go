@@ -140,8 +140,8 @@ type telegramInfo struct{}
 
 func (telegramInfo) Client(token string) *telegram.Client { return newTelegramClient(token) }
 func (telegramInfo) PCName(tg TelegramConfig) string      { return telegramPCName(tg) }
-func (telegramInfo) Polling() bool                        { return telegramControlRunning() }
-func (telegramInfo) Conflict() (bool, time.Time)          { return telegramConflictState() }
+func (telegramInfo) Polling() bool                        { return tgCtl.Running() }
+func (telegramInfo) Conflict() (bool, time.Time)          { return tgCtl.Conflict() }
 
 // heartbeatStore takes the tray app's heartbeat into the device stores.
 // target is the session the commands act on (targetUserSession); the

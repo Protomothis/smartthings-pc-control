@@ -1,4 +1,4 @@
-package service
+package tgcontrol
 
 // Telegram volume and media commands (#104, #105; media-notify.md §6):
 //
@@ -25,7 +25,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
+	"github.com/Protomothis/smartthings-pc-control/service/session"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -57,107 +60,107 @@ func parseVolArg(arg string) (name string, value int, ok bool) {
 	return name, value, true
 }
 
-// tgVolume handles /vol [0-100|+n|-n].
-func tgVolume(ctx context.Context, args []string) (string, *telegram.InlineKeyboard, error) {
+// volume handles /vol [0-100|+n|-n].
+func (c *Control) volume(ctx context.Context, args []string) (string, *telegram.InlineKeyboard, error) {
 	if len(args) == 0 {
-		a, err := readAudioNow(ctx)
+		a, err := c.d.Media.ReadAudio(ctx)
 		if err != nil {
-			return tgMediaError(err)
+			return c.mediaError(err)
 		}
-		return tgAudioState(a), nil, nil
+		return c.audioState(a), nil, nil
 	}
 	name, value, ok := parseVolArg(args[0])
 	if !ok {
-		return tgText("vol_usage"), nil, fmt.Errorf("invalid /vol argument %q", args[0])
+		return c.text("vol_usage"), nil, fmt.Errorf("invalid /vol argument %q", args[0])
 	}
-	return tgMediaCommand(ctx, name, &value)
+	return c.mediaCommand(ctx, name, &value)
 }
 
-// tgMediaCommand runs one media command (action.IsMedia) and words the
+// mediaCommand runs one media command (action.IsMedia) and words the
 // result: the audio state after a volume or mute command, what the media
 // session did after a media command ("⏸ 일시정지했습니다 · Spotify"), or
 // "⏯ 재생/일시정지 키를 보냈습니다" when only the media key could be pressed.
-func tgMediaCommand(ctx context.Context, name string, value *int) (string, *telegram.InlineKeyboard, error) {
-	res, err := runMediaCommand(ctx, name, value)
+func (c *Control) mediaCommand(ctx context.Context, name string, value *int) (string, *telegram.InlineKeyboard, error) {
+	res, err := c.d.Media.Run(ctx, name, value)
 	if err != nil {
-		return tgMediaError(err)
+		return c.mediaError(err)
 	}
-	logMsg("Telegram: %s", name)
+	logx.Printf("Telegram: %s", name)
 	if !action.IsAudio(name) {
-		return tgMediaResult(name, res, getConfig().Media.NowPlaying), nil, nil
+		return c.mediaResult(name, res, c.d.Config().Media.NowPlaying), nil, nil
 	}
 	if res.Audio == nil {
-		return tgMediaError(fmt.Errorf("%w: no audio block", errUserActionOutput))
+		return c.mediaError(fmt.Errorf("%w: no audio block", session.ErrOutput))
 	}
-	reply := tgAudioState(*res.Audio)
+	reply := c.audioState(*res.Audio)
 	if name == "unmute" {
 		// The notification pause /unmute used to end is still on: say how
 		// to end it now.
-		if b := currentBus(); b != nil {
+		if b := c.d.Bus(); b != nil {
 			if until := b.MutedUntil(); !until.IsZero() {
-				reply += "\n" + tgText("quiet_still", until.Format("15:04"))
+				reply += "\n" + c.text("quiet_still", until.Format("15:04"))
 			}
 		}
 	}
 	return reply, nil, nil
 }
 
-// tgAudioState is "볼륨 30% · 음소거 꺼짐 · 스피커"; a device without a name
+// audioState is "볼륨 30% · 음소거 꺼짐 · 스피커"; a device without a name
 // leaves the last part off.
-func tgAudioState(a useraction.Audio) string {
-	muted := tgText("st_off")
+func (c *Control) audioState(a useraction.Audio) string {
+	muted := c.text("st_off")
 	if a.Muted {
-		muted = tgText("st_on")
+		muted = c.text("st_on")
 	}
-	s := tgText("vol_state", a.Volume, muted)
+	s := c.text("vol_state", a.Volume, muted)
 	if a.Device != "" {
 		s += " · " + html.EscapeString(a.Device)
 	}
 	return s
 }
 
-// tgMediaLabel names a media key; play and pause send the play/pause
+// mediaLabel names a media key; play and pause send the play/pause
 // toggle, so they are worded as what was actually pressed.
-func tgMediaLabel(name string) string {
+func (c *Control) mediaLabel(name string) string {
 	switch name {
 	case "play", "pause":
 		name = "playpause"
 	}
-	return tgText("media_" + name)
+	return c.text("media_" + name)
 }
 
-// tgMediaError words a runMediaCommand failure. Only real failures are
+// mediaError words a failed media command (Media.Run). Only real failures are
 // returned as errors (and so logged by the poller); a switched-off
 // setting or an empty PC is an answer, not a fault.
-func tgMediaError(err error) (string, *telegram.InlineKeyboard, error) {
-	var uaErr *userActionError
+func (c *Control) mediaError(err error) (string, *telegram.InlineKeyboard, error) {
+	var uaErr *session.ActionError
 	var valErr *action.ValueError
 	switch {
 	case errors.Is(err, action.ErrMediaDisabled):
-		return tgText("media_disabled"), nil, nil
-	case errors.Is(err, errNoUserSession):
-		return tgText("media_no_user"), nil, nil
+		return c.text("media_disabled"), nil, nil
+	case errors.Is(err, session.ErrNoUserSession):
+		return c.text("media_no_user"), nil, nil
 	case errors.As(err, &valErr):
-		return tgText("vol_usage"), nil, err
-	case errors.Is(err, errUserActionTimeout):
-		return tgText("media_timeout"), nil, err
+		return c.text("vol_usage"), nil, err
+	case errors.Is(err, session.ErrTimeout):
+		return c.text("media_timeout"), nil, err
 	case errors.As(err, &uaErr) && uaErr.Code == useraction.CodeUnsupported:
-		return tgText("media_unsupported", html.EscapeString(uaErr.Message)), nil, err
+		return c.text("media_unsupported", html.EscapeString(uaErr.Message)), nil, err
 	case errors.As(err, &uaErr):
-		return tgText("media_failed", html.EscapeString(uaErr.Message)), nil, err
+		return c.text("media_failed", html.EscapeString(uaErr.Message)), nil, err
 	}
 	// Start errors can carry paths and child output; those stay in the log.
-	return tgText("media_failed", "user-action"), nil, err
+	return c.text("media_failed", "user-action"), nil, err
 }
 
-// tgMediaResult words a media command's reply. The session backend says
+// mediaResult words a media command's reply. The session backend says
 // which state it left the session in, so play, pause and the toggle read
 // as what happened; the app name follows with the media.now_playing
 // opt-in. The key path only knows that a key was pressed.
-func tgMediaResult(name string, res UserActionResult, share bool) string {
+func (c *Control) mediaResult(name string, res session.Result, share bool) string {
 	status := res.ReplyString("status")
 	if res.ReplyString("via") != "session" || !useraction.ValidMediaStatus(status) {
-		return tgText("media_sent", tgMediaLabel(name))
+		return c.text("media_sent", c.mediaLabel(name))
 	}
 	var key string
 	switch name {
@@ -173,25 +176,25 @@ func tgMediaResult(name string, res UserActionResult, share bool) string {
 			key = "media_done_stop"
 		}
 	}
-	reply := tgText(key)
+	reply := c.text(key)
 	if app := res.ReplyString("app"); share && app != "" {
 		reply += " · " + html.EscapeString(app)
 	}
 	return reply
 }
 
-// tgNowPlaying handles /np: the session as the user session sees it now,
+// nowPlaying handles /np: the session as the user session sees it now,
 // not the stored sample, so it also works without the tray app.
-func tgNowPlaying(ctx context.Context) (string, *telegram.InlineKeyboard, error) {
-	np, err := readNowPlayingNow(ctx)
+func (c *Control) nowPlaying(ctx context.Context) (string, *telegram.InlineKeyboard, error) {
+	np, err := c.d.Media.ReadNowPlaying(ctx)
 	if err != nil {
-		return tgMediaError(err)
+		return c.mediaError(err)
 	}
-	return tgNowPlayingText(np, getConfig().Media.NowPlaying), nil, nil
+	return c.nowPlayingText(np, c.d.Config().Media.NowPlaying), nil, nil
 }
 
-// tgMediaGlyph is the status symbol of the /np and /status lines.
-func tgMediaGlyph(status string) string {
+// mediaGlyph is the status symbol of the /np and /status lines.
+func mediaGlyph(status string) string {
 	switch status {
 	case useraction.MediaPlaying:
 		return "▶"
@@ -201,23 +204,23 @@ func tgMediaGlyph(status string) string {
 	return "⏹"
 }
 
-// tgNowPlayingText is "▶ 제목 — 아티스트 · Spotify", "⏸ …", or "재생 중인
+// nowPlayingText is "▶ 제목 — 아티스트 · Spotify", "⏸ …", or "재생 중인
 // 미디어 없음". Without the opt-in only the state is told, with a note on
 // why: "▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)".
-func tgNowPlayingText(np useraction.NowPlaying, share bool) string {
+func (c *Control) nowPlayingText(np useraction.NowPlaying, share bool) string {
 	if np.Status == useraction.MediaNone || !useraction.ValidMediaStatus(np.Status) {
-		return tgText("np_none")
+		return c.text("np_none")
 	}
-	state := tgText("np_" + np.Status)
+	state := c.text("np_" + np.Status)
 	if !share {
-		return tgMediaGlyph(np.Status) + " " + state + " " + tgText("np_private")
+		return mediaGlyph(np.Status) + " " + state + " " + c.text("np_private")
 	}
-	return tgMediaGlyph(np.Status) + " " + tgTrackText(np, state)
+	return mediaGlyph(np.Status) + " " + trackText(np, state)
 }
 
-// tgTrackText is "제목 — 아티스트 · 앱" with whatever parts are known;
+// trackText is "제목 — 아티스트 · 앱" with whatever parts are known;
 // fallback stands in for a missing title and artist.
-func tgTrackText(np useraction.NowPlaying, fallback string) string {
+func trackText(np useraction.NowPlaying, fallback string) string {
 	var track string
 	switch {
 	case np.Title != "" && np.Artist != "":
@@ -235,17 +238,17 @@ func tgTrackText(np useraction.NowPlaying, fallback string) string {
 	return track
 }
 
-// tgMediaLine is the /status "미디어: ▶ 제목 — 아티스트 · Spotify" line, or ""
+// mediaLine is the /status "미디어: ▶ 제목 — 아티스트 · Spotify" line, or ""
 // unless something is playing — like the activity line, an idle PC needs
 // no line saying so. It reads the stored sample (/status runs nothing in
 // the user session).
-func tgMediaLine(m stMedia, share bool) string {
+func (c *Control) mediaLine(m status.Media, share bool) string {
 	if m.Status != useraction.MediaPlaying {
 		return ""
 	}
-	text := tgText("np_playing")
+	text := c.text("np_playing")
 	if share {
-		text = tgTrackText(useraction.NowPlaying{Status: m.Status, Title: m.Title, Artist: m.Artist, App: m.App}, text)
+		text = trackText(useraction.NowPlaying{Status: m.Status, Title: m.Title, Artist: m.Artist, App: m.App}, text)
 	}
-	return tgText("st_media") + ": " + tgMediaGlyph(m.Status) + " " + text
+	return c.text("st_media") + ": " + mediaGlyph(m.Status) + " " + text
 }

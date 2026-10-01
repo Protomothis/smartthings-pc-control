@@ -340,8 +340,8 @@ func TestTelegramMeEndpointUnauthorizedToken(t *testing.T) {
 
 func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 	withLiveConfig(t, telegramCfg(true, testBotToken))
-	setTelegramConflict(false)
-	t.Cleanup(func() { setTelegramConflict(false) })
+	tgCtl.SetConflict(false)
+	t.Cleanup(func() { tgCtl.SetConflict(false) })
 
 	w := httptest.NewRecorder()
 	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
@@ -357,9 +357,9 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 	}
 
 	before := time.Now()
-	setTelegramConflict(true)
+	tgCtl.SetConflict(true)
 	// Repeated reports keep the original start time.
-	setTelegramConflict(true)
+	tgCtl.SetConflict(true)
 	w = httptest.NewRecorder()
 	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	body = decodeBody(t, w)
@@ -375,7 +375,7 @@ func TestTelegramStateEndpointReportsConflict(t *testing.T) {
 		t.Errorf("since = %s, want ~now", ts)
 	}
 
-	setTelegramConflict(false)
+	tgCtl.SetConflict(false)
 	w = httptest.NewRecorder()
 	webAPI(w, httptest.NewRequest("GET", "/api/telegram/state", nil))
 	if body = decodeBody(t, w); body["conflict"] != false {

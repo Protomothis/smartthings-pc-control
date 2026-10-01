@@ -333,7 +333,7 @@ local STRINGS = {
   -- same word the power row uses for a PC that is not there.
   session_off = { ko = "꺼짐", en = "Off" },
 
-  -- command names (§3.3). Wording follows the Go side (service/telegram_control.go).
+  -- command names (§3.3). Wording follows the Go side (service/tgcontrol/control.go).
   cmd_shutdown = { ko = "종료", en = "Shut down" },
   cmd_forceshutdown = { ko = "강제 종료", en = "Force shut down" },
   cmd_restart = { ko = "재시작", en = "Restart" },

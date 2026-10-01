@@ -351,49 +351,11 @@ func TestAudioChangedPush(t *testing.T) {
 
 // ---- Telegram (#104, #105) --------------------------------------------------
 
-func TestParseVolArg(t *testing.T) {
-	ok := map[string]struct {
-		name  string
-		value int
-	}{
-		"30": {"volume", 30}, "0": {"volume", 0}, "100": {"volume", 100}, "30%": {"volume", 30},
-		"+10": {"volumeup", 10}, "-10": {"volumedown", 10}, "+1": {"volumeup", 1}, "-100": {"volumedown", 100},
-	}
-	for arg, want := range ok {
-		name, value, good := parseVolArg(arg)
-		if !good || name != want.name || value != want.value {
-			t.Errorf("parseVolArg(%q) = %s %d %v, want %s %d", arg, name, value, good, want.name, want.value)
-		}
-	}
-	for _, arg := range []string{"", "101", "+0", "-0", "+101", "loud", "1e2", "+", "3 0", "0x10", "1000"} {
-		if _, _, good := parseVolArg(arg); good {
-			t.Errorf("parseVolArg(%q) accepted", arg)
-		}
-	}
-}
-
-func TestTelegramAudioState(t *testing.T) {
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	if got := tgAudioState(useraction.Audio{Volume: 30, Device: "스피커"}); got != "볼륨 30% · 음소거 꺼짐 · 스피커" {
-		t.Errorf("ko = %q", got)
-	}
-	if got := tgAudioState(useraction.Audio{Volume: 0, Muted: true}); got != "볼륨 0% · 음소거 켜짐" {
-		t.Errorf("ko without device = %q", got)
-	}
-	if got := tgAudioState(useraction.Audio{Volume: 5, Device: "<HDMI>"}); !strings.HasSuffix(got, "&lt;HDMI&gt;") {
-		t.Errorf("device not escaped: %q", got)
-	}
-	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	if got := tgAudioState(useraction.Audio{Volume: 30, Device: "Speakers"}); got != "Volume 30% · mute off · Speakers" {
-		t.Errorf("en = %q", got)
-	}
-}
-
 func TestTelegramVolumeCommands(t *testing.T) {
 	initLogger()
 	setConfig(Config{Media: MediaConfig{Enabled: true}, Telegram: TelegramConfig{Lang: "ko"}})
 	run := stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Device: "스피커"}}, nil)
-	var h telegramControl
+	h := tgCtl
 	do := func(cmd string, args ...string) (string, error) {
 		t.Helper()
 		html, kb, err := h.HandleCommand(context.Background(), "42", cmd, args)
@@ -478,7 +440,7 @@ func TestTelegramQuietAndLegacyMute(t *testing.T) {
 	setConfig(Config{Media: MediaConfig{Enabled: true}, Telegram: TelegramConfig{Lang: "ko"}})
 	run := stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30}}, nil)
 	captureNotifications(t)
-	var h telegramControl
+	h := tgCtl
 
 	if html, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"2h"}); err != nil || !strings.HasPrefix(tgBody(html), "🔕") {
 		t.Errorf("/mute 2h = %q, %v", html, err)

@@ -1,6 +1,6 @@
-package service
+package tgcontrol
 
-// Telegram /presets and /run 이름|번호 (#109). /run goes through runPreset
+// Telegram /presets and /run 이름|번호 (#109). /run goes through Presets.Run
 // like the SmartThings preset command; /presets lists slots, names and
 // types only — what a preset runs never leaves the PC.
 
@@ -18,8 +18,8 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
-// tgPresetTexts are merged into tgTexts at start-up; ko then en.
-var tgPresetTexts = map[string][2]string{
+// presetTexts are merged into texts at start-up; ko then en.
+var presetTexts = map[string][2]string{
 	"presets_title":     {"<b>프리셋</b>", "<b>Presets</b>"},
 	"presets_none":      {"등록된 프리셋이 없습니다. PC 앱의 프리셋 탭에서 추가하세요.", "No presets yet. Add them on the PC app's Presets tab."},
 	"presets_hint":      {"실행: <code>/run 번호</code> 또는 <code>/run 이름</code>", "Run one: <code>/run number</code> or <code>/run name</code>"},
@@ -33,45 +33,45 @@ var tgPresetTexts = map[string][2]string{
 }
 
 func init() {
-	for k, v := range tgPresetTexts {
-		tgTexts[k] = v
+	for k, v := range presetTexts {
+		texts[k] = v
 	}
 }
 
-// tgPresetList is the /presets reply: "1 · 게임 모드 (프로그램)" lines.
+// presetList is the /presets reply: "1 · 게임 모드 (프로그램)" lines.
 // Paths and arguments are not shown — the chat is a remote, not the PC.
-func tgPresetList() string {
-	ps := config.NormalizePresets(getConfig().Presets)
+func (c *Control) presetList() string {
+	ps := config.NormalizePresets(c.d.Config().Presets)
 	if len(ps) == 0 {
-		return tgText("presets_none")
+		return c.text("presets_none")
 	}
 	var b strings.Builder
-	b.WriteString(tgText("presets_title"))
+	b.WriteString(c.text("presets_title"))
 	for _, p := range ps {
 		b.WriteString("\n")
-		b.WriteString(tgText("preset_list_entry", p.Slot, html.EscapeString(p.Name), tgText("type_"+p.Type)))
+		b.WriteString(c.text("preset_list_entry", p.Slot, html.EscapeString(p.Name), c.text("type_"+p.Type)))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(tgText("presets_hint"))
+	b.WriteString(c.text("presets_hint"))
 	return b.String()
 }
 
 // runPreset handles /run 이름|번호.
-func (telegramControl) runPreset(args []string) (string, *telegram.InlineKeyboard, error) {
-	arg := strings.TrimSpace(tgJoinText(args))
+func (c *Control) runPreset(args []string) (string, *telegram.InlineKeyboard, error) {
+	arg := strings.TrimSpace(joinText(args))
 	if arg == "" {
-		return tgText("run_usage"), nil, nil
+		return c.text("run_usage"), nil, nil
 	}
-	p, ok := config.FindPresetByName(getConfig().Presets, arg)
+	p, ok := config.FindPresetByName(c.d.Config().Presets, arg)
 	if !ok {
-		return tgText("run_no_such", html.EscapeString(httpx.Truncate(arg, 64))), nil, fmt.Errorf("no preset %q", httpx.Truncate(arg, 64))
+		return c.text("run_no_such", html.EscapeString(httpx.Truncate(arg, 64))), nil, fmt.Errorf("no preset %q", httpx.Truncate(arg, 64))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.d.ActionTimeout()+time.Second)
 	defer cancel()
-	err := runPreset(ctx, p, "telegram")
-	notePresetCommand(p, "telegram", "telegram", action.ResultCode(err))
+	err := c.d.Presets.Run(ctx, p, "telegram")
+	c.d.Presets.Record(p, "telegram", action.ResultCode(err))
 	if err != nil {
-		return tgActionError(err), nil, err
+		return c.actionError(err), nil, err
 	}
-	return tgText("run_started", p.Slot, html.EscapeString(p.Name)), nil, nil
+	return c.text("run_started", p.Slot, html.EscapeString(p.Name)), nil, nil
 }

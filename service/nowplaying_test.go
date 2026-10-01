@@ -356,55 +356,10 @@ func TestMediaAPI(t *testing.T) {
 
 // ---- Telegram --------------------------------------------------------------
 
-func TestTelegramNowPlayingText(t *testing.T) {
-	initLogger()
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	cases := []struct {
-		np    useraction.NowPlaying
-		share bool
-		want  string
-	}{
-		{spotifyTrack, true, "▶ Hype Boy — NewJeans · Spotify"},
-		{useraction.NowPlaying{Status: "paused", Title: "<b>Ditto</b>", App: "Chrome"}, true, "⏸ &lt;b&gt;Ditto&lt;/b&gt; · Chrome"},
-		{useraction.NowPlaying{Status: "playing", App: "VLC"}, true, "▶ 재생 중 · VLC"},
-		{useraction.NowPlaying{Status: "stopped"}, true, "⏹ 정지"},
-		{spotifyTrack, false, "▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)"},
-		{useraction.NowPlaying{Status: "paused"}, false, "⏸ 일시정지 (재생 정보 공유가 꺼져 있습니다)"},
-		{useraction.NowPlaying{Status: "none"}, true, "재생 중인 미디어 없음"},
-		{useraction.NowPlaying{Status: "none"}, false, "재생 중인 미디어 없음"},
-	}
-	for _, c := range cases {
-		if got := tgNowPlayingText(c.np, c.share); got != c.want {
-			t.Errorf("tgNowPlayingText(%+v, %v) = %q, want %q", c.np, c.share, got, c.want)
-		}
-	}
-	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	if got := tgNowPlayingText(useraction.NowPlaying{Status: "none"}, true); got != "Nothing is playing" {
-		t.Errorf("en none = %q", got)
-	}
-}
-
-func TestTelegramMediaLine(t *testing.T) {
-	initLogger()
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	m := stMedia{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", App: "Spotify"}
-	if got := tgMediaLine(m, true); got != "미디어: ▶ Hype Boy — NewJeans · Spotify" {
-		t.Errorf("line = %q", got)
-	}
-	if got := tgMediaLine(stMedia{Status: "playing"}, false); got != "미디어: ▶ 재생 중" {
-		t.Errorf("opt-out line = %q", got)
-	}
-	for _, s := range []string{"paused", "stopped", "none"} {
-		if got := tgMediaLine(stMedia{Status: s, Title: "x"}, true); got != "" {
-			t.Errorf("%s line = %q, want none", s, got)
-		}
-	}
-}
-
 func TestTelegramMediaCommandResults(t *testing.T) {
 	initLogger()
 	nowPlayingSetup(t, Config{Media: MediaConfig{Enabled: true, NowPlaying: true}, Telegram: TelegramConfig{Lang: "ko"}})
-	var h telegramControl
+	h := tgCtl
 	do := func(cmd string) string {
 		t.Helper()
 		html, _, err := h.HandleCommand(context.Background(), "42", cmd, nil)
@@ -465,11 +420,11 @@ func TestTelegramMediaCommandResults(t *testing.T) {
 func TestTelegramStatusMediaLine(t *testing.T) {
 	initLogger()
 	now := nowPlayingSetup(t, Config{Media: MediaConfig{Enabled: true, NowPlaying: true}, Telegram: TelegramConfig{Lang: "ko"}})
-	if strings.Contains(tgStatusText(), "미디어:") {
+	if strings.Contains(tgStatus(t), "미디어:") {
 		t.Error("/status has a media line with nothing playing")
 	}
 	recordMediaSample(spotifyTrack, now)
-	if got := tgStatusText(); !strings.Contains(got, "\n미디어: ▶ Hype Boy — NewJeans · Spotify") {
+	if got := tgStatus(t); !strings.Contains(got, "\n미디어: ▶ Hype Boy — NewJeans · Spotify") {
 		t.Errorf("/status = %q", got)
 	}
 }

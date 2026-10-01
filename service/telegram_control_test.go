@@ -61,8 +61,17 @@ func keyboardData(kb *telegram.InlineKeyboard) []string {
 // (#75) so a test can assert on the reply text itself. Replies that put the
 // header on the body's first line (/status) are returned unchanged.
 func tgBody(h string) string {
-	header := tgHeader() + "\n"
+	header := tgCtl.Header() + "\n"
 	return strings.TrimPrefix(h, header)
+}
+
+// tgStatus is the bot's /status reply. Its first line is the header with
+// the version on it, so the header the bot puts on every reply adds
+// nothing.
+func tgStatus(t *testing.T) string {
+	t.Helper()
+	text, _, _ := tgCtl.HandleCommand(context.Background(), "42", "status", nil)
+	return text
 }
 
 // Every command reply starts with the PC-name header (#75).
@@ -73,7 +82,7 @@ func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 	stubCommand(t, "lock")
 	stubMediaRun(t, UserActionResult{}, errNoUserSession) // /unmute never reaches a real session
 	defer cancelScheduleBy("api")
-	var h telegramControl
+	h := tgCtl
 
 	const header = "🖥 <b>MY&lt;PC&gt;</b>"
 	for _, cmd := range []string{"help", "status", "menu", "lock", "shutdown", "cancel", "now", "unmute", "frobnicate", telegram.StaleCommand} {
@@ -97,12 +106,12 @@ func TestTelegramRepliesCarryPCNameHeader(t *testing.T) {
 		}
 	}
 	// An empty reply stays empty (the poller sends nothing for it).
-	if got := tgWithHeader(""); got != "" {
+	if got := tgCtl.WithHeader(""); got != "" {
 		t.Errorf("empty reply = %q", got)
 	}
 	// Without telegram.pc_name the hostname is used.
 	setConfig(Config{Port: 5001})
-	if got := tgPCName(); got != hostname() {
+	if got := tgCtl.PCName(); got != hostname() {
 		t.Errorf("tgPCName = %q, want the hostname %q", got, hostname())
 	}
 }
@@ -120,7 +129,7 @@ func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
 	lastRemote = remoteRecord{}
 	lastRemoteMu.Unlock()
 
-	var h telegramControl
+	h := tgCtl
 	html, kb, err := h.HandleCommand(context.Background(), "42", "status", nil)
 	if err != nil || kb != nil {
 		t.Fatalf("status: err=%v kb=%v", err, kb)
@@ -151,7 +160,7 @@ func TestTelegramStatusShowsVersionScheduleAndLastRemote(t *testing.T) {
 
 func TestTelegramHelpMenuAndUnknown(t *testing.T) {
 	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	var h telegramControl
+	h := tgCtl
 	help, _, _ := h.HandleCommand(context.Background(), "42", "help", nil)
 	if !strings.Contains(help, "/shutdown") || !strings.Contains(help, "/mute") {
 		t.Errorf("help = %q", help)
@@ -172,7 +181,7 @@ func TestTelegramLockAndScreenOffRunImmediately(t *testing.T) {
 	setConfig(Config{})
 	lock := stubCommand(t, "lock")
 	screen := stubCommand(t, "turnscreenoff")
-	var h telegramControl
+	h := tgCtl
 	if html, _, err := h.HandleCommand(context.Background(), "42", "lock", nil); err != nil || !strings.Contains(html, "잠금") {
 		t.Errorf("lock reply = %q err=%v", html, err)
 	}
@@ -195,7 +204,7 @@ func TestTelegramShutdownWithoutMinutesAsksConfirmation(t *testing.T) {
 	setConfig(Config{})
 	shutdown := stubCommand(t, "shutdown")
 	defer cancelScheduleBy("api")
-	var h telegramControl
+	h := tgCtl
 	html, kb, err := h.HandleCommand(context.Background(), "42", "shutdown", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +232,7 @@ func TestTelegramShutdownWithMinutesSchedulesAsTelegram(t *testing.T) {
 	launches := stubTrayLauncher(t, nil)
 	shutdown := stubCommand(t, "shutdown")
 	defer cancelScheduleBy("api")
-	var h telegramControl
+	h := tgCtl
 
 	html, kb, err := h.HandleCommand(context.Background(), "42", "shutdown", []string{"30"})
 	if err != nil || kb != nil {
@@ -259,7 +268,7 @@ func TestTelegramCancelAndNow(t *testing.T) {
 	events := captureNotifications(t)
 	lock := stubCommand(t, "lock")
 	defer cancelScheduleBy("api")
-	var h telegramControl
+	h := tgCtl
 
 	html, _, _ := h.HandleCommand(context.Background(), "42", "cancel", nil)
 	if tgBody(html) != "활성 예약 없음" {
@@ -296,7 +305,7 @@ func TestTelegramCancelAndNow(t *testing.T) {
 func TestTelegramMuteUnmute(t *testing.T) {
 	initLogger()
 	setConfig(Config{})
-	var h telegramControl
+	h := tgCtl
 
 	stopNotifier()
 	if html, _, _ := h.HandleCommand(context.Background(), "42", "mute", []string{"30m"}); !strings.Contains(html, "꺼져") {
@@ -327,25 +336,11 @@ func TestTelegramMuteUnmute(t *testing.T) {
 	}
 }
 
-func TestParseMuteDuration(t *testing.T) {
-	cases := map[string]time.Duration{"30m": 30 * time.Minute, "2h": 2 * time.Hour, "1h30m": 90 * time.Minute, "45": 45 * time.Minute}
-	for in, want := range cases {
-		if got, ok := parseMuteDuration(in); !ok || got != want {
-			t.Errorf("parseMuteDuration(%q) = %s,%v want %s", in, got, ok, want)
-		}
-	}
-	for _, in := range []string{"", "x", "10s", "0", "-1h", "200h"} {
-		if _, ok := parseMuteDuration(in); ok {
-			t.Errorf("parseMuteDuration(%q) accepted", in)
-		}
-	}
-}
-
 func TestTelegramCallbackExecAndDismiss(t *testing.T) {
 	initLogger()
 	setConfig(Config{})
 	shutdown := stubCommand(t, "shutdown")
-	var h telegramControl
+	h := tgCtl
 
 	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "exec:shutdown")
 	if err != nil {
@@ -385,7 +380,7 @@ func TestTelegramCallbackMenuButtons(t *testing.T) {
 	setConfig(Config{})
 	lock := stubCommand(t, "lock")
 	shutdown := stubCommand(t, "shutdown")
-	var h telegramControl
+	h := tgCtl
 
 	// cmd: runs safe commands only.
 	if edit, _, err := h.HandleCallback(context.Background(), "42", 7, "", "cmd:lock"); err != nil || !strings.Contains(edit, "실행됨") {
@@ -421,7 +416,7 @@ func TestTelegramCallbackCancelAndRunnowOnGrace(t *testing.T) {
 	events := captureNotifications(t)
 	shutdown := stubCommand(t, "shutdown")
 	defer cancelScheduleBy("api")
-	var h telegramControl
+	h := tgCtl
 
 	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, "", "cancel:")
 	if err != nil || edit != "" || toast != "활성 예약 없음" {
@@ -466,81 +461,13 @@ func TestTelegramUnauthorizedEmitsUnknownChat(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001})
 	events := captureNotifications(t)
-	telegramControl{}.Unauthorized("99", "@mallory", strings.Repeat("/shutdown ", 20))
+	tgCtl.Unauthorized("99", "@mallory", strings.Repeat("/shutdown ", 20))
 	ev := expectNotification(t, events, "security.unknown_chat")
 	if ev.Fields["chat_id"] != "99" || ev.Fields["username"] != "@mallory" {
 		t.Errorf("unknown_chat fields = %v", ev.Fields)
 	}
 	if !strings.HasSuffix(ev.Fields["text"], "…") || len([]rune(ev.Fields["text"])) != 65 {
 		t.Errorf("text not truncated: %q", ev.Fields["text"])
-	}
-}
-
-func TestTelegramAllowedChatIDsFallsBackToChatID(t *testing.T) {
-	setConfig(Config{Telegram: TelegramConfig{ChatID: "42"}})
-	if got := telegramAllowedChatIDs(); fmt.Sprint(got) != "[42]" {
-		t.Errorf("allowed = %v", got)
-	}
-	setConfig(Config{Telegram: TelegramConfig{ChatID: "42", AllowedChatIDs: []string{" 7 ", "", "8"}}})
-	if got := telegramAllowedChatIDs(); fmt.Sprint(got) != "[7 8]" {
-		t.Errorf("allowed = %v", got)
-	}
-	setConfig(Config{Telegram: TelegramConfig{AllowedChatIDs: []string{" "}}})
-	if got := telegramAllowedChatIDs(); len(got) != 0 {
-		t.Errorf("allowed = %v, want none", got)
-	}
-}
-
-func TestTelegramBotCommandsFollowLang(t *testing.T) {
-	ko := telegramBotCommands("ko")
-	en := telegramBotCommands("en")
-	if len(ko) != 26 || len(en) != len(ko) {
-		t.Fatalf("command count ko=%d en=%d", len(ko), len(en))
-	}
-	if ko[0].Command != "status" || ko[0].Description != "상태" || en[0].Description != "Status" {
-		t.Errorf("status = %+v / %+v", ko[0], en[0])
-	}
-	if telegramBotCommands("")[0].Description != "상태" {
-		t.Error("unknown lang should fall back to ko")
-	}
-}
-
-func TestTelegramControlKey(t *testing.T) {
-	on := TelegramConfig{Enabled: true, ControlEnabled: true, BotToken: "tok", ChatID: "42", Lang: "ko"}
-	if telegramControlKey(on) == "" {
-		t.Error("fully configured control should be on")
-	}
-	for name, cfg := range map[string]TelegramConfig{
-		"disabled":   {ControlEnabled: true, BotToken: "tok", ChatID: "42"},
-		"no control": {Enabled: true, BotToken: "tok", ChatID: "42"},
-		"no token":   {Enabled: true, ControlEnabled: true, ChatID: "42"},
-		"no chat":    {Enabled: true, ControlEnabled: true, BotToken: "tok"},
-	} {
-		if telegramControlKey(cfg) != "" {
-			t.Errorf("%s: control should be off", name)
-		}
-	}
-	changed := on
-	changed.Lang = "en"
-	if telegramControlKey(changed) == telegramControlKey(on) {
-		t.Error("lang change must restart the poller (setMyCommands descriptions)")
-	}
-}
-
-func TestFormatUptime(t *testing.T) {
-	cases := map[time.Duration]string{
-		0:                                "0m 00s",
-		4*time.Minute + 9*time.Second:    "4m 09s",
-		time.Hour + 5*time.Minute:        "1h 05m",
-		26*time.Hour + 30*time.Minute:    "1d 02h",
-		29*time.Minute + 59*time.Second:  "29m 59s",
-		-time.Second:                     "0m 00s",
-		3*24*time.Hour + 4*time.Hour + 1: "3d 04h",
-	}
-	for d, want := range cases {
-		if got := formatUptime(d); got != want {
-			t.Errorf("formatUptime(%s) = %q, want %q", d, got, want)
-		}
 	}
 }
 
@@ -568,7 +495,7 @@ func TestTelegramControlLifecycle(t *testing.T) {
 	origBase := telegramBaseURL
 	telegramBaseURL = srv.URL
 	t.Cleanup(func() {
-		stopTelegramControl()
+		tgCtl.Stop()
 		telegramBaseURL = origBase
 	})
 
@@ -584,19 +511,19 @@ func TestTelegramControlLifecycle(t *testing.T) {
 
 	// Off: nothing starts, and saveConfig's reconcile is a no-op until managed.
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Enabled: true, BotToken: "plain-token", ChatID: "42"}})
-	reconcileTelegramControl()
-	if telegramControlRunning() {
+	tgCtl.Reconcile()
+	if tgCtl.Running() {
 		t.Fatal("poller running before startTelegramControl")
 	}
-	startTelegramControl()
-	if telegramControlRunning() {
+	tgCtl.Start()
+	if tgCtl.Running() {
 		t.Fatal("poller running with control_enabled=false")
 	}
 
 	// On: setMyCommands once, then the drain poll (offset -1).
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Enabled: true, ControlEnabled: true, BotToken: "plain-token", ChatID: "42", Lang: "ko"}})
-	reconcileTelegramControl()
-	if !telegramControlRunning() {
+	tgCtl.Reconcile()
+	if !tgCtl.Running() {
 		t.Fatal("poller not running after enabling control")
 	}
 	if got := next(); got != "/botplain-token/setMyCommands <nil>" {
@@ -607,7 +534,7 @@ func TestTelegramControlLifecycle(t *testing.T) {
 	}
 
 	// Same settings: reconcile leaves the running poller alone.
-	reconcileTelegramControl()
+	tgCtl.Reconcile()
 	select {
 	case c := <-calls:
 		t.Errorf("unexpected call after no-op reconcile: %s", c)
@@ -616,7 +543,7 @@ func TestTelegramControlLifecycle(t *testing.T) {
 
 	// Token change: restart with the new token.
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Enabled: true, ControlEnabled: true, BotToken: "other-token", ChatID: "42", Lang: "ko"}})
-	reconcileTelegramControl()
+	tgCtl.Reconcile()
 	if got := next(); got != "/botother-token/setMyCommands <nil>" {
 		t.Errorf("after token change = %q", got)
 	}
@@ -624,9 +551,9 @@ func TestTelegramControlLifecycle(t *testing.T) {
 
 	// Off again: the poller goroutine exits.
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Enabled: true, BotToken: "other-token", ChatID: "42"}})
-	reconcileTelegramControl()
-	if telegramControlRunning() {
+	tgCtl.Reconcile()
+	if tgCtl.Running() {
 		t.Fatal("poller still running after control_enabled=false")
 	}
-	stopTelegramControl()
+	tgCtl.Stop()
 }

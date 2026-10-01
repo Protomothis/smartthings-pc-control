@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/power"
+	"github.com/Protomothis/smartthings-pc-control/service/tgcontrol"
 )
 
 // scheduleOrigin and its values under the names the service code has
@@ -48,7 +49,7 @@ var scheduler = &power.Scheduler{
 				"command": command, "origin": origin.String(),
 				"old_command": old.Command, "old_origin": old.Origin.String(),
 			})
-			finishGraceMessage(old.Seq, graceReplaced, "")
+			tgCtl.FinishGraceMessage(old.Seq, tgcontrol.GraceReplaced, "")
 		},
 		Created: func(t power.Task, delay time.Duration) {
 			if t.Origin == originRemote {
@@ -65,7 +66,7 @@ var scheduler = &power.Scheduler{
 			} else {
 				emit("schedule", "executed", map[string]string{"command": t.Command, "origin": t.Origin.String()})
 			}
-			finishGraceMessage(t.Seq, graceExecuted, "timer")
+			tgCtl.FinishGraceMessage(t.Seq, tgcontrol.GraceExecuted, "timer")
 		},
 		Ended: func(t power.Task, by string, runNow bool) {
 			if t.Origin == originRemote {
@@ -75,11 +76,11 @@ var scheduler = &power.Scheduler{
 					"command": t.Command, "origin": t.Origin.String(), "by": by,
 				})
 			}
-			result := graceCancelled
+			result := tgcontrol.GraceCancelled
 			if runNow {
-				result = graceExecuted
+				result = tgcontrol.GraceExecuted
 			}
-			finishGraceMessage(t.Seq, result, by)
+			tgCtl.FinishGraceMessage(t.Seq, result, by)
 		},
 	},
 }

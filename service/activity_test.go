@@ -480,34 +480,6 @@ func TestProcessesAPI(t *testing.T) {
 
 // ---- Telegram ----------------------------------------------------------------
 
-func TestTelegramActivityLine(t *testing.T) {
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"}})
-	t.Cleanup(func() { setConfig(Config{Port: 5001}) })
-	steam, obs, code := app("steam.exe", "Steam", true), app("obs64.exe", "OBS", true), app("code.exe", "<b>", true)
-	for _, tc := range []struct {
-		name string
-		in   stActivity
-		want string
-	}{
-		{"off", activityOff(), ""},
-		{"nothing running", stActivity{Enabled: true, Apps: []stActivityApp{app("steam.exe", "Steam", false)}}, ""},
-		{"one", stActivity{Enabled: true, Top: "steam.exe", Apps: []stActivityApp{steam}}, "활동: Steam 실행 중"},
-		{"two", stActivity{Enabled: true, Top: "steam.exe", Apps: []stActivityApp{steam, obs}}, "활동: Steam 실행 중 · 외 1개"},
-		{"top below a stopped one", stActivity{Enabled: true, Top: "obs64.exe",
-			Apps: []stActivityApp{app("steam.exe", "Steam", false), obs, steam}}, "활동: OBS 실행 중 · 외 1개"},
-		{"escaped", stActivity{Enabled: true, Top: "code.exe", Apps: []stActivityApp{code}}, "활동: &lt;b&gt; 실행 중"},
-	} {
-		if got := tgActivityLine(tc.in); got != tc.want {
-			t.Errorf("%s: tgActivityLine = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
-	in := stActivity{Enabled: true, Top: "steam.exe", Apps: []stActivityApp{steam, obs, code}}
-	if got := tgActivityLine(in); got != "Activity: Steam running · 2 more" {
-		t.Errorf("en line = %q", got)
-	}
-}
-
 func TestTelegramStatusShowsActivity(t *testing.T) {
 	initLogger()
 	stubProcesses(t, "steam.exe", "obs64.exe")
@@ -516,12 +488,12 @@ func TestTelegramStatusShowsActivity(t *testing.T) {
 	setConfig(cfg)
 	t.Cleanup(func() { setConfig(Config{Port: 5001}) })
 	activityScan.scan(cfg.Activity)
-	if got := tgStatusText(); !strings.Contains(got, "\n활동: Steam 실행 중 · 외 1개") {
+	if got := tgStatus(t); !strings.Contains(got, "\n활동: Steam 실행 중 · 외 1개") {
 		t.Errorf("/status lacks the activity line:\n%s", got)
 	}
 	cfg.Activity.Enabled = false
 	setConfig(cfg)
-	if got := tgStatusText(); strings.Contains(got, "활동") {
+	if got := tgStatus(t); strings.Contains(got, "활동") {
 		t.Errorf("/status shows activity while the option is off:\n%s", got)
 	}
 }

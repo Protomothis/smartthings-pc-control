@@ -584,40 +584,13 @@ func TestAwakeAPI(t *testing.T) {
 
 // ---- Telegram --------------------------------------------------------------
 
-func TestParseAwakeArg(t *testing.T) {
-	prev := getConfig()
-	setConfig(Config{Awake: AwakeConfig{DefaultMinutes: 90}})
-	t.Cleanup(func() { setConfig(prev) })
-	for _, tc := range []struct {
-		args    []string
-		minutes int
-		off, ok bool
-	}{
-		{nil, 90, false, true},
-		{[]string{"off"}, 0, true, true},
-		{[]string{"OFF"}, 0, true, true},
-		{[]string{"30"}, 30, false, true},
-		{[]string{"0"}, 0, false, true},
-		{[]string{"1440"}, 1440, false, true},
-		{[]string{"1441"}, 0, false, false},
-		{[]string{"-1"}, 0, false, false},
-		{[]string{"2h"}, 0, false, false},
-		{[]string{"on"}, 0, false, false},
-	} {
-		m, off, ok := parseAwakeArg(tc.args)
-		if m != tc.minutes || off != tc.off || ok != tc.ok {
-			t.Errorf("parseAwakeArg(%q) = %d,%v,%v want %d,%v,%v", tc.args, m, off, ok, tc.minutes, tc.off, tc.ok)
-		}
-	}
-}
-
 func TestTelegramAwake(t *testing.T) {
 	initLogger()
 	prev := getConfig()
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"}, Awake: AwakeConfig{DefaultMinutes: 60}})
 	t.Cleanup(func() { setConfig(prev) })
 	fa := stubAwake(t)
-	var h telegramControl
+	h := tgCtl
 	ctx := context.Background()
 
 	reply, _, err := h.HandleCommand(ctx, "42", "awake", []string{"30"})

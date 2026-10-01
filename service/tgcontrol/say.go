@@ -1,7 +1,7 @@
-package service
+package tgcontrol
 
 // Telegram /say 문구 (#106): a toast on this PC. It goes through
-// sendPCNotify like /st/v1/notify: the same text rules, the per-source
+// the Notifier like /st/v1/notify: the same text rules, the per-source
 // rate limit (keyed by chat) and the user-session requirement.
 
 import (
@@ -16,9 +16,9 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
-// tgSayTexts are merged into tgTexts at start-up; ko then en. They live
-// here rather than in tgTexts so each feature keeps its strings with it.
-var tgSayTexts = map[string][2]string{
+// sayTexts are merged into texts at start-up; ko then en. They live
+// here rather than in texts so each feature keeps its strings with it.
+var sayTexts = map[string][2]string{
 	"say_usage":        {"사용법: <code>/say 문구</code> (200자까지)", "Usage: <code>/say text</code> (up to 200 characters)"},
 	"say_ok":           {"🔔 PC에 알림을 띄웠습니다", "🔔 Notification shown on the PC"},
 	"say_disabled":     {"PC 알림이 꺼져 있습니다 (PC 앱의 설정 탭 → 미디어·알림에서 켤 수 있습니다)", "PC notifications are turned off (turn them on under Settings → Media &amp; notifications in the PC app)"},
@@ -30,50 +30,50 @@ var tgSayTexts = map[string][2]string{
 }
 
 func init() {
-	for k, v := range tgSayTexts {
-		tgTexts[k] = v
+	for k, v := range sayTexts {
+		texts[k] = v
 	}
 }
 
-// tgJoinText is the argument as typed: the poller splits on whitespace,
+// joinText is the argument as typed: the poller splits on whitespace,
 // the notification (or a preset name) wants the words back together.
-func tgJoinText(args []string) string { return strings.Join(args, " ") }
+func joinText(args []string) string { return strings.Join(args, " ") }
 
 // say handles /say 문구.
-func (telegramControl) say(chatID string, args []string) (string, *telegram.InlineKeyboard, error) {
-	text := tgJoinText(args)
+func (c *Control) say(chatID string, args []string) (string, *telegram.InlineKeyboard, error) {
+	text := joinText(args)
 	if strings.TrimSpace(text) == "" {
-		return tgText("say_usage"), nil, nil
+		return c.text("say_usage"), nil, nil
 	}
-	cfg := getConfig().NotifyPC
-	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
+	cfg := c.d.Config().NotifyPC
+	ctx, cancel := context.WithTimeout(context.Background(), c.d.ActionTimeout()+time.Second)
 	defer cancel()
-	if _, err := sendPCNotify(ctx, cfg, true, "telegram "+chatID, "", text); err != nil {
-		return tgActionError(err), nil, err
+	if _, err := c.d.Notify.Send(ctx, cfg, "telegram "+chatID, "", text); err != nil {
+		return c.actionError(err), nil, err
 	}
-	return tgText("say_ok"), nil, nil
+	return c.text("say_ok"), nil, nil
 }
 
-// tgActionError words a failed user-session action (/say, /run).
-func tgActionError(err error) string {
+// actionError words a failed user-session action (/say, /run).
+func (c *Control) actionError(err error) string {
 	var ne *action.NotifyError
 	if errors.As(err, &ne) {
 		switch ne.Code {
 		case "notify_disabled":
-			return tgText("say_disabled")
+			return c.text("say_disabled")
 		case "bad_text":
-			return tgText("say_bad_text")
+			return c.text("say_bad_text")
 		case "rate_limited":
 			secs := int((ne.RetryAfter + time.Second - 1) / time.Second)
-			return tgText("say_rate_limited", max(secs, 1))
+			return c.text("say_rate_limited", max(secs, 1))
 		}
 	}
 	switch _, code, msg := action.Status(err); code {
 	case "no_user_session":
-		return tgText("no_user_session")
+		return c.text("no_user_session")
 	case "timeout":
-		return tgText("action_timeout")
+		return c.text("action_timeout")
 	default:
-		return tgText("action_failed", html.EscapeString(httpx.Truncate(msg, 200)))
+		return c.text("action_failed", html.EscapeString(httpx.Truncate(msg, 200)))
 	}
 }

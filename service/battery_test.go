@@ -115,7 +115,7 @@ func TestTelegramStatusBatteryLine(t *testing.T) {
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"}})
 	t.Cleanup(func() { setConfig(prev) })
 	stubAwake(t)
-	var h telegramControl
+	h := tgCtl
 
 	for _, tc := range []struct {
 		raw  systemPowerStatus
