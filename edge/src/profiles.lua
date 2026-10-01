@@ -52,6 +52,11 @@
 -- development device on one still lands on the v4 of its style and battery
 -- half, but their files are gone from the package.
 --
+-- `pc.v5`: `pcNotify` gave way to `pcToast`, the same command plus a
+-- `lastMessage` attribute the text row is bound to (a row bound to no
+-- attribute spun and ended in "네트워크 오류"). A new id, so a new name again;
+-- v4 never left the Dev channel either and joins `UNSHIPPED_VERSIONS`.
+--
 -- Everything here is pure except `remember`, `ensure`, `apply_style`,
 -- `apply_battery` and `remove_legacy_child`, which touch the device, and all of
 -- them are guarded: a hub that refuses `try_update_metadata` or
@@ -59,8 +64,8 @@
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v4`, …).
-profiles.VERSION = 4
+-- The profile generation every current name carries (`pc.v5`, …).
+profiles.VERSION = 5
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -87,7 +92,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v4`, `pc-tv.v4`, `pc-battery.v4`, `pc-tv-battery.v4`.
+--- `pc.v5`, `pc-tv.v5`, `pc-battery.v5`, `pc-tv-battery.v5`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -100,7 +105,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v4` once its status says so (#116).
+-- moves to `pc-battery.v5` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -150,8 +155,8 @@ end
 -- files add up to more than 655360 bytes, and each generation of twenty
 -- profiles is about 165 KB (measured 2026-09-30 when v1+v2+v3 reached 666 KB).
 -- v2 lived only on the Dev channel (edge-v1.1.0 development), and so did v3
--- (pcMessage, with read-aloud).
-profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true }
+-- (pcMessage, with read-aloud) and v4 (pcNotify, no attribute).
+profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true }
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)
@@ -164,7 +169,7 @@ end
 profiles.FIELD = "profile_name"
 
 -- #116: whether the last settled status said this PC has a battery. Persisted,
--- so a later migration (v1 -> v4) lands a laptop straight on its battery
+-- so a later migration (v1 -> v5) lands a laptop straight on its battery
 -- profile instead of taking the detour through the plain one.
 profiles.BATTERY_FIELD = "has_battery"
 

@@ -93,6 +93,11 @@ local function info_message(device)
   return h.last_value(h.emitted(device), nil, caps.STATUS, "message")
 end
 
+--- #108: what the message row (`pcToast.lastMessage`) shows last.
+local function toast_value(device)
+  return h.last_value(h.emitted(device), nil, caps.TOAST, "lastMessage")
+end
+
 --------------------------------------------------------------------------------
 -- pure: what the PC offers
 --------------------------------------------------------------------------------
@@ -768,10 +773,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc-tv.v4")
+  local device = device_on_profile("pc-tv.v5")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v4", "the style is kept")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v4" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v5", "the style is kept")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v5" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -780,15 +785,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v4")
+  local device = device_on_profile("pc-battery.v5")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v4")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v5")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v4")
+  local device = device_on_profile("pc.v5")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -805,7 +810,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v4")
+  local device = device_on_profile("pc.v5")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -825,29 +830,35 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v4")
+  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v5")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v4")
+  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v5")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v4")
+  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v5")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v4")
+  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v5")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(profiles.BATTERY_FIELD, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v4")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v5")
+  -- pcToast: and a v4 (pcNotify) name the same way.
+  local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
+  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v5")
+  local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
+  plain_v4:set_field(profiles.BATTERY_FIELD, true)
+  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v5")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v4", "polled-laptop")
+  local device = device_on_profile("pc.v5", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v4")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v5")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -857,11 +868,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v4", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v5", "pushed-laptop")
   poll.emit(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v4", "pushed-desktop")
+  local desktop = device_on_profile("pc.v5", "pushed-desktop")
   poll.emit(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
@@ -902,29 +913,62 @@ function T.test_the_text_is_cleaned_and_cut_to_the_services_limit()
   h.assert_equal(long:sub(-3), "…")
 end
 
-function T.test_pc_notify_send_is_a_toast()
-  -- The screen's one text field: `pcNotify.send(text)`, text only.
+function T.test_pc_toast_send_is_a_toast()
+  -- The screen's one text field: `pcToast.send(text)`, text only.
   local device = device_with(status_v12())
   local sent = with_notify(nil, function()
-    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "현관문이 열렸습니다" } })
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "현관문이 열렸습니다" } })
   end)
   h.assert_deep_equal(sent, { { text = "현관문이 열렸습니다", extra = 0 } })
   h.assert_equal(info_message(device), "PC에 메시지를 보냈습니다")
   h.assert_nil(info_summary(device), "a sent message leaves the summary row alone")
+  -- The row the text was typed into answers with the text, forced: the app's
+  -- spinner waits for an event on `lastMessage` (2026-10-01: a row bound to
+  -- nothing spun into "네트워크 오류").
+  h.assert_equal(toast_value(device), "현관문이 열렸습니다")
+  h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
+  h.assert_equal(device:get_field(poll.TOAST_FIELD), "현관문이 열렸습니다", "remembered")
+end
+
+function T.test_the_same_text_twice_is_answered_twice()
+  -- Unchanged, so only `state_change` gets the second answer through.
+  local device = device_with(status_v12())
+  with_notify(nil, function()
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "밥 먹자" } })
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "밥 먹자" } })
+  end)
+  local answers = 0
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.TOAST and e.attr == "lastMessage" then
+      answers = answers + 1
+      h.assert_equal(e.value, "밥 먹자")
+      h.assert_true((e.options or {}).state_change == true, "every answer is forced")
+    end
+  end
+  h.assert_equal(answers, 2)
+end
+
+function T.test_the_row_shows_the_cleaned_text_that_went_out()
+  local device = device_with(status_v12())
+  local sent = with_notify(nil, function()
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "  세탁\n끝  " } })
+  end)
+  h.assert_equal(sent[1].text, "세탁 끝")
+  h.assert_equal(toast_value(device), "세탁 끝")
 end
 
 function T.test_the_confirmation_follows_the_language()
   local device = device_with(status_v12())
   device.preferences.language = "en"
   with_notify(nil, function()
-    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "hi" } })
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "hi" } })
     h.assert_equal(info_message(device), "Message sent to the PC")
   end)
 end
 
-function T.test_pc_notify_handles_exactly_its_one_command()
+function T.test_pc_toast_handles_exactly_its_one_command()
   local names = {}
-  for name in pairs(handlers_for(caps.NOTIFY)) do
+  for name in pairs(handlers_for(caps.TOAST)) do
     names[#names + 1] = name
   end
   table.sort(names)
@@ -938,6 +982,7 @@ function T.test_no_read_aloud_or_standard_notification_handler_is_left()
   h.assert_nil(handlers["notification"], "the standard notification of pc.v2")
   h.assert_nil(handlers["speechSynthesis"], "the standard speechSynthesis of pc.v2")
   h.assert_nil(handlers["numbersystem53811.pcmessage"], "pcMessage of pc.v3")
+  h.assert_nil(handlers["numbersystem53811.pcnotify"], "pcNotify of pc.v4, whose row had no attribute")
   for id, by_command in pairs(handlers) do
     h.assert_nil(by_command.speak, tostring(id) .. " still handles speak")
   end
@@ -948,7 +993,7 @@ function T.test_a_long_message_is_cut_to_the_services_limit_before_it_goes_out()
   -- cleaning whatever arrives.
   local device = device_with(status_v12())
   local sent = with_notify(nil, function()
-    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = string.rep("가", 250) } })
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = string.rep("가", 250) } })
   end)
   h.assert_equal(#sent, 1)
   local count = select(2, sent[1].text:gsub("[\1-\127\194-\244][\128-\191]*", ""))
@@ -979,22 +1024,95 @@ function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
   for i, case in ipairs(cases) do
     local device = device_with(case.status)
     local sent = with_notify(case.service, function()
-      handlers_for(caps.NOTIFY).send(driver, device, { args = { text = "hi" } })
+      handlers_for(caps.TOAST).send(driver, device, { args = { text = "hi" } })
     end)
     h.assert_equal(#sent, case.sends, "case " .. i .. " sends")
     h.assert_equal(info_message(device), case.message, "case " .. i)
     h.assert_nil(info_summary(device), "case " .. i .. " touched the summary row")
+    -- The row still answers - with what it showed, never with the text that
+    -- did not go out - or it spins into "네트워크 오류".
+    h.assert_equal(toast_value(device), "없음", "case " .. i .. " row value")
+    h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"), "case " .. i .. " forced")
+    h.assert_nil(device:get_field(poll.TOAST_FIELD), "case " .. i .. " remembered a text that was not sent")
   end
+end
+
+function T.test_a_refused_message_keeps_the_last_one_on_the_row()
+  local device = device_with(status_v12())
+  device:set_field(poll.TOAST_FIELD, "세탁 끝")
+  with_notify({ ok = false, kind = "ratelimited" }, function()
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "또 보냄" } })
+  end)
+  h.assert_equal(toast_value(device), "세탁 끝")
+  h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
+end
+
+function T.test_an_unreachable_pc_still_answers_the_row()
+  -- A network failure is `report_error`'s (connection, summary, message),
+  -- and the row answers on top of it.
+  local device = device_with(status_v12())
+  device.preferences.language = "en"
+  local sent = with_notify({ ok = false, kind = "unreachable" }, function()
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = "hi" } })
+  end)
+  h.assert_equal(#sent, 1)
+  h.assert_equal(toast_value(device), "None", "the rest value follows the language")
+  h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
+  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "connection"), "unreachable")
 end
 
 function T.test_an_empty_notification_is_not_sent()
   local device = device_with(status_v12())
   local sent = with_notify(nil, function()
-    handlers_for(caps.NOTIFY).send(driver, device, { args = { text = " \n " } })
-    handlers_for(caps.NOTIFY).send(driver, device, { args = {} })
+    handlers_for(caps.TOAST).send(driver, device, { args = { text = " \n " } })
+    handlers_for(caps.TOAST).send(driver, device, { args = {} })
   end)
   h.assert_equal(#sent, 0)
   h.assert_equal(info_message(device), "보낼 문구 없음")
+  local answers = 0
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.TOAST and e.attr == "lastMessage" then
+      answers = answers + 1
+      h.assert_equal(e.value, "없음", "never the empty text")
+      h.assert_true((e.options or {}).state_change == true)
+    end
+  end
+  h.assert_equal(answers, 2, "each empty send is answered")
+end
+
+function T.test_the_message_row_is_never_empty()
+  -- "" is null in the cloud and "-" on the phone (platform notes).
+  for _, lang in ipairs({ "ko", "en" }) do
+    local device = device_with(status_v12())
+    device.preferences.language = lang
+    h.assert_equal(poll.shown_toast(device), lang == "ko" and "없음" or "None")
+    device:set_field(poll.TOAST_FIELD, "")
+    h.assert_true(poll.shown_toast(device) ~= "", lang)
+    -- An empty text is never remembered either.
+    poll.emit_toast(device, "")
+    h.assert_true(toast_value(device) ~= "", lang)
+    h.assert_true(toast_value(device) ~= nil, lang)
+  end
+end
+
+function T.test_the_message_row_is_painted_once_per_run_and_by_a_repaint()
+  -- `ensure_toast` goes out with every poll and push unforced, and the first
+  -- of them in a driver run is forced (`FIRST_FIELD`) - which is what gives a
+  -- device just moved onto pcToast its value. A repaint forces it as well.
+  local device = device_with(status_v12())
+  device:set_field(poll.TOAST_FIELD, "안녕")
+  poll.ensure_toast(device)
+  poll.ensure_toast(device)
+  local forced = {}
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.TOAST and e.attr == "lastMessage" then
+      h.assert_equal(e.value, "안녕")
+      forced[#forced + 1] = (e.options or {}).state_change == true
+    end
+  end
+  h.assert_deep_equal(forced, { true, false })
+  poll.repaint(device)
+  h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"), "a repaint forces it")
 end
 
 --------------------------------------------------------------------------------

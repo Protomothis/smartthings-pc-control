@@ -57,7 +57,9 @@ poll.LAST_SEEN_STEP = 60
 -- capability set, so every row goes out once more.
 -- "4" - the move to `pc.v4` (pcNotify, send only, in place of pcMessage).
 -- Again nothing new to paint, again a new profile and a new capability set.
-poll.ROWS_VERSION = "4"
+-- "5" - the move to `pc.v5` (pcToast in place of pcNotify), whose
+-- `lastMessage` row starts unset.
+poll.ROWS_VERSION = "5"
 poll.WOL_READY_FIELD = "wol_ready"
 -- #97: the name of the adapter the service chose for WoL, so the message the
 -- wake sequence writes can name it while the PC is off and there is no status
@@ -602,6 +604,61 @@ function poll.ensure_preset(device, deps)
   return false
 end
 
+--------------------------------------------------------------------------------
+-- #108: pcToast.lastMessage
+--------------------------------------------------------------------------------
+
+-- The last text `send` delivered to the PC. Persisted: the row shows it, and
+-- a driver restart must not put "없음" back over a message the cloud already
+-- shows (every row's first emit in a run is forced, `FIRST_FIELD`).
+poll.TOAST_FIELD = "last_toast"
+
+--- What `pcToast.lastMessage` shows now: the last text that went out, else
+--- the translated "없음" - never "" (the cloud would record null and the row
+--- would read "-", platform notes "상세 화면(detailView) 위젯").
+function poll.shown_toast(device)
+  local sent
+  pcall(function() sent = device:get_field(poll.TOAST_FIELD) end)
+  if type(sent) == "string" and sent ~= "" then
+    return sent
+  end
+  return i18n.t(poll.lang(device), "toast_none")
+end
+
+--- The `lastMessage` record for `value` (default: what the row shows now).
+function poll.toast_row(device, value, force)
+  return { cap = caps.TOAST, attr = "lastMessage", value = value or poll.shown_toast(device),
+    force = force == true }
+end
+
+--- A text `send` delivered: remember it and put it on the row, forced - the
+--- app's spinner waits for exactly this event, and sending the same text twice
+--- changes nothing the hub would otherwise pass on.
+function poll.emit_toast(device, text)
+  if type(text) == "string" and text ~= "" then
+    pcall(function() device:set_field(poll.TOAST_FIELD, text, { persist = true }) end)
+  end
+  local value = poll.shown_toast(device)
+  poll.emit(device, { poll.toast_row(device, value, true) })
+  return value
+end
+
+--- Answer a `send` that did not go out (empty text, refused, failed): the row
+--- keeps what it shows, re-emitted forced so the spinner ends. The reason is
+--- `pcInfo.message`'s.
+function poll.answer_toast(device)
+  local value = poll.shown_toast(device)
+  poll.emit(device, { poll.toast_row(device, value, true) })
+  return value
+end
+
+--- Keep the row painted: unforced, so after the first emit of a driver run
+--- (forced by `FIRST_FIELD`, which is what gives a migrated device its value)
+--- the hub drops the unchanged repeats. Called with every poll and push.
+function poll.ensure_toast(device)
+  poll.emit(device, { poll.toast_row(device) })
+end
+
 --- Emit `pcDefer.planCommand` and remember it (#84, moved in #85).
 --
 -- The command a `pcDefer.schedule` without an explicit command runs. It is
@@ -729,6 +786,8 @@ function poll.repaint(device)
   poll.emit_plan_command(device, poll.plan_command(device), true)
   -- #113: the preset list's resting value, like `lastAction` above.
   poll.answer_preset(device)
+  -- #108: the message row, on the last text sent (or "없음").
+  poll.answer_toast(device)
   -- #92: a repaint of a device that has answered before keeps its version on
   -- the row; only one that never answered falls back to "v?".
   -- #107: and the v1.2.0 rows from the last status, when there was one.
@@ -883,6 +942,8 @@ function poll.once(driver, device, opts)
     poll.ensure_plan_command(device)
     -- #113: a preset that just ran shows for a moment, then the list rests.
     poll.ensure_preset(device, opts.deps)
+    -- #108: no status body carries `lastMessage` either.
+    poll.ensure_toast(device)
     -- #116: a laptop moves to the profile with the battery card, and back.
     poll.follow_battery(driver, device, body)
     pcall(function() device:online() end)
@@ -918,6 +979,7 @@ function poll.once(driver, device, opts)
   -- when `waking` gives up and becomes `off`.
   poll.ensure_action(device)
   poll.ensure_preset(device, opts.deps)
+  poll.ensure_toast(device)
   poll.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
   return false, kind
 end

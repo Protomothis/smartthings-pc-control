@@ -483,6 +483,8 @@ function push.apply_to_device(driver, device, payload, deps)
   pcall(function() poll.ensure_action(device) end)
   -- #113: and the preset list the same way.
   pcall(function() poll.ensure_preset(device, deps) end)
+  -- #108: and the message row keeps its value painted.
+  pcall(function() poll.ensure_toast(device) end)
 
   return true
 end

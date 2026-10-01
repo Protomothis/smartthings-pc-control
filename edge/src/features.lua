@@ -39,13 +39,14 @@ features.AWAKE_MAX_MINUTES = 1440
 
 -- #108: a toast on the PC, `POST /st/v1/notify`.
 features.NOTIFY = "notify"
--- Our own `pcNotify` (`send(text)`) since the standard `notification` showed
--- Samsung's label ("텍스트 표시") that a device configuration cannot override
--- (platform notes "표준 capability").
-features.CAP_NOTIFY = caps.NOTIFY
--- The service takes 1-200 characters (§3). `pcNotify` declares the same 200
+-- Our own `pcToast` (`send(text)` + `lastMessage`) since the standard
+-- `notification` showed Samsung's label ("텍스트 표시") that a device
+-- configuration cannot override (platform notes "표준 capability").
+features.CAP_TOAST = caps.TOAST
+-- The service takes 1-200 characters (§3). `pcToast` declares the same 200
 -- (`maxLength`, so the cloud stops a longer text before the hub), and the
--- driver cuts anyway, after cleaning.
+-- driver cuts anyway, after cleaning. `lastMessage` holds what was sent, so
+-- it has the same limit.
 features.NOTIFY_MAX_CHARS = 200
 
 -- #116: the laptop battery, on a component only the `-battery` profiles have.

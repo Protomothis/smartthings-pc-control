@@ -1,0 +1,38 @@
+{
+  "id": "numbersystem53811.pctoast",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcToast",
+  "ephemeral": false,
+  "attributes": {
+    "lastMessage": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "send": {
+      "name": "send",
+      "arguments": [
+        {
+          "name": "text",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      ]
+    }
+  }
+}

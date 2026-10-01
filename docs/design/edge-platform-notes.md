@@ -21,7 +21,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`, `pcnotify`로 바뀜)도 개발 장치가 `pc*.v4`로 옮겨진 뒤 지운다.
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`, `pcnotify`로 바뀜)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`, `pctoast`로 바뀜)도 개발 장치가 `pc*.v5`로 옮겨진 뒤 지운다.
 
 ## 프로필과 화면 생성
 
@@ -56,7 +56,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
   - 그래서 ⑴ **같은 값을 주기적으로 다시 내보내지 않는다.** 허브가 속성을 들고 있으므로 "계속 그 값이라고 말해 주기" 위한 재전송은 필요가 없고, 그 연발이 바로 사고의 원인이다. 강제 재전송은 앱이 기다리고 있는 **명령의 응답**에만 쓴다.
   - ⑵ **값이 바뀔 때도 강제한다.** `state_change`는 "같아 보여도 전달하라"는 뜻이라 바뀐 값에 붙여도 손해가 없고, 반드시 닿아야 하는 이벤트에 붙일 수 있는 유일한 표시다.
   - ⑶ **한 번 더 보낸다.** 드라이버가 "이미 그 값으로 쉬고 있다"고 판단하면 다시 시도하지 않으므로, 한 번 잃으면 다음 전환까지 줄이 굳는다. 값이 바뀐 다음 폴링에서 같은 값을 한 번만 더 강제로 내보내 이 막다른 길을 없앤다.
-- **값이 바뀌지 않는 명령은 회전 표시 뒤 오류로 끝난다.** 앱은 명령을 보낸 뒤 그 줄이 묶인 속성의 이벤트를 기다리는데, 값이 같으면 플랫폼이 이벤트를 버린다. 명령의 응답으로 나가는 emit은 `device:emit_event(cap.attr(value, { state_change = true }))`로 강제한다. 폴링이 스스로 내는 갱신은 강제하지 않는다.
+- **값이 바뀌지 않는 명령은 회전 표시 뒤 오류로 끝난다.** 앱은 명령을 보낸 뒤 그 줄이 묶인 속성의 이벤트를 기다리는데, 값이 같으면 플랫폼이 이벤트를 버린다. 명령의 응답으로 나가는 emit은 `device:emit_event(cap.attr(value, { state_change = true }))`로 강제한다. 폴링이 스스로 내는 갱신은 강제하지 않는다. 줄이 아무 속성에도 묶여 있지 않으면 기다릴 이벤트 자체가 없어 늘 이렇게 끝난다(아래 "표준 capability", `pcNotify`).
 - **한 번도 emit 되지 않은 속성은 "-"이고, 값이 빈 문자열인 줄도 "-"다.** 앱이 "상태를 모두 보고하지 않았다"고 안내한다. 모든 `state` 줄은 해당 사항이 없을 때도 문구를 가져야 한다.
 - **`visibleCondition`은 무시된다.** API는 받아 주지만 휴대폰이 반영하지 않는다. 모든 줄은 해당 사항이 없을 때도 혼자 읽혀야 한다.
 
@@ -90,7 +90,8 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - **`notification`**(status `live`): 명령 `deviceNotification(notification: string, maxLength 255)`, 속성 없음. 프레젠테이션에 detailView `textField`(라벨 "텍스트 표시")와 `automation.actions`의 `textField`가 **둘 다** 있다 — 루틴 동작으로도, 장치 화면의 입력 줄로도 나온다.
 - **`speechSynthesis`**(status `proposed`): 명령 `speak(phrase: string, maxLength 1000)`, 속성 없음. 프레젠테이션은 detailView `textField` + `automation.actions` `textField`. `proposed`라 루틴 동작 목록에 실제로 나오는지는 Dev 채널 실측 대기(media-notify.md §16).
 - **표준 capability의 라벨은 장치 쪽에서 바꿀 수 없다**(2026-09-30, 문서 확인). 휴대폰은 표준 capability의 줄·루틴 동작 이름을 삼성의 번역으로 쓴다 — `notification`은 "텍스트 표시", `speechSynthesis`는 "음성 합성". 프로필에도, 임베디드 장치 구성(device configuration)에도 표준 capability의 라벨이나 i18n을 덮어쓰는 자리가 없다. 우리가 문구를 정할 수 있는 것은 번역 파일을 올리는 자기 네임스페이스의 capability뿐이다.
-- 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"는 커스텀 `pcNotify`(`send(text)`, 속성 없음)로 옮겼다(media-notify.md §5). 소리내어 읽기(`speak`)까지 있던 `pcMessage`는 Dev 채널에서만 쓰였고, 읽기 기능을 없애면서 정의가 바뀌므로 새 id가 됐다. 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. **속성이 없는 커스텀 capability도 정의로 받아들여진다고 보고 만든다**(표준 `notification`이 그렇다) — 계정에서 거절되면 쉬는 값 `"none"`인 문자열 속성(`lastMessage`)을 더한다. 빈 문자열은 쓰지 않는다.
+- 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"는 커스텀 `pcToast`(`send(text)` + 속성 `lastMessage`)로 옮겼다(media-notify.md §5). 소리내어 읽기(`speak`)까지 있던 `pcMessage`와 속성 없는 `pcNotify`는 Dev 채널에서만 쓰였고, 정의가 바뀔 때마다 새 id가 됐다. 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. detailView 쪽에만 `"value": "lastMessage.value"`를 더한다.
+- **속성 없는 커스텀 capability를 detailView 줄로 쓰면 앱이 기다릴 이벤트가 없어 회전 표시 뒤 네트워크 오류로 끝난다**(2026-10-01 실측, `pcNotify`). 정의는 받아들여지고 명령도 허브에 닿아 PC에 토스트가 떴지만, 입력 줄은 돌다가 "네트워크 오류"를 띄웠다. **입력 줄은 반드시 속성에 묶는다.** `pcToast`는 문자열 속성 `lastMessage`에 묶고, 드라이버가 `send`마다 — 보냈든 거절했든 — 그 속성을 `state_change = true`로 내보낸다(보냈으면 보낸 문구, 아니면 지금 값). 쉬는 값은 "없음"/"None"이고 빈 문자열은 쓰지 않는다. 루틴 동작(`automation.actions`)은 보여 줄 값이 없으므로 명령만으로 된다.
 - 표준은 문구가 앱의 것이어도 괜찮은 곳(스위치, 볼륨, 미디어 버튼, 배터리)에만 쓴다.
 - `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고 등록을 pcall로 감싸야 한다. (v2 장치용으로 남겼던 `notification`·`speechSynthesis` 핸들러는 v2가 공개되지 않아 지웠다.)
 
