@@ -97,7 +97,9 @@ jobs:
       # hub logs still point into src/). The whole suite runs against it too:
       # a stripper bug that changes code fails here, not on the hub.
       - name: Build the package tree
-        run: node tools/build.js
+        run: |
+          node tools/build.js --self-test
+          node tools/build.js
 
       - name: Test the package tree (Lua 5.3)
         run: |

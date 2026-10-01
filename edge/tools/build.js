@@ -17,6 +17,7 @@
  * Options:
  *   --out <dir>   write somewhere else (default: build/edge)
  *   --quiet       no size report
+ *   --self-test   check the comment stripper against its cases and exit
  */
 'use strict';
 
@@ -184,8 +185,47 @@ function build(outDir) {
   return sizes;
 }
 
+// Cases the stripper must get right: [source, expected]. `--self-test` runs
+// them (CI does, before the build).
+const CASES = [
+  ['local a = 1 -- note\n', 'local a = 1\n'],
+  ['-- whole line\nx()\n', '\nx()\n'],
+  ['  --- doc\n', '\n'],
+  ['s = "a -- b" -- c\n', 's = "a -- b"\n'],
+  ["s = 'it''s' -- c\n", "s = 'it''s'\n"],
+  ['s = "q\\"--" -- c\n', 's = "q\\"--"\n'],
+  ['s = [[x -- y]] -- c\n', 's = [[x -- y]]\n'],
+  ['s = [==[a ]] -- b]==] --c\n', 's = [==[a ]] -- b]==]\n'],
+  ['a --[[ one ]] b\n', 'a  b\n'],
+  ['a--[[x]]b\n', 'a b\n'],
+  ['--[[\nline\n]]\ny = 2\n', '\n\n\ny = 2\n'],
+  ['--[==[\n]]\n]==] z()\n', '\n\n z()\n'],
+  ['x = a - -b --c\n', 'x = a - -b\n'],
+  ['t[ [[k]] ] = 1\n', 't[ [[k]] ] = 1\n'],
+  ['s = "a\\z\n   b" -- c\n', 's = "a\\z\n   b"\n'],
+  ['x = 1 -- crlf\r\ny = 2\r\n', 'x = 1\r\ny = 2\r\n'],
+];
+
+function selfTest() {
+  let failed = 0;
+  for (const [source, expected] of CASES) {
+    const got = stripLua(source);
+    if (got !== expected || lines(got) !== lines(source)) {
+      failed++;
+      process.stderr.write('stripLua(' + JSON.stringify(source) + ') = ' + JSON.stringify(got)
+        + ', want ' + JSON.stringify(expected) + '\n');
+    }
+  }
+  if (failed > 0) process.exit(1);
+  process.stdout.write('stripLua: ' + CASES.length + ' cases ok\n');
+}
+
 function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes('--self-test')) {
+    selfTest();
+    return;
+  }
   const at = argv.indexOf('--out');
   const outDir = at >= 0 ? path.resolve(argv[at + 1]) : path.join(EDGE, 'build', 'edge');
   const sizes = build(outDir);
