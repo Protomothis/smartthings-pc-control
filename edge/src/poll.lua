@@ -668,11 +668,19 @@ end
 poll.PRESET_FIELD = "last_preset"
 poll.PRESET_AT_FIELD = "last_preset_at"
 poll.PRESET_CONFIRM_FIELD = "last_preset_confirm"
--- How long the row says "프리셋 3 실행함" before a poll puts it back on "none".
--- Longer than the poll that follows a command takes to answer, shorter than
--- the shortest poll interval (10 s), so the flash lasts until the next
--- scheduled poll.
+-- How long the row says "프리셋 3 실행함" before it goes back on "none".
+-- `hold_preset`'s timer ends the flash after exactly this long; a poll or push
+-- that comes first leaves the row alone until it is this old. That check is
+-- why it is not shorter: it has to outlast the poll that answers the command
+-- (at once, or when a shared answer window closes 1.5 s later, plus however
+-- long the PC takes to reply), and `poll.clock` counts whole seconds, so a
+-- 3 s hold could already have run out 2 s after the run.
 poll.PRESET_HOLD_SECONDS = 5
+-- The one owed repeat of the return to "none" follows this much later, on a
+-- timer of its own, instead of waiting for the next poll (up to 30 s).
+poll.PRESET_REPEAT_SECONDS = 2
+-- The device's pending reset or repeat timer (`hold_preset`). Not persisted.
+poll.PRESET_TIMER_FIELD = "last_preset_timer"
 
 --- The value the preset list shows now.
 function poll.shown_preset(device)
@@ -711,17 +719,21 @@ function poll.answer_preset(device)
 end
 
 --- Put the preset list back on "none" once the slot it shows has been shown
---- for `PRESET_HOLD_SECONDS` (#113). Called from every poll and push, like
---- `ensure_action`: the change goes out forced and once more on the next call,
---- and nothing is sent while the value stays where it is.
+--- for `PRESET_HOLD_SECONDS` (#113). Called from `hold_preset`'s timers and,
+--- as the fallback, from every poll and push, like `ensure_action`: the change
+--- goes out forced and once more on the next call, and nothing is sent while
+--- the value stays where it is.
+-- @param held true from the hold timer: the hold is over, whatever the clock's
+--   whole seconds say about a timer that fired a moment early.
 -- Returns true when something was emitted.
-function poll.ensure_preset(device, deps)
+function poll.ensure_preset(device, deps, held)
   local shown = poll.shown_preset(device)
   if shown ~= features.PRESET_NONE then
     local at
     pcall(function() at = device:get_field(poll.PRESET_AT_FIELD) end)
     at = tonumber(at)
-    if at and poll.clock(deps) - at < poll.PRESET_HOLD_SECONDS and poll.clock(deps) >= at then
+    if not held and at and poll.clock(deps) - at < poll.PRESET_HOLD_SECONDS
+        and poll.clock(deps) >= at then
       return false
     end
     poll.emit_preset(device, features.PRESET_NONE, true, deps)
@@ -736,6 +748,60 @@ function poll.ensure_preset(device, deps)
     return true
   end
   return false
+end
+
+-- Make `fn` after `delay` the device's one pending preset timer, cancelling the
+-- one it replaces; `fn` runs only while it is still the current one.
+local function preset_timer(driver, device, delay, name, fn)
+  local previous
+  pcall(function() previous = device:get_field(poll.PRESET_TIMER_FIELD) end)
+  if type(previous) == "table" and previous.timer then
+    pcall(function() driver:cancel_timer(previous.timer) end)
+  end
+  pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, nil) end)
+  local token = {}
+  local ok, timer = pcall(function()
+    return driver:call_with_delay(delay, function()
+      local current
+      pcall(function() current = device:get_field(poll.PRESET_TIMER_FIELD) end)
+      if current ~= token then
+        return
+      end
+      pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, nil) end)
+      fn()
+    end, name)
+  end)
+  if not ok then
+    return false
+  end
+  token.timer = timer
+  pcall(function() device:set_field(poll.PRESET_TIMER_FIELD, token) end)
+  return true
+end
+
+--- After a preset ran: put the row back on "none" `PRESET_HOLD_SECONDS` from
+--- now and send the owed repeat `PRESET_REPEAT_SECONDS` after that, instead of
+--- on the first poll after the hold - up to 35 s with the default 30 s
+--- interval, all of it a list that will not run that preset again (init.lua,
+--- `handle_preset_run`). Another run meanwhile replaces the pending timer, so
+--- they never stack. Still two forced events per run; without a timer the
+--- polls and pushes do the same, later.
+-- Returns false when no timer could be set.
+function poll.hold_preset(driver, device)
+  if not driver then
+    return false
+  end
+  return preset_timer(driver, device, poll.PRESET_HOLD_SECONDS, "preset-reset", function()
+    poll.ensure_preset(device, nil, true)
+    -- A poll that got there first leaves only the repeat, just sent above.
+    local owed
+    pcall(function() owed = device:get_field(poll.PRESET_CONFIRM_FIELD) end)
+    if owed then
+      preset_timer(driver, device, poll.PRESET_REPEAT_SECONDS, "preset-repeat", function()
+        poll.ensure_preset(device)
+      end)
+    end
+  end)
 end
 
 --------------------------------------------------------------------------------
