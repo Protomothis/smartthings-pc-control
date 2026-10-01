@@ -283,4 +283,77 @@ function h.fake_device(preferences)
   return device
 end
 
+--------------------------------------------------------------------------------
+-- #125: the shared contract fixtures in testdata/st-v1 at the repository root
+--------------------------------------------------------------------------------
+
+local function dirname(path)
+  return (path or ""):match("^(.*)[/\\][^/\\]*$")
+end
+
+-- SCRIPT_DIR is set by tools/lua.js; arg[0] covers a real lua interpreter
+-- (`lua tests/run.lua` from edge/), exactly as run.lua finds tests/.
+local tests_dir = SCRIPT_DIR or dirname(arg and arg[0]) or "tests"
+
+--- testdata/st-v1, from edge/tests.
+h.FIXTURE_DIR = tests_dir .. "/../../testdata/st-v1"
+
+--- The contents of a file, or raises. fengari has no `io.open`, so tools/lua.js
+--- hands one in as `host.readfile`.
+function h.read_file(path)
+  if host and host.readfile then
+    local text, err = host.readfile(path)
+    if not text then
+      error("cannot read " .. path .. ": " .. tostring(err), 2)
+    end
+    return text
+  end
+  local file, err = io.open(path, "rb")
+  if not file then
+    error("cannot read " .. path .. ": " .. tostring(err), 2)
+  end
+  local text = file:read("a")
+  file:close()
+  return text
+end
+
+--- File names in a directory (host.listdir under fengari, `ls` otherwise).
+function h.list_dir(dir)
+  local names = {}
+  if host and host.listdir then
+    for _, name in ipairs(host.listdir(dir)) do
+      names[#names + 1] = name
+    end
+  elseif io.popen then
+    local pipe = io.popen('ls "' .. dir .. '"')
+    if pipe then
+      for name in pipe:lines() do
+        names[#names + 1] = name
+      end
+      pipe:close()
+    end
+  end
+  table.sort(names)
+  return names
+end
+
+--- One fixture of testdata/st-v1, decoded with the st.json mock (the same
+--- decoder the driver's bodies go through in every other test). `null`
+--- decodes to nil, as on the hub.
+function h.fixture(name)
+  local json = require "st.json"
+  return json.decode(h.read_file(h.FIXTURE_DIR .. "/" .. name))
+end
+
+--- The fixture names matching a Lua pattern ("^push%..*%.json$").
+function h.fixture_names(pattern)
+  local out = {}
+  for _, name in ipairs(h.list_dir(h.FIXTURE_DIR)) do
+    if name:match(pattern) then
+      out[#out + 1] = name
+    end
+  end
+  return out
+end
+
 return h

@@ -508,6 +508,11 @@ func hostname() string {
 	return "PC"
 }
 
+// stSessionQuery is querySessionInfo, replaced by the contract tests
+// (contract_golden_test.go): the real one asks WTS about whatever session
+// the machine running the tests happens to have.
+var stSessionQuery = querySessionInfo
+
 // stSessionInfo builds the session block for the live config. The lock
 // state and the user name come from WTS; the idle time comes from the tray
 // app's heartbeat (#77) and is independent of them, so a machine with no
@@ -521,7 +526,7 @@ func stSessionInfo(cfg SmartThingsConfig) stSession {
 	if idle, ok := lastIdleSeconds(); ok {
 		out.IdleSeconds = &idle
 	}
-	info, err := querySessionInfo()
+	info, err := stSessionQuery()
 	if err != nil {
 		// Nobody is logged in, or WTS refused: locked stays null rather
 		// than guessing.

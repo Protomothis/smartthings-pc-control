@@ -1,0 +1,17 @@
+{
+  "_doc": "push.ensure -> client.subscribe: the hub listener's callback. driver_version is the driver's own; the Lua test puts driver_version.lua in its place.",
+  "method": "POST",
+  "path": "/st/v1/subscribe",
+  "request": {
+    "callback": "http://192.168.1.20:39500/pc/evt",
+    "driver_version": "1.1.0",
+    "ttl_seconds": 600
+  },
+  "response": {
+    "body": {
+      "expires_at": "2026-10-01T21:10:00+09:00",
+      "id": "sub-1"
+    },
+    "code": 200
+  }
+}

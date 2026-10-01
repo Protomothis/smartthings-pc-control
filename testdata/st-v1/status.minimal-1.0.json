@@ -1,0 +1,51 @@
+{
+  "protocol": 1,
+  "service_version": "v1.1.2",
+  "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
+  "hostname": "GOLDEN-PC",
+  "power": "on",
+  "uptime_seconds": 93784,
+  "last_shutdown_clean": true,
+  "secret_set": true,
+  "grace": {
+    "enabled": false,
+    "seconds": 300
+  },
+  "schedule": {
+    "active": false
+  },
+  "last_command": {
+    "command": "restart",
+    "origin": "smartthings",
+    "at": "2026-10-01T20:40:00+09:00"
+  },
+  "update": {
+    "available": false,
+    "latest": "v1.1.2"
+  },
+  "wol": {
+    "ready": true,
+    "selected": {
+      "name": "이더넷",
+      "mac": "B4-2E-99-45-B4-F5",
+      "ip": "192.168.1.10",
+      "wol_enabled": true,
+      "wol_capable": true,
+      "source": "auto"
+    },
+    "adapters": [
+      {
+        "name": "이더넷",
+        "mac": "B4-2E-99-45-B4-F5",
+        "ip": "192.168.1.10",
+        "wol_enabled": true,
+        "wol_capable": true,
+        "selected": true
+      }
+    ]
+  },
+  "display": "unknown",
+  "session": {
+    "exposed": false
+  }
+}

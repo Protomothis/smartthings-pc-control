@@ -1,0 +1,24 @@
+{
+  "_doc": "pcDefer.schedule(minutes = \"30\", command = restart): minutes > 0 schedules instead of running.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "restart",
+    "minutes": 30,
+    "mode": "default"
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "executed": false,
+      "schedule": {
+        "active": true,
+        "command": "restart",
+        "execute_at": "2026-10-01T21:30:00+09:00",
+        "origin": "smartthings",
+        "remaining_seconds": 1800
+      }
+    },
+    "code": 200
+  }
+}

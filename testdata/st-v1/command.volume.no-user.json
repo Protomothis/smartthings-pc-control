@@ -1,0 +1,15 @@
+{
+  "_doc": "The same request while nobody is logged in: 409 no_user_session, which the driver shows as no_user.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "volume",
+    "value": 30
+  },
+  "response": {
+    "body": {
+      "error": "no_user_session"
+    },
+    "code": 409
+  }
+}

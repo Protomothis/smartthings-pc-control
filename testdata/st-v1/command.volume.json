@@ -1,0 +1,26 @@
+{
+  "_doc": "audioVolume.setVolume(30). The v1.2.0 commands send {command, value?} only: no mode, no minutes.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "volume",
+    "value": 30
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "audio": {
+        "available": true,
+        "device": "스피커 (Realtek(R) Audio)",
+        "muted": false,
+        "updated_at": "2026-10-01T21:00:00+09:00",
+        "volume": 30
+      },
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

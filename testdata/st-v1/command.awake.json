@@ -1,0 +1,23 @@
+{
+  "_doc": "switch.on on the awake component, with the awakeMinutes preference at 90.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "awake",
+    "value": 90
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "awake": {
+        "on": true,
+        "until": "2026-10-01T22:30:00+09:00"
+      },
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

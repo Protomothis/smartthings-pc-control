@@ -1,0 +1,15 @@
+{
+  "_doc": "pcToast.send(text): POST /st/v1/notify {text}. No title: the service defaults to SmartThings.",
+  "method": "POST",
+  "path": "/st/v1/notify",
+  "request": {
+    "text": "빨래가 끝났습니다"
+  },
+  "response": {
+    "body": {
+      "ok": true,
+      "toast": "shown"
+    },
+    "code": 200
+  }
+}

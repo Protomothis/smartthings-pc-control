@@ -1,0 +1,24 @@
+{
+  "_doc": "pcPreset.run(slot = \"3\"): value is the slot number.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "preset",
+    "value": 3
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "executed": true,
+      "preset": {
+        "name": "게임 모드",
+        "slot": 3,
+        "started": true
+      },
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

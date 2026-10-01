@@ -1,0 +1,15 @@
+{
+  "_doc": "The same request with notify_pc.enabled off on the PC: 403 notify_disabled.",
+  "method": "POST",
+  "path": "/st/v1/notify",
+  "request": {
+    "text": "빨래가 끝났습니다"
+  },
+  "response": {
+    "body": {
+      "error": "notify_disabled",
+      "message": "PC notifications are turned off in the app settings"
+    },
+    "code": 403
+  }
+}
