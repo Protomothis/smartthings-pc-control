@@ -68,8 +68,8 @@ func saveConfig(cfg Config) error {
 	// The tray's non-secret copy follows every save (#131).
 	config.WriteTrayFile(dir, stored)
 	// Telegram control follows the saved settings without a restart
-	// (no-op unless the service has started it, see telegram_control.go).
-	reconcileTelegramControl()
+	// (no-op unless the service has started it, see service/tgcontrol).
+	tgCtl.Reconcile()
 	// The activity scanner looks again right away instead of on its next
 	// tick (a no-op while it is not running).
 	kickActivityScan()

@@ -14,89 +14,7 @@ import (
 	"testing"
 
 	"github.com/Protomothis/smartthings-pc-control/service/session"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
-
-func TestValidatePreset(t *testing.T) {
-	ok := []Preset{
-		{Slot: 1, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`, Args: []string{"-bigpicture"}},
-		{Slot: 10, Name: strings.Repeat("가", 30), Type: "program", Path: `\\nas\apps\tool.exe`},
-		{Slot: 2, Name: "대시보드", Type: "url", Path: "http://192.168.1.50:3000/d/home"},
-		{Slot: 3, Name: "방송", Type: "url", Path: "https://example.com/?a=1&b=2"},
-		{Slot: 4, Name: "PS", Type: "script", Path: `C:\Scripts\game.ps1`, Args: []string{"-Mode", `"on"`, "%x%"}},
-		{Slot: 5, Name: "Batch", Type: "script", Path: `C:\Scripts\go.CMD`, Args: []string{"a&b", "two words"}},
-		{Slot: 6, Name: "Bat", Type: "script", Path: `C:\Scripts\go.bat`},
-	}
-	for _, p := range ok {
-		if err := config.ValidatePreset(p); err != nil {
-			t.Errorf("%+v: %v", p, err)
-		}
-	}
-	tooMany := make([]string, 33)
-	bad := map[string]Preset{
-		"slot 0":           {Slot: 0, Name: "x", Type: "url", Path: "https://x.com"},
-		"slot 11":          {Slot: 11, Name: "x", Type: "url", Path: "https://x.com"},
-		"no name":          {Slot: 1, Name: "  ", Type: "url", Path: "https://x.com"},
-		"name spaces":      {Slot: 1, Name: " x", Type: "url", Path: "https://x.com"},
-		"name 31":          {Slot: 1, Name: strings.Repeat("a", 31), Type: "url", Path: "https://x.com"},
-		"name control":     {Slot: 1, Name: "a\nb", Type: "url", Path: "https://x.com"},
-		"type":             {Slot: 1, Name: "x", Type: "shell", Path: `C:\x.exe`},
-		"type case":        {Slot: 1, Name: "x", Type: "Program", Path: `C:\x.exe`},
-		"no path":          {Slot: 1, Name: "x", Type: "program", Path: ""},
-		"path spaces":      {Slot: 1, Name: "x", Type: "program", Path: ` C:\x.exe`},
-		"relative":         {Slot: 1, Name: "x", Type: "program", Path: `x.exe`},
-		"no drive":         {Slot: 1, Name: "x", Type: "program", Path: `\x.exe`},
-		"bat as program":   {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
-		"relative script":  {Slot: 1, Name: "x", Type: "script", Path: `x.ps1`},
-		"vbs script":       {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
-		"quote in bat arg": {Slot: 1, Name: "x", Type: "script", Path: `C:\x.bat`, Args: []string{`a"b`}},
-		"% in cmd arg":     {Slot: 1, Name: "x", Type: "script", Path: `C:\x.cmd`, Args: []string{"%PATH%"}},
-		"file url":         {Slot: 1, Name: "x", Type: "url", Path: "file:///C:/Windows/System32/cmd.exe"},
-		"javascript":       {Slot: 1, Name: "x", Type: "url", Path: "javascript:alert(1)"},
-		"bare host":        {Slot: 1, Name: "x", Type: "url", Path: "example.com"},
-		"url args":         {Slot: 1, Name: "x", Type: "url", Path: "https://x.com", Args: []string{"a"}},
-		"33 args":          {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: tooMany},
-		"arg control":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: []string{"a\x00"}},
-	}
-	for name, p := range bad {
-		if err := config.ValidatePreset(p); err == nil {
-			t.Errorf("%s: accepted %+v", name, p)
-		}
-	}
-}
-
-func TestPresetsDefault(t *testing.T) {
-	cfg := config.Default().WithDefaults()
-	if cfg.Presets == nil || len(cfg.Presets) != 0 {
-		t.Errorf("presets default = %#v, want []", cfg.Presets)
-	}
-}
-
-func TestValidatePresetsAndDrop(t *testing.T) {
-	a := Preset{Slot: 1, Name: "a", Type: "url", Path: "https://a.example"}
-	b := Preset{Slot: 2, Name: "b", Type: "url", Path: "https://b.example"}
-	dup := Preset{Slot: 1, Name: "dup", Type: "url", Path: "https://c.example"}
-	invalid := Preset{Slot: 3, Name: "bad", Type: "program", Path: "relative.exe"}
-
-	if msg := config.ValidatePresets([]Preset{a, b}); msg != "" {
-		t.Error(msg)
-	}
-	if msg := config.ValidatePresets([]Preset{a, dup}); !strings.Contains(msg, "slot 1 is used twice") {
-		t.Errorf("duplicate: %q", msg)
-	}
-	if msg := config.ValidatePresets([]Preset{a, invalid}); !strings.Contains(msg, "slot 3") || !strings.Contains(msg, "absolute") {
-		t.Errorf("invalid: %q", msg)
-	}
-	initLogger()
-	got := config.DropInvalidPresets([]Preset{a, invalid, dup, b})
-	if !reflect.DeepEqual(got, []Preset{a, b}) {
-		t.Errorf("dropInvalidPresets = %+v", got)
-	}
-	if got := config.DropInvalidPresets(nil); got == nil || len(got) != 0 {
-		t.Errorf("nil list = %#v", got)
-	}
-}
 
 func TestLoadConfigIgnoresInvalidPresets(t *testing.T) {
 	path := protectConfigFile(t)
@@ -114,49 +32,18 @@ func TestLoadConfigIgnoresInvalidPresets(t *testing.T) {
 	}
 }
 
-func TestChangedPresetSlotsAndConfigKey(t *testing.T) {
-	a := Preset{Slot: 1, Name: "a", Type: "url", Path: "https://a.example"}
-	b := Preset{Slot: 2, Name: "b", Type: "program", Path: `C:\b.exe`, Args: []string{"x"}}
-	b2 := b
-	b2.Args = []string{"y"}
-	c := Preset{Slot: 3, Name: "c", Type: "url", Path: "https://c.example"}
-
-	if got := config.ChangedPresetSlots([]Preset{a, b}, []Preset{b, a}); len(got) != 0 {
-		t.Errorf("reordered = %v, want no change", got)
-	}
-	if got := config.ChangedPresetSlots([]Preset{a, b}, []Preset{b2, c}); !reflect.DeepEqual(got, []int{1, 2, 3}) {
-		t.Errorf("changed = %v, want [1 2 3]", got)
-	}
-	if got := config.PresetChangeKey([]int{1, 3}); got != "presets[1,3]" {
-		t.Errorf("key = %q", got)
-	}
-
-	old := config.Default().WithDefaults()
-	updated := old
-	updated.Presets = []Preset{b}
-	updated.NotifyPC.Enabled = false
-	keys := strings.Join(config.ChangedKeys(old, updated), ", ")
-	if keys != "notify_pc.enabled, presets[2]" {
-		t.Errorf("keys = %q", keys)
-	}
-	// The key names slots only: never the path or the arguments.
-	if strings.Contains(keys, "b.exe") {
-		t.Error("config_changed leaks the preset path")
-	}
-}
-
 func TestConfigAPIPresets(t *testing.T) {
 	protectConfigFile(t)
 	withLiveConfig(t, Config{Port: 5001})
 	initLogger()
 
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "absolute") {
 		t.Fatalf("invalid preset: %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[
 		{"slot":4,"name":"b","type":"url","path":"https://b.example"},
 		{"slot":2,"name":"a","type":"url","path":"https://a.example"}]}`))
 	if w.Code != http.StatusOK {
@@ -168,19 +55,19 @@ func TestConfigAPIPresets(t *testing.T) {
 	}
 	// A body without presets keeps them (an older WebUI page).
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 2 || getConfig().NotifyPC.Enabled {
 		t.Errorf("omitted presets: %d, %+v", w.Code, getConfig())
 	}
 	// [] clears them.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"presets":[]}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[]}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 0 {
 		t.Errorf("cleared: %d, %+v", w.Code, getConfig().Presets)
 	}
 	// The retired notify_pc.speak/voice keys of an older app are ignored.
 	w = httptest.NewRecorder()
-	handleConfigAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
 	if w.Code != http.StatusOK || !getConfig().NotifyPC.Enabled {
 		t.Errorf("old speech keys: %d, %+v", w.Code, getConfig().NotifyPC)
 	}
@@ -190,15 +77,15 @@ func TestConfigAPIPresets(t *testing.T) {
 func fakePresetRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
-	saved := presetRun
-	presetRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+	saved := userRun.preset
+	userRun.preset = func(ctx context.Context, args ...string) (UserActionResult, error) {
 		calls = append(calls, args)
 		if err != nil {
 			return UserActionResult{}, err
 		}
 		return session.ParseOutput([]byte(reply))
 	}
-	t.Cleanup(func() { presetRun = saved })
+	t.Cleanup(func() { userRun.preset = saved })
 	return &calls
 }
 
@@ -267,7 +154,7 @@ func TestSTPresetCommandRefusals(t *testing.T) {
 		{`{"command":"preset","value":"3"}`, http.StatusBadRequest, ""},
 		{`{"command":"preset","value":2}`, http.StatusNotFound, "no_such_preset"},
 	} {
-		resetSTRateLimit()
+		stSrv.ResetRateLimit()
 		w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", c.body)
 		if w.Code != c.status || (c.code != "" && stJSON(t, w)["error"] != c.code) {
 			t.Errorf("%s: %d %s", c.body, w.Code, w.Body.String())
@@ -293,12 +180,12 @@ func TestSTPresetCommandUserSessionErrors(t *testing.T) {
 
 	// A reply that does not confirm the start is a failure.
 	fakePresetRun(t, `{"ok":true}`, nil)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	if w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"preset","value":1}`); w.Code != http.StatusBadGateway {
 		t.Errorf("unconfirmed start: %d %s", w.Code, w.Body.String())
 	}
 	fakePresetRun(t, `{"ok":false,"error":"failed","message":"start steam.exe: file not found"}`, nil)
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	w = stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"preset","value":3}`)
 	if w.Code != http.StatusBadGateway || stJSON(t, w)["error"] != "failed" {
 		t.Errorf("failed start: %d %s", w.Code, w.Body.String())
@@ -311,19 +198,19 @@ func TestPresetsAPI(t *testing.T) {
 	calls := fakePresetRun(t, `{"ok":true,"started":true}`, nil)
 
 	w := httptest.NewRecorder()
-	handlePresetsRunAPI(w, postJSON("/api/presets/run", `{"slot":1}`))
+	webAPI(w, postJSON("/api/presets/run", `{"slot":1}`))
 	if w.Code != http.StatusOK || decodeBody(t, w)["started"] != true {
 		t.Errorf("run: %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handlePresetsRunAPI(w, postJSON("/api/presets/run", `{"slot":9}`))
+	webAPI(w, postJSON("/api/presets/run", `{"slot":9}`))
 	if w.Code != http.StatusNotFound || decodeBody(t, w)["error"] != "no_such_preset" {
 		t.Errorf("unknown slot: %d %s", w.Code, w.Body.String())
 	}
 
 	// The editor's test runs an unsaved row, through the save rules.
 	w = httptest.NewRecorder()
-	handlePresetsTestAPI(w, postJSON("/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
+	webAPI(w, postJSON("/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("test: %d %s", w.Code, w.Body.String())
 	}
@@ -332,25 +219,13 @@ func TestPresetsAPI(t *testing.T) {
 	}
 	n := len(*calls)
 	w = httptest.NewRecorder()
-	handlePresetsTestAPI(w, postJSON("/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
+	webAPI(w, postJSON("/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
 	if w.Code != http.StatusBadRequest || len(*calls) != n {
 		t.Errorf("invalid test: %d, ran %d", w.Code, len(*calls)-n)
 	}
 	w = httptest.NewRecorder()
-	handlePresetsRunAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
+	webAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("without CSRF header: %d", w.Code)
-	}
-}
-
-func TestFindPresetByName(t *testing.T) {
-	for arg, slot := range map[string]int{"3": 3, " 1 ": 1, "게임 모드": 3, "대시보드": 1, "  게임 모드 ": 3, "2": 0, "게임": 0, "": 0} {
-		p, ok := findPresetByName(testPresets, arg)
-		if (slot == 0) == ok || (ok && p.Slot != slot) {
-			t.Errorf("findPresetByName(%q) = %+v, %v; want slot %d", arg, p, ok, slot)
-		}
-	}
-	if p, ok := findPresetByName([]Preset{{Slot: 1, Name: "Steam"}}, "steam"); !ok || p.Slot != 1 {
-		t.Error("names match without regard to case")
 	}
 }

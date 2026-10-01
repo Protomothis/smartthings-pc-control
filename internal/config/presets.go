@@ -134,6 +134,31 @@ func DropInvalidPresets(ps []Preset) []Preset {
 	return out
 }
 
+// FindPreset looks a slot up in the live list.
+func FindPreset(ps []Preset, slot int) (Preset, bool) {
+	for _, p := range ps {
+		if p.Slot == slot {
+			return p, true
+		}
+	}
+	return Preset{}, false
+}
+
+// FindPresetByName matches a Telegram /run argument: a slot number, or a
+// name compared without regard to case or surrounding space.
+func FindPresetByName(ps []Preset, arg string) (Preset, bool) {
+	arg = strings.TrimSpace(arg)
+	if n, err := strconv.Atoi(arg); err == nil {
+		return FindPreset(ps, n)
+	}
+	for _, p := range ps {
+		if strings.EqualFold(p.Name, arg) {
+			return p, true
+		}
+	}
+	return Preset{}, false
+}
+
 // NormalizePresets returns a sorted copy that never aliases ps and is
 // never nil (config.json documents "presets": []).
 func NormalizePresets(ps []Preset) []Preset {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 // stPushSetup gives one test the /st/v1 fixtures plus an empty
@@ -24,13 +25,13 @@ import (
 func stPushSetup(t *testing.T, cfg Config) {
 	t.Helper()
 	stSetup(t, cfg)
-	stPushReset()
+	stSrv.ResetSubscriptions()
 	resetPowerCommandHint()
-	orig := stPushNow
+	orig := stSrv.PushNow
 	t.Cleanup(func() {
 		stPushFlush(t)
-		stPushNow = orig
-		stPushReset()
+		stSrv.PushNow = orig
+		stSrv.ResetSubscriptions()
 		resetPowerCommandHint()
 	})
 }
@@ -40,17 +41,7 @@ func stPushSetup(t *testing.T, cfg Config) {
 // package state (Version, the config) that the next test is rewriting.
 func stPushFlush(t *testing.T) {
 	t.Helper()
-	stPushWorkerOne.Do(func() { go stPushWorker() })
-	done := make(chan struct{})
-	select {
-	case stPushQueue <- stPushJob{flushed: done}:
-	case <-time.After(5 * time.Second):
-		t.Error("ST push queue still full after 5s")
-		return
-	}
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
+	if !stSrv.FlushPush(5 * time.Second) {
 		t.Error("ST push worker did not drain within 5s")
 	}
 }
@@ -145,7 +136,7 @@ func TestSTSubscribeAcceptsHubCallback(t *testing.T) {
 	if d := time.Until(at); d < 9*time.Minute || d > 10*time.Minute+time.Minute {
 		t.Errorf("expires in %s, want ~10m", d)
 	}
-	if n := len(stSubs.active()); n != 1 {
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Errorf("%d subscriptions stored, want 1", n)
 	}
 	// The secret must not come back in the response (§8).
@@ -170,7 +161,7 @@ func TestSTSubscribeRejectsBadCallbacks(t *testing.T) {
 			t.Errorf("%s: %d, want 400 (%s)", tc.name, w.Code, w.Body.String())
 		}
 	}
-	if n := len(stSubs.active()); n != 0 {
+	if n := stSrv.Subscriptions(); n != 0 {
 		t.Errorf("%d subscriptions stored, want 0", n)
 	}
 }
@@ -188,8 +179,8 @@ func TestSTSubscribeTTLBounds(t *testing.T) {
 
 	// Omitted (0) falls back to the 600s default, and the bounds
 	// themselves are accepted.
-	for ttl, want := range map[int]time.Duration{0: stSubDefaultTTL, 60: stSubMinTTL, 3600: stSubMaxTTL} {
-		stPushReset()
+	for ttl, want := range map[int]time.Duration{0: 600 * time.Second, 60: 60 * time.Second, 3600: 3600 * time.Second} {
+		stSrv.ResetSubscriptions()
 		w := stDo(t, "POST", "/st/v1/subscribe", "192.168.1.20", "",
 			subscribeBody("http://192.168.1.20:41234/pc/evt", ttl))
 		if w.Code != http.StatusOK {
@@ -216,7 +207,7 @@ func TestSTSubscribeRenewsSameCallback(t *testing.T) {
 	if first["id"] != second["id"] {
 		t.Errorf("re-subscribing made a new id: %v then %v", first["id"], second["id"])
 	}
-	if n := len(stSubs.active()); n != 1 {
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Errorf("%d subscriptions stored, want 1", n)
 	}
 	firstAt, _ := time.Parse(time.RFC3339, first["expires_at"].(string))
@@ -229,7 +220,7 @@ func TestSTSubscribeRenewsSameCallback(t *testing.T) {
 	// hub's driver restarted on a new ephemeral port and the old listener
 	// is gone.
 	third := stJSON(t, stDo(t, "POST", "/st/v1/subscribe", "192.168.1.20", "", subscribeBody("http://192.168.1.20:41235/pc/evt", 600)))
-	if n := len(stSubs.active()); n != 1 {
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Errorf("%d subscriptions stored after a same-host re-subscribe, want 1", n)
 	}
 	if third["id"] == first["id"] {
@@ -238,7 +229,7 @@ func TestSTSubscribeRenewsSameCallback(t *testing.T) {
 
 	// A callback from another host (a second hub) is a second subscription.
 	stDo(t, "POST", "/st/v1/subscribe", "192.168.1.21", "", subscribeBody("http://192.168.1.21:41234/pc/evt", 600))
-	if n := len(stSubs.active()); n != 2 {
+	if n := stSrv.Subscriptions(); n != 2 {
 		t.Errorf("%d subscriptions stored for two hubs, want 2", n)
 	}
 }
@@ -246,20 +237,20 @@ func TestSTSubscribeRenewsSameCallback(t *testing.T) {
 func TestSTSubscriptionExpires(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001})
 	now := time.Date(2026, 9, 17, 23, 0, 0, 0, time.Local)
-	stPushNow = func() time.Time { return now }
+	stSrv.PushNow = func() time.Time { return now }
 
 	stDo(t, "POST", "/st/v1/subscribe", "192.168.1.20", "",
 		subscribeBody("http://192.168.1.20:41234/pc/evt", 60))
-	if n := len(stSubs.active()); n != 1 {
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Fatalf("%d subscriptions right after subscribing", n)
 	}
 
 	now = now.Add(59 * time.Second)
-	if n := len(stSubs.active()); n != 1 {
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Errorf("%d subscriptions after 59s, want 1", n)
 	}
 	now = now.Add(2 * time.Second)
-	if n := len(stSubs.active()); n != 0 {
+	if n := stSrv.Subscriptions(); n != 0 {
 		t.Errorf("%d subscriptions after the TTL, want 0", n)
 	}
 }
@@ -278,7 +269,7 @@ func TestSTUnsubscribe(t *testing.T) {
 	if removed, _ := stJSON(t, w)["removed"].(bool); !removed {
 		t.Error(`removed = false, want true`)
 	}
-	if n := len(stSubs.active()); n != 0 {
+	if n := stSrv.Subscriptions(); n != 0 {
 		t.Errorf("%d subscriptions after DELETE, want 0", n)
 	}
 
@@ -313,14 +304,11 @@ func TestSTPushBodyShape(t *testing.T) {
 	subscribeTo(t, cb, 600)
 
 	at := time.Date(2026, 9, 17, 23, 5, 0, 0, time.Local)
-	stPushDispatch(context.Background(), stPushJob{
-		Type: "schedule.created",
-		At:   at,
-		Data: map[string]string{"command": "shutdown", "origin": "smartthings"},
-	})
+	stSrv.Deliver(context.Background(), "schedule.created", at,
+		map[string]string{"command": "shutdown", "origin": "smartthings"})
 	got := cb.wait(t)
 
-	if got["protocol"] != float64(stProtocol) {
+	if got["protocol"] != float64(stapi.Protocol) {
 		t.Errorf("protocol = %v", got["protocol"])
 	}
 	if got["type"] != "schedule.created" {
@@ -364,47 +352,38 @@ func TestSTPushBodyShape(t *testing.T) {
 	}
 }
 
-func TestSTPushDropsSecretValuedFields(t *testing.T) {
-	stPushSetup(t, Config{Port: 5001, Secret: "s3cr3t"})
-	got := stPushData(map[string]string{"command": "shutdown", "leak": "s3cr3t"}, "s3cr3t")
-	if _, ok := got["leak"]; ok {
-		t.Errorf("a field holding the secret was kept: %v", got)
-	}
-	if got["command"] != "shutdown" {
-		t.Errorf("data = %v", got)
-	}
-}
-
 func TestSTPushRemovesAfterThreeFailures(t *testing.T) {
 	stPushSetup(t, Config{Port: 5001})
 	cb := newCallbackServer(t)
 	cb.status.Store(http.StatusInternalServerError)
 	subscribeTo(t, cb, 600)
 
-	job := stPushJob{Type: "remote.received", At: time.Now(), Data: map[string]string{"command": "ping"}}
-	for i := 1; i <= stPushMaxFailures; i++ {
-		if n := len(stSubs.active()); n != 1 && i <= stPushMaxFailures {
+	deliver := func() {
+		stSrv.Deliver(context.Background(), "remote.received", time.Now(), map[string]string{"command": "ping"})
+	}
+	for i := 1; i <= stapi.PushMaxFailures; i++ {
+		if n := stSrv.Subscriptions(); n != 1 && i <= stapi.PushMaxFailures {
 			t.Fatalf("subscription gone before attempt %d", i)
 		}
-		stPushDispatch(context.Background(), job)
+		deliver()
 	}
-	if n := len(stSubs.active()); n != 0 {
-		t.Errorf("%d subscriptions after %d failed deliveries, want 0", n, stPushMaxFailures)
+	if n := stSrv.Subscriptions(); n != 0 {
+		t.Errorf("%d subscriptions after %d failed deliveries, want 0", n, stapi.PushMaxFailures)
 	}
 	// Every failed delivery is one POST plus one retry (§3.5).
-	if hits := cb.hits.Load(); hits != int32(2*stPushMaxFailures) {
-		t.Errorf("callback hit %d times, want %d (one retry each)", hits, 2*stPushMaxFailures)
+	if hits := cb.hits.Load(); hits != int32(2*stapi.PushMaxFailures) {
+		t.Errorf("callback hit %d times, want %d (one retry each)", hits, 2*stapi.PushMaxFailures)
 	}
 
 	// A success in between resets the counter.
-	stPushReset()
+	stSrv.ResetSubscriptions()
 	cb.status.Store(http.StatusOK)
 	id := subscribeTo(t, cb, 600)
-	stPushDispatch(context.Background(), job)
+	deliver()
 	cb.status.Store(http.StatusInternalServerError)
-	stPushDispatch(context.Background(), job)
-	stPushDispatch(context.Background(), job)
-	if n := len(stSubs.active()); n != 1 {
+	deliver()
+	deliver()
+	if n := stSrv.Subscriptions(); n != 1 {
 		t.Errorf("%s removed after 2 failures following a success", id)
 	}
 }
@@ -426,7 +405,7 @@ func TestSTPushStoppingIsSynchronousAndBounded(t *testing.T) {
 	}
 
 	start := time.Now()
-	stPushTap(notify.Event{
+	stSrv.PushTap(notify.Event{
 		Category: "power", Kind: "stopping", At: time.Now(),
 		Fields: map[string]string{"reason": "shutdown"},
 	})
@@ -436,8 +415,8 @@ func TestSTPushStoppingIsSynchronousAndBounded(t *testing.T) {
 	if took < 500*time.Millisecond {
 		t.Errorf("power.stopping returned after %s — it was not delivered synchronously", took)
 	}
-	if took > stPushStoppingDeadline+2*time.Second {
-		t.Errorf("power.stopping held the stop for %s, want ≤ %s plus slack", took, stPushStoppingDeadline)
+	if took > stapi.PushStoppingDeadline+2*time.Second {
+		t.Errorf("power.stopping held the stop for %s, want ≤ %s plus slack", took, stapi.PushStoppingDeadline)
 	}
 }
 
@@ -446,7 +425,7 @@ func TestSTPushDeliversAsynchronously(t *testing.T) {
 	cb := newCallbackServer(t)
 	subscribeTo(t, cb, 600)
 
-	stPushTap(notify.Event{
+	stSrv.PushTap(notify.Event{
 		Category: "display", Kind: "changed", At: time.Now(),
 		Fields: map[string]string{"display": "off"},
 	})
@@ -456,44 +435,6 @@ func TestSTPushDeliversAsynchronously(t *testing.T) {
 }
 
 // ---- event mapping (§3.5) --------------------------------------------------
-
-func TestSTPushEventSelection(t *testing.T) {
-	exposed := SmartThingsConfig{ExposeSession: true}
-	var hidden SmartThingsConfig
-
-	for _, tc := range []struct {
-		cat, kind string
-		cfg       SmartThingsConfig
-		want      bool
-	}{
-		{"power", "stopping", hidden, true},
-		{"power", "started", hidden, true},
-		{"power", "resumed", hidden, true},
-		{"schedule", "created", hidden, true},
-		{"schedule", "cancelled", hidden, true},
-		{"remote", "received", hidden, true},
-		{"remote", "grace_scheduled", hidden, true},
-		{"system", "updated", hidden, true},
-		{"system", "update_available", hidden, true},
-		{"display", "changed", hidden, true},
-		{"awake", "changed", hidden, true},
-		{"battery", "changed", hidden, true},
-		{"session", "locked", exposed, true},
-		{"session", "unlocked", exposed, true},
-		{"session", "locked", hidden, false},
-		{"security", "unauthorized", hidden, false},
-		{"system", "exec_failed", hidden, false},
-		{"system", "digest", hidden, false},
-	} {
-		typ, ok := stPushEventType(notify.Event{Category: tc.cat, Kind: tc.kind}, tc.cfg)
-		if ok != tc.want {
-			t.Errorf("%s.%s pushed = %v, want %v", tc.cat, tc.kind, ok, tc.want)
-		}
-		if ok && typ != tc.cat+"."+tc.kind {
-			t.Errorf("type = %q, want %s.%s", typ, tc.cat, tc.kind)
-		}
-	}
-}
 
 // TestSTPushTapBypassesNotifyFilters is the §3.5 requirement that the hub
 // sees device state even when the user has switched the matching

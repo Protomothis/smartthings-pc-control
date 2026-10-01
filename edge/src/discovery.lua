@@ -66,7 +66,7 @@ end
 --------------------------------------------------------------------------------
 
 --- The M-SEARCH datagram (§3.6). `MAN` is quoted, as the spec requires and as
---- `parseMSearch` in service/st_ssdp.go checks.
+--- `parseMSearch` in service/stapi/ssdp.go checks.
 function discovery.msearch(mx)
   return table.concat({
     "M-SEARCH * HTTP/1.1",

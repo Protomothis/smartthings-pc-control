@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/tgcontrol"
 )
 
 // Tests for the grace-message lifecycle (#62): the Telegram message that
@@ -29,12 +30,12 @@ func graceCfg() Config {
 // for the test and clears the remembered message afterwards.
 func startGraceSink(t *testing.T) {
 	t.Helper()
-	resetGraceMessage()
+	tgCtl.ResetGraceMessage()
 	startLiveNotifier()
 	t.Cleanup(func() {
 		cancelScheduleBy("api")
 		stopNotifier()
-		resetGraceMessage()
+		tgCtl.ResetGraceMessage()
 	})
 }
 
@@ -67,16 +68,22 @@ func (f *fakeTelegram) waitCalls(t *testing.T, method string, n int) []fakeCall 
 }
 
 // storedGrace returns a copy of the remembered grace message.
-func storedGrace() graceMessage {
-	graceMsg.mu.Lock()
-	defer graceMsg.mu.Unlock()
-	return graceMsg.cur
+func storedGrace() storedMessage {
+	chatID, msgID, html := tgCtl.GraceMessage()
+	return storedMessage{chatID: chatID, msgID: msgID, html: html}
+}
+
+// storedMessage is what the bot remembers of a grace message.
+type storedMessage struct {
+	chatID string
+	msgID  int
+	html   string
 }
 
 // waitStored polls until the message with msgID is remembered: the fake
 // server records sendMessage before the client has processed the reply
 // and run OnSent.
-func waitStored(t *testing.T, msgID int) graceMessage {
+func waitStored(t *testing.T, msgID int) storedMessage {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -223,11 +230,11 @@ func TestGraceMessageNotRememberedWhenScheduleAlreadyGone(t *testing.T) {
 	initLogger()
 	useFakeTelegram(t)
 	withLiveConfig(t, graceCfg())
-	resetGraceMessage()
-	t.Cleanup(resetGraceMessage)
+	tgCtl.ResetGraceMessage()
+	t.Cleanup(tgCtl.ResetGraceMessage)
 
 	ev := testGraceEvent()
-	rememberGraceMessage(ev, 7, "<b>x</b>")
+	tgCtl.RememberGraceMessage(ev, 7, "<b>x</b>")
 	if storedGrace().msgID != 0 {
 		t.Error("remembered a message for a schedule that does not exist")
 	}
@@ -239,22 +246,22 @@ func TestGraceMessageNotRememberedWhenScheduleAlreadyGone(t *testing.T) {
 	}
 	other := ev
 	other.Kind = "grace_cancelled"
-	rememberGraceMessage(other, 8, "x")
-	rememberGraceMessage(ev, 0, "x")
+	tgCtl.RememberGraceMessage(other, 8, "x")
+	tgCtl.RememberGraceMessage(ev, 0, "x")
 	if storedGrace().msgID != 0 {
 		t.Errorf("stored = %+v, want nothing", storedGrace())
 	}
-	rememberGraceMessage(ev, 9, "<b>x</b>")
+	tgCtl.RememberGraceMessage(ev, 9, "<b>x</b>")
 	if got := storedGrace(); got.msgID != 9 || got.chatID != "42" || got.html != "<b>x</b>" {
 		t.Errorf("stored = %+v", got)
 	}
 	// A UI schedule of the same command is not what the message announced.
 	cancelScheduleBy("api")
-	resetGraceMessage()
+	tgCtl.ResetGraceMessage()
 	if err := setSchedule("shutdown", time.Hour, originUI); err != nil {
 		t.Fatal(err)
 	}
-	rememberGraceMessage(ev, 10, "x")
+	tgCtl.RememberGraceMessage(ev, 10, "x")
 	if storedGrace().msgID != 0 {
 		t.Error("remembered a remote grace message for a UI schedule")
 	}
@@ -270,10 +277,10 @@ func TestGraceCallbackEditsThroughPollerOnly(t *testing.T) {
 	stubTrayLauncher(t, nil)
 	shutdown := stubCommand(t, "shutdown")
 	startGraceSink(t)
-	var h telegramControl
+	h := tgCtl
 
 	original := sendGrace(t, f)
-	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, tgPlain(original), "cancel:")
+	edit, toast, err := h.HandleCallback(context.Background(), "42", 7, tgcontrol.Plain(original), "cancel:")
 	if err != nil || toast != "취소됨" {
 		t.Fatalf("cancel: toast=%q err=%v", toast, err)
 	}
@@ -326,8 +333,8 @@ func TestTelegramStaleGraceButtonsStripKeyboard(t *testing.T) {
 	initLogger()
 	setConfig(Config{Port: 5001})
 	stubCommand(t, "shutdown")
-	resetGraceMessage()
-	var h telegramControl
+	tgCtl.ResetGraceMessage()
+	h := tgCtl
 	msgText := "🔌 원격 명령 유예 예약\n5 min 후 shutdown 실행 예정 — <취소>"
 
 	for _, data := range []string{"cancel:", "runnow:"} {
@@ -335,7 +342,7 @@ func TestTelegramStaleGraceButtonsStripKeyboard(t *testing.T) {
 		if err != nil || toast != "활성 예약 없음" {
 			t.Errorf("%s: toast=%q err=%v", data, toast, err)
 		}
-		if want := tgWithHeader(html.EscapeString(msgText) + "\n⏹ 이미 처리됨"); edit != want {
+		if want := tgCtl.WithHeader(html.EscapeString(msgText) + "\n⏹ 이미 처리됨"); edit != want {
 			t.Errorf("%s: edit = %q, want %q", data, edit, want)
 		}
 		if h.EditKeyboard(data) != nil {
@@ -347,7 +354,7 @@ func TestTelegramStaleGraceButtonsStripKeyboard(t *testing.T) {
 		}
 	}
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "en"}})
-	if edit, _, _ := h.HandleCallback(context.Background(), "42", 7, "old", "cancel:"); edit != tgWithHeader("old\n⏹ Already handled") {
+	if edit, _, _ := h.HandleCallback(context.Background(), "42", 7, "old", "cancel:"); edit != tgCtl.WithHeader("old\n⏹ Already handled") {
 		t.Errorf("en stale edit = %q", edit)
 	}
 }
@@ -357,10 +364,10 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{PCName: "MY<PC>"}})
 	shutdown := stubCommand(t, "shutdown")
 	stubCommand(t, "lock")
-	var h telegramControl
+	h := tgCtl
 
 	menu, _, _ := h.HandleCommand(context.Background(), "42", "menu", nil)
-	plainMenu := tgPlain(menu)
+	plainMenu := tgcontrol.Plain(menu)
 	if plainMenu != "🖥 MY<PC>\n무엇을 할까요?" {
 		t.Fatalf("plain menu = %q", plainMenu)
 	}
@@ -370,7 +377,7 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 	if err != nil || toast != "" {
 		t.Fatalf("confirm: toast=%q err=%v", toast, err)
 	}
-	if want := menu + "\n\n" + tgText("confirm_q", "종료"); edit != want {
+	if want := menu + "\n\n" + tgCtl.Text("confirm_q", "종료"); edit != want {
 		t.Errorf("confirm edit = %q, want %q", edit, want)
 	}
 	if got := keyboardData(h.EditKeyboard("confirm:shutdown")); fmt.Sprint(got) != "[exec:shutdown dismiss:]" {
@@ -380,18 +387,18 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 
 	// exec: keeps menu + prompt and appends the result line.
 	prompt := edit
-	edit, _, err = h.HandleCallback(context.Background(), "42", 7, tgPlain(prompt), "exec:shutdown")
+	edit, _, err = h.HandleCallback(context.Background(), "42", 7, tgcontrol.Plain(prompt), "exec:shutdown")
 	if err != nil || !strings.HasPrefix(edit, prompt+"\n✅ 실행됨 · ") || !strings.HasSuffix(edit, " · 텔레그램") {
 		t.Errorf("exec edit = %q err=%v", edit, err)
 	}
 	expectExecuted(t, shutdown, "shutdown")
 
 	// dismiss: same for a /shutdown prompt on its own; unknown text is escaped.
-	q := tgText("confirm_q", "종료")
-	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, tgPlain(q), "dismiss:"); !strings.HasPrefix(edit, tgWithHeader(q)+"\n❎ 취소됨 · ") {
+	q := tgCtl.Text("confirm_q", "종료")
+	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, tgcontrol.Plain(q), "dismiss:"); !strings.HasPrefix(edit, tgCtl.WithHeader(q)+"\n❎ 취소됨 · ") {
 		t.Errorf("dismiss edit = %q", edit)
 	}
-	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "a<b", "dismiss:"); !strings.HasPrefix(edit, tgWithHeader("a&lt;b")+"\n❎ 취소됨 · ") {
+	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, "a<b", "dismiss:"); !strings.HasPrefix(edit, tgCtl.WithHeader("a&lt;b")+"\n❎ 취소됨 · ") {
 		t.Errorf("dismiss edit of foreign text = %q", edit)
 	}
 
@@ -414,37 +421,12 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 	if err != nil || toast != "취소됨" || edit != menu+"\n✅ 취소됨: 잠금" {
 		t.Errorf("cancel:menu edit=%q toast=%q err=%v", edit, toast, err)
 	}
-	if got := keyboardData(h.EditKeyboard("cancel:menu")); fmt.Sprint(got) != fmt.Sprint(keyboardData(tgMenuKeyboard())) {
+	_, menuKB, _ := h.HandleCommand(context.Background(), "42", "menu", nil)
+	if got := keyboardData(h.EditKeyboard("cancel:menu")); fmt.Sprint(got) != fmt.Sprint(keyboardData(menuKB)) {
 		t.Errorf("cancel:menu keyboard = %v, want the menu", got)
 	}
 	if getSchedule()["active"] == true {
 		t.Error("cancel:menu did not cancel")
-	}
-}
-
-func TestTgPlainAndStampBy(t *testing.T) {
-	if got := tgPlain("🖥 <b>MY&lt;PC&gt;</b>\n<code>a &amp; b</code>"); got != "🖥 MY<PC>\na & b" {
-		t.Errorf("tgPlain = %q", got)
-	}
-	if got := tgKeep("x<y"); got != "x&lt;y" {
-		t.Errorf("tgKeep escapes foreign text: %q", got)
-	}
-	if got := tgKeep("", "<b>a</b>"); got != "" {
-		t.Errorf("tgKeep(\"\") = %q", got)
-	}
-	setConfig(Config{})
-	for by, want := range map[string]string{"toast": "토스트", "tray": "트레이", "app": "앱", "webui": "WebUI", "api": "API", "telegram": "텔레그램", "smartthings": "SmartThings", "timer": "타이머", "x<y": "x&lt;y"} {
-		if got := tgByLabel(by); got != want {
-			t.Errorf("tgByLabel(%q) = %q, want %q", by, got, want)
-		}
-	}
-	line := tgStampBy("stamp_replaced", "")
-	if parts := strings.Split(line, " · "); len(parts) != 2 || parts[0] != "🔁 대체됨" || !stampTime.MatchString(parts[1]) {
-		t.Errorf("tgStampBy without origin = %q", line)
-	}
-	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	if line := tgStampBy("stamp_ran", "timer"); !strings.HasPrefix(line, "▶️ Executed · ") || !strings.HasSuffix(line, " · timer") {
-		t.Errorf("en tgStampBy = %q", line)
 	}
 }
 

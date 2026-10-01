@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
@@ -16,10 +15,6 @@ import (
 // points. Tests swap it for an httptest.Server; production leaves the
 // public endpoint.
 var telegramBaseURL = telegram.DefaultBaseURL
-
-// telegramAPITimeout bounds the one-shot calls made on behalf of the
-// WebUI (/api/telegram/test, /me, /chats).
-const telegramAPITimeout = 15 * time.Second
 
 // newTelegramClient builds a Bot API client for a plaintext token. Callers
 // must secret.Unprotect the stored config value first (see liveBotToken).
@@ -157,4 +152,13 @@ func (s *liveSink) noteState(disabled bool) {
 	if disabled {
 		logMsg("Telegram notifications are off or incomplete (enabled/bot_token/chat_id); events are dropped")
 	}
+}
+
+// startLiveNotifier installs the Telegram sink behind the notification bus
+// with the grace-message hook attached (tgCtl.RememberGraceMessage).
+// windows.go calls it at service start; tests wire the pieces themselves.
+func startLiveNotifier() {
+	s := newLiveSink()
+	s.SetOnSent(tgCtl.RememberGraceMessage)
+	startNotifier(s)
 }

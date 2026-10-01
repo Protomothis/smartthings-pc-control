@@ -17,16 +17,14 @@ func heartbeatDo(t *testing.T, body string, session, csrf bool) *httptest.Respon
 	t.Helper()
 	r := httptest.NewRequest("POST", "/api/session/heartbeat", strings.NewReader(body))
 	if session {
-		sessionMu.Lock()
-		sessionToken = "heartbeat-token"
-		sessionMu.Unlock()
+		webSrv.SetSessionToken("heartbeat-token")
 		r.AddCookie(&http.Cookie{Name: "session", Value: "heartbeat-token"})
 	}
 	if csrf {
 		r.Header.Set("X-Requested-With", "XMLHttpRequest")
 	}
 	w := httptest.NewRecorder()
-	handleSessionHeartbeat(w, r)
+	webAPI(w, r)
 	return w
 }
 
@@ -36,10 +34,8 @@ func idleSetup(t *testing.T) {
 	resetIdleHeartbeat()
 	t.Cleanup(func() {
 		resetIdleHeartbeat()
-		idleNow = time.Now
-		sessionMu.Lock()
-		sessionToken = ""
-		sessionMu.Unlock()
+		clock.idle = time.Now
+		webSrv.SetSessionToken("")
 	})
 }
 
@@ -115,14 +111,14 @@ func TestSTStatusIdleFromHeartbeat(t *testing.T) {
 
 	// Older than idleHeartbeatTTL: back to null rather than to a number
 	// nobody has confirmed since.
-	idleNow = func() time.Time { return time.Now().Add(idleHeartbeatTTL + time.Second) }
+	clock.idle = func() time.Time { return time.Now().Add(idleHeartbeatTTL + time.Second) }
 	if sess := stStatusSession(t); sess["idle_seconds"] != nil {
 		t.Errorf("idle_seconds = %v for a stale heartbeat, want null", sess["idle_seconds"])
 	}
 
 	// The opt-in still gates the whole block.
 	setConfig(Config{Port: 5001, SmartThings: SmartThingsConfig{ExposeSession: false}})
-	idleNow = time.Now
+	clock.idle = time.Now
 	heartbeatDo(t, `{"idle_seconds":136}`, true, true)
 	if sess := stStatusSession(t); len(sess) != 1 || sess["exposed"] != false {
 		t.Errorf("session = %v with the opt-in off, want only {exposed:false}", sess)
@@ -152,7 +148,7 @@ func TestSessionInfoHasNoWTSIdle(t *testing.T) {
 	if err != nil {
 		t.Skipf("no interactive session to query here: %v", err)
 	}
-	out := stSessionInfo(SmartThingsConfig{ExposeSession: true})
+	out := stSrv.BuildStatus(Config{SmartThings: SmartThingsConfig{ExposeSession: true}}).Session
 	if out.Locked == nil || *out.Locked != info.Locked {
 		t.Errorf("locked = %v, want the WTS value %v", out.Locked, info.Locked)
 	}

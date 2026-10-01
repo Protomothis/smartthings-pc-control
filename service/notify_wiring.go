@@ -77,7 +77,7 @@ func startNotifier(sink notify.Sink) {
 	// The SmartThings hub push (#68) rides on a raw tap so device state
 	// reaches the Edge driver unfiltered; it is a no-op without
 	// subscriptions, and has to be re-attached to every new bus.
-	b.Tap(stPushTap)
+	b.Tap(stSrv.PushTap)
 	busMu.Lock()
 	old := bus
 	bus = b

@@ -64,11 +64,6 @@ var shutdownTypeReason = []struct {
 	{"절전", "suspend"},
 }
 
-// localShutdownRunner returns the raw XML of the newest matching record.
-// It is a variable so tests can feed parseShutdownReason sample output
-// without a Windows event log.
-var localShutdownRunner = runLocalShutdownQuery
-
 // runLocalShutdownQuery asks wevtutil for the one record. /rd:true reads
 // newest-first, /c:1 stops after one, /f:xml prints the raw EventData
 // (the rendered, localised message is not included).
@@ -117,7 +112,7 @@ func stopReason(systemShutdown bool) string {
 func localShutdownReason() (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), localShutdownTimeout)
 	defer cancel()
-	out, err := localShutdownRunner(ctx)
+	out, err := sys.shutdownLog(ctx)
 	if err != nil {
 		return "", false
 	}

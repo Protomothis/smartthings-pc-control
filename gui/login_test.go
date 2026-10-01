@@ -119,7 +119,7 @@ func TestLoginMessagesTranslated(t *testing.T) {
 	}
 }
 
-// TestClientLoginStatus maps the service's login answers (service/webui.go)
+// TestClientLoginStatus maps the service's login answers (service/webui)
 // onto the sentinels the dialog words itself.
 func TestClientLoginStatus(t *testing.T) {
 	cases := []struct {

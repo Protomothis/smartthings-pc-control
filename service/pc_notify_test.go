@@ -6,7 +6,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,68 +15,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-func TestCleanNotifyText(t *testing.T) {
-	for in, want := range map[string]string{
-		"빨래 끝":                            "빨래 끝",
-		"  a  b  ":                        "a b",
-		"line1\nline2\r\nline3\tx":        "line1 line2 line3 x",
-		"bell\a esc\x1b[2J null\x00":      "bell esc[2J null",
-		"del\x7f c1\u0085":                "del c1", // U+0085 is a space to Go, and a control
-		"rtl \u202eevil\u202c mark\u200f": "rtl evil mark",
-		"\xff\xfeok":                      "ok",
-		"\n\t ":                           "",
-		"$(calc) & <b>":                   "$(calc) & <b>", // not ours to escape: the toast XML does
-	} {
-		if got := cleanNotifyText(in); got != want {
-			t.Errorf("cleanNotifyText(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestPrepareNotify(t *testing.T) {
-	title, text, err := prepareNotify("", " 빨래 끝\n")
-	if err != nil || title != pcNotifyDefaultTitle || text != "빨래 끝" {
-		t.Errorf("default title: %q %q %v", title, text, err)
-	}
-	if _, text, err := prepareNotify("t", strings.Repeat("가", 200)); err != nil || len([]rune(text)) != 200 {
-		t.Errorf("200 characters: %v", err)
-	}
-	// Control characters do not count: 200 visible characters plus noise.
-	if _, _, err := prepareNotify("t", strings.Repeat("가", 200)+"\x00\x01"); err != nil {
-		t.Errorf("200 + controls: %v", err)
-	}
-	for name, c := range map[string][2]string{
-		"empty":      {"t", ""},
-		"blank":      {"t", " \n\t "},
-		"only ctrl":  {"t", "\x00\x1b"},
-		"201":        {"t", strings.Repeat("a", 201)},
-		"long title": {strings.Repeat("a", 101), "x"},
-	} {
-		_, _, err := prepareNotify(c[0], c[1])
-		var ne *pcNotifyError
-		if !errors.As(err, &ne) || ne.Code != "bad_text" {
-			t.Errorf("%s: err = %v, want bad_text", name, err)
-		}
-	}
-}
-
 func TestNotifyLimiter(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	l := newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
+	l := ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
 	for i := 0; i < pcNotifyPerMinute; i++ {
-		if ok, _ := l.allow("ip 1"); !ok {
+		if ok, _ := l.Allow("ip 1"); !ok {
 			t.Fatalf("request %d refused", i+1)
 		}
 		now = now.Add(time.Second)
 	}
-	ok, wait := l.allow("ip 1")
+	ok, wait := l.Allow("ip 1")
 	if ok {
 		t.Fatal("11th request in a minute allowed")
 	}
@@ -86,14 +39,14 @@ func TestNotifyLimiter(t *testing.T) {
 	if wait != 50*time.Second {
 		t.Errorf("retry after %v, want 50s", wait)
 	}
-	if ok, _ := l.allow("ip 2"); !ok {
+	if ok, _ := l.Allow("ip 2"); !ok {
 		t.Error("another source shares the limit")
 	}
 	now = now.Add(50 * time.Second)
-	if ok, _ := l.allow("ip 1"); !ok {
+	if ok, _ := l.Allow("ip 1"); !ok {
 		t.Error("still refused once the oldest hit left the window")
 	}
-	if ok, _ := l.allow("ip 1"); ok {
+	if ok, _ := l.Allow("ip 1"); ok {
 		t.Error("the window should be full again")
 	}
 }
@@ -102,16 +55,16 @@ func TestNotifyLimiter(t *testing.T) {
 func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
-	saved, savedLimits := pcNotifyRun, pcNotifyLimits
-	pcNotifyRun = func(ctx context.Context, args ...string) (UserActionResult, error) {
+	saved, savedLimits := userRun.notify, pcNotifyLimits
+	userRun.notify = func(ctx context.Context, args ...string) (UserActionResult, error) {
 		calls = append(calls, args)
 		if err != nil {
 			return UserActionResult{}, err
 		}
 		return session.ParseOutput([]byte(reply))
 	}
-	pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
-	t.Cleanup(func() { pcNotifyRun, pcNotifyLimits = saved, savedLimits })
+	pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
+	t.Cleanup(func() { userRun.notify, pcNotifyLimits = saved, savedLimits })
 	return &calls
 }
 
@@ -189,12 +142,12 @@ func TestSTNotifyRateLimit(t *testing.T) {
 	stSetup(t, notifyCfg(true))
 	fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 	for i := 0; i < pcNotifyPerMinute; i++ {
-		resetSTRateLimit() // the per-second /st/v1 bucket is not what is tested
+		stSrv.ResetRateLimit() // the per-second /st/v1 bucket is not what is tested
 		if w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`); w.Code != http.StatusOK {
 			t.Fatalf("request %d: status %d", i+1, w.Code)
 		}
 	}
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`)
 	if w.Code != http.StatusTooManyRequests || stJSON(t, w)["error"] != "rate_limited" {
 		t.Fatalf("11th: %d %s", w.Code, w.Body.String())
@@ -202,7 +155,7 @@ func TestSTNotifyRateLimit(t *testing.T) {
 	if ra := w.Header().Get("Retry-After"); ra == "" || ra == "0" {
 		t.Errorf("Retry-After = %q", ra)
 	}
-	resetSTRateLimit()
+	stSrv.ResetRateLimit()
 	if w := stDo(t, "POST", "/st/v1/notify", "192.168.1.21", "", `{"text":"hi"}`); w.Code != http.StatusOK {
 		t.Errorf("another hub: status %d", w.Code)
 	}
@@ -222,7 +175,7 @@ func TestSTNotifyUserSessionErrors(t *testing.T) {
 		{errUserActionOutput, http.StatusBadGateway, "failed"},
 	} {
 		fakeNotifyRun(t, "", c.err)
-		resetSTRateLimit()
+		stSrv.ResetRateLimit()
 		w := stDo(t, "POST", "/st/v1/notify", "192.168.1.20", "", `{"text":"hi"}`)
 		if w.Code != c.status || stJSON(t, w)["error"] != c.code {
 			t.Errorf("%v: %d %s, want %d %s", c.err, w.Code, w.Body.String(), c.status, c.code)
@@ -264,7 +217,7 @@ func TestNotifyTestAPI(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	// An older app still sends speak/voice: ignored.
-	handleNotifyTestAPI(w, postJSON("/api/notify/test", `{"speak":true,"voice":"Zira"}`))
+	webAPI(w, postJSON("/api/notify/test", `{"speak":true,"voice":"Zira"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -278,14 +231,14 @@ func TestNotifyTestAPI(t *testing.T) {
 
 	// No CSRF header: refused before anything runs.
 	w = httptest.NewRecorder()
-	handleNotifyTestAPI(w, httptest.NewRequest("POST", "/api/notify/test", strings.NewReader(`{}`)))
+	webAPI(w, httptest.NewRequest("POST", "/api/notify/test", strings.NewReader(`{}`)))
 	if w.Code != http.StatusForbidden || len(*calls) != 1 {
 		t.Errorf("without CSRF header: %d, calls %d", w.Code, len(*calls))
 	}
 
 	fakeNotifyRun(t, "", errNoUserSession)
 	w = httptest.NewRecorder()
-	handleNotifyTestAPI(w, postJSON("/api/notify/test", `{}`))
+	webAPI(w, postJSON("/api/notify/test", `{}`))
 	if w.Code != http.StatusConflict || decodeBody(t, w)["error"] != "no_user_session" {
 		t.Errorf("no session: %d %s", w.Code, w.Body.String())
 	}
@@ -299,13 +252,6 @@ func TestNotifyArgsParse(t *testing.T) {
 	}
 	if req.Title != "SmartThings" || req.Text != "--text is text" {
 		t.Errorf("%q parsed as %+v", args, req)
-	}
-}
-
-func TestNotifyPCDefaults(t *testing.T) {
-	cfg := config.Default().WithDefaults()
-	if !cfg.NotifyPC.Enabled {
-		t.Errorf("defaults = %+v, want enabled", cfg.NotifyPC)
 	}
 }
 

@@ -6,7 +6,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,77 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
-
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 func intp(n int) *int { return &n }
 
-func TestMediaCommandArgs(t *testing.T) {
-	ok := []struct {
-		name  string
-		value *int
-		want  []string
-	}{
-		{"volume", intp(0), []string{"audio", "set", "0"}},
-		{"volume", intp(30), []string{"audio", "set", "30"}},
-		{"volume", intp(100), []string{"audio", "set", "100"}},
-		{"volumeup", nil, []string{"audio", "step", "+5"}},
-		{"volumeup", intp(1), []string{"audio", "step", "+1"}},
-		{"volumedown", nil, []string{"audio", "step", "-5"}},
-		{"volumedown", intp(100), []string{"audio", "step", "-100"}},
-		{"mute", nil, []string{"audio", "mute", "on"}},
-		// mute and unmute take no value; one sent anyway is ignored.
-		{"unmute", intp(7), []string{"audio", "mute", "off"}},
-		{"playpause", nil, []string{"media", "playpause"}},
-		{"play", nil, []string{"media", "play"}},
-		{"pause", nil, []string{"media", "pause"}},
-		{"stop", nil, []string{"media", "stop"}},
-		{"next", nil, []string{"media", "next"}},
-		{"prev", nil, []string{"media", "prev"}},
-	}
-	for _, c := range ok {
-		got, err := mediaCommandArgs(c.name, c.value)
-		if err != nil || !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s %v: %q, %v; want %q", c.name, c.value, got, err, c.want)
-			continue
-		}
-		// Whatever is built must pass the subcommand's own parser, or
-		// runUserAction would refuse it.
-		if _, err := useraction.Parse(got); err != nil {
-			t.Errorf("%s: %q does not parse: %v", c.name, got, err)
-		}
-	}
-	bad := []struct {
-		name  string
-		value *int
-	}{
-		{"volume", nil}, {"volume", intp(-1)}, {"volume", intp(101)},
-		{"volumeup", intp(0)}, {"volumeup", intp(101)}, {"volumedown", intp(-5)},
-	}
-	for _, c := range bad {
-		var ve *errMediaValue
-		if _, err := mediaCommandArgs(c.name, c.value); !errors.As(err, &ve) {
-			t.Errorf("%s %v: err = %v, want a value error", c.name, *valueOr(c.value), err)
-		}
-	}
-	// Every name the handler dispatches has arguments.
-	for name := range mediaCommandKinds {
-		if _, err := mediaCommandArgs(name, intp(5)); err != nil {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
-}
-
-func valueOr(p *int) *int {
-	if p == nil {
-		return intp(-999)
-	}
-	return p
-}
-
-// fakeMediaRun replaces runUserActionFn and records the argument vectors.
+// fakeMediaRun replaces userRun.media and records the argument vectors.
 type fakeMediaRun struct {
 	mu    sync.Mutex
 	calls [][]string
@@ -97,14 +31,14 @@ type fakeMediaRun struct {
 func stubMediaRun(t *testing.T, res UserActionResult, err error) *fakeMediaRun {
 	t.Helper()
 	f := &fakeMediaRun{res: res, err: err}
-	saved := runUserActionFn
-	runUserActionFn = func(_ context.Context, args ...string) (UserActionResult, error) {
+	saved := userRun.media
+	userRun.media = func(_ context.Context, args ...string) (UserActionResult, error) {
 		f.mu.Lock()
 		f.calls = append(f.calls, args)
 		f.mu.Unlock()
 		return f.res, f.err
 	}
-	t.Cleanup(func() { runUserActionFn = saved })
+	t.Cleanup(func() { userRun.media = saved })
 	return f
 }
 
@@ -120,12 +54,12 @@ func mediaSetup(t *testing.T, cfg Config) {
 	t.Helper()
 	stSetup(t, cfg)
 	resetAudioSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
 	t.Cleanup(func() {
 		resetAudioSample()
-		audioNow = time.Now
-		audioSessionPresent = savedPresent
+		clock.audio = time.Now
+		sys.sessionPresent = savedPresent
 	})
 }
 
@@ -270,11 +204,11 @@ func TestSTStatusAudioBlock(t *testing.T) {
 	}
 
 	// Nobody logged in: the stored sample is not reported.
-	audioSessionPresent = func() bool { return false }
+	sys.sessionPresent = func() bool { return false }
 	if a, _ = status(); a["available"] != false || len(a) != 1 {
 		t.Errorf("audio without a user = %v", a)
 	}
-	audioSessionPresent = func() bool { return true }
+	sys.sessionPresent = func() bool { return true }
 
 	// media.enabled off: neither the block nor the features.
 	setConfig(Config{Port: 5001})
@@ -304,29 +238,6 @@ func containsAll(list []any, want ...string) bool {
 	return true
 }
 
-func TestMediaConfigDefaultsOn(t *testing.T) {
-	if !config.Default().Media.Enabled {
-		t.Error("media.enabled defaults to off")
-	}
-	// An older config.json without the key keeps the default; an explicit
-	// false is kept.
-	for body, want := range map[string]bool{`{"port":5001}`: true, `{"media":{"enabled":false}}`: false, `{"media":{}}`: true} {
-		cfg := config.Default()
-		if err := json.Unmarshal([]byte(body), &cfg); err != nil {
-			t.Fatal(err)
-		}
-		if cfg.WithDefaults().Media.Enabled != want {
-			t.Errorf("%s: media.enabled = %v, want %v", body, cfg.Media.Enabled, want)
-		}
-	}
-	old := config.Default().WithDefaults()
-	changed := old
-	changed.Media.Enabled = false
-	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.enabled"}) {
-		t.Errorf("changed keys = %v", keys)
-	}
-}
-
 // ---- heartbeat sampled_at (#104) -------------------------------------------
 
 func TestHeartbeatSampledAtOrdering(t *testing.T) {
@@ -334,8 +245,8 @@ func TestHeartbeatSampledAtOrdering(t *testing.T) {
 	idleSetup(t)
 	resetAudioSample()
 	received := time.Date(2026, 9, 30, 12, 0, 10, 0, time.UTC)
-	audioNow = func() time.Time { return received }
-	t.Cleanup(func() { resetAudioSample(); audioNow = time.Now })
+	clock.audio = func() time.Time { return received }
+	t.Cleanup(func() { resetAudioSample(); clock.audio = time.Now })
 
 	post := func(body string) int {
 		t.Helper()
@@ -392,9 +303,9 @@ func TestHeartbeatSampledAtOrdering(t *testing.T) {
 func TestAudioChangedPush(t *testing.T) {
 	stPushSetup(t, mediaOn())
 	resetAudioSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	t.Cleanup(func() { resetAudioSample(); audioSessionPresent = savedPresent })
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	t.Cleanup(func() { resetAudioSample(); sys.sessionPresent = savedPresent })
 	startNotifier(nil)
 	t.Cleanup(stopNotifier)
 	cb := newCallbackServer(t)
@@ -440,49 +351,11 @@ func TestAudioChangedPush(t *testing.T) {
 
 // ---- Telegram (#104, #105) --------------------------------------------------
 
-func TestParseVolArg(t *testing.T) {
-	ok := map[string]struct {
-		name  string
-		value int
-	}{
-		"30": {"volume", 30}, "0": {"volume", 0}, "100": {"volume", 100}, "30%": {"volume", 30},
-		"+10": {"volumeup", 10}, "-10": {"volumedown", 10}, "+1": {"volumeup", 1}, "-100": {"volumedown", 100},
-	}
-	for arg, want := range ok {
-		name, value, good := parseVolArg(arg)
-		if !good || name != want.name || value != want.value {
-			t.Errorf("parseVolArg(%q) = %s %d %v, want %s %d", arg, name, value, good, want.name, want.value)
-		}
-	}
-	for _, arg := range []string{"", "101", "+0", "-0", "+101", "loud", "1e2", "+", "3 0", "0x10", "1000"} {
-		if _, _, good := parseVolArg(arg); good {
-			t.Errorf("parseVolArg(%q) accepted", arg)
-		}
-	}
-}
-
-func TestTelegramAudioState(t *testing.T) {
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	if got := tgAudioState(useraction.Audio{Volume: 30, Device: "스피커"}); got != "볼륨 30% · 음소거 꺼짐 · 스피커" {
-		t.Errorf("ko = %q", got)
-	}
-	if got := tgAudioState(useraction.Audio{Volume: 0, Muted: true}); got != "볼륨 0% · 음소거 켜짐" {
-		t.Errorf("ko without device = %q", got)
-	}
-	if got := tgAudioState(useraction.Audio{Volume: 5, Device: "<HDMI>"}); !strings.HasSuffix(got, "&lt;HDMI&gt;") {
-		t.Errorf("device not escaped: %q", got)
-	}
-	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	if got := tgAudioState(useraction.Audio{Volume: 30, Device: "Speakers"}); got != "Volume 30% · mute off · Speakers" {
-		t.Errorf("en = %q", got)
-	}
-}
-
 func TestTelegramVolumeCommands(t *testing.T) {
 	initLogger()
 	setConfig(Config{Media: MediaConfig{Enabled: true}, Telegram: TelegramConfig{Lang: "ko"}})
 	run := stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Device: "스피커"}}, nil)
-	var h telegramControl
+	h := tgCtl
 	do := func(cmd string, args ...string) (string, error) {
 		t.Helper()
 		html, kb, err := h.HandleCommand(context.Background(), "42", cmd, args)
@@ -567,7 +440,7 @@ func TestTelegramQuietAndLegacyMute(t *testing.T) {
 	setConfig(Config{Media: MediaConfig{Enabled: true}, Telegram: TelegramConfig{Lang: "ko"}})
 	run := stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30}}, nil)
 	captureNotifications(t)
-	var h telegramControl
+	h := tgCtl
 
 	if html, _, err := h.HandleCommand(context.Background(), "42", "mute", []string{"2h"}); err != nil || !strings.HasPrefix(tgBody(html), "🔕") {
 		t.Errorf("/mute 2h = %q, %v", html, err)

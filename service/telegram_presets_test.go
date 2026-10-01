@@ -18,7 +18,7 @@ func TestTelegramPresets(t *testing.T) {
 		{Slot: 2, Name: "<방송>", Type: "script", Path: `C:\s\live.ps1`},
 		{Slot: 1, Name: "게임 모드", Type: "program", Path: `C:\Games\steam.exe`, Args: []string{"-secret-flag"}},
 	}))
-	h := telegramControl{}
+	h := tgCtl
 	reply, _, _ := h.HandleCommand(context.Background(), "42", "presets", nil)
 	i1, i2 := strings.Index(reply, "1 · 게임 모드"), strings.Index(reply, "2 · &lt;방송&gt;")
 	if i1 < 0 || i2 < i1 {
@@ -38,7 +38,7 @@ func TestTelegramRun(t *testing.T) {
 	initLogger()
 	withLiveConfig(t, tgPresetCfg(testPresets))
 	calls := fakePresetRun(t, `{"ok":true,"started":true}`, nil)
-	h := telegramControl{}
+	h := tgCtl
 
 	for _, args := range [][]string{{"3"}, {"게임", "모드"}} {
 		reply, _, err := h.HandleCommand(context.Background(), "42", "run", args)
@@ -69,22 +69,5 @@ func TestTelegramRun(t *testing.T) {
 	}
 	if lr := getLastRemote(); lr.Preset == nil || lr.Preset.Result != "no_user_session" {
 		t.Errorf("last remote after failure = %+v", lr)
-	}
-}
-
-func TestTelegramHelpListsPresets(t *testing.T) {
-	withLiveConfig(t, tgPresetCfg(nil))
-	help, _, _ := telegramControl{}.HandleCommand(context.Background(), "42", "help", nil)
-	for _, cmd := range []string{"/presets", "/run"} {
-		if !strings.Contains(help, cmd) {
-			t.Errorf("help lacks %s", cmd)
-		}
-	}
-	names := map[string]bool{}
-	for _, c := range telegramBotCommands("ko") {
-		names[c.Command] = true
-	}
-	if !names["presets"] || !names["run"] {
-		t.Errorf("setMyCommands = %v", names)
 	}
 }

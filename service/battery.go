@@ -8,7 +8,6 @@ package service
 // decoding are service/devstate.
 
 import (
-	"net/http"
 	"strconv"
 	"time"
 
@@ -55,12 +54,4 @@ func startBatteryMonitor(stop <-chan struct{}) {
 			}
 		}
 	}()
-}
-
-// handleBatteryAPI serves GET /api/battery for the app's status bar, behind
-// the same session check as the other /api routes.
-var handleBatteryAPI = apiAuth(serveBatteryAPI, http.MethodGet)
-
-func serveBatteryAPI(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, battery.Info())
 }

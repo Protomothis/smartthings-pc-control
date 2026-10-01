@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/wolscan"
 
 	"golang.org/x/sys/windows"
 
@@ -293,7 +294,7 @@ func startupHooks(stop <-chan struct{}) {
 // ("-" when the lookup fails). It blocks on the lookup (3s timeout) and is
 // therefore run in its own goroutine.
 func emitStarted() {
-	ip := getExternalIP()
+	ip := wolscan.ExternalIP()
 	if ip == "" {
 		ip = "-"
 	}

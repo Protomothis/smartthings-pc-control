@@ -132,7 +132,7 @@ linters:
 
       # The WebUI session cookie is HttpOnly + SameSite=Strict but cannot be
       # Secure: the WebUI is served over plain HTTP on the LAN/loopback.
-      - path: service/webui\.go
+      - path: service/webui/server\.go
         linters: [gosec]
         text: G124
 
@@ -160,7 +160,7 @@ linters:
         source: json\.NewDecoder\(.*\)\.Decode\(
       # Optional/lenient JSON fields: a malformed value is ignored on purpose
       # and the field keeps its default.
-      - path: (gui/toast|service/nowplaying|service/pc_notify|service/presets|service/server)\.go
+      - path: (gui/toast|service/pc_notify|service/presets|service/wolscan/wolscan)\.go
         linters: [errcheck]
         source: json\.Unmarshal\(
       # Fire-and-forget UI actions: opening the browser, the toast protocol
@@ -186,7 +186,7 @@ linters:
         source: (svc\.Run\(|saveConfig\(|s\.Control\(|s\.Delete\(|s\.SetRecoveryActions\()
       # Firewall-rule cleanup is best effort by contract (see the comments at
       # the call sites): a rule that is already gone is the normal case.
-      - path: service/(windows|webui)\.go
+      - path: service/(windows|webui_wiring)\.go
         linters: [errcheck]
         source: remove(WebUI|SSDP)?FirewallRule\(\)
       # Waiting for the elevated helper is advisory; its exit code is not used.
@@ -197,13 +197,13 @@ linters:
       - path: internal/logx/logx\.go
         linters: [errcheck]
         source: os\.Rename\(src, dst\)
-      - path: service/st_push\.go
+      - path: service/stapi/push\.go
         linters: [errcheck]
         source: io\.Copy\(io\.Discard
       - path: service/useraction\.go
         linters: [errcheck]
         source: targetUserSession\(\)
-      - path: service/webui\.go
+      - path: service/(webui_wiring|webui/routes)\.go
         linters: [errcheck]
         source: (server\.ListenAndServe\(\)|settingsTmpl\.Execute\()
       - path: useraction/env\.go

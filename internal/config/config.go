@@ -54,7 +54,7 @@ type Config struct {
 	// Notify says which Category.Kind events are sent. Missing entries
 	// mean the catalogue default; Load/Save store the full map.
 	Notify notify.Config `json:"notify"`
-	// Awake holds the keep-awake defaults (#111, service/awake.go). The
+	// Awake holds the keep-awake defaults (#111, service/power/awake.go). The
 	// on/off state itself is not configuration and is never saved.
 	Awake AwakeConfig `json:"awake"`
 	// Activity is the opt-in running-app detection (media-notify doc §11,

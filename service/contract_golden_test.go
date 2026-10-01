@@ -41,6 +41,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -315,7 +316,7 @@ func goldenActivityConfig() ActivityConfig {
 func goldenActivity(t *testing.T, cfg Config) {
 	t.Helper()
 	stubProcesses(t, "explorer.exe", "steam.exe")
-	activityScan.scan(cfg.Activity)
+	activityScan.Scan(cfg.Activity)
 }
 
 // ---- end of the activity section.
@@ -357,22 +358,22 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		{Name: "이더넷", MacAddress: "B4-2E-99-45-B4-F5", IPs: []string{"192.168.1.10", "fe80::1"}, Status: "Up", WoLEnabled: true, WoLCapable: true},
 		{Name: "Wi-Fi", MacAddress: "3C-A9-F4-11-22-33", IPs: []string{"192.168.1.11"}, Status: "Up", WoLEnabled: false, WoLCapable: true},
 	}})
-	resetHubLocalIP()
-	noteHubLocalIP(net.ParseIP("192.168.1.10"))
-	t.Cleanup(resetHubLocalIP)
+	stSrv.ResetHubLocalIP()
+	stSrv.NoteHubLocalIP(net.ParseIP("192.168.1.10"))
+	t.Cleanup(stSrv.ResetHubLocalIP)
 
 	savedDisplay := getDisplayState()
 	setDisplayState("on")
 	t.Cleanup(func() { setDisplayState(savedDisplay) })
 
 	// session: WTS through the seam, idle through the tray heartbeat.
-	savedQuery := stSessionQuery
-	stSessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
-	idleNow = func() time.Time { return goldenNow }
+	savedQuery := sources.sessionQuery
+	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
+	clock.idle = func() time.Time { return goldenNow }
 	noteIdleHeartbeat(754)
 	t.Cleanup(func() {
-		stSessionQuery = savedQuery
-		idleNow = time.Now
+		sources.sessionQuery = savedQuery
+		clock.idle = time.Now
 		resetIdleHeartbeat()
 	})
 
@@ -400,14 +401,14 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	// audio and media: one reading each, fresh against the golden clock.
 	resetAudioSample()
 	resetMediaSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	audioNow = func() time.Time { return goldenNow }
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	clock.audio = func() time.Time { return goldenNow }
 	t.Cleanup(func() {
 		resetAudioSample()
 		resetMediaSample()
-		audioNow = time.Now
-		audioSessionPresent = savedPresent
+		clock.audio = time.Now
+		sys.sessionPresent = savedPresent
 	})
 	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
 	noteMediaSampleChange(goldenTrack, goldenNow.Add(-20*time.Second))
@@ -591,9 +592,7 @@ var commandCases = map[string]commandCase{
 	"command.subscribe.json": {
 		setup: func(t *testing.T) {
 			// Ids count up for the life of the process; start this one at 1.
-			stSubs.mu.Lock()
-			stSubs.nextID = 0
-			stSubs.mu.Unlock()
+			stSrv.RestartSubscriptionIDs()
 		},
 		volatile: []volatileField{vf("expires_at", "time", "2026-10-01T21:10:00+09:00")},
 	},
@@ -607,11 +606,11 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	var target any
 	switch {
 	case method == "POST" && path == "/st/v1/command":
-		target = &stCommandRequest{}
+		target = &stapi.CommandRequest{}
 	case method == "POST" && path == "/st/v1/notify":
-		target = &stNotifyRequest{}
+		target = &stapi.NotifyRequest{}
 	case method == "POST" && path == "/st/v1/subscribe":
-		target = &stSubscribeRequest{}
+		target = &stapi.SubscribeRequest{}
 	case method == "DELETE":
 		if s := strings.TrimSpace(string(raw)); s != "" && s != "null" {
 			t.Fatalf("%s %s carries no body, the fixture has %s", method, path, s)
@@ -731,12 +730,12 @@ var pushCases = map[string]pushCase{
 	// activity (#123): OBS starts next to Steam. Both run, top stays
 	// steam.exe (first on the list); data = status.activity.
 	"push.activity.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
-		processLister = func() ([]string, error) { return []string{"explorer.exe", "steam.exe", "obs64.exe"}, nil }
+		sys.processes = func() ([]string, error) { return []string{"explorer.exe", "steam.exe", "obs64.exe"}, nil }
 		activityTick(getConfig().Activity)
 	}},
 	"push.awake.changed.json": {trigger: func(t *testing.T, fa *fakeAwake) {
 		// The service's controller reports through emitAwakeChanged.
-		fa.ctl.onChange = emitAwakeChanged
+		fa.ctl.Hooks.OnChange = emitAwakeChanged
 		if _, _, err := fa.ctl.TurnOff(); err != nil {
 			t.Fatal(err)
 		}
@@ -827,20 +826,13 @@ func TestContractConfigMasked(t *testing.T) {
 		Detail: "simple", Lang: "ko",
 	}
 	withLiveConfig(t, cfg)
-	sessionMu.Lock()
-	savedToken := sessionToken
-	sessionToken = "golden-session"
-	sessionMu.Unlock()
-	t.Cleanup(func() {
-		sessionMu.Lock()
-		sessionToken = savedToken
-		sessionMu.Unlock()
-	})
+	savedToken := webSrv.SetSessionToken("golden-session")
+	t.Cleanup(func() { webSrv.SetSessionToken(savedToken) })
 
 	r := httptest.NewRequest("GET", "/api/config", nil)
 	r.AddCookie(&http.Cookie{Name: "session", Value: "golden-session"})
 	w := httptest.NewRecorder()
-	handleConfigAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /api/config: %d (%s)", w.Code, w.Body.String())
 	}

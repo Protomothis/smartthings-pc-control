@@ -4,7 +4,7 @@ package gui
 // used to log in with the secret read from config.json next to the exe;
 // that file is now SYSTEM and Administrators only, so instead the app asks
 // POST /api/local-login and the service decides from the connection itself
-// (service/local_login.go): this exe, in the caller's own interactive
+// (service/webui/locallogin.go): this exe, in the caller's own interactive
 // session, run by an administrator. A refusal — a standard user, an older
 // service that has no such route — leaves the login dialog as before.
 

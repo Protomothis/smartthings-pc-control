@@ -85,7 +85,7 @@ func fakeUserAction(t *testing.T, run func(ctx context.Context, exe string, args
 	t.Cleanup(func() {
 		userActions = saved
 		resetAudioSample()
-		audioNow = time.Now
+		clock.audio = time.Now
 	})
 }
 
@@ -100,7 +100,7 @@ func TestRunUserActionOK(t *testing.T) {
 		return []byte("noise\n" + `{"ok":true,"audio":{"volume":42,"muted":true,"device":"헤드폰"}}` + "\n"), nil
 	})
 	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	audioNow = func() time.Time { return at }
+	clock.audio = func() time.Time { return at }
 
 	res, err := runUserAction(context.Background(), "audio", "set", "42")
 	if err != nil {
@@ -290,8 +290,8 @@ func TestSessionHeartbeatAudio(t *testing.T) {
 	idleSetup(t)
 	resetAudioSample()
 	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	audioNow = func() time.Time { return at }
-	t.Cleanup(func() { resetAudioSample(); audioNow = time.Now })
+	clock.audio = func() time.Time { return at }
+	t.Cleanup(func() { resetAudioSample(); clock.audio = time.Now })
 
 	// Without audio: the idle sample is stored, the audio store untouched.
 	if w := heartbeatDo(t, `{"idle_seconds":12}`, true, true); w.Code != http.StatusOK {

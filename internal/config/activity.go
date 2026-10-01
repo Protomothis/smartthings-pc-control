@@ -21,7 +21,7 @@ const (
 )
 
 // ActivityConfig is the "activity" object in config.json (§11, #110,
-// #123; the scanner is service/activity.go).
+// #123; the scanner is service/activity).
 type ActivityConfig struct {
 	// Enabled turns the scanner on. Off by default.
 	Enabled bool `json:"enabled"`

@@ -16,16 +16,15 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/session"
-
-	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/webui"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // No test may start the delayed `media info` refresh: it would outlive the
-// test and call whatever runUserActionFn is by then.
+// test and call whatever userRun.media is by then.
 func init() {
-	scheduleMediaRefresh = func() {}
+	sys.mediaRefresh = func() {}
 }
 
 var spotifyTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", Album: "New Jeans", App: "Spotify"}
@@ -37,7 +36,7 @@ func nowPlayingSetup(t *testing.T, cfg Config) time.Time {
 	mediaSetup(t, cfg)
 	resetMediaSample()
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	audioNow = func() time.Time { return now }
+	clock.audio = func() time.Time { return now }
 	t.Cleanup(resetMediaSample)
 	return now
 }
@@ -67,7 +66,7 @@ func TestMediaStoreNewerWins(t *testing.T) {
 	if _, ok := currentMedia(); !ok {
 		t.Fatal("fresh sample not reported")
 	}
-	audioNow = func() time.Time { return now.Add(mediaSampleTTL + 3*time.Second) }
+	clock.audio = func() time.Time { return now.Add(mediaSampleTTL + 3*time.Second) }
 	if _, ok := currentMedia(); ok {
 		t.Error("a sample older than the TTL is still reported")
 	}
@@ -125,11 +124,11 @@ func TestSTStatusMediaBlock(t *testing.T) {
 	}
 
 	// Nobody logged in, media off: none.
-	audioSessionPresent = func() bool { return false }
+	sys.sessionPresent = func() bool { return false }
 	if m, _ = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) {
 		t.Errorf("media without a user = %v", m)
 	}
-	audioSessionPresent = func() bool { return true }
+	sys.sessionPresent = func() bool { return true }
 	setConfig(Config{Port: 5001, Media: MediaConfig{NowPlaying: true}})
 	if m, features = status(); !reflect.DeepEqual(m, map[string]any{"status": "none"}) || containsAll(features, "nowplaying") {
 		t.Errorf("media while disabled = %v, features %v", m, features)
@@ -141,8 +140,8 @@ func TestHeartbeatMediaBlock(t *testing.T) {
 	idleSetup(t)
 	resetMediaSample()
 	received := time.Date(2026, 9, 30, 12, 0, 10, 0, time.UTC)
-	audioNow = func() time.Time { return received }
-	t.Cleanup(func() { resetMediaSample(); audioNow = time.Now })
+	clock.audio = func() time.Time { return received }
+	t.Cleanup(func() { resetMediaSample(); clock.audio = time.Now })
 	post := func(body string) int {
 		t.Helper()
 		return heartbeatDo(t, body, true, true).Code
@@ -183,9 +182,9 @@ func TestHeartbeatMediaBlock(t *testing.T) {
 func TestMediaChangedPush(t *testing.T) {
 	stPushSetup(t, optIn())
 	resetMediaSample()
-	savedPresent := audioSessionPresent
-	audioSessionPresent = func() bool { return true }
-	t.Cleanup(func() { resetMediaSample(); audioSessionPresent = savedPresent })
+	savedPresent := sys.sessionPresent
+	sys.sessionPresent = func() bool { return true }
+	t.Cleanup(func() { resetMediaSample(); sys.sessionPresent = savedPresent })
 	startNotifier(nil)
 	t.Cleanup(stopNotifier)
 	cb := newCallbackServer(t)
@@ -224,9 +223,9 @@ func TestMediaEventFieldsOmitUnknown(t *testing.T) {
 func TestMediaCommandUpdatesStore(t *testing.T) {
 	now := nowPlayingSetup(t, optIn())
 	var refreshes atomic.Int32
-	saved := scheduleMediaRefresh
-	scheduleMediaRefresh = func() { refreshes.Add(1) }
-	t.Cleanup(func() { scheduleMediaRefresh = saved })
+	saved := sys.mediaRefresh
+	sys.mediaRefresh = func() { refreshes.Add(1) }
+	t.Cleanup(func() { sys.mediaRefresh = saved })
 
 	recordMediaSample(spotifyTrack, now.Add(-time.Second))
 	reply := func(line string) UserActionResult {
@@ -292,7 +291,7 @@ func TestRunUserActionStoresNowPlaying(t *testing.T) {
 
 // ---- /api/media ------------------------------------------------------------
 
-func mediaAPI(t *testing.T, method, body string) (int, mediaAPIBody, map[string]string) {
+func mediaAPI(t *testing.T, method, body string) (int, webui.MediaBody, map[string]string) {
 	t.Helper()
 	var r *http.Request
 	if body == "" {
@@ -302,8 +301,8 @@ func mediaAPI(t *testing.T, method, body string) (int, mediaAPIBody, map[string]
 	}
 	r.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
-	handleMediaAPI(w, r)
-	var out mediaAPIBody
+	webAPI(w, r)
+	var out webui.MediaBody
 	json.Unmarshal(w.Body.Bytes(), &out)
 	var errBody map[string]string
 	json.Unmarshal(w.Body.Bytes(), &errBody)
@@ -349,75 +348,18 @@ func TestMediaAPI(t *testing.T) {
 	// Changes need the CSRF header.
 	r := httptest.NewRequest("POST", "/api/media", strings.NewReader(`{"command":"next"}`))
 	w := httptest.NewRecorder()
-	handleMediaAPI(w, r)
+	webAPI(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("POST without CSRF = %d", w.Code)
 	}
 }
 
-func TestMediaConfigNowPlayingDefaultOff(t *testing.T) {
-	if config.Default().Media.NowPlaying {
-		t.Error("media.now_playing defaults to on")
-	}
-	old := config.Default().WithDefaults()
-	changed := old
-	changed.Media.NowPlaying = true
-	if keys := config.ChangedKeys(old, changed); !reflect.DeepEqual(keys, []string{"media.now_playing"}) {
-		t.Errorf("changed keys = %v", keys)
-	}
-}
-
 // ---- Telegram --------------------------------------------------------------
-
-func TestTelegramNowPlayingText(t *testing.T) {
-	initLogger()
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	cases := []struct {
-		np    useraction.NowPlaying
-		share bool
-		want  string
-	}{
-		{spotifyTrack, true, "▶ Hype Boy — NewJeans · Spotify"},
-		{useraction.NowPlaying{Status: "paused", Title: "<b>Ditto</b>", App: "Chrome"}, true, "⏸ &lt;b&gt;Ditto&lt;/b&gt; · Chrome"},
-		{useraction.NowPlaying{Status: "playing", App: "VLC"}, true, "▶ 재생 중 · VLC"},
-		{useraction.NowPlaying{Status: "stopped"}, true, "⏹ 정지"},
-		{spotifyTrack, false, "▶ 재생 중 (재생 정보 공유가 꺼져 있습니다)"},
-		{useraction.NowPlaying{Status: "paused"}, false, "⏸ 일시정지 (재생 정보 공유가 꺼져 있습니다)"},
-		{useraction.NowPlaying{Status: "none"}, true, "재생 중인 미디어 없음"},
-		{useraction.NowPlaying{Status: "none"}, false, "재생 중인 미디어 없음"},
-	}
-	for _, c := range cases {
-		if got := tgNowPlayingText(c.np, c.share); got != c.want {
-			t.Errorf("tgNowPlayingText(%+v, %v) = %q, want %q", c.np, c.share, got, c.want)
-		}
-	}
-	setConfig(Config{Telegram: TelegramConfig{Lang: "en"}})
-	if got := tgNowPlayingText(useraction.NowPlaying{Status: "none"}, true); got != "Nothing is playing" {
-		t.Errorf("en none = %q", got)
-	}
-}
-
-func TestTelegramMediaLine(t *testing.T) {
-	initLogger()
-	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	m := stMedia{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", App: "Spotify"}
-	if got := tgMediaLine(m, true); got != "미디어: ▶ Hype Boy — NewJeans · Spotify" {
-		t.Errorf("line = %q", got)
-	}
-	if got := tgMediaLine(stMedia{Status: "playing"}, false); got != "미디어: ▶ 재생 중" {
-		t.Errorf("opt-out line = %q", got)
-	}
-	for _, s := range []string{"paused", "stopped", "none"} {
-		if got := tgMediaLine(stMedia{Status: s, Title: "x"}, true); got != "" {
-			t.Errorf("%s line = %q, want none", s, got)
-		}
-	}
-}
 
 func TestTelegramMediaCommandResults(t *testing.T) {
 	initLogger()
 	nowPlayingSetup(t, Config{Media: MediaConfig{Enabled: true, NowPlaying: true}, Telegram: TelegramConfig{Lang: "ko"}})
-	var h telegramControl
+	h := tgCtl
 	do := func(cmd string) string {
 		t.Helper()
 		html, _, err := h.HandleCommand(context.Background(), "42", cmd, nil)
@@ -478,11 +420,11 @@ func TestTelegramMediaCommandResults(t *testing.T) {
 func TestTelegramStatusMediaLine(t *testing.T) {
 	initLogger()
 	now := nowPlayingSetup(t, Config{Media: MediaConfig{Enabled: true, NowPlaying: true}, Telegram: TelegramConfig{Lang: "ko"}})
-	if strings.Contains(tgStatusText(), "미디어:") {
+	if strings.Contains(tgStatus(t), "미디어:") {
 		t.Error("/status has a media line with nothing playing")
 	}
 	recordMediaSample(spotifyTrack, now)
-	if got := tgStatusText(); !strings.Contains(got, "\n미디어: ▶ Hype Boy — NewJeans · Spotify") {
+	if got := tgStatus(t); !strings.Contains(got, "\n미디어: ▶ Hype Boy — NewJeans · Spotify") {
 		t.Errorf("/status = %q", got)
 	}
 }

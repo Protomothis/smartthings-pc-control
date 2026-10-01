@@ -9,104 +9,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 const (
-	// pcNotifyDefaultTitle is the toast title when a request sends none.
-	pcNotifyDefaultTitle = "SmartThings"
-	// pcNotifyMaxText and pcNotifyMaxTitle are counted in characters
-	// (runes) after control characters are removed (§3).
-	pcNotifyMaxText  = useraction.MaxTextRunes
-	pcNotifyMaxTitle = useraction.MaxTitleRunes
 	// pcNotifyPerMinute is how many notifications one source may send in
 	// any 60 seconds (§3, §7).
 	pcNotifyPerMinute = 10
 	pcNotifyWindow    = time.Minute
 )
 
-// cleanNotifyText removes what must not reach a toast: line breaks and
-// tabs become spaces, every other control character and the bidirectional
-// overrides (which could make a toast read differently from what was sent)
-// are dropped, and runs of spaces collapse. Surrounding space is trimmed.
-func cleanNotifyText(s string) string {
-	s = strings.ToValidUTF8(s, "")
-	var b strings.Builder
-	space := false
-	for _, r := range s {
-		switch {
-		case unicode.IsSpace(r): // \n, \r, \t included
-			space = true
-			continue
-		case unicode.IsControl(r), isBidiControl(r):
-			continue
-		}
-		if space && b.Len() > 0 {
-			b.WriteByte(' ')
-		}
-		space = false
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-// isBidiControl reports the explicit directional formatting characters
-// (LRE…RLO, LRI…PDI) and the marks ALM, LRM, RLM.
-func isBidiControl(r rune) bool {
-	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) ||
-		r == 0x061C || r == 0x200E || r == 0x200F
-}
-
-// pcNotifyError is a request the notify rules refuse. Code is the wire
-// error ("notify_disabled", "bad_text", "rate_limited").
-type pcNotifyError struct {
-	Code       string
-	Message    string
-	RetryAfter time.Duration // rate_limited only
-}
-
-func (e *pcNotifyError) Error() string { return e.Code + ": " + e.Message }
-
-// prepareNotify validates and cleans one request's title and text.
-func prepareNotify(title, text string) (string, string, error) {
-	text = cleanNotifyText(text)
-	if n := utf8.RuneCountInString(text); n == 0 || n > pcNotifyMaxText {
-		return "", "", &pcNotifyError{Code: "bad_text",
-			Message: fmt.Sprintf("text must be 1-%d characters (got %d)", pcNotifyMaxText, n)}
-	}
-	title = cleanNotifyText(title)
-	if title == "" {
-		title = pcNotifyDefaultTitle
-	}
-	if n := utf8.RuneCountInString(title); n > pcNotifyMaxTitle {
-		return "", "", &pcNotifyError{Code: "bad_text",
-			Message: fmt.Sprintf("title must be at most %d characters (got %d)", pcNotifyMaxTitle, n)}
-	}
-	return title, text, nil
-}
-
 // ---- rate limit ---------------------------------------------------------
 
 // pcNotifyLimits allows pcNotifyPerMinute notifications per source in any
 // sliding window of pcNotifyWindow. Replaced by the tests.
-var pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
+var pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 
 // ---- running -----------------------------------------------------------
-
-// pcNotifyRun is runUserAction, replaced by the tests.
-var pcNotifyRun = runUserAction
-
-// pcNotifyResult is what the user-action child reported.
-type pcNotifyResult struct {
-	Toast string `json:"toast"` // "shown" or "pending"
-}
 
 // notifyArgs is the user-action argument vector for one notification.
 func notifyArgs(title, text string) []string {
@@ -116,24 +40,24 @@ func notifyArgs(title, text string) []string {
 // sendPCNotify shows one notification. source keys the rate limit ("ip
 // 192.168.1.20", "telegram 12345", "app"). checkEnabled is false for the
 // app's test button, which must work before the feature is on.
-func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (pcNotifyResult, error) {
+func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, source, title, text string) (action.NotifyResult, error) {
 	if checkEnabled && !cfg.Enabled {
-		return pcNotifyResult{}, &pcNotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
+		return action.NotifyResult{}, &action.NotifyError{Code: "notify_disabled", Message: "PC notifications are turned off in the app settings"}
 	}
-	title, text, err := prepareNotify(title, text)
+	title, text, err := action.PrepareNotify(title, text)
 	if err != nil {
-		return pcNotifyResult{}, err
+		return action.NotifyResult{}, err
 	}
-	if ok, wait := pcNotifyLimits.allow(source); !ok {
-		return pcNotifyResult{}, &pcNotifyError{Code: "rate_limited", RetryAfter: wait,
+	if ok, wait := pcNotifyLimits.Allow(source); !ok {
+		return action.NotifyResult{}, &action.NotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
-	res, err := pcNotifyRun(ctx, notifyArgs(title, text)...)
+	res, err := userRun.notify(ctx, notifyArgs(title, text)...)
 	if err != nil {
 		logMsg("PC notify (%s) failed: %v", source, err)
-		return pcNotifyResult{}, err
+		return action.NotifyResult{}, err
 	}
-	var out pcNotifyResult
+	var out action.NotifyResult
 	if raw, ok := res.Fields["toast"]; ok {
 		json.Unmarshal(raw, &out.Toast)
 	}
@@ -147,69 +71,4 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 		logMsg("PC notify (%s): start menu shortcut %s", source, s)
 	}
 	return out, nil
-}
-
-// stNotifyRequest is the POST /st/v1/notify body. A "speak" field from an
-// older driver is ignored like any unknown key.
-type stNotifyRequest struct {
-	Title string `json:"title"`
-	Text  string `json:"text"`
-}
-
-// stNotifyResponse is the 200 answer: the pcNotifyResult plus ok.
-type stNotifyResponse struct {
-	OK bool `json:"ok"`
-	pcNotifyResult
-}
-
-// handleSTNotify serves POST /st/v1/notify (§3).
-func handleSTNotify(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		stError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	var body stNotifyRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil {
-		stError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	from := remoteHost(r.RemoteAddr)
-	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text)
-	if err != nil {
-		writeActionError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, stNotifyResponse{OK: true, pcNotifyResult: res})
-}
-
-// handleNotifyTestAPI serves POST /api/notify/test for the app's
-// [테스트 알림] button. The enabled switch is ignored (testing is how the
-// user decides), the rate limit is not.
-var handleNotifyTestAPI = apiAuth(serveNotifyTestAPI, "POST")
-
-func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Title string `json:"title"`
-		Text  string `json:"text"`
-	}
-	if r.Body != nil {
-		if err := json.NewDecoder(io.LimitReader(r.Body, stMaxBody)).Decode(&body); err != nil && err != io.EOF {
-			writeAPIError(w, http.StatusBadRequest, "Invalid JSON")
-			return
-		}
-	}
-	text := body.Text
-	if strings.TrimSpace(text) == "" {
-		text = "PC Control 테스트 알림입니다 · This is a test notification"
-	}
-	res, err := sendPCNotify(r.Context(), NotifyPCConfig{Enabled: true}, false, "app", body.Title, text)
-	if err != nil {
-		status, code, msg := actionErrorStatus(err)
-		writeJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
-		return
-	}
-	writeJSON(w, http.StatusOK, struct {
-		Status string `json:"status"`
-		pcNotifyResult
-	}{"ok", res})
 }

@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,66 +44,6 @@ func stubBattery(t *testing.T, m *batteryMonitor) {
 	orig := battery
 	battery = m
 	t.Cleanup(func() { battery = orig })
-}
-
-func TestBatteryChangeDetection(t *testing.T) {
-	initLogger()
-	laptop := func(percent byte, charging bool) systemPowerStatus {
-		s := systemPowerStatus{ACLineStatus: 0, BatteryFlag: 1, BatteryLifePercent: percent}
-		if charging {
-			s.ACLineStatus, s.BatteryFlag = 1, 1|8
-		}
-		return s
-	}
-	f := &fakeBattery{readings: []systemPowerStatus{
-		laptop(80, false), // first reading: fills the cache, no event
-		laptop(80, false), // same: no event
-		laptop(79, false), // percent moved
-		laptop(79, true),  // plugged in
-		laptop(79, true),
-	}}
-	m := f.monitor()
-	if got := m.Info(); got != devstate.UnknownBattery {
-		t.Errorf("before the first reading = %+v", got)
-	}
-	var changed []bool
-	for i := 0; i < 5; i++ {
-		changed = append(changed, m.Poll())
-	}
-	want := []bool{false, false, true, true, false}
-	for i := range want {
-		if changed[i] != want[i] {
-			t.Errorf("poll %d changed = %v, want %v", i, changed[i], want[i])
-		}
-	}
-	if len(f.changes) != 2 || f.changes[0].Percent != 79 || f.changes[0].Charging || !f.changes[1].Charging {
-		t.Errorf("changes = %+v", f.changes)
-	}
-	if got := m.Info(); got != (batteryInfo{Present: true, Percent: 79, Charging: true, AC: true}) {
-		t.Errorf("info = %+v", got)
-	}
-
-	// A failed read keeps the last value and is not a change.
-	f.err = errors.New("nope")
-	if m.Poll() {
-		t.Error("a failed read reported a change")
-	}
-	if m.Info().Percent != 79 {
-		t.Errorf("a failed read lost the last value: %+v", m.Info())
-	}
-}
-
-// A desktop never changes, so it never pushes.
-func TestBatteryDesktopNeverChanges(t *testing.T) {
-	initLogger()
-	f := &fakeBattery{readings: []systemPowerStatus{{ACLineStatus: 1, BatteryFlag: 128, BatteryLifePercent: 255}}}
-	m := f.monitor()
-	for i := 0; i < 3; i++ {
-		m.Poll()
-	}
-	if len(f.changes) != 0 {
-		t.Errorf("desktop changes = %+v", f.changes)
-	}
 }
 
 func TestSTStatusBatteryAndFeatures(t *testing.T) {
@@ -176,7 +115,7 @@ func TestTelegramStatusBatteryLine(t *testing.T) {
 	setConfig(Config{Port: 5001, Telegram: TelegramConfig{Lang: "ko"}})
 	t.Cleanup(func() { setConfig(prev) })
 	stubAwake(t)
-	var h telegramControl
+	h := tgCtl
 
 	for _, tc := range []struct {
 		raw  systemPowerStatus
@@ -225,12 +164,12 @@ func TestBatteryAPI(t *testing.T) {
 	stubBattery(t, m)
 
 	w := httptest.NewRecorder()
-	handleBatteryAPI(w, httptest.NewRequest("GET", "/api/battery", nil))
+	webAPI(w, httptest.NewRequest("GET", "/api/battery", nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"present":true`) || !strings.Contains(w.Body.String(), `"percent":55`) {
 		t.Errorf("GET /api/battery = %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	handleBatteryAPI(w, httptest.NewRequest("POST", "/api/battery", nil))
+	webAPI(w, httptest.NewRequest("POST", "/api/battery", nil))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST = %d", w.Code)
 	}

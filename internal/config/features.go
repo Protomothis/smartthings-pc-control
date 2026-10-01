@@ -29,6 +29,21 @@ func (a AwakeConfig) WithDefaults() AwakeConfig {
 	return a
 }
 
+// Period resolves an optional keep-awake period: nil means
+// default_minutes.
+func (a AwakeConfig) Period(minutes *int) int {
+	if minutes != nil {
+		return *minutes
+	}
+	return a.WithDefaults().DefaultMinutes
+}
+
+// ValidAwakeMinutes reports whether minutes is a period keep-awake
+// accepts: 0 (until turned off) through AwakeMaxMinutes.
+func ValidAwakeMinutes(minutes int) bool {
+	return minutes >= 0 && minutes <= AwakeMaxMinutes
+}
+
 // MediaConfig is the "media" object in config.json (media-notify doc §4).
 // There is nothing to normalise: a missing key keeps the default (on)
 // because Load decodes over Default.

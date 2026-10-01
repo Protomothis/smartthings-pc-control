@@ -19,15 +19,15 @@ import (
 func stubDisconnect(t *testing.T, fail map[uint32]bool) *[]uint32 {
 	t.Helper()
 	var got []uint32
-	saved := wtsDisconnectSession
-	wtsDisconnectSession = func(id uint32) error {
+	saved := sys.disconnect
+	sys.disconnect = func(id uint32) error {
 		got = append(got, id)
 		if fail[id] {
 			return windows.ERROR_ACCESS_DENIED
 		}
 		return nil
 	}
-	t.Cleanup(func() { wtsDisconnectSession = saved })
+	t.Cleanup(func() { sys.disconnect = saved })
 	return &got
 }
 
@@ -88,9 +88,9 @@ func TestSuspendCallsSetSuspendState(t *testing.T) {
 	resetPowerCommandHint()
 	t.Cleanup(resetPowerCommandHint)
 	var calls []bool
-	saved := setSuspendState
-	setSuspendState = func(hibernate bool) error { calls = append(calls, hibernate); return nil }
-	t.Cleanup(func() { setSuspendState = saved })
+	saved := sys.suspend
+	sys.suspend = func(hibernate bool) error { calls = append(calls, hibernate); return nil }
+	t.Cleanup(func() { sys.suspend = saved })
 
 	Commands["suspend"].Execute()
 	if !reflect.DeepEqual(calls, []bool{false}) {
@@ -103,11 +103,11 @@ func TestSuspendCallsSetSuspendState(t *testing.T) {
 
 func TestSuspendFailureRaisesExecFailed(t *testing.T) {
 	events := captureNotifications(t)
-	saved := setSuspendState
-	setSuspendState = func(bool) error {
+	saved := sys.suspend
+	sys.suspend = func(bool) error {
 		return errors.New("SetSuspendState: A required privilege is not held by the client.")
 	}
-	t.Cleanup(func() { setSuspendState = saved })
+	t.Cleanup(func() { sys.suspend = saved })
 
 	suspendPC()
 	ev := expectNotification(t, events, "system.exec_failed")
@@ -122,12 +122,12 @@ func TestPowerCommandsRunShutdownExe(t *testing.T) {
 	resetPowerCommandHint()
 	t.Cleanup(resetPowerCommandHint)
 	var got [][]string
-	saved := runTool
-	runTool = func(tool string, args ...string) ([]byte, error) {
+	saved := sys.tool
+	sys.tool = func(tool string, args ...string) ([]byte, error) {
 		got = append(got, append([]string{tool}, args...))
 		return nil, nil
 	}
-	t.Cleanup(func() { runTool = saved })
+	t.Cleanup(func() { sys.tool = saved })
 
 	for _, name := range []string{"shutdown", "forceshutdown", "restart", "hibernate"} {
 		Commands[name].Execute()

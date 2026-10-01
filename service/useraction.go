@@ -53,11 +53,11 @@ func storeUserActionReply(args []string, res UserActionResult) {
 		} else {
 			// Stamped with the completion time: the child read the device
 			// just before it answered.
-			recordAudioSample(*res.Audio, audioNow())
+			recordAudioSample(*res.Audio, clock.audio())
 		}
 	}
 	if np, ok := res.NowPlaying(); ok {
-		recordMediaSample(np, audioNow())
+		recordMediaSample(np, clock.audio())
 	}
 }
 
