@@ -92,6 +92,18 @@ jobs:
       - name: Syntax check (Lua 5.3)
         run: lua5.3 tests/syntax.lua
 
+      # What is packaged is not src/ but the comment-stripped copy
+      # tools/build.js writes to build/edge/ (#129; line numbers are kept, so
+      # hub logs still point into src/). The whole suite runs against it too:
+      # a stripper bug that changes code fails here, not on the hub.
+      - name: Build the package tree
+        run: node tools/build.js
+
+      - name: Test the package tree (Lua 5.3)
+        run: |
+          lua5.3 tests/run.lua --src build/edge/src
+          lua5.3 tests/syntax.lua --src build/edge/src
+
       # Settings, globals and the reasons for them are in edge/.luacheckrc.
       - name: luacheck
         run: luacheck --codes src tests
@@ -156,6 +168,11 @@ jobs:
       - name: Install the SmartThings CLI
         run: npm i -g @smartthings/cli
 
+      # The package is the comment-stripped tree (#129), which the test job
+      # ran the whole suite against. Prints raw vs built sizes.
+      - name: Build the package tree
+        run: node edge/tools/build.js
+
       # Builds the driver zip. With a token the CLI does it (--build-only never
       # contacts SmartThings); without one the CLI refuses to start at all
       # ("Invalid base URL undefined"), so the zip is assembled by hand from
@@ -164,10 +181,10 @@ jobs:
         run: |
           zip_name="smartthings-pc-control-${GITHUB_REF_NAME}.zip"
           if [ -n "${SMARTTHINGS_TOKEN}" ]; then
-            smartthings edge:drivers:package edge/ --build-only "$zip_name"
+            smartthings edge:drivers:package edge/build/edge --build-only "$zip_name"
           else
             echo "SMARTTHINGS_TOKEN is not set: building the zip without the CLI"
-            (cd edge && zip -r "../$zip_name" config.yml profiles src -x 'src/*.md')
+            (cd edge/build/edge && zip -r "../../../$zip_name" config.yml profiles src)
           fi
           unzip -l "$zip_name"
 
@@ -176,7 +193,7 @@ jobs:
         if: ${{ env.SMARTTHINGS_TOKEN != '' && env.ST_CHANNEL_ID != '' }}
         env:
           SMARTTHINGS_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
-        run: smartthings edge:drivers:package edge/ --json | tee package-result.json
+        run: smartthings edge:drivers:package edge/build/edge --json | tee package-result.json
 
       - name: Assign the driver to the channel
         if: ${{ env.SMARTTHINGS_TOKEN != '' && env.ST_CHANNEL_ID != '' }}

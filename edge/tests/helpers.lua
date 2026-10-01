@@ -393,6 +393,26 @@ function h.list_dir(dir)
   return names
 end
 
+--- The driver tree the suite runs against: edge/src, or the stripped copy
+--- `run.lua --src` points at (tools/build.js). Set by run.lua.
+h.SRC_DIR = tests_dir .. "/../src"
+
+--- Every `.lua` file under `dir`, as paths relative to it ("device/emit.lua"),
+--- sorted. A name without a dot is taken for a subdirectory.
+function h.lua_tree(dir, prefix, out)
+  out = out or {}
+  for _, name in ipairs(h.list_dir(dir)) do
+    local rel = (prefix and prefix .. "/" or "") .. name
+    if name:match("%.lua$") then
+      out[#out + 1] = rel
+    elseif not name:find(".", 1, true) then
+      h.lua_tree(dir .. "/" .. name, rel, out)
+    end
+  end
+  table.sort(out)
+  return out
+end
+
 --- One fixture of testdata/st-v1, decoded with the st.json mock (the same
 --- decoder the driver's bodies go through in every other test). `null`
 --- decodes to nil, as on the hub.

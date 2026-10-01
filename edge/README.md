@@ -386,9 +386,11 @@ cd edge
 npm install                       # fengari 하나뿐
 npm test                          # tests/run.lua
 node tools/lua.js tests/syntax.lua  # src/ 전 모듈 컴파일
+npm run test-build                # 주석 뗀 패키지 트리(build/edge)로 같은 테스트
 ```
 
 로컬에서 bun을 쓰면 `bun tools/lua.js tests/run.lua`로 같은 것이 돈다.
+`--src <폴더>`를 붙이면 그 폴더의 모듈로 돈다(`tests/run.lua --src build/edge/src`).
 `capabilities_test.lua`가 정의·프레젠테이션·드라이버의 정합성을 지키므로, 화면을 바꾸면
 여기가 먼저 알려 준다.
 
@@ -442,9 +444,14 @@ npm test
 ### 패키징
 
 ```bash
-smartthings edge:drivers:package .
+node tools/build.js && smartthings edge:drivers:package build/edge
 smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 ```
+
+패키지는 `src/`가 아니라 `tools/build.js`가 만드는 `build/edge/`다(커밋하지 않는다).
+Lua 주석을 빈 줄로 바꿔 줄 번호를 그대로 두므로 허브 로그의 줄 번호는 `src/`의 줄을
+가리킨다. YAML의 주석 줄도 뗀다. 패키지 한도(655360바이트)는 이 결과에 걸리고,
+`tools/build.js`가 원본과 결과의 크기를 출력한다.
 
 CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야
 하며, 다르면 워크플로가 실패한다.

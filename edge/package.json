@@ -5,6 +5,8 @@
   "scripts": {
     "test": "node tools/lua.js tests/run.lua",
     "syntax": "node tools/lua.js tests/syntax.lua",
+    "build": "node tools/build.js",
+    "test-build": "node tools/build.js --quiet && node tools/lua.js tests/run.lua --src build/edge/src",
     "gen-profiles": "node tools/gen-profiles.js",
     "check-profiles": "node tools/gen-profiles.js --check"
   },
