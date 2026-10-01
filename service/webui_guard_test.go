@@ -97,10 +97,8 @@ func TestCommandAPIRunsNotifiesAndRecords(t *testing.T) {
 	// runs within the test's wait, and the first event is not
 	// remote.grace_scheduled.
 	expectExecuted(t, executed, "shutdown")
-	ev := expectNotification(t, events, "remote.received")
-	if ev.Fields["command"] != "shutdown" || ev.Fields["from"] != "app" {
-		t.Errorf("event fields = %v", ev.Fields)
-	}
+	// The person at the PC pressed it: no Telegram notification.
+	expectNoNotification(t, events)
 	if lr := getLastRemote(); lr.Command != "shutdown" || lr.Origin != "ui" || lr.From != "app" {
 		t.Errorf("last_command = %+v, want shutdown from app (origin ui)", lr)
 	}
@@ -117,9 +115,7 @@ func TestCommandAPIForceShutdownAndCallers(t *testing.T) {
 		t.Fatalf("POST /api/command = %d, want 200", w.Code)
 	}
 	expectExecuted(t, executed, "forceshutdown")
-	if ev := expectNotification(t, events, "remote.force"); ev.Fields["from"] != "app" {
-		t.Errorf("from = %q, want app", ev.Fields["from"])
-	}
+	expectNoNotification(t, events) // treated as the desktop app: quiet
 
 	serveWebUI(commandRequest("POST", `{"command":"forceshutdown","by":"webui"}`, true), false)
 	expectExecuted(t, executed, "forceshutdown")
@@ -155,37 +151,33 @@ func TestCommandAPIUnknownCommand(t *testing.T) {
 }
 
 func TestWebUIHostAllowed(t *testing.T) {
-	orig := webUILANHosts
-	webUILANHosts = func() []string { return []string{"192.168.1.30", "10.0.0.7", "DESKTOP-TEST"} }
-	t.Cleanup(func() { webUILANHosts = orig })
 
 	cases := []struct {
 		host        string
-		local, lan  bool // allowed with remote off / on
+		local       bool // allowed with remote access off
 		description string
 	}{
-		{"127.0.0.1:5002", true, true, "loopback IPv4"},
-		{"localhost:5002", true, true, "localhost"},
-		{"LocalHost:5002", true, true, "localhost, any case"},
-		{"[::1]:5002", true, true, "loopback IPv6"},
-		{"127.0.0.1:5001", false, false, "wrong port"},
-		{"127.0.0.1", false, false, "no port"},
-		{"", false, false, "empty"},
-		{"evil.example:5002", false, false, "rebound domain"},
-		{"localhost.evil.example:5002", false, false, "localhost prefix"},
-		{"127.0.0.1.nip.io:5002", false, false, "loopback-looking domain"},
-		{"192.168.1.30:5002", false, true, "own LAN IP"},
-		{"10.0.0.7:5002", false, true, "own second IP"},
-		{"desktop-test:5002", false, true, "own hostname, any case"},
-		{"192.168.1.31:5002", false, false, "someone else's IP"},
-		{"desktop-test.evil.example:5002", false, false, "hostname prefix"},
+		{"127.0.0.1:5002", true, "loopback IPv4"},
+		{"localhost:5002", true, "localhost"},
+		{"LocalHost:5002", true, "localhost, any case"},
+		{"[::1]:5002", true, "loopback IPv6"},
+		{"127.0.0.1:5001", false, "wrong port"},
+		{"127.0.0.1", false, "no port"},
+		{"", false, "empty"},
+		{"evil.example:5002", false, "rebound domain"},
+		{"localhost.evil.example:5002", false, "localhost prefix"},
+		{"127.0.0.1.nip.io:5002", false, "loopback-looking domain"},
+		{"192.168.1.30:5002", false, "LAN IP"},
+		{"pc.tailnet.ts.net:5002", false, "Tailscale name"},
 	}
 	for _, c := range cases {
 		if got := webUIHostAllowed(c.host, 5002, false); got != c.local {
 			t.Errorf("%s (%q), remote off: allowed = %v, want %v", c.description, c.host, got, c.local)
 		}
-		if got := webUIHostAllowed(c.host, 5002, true); got != c.lan {
-			t.Errorf("%s (%q), remote on: allowed = %v, want %v", c.description, c.host, got, c.lan)
+		// Remote access requires a secret and a session cookie on every API
+		// call, so any name the user reaches the PC by is fine.
+		if !webUIHostAllowed(c.host, 5002, true) {
+			t.Errorf("%s (%q), remote on: refused", c.description, c.host)
 		}
 	}
 }
@@ -195,9 +187,6 @@ func TestWebUIHostAllowed(t *testing.T) {
 func TestWebUIHostGuardRunsBeforeHandlers(t *testing.T) {
 	withWebUIConfig(t, Config{Port: 5001})
 	executed := stubCommand(t, "forceshutdown")
-	orig := webUILANHosts
-	webUILANHosts = func() []string { return []string{"192.168.1.30"} }
-	t.Cleanup(func() { webUILANHosts = orig })
 
 	evil := commandRequest("POST", `{"command":"forceshutdown"}`, true)
 	evil.Host = "evil.example:5002"
@@ -205,7 +194,8 @@ func TestWebUIHostGuardRunsBeforeHandlers(t *testing.T) {
 		t.Fatalf("Host evil.example:5002 = %d, want 403", w.Code)
 	}
 	cfgReq := httptest.NewRequest("GET", "http://evil.example:5002/api/config", nil)
-	if w := serveWebUI(cfgReq, true); w.Code != http.StatusForbidden {
+	// Remote access off is the rebinding case (no secret needed, loopback only).
+	if w := serveWebUI(cfgReq, false); w.Code != http.StatusForbidden {
 		t.Errorf("GET /api/config with a foreign Host = %d, want 403", w.Code)
 	}
 	expectNotExecuted(t, executed, "forceshutdown with a foreign Host")

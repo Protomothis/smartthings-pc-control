@@ -22,55 +22,25 @@ func secretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare(ha[:], hb[:]) == 1
 }
 
-// webUILANHosts lists the names this PC answers to on the LAN — its own
-// IPv4 addresses and its hostname — for the remote WebUI's Host check. A
-// variable so tests can pin it; it is read per request because DHCP may
-// change the addresses while the service runs.
-var webUILANHosts = lanHostNames
-
-// lanHostNames is the machine's IPv4 addresses (loopback excluded) plus
-// its hostname.
-func lanHostNames() []string {
-	var out []string
-	if addrs, err := net.InterfaceAddrs(); err == nil {
-		for _, a := range addrs {
-			ipnet, ok := a.(*net.IPNet)
-			if !ok || ipnet.IP.IsLoopback() {
-				continue
-			}
-			if ip4 := ipnet.IP.To4(); ip4 != nil {
-				out = append(out, ip4.String())
-			}
-		}
-	}
-	if h := hostname(); h != "" {
-		out = append(out, h)
-	}
-	return out
-}
-
-// webUIHostAllowed reports whether a request's Host header names this PC
-// on the WebUI port. Loopback names (127.0.0.1, localhost, [::1]) are
-// always accepted; with remote access on, so are this PC's LAN IPv4
-// addresses and hostname. Anything else — notably an attacker's domain
-// re-pointed at 127.0.0.1 — is refused.
+// webUIHostAllowed reports whether a request's Host header may reach the
+// WebUI. Without remote access the WebUI listens on loopback only and needs
+// no login when no secret is set, so a page whose domain was re-pointed at
+// 127.0.0.1 (DNS rebinding) could otherwise use the whole API as same-origin:
+// only loopback names on the WebUI port are accepted. With remote access on,
+// a secret is required and every API call needs the session cookie, which a
+// rebound page cannot have, so any Host is accepted — a Tailscale name, a
+// reverse proxy or a port forward must keep working.
 func webUIHostAllowed(hostHeader string, port int, remote bool) bool {
+	if remote {
+		return true
+	}
 	host, p, err := net.SplitHostPort(hostHeader)
 	if err != nil || p != strconv.Itoa(port) {
 		return false
 	}
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	switch host {
+	switch strings.TrimSuffix(strings.ToLower(host), ".") {
 	case "127.0.0.1", "localhost", "::1":
 		return true
-	}
-	if !remote {
-		return false
-	}
-	for _, name := range webUILANHosts() {
-		if strings.EqualFold(host, name) {
-			return true
-		}
 	}
 	return false
 }

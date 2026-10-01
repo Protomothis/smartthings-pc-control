@@ -581,10 +581,15 @@ func runLocalCommand(name string, cmd Command, by string) {
 	logMsg("Command from %s: %s", commandCallers[by], name)
 	if name != "ping" {
 		noteRemoteCommandBy(name, by, originUI.String())
-		if name == "forceshutdown" {
-			emit("remote", "force", map[string]string{"from": by})
-		} else {
-			emit("remote", "received", map[string]string{"command": name, "from": by})
+		// Only the WebUI can be another device. A command pressed in the
+		// desktop app, the tray menu or a toast comes from the person at the
+		// PC, and telling them on Telegram what they just did is noise.
+		if by == "webui" {
+			if name == "forceshutdown" {
+				emit("remote", "force", map[string]string{"from": by})
+			} else {
+				emit("remote", "received", map[string]string{"command": name, "from": by})
+			}
 		}
 	}
 	if cmd.Execute != nil {
