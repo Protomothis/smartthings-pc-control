@@ -1,7 +1,9 @@
 package gui
 
-// The network tab: the SmartThings section (st_section.go) and the
-// Wake-on-LAN adapter list.
+// The SmartThings tab (the network tab before #128): how the Edge driver
+// reaches this PC — the SmartThings section (st_section.go: hub, this PC's
+// id, discovery, WoL adapter, allowed hubs) and the Wake-on-LAN adapter
+// list. What the PC shares with SmartThings is the sharing tab's.
 
 import (
 	"fmt"
@@ -14,7 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (u *ui) buildNetworkTab() fyne.CanvasObject {
+func (u *ui) buildSmartThingsTab() fyne.CanvasObject {
 	u.networkBox = container.NewVBox(widget.NewLabel(u.t("network.loading")))
 	// One button for the whole tab: the SmartThings hub state and the WoL
 	// adapter list are both re-read (the tab has no polling loop of its own,
@@ -24,23 +26,24 @@ func (u *ui) buildNetworkTab() fyne.CanvasObject {
 
 	// Save lives in the fixed footer (savebar.go), enabled only while the
 	// SmartThings section differs from the baseline.
-	ft := u.forms.register(u.stForm(tabNetwork))
+	ft := u.forms.register(u.stForm(tabSmartThings))
 	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
-	u.networkRoot = container.NewVBox(
+	u.stRoot = container.NewVBox(
 		container.NewHBox(layout.NewSpacer(), refreshBtn),
 		section(u.t("st.section"), stBody),
 		widget.NewSeparator(),
 		section(u.t("network.wol.section"), u.networkBox),
 		// Trailing padding so the last row never sits flush against the
-		// footer (same as the settings and notifications tabs).
+		// footer (same as the other form tabs).
 		widget.NewLabel(""),
 	)
 	u.refreshNetwork()
-	return withSaveBar(u.networkRoot, ft.bar)
+	return withSaveBar(u.stRoot, ft.bar)
 }
 
-// refreshNetwork re-reads both halves of the network tab off the UI thread.
+// refreshNetwork re-reads both halves of the SmartThings tab off the UI
+// thread.
 func (u *ui) refreshNetwork() {
 	background(u.loadNetwork)
 	background(u.loadSTHub)
@@ -67,8 +70,8 @@ func (u *ui) loadNetwork() {
 		// The adapter list is the last section of the tab root, so it has to
 		// re-lay out the parent once it grows (like fillSvcBox, #53).
 		defer func() {
-			if u.networkRoot != nil {
-				u.networkRoot.Refresh()
+			if u.stRoot != nil {
+				u.stRoot.Refresh()
 			}
 		}()
 		u.networkBox.RemoveAll()

@@ -9,8 +9,9 @@ import (
 )
 
 // The settings tab's 미디어·알림 section (media-notify doc §4, "UI 구성"):
-// the media switches of #104 and #117 next to the PC-notification switch
-// of #106 and [테스트 알림]. It shares the settings tab's save bar:
+// the media switch of #104 next to the PC-notification switch of #106 and
+// [테스트 알림]; #117's now-playing opt-in is on the sharing tab. It shares
+// the settings tab's save bar:
 // settingsState reads it into settingsFormState.NotifyPC.
 
 // --- Pure model (unit-tested) ------------------------------------------------
@@ -45,8 +46,8 @@ type notifySection struct {
 }
 
 // buildMediaNotifySection creates the section. head are the settings
-// tab's own media switches (media.enabled and media.now_playing with their
-// hints), placed first; the PC-notification controls follow.
+// tab's own media switch (media.enabled with its hint), placed first; the
+// PC-notification controls follow.
 func (u *ui) buildMediaNotifySection(head ...fyne.CanvasObject) fyne.CanvasObject {
 	n := &notifySection{}
 	u.pcNotify = n

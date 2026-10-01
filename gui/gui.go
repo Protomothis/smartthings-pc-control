@@ -97,17 +97,18 @@ type ui struct {
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
 	lastBattery  Battery
-	// Network tab: the WoL/adapter list, the tab root (re-laid out when the
-	// SmartThings hub list changes) and the SmartThings section (#70).
-	networkBox  *fyne.Container
-	networkRoot *fyne.Container
-	st          *stSection
+	// SmartThings tab: the WoL/adapter list, the tab root (re-laid out when
+	// the hub list changes) and the SmartThings section (#70); the sharing
+	// tab (share_tab.go).
+	networkBox *fyne.Container
+	stRoot     *fyne.Container
+	st         *stSection
+	share      *shareTab
+	// Settings tab: the service box, browser access and media.enabled
+	// (#104: volume and media-key commands).
 	svcBox      *fyne.Container
 	remoteCheck *toggle
-	// mediaCheck is media.enabled (#104): volume and media-key commands.
-	mediaCheck *toggle
-	// nowPlayingCheck is the media.now_playing opt-in (#117).
-	nowPlayingCheck *toggle
+	mediaCheck  *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -136,10 +137,12 @@ type ui struct {
 	notify *notifyTab
 	// Tab titles without the "•" unsaved marker, the tab shown before the
 	// current selection, and a guard for programmatic SelectIndex calls
-	// (see savebar.go).
+	// (see savebar.go). returnTab is the tab (+1; 0 = none) to go back to
+	// when the service answers again after a forced switch to settings.
 	tabTitles []string
 	curTab    int
 	switching bool
+	returnTab int
 
 	// Logs: every line from the last fetch; the label shows the subset
 	// matching logsFilter. Both touched on the UI thread only.
@@ -410,19 +413,28 @@ func (u *ui) rebuild() {
 	// width is left (and truncates) instead of dictating the window width.
 	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel, langSelect), u.status)
 
-	// Order matters: tabSettings / tabNotify in savebar.go index into this.
-	u.tabTitles = []string{u.t("tab.settings"), u.t("tab.commands"), u.t("tab.schedule"), u.t("tab.notify"), u.t("tab.network"), u.t("tab.presets"), u.t("tab.logs")}
-	u.tabs = container.NewAppTabs(
-		container.NewTabItemWithIcon(u.tabTitles[0], theme.SettingsIcon(), u.buildSettingsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[1], theme.MediaPlayIcon(), u.buildCommandsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[2], theme.HistoryIcon(), u.buildScheduleTab()),
-		container.NewTabItemWithIcon(u.tabTitles[3], theme.MailSendIcon(), u.buildNotifyTab()),
-		container.NewTabItemWithIcon(u.tabTitles[4], theme.ComputerIcon(), u.buildNetworkTab()),
-		container.NewTabItemWithIcon(u.tabTitles[5], theme.GridIcon(), u.buildPresetsTab()),
-		container.NewTabItemWithIcon(u.tabTitles[6], theme.ListIcon(), u.buildLogsTab()),
-	)
-	u.curTab = 0
-	u.shownTab.Store(0)
+	// In the order of the tab* constants (savebar.go). Titles only, no
+	// icons: eight tabs with icons need about 640 px in Korean and more
+	// than the window's 640 in English; without them both fit (#128).
+	u.tabTitles = make([]string, len(tabKeys))
+	items := make([]*container.TabItem, len(tabKeys))
+	builders := []func() fyne.CanvasObject{
+		tabCommands:    u.buildCommandsTab,
+		tabSchedule:    u.buildScheduleTab,
+		tabPresets:     u.buildPresetsTab,
+		tabShare:       u.buildShareTab,
+		tabSmartThings: u.buildSmartThingsTab,
+		tabTelegram:    u.buildNotifyTab,
+		tabSettings:    u.buildSettingsTab,
+		tabLogs:        u.buildLogsTab,
+	}
+	for i, key := range tabKeys {
+		u.tabTitles[i] = u.t(key)
+		items[i] = container.NewTabItem(u.tabTitles[i], builders[i]())
+	}
+	u.tabs = container.NewAppTabs(items...)
+	u.curTab = tabCommands
+	u.shownTab.Store(tabCommands)
 	u.tabs.OnSelected = u.onTabSelected
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
@@ -453,22 +465,36 @@ func (u *ui) applyConnected(on bool) {
 	if u.tabs == nil {
 		return // only the tray so far (a minimized start)
 	}
-	for i := 1; i < len(u.tabs.Items); i++ {
+	// Forced switches, so no unsaved-changes prompt: to the settings tab
+	// while the service is gone, and back to where the user was (the
+	// commands tab after a start) once it answers. The tab is noted before
+	// disabling: AppTabs moves off a tab that gets disabled.
+	if !on && u.curTab != tabSettings && u.returnTab == 0 {
+		u.returnTab = u.curTab + 1
+	}
+	u.switching = true
+	for i := range u.tabs.Items {
+		if i == tabSettings {
+			continue
+		}
 		if on {
 			u.tabs.EnableIndex(i)
 		} else {
 			u.tabs.DisableIndex(i)
 		}
 	}
-	if !on {
+	u.switching = false
+	switch {
+	case !on:
 		// The battery reading comes from the service; without it, say nothing.
 		u.applyBattery(Battery{})
-		// Forced switch: no unsaved-changes prompt (the service is gone).
-		u.switching = true
-		u.tabs.SelectIndex(0)
-		u.switching = false
-		u.curTab = 0
-		u.shownTab.Store(0)
+		u.selectTab(tabSettings)
+	case u.returnTab != 0:
+		back := u.returnTab - 1
+		u.returnTab = 0
+		if u.curTab == tabSettings {
+			u.selectTab(back)
+		}
 	}
 	if u.settingsExtra != nil {
 		if on {

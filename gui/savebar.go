@@ -18,16 +18,45 @@ import (
 // on the tab title, and a Save / Discard / Keep editing prompt when the
 // user switches tabs or closes the window with edits pending.
 
-// Tab indices that own a save bar (order set in rebuild).
+// Tab indices, in the order rebuild adds them (#128): the everyday tabs
+// first, then what the PC shares and how it connects, settings and logs
+// last. Presets, sharing, SmartThings, Telegram and settings own a save
+// bar.
 const (
-	tabSettings = 0
-	tabNotify   = 3
-	tabNetwork  = 4
-	// tabPresets is the preset editor (#109).
-	tabPresets = 5
+	tabCommands = iota
+	tabSchedule
+	tabPresets
+	tabShare
+	tabSmartThings
+	tabTelegram
+	// tabSettings is the only tab usable while the service is unreachable
+	// (installing and starting it live there).
+	tabSettings
 	// tabLogs is only polled while it is in front.
-	tabLogs = 6
+	tabLogs
 )
+
+// tabKeys are the tab titles' i18n keys, by index.
+var tabKeys = []string{
+	tabCommands:    "tab.commands",
+	tabSchedule:    "tab.schedule",
+	tabPresets:     "tab.presets",
+	tabShare:       "tab.share",
+	tabSmartThings: "tab.smartthings",
+	tabTelegram:    "tab.telegram",
+	tabSettings:    "tab.settings",
+	tabLogs:        "tab.logs",
+}
+
+// selectTab switches to index without the unsaved-changes prompt (a
+// switch the app makes, not the user). UI thread only.
+func (u *ui) selectTab(index int) {
+	u.switching = true
+	u.tabs.SelectIndex(index)
+	u.switching = false
+	u.curTab = index
+	u.shownTab.Store(int32(index))
+}
 
 // saveBar is the footer under a form tab.
 type saveBar struct {
@@ -160,8 +189,8 @@ func (u *ui) promptUnsaved(bodyKey string, dirty []*formTab, onDone func()) {
 }
 
 // setCurTab records the tab now on screen and refreshes the ones that only
-// load when shown. The network tab has no polling loop of its own (#70), so
-// its WoL list and SmartThings hub state are re-read here; the notify tab's
+// load when shown. The SmartThings tab has no polling loop of its own (#70), so
+// its WoL list and SmartThings hub state are re-read here; the Telegram tab's
 // Telegram conflict warning (#75) is re-read the same way, and the logs,
 // polled only while their tab is in front, catch up at once.
 func (u *ui) setCurTab(index int) {
@@ -171,9 +200,9 @@ func (u *ui) setCurTab(index int) {
 		return
 	}
 	switch index {
-	case tabNetwork:
+	case tabSmartThings:
 		u.refreshNetwork()
-	case tabNotify:
+	case tabTelegram:
 		u.refreshTelegramState()
 	case tabLogs:
 		background(u.loadLogs)

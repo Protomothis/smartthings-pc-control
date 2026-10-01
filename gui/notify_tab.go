@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// The notifications tab (issue #64, design doc §12): Telegram connection,
+// The Telegram tab (issue #64, design doc §12; "알림" before #128): connection,
 // inbound control, the event catalogue, quiet hours and display options.
 // The service owns delivery; this tab only edits the telegram/notify parts
 // of the config and offers the test/lookup helpers of /api/telegram/*.
@@ -628,7 +628,7 @@ func (u *ui) buildNotifyTab() fyne.CanvasObject {
 	// form differs from the baseline. The message language follows the app
 	// language (design doc §10), so it is written on every save of the tab.
 	ft := u.forms.register(&formTab{
-		index: tabNotify,
+		index: tabTelegram,
 		Fill:  u.fillNotifyTab,
 		Dirty: func(base Config) bool { return t.state().dirty(base) },
 		ApplyTo: func(cfg *Config) error {

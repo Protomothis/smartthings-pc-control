@@ -13,11 +13,10 @@ import (
 // settingsFormState is the settings tab's contents as plain values.
 type settingsFormState struct {
 	// Port is the entry text; it only becomes a number on save.
-	Port       string
-	Secret     string
-	Remote     bool
-	Media      bool
-	NowPlaying bool
+	Port   string
+	Secret string
+	Remote bool
+	Media  bool
 	// GraceOn and GraceSec are the grace select: off, or a period.
 	GraceOn  bool
 	GraceSec int
@@ -27,13 +26,12 @@ type settingsFormState struct {
 // settingsStateFromConfig is what the tab shows for cfg.
 func settingsStateFromConfig(cfg Config) settingsFormState {
 	s := settingsFormState{
-		Port:       strconv.Itoa(cfg.Port),
-		Secret:     cfg.Secret,
-		Remote:     cfg.WebUIRemote,
-		Media:      cfg.Media.Enabled,
-		NowPlaying: cfg.Media.NowPlaying,
-		GraceOn:    cfg.ShutdownGrace,
-		NotifyPC:   notifyPCStateFromConfig(cfg),
+		Port:     strconv.Itoa(cfg.Port),
+		Secret:   cfg.Secret,
+		Remote:   cfg.WebUIRemote,
+		Media:    cfg.Media.Enabled,
+		GraceOn:  cfg.ShutdownGrace,
+		NotifyPC: notifyPCStateFromConfig(cfg),
 	}
 	if s.GraceOn {
 		s.GraceSec = cfg.GraceSeconds
@@ -51,7 +49,6 @@ func (s settingsFormState) applyTo(cfg *Config, l Lang) error {
 	cfg.Secret = s.Secret
 	cfg.WebUIRemote = s.Remote
 	cfg.Media.Enabled = s.Media
-	cfg.Media.NowPlaying = s.NowPlaying
 	s.NotifyPC.applyTo(cfg)
 	cfg.ShutdownGrace = s.GraceOn
 	switch {
@@ -77,7 +74,6 @@ func (s settingsFormState) dirty(base Config) bool {
 		s.Secret != base.Secret ||
 		s.Remote != base.WebUIRemote ||
 		s.Media != base.Media.Enabled ||
-		s.NowPlaying != base.Media.NowPlaying ||
 		s.GraceOn != base.ShutdownGrace ||
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
 		s.NotifyPC.dirty(base)

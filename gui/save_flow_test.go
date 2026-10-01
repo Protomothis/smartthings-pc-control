@@ -108,7 +108,7 @@ func TestSaveFromOneTabKeepsTheOthers(t *testing.T) {
 	if u.notify.chatEntry.Text != "99" {
 		t.Errorf("notify chat entry = %q, the unsaved edit was lost", u.notify.chatEntry.Text)
 	}
-	if d := dirtyIndices(u.forms); len(d) != 1 || d[0] != tabNotify {
+	if d := dirtyIndices(u.forms); len(d) != 1 || d[0] != tabTelegram {
 		t.Errorf("dirty after saving settings = %v, want only notify", d)
 	}
 	if !u.forms.tabAt(tabSettings).bar.save.Disabled() {
@@ -137,5 +137,50 @@ func TestRebuildKeepsUnsavedEdits(t *testing.T) {
 	}
 	if !u.forms.tabAt(tabPresets).bar.dirty {
 		t.Error("presets save bar not dirty after the rebuild")
+	}
+}
+
+// The tab order of #128, with the form tabs where the constants say, and
+// the forced switch to settings while the service is away going back to
+// where the user was once it answers (the commands tab after a start).
+func TestTabsAndTheForcedSettingsSwitch(t *testing.T) {
+	u := newTestUI(t, LangEn, nil) // never connected
+	if len(u.tabs.Items) != len(tabKeys) {
+		t.Fatalf("%d tabs, want %d", len(u.tabs.Items), len(tabKeys))
+	}
+	for i, it := range u.tabs.Items {
+		if it.Text != T(LangEn, tabKeys[i]) || it.Icon != nil {
+			t.Errorf("tab %d = %q (icon %v), want %q without an icon", i, it.Text, it.Icon != nil, T(LangEn, tabKeys[i]))
+		}
+	}
+	for _, i := range []int{tabPresets, tabShare, tabSmartThings, tabTelegram, tabSettings} {
+		if u.forms.tabAt(i) == nil {
+			t.Errorf("tab %d (%s) has no form", i, tabKeys[i])
+		}
+	}
+	if u.curTab != tabSettings || u.tabs.SelectedIndex() != tabSettings {
+		t.Fatalf("disconnected start shows tab %d, want settings", u.tabs.SelectedIndex())
+	}
+	if !u.tabs.Items[tabCommands].Disabled() {
+		t.Error("the commands tab is usable without the service")
+	}
+
+	u.connected.Store(true)
+	u.applyConnected(true)
+	if u.tabs.SelectedIndex() != tabCommands || u.tabs.Items[tabCommands].Disabled() {
+		t.Errorf("after connecting: tab %d, want commands (enabled)", u.tabs.SelectedIndex())
+	}
+
+	// The user moves on, the service restarts, and comes back.
+	u.selectTab(tabShare)
+	u.connected.Store(false)
+	u.applyConnected(false)
+	if u.tabs.SelectedIndex() != tabSettings {
+		t.Errorf("service gone: tab %d, want settings", u.tabs.SelectedIndex())
+	}
+	u.connected.Store(true)
+	u.applyConnected(true)
+	if u.tabs.SelectedIndex() != tabShare {
+		t.Errorf("service back: tab %d, want sharing again", u.tabs.SelectedIndex())
 	}
 }

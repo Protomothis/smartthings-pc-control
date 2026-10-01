@@ -64,7 +64,7 @@ func (u *ui) loadShown() {
 	switch int(u.shownTab.Load()) {
 	case tabLogs:
 		u.loadLogs()
-	case tabNetwork:
+	case tabSmartThings:
 		u.loadNetwork()
 		u.loadSTHub()
 	}

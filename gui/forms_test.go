@@ -13,9 +13,10 @@ type modelTabs struct {
 	settings settingsFormState
 	notify   notifyFormState
 	st       stFormState
+	share    shareFormState
 	presets  presetsFormState
 	f        *forms
-	tabs     struct{ settings, notify, st, presets *formTab }
+	tabs     struct{ settings, notify, st, share, presets *formTab }
 }
 
 func newModelTabs() *modelTabs {
@@ -27,7 +28,7 @@ func newModelTabs() *modelTabs {
 		ApplyTo: func(c *Config) error { return m.settings.applyTo(c, LangEn) },
 	})
 	m.tabs.notify = m.f.register(&formTab{
-		index: tabNotify,
+		index: tabTelegram,
 		Fill:  func(c Config) { m.notify = notifyStateFromConfig(c) },
 		Dirty: func(b Config) bool { return m.notify.dirty(b) },
 		ApplyTo: func(c *Config) error {
@@ -36,11 +37,20 @@ func newModelTabs() *modelTabs {
 		},
 	})
 	m.tabs.st = m.f.register(&formTab{
-		index: tabNetwork,
+		index: tabSmartThings,
 		Fill:  func(c Config) { m.st = stStateFromConfig(c) },
 		Dirty: func(b Config) bool { return m.st.dirty(b) },
 		ApplyTo: func(c *Config) error {
 			*c = m.st.applyTo(*c)
+			return nil
+		},
+	})
+	m.tabs.share = m.f.register(&formTab{
+		index: tabShare,
+		Fill:  func(c Config) { m.share = shareStateFromConfig(c) },
+		Dirty: func(b Config) bool { return m.share.dirty(b) },
+		ApplyTo: func(c *Config) error {
+			*c = m.share.applyTo(*c)
 			return nil
 		},
 	})
@@ -93,9 +103,17 @@ func TestMergeKeepsSecretAndMaskedToken(t *testing.T) {
 	m.notify.ChatID = "99"
 	m.st.Hubs = append(m.st.Hubs, "192.168.1.21")
 	m.presets.Rows[0].Name = "Games"
+	// The sharing tab edits the same smartthings and media objects as the
+	// SmartThings and settings tabs, field by field.
+	m.share.ExposeSession = false
+	m.share.NowPlaying = true
+	m.settings.Media = true
 
-	all := []*formTab{m.tabs.settings, m.tabs.notify, m.tabs.st, m.tabs.presets}
-	for _, saving := range [][]*formTab{all, {m.tabs.notify}, {m.tabs.st}, {m.tabs.presets}, {m.tabs.settings}, {m.tabs.notify, m.tabs.presets}} {
+	all := []*formTab{m.tabs.settings, m.tabs.notify, m.tabs.st, m.tabs.share, m.tabs.presets}
+	for _, saving := range [][]*formTab{
+		all, {m.tabs.notify}, {m.tabs.st}, {m.tabs.share}, {m.tabs.presets}, {m.tabs.settings},
+		{m.tabs.notify, m.tabs.presets}, {m.tabs.st, m.tabs.share}, {m.tabs.share, m.tabs.settings},
+	} {
 		cfg, err := m.f.merge(saving)
 		if err != nil {
 			t.Fatalf("merge: %v", err)
@@ -122,6 +140,12 @@ func TestMergeKeepsSecretAndMaskedToken(t *testing.T) {
 		}
 		if got := cfg.Presets[0].Name == "Games"; got != want[m.tabs.presets] {
 			t.Errorf("preset rename in merge = %v, want %v", got, want[m.tabs.presets])
+		}
+		if got := !cfg.SmartThings.ExposeSession && cfg.Media.NowPlaying; got != want[m.tabs.share] {
+			t.Errorf("sharing edits in merge = %v, want %v", got, want[m.tabs.share])
+		}
+		if got := cfg.Media.Enabled; got != want[m.tabs.settings] {
+			t.Errorf("media.enabled in merge = %v, want %v", got, want[m.tabs.settings])
 		}
 	}
 
@@ -165,7 +189,7 @@ func TestAdoptAfterSaveKeepsOtherTabsEdits(t *testing.T) {
 	m.settings.Port = "5005"
 	m.notify.ChatID = "99"
 	m.notify.Token = "123456:NEWTOKEN"
-	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabSettings, tabNotify}) {
+	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabSettings, tabTelegram}) {
 		t.Fatalf("dirty = %v, want settings and notify", d)
 	}
 
@@ -180,7 +204,7 @@ func TestAdoptAfterSaveKeepsOtherTabsEdits(t *testing.T) {
 	if m.f.base.Port != 5005 {
 		t.Errorf("baseline port = %d, want the saved 5005", m.f.base.Port)
 	}
-	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabNotify}) {
+	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabTelegram}) {
 		t.Errorf("dirty after saving settings = %v, want only notify", d)
 	}
 	if m.notify.ChatID != "99" || m.notify.Token != "123456:NEWTOKEN" {
@@ -208,24 +232,28 @@ func TestAdoptAfterSaveKeepsOtherTabsEdits(t *testing.T) {
 func TestAdoptOnRefreshKeepsUnsavedEdits(t *testing.T) {
 	m := newModelTabs()
 	m.f.adopt(storedConfig(), nil)
-	m.st.ExposeSession = false // unsaved
+	m.share.ExposeSession = false // unsaved
 
 	remote := storedConfig() // changed elsewhere (WebUI, Telegram)
 	remote.Presets = append(remote.Presets, Preset{Slot: 2, Name: "Docs", Type: "url", Path: "https://example.com"})
 	remote.SmartThings.AllowedHubs = []string{"10.0.0.1"}
+	remote.Media.NowPlaying = true
 	m.f.adopt(remote, m.f.base)
 
 	if len(m.presets.Rows) != 2 {
 		t.Errorf("clean presets tab did not follow the service: %d rows", len(m.presets.Rows))
 	}
-	if m.st.ExposeSession {
-		t.Error("unsaved SmartThings edit was overwritten by the refresh")
+	if !slices.Equal(m.st.Hubs, []string{"10.0.0.1"}) {
+		t.Errorf("clean SmartThings tab did not follow the service: %v", m.st.Hubs)
 	}
-	if !slices.Equal(m.st.Hubs, []string{"192.168.1.20"}) {
-		t.Errorf("hubs = %v: a dirty tab keeps all of its widgets", m.st.Hubs)
+	if m.share.ExposeSession {
+		t.Error("unsaved sharing edit was overwritten by the refresh")
 	}
-	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabNetwork}) {
-		t.Errorf("dirty after refresh = %v, want only the SmartThings tab", d)
+	if m.share.NowPlaying {
+		t.Error("now playing changed: a dirty tab keeps all of its widgets")
+	}
+	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabShare}) {
+		t.Errorf("dirty after refresh = %v, want only the sharing tab", d)
 	}
 }
 
@@ -250,7 +278,7 @@ func TestDraftsSurviveARebuild(t *testing.T) {
 	if m2.notify.ChatID != "42" || m2.settings.Port != "5001" {
 		t.Errorf("untouched fields changed: chat %q port %q", m2.notify.ChatID, m2.settings.Port)
 	}
-	if d := dirtyIndices(m2.f); !slices.Equal(d, []int{tabSettings, tabNotify}) {
+	if d := dirtyIndices(m2.f); !slices.Equal(d, []int{tabSettings, tabTelegram}) {
 		t.Errorf("dirty after the rebuild = %v, want settings and notify", d)
 	}
 }

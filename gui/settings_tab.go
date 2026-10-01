@@ -37,7 +37,6 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
-	u.nowPlayingCheck = newToggle(u.t("settings.nowplaying"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
 
@@ -82,12 +81,12 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		u.remoteCheck,
 		hint(u.t("settings.remote.hint")),
 	)
-	// The media switches (media.enabled #104, media.now_playing #117) head
-	// the 미디어·알림 section, above the PC notification ones (#106,
-	// notify_section.go).
+	// The media switch (media.enabled, #104) heads the 미디어·알림 section,
+	// above the PC notification ones (#106, notify_section.go). The
+	// now-playing opt-in (#117) is the sharing tab's: it is about what the
+	// PC tells others, not what they may do to it.
 	mediaNotifyBody := u.buildMediaNotifySection(
 		u.mediaCheck, hint(u.t("settings.media.hint")),
-		u.nowPlayingCheck, hint(u.t("settings.nowplaying.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -144,7 +143,6 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.secretEntry.SetText(s.Secret)
 	u.remoteCheck.SetChecked(s.Remote)
 	u.mediaCheck.SetChecked(s.Media)
-	u.nowPlayingCheck.SetChecked(s.NowPlaying)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
 }
@@ -152,12 +150,11 @@ func (u *ui) fillSettingsTab(cfg Config) {
 // settingsState reads the settings-tab fields into the pure model.
 func (u *ui) settingsState() settingsFormState {
 	s := settingsFormState{
-		Port:       u.portEntry.Text,
-		Secret:     u.secretEntry.Text,
-		Remote:     u.remoteCheck.Checked,
-		Media:      u.mediaCheck.Checked,
-		NowPlaying: u.nowPlayingCheck.Checked,
-		NotifyPC:   u.notifySectionState(),
+		Port:     u.portEntry.Text,
+		Secret:   u.secretEntry.Text,
+		Remote:   u.remoteCheck.Checked,
+		Media:    u.mediaCheck.Checked,
+		NotifyPC: u.notifySectionState(),
 	}
 	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
 		s.GraceOn, s.GraceSec = true, u.graceValues[i]

@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,13 +14,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// The SmartThings section of the network tab (issue #70, edge-driver doc
-// §7): the Edge driver's connection state, this PC's discovery identity
-// and search diagnostics (#95), plus the editable `smartthings` part of
-// the config (§3.7) — session exposure and the hub allow list. Saving goes
-// through the shared saveBar flow like the settings and notifications
-// tabs; only the smartthings fields are written over the baseline, so a
-// save here never clobbers another tab's edits.
+// The SmartThings section of the SmartThings tab (issue #70, edge-driver
+// doc §7): the Edge driver's connection state, this PC's discovery
+// identity and search diagnostics (#95), plus the editable connection part
+// of the `smartthings` config (§3.7) — the WoL adapter and the hub allow
+// list. What the PC shares (session info, #110 app detection) is the
+// sharing tab's (share_tab.go). Only these fields are written over the
+// baseline, so a save here never clobbers another tab's edits.
 //
 // SSDP itself has no switch any more: adding the device has no other path,
 // so the responder always runs and the section reports on it instead of
@@ -32,35 +31,19 @@ import (
 // stFormState is the section's contents as plain values, independent of
 // widgets, so the config round-trip and the dirty check are testable.
 type stFormState struct {
-	ExposeSession     bool
-	ExposeSessionUser bool
 	// Hubs is the edited allow list; empty means "any hub".
 	Hubs []string
 	// WoLMAC is the adapter the dropdown picked; empty means automatic.
 	WoLMAC string
-	// Activity is the running-app detection toggle and watch list (#110,
-	// activity_section.go). It is a top-level config key, not part of
-	// smartthings, but it is edited and saved with this section.
-	Activity ActivityConfig
 }
 
 // stStateFromConfig is what the section shows for cfg. The hub list is
 // copied so editing it never writes into the baseline.
 func stStateFromConfig(cfg Config) stFormState {
 	return stFormState{
-		ExposeSession:     cfg.SmartThings.ExposeSession,
-		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
-		Hubs:              normalizeHubs(cfg.SmartThings.AllowedHubs),
-		WoLMAC:            cfg.SmartThings.WoLMAC,
-		Activity:          cloneActivity(cfg.Activity),
+		Hubs:   normalizeHubs(cfg.SmartThings.AllowedHubs),
+		WoLMAC: cfg.SmartThings.WoLMAC,
 	}
-}
-
-// effectiveUser is the value saved for expose_session_user: the toggle
-// keeps its position while session exposure is off (like the notify tab's
-// category masters), but off gates it.
-func (s stFormState) effectiveUser() bool {
-	return s.ExposeSession && s.ExposeSessionUser
 }
 
 // normalizeHubs trims, drops blanks and de-duplicates the allow list.
@@ -97,28 +80,21 @@ func removeHub(hubs []string, ip string) []string {
 	return out
 }
 
-// applyTo returns base with the section's fields written over smartthings.
-// Everything else (port, secret, telegram, notify…) is untouched.
+// applyTo returns base with the section's two fields written over it.
+// Everything else — the rest of smartthings (the sharing tab's), port,
+// secret, telegram… — is untouched.
 func (s stFormState) applyTo(base Config) Config {
 	cfg := base
-	cfg.SmartThings = SmartThingsConfig{
-		AllowedHubs:       normalizeHubs(s.Hubs),
-		ExposeSession:     s.ExposeSession,
-		ExposeSessionUser: s.effectiveUser(),
-		WoLMAC:            s.WoLMAC,
-	}
-	cfg.Activity = normalizeActivity(s.Activity)
+	cfg.SmartThings.AllowedHubs = normalizeHubs(s.Hubs)
+	cfg.SmartThings.WoLMAC = s.WoLMAC
 	return cfg
 }
 
 // dirty reports whether saving would change base.
 func (s stFormState) dirty(base Config) bool {
 	st := base.SmartThings
-	return s.ExposeSession != st.ExposeSession ||
-		s.effectiveUser() != st.ExposeSessionUser ||
-		s.WoLMAC != st.WoLMAC ||
-		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs)) ||
-		!activityEqual(s.Activity, base.Activity)
+	return s.WoLMAC != st.WoLMAC ||
+		!slices.Equal(normalizeHubs(s.Hubs), normalizeHubs(st.AllowedHubs))
 }
 
 // --- WoL adapter labels (unit-tested) ---------------------------------------
@@ -303,17 +279,15 @@ func (u *ui) stSearchLine(s STSSDPState, now time.Time) string {
 // stSection holds the section's widgets; rebuilt with the window on a
 // language change, filled by fillSTSection.
 type stSection struct {
-	status      *widget.Label
-	secretHint  *widget.Label
-	machineID   *widget.Label
-	copyBtn     *widget.Button
-	search      *widget.Label
-	session     *toggle
-	sessionUser *toggle
-	wolSelect   *widget.Select
-	wolHint     *widget.Label
-	hubBox      *fyne.Container
-	addBtn      *widget.Button
+	status     *widget.Label
+	secretHint *widget.Label
+	machineID  *widget.Label
+	copyBtn    *widget.Button
+	search     *widget.Label
+	wolSelect  *widget.Select
+	wolHint    *widget.Label
+	hubBox     *fyne.Container
+	addBtn     *widget.Button
 
 	// hubs is the edited allow list and hub the last /api/st/hub result
 	// (the [Add current hub] button and the [복사] button need both).
@@ -329,9 +303,6 @@ type stSection struct {
 	wolMACs   []string
 	wolLoaded bool
 
-	// activity is the running-app detection editor (#110).
-	activity activityBox
-
 	// filling suppresses the WoL dropdown's OnChanged while fillSTSection
 	// writes the widgets.
 	filling bool
@@ -339,31 +310,15 @@ type stSection struct {
 
 // state reads the widgets into the pure form model.
 func (t *stSection) state() stFormState {
-	return stFormState{
-		ExposeSession:     t.session.Checked,
-		ExposeSessionUser: t.sessionUser.Checked,
-		Hubs:              t.hubs,
-		WoLMAC:            t.wolMAC,
-		Activity:          t.activity.form(),
-	}
+	return stFormState{Hubs: t.hubs, WoLMAC: t.wolMAC}
 }
 
-// setUserEnabled greys the "include user name" toggle while session
-// exposure is off.
-func (t *stSection) setUserEnabled(on bool) {
-	if on {
-		t.sessionUser.Enable()
-	} else {
-		t.sessionUser.Disable()
-	}
-}
-
-// buildSTSection builds the SmartThings part of the network tab. The save
-// bar itself is created by buildNetworkTab (it is the whole tab's footer).
+// buildSTSection builds the SmartThings part of the SmartThings tab. The
+// save bar itself is created by buildSmartThingsTab (the whole tab's
+// footer).
 func (u *ui) buildSTSection() fyne.CanvasObject {
 	t := &stSection{}
 	u.st = t
-	onToggle := func(bool) { u.refreshDirty() }
 
 	t.status = widget.NewLabel(u.t("st.hub.loading"))
 	t.status.Wrapping = fyne.TextWrapWord
@@ -382,13 +337,6 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.search = widget.NewLabel(u.t("st.search.loading"))
 	t.search.Wrapping = fyne.TextWrapWord
 
-	t.session = newToggle(u.t("st.session"), func(on bool) {
-		t.setUserEnabled(on)
-		u.refreshDirty()
-	})
-	t.sessionUser = newToggle(u.t("st.session.user"), onToggle)
-	t.sessionUser.Disable()
-
 	// The adapter dropdown (#96). Its options only exist once /api/st/hub
 	// has answered, so it starts as a placeholder; OnChanged is attached
 	// after construction so filling it can never look like a user pick.
@@ -402,7 +350,6 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.addBtn = widget.NewButtonWithIcon(u.t("st.hubs.add"), theme.ContentAddIcon(), func() { u.addCurrentHub() })
 	t.addBtn.Disable() // enabled by updateAddHubButton once a hub is known
 	u.renderHubs()
-	activityBox := u.buildActivityBox()
 
 	return container.NewVBox(
 		t.status,
@@ -412,13 +359,6 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 		container.NewHBox(t.machineID, t.copyBtn, layout.NewSpacer()),
 		t.search,
 		hint(u.t("st.search.hint")),
-		widget.NewSeparator(),
-		t.session,
-		hint(u.t("st.session.hint")),
-		t.sessionUser,
-		hint(u.t("st.session.user.hint")),
-		widget.NewSeparator(),
-		activityBox,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(u.t("st.wol"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		t.wolSelect,
@@ -459,8 +399,8 @@ func (u *ui) renderHubs() {
 	u.updateAddHubButton()
 	// The box grew or shrank after the tab was laid out; without this the
 	// rows below keep their old positions (see fillSvcBox / #53).
-	if u.networkRoot != nil {
-		u.networkRoot.Refresh()
+	if u.stRoot != nil {
+		u.stRoot.Refresh()
 	}
 }
 
@@ -556,19 +496,14 @@ func (u *ui) updateAddHubButton() {
 	t.addBtn.Disable()
 }
 
-// stForm is the section's formTab. The watch list is checked here first
-// so the reason comes in the app's language; the service checks it again.
+// stForm is the section's formTab.
 func (u *ui) stForm(index int) *formTab {
 	return &formTab{
 		index: index,
 		Fill:  u.fillSTSection,
 		Dirty: func(base Config) bool { return u.st.state().dirty(base) },
 		ApplyTo: func(cfg *Config) error {
-			s := u.st.state()
-			*cfg = s.applyTo(*cfg)
-			if problem := activityProblem(u.lang, s.Activity); problem != "" {
-				return errors.New(problem)
-			}
+			*cfg = u.st.state().applyTo(*cfg)
 			return nil
 		},
 	}
@@ -583,12 +518,8 @@ func (u *ui) fillSTSection(cfg Config) {
 	}
 	s := stStateFromConfig(cfg)
 	t.filling = true
-	t.session.SetChecked(s.ExposeSession)
-	t.sessionUser.SetChecked(s.ExposeSessionUser)
-	t.setUserEnabled(s.ExposeSession)
 	t.hubs = s.Hubs
 	t.wolMAC = s.WoLMAC
-	u.fillActivityBox(s.Activity)
 	u.renderHubs()
 	u.renderWoLAdapters()
 	t.filling = false

@@ -17,10 +17,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Running-app detection (#110, #123, media-notify doc §11) in the network
-// tab's SmartThings section, next to the session-info opt-in: the on/off
-// toggle and the watch-list editor. It is part of the section's form
-// (stFormState) and saves with it.
+// Running-app detection (#110, #123, media-notify doc §11) on the sharing
+// tab (share_tab.go), under the session-info and now-playing opt-ins: the
+// on/off toggle and the watch-list editor. It is part of the tab's form
+// (shareFormState) and saves with it.
 //
 // The list order is the priority: the first running entry is the one the
 // PC device's activity line shows. The rows have up/down buttons for it.
@@ -187,7 +187,7 @@ func (a *activityBox) form() ActivityConfig {
 
 // buildActivityBox builds the toggle and the watch-list editor. UI thread.
 func (u *ui) buildActivityBox() fyne.CanvasObject {
-	t := u.st
+	t := u.share
 	a := &t.activity
 	a.toggle = newToggle(u.t("activity.toggle"), func(bool) { u.refreshDirty() })
 	a.rows = container.NewVBox()
@@ -238,7 +238,7 @@ func activityRowButtons(up, down, del func()) *fyne.Container {
 // its own entry in place, so typing never rebuilds the list (and never
 // steals the focus); adding, removing and moving do. UI thread only.
 func (u *ui) renderActivityRows() {
-	t := u.st
+	t := u.share
 	if t == nil || t.activity.rows == nil {
 		return
 	}
@@ -301,15 +301,15 @@ func (u *ui) renderActivityRows() {
 		a.pickBtn.Enable()
 	}
 	// The rows changed height after the tab was laid out (see renderHubs).
-	if u.networkRoot != nil {
-		u.networkRoot.Refresh()
+	if u.share != nil && u.share.root != nil {
+		u.share.root.Refresh()
 	}
 }
 
-// fillActivityBox writes a into the editor. Called by fillSTSection, which
+// fillActivityBox writes a into the editor. Called by fillShareTab, which
 // runs with the change callbacks muted. UI thread only.
 func (u *ui) fillActivityBox(a ActivityConfig) {
-	t := u.st
+	t := u.share
 	if t == nil || t.activity.toggle == nil {
 		return
 	}
@@ -321,7 +321,7 @@ func (u *ui) fillActivityBox(a ActivityConfig) {
 // pickRunningProgram fetches the running program names off the UI thread
 // and opens the picker with them. The names stay in this dialog.
 func (u *ui) pickRunningProgram() {
-	a := &u.st.activity
+	a := &u.share.activity
 	busy := func(on bool) {
 		// Back on afterwards only while the list has room, the rule
 		// renderActivityRows applies.
@@ -340,7 +340,7 @@ func (u *ui) pickRunningProgram() {
 // showProcessPicker is the dialog: a search box over the names not yet on
 // the list; picking one adds a row and closes it. UI thread only.
 func (u *ui) showProcessPicker(running []string) {
-	t := u.st
+	t := u.share
 	if t == nil {
 		return
 	}
