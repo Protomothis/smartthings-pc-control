@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
 
@@ -72,6 +73,6 @@ func tgActionError(err error) string {
 	case "timeout":
 		return tgText("action_timeout")
 	default:
-		return tgText("action_failed", html.EscapeString(truncate(msg, 200)))
+		return tgText("action_failed", html.EscapeString(httpx.Truncate(msg, 200)))
 	}
 }

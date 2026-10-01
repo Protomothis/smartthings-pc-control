@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
@@ -62,7 +63,7 @@ func (telegramControl) runPreset(args []string) (string, *telegram.InlineKeyboar
 	}
 	p, ok := findPresetByName(getConfig().Presets, arg)
 	if !ok {
-		return tgText("run_no_such", html.EscapeString(truncate(arg, 64))), nil, fmt.Errorf("no preset %q", truncate(arg, 64))
+		return tgText("run_no_such", html.EscapeString(httpx.Truncate(arg, 64))), nil, fmt.Errorf("no preset %q", httpx.Truncate(arg, 64))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
 	defer cancel()

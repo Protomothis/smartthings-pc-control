@@ -34,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
@@ -318,7 +319,7 @@ func handleSTSubscribe(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	from := remoteHost(r.RemoteAddr)
+	from := httpx.RemoteHost(r.RemoteAddr)
 	callback, err := stValidateCallback(body.Callback, from)
 	if err != nil {
 		logMsg("ST push: subscribe from %s rejected: %v", from, err)
@@ -330,13 +331,13 @@ func handleSTSubscribe(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sub, renewed := stSubs.subscribe(callback, truncate(strings.TrimSpace(body.DriverVersion), 32), ttl)
+	sub, renewed := stSubs.subscribe(callback, httpx.Truncate(strings.TrimSpace(body.DriverVersion), 32), ttl)
 	verb := "subscribed"
 	if renewed {
 		verb = "renewed"
 	}
 	logMsg("ST push: %s %s → %s for %s (driver %s)", sub.ID, verb, sub.Callback, formatDelay(ttl), sub.DriverVersion)
-	writeJSON(w, http.StatusOK, stSubscribeResponse{
+	httpx.WriteJSON(w, http.StatusOK, stSubscribeResponse{
 		ID:        sub.ID,
 		ExpiresAt: sub.ExpiresAt.Format(time.RFC3339),
 	})
@@ -355,9 +356,9 @@ func handleSTUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	removed := stSubs.remove(id)
 	if removed {
-		logMsg("ST push: %s removed by the hub", truncate(id, 32))
+		logMsg("ST push: %s removed by the hub", httpx.Truncate(id, 32))
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"removed": removed})
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"removed": removed})
 }
 
 // registerSTPushRoutes mounts the §3.5 subscription endpoints, wrapped in

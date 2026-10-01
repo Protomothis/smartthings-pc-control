@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"golang.org/x/sys/windows"
 )
@@ -427,7 +428,7 @@ func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
 	ctl := currentAwake()
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, awakeAPIBody(ctl.View(), liveCfg, ctl.now()))
+		httpx.WriteJSON(w, http.StatusOK, awakeAPIBody(ctl.View(), liveCfg, ctl.now()))
 		return
 	}
 	var (
@@ -458,5 +459,5 @@ func serveAwakeAPI(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "Keep-awake failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, awakeAPIBody(view, getConfig(), ctl.now()))
+	httpx.WriteJSON(w, http.StatusOK, awakeAPIBody(view, getConfig(), ctl.now()))
 }

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -84,5 +85,5 @@ func writeActionError(w http.ResponseWriter, err error) {
 		secs := int((f.RetryAfter + time.Second - 1) / time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
 	}
-	writeJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Message})
+	httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Message})
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"golang.org/x/sys/windows"
 )
 
@@ -108,5 +109,5 @@ var handleWebUIStatusAPI = apiAuth(serveWebUIStatusAPI, http.MethodGet)
 
 func serveWebUIStatusAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
-	writeJSON(w, http.StatusOK, buildWebUIStatus(liveCfg))
+	httpx.WriteJSON(w, http.StatusOK, buildWebUIStatus(liveCfg))
 }

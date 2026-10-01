@@ -25,6 +25,9 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/secret"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -59,16 +62,16 @@ const (
 var stNow = time.Now
 
 // stLimiter allows stRatePerSecond requests per source IP in any second.
-var stLimiter = newRateLimiter(stRatePerSecond, time.Second, func() time.Time { return stNow() })
+var stLimiter = ratelimit.New(stRatePerSecond, time.Second, func() time.Time { return stNow() })
 
 // stAllow reports whether ip may make one more request now.
 func stAllow(ip string) bool {
-	ok, _ := stLimiter.allow(ip)
+	ok, _ := stLimiter.Allow(ip)
 	return ok
 }
 
 // resetSTRateLimit forgets every source (tests).
-func resetSTRateLimit() { stLimiter.reset() }
+func resetSTRateLimit() { stLimiter.Reset() }
 
 // ---- hub last seen ---------------------------------------------------------
 
@@ -106,9 +109,9 @@ func hubLastSeenInfo() (hubSeen, bool) {
 func driverVersionOf(userAgent string) string {
 	ua := strings.TrimSpace(userAgent)
 	if name, version, ok := strings.Cut(ua, "/"); ok && name == stDriverAgent {
-		return truncate(version, 32)
+		return httpx.Truncate(version, 32)
 	}
-	return truncate(ua, 64)
+	return httpx.Truncate(ua, 64)
 }
 
 // ---- auth (§3.1) -----------------------------------------------------------
@@ -119,7 +122,7 @@ func driverVersionOf(userAgent string) string {
 func stAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := getConfig()
-		from := remoteHost(r.RemoteAddr)
+		from := httpx.RemoteHost(r.RemoteAddr)
 
 		if !stAllow(from) {
 			w.Header().Set("Retry-After", "1")
@@ -130,17 +133,17 @@ func stAuth(next http.HandlerFunc) http.HandlerFunc {
 			logMsg("ST API: %s %s from %s rejected (not in allowed_hubs)", r.Method, r.URL.Path, from)
 			emit("security", "unauthorized", map[string]string{
 				"from": from,
-				"path": truncate(r.URL.Path, 64),
+				"path": httpx.Truncate(r.URL.Path, 64),
 			})
 			stError(w, http.StatusForbidden, "hub not allowed")
 			return
 		}
-		if cfg.Secret != "" && !secretEqual(r.Header.Get("X-PC-Secret"), cfg.Secret) {
+		if cfg.Secret != "" && !secret.Equal(r.Header.Get("X-PC-Secret"), cfg.Secret) {
 			// The attempted value is deliberately not logged or notified.
 			logMsg("ST API: %s %s from %s (UNAUTHORIZED)", r.Method, r.URL.Path, from)
 			emit("security", "unauthorized", map[string]string{
 				"from": from,
-				"path": truncate(r.URL.Path, 64),
+				"path": httpx.Truncate(r.URL.Path, 64),
 			})
 			stError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -161,7 +164,7 @@ func localRequestIP(r *http.Request) net.IP {
 	if addr == nil {
 		return nil
 	}
-	return net.ParseIP(remoteHost(addr.String()))
+	return net.ParseIP(httpx.RemoteHost(addr.String()))
 }
 
 // stHubAllowed reports whether from matches one of the configured hub
@@ -186,7 +189,7 @@ func stHubAllowed(hubs []string, from string) bool {
 
 // stError writes the {"error": ...} body the driver shows in pcInfo.
 func stError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	httpx.WriteJSON(w, status, map[string]string{"error": msg})
 }
 
 // ---- status (§3.2) ---------------------------------------------------------
@@ -513,7 +516,7 @@ func handleSTStatus(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, buildSTStatus(getConfig()))
+	httpx.WriteJSON(w, http.StatusOK, buildSTStatus(getConfig()))
 }
 
 // buildSTStatus assembles the §3.2 status document for cfg. Push bodies
@@ -621,7 +624,7 @@ func handleSTAwake(w http.ResponseWriter, name string, body stCommandRequest, fr
 	}
 	logMsg("ST API: %s from %s", name, from)
 	wire := view.wire()
-	writeJSON(w, http.StatusOK, stCommandResponse{
+	httpx.WriteJSON(w, http.StatusOK, stCommandResponse{
 		Accepted: true,
 		Executed: true,
 		Schedule: stScheduleView(),
@@ -642,7 +645,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	from := remoteHost(r.RemoteAddr)
+	from := httpx.RemoteHost(r.RemoteAddr)
 	name := strings.ToLower(strings.TrimSpace(body.Command))
 	switch name {
 	case "awake", "awakeoff":
@@ -658,7 +661,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := Commands[name]; !ok {
 		logMsg("ST API: unknown command from %s", from)
-		emit("security", "unknown_command", map[string]string{"from": from, "command": truncate(name, 64)})
+		emit("security", "unknown_command", map[string]string{"from": from, "command": httpx.Truncate(name, 64)})
 		stError(w, http.StatusBadRequest, "unknown command")
 		return
 	}
@@ -685,7 +688,7 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logMsg("ST API: %s scheduled in %s (from %s)", name, formatDelay(delay), from)
-		writeJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
+		httpx.WriteJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
 		return
 	}
 
@@ -699,10 +702,10 @@ func handleSTCommand(w http.ResponseWriter, r *http.Request) {
 		dm = dispatchGrace
 	}
 	if deferred, _ := dispatchCommand(name, from, originSmartThings, dm); deferred > 0 {
-		writeJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
+		httpx.WriteJSON(w, http.StatusOK, stCommandResponse{Accepted: true, Schedule: stScheduleView()})
 		return
 	}
-	writeJSON(w, http.StatusOK, stCommandResponse{
+	httpx.WriteJSON(w, http.StatusOK, stCommandResponse{
 		Accepted: true,
 		Executed: true,
 		Schedule: map[string]any{"active": false},
@@ -718,7 +721,7 @@ func handleSTSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cancelled := cancelScheduleBy("smartthings")
-	writeJSON(w, http.StatusOK, map[string]bool{"cancelled": cancelled})
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"cancelled": cancelled})
 }
 
 // ---- wiring ----------------------------------------------------------------

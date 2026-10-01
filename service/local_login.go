@@ -34,6 +34,10 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
+	"github.com/Protomothis/smartthings-pc-control/service/secret"
 )
 
 // Local login rate limit: every attempt counts, trusted or not. The tray
@@ -57,7 +61,7 @@ var (
 	localSessionToken string
 	// localLoginLimiter is one global limit ("" key): localLoginMax
 	// attempts per localLoginWindow.
-	localLoginLimiter = newRateLimiter(localLoginMax, localLoginWindow, func() time.Time { return localLoginNow() })
+	localLoginLimiter = ratelimit.New(localLoginMax, localLoginWindow, func() time.Time { return localLoginNow() })
 	// localLoginLastRefusal is the last refusal logged, so a tray that
 	// keeps asking costs one log line, not one per attempt.
 	localLoginLastRefusal string
@@ -179,7 +183,7 @@ func localSessionValid(r *http.Request, value string) bool {
 	localSessionMu.Lock()
 	tok := localSessionToken
 	localSessionMu.Unlock()
-	return tok != "" && secretEqual(value, tok)
+	return tok != "" && secret.Equal(value, tok)
 }
 
 // resetLocalSession forgets the token and the limiter (tests).
@@ -187,7 +191,7 @@ func resetLocalSession() {
 	localSessionMu.Lock()
 	localSessionToken, localLoginLastRefusal = "", ""
 	localSessionMu.Unlock()
-	localLoginLimiter.reset()
+	localLoginLimiter.Reset()
 }
 
 // handleLocalLoginAPI serves POST /api/local-login. Replies: 200
@@ -204,11 +208,11 @@ func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if getConfig().Secret == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
-	if ok, _ := localLoginLimiter.allow(""); !ok {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"status": "error", "code": "rate_limited", "message": "Too many attempts. Try again later."})
+	if ok, _ := localLoginLimiter.Allow(""); !ok {
+		httpx.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"status": "error", "code": "rate_limited", "message": "Too many attempts. Try again later."})
 		return
 	}
 	p, err := identifyLocalPeer(r)
@@ -219,12 +223,12 @@ func handleLocalLoginAPI(w http.ResponseWriter, r *http.Request) {
 			code = te.code
 		}
 		noteLocalLoginRefusal(err)
-		writeJSON(w, http.StatusForbidden, map[string]string{"status": "error", "code": code, "message": "Not trusted for a local login"})
+		httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"status": "error", "code": code, "message": "Not trusted for a local login"})
 		return
 	}
 	setSessionCookie(w, localSession())
 	logMsg("Local login for the tray app (pid %d, session %d)", p.PID, p.SessionID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // noteLocalLoginRefusal logs a refusal unless it repeats the last one.

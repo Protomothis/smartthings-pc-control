@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -806,11 +807,11 @@ func (telegramControl) EditKeyboard(data string) *telegram.InlineKeyboard {
 
 // Unauthorized raises security.unknown_chat for traffic from other chats.
 func (telegramControl) Unauthorized(chatID, username, text string) {
-	logMsg("Telegram: ignored message from unknown chat %s (%s): %s", chatID, username, truncate(text, 64))
+	logMsg("Telegram: ignored message from unknown chat %s (%s): %s", chatID, username, httpx.Truncate(text, 64))
 	emit("security", "unknown_chat", map[string]string{
 		"chat_id":  chatID,
-		"username": truncate(username, 64),
-		"text":     truncate(text, 64),
+		"username": httpx.Truncate(username, 64),
+		"text":     httpx.Truncate(text, 64),
 	})
 }
 

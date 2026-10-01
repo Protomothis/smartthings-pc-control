@@ -35,6 +35,7 @@ import (
 	"unsafe"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"golang.org/x/sys/windows"
 )
@@ -372,7 +373,7 @@ func runningProcessNames() ([]string, error) {
 
 // isLoopbackRequest reports whether r came from this PC.
 func isLoopbackRequest(r *http.Request) bool {
-	ip := net.ParseIP(remoteHost(r.RemoteAddr))
+	ip := net.ParseIP(httpx.RemoteHost(r.RemoteAddr))
 	return ip != nil && ip.IsLoopback()
 }
 
@@ -394,5 +395,5 @@ func serveProcessesAPI(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "The process list is unavailable.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string][]string{"processes": names})
+	httpx.WriteJSON(w, http.StatusOK, map[string][]string{"processes": names})
 }

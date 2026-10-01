@@ -16,6 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -96,7 +98,7 @@ func prepareNotify(title, text string) (string, string, error) {
 
 // pcNotifyLimits allows pcNotifyPerMinute notifications per source in any
 // sliding window of pcNotifyWindow. Replaced by the tests.
-var pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
+var pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 
 // ---- running -----------------------------------------------------------
 
@@ -124,7 +126,7 @@ func sendPCNotify(ctx context.Context, cfg NotifyPCConfig, checkEnabled bool, so
 	if err != nil {
 		return pcNotifyResult{}, err
 	}
-	if ok, wait := pcNotifyLimits.allow(source); !ok {
+	if ok, wait := pcNotifyLimits.Allow(source); !ok {
 		return pcNotifyResult{}, &pcNotifyError{Code: "rate_limited", RetryAfter: wait,
 			Message: fmt.Sprintf("at most %d notifications a minute", pcNotifyPerMinute)}
 	}
@@ -173,13 +175,13 @@ func handleSTNotify(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	from := remoteHost(r.RemoteAddr)
+	from := httpx.RemoteHost(r.RemoteAddr)
 	res, err := sendPCNotify(r.Context(), getConfig().NotifyPC, true, "ip "+from, body.Title, body.Text)
 	if err != nil {
 		writeActionError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, stNotifyResponse{OK: true, pcNotifyResult: res})
+	httpx.WriteJSON(w, http.StatusOK, stNotifyResponse{OK: true, pcNotifyResult: res})
 }
 
 // handleNotifyTestAPI serves POST /api/notify/test for the app's
@@ -205,10 +207,10 @@ func serveNotifyTestAPI(w http.ResponseWriter, r *http.Request) {
 	res, err := sendPCNotify(r.Context(), NotifyPCConfig{Enabled: true}, false, "app", body.Title, text)
 	if err != nil {
 		status, code, msg := actionErrorStatus(err)
-		writeJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
+		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
 		return
 	}
-	writeJSON(w, http.StatusOK, struct {
+	httpx.WriteJSON(w, http.StatusOK, struct {
 		Status string `json:"status"`
 		pcNotifyResult
 	}{"ok", res})

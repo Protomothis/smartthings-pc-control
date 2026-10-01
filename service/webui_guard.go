@@ -5,22 +5,13 @@ package service
 // comparison every password-like check goes through.
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
-)
 
-// secretEqual compares a presented secret (or session token) with the
-// expected one in constant time. Both sides are hashed first, so not even
-// the length of the expected value leaks through timing.
-func secretEqual(a, b string) bool {
-	ha := sha256.Sum256([]byte(a))
-	hb := sha256.Sum256([]byte(b))
-	return subtle.ConstantTimeCompare(ha[:], hb[:]) == 1
-}
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+)
 
 // webUIHostAllowed reports whether a request's Host header may reach the
 // WebUI. Without remote access the WebUI listens on loopback only and needs
@@ -52,7 +43,7 @@ func webUIHostAllowed(hostHeader string, port int, remote bool) bool {
 func webUIHostGuard(next http.Handler, port int, remote bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !webUIHostAllowed(r.Host, port, remote) {
-			logMsg("WebUI: request from %s with Host %q rejected", remoteHost(r.RemoteAddr), truncate(r.Host, 64))
+			logMsg("WebUI: request from %s with Host %q rejected", httpx.RemoteHost(r.RemoteAddr), httpx.Truncate(r.Host, 64))
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}

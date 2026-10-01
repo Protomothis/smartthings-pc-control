@@ -29,6 +29,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"golang.org/x/sys/windows"
 )
 
@@ -237,16 +239,16 @@ func resetSSDPLastSearch() {
 
 // ssdpLimiter answers each source at most once per ssdpPerSourceInterval.
 // stNow is shared with the /st/v1 limiter so a test can drive both.
-var ssdpLimiter = newRateLimiter(1, ssdpPerSourceInterval, func() time.Time { return stNow() })
+var ssdpLimiter = ratelimit.New(1, ssdpPerSourceInterval, func() time.Time { return stNow() })
 
 // ssdpAllow reports whether ip may be answered now.
 func ssdpAllow(ip string) bool {
-	ok, _ := ssdpLimiter.allow(ip)
+	ok, _ := ssdpLimiter.Allow(ip)
 	return ok
 }
 
 // resetSSDPRateLimit drops every source (tests).
-func resetSSDPRateLimit() { ssdpLimiter.reset() }
+func resetSSDPRateLimit() { ssdpLimiter.Reset() }
 
 // ---- sockets ---------------------------------------------------------------
 
@@ -503,13 +505,13 @@ func handleSTDescription(w http.ResponseWriter, r *http.Request) {
 		stError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !stAllow(remoteHost(r.RemoteAddr)) {
+	if !stAllow(httpx.RemoteHost(r.RemoteAddr)) {
 		w.Header().Set("Retry-After", "1")
 		stError(w, http.StatusTooManyRequests, "rate limited")
 		return
 	}
 	cfg := getConfig() // live: a config save takes effect without a restart
-	writeJSON(w, http.StatusOK, stDescription{
+	httpx.WriteJSON(w, http.StatusOK, stDescription{
 		Protocol:       stProtocol,
 		MachineID:      machineID(),
 		Hostname:       hostname(),

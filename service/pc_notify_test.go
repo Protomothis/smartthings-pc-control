@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
@@ -68,14 +69,14 @@ func TestPrepareNotify(t *testing.T) {
 
 func TestNotifyLimiter(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	l := newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
+	l := ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, func() time.Time { return now })
 	for i := 0; i < pcNotifyPerMinute; i++ {
-		if ok, _ := l.allow("ip 1"); !ok {
+		if ok, _ := l.Allow("ip 1"); !ok {
 			t.Fatalf("request %d refused", i+1)
 		}
 		now = now.Add(time.Second)
 	}
-	ok, wait := l.allow("ip 1")
+	ok, wait := l.Allow("ip 1")
 	if ok {
 		t.Fatal("11th request in a minute allowed")
 	}
@@ -84,14 +85,14 @@ func TestNotifyLimiter(t *testing.T) {
 	if wait != 50*time.Second {
 		t.Errorf("retry after %v, want 50s", wait)
 	}
-	if ok, _ := l.allow("ip 2"); !ok {
+	if ok, _ := l.Allow("ip 2"); !ok {
 		t.Error("another source shares the limit")
 	}
 	now = now.Add(50 * time.Second)
-	if ok, _ := l.allow("ip 1"); !ok {
+	if ok, _ := l.Allow("ip 1"); !ok {
 		t.Error("still refused once the oldest hit left the window")
 	}
-	if ok, _ := l.allow("ip 1"); ok {
+	if ok, _ := l.Allow("ip 1"); ok {
 		t.Error("the window should be full again")
 	}
 }
@@ -108,7 +109,7 @@ func fakeNotifyRun(t *testing.T, reply string, err error) *[][]string {
 		}
 		return session.ParseOutput([]byte(reply))
 	}
-	pcNotifyLimits = newRateLimiter(pcNotifyPerMinute, pcNotifyWindow, time.Now)
+	pcNotifyLimits = ratelimit.New(pcNotifyPerMinute, pcNotifyWindow, time.Now)
 	t.Cleanup(func() { pcNotifyRun, pcNotifyLimits = saved, savedLimits })
 	return &calls
 }

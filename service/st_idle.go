@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -174,7 +175,7 @@ func serveSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 			// one heartbeat. 200, so the tray app neither retries nor logs in
 			// again; the reason tells it why nothing was stored.
 			noteIgnoredHeartbeat(*body.SessionID, target)
-			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "other_session"})
+			httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ignored", "reason": "other_session"})
 			return
 		}
 	}
@@ -189,7 +190,7 @@ func serveSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.Media != nil {
 		recordMediaSample(body.Media.NowPlaying, mediaAt)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ---- which session the samples describe -----------------------------------

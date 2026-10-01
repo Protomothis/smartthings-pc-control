@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -222,7 +223,7 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 		if f.Detail == "" {
 			stError(w, f.Status, f.Code)
 		} else {
-			writeJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
+			httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
 		}
 		return
 	}
@@ -234,5 +235,5 @@ func handleSTMedia(w http.ResponseWriter, r *http.Request, name string, body stC
 		view := stAudioView(audioSample{Audio: *res.Audio, UpdatedAt: audioNow()})
 		resp.Audio = &view
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }

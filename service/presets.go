@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -119,7 +120,7 @@ func handleSTPreset(w http.ResponseWriter, r *http.Request, body stCommandReques
 	p, ok := findPreset(getConfig().Presets, slot)
 	if !ok {
 		logMsg("ST API: preset %d from %s: no such preset", slot, from)
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no_such_preset",
+		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "no_such_preset",
 			"message": fmt.Sprintf("slot %d has no preset", slot)})
 		return
 	}
@@ -131,10 +132,10 @@ func handleSTPreset(w http.ResponseWriter, r *http.Request, body stCommandReques
 	}
 	// Only a start is "executed"; a refusal is in last_command and the log.
 	emit("remote", "received", map[string]string{
-		"command": truncate(fmt.Sprintf("preset %d (%s)", p.Slot, p.Name), 64),
+		"command": httpx.Truncate(fmt.Sprintf("preset %d (%s)", p.Slot, p.Name), 64),
 		"from":    from,
 	})
-	writeJSON(w, http.StatusOK, stCommandResponse{
+	httpx.WriteJSON(w, http.StatusOK, stCommandResponse{
 		Accepted: true,
 		Executed: true,
 		Schedule: stScheduleView(),
@@ -158,7 +159,7 @@ func servePresetsRunAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	p, ok := findPreset(getConfig().Presets, body.Slot)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"status": "error", "error": "no_such_preset",
+		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"status": "error", "error": "no_such_preset",
 			"message": fmt.Sprintf("slot %d has no preset", body.Slot)})
 		return
 	}
@@ -192,8 +193,8 @@ func servePresetsTestAPI(w http.ResponseWriter, r *http.Request) {
 func writePresetAPIResult(w http.ResponseWriter, p Preset, err error) {
 	if err != nil {
 		status, code, msg := actionErrorStatus(err)
-		writeJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
+		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "started": true, "slot": p.Slot, "name": p.Name})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "started": true, "slot": p.Slot, "name": p.Name})
 }

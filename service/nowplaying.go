@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -216,7 +217,7 @@ var handleMediaAPI = apiAuth(serveMediaAPI, http.MethodGet, http.MethodPost)
 
 func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, mediaAPIView(getConfig()))
+		httpx.WriteJSON(w, http.StatusOK, mediaAPIView(getConfig()))
 		return
 	}
 	var body struct {
@@ -235,7 +236,7 @@ func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		f := classifyActionError(err)
 		logMsg("App: %s failed: %v", body.Command, err)
-		writeJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
+		httpx.WriteJSON(w, f.Status, map[string]string{"error": f.Code, "message": f.Detail})
 		return
 	}
 	view := mediaAPIView(getConfig())
@@ -244,5 +245,5 @@ func serveMediaAPI(w http.ResponseWriter, r *http.Request) {
 		// heartbeat, but the caller asked about this command.
 		view.Audio = stAudioView(audioSample{Audio: *res.Audio, UpdatedAt: audioNow()})
 	}
-	writeJSON(w, http.StatusOK, view)
+	httpx.WriteJSON(w, http.StatusOK, view)
 }

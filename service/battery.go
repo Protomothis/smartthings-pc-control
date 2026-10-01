@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/service/devstate"
 )
 
@@ -62,5 +63,5 @@ func startBatteryMonitor(stop <-chan struct{}) {
 var handleBatteryAPI = apiAuth(serveBatteryAPI, http.MethodGet)
 
 func serveBatteryAPI(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, battery.Info())
+	httpx.WriteJSON(w, http.StatusOK, battery.Info())
 }

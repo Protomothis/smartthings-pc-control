@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
@@ -49,8 +50,8 @@ func generateSessionToken() string {
 }
 
 // checkAuth validates session cookie. Returns true if authenticated.
-func checkAuth(r *http.Request, secret string) bool {
-	if secret == "" {
+func checkAuth(r *http.Request, configured string) bool {
+	if configured == "" {
 		return true // No auth required
 	}
 	cookie, err := r.Cookie("session")
@@ -59,7 +60,7 @@ func checkAuth(r *http.Request, secret string) bool {
 	}
 	sessionMu.RLock()
 	defer sessionMu.RUnlock()
-	if sessionToken != "" && secretEqual(cookie.Value, sessionToken) {
+	if sessionToken != "" && secret.Equal(cookie.Value, sessionToken) {
 		return true
 	}
 	// The tray's session from POST /api/local-login (#131).
@@ -284,7 +285,7 @@ To use the browser WebUI, enable "Allow browser access" in the app settings and 
 		}
 
 		liveCfg := getConfig()
-		if !secretEqual(body.Secret, liveCfg.Secret) {
+		if !secret.Equal(body.Secret, liveCfg.Secret) {
 			recordLoginFailure(r.RemoteAddr)
 			logMsg("WebUI login failed from %s", r.RemoteAddr)
 			w.Header().Set("Content-Type", "application/json")
@@ -495,16 +496,9 @@ func apiAuth(next http.HandlerFunc, methods ...string) http.HandlerFunc {
 	}
 }
 
-// writeJSON encodes v with the JSON content type and the given status.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
 // writeAPIError is the {status:"error", message} shape the GUI expects.
 func writeAPIError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"status": "error", "message": msg})
+	httpx.WriteJSON(w, status, map[string]string{"status": "error", "message": msg})
 }
 
 // commandCallers are the UIs POST /api/command may name in "by". Anything
@@ -537,10 +531,10 @@ func serveCommandAPI(w http.ResponseWriter, r *http.Request) {
 	// Recorded as last_command (origin "ui"); notified only from the
 	// WebUI (notifiesCommand).
 	if _, ok := dispatchCommand(name, by, originUI, dispatchImmediate); !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"status": "error", "command": truncate(name, 64), "message": "Unknown command"})
+		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"status": "error", "command": httpx.Truncate(name, 64), "message": "Unknown command"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "command": name, "message": "Command sent"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "command": name, "message": "Command sent"})
 }
 
 // configView is what GET /api/config returns: the live Config with the
@@ -582,7 +576,7 @@ var handleConfigAPI = apiAuth(serveConfigAPI, http.MethodGet, http.MethodPost)
 func serveConfigAPI(w http.ResponseWriter, r *http.Request) {
 	liveCfg := getConfig()
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, maskedConfig(liveCfg))
+		httpx.WriteJSON(w, http.StatusOK, maskedConfig(liveCfg))
 		return
 	}
 	// POST. Decode over the live config: keys the client omits (an older
@@ -634,7 +628,7 @@ func serveConfigAPI(w http.ResponseWriter, r *http.Request) {
 	if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
 		msg = "Settings saved. Restart service to apply port/remote-access changes."
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
 }
 
 // ---- SmartThings hub state (#67) -------------------------------------------
@@ -710,7 +704,7 @@ func serveSTHubAPI(w http.ResponseWriter, r *http.Request) {
 		view.DriverVersion = seen.DriverVersion
 		view.LastSeen = seen.At.Format(time.RFC3339)
 	}
-	writeJSON(w, http.StatusOK, view)
+	httpx.WriteJSON(w, http.StatusOK, view)
 }
 
 // ---- Telegram helper endpoints (#63) ---------------------------------------
@@ -828,7 +822,7 @@ func serveTelegramTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logMsg("Telegram test message sent to chat %s", chatID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "sent"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "sent"})
 }
 
 // handleTelegramMe serves GET /api/telegram/me with the live token:
@@ -852,7 +846,7 @@ func serveTelegramMe(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, telegramCallStatus(err), telegramErrorMessage(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
 		"status":   "ok",
 		"username": u.Username,
 		"name":     strings.TrimSpace(u.FirstName + " " + u.LastName),
@@ -879,7 +873,7 @@ func serveTelegramState(w http.ResponseWriter, r *http.Request) {
 	if conflict && !since.IsZero() {
 		out["since"] = since.Format(time.RFC3339)
 	}
-	writeJSON(w, http.StatusOK, out)
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 // telegramChat is one entry of /api/telegram/chats.
@@ -918,7 +912,7 @@ func serveTelegramChats(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, telegramCallStatus(err), telegramErrorMessage(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "chats": distinctChats(updates)})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "chats": distinctChats(updates)})
 }
 
 // distinctChats collects each chat once (message and callback_query

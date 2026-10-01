@@ -12,8 +12,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
+	"github.com/Protomothis/smartthings-pc-control/service/secret"
 )
 
 // httpReadHeaderTimeout is how long the command and WebUI servers wait
@@ -39,7 +41,7 @@ func newCommandHandler() http.HandlerFunc {
 
 		var command string
 
-		from := remoteHost(r.RemoteAddr)
+		from := httpx.RemoteHost(r.RemoteAddr)
 
 		if liveCfg.Secret != "" {
 			// With secret: /{secret}/{command}. A wrong secret counts like
@@ -51,14 +53,14 @@ func newCommandHandler() http.HandlerFunc {
 				http.Error(w, "Too many attempts", http.StatusTooManyRequests)
 				return
 			}
-			if len(parts) < 2 || !secretEqual(parts[0], liveCfg.Secret) {
+			if len(parts) < 2 || !secret.Equal(parts[0], liveCfg.Secret) {
 				recordLoginFailure(r.RemoteAddr)
 				logMsg("Request: %s /***/%s from %s (UNAUTHORIZED)", r.Method, strings.Join(parts[1:], "/"), r.RemoteAddr)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				// count/window are filled by the aggregation stage (#58).
 				emit("security", "unauthorized", map[string]string{
 					"from": from,
-					"path": truncate("/***/"+strings.Join(parts[1:], "/"), 64),
+					"path": httpx.Truncate("/***/"+strings.Join(parts[1:], "/"), 64),
 				})
 				return
 			}
@@ -79,7 +81,7 @@ func newCommandHandler() http.HandlerFunc {
 		cmd, ok := Commands[name]
 		if !ok {
 			http.Error(w, "Unknown command: "+command, http.StatusBadRequest)
-			emit("security", "unknown_command", map[string]string{"from": from, "command": truncate(command, 64)})
+			emit("security", "unknown_command", map[string]string{"from": from, "command": httpx.Truncate(command, 64)})
 			return
 		}
 
@@ -90,24 +92,6 @@ func newCommandHandler() http.HandlerFunc {
 		fmt.Fprint(w, cmd.Response)
 		dispatchCommand(name, from, originRemote, dispatchDefault)
 	}
-}
-
-// remoteHost strips the port from an http.Request.RemoteAddr for the
-// "from" field of notifications.
-func remoteHost(addr string) string {
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
-	}
-	return addr
-}
-
-// truncate shortens attacker-controlled strings (paths, command names) to
-// max runes before they go into a notification.
-func truncate(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	return string([]rune(s)[:max]) + "…"
 }
 
 // StartHTTPServer starts the HTTP server compatible with SmartThings Edge driver
@@ -180,7 +164,7 @@ var runTool = func(tool string, args ...string) ([]byte, error) {
 func reportExecFailure(command string, err error, output []byte) {
 	msg := err.Error()
 	if line, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n"); line != "" && utf8.ValidString(line) {
-		msg += ": " + truncate(strings.TrimSpace(line), 200)
+		msg += ": " + httpx.Truncate(strings.TrimSpace(line), 200)
 	}
 	emit("system", "exec_failed", map[string]string{"command": command, "error": msg})
 }
