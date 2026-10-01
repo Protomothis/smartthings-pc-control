@@ -25,6 +25,8 @@ const (
 	tabNetwork  = 4
 	// tabPresets is the preset editor (#109).
 	tabPresets = 5
+	// tabLogs is only polled while it is in front.
+	tabLogs = 6
 )
 
 // saveBar is the footer under a form tab.
@@ -160,9 +162,11 @@ func (u *ui) promptUnsaved(bodyKey string, dirty []*formTab, onDone func()) {
 // setCurTab records the tab now on screen and refreshes the ones that only
 // load when shown. The network tab has no polling loop of its own (#70), so
 // its WoL list and SmartThings hub state are re-read here; the notify tab's
-// Telegram conflict warning (#75) is re-read the same way.
+// Telegram conflict warning (#75) is re-read the same way, and the logs,
+// polled only while their tab is in front, catch up at once.
 func (u *ui) setCurTab(index int) {
 	u.curTab = index
+	u.shownTab.Store(int32(index))
 	if !u.connected.Load() {
 		return
 	}
@@ -171,6 +175,8 @@ func (u *ui) setCurTab(index int) {
 		u.refreshNetwork()
 	case tabNotify:
 		u.refreshTelegramState()
+	case tabLogs:
+		background(u.loadLogs)
 	}
 }
 

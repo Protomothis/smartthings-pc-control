@@ -28,10 +28,7 @@ func (u *ui) setupTray() {
 	// Force the next refreshTrayStatus to repaint the freshly built entry.
 	u.trayShown = ""
 
-	openItem := fyne.NewMenuItem(u.t("tray.open"), func() {
-		u.win.Show()
-		u.win.RequestFocus()
-	})
+	openItem := fyne.NewMenuItem(u.t("tray.open"), u.showWindow)
 	webUIItem := fyne.NewMenuItem(u.t("settings.openwebui"), func() {
 		exec.Command("cmd", "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", currentWebUIPort())).Start()
 	})
@@ -76,15 +73,20 @@ func (u *ui) setupTray() {
 	desk.SetSystemTrayMenu(u.trayMenu)
 	desk.SetSystemTrayIcon(appIcon)
 	// Left click on the tray icon opens the window; the menu stays on
-	// right click only (without this Fyne shows the menu on both).
+	// right click only (without this Fyne shows the menu on both). Fyne's
+	// own tap handler only calls Show; ours also puts in content a
+	// minimized start deferred (visibility.go).
 	desk.SetSystemTrayWindow(u.win)
+	systray.SetOnTapped(func() { fyne.Do(u.showWindow) })
 }
 
 // setStatus updates the window status bar and the tray status/tooltip.
 // Must be called on the UI thread.
 func (u *ui) setStatus(text string) {
 	u.statusText = text
-	u.status.SetText(text)
+	if u.status != nil { // nil until a minimized start shows the window
+		u.status.SetText(text)
+	}
 	u.refreshTrayStatus()
 }
 

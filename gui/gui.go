@@ -111,6 +111,14 @@ type ui struct {
 	login atomic.Int32
 	quit  chan struct{}
 
+	// visible is whether the window was on screen at pollLoop's last look,
+	// shownTab the tab in front (mirrors curTab) — both read by pollLoop.
+	// deferContent is set while a minimized start has not shown the window
+	// yet: until then only the tray exists (visibility.go).
+	visible      atomic.Bool
+	shownTab     atomic.Int32
+	deferContent bool
+
 	// Widgets the background pollers update. Rebuilt on language change.
 	status      *widget.Label
 	loginBtn    *widget.Button // shown only while the login is deferred
@@ -250,6 +258,13 @@ func Run(version string, minimized bool) {
 	u.win.Resize(fyne.NewSize(640, 800))
 	// Closing the window hides to the system tray (after an unsaved-changes
 	// prompt when needed, installed by rebuild); Exit lives in the tray menu.
+	//
+	// A minimized start keeps the content out of the window until it is
+	// first shown, so nothing measures text (and loads the fonts) before
+	// someone looks. Gaining focus is the catch-all for every way of
+	// showing it; the tray entries and pollLoop call ensureContent too.
+	u.deferContent = minimized
+	a.Lifecycle().SetOnEnteredForeground(u.ensureContent)
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
@@ -563,6 +578,19 @@ func (u *ui) rebuild() {
 	if u.forms == nil {
 		u.forms = &forms{}
 	}
+	if u.deferContent {
+		// A minimized start: only the tray until the window is first shown
+		// (ensureContent builds the rest). Every setter of a widget creates
+		// its renderer and measures text, so nothing else is built yet.
+		if u.statusText == "" {
+			u.statusText = u.t("status.connecting")
+		}
+		u.setupTray()
+		u.win.SetCloseIntercept(u.onCloseRequest)
+		u.refreshTrayStatus()
+		u.applyConnected(u.connected.Load())
+		return
+	}
 	drafts := u.forms.drafts()
 	u.forms.tabs = nil
 
@@ -651,6 +679,7 @@ func (u *ui) rebuild() {
 		container.NewTabItemWithIcon(u.tabTitles[6], theme.ListIcon(), u.buildLogsTab()),
 	)
 	u.curTab = 0
+	u.shownTab.Store(0)
 	u.tabs.OnSelected = u.onTabSelected
 
 	u.win.SetContent(container.NewBorder(topBar, nil, nil, nil, u.tabs))
@@ -672,6 +701,15 @@ func (u *ui) rebuild() {
 // the Settings tab (install/start lives there) and basic tray entries stay
 // usable. Must be called on the UI thread.
 func (u *ui) applyConnected(on bool) {
+	for _, item := range u.trayNeedsConn {
+		item.Disabled = !on
+	}
+	if u.trayMenu != nil {
+		u.trayMenu.Refresh()
+	}
+	if u.tabs == nil {
+		return // only the tray so far (a minimized start)
+	}
 	for i := 1; i < len(u.tabs.Items); i++ {
 		if on {
 			u.tabs.EnableIndex(i)
@@ -687,6 +725,7 @@ func (u *ui) applyConnected(on bool) {
 		u.tabs.SelectIndex(0)
 		u.switching = false
 		u.curTab = 0
+		u.shownTab.Store(0)
 	}
 	if u.settingsExtra != nil {
 		if on {
@@ -697,12 +736,6 @@ func (u *ui) applyConnected(on bool) {
 		if u.settingsRoot != nil {
 			u.settingsRoot.Refresh()
 		}
-	}
-	for _, item := range u.trayNeedsConn {
-		item.Disabled = !on
-	}
-	if u.trayMenu != nil {
-		u.trayMenu.Refresh()
 	}
 }
 
@@ -1298,12 +1331,12 @@ func (u *ui) initialLoad() {
 		u.adoptConfig(cfg, u.forms.base)
 	})
 	if err == nil {
-		u.loadLogs()
+		// The schedule feeds the tray too; the rest only matters on screen
+		// and comes with the window otherwise (checkVisible).
 		u.loadSchedule()
-		u.loadSTHub()
-		u.loadAwake()
-		u.loadBattery()
-		u.loadMedia()
+		if u.onScreen() || windowOnScreen() {
+			u.loadShown()
+		}
 	}
 }
 
@@ -1330,6 +1363,8 @@ func (u *ui) pollLoop() {
 	defer batteryTick.Stop()
 	mediaTick := time.NewTicker(mediaWatchInterval)
 	defer mediaTick.Stop()
+	visTick := time.NewTicker(visibleCheckInterval)
+	defer visTick.Stop()
 	defer logsTick.Stop()
 	defer schedTick.Stop()
 	defer connTick.Stop()
@@ -1344,20 +1379,24 @@ func (u *ui) pollLoop() {
 			if u.app.Preferences().BoolWithFallback("check_updates", true) {
 				go u.checkForUpdates(false)
 			}
+		case <-visTick.C:
+			u.checkVisible()
 		case <-logsTick.C:
-			if u.connected.Load() && u.logsAutoOn.Load() {
+			if u.logsPollWanted() {
 				u.loadLogs()
 			}
 		case <-schedTick.C:
+			// Hidden too: the tray entry and tooltip show the countdown,
+			// and a new schedule raises the grace toast.
 			if u.connected.Load() {
 				u.loadSchedule()
 			}
 		case <-awakeTick.C:
-			if u.connected.Load() {
+			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
 			}
 		case <-batteryTick.C:
-			if u.connected.Load() {
+			if u.connected.Load() && u.onScreen() {
 				go u.loadBattery()
 			}
 		case <-mediaTick.C:
@@ -1401,6 +1440,9 @@ func (u *ui) loadLogs() {
 // view pinned to the end when it already was. Must be called on the UI
 // thread.
 func (u *ui) renderLogs() {
+	if u.logsLabel == nil {
+		return // not built yet (a minimized start)
+	}
 	var filter string
 	if u.logsFilter != nil {
 		filter = strings.ToLower(strings.TrimSpace(u.logsFilter.Text))
@@ -1448,9 +1490,7 @@ func (u *ui) loadSchedule() {
 		if !s.Active {
 			u.lastSchedCmd = ""
 			u.setCountdown(u.t("schedule.idle"))
-			u.scheduleLabel.SetText(u.t("schedule.none"))
-			u.setOriginStyle(false)
-			u.schedCancelBtn.Disable()
+			u.showScheduleDetail(u.t("schedule.none"), false, false)
 			u.setScheduleText("")
 			return
 		}
@@ -1477,9 +1517,7 @@ func (u *ui) loadSchedule() {
 		if s.Replaced != nil {
 			detail += "\n" + fmt.Sprintf(u.t("schedule.replaced"), u.commandLabel(s.Replaced.Command), u.t(u.originShortKey(s.Replaced.Origin)))
 		}
-		u.scheduleLabel.SetText(detail)
-		u.setOriginStyle(s.IsRemote())
-		u.schedCancelBtn.Enable()
+		u.showScheduleDetail(detail, s.IsRemote(), true)
 		// Tray entry and icon tooltip carry the one-line form.
 		u.setScheduleText(countdown)
 
@@ -1528,16 +1566,23 @@ func (u *ui) originShortKey(origin string) string {
 	return "origin.ui.short"
 }
 
-// setOriginStyle tints the schedule detail line: remote deferrals get the
-// warning colour so a countdown the user did not start stands out. Must be
-// called on the UI thread.
-func (u *ui) setOriginStyle(remote bool) {
+// showScheduleDetail writes the line under the countdown and enables the
+// cancel button while a schedule is active. Remote deferrals get the
+// warning colour so a countdown the user did not start stands out. A no-op
+// before the window is built (a minimized start: the tray still gets the
+// countdown). UI thread only.
+func (u *ui) showScheduleDetail(detail string, remote, active bool) {
+	if u.scheduleLabel == nil {
+		return
+	}
+	u.scheduleLabel.SetText(detail)
 	if remote {
 		u.scheduleLabel.Importance = widget.WarningImportance
 	} else {
 		u.scheduleLabel.Importance = widget.MediumImportance
 	}
 	u.scheduleLabel.Refresh()
+	setEnabled(u.schedCancelBtn, active)
 }
 
 func (u *ui) loadNetwork() {
@@ -1547,6 +1592,9 @@ func (u *ui) loadNetwork() {
 		return
 	}
 	fyne.Do(func() {
+		if u.networkBox == nil {
+			return // not built yet (a minimized start)
+		}
 		// Every free-text line wraps: adapter names, warnings and especially
 		// IPv6 address lists would otherwise set the window's minimum width
 		// once they load (a few seconds after start) and make it jump.

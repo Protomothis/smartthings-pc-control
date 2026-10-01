@@ -339,7 +339,7 @@ func (u *ui) mediaTick() {
 	}
 	defer mediaPollBusy.Store(false)
 	u.watchMediaChanges()
-	if u.connected.Load() && windowOnScreen() {
+	if u.connected.Load() && u.onScreen() {
 		u.loadMedia()
 	}
 }
