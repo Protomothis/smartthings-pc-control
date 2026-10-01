@@ -1,5 +1,5 @@
 {
-  "id": "numbersystem53811.pcnotify",
+  "id": "numbersystem53811.pctoast",
   "version": 1,
   "dashboard": {
     "states": [],
@@ -10,6 +10,7 @@
       "label": "{{i18n.commands.send.label}}",
       "displayType": "textField",
       "textField": {
+        "value": "lastMessage.value",
         "command": "send",
         "argumentType": "string",
         "range": [1, 200]

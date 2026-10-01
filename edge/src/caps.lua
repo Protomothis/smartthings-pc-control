@@ -83,11 +83,16 @@ caps.ACTIVITY = NAMESPACE .. ".pcactivity"
 -- `notification` did the job, but the app labels it with Samsung's own words
 -- ("텍스트 표시") and an embedded device configuration cannot override a
 -- standard capability's labels (platform notes "표준 capability"). Our own
--- capability carries our own label. New, like pcPreset - no definition cache
--- to fight, the owner creates it once. Commands only: there is nothing to
--- show, so there is no attribute to paint. (`pcmessage`, which also had a
--- read-aloud command, was never shipped; read-aloud was dropped.)
-caps.NOTIFY = NAMESPACE .. ".pcnotify"
+-- capability carries our own label. (`pcmessage`, which also had a read-aloud
+-- command, was never shipped; read-aloud was dropped.)
+-- And `pcNotify` (`send` only, no attribute) became `pcToast`: the app waits
+-- for an event on the attribute a detail row is bound to, and a row bound to
+-- no attribute never gets one - the message reached the PC, the row span and
+-- ended in "네트워크 오류" (measured 2026-10-01, platform notes "상세
+-- 화면(detailView) 위젯"). The row is now bound to `lastMessage`, which the
+-- driver answers on every `send`. An attribute is a definition change, so a
+-- new id (platform notes "허브의 정의 캐시"); `pcnotify` was never published.
+caps.TOAST = NAMESPACE .. ".pctoast"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -99,7 +104,7 @@ caps.ids = {
   version = caps.VERSION,
   preset = caps.PRESET,
   activity = caps.ACTIVITY,
-  notify = caps.NOTIFY,
+  toast = caps.TOAST,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

@@ -928,6 +928,9 @@ local ATTRIBUTES = {
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
   -- #114
   [caps.ACTIVITY] = { activity = true, summary = true },
+  -- #108: the last text sent, which the message row is bound to. No status
+  -- body carries it; poll.lua owns it like `lastPreset` (poll.emit_toast).
+  [caps.TOAST] = { lastMessage = true },
   -- #116: standard, on the `battery` component.
   [features.CAP_BATTERY] = { battery = true },
   [features.CAP_POWER_SOURCE] = { powerSource = true },

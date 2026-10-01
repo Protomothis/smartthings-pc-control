@@ -2,7 +2,11 @@
   "tag": "ko",
   "label": "PC 알림",
   "description": "PC 화면에 알림을 띄웁니다.",
-  "attributes": {},
+  "attributes": {
+    "lastMessage": {
+      "label": "마지막 메시지"
+    }
+  },
   "commands": {
     "send": {
       "label": "PC에 메시지 보내기",

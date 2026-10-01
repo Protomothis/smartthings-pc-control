@@ -600,8 +600,8 @@ local EXPECTED_COMMANDS = {
   preset = { run = { "slot" } },
   -- #114: a condition, nothing to command.
   activity = {},
-  -- #108/pcNotify: one command, one text argument.
-  notify = { send = { "text" } },
+  -- #108/pcToast: one command, one text argument.
+  toast = { send = { "text" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -809,7 +809,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "notify" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "toast" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -1506,7 +1506,7 @@ function T.test_no_automation_action_uses_a_push_button()
 end
 
 --------------------------------------------------------------------------------
--- textField rows (#108, pcNotify)
+-- textField rows (#108, pcToast)
 --------------------------------------------------------------------------------
 
 --- Every `textField` widget of every presentation, detail view and automation
@@ -1537,7 +1537,7 @@ function T.test_every_text_field_sends_one_bounded_string_argument()
   -- text) to the definition's `maxLength`, so the field cannot accept what the
   -- cloud would then reject.
   local fields = text_fields()
-  h.assert_true(#fields >= 2, "pcNotify has a text field in each place: " .. #fields)
+  h.assert_true(#fields >= 2, "pcToast has a text field in each place: " .. #fields)
   for _, field in ipairs(fields) do
     local text_field = field.item.textField or {}
     local command = ((definition(field.key).commands or {})[text_field.command or ""]) or nil
@@ -1553,31 +1553,58 @@ function T.test_every_text_field_sends_one_bounded_string_argument()
   end
 end
 
-function T.test_pc_notify_is_one_text_field_and_nothing_else()
-  h.assert_equal(caps.NOTIFY, "numbersystem53811.pcnotify")
-  h.assert_equal(definition("notify").name, "pcNotify")
-  local detail = presentation("notify").detailView
+function T.test_pc_toast_is_one_text_field_bound_to_the_last_message()
+  h.assert_equal(caps.TOAST, "numbersystem53811.pctoast")
+  h.assert_equal(definition("toast").name, "pcToast")
+  h.assert_equal(definition("toast").status, "proposed")
+  local detail = presentation("toast").detailView
   h.assert_equal(#detail, 1, "send only - read-aloud was dropped")
   h.assert_equal(detail[1].textField.command, "send")
-  local actions = presentation("notify").automation.actions
+  -- The fix of 2026-10-01: the app waits for an event on the attribute a row
+  -- is bound to, and pcNotify's row was bound to none - the message reached
+  -- the PC and the row spun into "네트워크 오류" (platform notes).
+  h.assert_equal(detail[1].textField.value, "lastMessage.value", "the row shows the last message")
+  local actions = presentation("toast").automation.actions
   h.assert_equal(#actions, 1, "the same one in a routine")
   h.assert_equal(actions[1].textField.command, "send")
-  h.assert_equal(#presentation("notify").automation.conditions, 0, "nothing to react to")
-  h.assert_equal(#presentation("notify").dashboard.actions, 0)
-  -- No attribute: nothing to show, so nothing the driver would have to paint -
-  -- and nothing that could read "-" (the standard `notification` has none
-  -- either).
-  h.assert_nil(next(definition("notify").attributes or {}), "pcNotify defines no attribute")
+  h.assert_equal(#presentation("toast").automation.conditions, 0, "nothing to react to")
+  h.assert_equal(#presentation("toast").dashboard.actions, 0)
+  -- One attribute, a string as long as the text it holds.
+  local features = require "features"
   local names = {}
-  for name in pairs(definition("notify").commands) do
+  for name in pairs(definition("toast").attributes) do
+    names[#names + 1] = name
+  end
+  h.assert_deep_equal(names, { "lastMessage" })
+  local value = definition("toast").attributes.lastMessage.schema.properties.value
+  h.assert_equal(value.type, "string")
+  h.assert_equal(value.maxLength, features.NOTIFY_MAX_CHARS, "lastMessage maxLength")
+  names = {}
+  for name in pairs(definition("toast").commands) do
     names[#names + 1] = name
   end
   h.assert_deep_equal(names, { "send" })
   -- The service's limit.
-  local features = require "features"
-  h.assert_equal(definition("notify").commands.send.arguments[1].schema.maxLength,
+  h.assert_equal(definition("toast").commands.send.arguments[1].schema.maxLength,
     features.NOTIFY_MAX_CHARS, "send(text) maxLength")
   h.assert_deep_equal(detail[1].textField.range, { 1, features.NOTIFY_MAX_CHARS })
+end
+
+function T.test_every_detail_text_field_is_bound_to_an_attribute()
+  -- A detail row bound to no attribute never gets the event the app waits
+  -- for after a command, so it spins and ends in "네트워크 오류" (measured
+  -- 2026-10-01 with pcNotify). Routine actions have nothing to show and are
+  -- exempt.
+  for key, id in pairs(caps.ids) do
+    for i, item in ipairs(presentation(key).detailView or {}) do
+      if item.displayType == "textField" then
+        local attr = tostring((item.textField or {}).value or ""):match("^([%a][%w_]*)%.value$")
+        h.assert_true(attr ~= nil, string.format("%s detailView[%d] is a text field bound to nothing", id, i))
+        h.assert_true((definition(key).attributes or {})[attr] ~= nil,
+          string.format("%s detailView[%d] is bound to %s, which is not defined", id, i, tostring(attr)))
+      end
+    end
+  end
 end
 
 -- Attributes that are still defined and emitted but no longer have a row of
@@ -1849,14 +1876,16 @@ function T.test_the_versions_row_has_a_label_in_both_languages()
   h.assert_equal(translation("version", "en").label, "PC version")
 end
 
-function T.test_pc_notify_reads_as_ours_in_both_languages()
+function T.test_pc_toast_reads_as_ours_in_both_languages()
   -- The whole point of the capability: the words on the phone, instead of the
   -- app's "텍스트 표시" for the standard `notification`.
-  local ko, en = translation("notify", "ko"), translation("notify", "en")
+  local ko, en = translation("toast", "ko"), translation("toast", "en")
   h.assert_equal(ko.label, "PC 알림")
   h.assert_equal(en.label, "PC notification")
   h.assert_equal(ko.commands.send.label, "PC에 메시지 보내기")
   h.assert_equal(en.commands.send.label, "Send a message to the PC")
+  h.assert_equal(ko.attributes.lastMessage.label, "마지막 메시지")
+  h.assert_equal(en.attributes.lastMessage.label, "Last message")
   h.assert_nil(ko.commands.speak, "read-aloud was dropped")
   h.assert_nil(en.commands.speak, "read-aloud was dropped")
   for _, doc in ipairs({ ko, en }) do
@@ -1899,7 +1928,7 @@ function T.test_the_package_stays_under_the_upload_limit()
   -- bytes (uncompressed; measured 2026-09-30 when fifty profiles - v1, v2
   -- and v3 of every icon/battery variant - reached 666 KB). Only published
   -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS):
-  -- today v1 and v4.
+  -- today v1 and v5.
   local root = tests_dir .. "/.."
   local total = 0
   local function add(path)

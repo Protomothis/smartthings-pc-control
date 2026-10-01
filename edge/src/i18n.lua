@@ -164,12 +164,15 @@ local STRINGS = {
     ko = "보낼 문구 없음",
     en = "Nothing to send",
   },
-  -- The confirmation a message that went out leaves on `pcInfo.message`:
-  -- `pcNotify` has no row of its own to answer on.
+  -- The confirmation a message that went out leaves on `pcInfo.message`; the
+  -- text itself goes on `pcToast.lastMessage`, the row it was typed into.
   notify_sent = {
     ko = "PC에 메시지를 보냈습니다",
     en = "Message sent to the PC",
   },
+  -- `pcToast.lastMessage` before anything was sent. Never "": the cloud
+  -- records an empty string as null and the row reads "-" (platform notes).
+  toast_none = { ko = "없음", en = "None" },
 
   -- #113: a routine (or a stale list) asked for a slot the PC has no preset in.
   preset_empty = {

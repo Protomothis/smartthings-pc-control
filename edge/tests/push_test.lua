@@ -464,6 +464,25 @@ function T.test_the_poll_subscribes_after_a_good_status()
   h.assert_equal(device:get_field(discovery.MACHINE_FIELD), "9f3c-guid")
   h.assert_equal(device:get_field(discovery.HOSTNAME_FIELD), "DESKTOP-ABC")
   h.assert_equal(client.device_base_url(device), "http://192.168.1.20:5001/st/v1")
+  -- #108: no status carries `pcToast.lastMessage`, so the poll paints it - the
+  -- first time in this run forced (`FIRST_FIELD`), on its rest value.
+  h.assert_equal(h.event_value(h.emitted(device), caps.TOAST, "lastMessage"), "없음")
+  h.assert_true(h.event_forced(h.emitted(device), caps.TOAST, "lastMessage"))
+end
+
+function T.test_a_push_and_a_failed_poll_keep_the_message_row_painted()
+  -- #108: like `lastPreset`, the row is owned by poll.lua and goes out with
+  -- every push and every poll, the remembered text over the rest value.
+  local pushed = pc_device("toast-guid")
+  pushed:set_field(poll.TOAST_FIELD, "세탁 끝")
+  push.route(fake_driver({ pushed }), payload({ machine_id = "toast-guid", type = "power.stopping",
+    data = { reason = "suspend" } }))
+  h.assert_equal(h.event_value(h.emitted(pushed), caps.TOAST, "lastMessage"), "세탁 끝")
+
+  local offline = pc_device("toast-off-guid")
+  local http = function() return nil, "connection refused" end
+  poll.once(fake_driver({ offline }), offline, { deps = { http = http } })
+  h.assert_equal(h.event_value(h.emitted(offline), caps.TOAST, "lastMessage"), "없음")
 end
 
 return T

@@ -2,7 +2,11 @@
   "tag": "en",
   "label": "PC notification",
   "description": "Shows a notification on the PC's screen.",
-  "attributes": {},
+  "attributes": {
+    "lastMessage": {
+      "label": "Last message"
+    }
+  },
   "commands": {
     "send": {
       "label": "Send a message to the PC",

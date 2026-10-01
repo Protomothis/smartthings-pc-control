@@ -43,7 +43,7 @@ local function device_init(driver, device)
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   -- #107: pc*.v1 -> the current pc*.vN, with the style kept; a development
-  -- device on pc*.v2 / pc*.v3 also keeps the battery half (pcNotify: v4).
+  -- device on pc*.v2 - pc*.v4 also keeps the battery half (pcToast: v5).
   local migrated = profiles.ensure(device)
   -- #100: the `iconStyle` preference changed but the driver restarted before
   -- the switch to that style's profile landed (or the hub refused it then).
@@ -625,19 +625,24 @@ end
 -- #108: PC notifications
 --------------------------------------------------------------------------------
 
---- `pcNotify.send(text)` -> `POST /st/v1/notify {text}`.
+--- `pcToast.send(text)` -> `POST /st/v1/notify {text}`.
 --
--- The capability has no attribute, so there is no row to answer; the outcome
--- goes to `pcInfo.message` only - a routine may send several a minute, and the
--- summary row is the one the user reads the PC's state from. A text that went
--- out says so there ("PC에 메시지를 보냈습니다"), a refused one says why. Gated
--- like the other v1.2.0 commands (`features "notify"`), and the text is cleaned
--- and cut to the service's 200 characters before it goes out.
-local function handle_notify_send(driver, device, cmd)
+-- The row is bound to `lastMessage`, and the app spins until an event on it
+-- arrives (a row bound to nothing ended in "네트워크 오류", platform notes
+-- "상세 화면(detailView) 위젯"). So every `send` is answered there, forced: a
+-- text that went out becomes the row's value, and on every other path the row
+-- re-emits what it already shows. The outcome in words goes to
+-- `pcInfo.message` only - a routine may send several a minute, and the summary
+-- row is the one the user reads the PC's state from: "PC에 메시지를
+-- 보냈습니다", or why not. Gated like the other v1.2.0 commands (`features
+-- "notify"`), and the text is cleaned and cut to the service's 200 characters
+-- before it goes out.
+local function handle_toast_send(driver, device, cmd)
   local text = ((cmd or {}).args or {}).text
   local lang = poll.lang(device)
   local cleaned = features.notify_text(text)
   if not cleaned then
+    poll.answer_toast(device)
     poll.emit_message(device, i18n.t(lang, "notify_empty"))
     return false
   end
@@ -646,12 +651,14 @@ local function handle_notify_send(driver, device, cmd)
   end
   local refusal = features.refusal(poll.extras(device), nil, features.NOTIFY)
   if refusal then
+    poll.answer_toast(device)
     poll.emit_message(device, i18n.t(lang, refusal))
     log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
     return false
   end
   local ok, body, kind = client.notify(device, cleaned)
   if not ok then
+    poll.answer_toast(device)
     local note = features.notify_error_note(kind, body)
     if note then
       poll.emit_message(device, i18n.t(lang, note))
@@ -660,6 +667,7 @@ local function handle_notify_send(driver, device, cmd)
     report_error(device, kind, body)
     return false
   end
+  poll.emit_toast(device, cleaned)
   poll.emit_message(device, i18n.t(lang, "notify_sent"))
   return true
 end
@@ -760,8 +768,8 @@ end
 if custom.preset then
   capability_handlers[custom.preset.ID] = { run = handle_preset_run }
 end
-if custom.notify then
-  capability_handlers[custom.notify.ID] = { send = handle_notify_send }
+if custom.toast then
+  capability_handlers[custom.toast.ID] = { send = handle_toast_send }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {
