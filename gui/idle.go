@@ -14,6 +14,7 @@ package gui
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -206,17 +207,57 @@ func (u *ui) watchMediaChanges() {
 
 // postHeartbeat delivers hb and records what arrived.
 func (u *ui) postHeartbeat(hb Heartbeat) {
-	err := u.client.SessionHeartbeat(hb)
+	hb.SessionID = heartbeatSessionID()
+	ignored, err := u.client.SessionHeartbeat(hb)
 	if errors.Is(err, errUnauthorized) {
 		// A secret is configured and this client has no session yet (the
 		// user never opened the window, or the service restarted).
 		// config.json holds the secret, so log in the way the toast handler
 		// does and retry once.
 		if secret := localSecret(); secret != "" && u.client.Login(secret) == nil {
-			err = u.client.SessionHeartbeat(hb)
+			ignored, err = u.client.SessionHeartbeat(hb)
 		}
 	}
 	if err == nil {
+		// An ignored post counts as delivered too: the 3s check then posts
+		// only on a change rather than every 3s, and the 30s heartbeat
+		// sends everything anyway once this session becomes the target.
 		u.hbSent.delivered(hb)
+		noteHeartbeatReply(ignored)
+	}
+}
+
+var (
+	// heartbeatSessionID is the Windows session this process runs in,
+	// read once: it never changes for a process.
+	heartbeatSessionID = sync.OnceValue(currentSessionID)
+	// heartbeatLog writes gui.log; replaced by the tests.
+	heartbeatLog = func(format string, args ...any) { guiLog("heartbeat", format, args...) }
+	// heartbeatIgnored is whether the last delivered post was ignored.
+	heartbeatIgnored atomic.Bool
+)
+
+// currentSessionID is ProcessIdToSessionId for this process, 0 when it
+// fails — the field is then left out and the service believes the post.
+func currentSessionID() uint32 {
+	var id uint32
+	if windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &id) != nil {
+		return 0
+	}
+	return id
+}
+
+// noteHeartbeatReply logs when the service starts or stops ignoring this
+// app's heartbeats: it acts on another session (a locked console next to
+// this RDP session, say), so the volume, media and idle time it reports
+// come from there. One line per change, not one per post.
+func noteHeartbeatReply(ignored bool) {
+	if heartbeatIgnored.Swap(ignored) == ignored {
+		return
+	}
+	if ignored {
+		heartbeatLog("service ignores heartbeats from session %d: its commands act on another session", heartbeatSessionID())
+	} else {
+		heartbeatLog("service accepts heartbeats from session %d again", heartbeatSessionID())
 	}
 }

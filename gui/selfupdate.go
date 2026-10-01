@@ -294,6 +294,12 @@ func cleanupStaleUpdateFiles() {
 // back to the temp dir when that is not writable). Truncates once the file
 // grows past 1 MB — this log only ever sees a handful of lines per update.
 func updateLog(format string, args ...interface{}) {
+	guiLog("update", format, args...)
+}
+
+// guiLog is updateLog under another tag ("[tag] ..."), for the rare line
+// the tray app itself has to leave.
+func guiLog(tag, format string, args ...interface{}) {
 	path := "gui.log"
 	if exe, err := os.Executable(); err == nil {
 		path = filepath.Join(filepath.Dir(exe), "gui.log")
@@ -309,7 +315,7 @@ func updateLog(format string, args ...interface{}) {
 	if st, err := f.Stat(); err == nil && st.Size() > 1<<20 {
 		f.Truncate(0)
 	}
-	fmt.Fprintf(f, "%s [update] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(f, "%s [%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), tag, fmt.Sprintf(format, args...))
 }
 
 // messageBox shows a blocking native message box (the elevated updater has

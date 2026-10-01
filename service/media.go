@@ -169,9 +169,11 @@ type stAudio struct {
 }
 
 // audioSessionPresent reports whether someone is logged in; a var so the
-// status tests do not depend on the machine they run on.
+// status tests do not depend on the machine they run on. It goes through
+// targetUserSession, so a status read also drops the samples of a session
+// the commands no longer act on.
 var audioSessionPresent = func() bool {
-	_, err := getActiveUserSessionID()
+	_, err := targetUserSession()
 	return err == nil
 }
 
