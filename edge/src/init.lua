@@ -578,9 +578,10 @@ end
 -- dismissed list sends the row's current value), so `run("none")` is the
 -- dismissed picker and does nothing but answer the row.
 --
--- A preset that ran shows as "프리셋 3 실행함" until the next poll at least
--- `poll.PRESET_HOLD_SECONDS` later puts the row back on "none"
--- (`poll.ensure_preset`, the `lastAction` rules). During that moment the row
+-- A preset that ran shows as "프리셋 3 실행함" for `poll.PRESET_HOLD_SECONDS`,
+-- then a timer puts the row back on "none" (`poll.hold_preset`, with the
+-- polls as the fallback - `poll.ensure_preset`, the `lastAction` rules).
+-- During that moment the row
 -- rests on "3", so a dismissed list sends `run("3")` - which must not start
 -- the preset a second time. A `run` of the very slot the row is showing is
 -- therefore the same no-op as `none`. Picking the same preset again on purpose
@@ -620,6 +621,8 @@ local function handle_preset_run(driver, device, cmd)
   end
   -- The row the app is watching changes value, forced as every answer is.
   poll.emit_preset(device, slot, true)
+  -- And back on "none" a few seconds later, not at the next scheduled poll.
+  poll.hold_preset(driver, device)
   -- The event budget: shared with any command that lands right after it.
   poll.answer(driver, device, nil)
   return true

@@ -549,6 +549,150 @@ function T.test_the_preset_row_returns_to_none_after_the_hold()
   h.assert_equal(#device.emitted, 2)
 end
 
+--- The preset timers `run` started on the shared driver since `from`.
+local function preset_timers(from)
+  local out = {}
+  for i = from + 1, #driver.timers do
+    local t = driver.timers[i]
+    if t.name == "preset-reset" or t.name == "preset-repeat" then
+      out[#out + 1] = t
+    end
+  end
+  return out
+end
+
+--- Run `fn` with `poll.wallclock` reading `clock.now`.
+local function with_clock(clock, fn)
+  local original = poll.wallclock
+  poll.wallclock = function() return clock.now end
+  local ok, err = pcall(fn)
+  poll.wallclock = original
+  if not ok then
+    error(err, 0)
+  end
+end
+
+local function preset_events(device)
+  local out = {}
+  for _, e in ipairs(h.emitted(device)) do
+    if e.cap == caps.PRESET and e.attr == "lastPreset" then
+      out[#out + 1] = e
+    end
+  end
+  return out
+end
+
+function T.test_a_timer_puts_the_preset_row_back_without_waiting_for_a_poll()
+  local device = device_with(with_presets(PRESETS))
+  local clock = { now = 5000 }
+  local from = #driver.timers
+  with_clock(clock, function()
+    with_service(nil, function()
+      handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
+    end)
+    local timers = preset_timers(from)
+    h.assert_equal(#timers, 1)
+    h.assert_equal(timers[1].name, "preset-reset")
+    h.assert_equal(timers[1].delay, poll.PRESET_HOLD_SECONDS)
+    device.emitted = {}
+    -- The timer fires at the hold. `os.time` counts whole seconds, so a timer
+    -- that fires a moment early still ends the hold.
+    clock.now = 5000 + poll.PRESET_HOLD_SECONDS - 1
+    h.assert_true(h.fire_last(driver, "preset-reset"))
+    h.assert_equal(last_preset(device), "none")
+    h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
+    h.assert_equal(#device.emitted, 1)
+    -- The owed repeat, on a short timer of its own.
+    timers = preset_timers(from)
+    h.assert_equal(timers[#timers].name, "preset-repeat")
+    h.assert_equal(timers[#timers].delay, poll.PRESET_REPEAT_SECONDS)
+    h.assert_true(h.fire_last(driver, "preset-repeat"))
+    h.assert_equal(#device.emitted, 2)
+    h.assert_true(h.event_forced(h.emitted(device), caps.PRESET, "lastPreset"))
+    -- And nothing after it: no timer left, and the polls stay quiet.
+    for _, t in ipairs(preset_timers(from)) do
+      h.assert_true(t.cancelled, "no preset timer is still pending")
+    end
+    clock.now = 5100
+    h.assert_false(poll.ensure_preset(device))
+    h.assert_equal(#device.emitted, 2)
+  end)
+  -- The same preset runs again as soon as the row rests on "none".
+  local calls = with_service(nil, function()
+    handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
+  end)
+  h.assert_equal(#calls.actions, 1)
+end
+
+function T.test_a_second_run_within_the_hold_replaces_the_preset_timer()
+  local device = device_with(with_presets(PRESETS))
+  local clock = { now = 6000 }
+  local from = #driver.timers
+  with_clock(clock, function()
+    with_service(nil, function()
+      handlers_for(caps.PRESET).run(driver, device, { args = { slot = "1" } })
+      clock.now = 6003
+      handlers_for(caps.PRESET).run(driver, device, { args = { slot = "2" } })
+    end)
+    local timers = preset_timers(from)
+    h.assert_equal(#timers, 2)
+    h.assert_true(timers[1].cancelled, "the first run's timer is cancelled")
+    h.assert_false(timers[2].cancelled)
+    -- Even if the platform ran the cancelled one anyway, it would do nothing.
+    device.emitted = {}
+    clock.now = 6005
+    timers[1].fn()
+    h.assert_equal(#device.emitted, 0)
+    h.assert_equal(poll.shown_preset(device), "2")
+    -- The second run's timer ends the second run's hold.
+    clock.now = 6008
+    h.assert_true(h.fire_last(driver, "preset-reset"))
+    h.assert_true(h.fire_last(driver, "preset-repeat"))
+    h.assert_false(h.fire_last(driver, "preset-repeat"))
+    h.assert_equal(#preset_events(device), 2)
+    h.assert_equal(last_preset(device), "none")
+  end)
+end
+
+function T.test_a_poll_that_comes_first_leaves_the_timers_nothing_extra_to_send()
+  local device = device_with(with_presets(PRESETS))
+  local clock = { now = 7000 }
+  with_clock(clock, function()
+    with_service(nil, function()
+      handlers_for(caps.PRESET).run(driver, device, { args = { slot = "5" } })
+    end)
+    device.emitted = {}
+    clock.now = 7000 + poll.PRESET_HOLD_SECONDS
+    h.assert_true(poll.ensure_preset(device), "a poll at the hold resets the row")
+    h.assert_true(h.fire_last(driver, "preset-reset"), "then the timer: the owed repeat")
+    h.assert_false(h.fire_last(driver, "preset-repeat"), "nothing left to repeat")
+    h.assert_false(poll.ensure_preset(device))
+    h.assert_equal(#preset_events(device), 2)
+  end)
+end
+
+function T.test_without_timers_the_polls_still_put_the_preset_row_back()
+  local device = device_with(with_presets(PRESETS))
+  local clock = { now = 8000 }
+  local timerless = {}
+  with_clock(clock, function()
+    with_service(nil, function()
+      handlers_for(caps.PRESET).run(timerless, device, { args = { slot = "1" } })
+    end)
+    h.assert_equal(poll.shown_preset(device), "1")
+    h.assert_false(poll.hold_preset(nil, device))
+    device.emitted = {}
+    clock.now = 8002
+    h.assert_false(poll.ensure_preset(device), "still inside the hold")
+    clock.now = 8030
+    h.assert_true(poll.ensure_preset(device))
+    h.assert_true(poll.ensure_preset(device), "the one repeat")
+    h.assert_false(poll.ensure_preset(device))
+    h.assert_equal(#preset_events(device), 2)
+    h.assert_equal(last_preset(device), "none")
+  end)
+end
+
 --------------------------------------------------------------------------------
 -- #114: activity
 --------------------------------------------------------------------------------
