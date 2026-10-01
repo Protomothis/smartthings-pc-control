@@ -61,6 +61,10 @@
 - `speak --text <t> [--voice <name>]` (#106, 내부용) — `notify --speak`가 토스트를 띄운 뒤 분리해서 띄우는 읽기 프로세스.
   200자를 읽는 데 3초 제한보다 훨씬 오래 걸리므로 notify는 음성만 정하고(`voice_used`, `voice_found`) 곧바로 답한다.
   읽기 프로세스는 이름 있는 뮤텍스로 줄을 서서 차례로 읽는다. 서비스는 이 동작을 만들지 않는다.
+- `screen <off|on>` (#121) — `turnscreenoff`·`turnscreenon`. `SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND,
+  SC_MONITORPOWER, 2|-1, SMTO_ABORTIFHUNG, 2000ms)`라 응답 없는 창 하나에 막히지 않는다(예전 PowerShell `SendMessage`는
+  영원히 막혔다). `on`은 먼저 움직임 0의 마우스 입력을 보낸다 — `-1`을 무시하는 모니터도 입력에는 깨어난다.
+  창 하나가 시간을 넘긴 것은 실패가 아니다(모니터는 처음 처리한 창에서 이미 반응).
 - 사용자 세션의 자식은 서비스(SYSTEM)의 환경 변수를 물려받는다. 프리셋이 띄우는 프로그램에는
   `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경을 준다(#109).
 - 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).

@@ -1,9 +1,12 @@
 package service
 
 import (
-	"strconv"
+	"context"
+	"errors"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // Command represents a PC control command
@@ -104,13 +107,30 @@ func resetPowerCommandHint() {
 	lastPowerCommandMu.Unlock()
 }
 
-// screenPowerScript builds the PowerShell one-liner that broadcasts
-// WM_SYSCOMMAND/SC_MONITORPOWER with lParam: 2 turns the monitor off,
-// -1 turns it back on. It must run in the user's session because a
-// service has no interactive desktop (session 0 isolation).
-func screenPowerScript(lParam int) string {
-	return "(Add-Type '[DllImport(\"user32.dll\")] public static extern int SendMessage(int hWnd,int hMsg,int wParam,int lParam);' -Name a -Pas)::SendMessage(-1,0x0112,0xF170," +
-		strconv.Itoa(lParam) + ")"
+// screenRun is runUserAction, replaced by the tests.
+var screenRun = runUserAction
+
+// setScreen runs `user-action screen <state>` ("off" or "on") in the
+// user's session — a service has no interactive desktop (session 0
+// isolation) — and records the display state. It replaced a PowerShell
+// SendMessage(HWND_BROADCAST) that one hung window could block forever
+// (#121); the child now uses SendMessageTimeoutW and runUserAction bounds
+// the whole run (userActionTimeout, child killed when it runs out).
+//
+// A run that timed out still counts: the broadcast was under way and the
+// monitor reacts to the first window that handles it. Any other failure
+// (nobody logged in, the child could not start) leaves the state alone.
+func setScreen(state string) {
+	_, err := screenRun(context.Background(), useraction.ActionScreen, state)
+	switch {
+	case err == nil:
+	case errors.Is(err, errUserActionTimeout):
+		logMsg("screen %s: %v (assuming it took effect)", state, err)
+	default:
+		logMsg("screen %s: %v", state, err)
+		return
+	}
+	setDisplayState(state)
 }
 
 // Grace period bounds (seconds). defaultGraceSeconds applies when
@@ -165,18 +185,12 @@ var Commands = map[string]Command{
 	},
 	"turnscreenoff": {
 		Response: "Screen off...",
-		Execute: func() {
-			runPowerShellInUserSession(screenPowerScript(2))
-			setDisplayState("off")
-		},
+		Execute:  func() { setScreen("off") },
 	},
-	// turnscreenon wakes the monitor again (edge-driver doc §3.3). SC_MONITORPOWER
-	// with lParam -1 is the documented "power on" value.
+	// turnscreenon wakes the monitor again (edge-driver doc §3.3): a zero
+	// mouse move, then SC_MONITORPOWER -1 (useraction/screen.go).
 	"turnscreenon": {
 		Response: "Screen on...",
-		Execute: func() {
-			runPowerShellInUserSession(screenPowerScript(-1))
-			setDisplayState("on")
-		},
+		Execute:  func() { setScreen("on") },
 	},
 }
