@@ -74,7 +74,7 @@ func TestInstallDirRiskBodies(t *testing.T) {
 			continue
 		}
 		for _, l := range []Lang{LangKo, LangEn} {
-			if s := messages[key][l]; strings.Count(s, "%s") != 2 {
+			if s := messages[l][key]; strings.Count(s, "%s") != 2 {
 				t.Errorf("%s/%s: want two %%s, got %q", key, l, s)
 			}
 		}
