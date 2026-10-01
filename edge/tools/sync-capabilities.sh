@@ -36,13 +36,9 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
-# and, once the development device has moved from `pc*.v3`/`pc*.v4` to
-# `pc*.v5` (pcMessage, with read-aloud, gave way to pcNotify, and pcNotify -
-# no attribute, so its row spun into "네트워크 오류" - to pcToast; neither was
-# ever published):
-#
-#   smartthings capabilities:delete numbersystem53811.pcmessage
-#   smartthings capabilities:delete numbersystem53811.pcnotify
+# (`numbersystem53811.pcmessage` and `numbersystem53811.pcnotify`, the Dev-only
+# predecessors of pcToast, were deleted on 2026-10-01 with
+# `smartthings capabilities:delete <id> --capability-version 1`.)
 #
 # Prerequisites:
 #   - `smartthings` CLI installed (npm i -g @smartthings/cli)
