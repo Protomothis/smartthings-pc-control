@@ -209,7 +209,10 @@ function discovery.find(devices, machine_id)
     return nil
   end
   for _, device in ipairs(devices) do
-    if discovery.machine_id_of(device) == machine_id then
+    -- #123: an app child device is never a PC, whatever its DNI looks like.
+    local child = type(device) == "table" and type(device.parent_assigned_child_key) == "string"
+      and device.parent_assigned_child_key ~= ""
+    if not child and discovery.machine_id_of(device) == machine_id then
       return device
     end
   end

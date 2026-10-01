@@ -76,9 +76,14 @@ caps.VERSION = NAMESPACE .. ".pcversion"
 -- capability, not a change to an existing one, so there is no cache to fight
 -- (platform notes "허브의 정의 캐시") - the account owner creates it once.
 caps.PRESET = NAMESPACE .. ".pcpreset"
--- #114: what the PC is doing, from the opt-in watch list (media-notify.md §11).
--- New, like pcPreset.
-caps.ACTIVITY = NAMESPACE .. ".pcactivity"
+-- #123: the opt-in watch list (media-notify.md §11), as one child device per
+-- app instead of one kind-based value on the PC. The PC keeps a summary row
+-- ("Steam 실행 중 · 외 1개"), each child a `running` enum a routine can use
+-- ("Steam이 실행 중이 되면"). Both are new ids; the kind-based `pcActivity`
+-- (#114) was never published and is deleted from the account later.
+caps.APPS = NAMESPACE .. ".pcapps"
+-- The child's capability. Only `pc-app.v1` lists it (`caps.CHILD`).
+caps.APP = NAMESPACE .. ".pcapp"
 -- #108 follow-up: "PC에 메시지 보내기", one command `send(text)`. The standard
 -- `notification` did the job, but the app labels it with Samsung's own words
 -- ("텍스트 표시") and an embedded device configuration cannot override a
@@ -103,9 +108,13 @@ caps.ids = {
   session = caps.SESSION,
   version = caps.VERSION,
   preset = caps.PRESET,
-  activity = caps.ACTIVITY,
+  apps = caps.APPS,
+  app = caps.APP,
   toast = caps.TOAST,
 }
+
+-- #123: the ids that belong on the app child's profile, not on the PC's.
+caps.CHILD = { [caps.APP] = true }
 
 --- Resolve the custom capability objects from `st.capabilities`.
 -- Indexing `st.capabilities` with an unknown id raises, so each lookup is

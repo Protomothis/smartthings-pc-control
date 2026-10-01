@@ -184,16 +184,19 @@ local STRINGS = {
   presets_none = { ko = "없음", en = "None" },
   preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
-  -- #114: the `pcActivity.summary` row, "게임 중 · Steam". The word says what
-  -- kind of thing runs (the watch list's `kind`), the labels which ones.
-  activity_off = { ko = "꺼짐", en = "Off" },
-  activity_none = { ko = "없음", en = "None" },
-  activity_game = { ko = "게임 중", en = "Gaming" },
-  activity_work = { ko = "작업 중", en = "Working" },
-  activity_media = { ko = "감상 중", en = "Watching" },
-  activity_stream = { ko = "방송 중", en = "Streaming" },
-  activity_other = { ko = "실행 중", en = "Running" },
-  activity_more = { ko = "%s 외 %d", en = "%s +%d" },
+  -- #123: the `pcApps.summary` row. The highest-priority app that runs (the
+  -- watch list's order is its priority), and how many others run with it.
+  -- Each app's own state is its child device's row, not a sentence here.
+  apps_running = { ko = "%s 실행 중", en = "%s running" },
+  apps_running_more = { ko = "%s 실행 중 · 외 %d개", en = "%s running · %d more" },
+  apps_none = { ko = "없음", en = "None" },
+  apps_off = { ko = "꺼짐", en = "Off" },
+  -- #123: an app left the watch list but the hub would not delete its child
+  -- device (apps.delete). `pcInfo.message`, once per run.
+  app_child_stale = {
+    ko = "%s 장치를 지우지 못했습니다 · 앱에서 직접 삭제하세요",
+    en = "Could not remove %s · delete it in the app",
+  },
 
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {

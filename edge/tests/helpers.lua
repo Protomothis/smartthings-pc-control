@@ -283,6 +283,51 @@ function h.fake_device(preferences)
   return device
 end
 
+--- #129: give a fake device the hub's persistent state cache - what
+--- `emit_event`/`emit_component_event` last sent per component, capability
+--- and attribute, read back with `get_latest_state` (lua_libs st/device.lua).
+--- `h.restart(device)` then forgets everything a driver run keeps in memory
+--- and keeps the cache, as a driver restart does.
+function h.with_state_cache(device)
+  device.state_cache = {}
+  local function record(component_id, event)
+    local by_cap = device.state_cache[component_id] or {}
+    device.state_cache[component_id] = by_cap
+    local by_attr = by_cap[event.capability] or {}
+    by_cap[event.capability] = by_attr
+    by_attr[event.attribute] = { value = event.value }
+  end
+  local emit_event, emit_component_event = device.emit_event, device.emit_component_event
+  function device:emit_event(event)
+    record("main", event)
+    return emit_event(self, event)
+  end
+  function device:emit_component_event(component, event)
+    record(component.id, event)
+    return emit_component_event(self, component, event)
+  end
+  function device:get_latest_state(component_id, capability_id, attribute)
+    local entry = (((self.state_cache[component_id] or {})[capability_id]) or {})[attribute]
+    if not entry then
+      return nil, nil
+    end
+    return entry.value, entry
+  end
+  return device
+end
+
+--- #129: a driver restart for a fake device: every field that is not
+--- persisted on the hub is gone (the ones `set_field` was given
+--- `{ persist = true }` for are listed in `persisted`), the state cache stays.
+function h.restart(device, persisted)
+  local kept = {}
+  for _, name in ipairs(persisted or {}) do
+    kept[name] = device.fields[name]
+  end
+  device.fields = kept
+  return device
+end
+
 --------------------------------------------------------------------------------
 -- #125: the shared contract fixtures in testdata/st-v1 at the repository root
 --------------------------------------------------------------------------------

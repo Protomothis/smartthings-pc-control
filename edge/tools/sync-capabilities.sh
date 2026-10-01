@@ -36,6 +36,12 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
+# And once the Dev channel device has moved from `pc*.v5` to `pc*.v6` (#123:
+# the kind-based `pcActivity` gave way to `pcApps` on the PC and one `pcApp`
+# child device per watched app; it was never published):
+#
+#   smartthings capabilities:delete numbersystem53811.pcactivity --capability-version 1
+#
 # (`numbersystem53811.pcmessage` and `numbersystem53811.pcnotify`, the Dev-only
 # predecessors of pcToast, were deleted on 2026-10-01 with
 # `smartthings capabilities:delete <id> --capability-version 1`.)
@@ -49,7 +55,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcActivity pcToast)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcApps pcApp pcToast)
 VERSION=1
 TAGS=(ko en)
 

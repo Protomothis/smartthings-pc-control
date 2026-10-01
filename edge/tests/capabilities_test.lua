@@ -214,7 +214,12 @@ function T.test_the_current_profile_lists_every_capability()
   local name, text = profile_file_for(profiles.current())
   h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
   for _, id in pairs(caps.ids) do
-    h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
+    if caps.CHILD[id] then
+      -- #123: the app child's capability belongs on its own profile.
+      h.assert_nil(text:find(id .. "\n", 1, true), "profiles/" .. tostring(name) .. " lists the child's " .. id)
+    else
+      h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
+    end
   end
 end
 
@@ -325,7 +330,7 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   }
   for name, text in pairs(profile_files) do
     -- #100: the icon variants are current, and checked against pc.yml below.
-    if not profiles.is_current(profile_name(text)) then
+    if not profiles.is_current(profile_name(text)) and not profiles.is_app_profile(profile_name(text)) then
       local order = capability_order(text)
       h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
       local at
@@ -461,8 +466,28 @@ function T.test_every_profile_file_is_current_or_known()
   end
   for file, text in pairs(profile_files) do
     local declared = profile_name(text)
-    h.assert_true(profiles.is_current(declared) or known[declared] == true,
+    h.assert_true(profiles.is_current(declared) or known[declared] == true or declared == profiles.APP,
       "profiles/" .. file .. " declares " .. tostring(declared) .. ", which profiles.lua does not know")
+  end
+end
+
+function T.test_the_app_child_profile_is_its_one_capability_and_refresh()
+  -- #123: one row ("실행 중 / 꺼짐"), and a pull-to-refresh that asks the PC.
+  local profiles = require "profiles"
+  local name, text = profile_file_for(profiles.APP)
+  h.assert_equal(name, "pc-app.yml", "pc-app.v1 lives in profiles/pc-app.yml")
+  text = text:gsub("\r\n", "\n")
+  h.assert_deep_equal(capability_order(text), { (caps.APP:gsub("^.*%.", "")) })
+  h.assert_contains(text, "\n      - id: " .. caps.APP .. "\n")
+  h.assert_contains(text, "\n      - id: refresh\n")
+  h.assert_equal(profile_category(text), "Others")
+  h.assert_nil(text:find("\npreferences:", 1, true), "the child has no preferences of its own")
+  for child_id in pairs(caps.CHILD) do
+    for file, other in pairs(profile_files) do
+      if file ~= name then
+        h.assert_nil(other:find(child_id .. "\n", 1, true), "profiles/" .. file .. " lists " .. child_id)
+      end
+    end
   end
 end
 
@@ -598,8 +623,9 @@ local EXPECTED_COMMANDS = {
   version = {},
   -- #113: one list argument, the slot as a string enum.
   preset = { run = { "slot" } },
-  -- #114: a condition, nothing to command.
-  activity = {},
+  -- #123: a summary row on the PC and a condition on each app child.
+  apps = {},
+  app = {},
   -- #108/pcToast: one command, one text argument.
   toast = { send = { "text" } },
 }
@@ -809,7 +835,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "activity", "toast" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "apps", "toast" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -1705,6 +1731,11 @@ function T.test_no_detail_state_row_is_ever_emitted_empty()
     samples[#samples + 1] = state.apply_status(state.new("on"), full,
       { lang = lang, now = "23:05:00" })
   end
+  -- #123: the app child's one row, emitted on the child device.
+  local features = require "features"
+  samples[#samples + 1] = features.app_events({ running = true })
+  samples[#samples + 1] = features.app_events({ running = false })
+  samples[#samples + 1] = features.app_events(nil)
 
   local rows = detail_state_rows()
   h.assert_true(#rows >= 5, "far too few state rows were checked: " .. #rows)
@@ -1928,16 +1959,22 @@ function T.test_the_package_stays_under_the_upload_limit()
   -- bytes (uncompressed; measured 2026-09-30 when fifty profiles - v1, v2
   -- and v3 of every icon/battery variant - reached 666 KB). Only published
   -- generations and the current one are packaged (profiles.UNSHIPPED_VERSIONS):
-  -- today v1 and v5.
+  -- today v1 and v6, plus the app child's pc-app.yml (#123). Read with the
+  -- helpers, so the size is checked under a real Lua 5.3 as well as fengari.
   local root = tests_dir .. "/.."
   local total = 0
   -- h.read_file / h.list_dir: host.* under fengari, io.* under C Lua.
   local function add(path)
-    total = total + #h.read_file(path)
+    local text = h.read_file(path)
+    h.assert_true(type(text) == "string", "could not read " .. path)
+    total = total + #text
   end
   add(root .. "/config.yml")
   for _, name in ipairs(list_yml()) do add(profiles_dir .. "/" .. name) end
-  local src = h.list_dir(root .. "/src")
+  local src = {}
+  for _, name in ipairs(h.list_dir(root .. "/src")) do
+    if name:match("%.lua$") then src[#src + 1] = name end
+  end
   h.assert_true(#src > 0, "could not list src/")
   for _, name in ipairs(src) do add(root .. "/src/" .. name) end
   h.assert_true(total < 600000, "package is " .. total .. " bytes; the upload limit is 655360")

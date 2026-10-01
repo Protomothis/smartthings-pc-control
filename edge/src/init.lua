@@ -8,6 +8,7 @@ local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
 local log = require "log"
 
+local apps = require "apps"
 local caps = require "caps"
 local client = require "client"
 local discovery = require "discovery"
@@ -40,6 +41,13 @@ local function device_init(driver, device)
   if profiles.remove_legacy_child(driver, device) then
     return
   end
+  -- #123: an app child is painted from its PC and nothing else - no profile
+  -- migration, no poll timer, no push subscription of its own.
+  if apps.is_child(device) then
+    apps.child_init(driver, device)
+    return
+  end
+  apps.remember_parent(device)
   -- platform notes "프로필과 화면 생성": a device keeps the screen definition it was created with, so a
   -- device left on an older profile is moved to the current one, once.
   -- #107: pc*.v1 -> the current pc*.vN, with the style kept; a development
@@ -54,18 +62,23 @@ local function device_init(driver, device)
   local fresh_rows = poll.ensure_rows(device)
   if fresh_rows or switched or migrated then
     -- First run on this generation of rows, or a new profile whose cloud
-    -- record starts empty: forced rows + forced poll, now and again shortly,
-    -- so attributes that never change (updateAvailable) and rows the cloud
-    -- dropped while applying the profile are filled in.
-    poll.repaint_soon(driver, device)
+    -- record starts empty: every row forced once, and a look again shortly
+    -- (poll.repaint_soon). #129: `ensure_rows` has just repainted when it
+    -- says so - not a second time.
+    poll.repaint_soon(driver, device, { painted = fresh_rows })
   end
   -- §6.3: one listener per driver, opened on the first device that needs it.
   push.start(driver)
   poll.start(driver, device)
 end
 
-local function device_added(_driver, device)
+local function device_added(driver, device)
   log.info("added " .. device.id)
+  -- #123: a child `apps.sync` asked for has arrived.
+  if apps.is_child(device) then
+    apps.child_init(driver, device)
+    return
+  end
   -- A device that is being added was created by this driver run, so it is on
   -- the current profile: record the name now (platform notes "프로필과 화면 생성", the hub does not always
   -- expose it) and let `ensure` confirm there is nothing to migrate.
@@ -90,28 +103,74 @@ end
 
 local function device_removed(driver, device)
   log.info("removed " .. device.id)
+  if apps.is_child(device) then
+    apps.child_removed(driver, device)
+    return
+  end
+  -- #123: the PC's app children go with it.
+  apps.parent_removed(driver, device)
   poll.stop(driver, device)
   wol.cancel_wake(driver, device)
   push.stop(driver, device)
 end
 
-local function device_info_changed(driver, device, _event, _args)
+--- #129: did this `infoChanged` move the device onto another profile?
+--
+-- The hub passes the device record from before the change as
+-- `args.old_st_store` (lua_libs st/driver.lua). When its profile is the one
+-- the device is on now, only preferences (or the label) changed, and nothing
+-- needs repainting: the cloud record is the same one, and the poll that
+-- `poll.start` runs a second later sends whatever a new preference changed
+-- (a new language rewrites every sentence row). When the old record is not
+-- there to compare, it is the profile change it used to be assumed to be.
+local function profile_changed(device, args)
+  local old = (((args or {}).old_st_store) or {}).profile
+  if type(old) ~= "table" then
+    return true
+  end
+  local now = device.profile
+  if type(now) ~= "table" then
+    return true
+  end
+  if old.id ~= nil and now.id ~= nil then
+    return old.id ~= now.id
+  end
+  if old.name ~= nil and now.name ~= nil then
+    return old.name ~= now.name
+  end
+  return true
+end
+
+local function device_info_changed(driver, device, _event, args)
   -- Preferences are already updated on `device` here; restarting the timer
   -- picks up a new pollInterval and a poll picks up a new IP/secret/port.
   log.info("preferences changed for " .. device.id)
+  -- #123: a child has no preferences; this is the user renaming it, which
+  -- is theirs to do (the driver never writes a child's label after creating it).
+  if apps.is_child(device) then
+    return
+  end
   -- #100: a new `iconStyle` moves the device onto the profile with that
   -- category (the icon). The switch fires infoChanged once more; by then
   -- `apply_style` remembers the profile it asked for and does nothing, so
   -- there is exactly one `try_update_metadata` per change.
-  profiles.apply_style(device)
+  local switched = profiles.apply_style(device)
   -- infoChanged also fires when a profile migration (or the switch above) has
   -- landed: the cloud's record of the new profile is empty until every row is
-  -- sent again, so the repaint below runs either way.
+  -- sent again, so that is repainted. #129: a preference change that moved no
+  -- profile is not - it used to be a whole forced repaint (about 70 events)
+  -- for, say, a new poll interval.
   poll.start(driver, device)
-  poll.repaint_soon(driver, device)
+  if switched or profile_changed(device, args) then
+    poll.repaint_soon(driver, device)
+  end
 end
 
 local function device_do_configure(driver, device)
+  -- #123: children are never polled themselves.
+  if apps.is_child(device) then
+    return
+  end
   poll.start(driver, device)
 end
 
@@ -185,6 +244,12 @@ local function handle_switch_on(driver, device)
   wol.wake(driver, device)
 end
 
+-- The rows `switch off` is answered on (`poll.answer`).
+local POWER_ROWS = {
+  [state.CAP_SWITCH .. ".switch"] = true,
+  [caps.POWER_STATE .. ".powerState"] = true,
+}
+
 --- switch.off: the configured off action with the service's own grace handling.
 --
 -- #93: not while the PC is already on its way out or coming up. The toggle is a
@@ -206,10 +271,18 @@ local function handle_switch_off(driver, device)
     report_error(device, kind, body)
     return
   end
-  poll.once(driver, device)
+  -- #129 (W2): through the answer window, like every command. The toggle is
+  -- answered on the rows it is bound to: with a grace period the PC is still
+  -- "on" (§6.2 `shuttingDown`), and an unchanged value would leave the
+  -- toggle's spinner without an event (platform notes "상세 화면").
+  poll.answer(driver, device, POWER_ROWS)
 end
 
 local function handle_refresh(driver, device)
+  -- #123: pulling an app child down to refresh asks its PC.
+  if apps.is_child(device) then
+    return apps.refresh(driver, device)
+  end
   poll.once(driver, device)
 end
 
@@ -275,7 +348,8 @@ local function run_command(driver, device, service_command, mode, minutes)
   poll.answer_action(device)
   if service_command == nil or service_command == "" or service_command == state.ACTION_NONE
       or state.is_busy_action(service_command) then
-    return poll.once(driver, device)
+    -- #129 (W2): the dismissed picker's refresh shares the answer window too.
+    return poll.answer(driver, device, nil)
   end
   if service_command == "wake" then
     return handle_switch_on(driver, device)
@@ -291,7 +365,8 @@ local function run_command(driver, device, service_command, mode, minutes)
     report_error(device, kind, body)
     return
   end
-  poll.once(driver, device)
+  -- #129 (W2): the row was answered above; the poll shows what the command did.
+  poll.answer(driver, device, nil)
 end
 
 --- Build the handler for one no-argument command.
@@ -394,7 +469,7 @@ local function handle_schedule(driver, device, cmd)
   -- A `schedule` with no minutes at all is the same "nothing was picked" case.
   local minutes = math.floor(tonumber(args.minutes) or state.MINUTES_NONE)
   if minutes < 0 then
-    return poll.once(driver, device)
+    return poll.answer(driver, device, nil)
   end
   if minutes == 0 then
     return handle_cancel(driver, device)
@@ -412,11 +487,10 @@ local function handle_schedule(driver, device, cmd)
     report_error(device, kind, body)
     return
   end
-  poll.once(driver, device, {
-    note = had_schedule and i18n.t(poll.lang(device), "schedule_replaced") or nil,
-    -- #86: the rows the schedule list is bound to answer this command.
-    force = poll.SCHEDULE_ROWS,
-  })
+  -- #86: the rows the schedule list is bound to answer this command. #129
+  -- (W2): through the shared answer window, like every other command.
+  poll.answer(driver, device, poll.SCHEDULE_ROWS,
+    had_schedule and i18n.t(poll.lang(device), "schedule_replaced") or nil)
 end
 
 function handle_cancel(driver, device)
@@ -430,13 +504,12 @@ function handle_cancel(driver, device)
   local nxt = state.transition(poll.get_state(device), "schedule_cancelled")
   poll.set_state(device, nxt)
   poll.emit_power(device, nxt)
-  poll.once(driver, device, {
-    note = i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"),
-    -- #86: cancelling with nothing scheduled leaves every schedule row exactly
-    -- as it was, which is precisely when the app's spinner used to end in an
-    -- error. Forced, the rows go out anyway and the spinner finishes (platform notes "상세 화면(detailView) 위젯").
-    force = poll.SCHEDULE_ROWS,
-  })
+  -- #86: cancelling with nothing scheduled leaves every schedule row exactly
+  -- as it was, which is precisely when the app's spinner used to end in an
+  -- error. Forced, the rows go out anyway and the spinner finishes (platform
+  -- notes "상세 화면(detailView) 위젯"). #129 (W2): through the answer window.
+  poll.answer(driver, device, poll.SCHEDULE_ROWS,
+    i18n.t(poll.lang(device), cancelled and "schedule_cancelled" or "schedule_none"))
 end
 
 --------------------------------------------------------------------------------
@@ -798,7 +871,10 @@ local function driver_lifecycle(driver, event)
   end
   local ok, devices = pcall(function() return driver:get_devices() end)
   for _, device in ipairs(ok and devices or {}) do
-    pcall(function() push.stop(driver, device) end)
+    -- #123: an app child has no subscription of its own.
+    if not apps.is_child(device) then
+      pcall(function() push.stop(driver, device) end)
+    end
   end
   pcall(function() push.shutdown(driver) end)
   log.info("driver shutting down: push subscriptions released")

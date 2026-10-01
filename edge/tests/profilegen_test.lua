@@ -225,7 +225,7 @@ function T.test_the_media_group_is_in_main_by_default_in_its_order()
   -- pcToast takes the place the standard notification pair had (pc.v2),
   -- pcMessage had (pc.v3) and pcNotify had (pc.v4), and closes main.
   h.assert_deep_equal({ main[at + 6], main[at + 7], main[at + 8] }, {
-    "numbersystem53811.pcpreset", "numbersystem53811.pcactivity", "numbersystem53811.pctoast",
+    "numbersystem53811.pcpreset", "numbersystem53811.pcapps", "numbersystem53811.pctoast",
   })
   h.assert_equal(#main, at + 8, "pcToast is the last capability of main")
   h.assert_nil(render("others", false):find("\n  - id: media\n", 1, true), "no media component by default")
@@ -250,32 +250,34 @@ function T.test_no_current_profile_carries_anything_that_reads_aloud()
   end
 end
 
-function T.test_the_unreleased_v2_v3_and_v4_generations_are_not_packaged()
-  -- v2, v3 and v4 existed only on the Dev channel; their files were dropped to
+function T.test_the_unreleased_v2_to_v5_generations_are_not_packaged()
+  -- v2, v3, v4 and v5 existed only on the Dev channel; their files were dropped to
   -- stay under the 655360-byte upload limit (profiles.UNSHIPPED_VERSIONS).
   -- Their names stay in KNOWN so a development device on any of them still
-  -- migrates to the v5 of its style and battery half.
+  -- migrates to the v6 of its style and battery half.
   local on_disk = {}
   for _, f in ipairs(list(edge_dir .. "/profiles")) do
     on_disk[f] = true
   end
-  for _, version in ipairs({ 2, 3, 4 }) do
+  for _, version in ipairs({ 2, 3, 4, 5 }) do
     for _, battery in ipairs({ false, true }) do
       for _, style in ipairs(profiles.STYLES) do
         local name = profiles.name_for(style, battery, version)
         h.assert_false(profiles.is_shipped(name), name)
         h.assert_nil(on_disk[file_name(name)], file_name(name) .. " must not be packaged")
-        h.assert_equal(profiles.migration_for(name), profiles.name_for(style, battery, 5),
+        h.assert_equal(profiles.migration_for(name), profiles.name_for(style, battery, 6),
           name .. " must still migrate")
       end
     end
   end
-  -- What is packaged: the ten v1 files and the twenty current ones.
+  -- What is packaged: the ten v1 files, the twenty current ones and the app
+  -- child's pc-app.yml (#123).
   local count = 0
   for _ in pairs(on_disk) do
     count = count + 1
   end
-  h.assert_equal(count, 30)
+  h.assert_equal(count, 31)
+  h.assert_true(on_disk["pc-app.yml"] == true, "the app child's profile is packaged")
 end
 
 function T.test_the_alternative_layout_moves_the_media_group_into_a_component()

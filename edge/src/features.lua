@@ -181,6 +181,10 @@ function features.remember(device_state, status)
     awake_on = features.awake_on(status),
     -- #118: and what the play/pause row does.
     playback = features.playback_status(status),
+    -- #123: the watch list, for the app children (apps.lua): a child that is
+    -- added between two statuses paints itself from this.
+    apps_mode = features.apps_mode(status),
+    apps = features.apps_of(status),
     -- The body itself, so a repaint (poll.repaint) paints these rows with
     -- what the PC last said instead of the never-polled defaults - a forced
     -- "off" on the keep-awake switch would fire every routine that watches it.
@@ -499,95 +503,172 @@ function features.preset_events(status, lang)
 end
 
 --------------------------------------------------------------------------------
--- #114: activity
+-- #123: watched apps
 --------------------------------------------------------------------------------
 
--- `pcActivity.activity`, the routine condition ("활동이 게임"). `none` when
--- nothing on the watch list runs and when the opt-in is off.
-features.ACTIVITY_KINDS = { "none", "game", "work", "media", "stream", "other" }
+-- The opt-in watch list (media-notify.md §11) as the service reports it since
+-- #123: `activity = { enabled, apps = [ { id, label, running } ], top }`, the
+-- list in priority order (first = highest). The PC shows one summary row
+-- (`pcApps.summary`); every app is a child device of its own whose `running`
+-- row a routine reads (apps.lua). This part is the pure reading of the block.
 
--- The summary row, like `pcInfo.summary`, is cut by the phone without a word
--- (platform notes "화면 배치"), so it is built to fit this many code points.
-features.ACTIVITY_MAX_CHARS = 24
+-- The service watches at most this many processes, and the driver holds to
+-- the same number: a status can never make it create more children than that.
+features.APPS_MAX = 10
 
-local function char_len(s)
-  return #(tostring(s):gsub("[\128-\191]", ""))
-end
+-- `pcApps.summary` is defined with `maxLength: 60`.
+features.APPS_SUMMARY_MAX_CHARS = 60
 
-local function is_kind(kind)
-  for _, k in ipairs(features.ACTIVITY_KINDS) do
-    if k == kind then
-      return true
-    end
+-- The service keeps labels to 30 characters; the driver cuts anything longer
+-- the same way rather than trusting it (the label becomes a device label).
+features.APP_LABEL_MAX_CHARS = 30
+
+-- The child's `pcApp.running` enum.
+features.APP_RUNNING = "running"
+features.APP_STOPPED = "stopped"
+
+-- What `apps_mode` answers.
+features.APPS_OLD = "old"
+features.APPS_OFF = "off"
+features.APPS_ON = "on"
+
+local function clean(text)
+  if type(text) ~= "string" then
+    return ""
   end
-  return false
+  return (text:gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
---- True when the status says the watch list is on: the block says so and
---- the service lists the feature (it does only while the opt-in is on). An
---- older service has neither.
-function features.activity_enabled(status)
+--- What a status says about the watch list.
+---
+---   "old"  a service older than v1.2.0 (no `features` at all): the rows say
+---          "서비스 v1.2.0 필요" and every child keeps the value it has
+---   "off"  the opt-in is off, the service does not list the feature, or the
+---          block is not one this driver can read (a Dev build of the
+---          kind-based #114 block): "꺼짐", and the children are left alone
+---   "on"   the list is on and `activity.apps` is its contents, possibly empty
+---
+-- Only "on" ever creates or deletes a child (apps.lua): a list that is
+-- switched off has no entries, and deleting every child (and every routine
+-- that uses one) because the user paused the feature would be wrong.
+function features.apps_mode(status)
+  local set = features.parse(status)
+  if set == false then
+    return features.APPS_OLD
+  end
   local block = (status or {}).activity
-  if type(block) ~= "table" or block.enabled ~= true then
-    return false
+  if type(block) ~= "table" or block.enabled ~= true or set[features.ACTIVITY] ~= true then
+    return features.APPS_OFF
   end
-  return features.has({ features = features.parse(status) }, features.ACTIVITY)
+  if type(block.apps) ~= "table" then
+    return features.APPS_OFF
+  end
+  return features.APPS_ON
 end
 
---- The `activity` enum value of a status body. A kind this driver does not
---- know (a newer service) is `other` rather than dropped: something IS running.
-function features.activity_kind(status)
-  if not features.activity_enabled(status) then
-    return "none"
+--- The watch list of a status, in priority order: `{ id, label, running }`.
+--
+-- `id` is the process name the service lowercased - the stable key of the
+-- child (`parent_assigned_child_key`), which survives label edits and
+-- reordering - and it is lowercased here too, so a key never depends on the
+-- service having done it. An entry without an id, a repeated id and anything
+-- past `APPS_MAX` are left out. A label that is missing or blank falls back to
+-- the id. Empty for anything but an "on" list.
+function features.apps_of(status)
+  local out, seen = {}, {}
+  if features.apps_mode(status) ~= features.APPS_ON then
+    return out
   end
-  local kind = tostring(((status or {}).activity or {}).kind or "none")
-  if is_kind(kind) then
-    return kind
+  for _, app in ipairs(status.activity.apps) do
+    if #out >= features.APPS_MAX then
+      break
+    end
+    local id = type(app) == "table" and clean(app.id):lower() or ""
+    if id ~= "" and not seen[id] then
+      seen[id] = true
+      local label = clean(app.label)
+      if label == "" then
+        label = id
+      end
+      out[#out + 1] = {
+        id = id,
+        label = features.truncate(label, features.APP_LABEL_MAX_CHARS),
+        running = app.running == true,
+      }
+    end
   end
-  return "other"
+  return out
 end
 
---- `pcActivity.summary`: "게임 중 · Steam", "없음" when nothing on the watch
---- list runs, "꺼짐" when the opt-in is off (or the service is too old to have
---- one). Labels are dropped from the end until the line fits: all of them,
---- then the first with "외 N", then the first alone, then the word alone.
-function features.activity_summary(status, lang)
-  if not features.activity_enabled(status) then
-    return i18n.t(lang, "activity_off")
-  end
-  local kind = features.activity_kind(status)
-  if kind == "none" then
-    return i18n.t(lang, "activity_none")
-  end
-  local word = i18n.t(lang, "activity_" .. kind)
-  local labels = {}
-  for _, label in ipairs(((status or {}).activity or {}).labels or {}) do
-    if type(label) == "string" and label ~= "" then
-      labels[#labels + 1] = label
+--- The running app that leads the summary, and how many others run.
+--
+-- `top` is the service's own answer (the highest-priority running app); it is
+-- taken when it names a running entry, and otherwise the first running entry
+-- in list order is - the same rule, read off the list.
+-- @param apps `features.apps_of(status)`
+function features.apps_top(status, apps)
+  local running = 0
+  local first
+  local named = clean((((status or {}).activity) or {}).top):lower()
+  local top
+  for _, app in ipairs(apps or {}) do
+    if app.running then
+      running = running + 1
+      first = first or app
+      if app.id == named then
+        top = app
+      end
     end
   end
-  local candidates = {}
-  if #labels > 0 then
-    candidates[#candidates + 1] = word .. " · " .. table.concat(labels, ", ")
-    if #labels > 1 then
-      candidates[#candidates + 1] = word .. " · " .. i18n.t(lang, "activity_more", labels[1], #labels - 1)
-    end
-    candidates[#candidates + 1] = word .. " · " .. labels[1]
+  top = top or first
+  if not top then
+    return nil, 0
   end
-  candidates[#candidates + 1] = word
-  for _, line in ipairs(candidates) do
-    if char_len(line) <= features.ACTIVITY_MAX_CHARS then
-      return line
-    end
-  end
-  return word
+  return top, running - 1
 end
 
---- #114: the activity rows of a status body.
-function features.activity_events(status, lang)
+--- `pcApps.summary`: "Steam 실행 중", "Steam 실행 중 · 외 2개", "없음" when
+--- nothing on the list runs, "꺼짐" when the list is off, and "서비스 v1.2.0
+--- 필요" for a service that has no such list. Never "" (an empty state row
+--- reads "-", platform notes "상세 화면(detailView) 위젯").
+function features.apps_summary(status, lang)
+  local mode = features.apps_mode(status)
+  if mode == features.APPS_OLD then
+    return i18n.t(lang, "needs_service")
+  end
+  if mode == features.APPS_OFF then
+    return i18n.t(lang, "apps_off")
+  end
+  local top, others = features.apps_top(status, features.apps_of(status))
+  if not top then
+    return i18n.t(lang, "apps_none")
+  end
+  local line
+  if others > 0 then
+    line = i18n.t(lang, "apps_running_more", top.label, others)
+  else
+    line = i18n.t(lang, "apps_running", top.label)
+  end
+  return features.truncate(line, features.APPS_SUMMARY_MAX_CHARS)
+end
+
+--- #123: the PC's apps row of a status body. The children's rows are not
+--- here - they belong to other devices (apps.lua).
+function features.apps_events(status, lang)
   local events = {}
-  ev(events, caps.ACTIVITY, "activity", features.activity_kind(status))
-  ev(events, caps.ACTIVITY, "summary", features.activity_summary(status, lang))
+  ev(events, caps.APPS, "summary", features.apps_summary(status, lang))
+  return events
+end
+
+--- #123: the `running` value of one app entry.
+function features.app_running(app)
+  return (app or {}).running == true and features.APP_RUNNING or features.APP_STOPPED
+end
+
+--- #123: the one row of an app child (emitted on the child device).
+function features.app_events(app)
+  local events = {}
+  ev(events, caps.APP, "running", features.app_running(app))
   return events
 end
 
@@ -707,7 +788,7 @@ function features.apply_status(status, opts)
   append(events, features.media_events(features.playback_status(status)))
   append(events, features.audio_events(status))
   append(events, features.preset_events(status, lang))
-  append(events, features.activity_events(status, lang))
+  append(events, features.apps_events(status, lang))
   append(events, features.awake_events(status))
   append(events, features.battery_events(status))
   return events
@@ -719,9 +800,8 @@ function features.initial_rows(lang)
   -- #113: before the first status there is no list of presets to show.
   ev(events, caps.PRESET, "names", i18n.t(lang, "presets_none"))
   ev(events, caps.PRESET, "supportedSlots", { features.PRESET_NONE })
-  -- #114: nothing known yet, which reads as "nothing running".
-  ev(events, caps.ACTIVITY, "activity", "none")
-  ev(events, caps.ACTIVITY, "summary", i18n.t(lang, "activity_none"))
+  -- #123: nothing known yet, which reads as "nothing running".
+  ev(events, caps.APPS, "summary", i18n.t(lang, "apps_none"))
   -- #115: a service that has just started has keep-awake off (it does not
   -- carry the period over a restart, §12), so "off" is the honest default.
   ev(events, features.CAP_SWITCH, "switch", "off", features.AWAKE_COMPONENT)

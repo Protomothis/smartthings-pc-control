@@ -57,6 +57,11 @@
 -- attribute spun and ended in "네트워크 오류"). A new id, so a new name again;
 -- v4 never left the Dev channel either and joins `UNSHIPPED_VERSIONS`.
 --
+-- `pc.v6` (#123): the kind-based `pcActivity` gave way to `pcApps`, one
+-- summary row; each watched app became a child device of its own on
+-- `pc-app.v1` (`APP`), which is not one of the PC's names at all - never
+-- current, never known, never migrated. v5 joins `UNSHIPPED_VERSIONS`.
+--
 -- Everything here is pure except `remember`, `ensure`, `apply_style`,
 -- `apply_battery` and `remove_legacy_child`, which touch the device, and all of
 -- them are guarded: a hub that refuses `try_update_metadata` or
@@ -64,8 +69,14 @@
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v5`, …).
-profiles.VERSION = 5
+-- The profile generation every current name carries (`pc.v6`, …).
+profiles.VERSION = 6
+
+-- #123: the app child device's profile (profiles/pc-app.yml). Not a PC
+-- profile: `ensure`, `apply_style` and `apply_battery` never see a child, and
+-- the name is in neither `CURRENT` nor `KNOWN`.
+profiles.APP = "pc-app.v1"
+profiles.APP_PREFIX = "pc-app."
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -92,7 +103,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v5`, `pc-tv.v5`, `pc-battery.v5`, `pc-tv-battery.v5`.
+--- `pc.v6`, `pc-tv.v6`, `pc-battery.v6`, `pc-tv-battery.v6`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -105,7 +116,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v5` once its status says so (#116).
+-- moves to `pc-battery.v6` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -155,8 +166,9 @@ end
 -- files add up to more than 655360 bytes, and each generation of twenty
 -- profiles is about 165 KB (measured 2026-09-30 when v1+v2+v3 reached 666 KB).
 -- v2 lived only on the Dev channel (edge-v1.1.0 development), and so did v3
--- (pcMessage, with read-aloud) and v4 (pcNotify, no attribute).
-profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true }
+-- (pcMessage, with read-aloud), v4 (pcNotify, no attribute) and v5 (pcToast
+-- with the kind-based pcActivity, #123).
+profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true }
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)
@@ -185,6 +197,8 @@ profiles.LEGACY = "pc.v1"
 -- first channel release (#90). Kept anyway: the check is one pure comparison
 -- per device per driver run and the author's own hub is such a hub.
 profiles.DISPLAY_PREFIX = "pc-display"
+-- The key the display child was created with (display.lua before #81).
+profiles.LEGACY_CHILD_KEY = "display"
 
 local function logger()
   local ok, log = pcall(require, "log")
@@ -298,23 +312,30 @@ function profiles.migration_for(device_profile_name, battery)
 end
 
 
+--- #123: true when `name` is the app child's profile (any version of it).
+function profiles.is_app_profile(name)
+  return type(name) == "string" and name:sub(1, #profiles.APP_PREFIX) == profiles.APP_PREFIX
+end
+
 --- #81: true when `device` is a leftover display child of an older driver.
 --
 -- Two independent marks, because a hub may only carry one of them: the
--- `parent_assigned_child_key` an EDGE_CHILD was created with (the child had no
--- DNI of its own), and a profile name from the removed `pc-display` series.
--- Pure, so the decision is testable without a hub.
+-- `parent_assigned_child_key` the display child was created with ("display",
+-- `LEGACY_CHILD_KEY`), and a profile name from the removed `pc-display`
+-- series. Pure, so the decision is testable without a hub.
+-- #123: any other child key is an app child of this driver (apps.lua), which
+-- is very much wanted - before #123 every child key meant "leftover".
 function profiles.is_legacy_child(device)
   if type(device) ~= "table" then
     return false
   end
-  local key = device.parent_assigned_child_key
-  if type(key) == "string" and key ~= "" then
+  local name = profiles.name_of(device)
+  if type(name) == "string"
+      and name:sub(1, #profiles.DISPLAY_PREFIX) == profiles.DISPLAY_PREFIX then
     return true
   end
-  local name = profiles.name_of(device)
-  return type(name) == "string"
-    and name:sub(1, #profiles.DISPLAY_PREFIX) == profiles.DISPLAY_PREFIX
+  return device.parent_assigned_child_key == profiles.LEGACY_CHILD_KEY
+    and not profiles.is_app_profile(name)
 end
 
 --------------------------------------------------------------------------------

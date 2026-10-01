@@ -1,0 +1,10 @@
+{
+  "tag": "ko",
+  "label": "PC 앱",
+  "attributes": {
+    "summary": {
+      "label": "앱"
+    }
+  },
+  "commands": {}
+}

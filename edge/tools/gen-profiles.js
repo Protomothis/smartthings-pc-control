@@ -16,10 +16,10 @@
  * and without the `battery` component (#116 - a desktop must not carry an
  * empty battery card). Names and files:
  *
- *   pc.v5            profiles/pc-v5.yml             others, no battery
- *   pc-tv.v5         profiles/pc-tv-v5.yml          tv, no battery
- *   pc-battery.v5    profiles/pc-battery-v5.yml     others, battery
- *   pc-tv-battery.v5 profiles/pc-tv-battery-v5.yml  tv, battery
+ *   pc.v6            profiles/pc-v6.yml             others, no battery
+ *   pc-tv.v6         profiles/pc-tv-v6.yml          tv, no battery
+ *   pc-battery.v6    profiles/pc-battery-v6.yml     others, battery
+ *   pc-tv-battery.v6 profiles/pc-tv-battery-v6.yml  tv, battery
  *
  * The rules are deliberately small, because tests/profilegen_test.lua applies
  * the same ones in Lua and compares the result with the files on disk:
@@ -57,7 +57,9 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 // 4: pcNotify (send only) replaced pcMessage; v2 and v3 were never published.
 // 5: pcToast (send + lastMessage, the row's value) replaced pcNotify; v4 was
 //    never published either.
-const VERSION = 5;
+// 6: pcApps (a summary row; one child device per watched app, #123) replaced
+//    the kind-based pcActivity; v5 was never published either.
+const VERSION = 6;
 
 const DEFAULT_STYLE = 'others';
 
