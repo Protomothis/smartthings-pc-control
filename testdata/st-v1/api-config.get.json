@@ -1,0 +1,107 @@
+{
+  "activity": {
+    "enabled": true,
+    "watch": [
+      {
+        "kind": "game",
+        "label": "Steam",
+        "process": "steam.exe"
+      },
+      {
+        "kind": "stream",
+        "label": "OBS",
+        "process": "obs64.exe"
+      }
+    ]
+  },
+  "awake": {
+    "default_minutes": 60,
+    "keep_display": false
+  },
+  "grace_seconds": 120,
+  "media": {
+    "enabled": true,
+    "now_playing": true
+  },
+  "notify": {
+    "power": {
+      "resumed": true,
+      "started": true,
+      "stopping": true
+    },
+    "remote": {
+      "executed": true,
+      "force": true,
+      "grace_cancelled": true,
+      "grace_scheduled": true,
+      "received": true
+    },
+    "schedule": {
+      "cancelled": false,
+      "created": false,
+      "executed": true,
+      "replaced": true
+    },
+    "security": {
+      "config_changed": true,
+      "login_limited": true,
+      "unauthorized": true,
+      "unknown_chat": true,
+      "unknown_command": true
+    },
+    "system": {
+      "exec_failed": true,
+      "tray_wake_failed": true,
+      "update_available": true,
+      "updated": true
+    }
+  },
+  "notify_pc": {
+    "enabled": true
+  },
+  "port": 5001,
+  "presets": [
+    {
+      "name": "대시보드",
+      "path": "https://example.com/dashboard",
+      "slot": 1,
+      "type": "url"
+    },
+    {
+      "args": [
+        "-bigpicture"
+      ],
+      "name": "게임 모드",
+      "path": "C:\\Games\\Steam\\steam.exe",
+      "slot": 3,
+      "type": "program"
+    }
+  ],
+  "secret": "golden-secret",
+  "shutdown_grace": true,
+  "smartthings": {
+    "allowed_hubs": [],
+    "expose_session": true,
+    "expose_session_user": true,
+    "wol_mac": ""
+  },
+  "telegram": {
+    "allowed_chat_ids": [],
+    "bot_token": "****9876",
+    "bot_token_set": true,
+    "chat_id": "123456789",
+    "control_enabled": false,
+    "detail": "simple",
+    "enabled": true,
+    "lang": "ko",
+    "pc_name": "",
+    "quiet_hours": {
+      "digest": false,
+      "enabled": false,
+      "end": "07:00",
+      "security_bypass": false,
+      "start": "22:00"
+    }
+  },
+  "webui_remote": false
+}

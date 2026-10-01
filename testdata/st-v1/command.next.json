@@ -1,0 +1,18 @@
+{
+  "_doc": "mediaTrackControl.nextTrack(): a media key, so the reply has no audio block.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "next"
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

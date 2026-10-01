@@ -1,0 +1,25 @@
+{
+  "_doc": "audioMute.unmute().",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "unmute"
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "audio": {
+        "available": true,
+        "device": "스피커 (Realtek(R) Audio)",
+        "muted": false,
+        "updated_at": "2026-10-01T21:00:00+09:00",
+        "volume": 35
+      },
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

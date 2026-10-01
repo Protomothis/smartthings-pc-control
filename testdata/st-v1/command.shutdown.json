@@ -1,0 +1,20 @@
+{
+  "_doc": "switch.off on main: the offAction preference (default shutdown), mode from buttonMode. Executed at once because the golden command world has no grace period.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "shutdown",
+    "minutes": 0,
+    "mode": "default"
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_doc": "The same request with media.enabled off on the PC: 403 media_disabled.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "next"
+  },
+  "response": {
+    "body": {
+      "error": "media_disabled"
+    },
+    "code": 403
+  }
+}

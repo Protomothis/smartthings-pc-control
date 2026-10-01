@@ -1,0 +1,22 @@
+{
+  "_doc": "switch.off on the awake component.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "awakeoff"
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "awake": {
+        "on": false,
+        "until": ""
+      },
+      "executed": true,
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

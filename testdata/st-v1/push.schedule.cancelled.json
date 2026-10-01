@@ -1,0 +1,130 @@
+{
+  "at": "2026-10-01T21:00:05+09:00",
+  "data": {
+    "by": "smartthings",
+    "command": "shutdown",
+    "origin": "smartthings"
+  },
+  "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
+  "protocol": 1,
+  "status": {
+    "activity": {
+      "enabled": true,
+      "kind": "game",
+      "labels": [
+        "Steam"
+      ]
+    },
+    "audio": {
+      "available": true,
+      "device": "스피커 (Realtek(R) Audio)",
+      "muted": false,
+      "updated_at": "2026-10-01T20:59:30+09:00",
+      "volume": 35
+    },
+    "awake": {
+      "on": true,
+      "until": "2026-10-01T22:30:00+09:00"
+    },
+    "battery": {
+      "ac": true,
+      "charging": true,
+      "percent": 76,
+      "present": true
+    },
+    "display": "on",
+    "features": [
+      "awake",
+      "battery",
+      "activity",
+      "audio",
+      "media",
+      "nowplaying",
+      "notify",
+      "presets"
+    ],
+    "grace": {
+      "enabled": true,
+      "seconds": 120
+    },
+    "hostname": "GOLDEN-PC",
+    "last_command": {
+      "at": "2026-10-01T20:55:00+09:00",
+      "command": "preset",
+      "origin": "smartthings",
+      "preset": {
+        "name": "게임 모드",
+        "slot": 3
+      },
+      "result": "started"
+    },
+    "last_shutdown_clean": true,
+    "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
+    "media": {
+      "album": "New Jeans",
+      "app": "Spotify",
+      "artist": "NewJeans",
+      "status": "playing",
+      "title": "Hype Boy",
+      "updated_at": "2026-10-01T20:59:40+09:00"
+    },
+    "power": "on",
+    "presets": [
+      {
+        "name": "대시보드",
+        "slot": 1
+      },
+      {
+        "name": "게임 모드",
+        "slot": 3
+      }
+    ],
+    "protocol": 1,
+    "schedule": {
+      "active": false
+    },
+    "secret_set": true,
+    "service_version": "v1.2.0",
+    "session": {
+      "exposed": true,
+      "idle_seconds": 754,
+      "locked": false,
+      "user": "golden"
+    },
+    "update": {
+      "available": true,
+      "latest": "v1.2.1"
+    },
+    "uptime_seconds": 93784,
+    "wol": {
+      "adapters": [
+        {
+          "ip": "192.168.1.10",
+          "mac": "B4-2E-99-45-B4-F5",
+          "name": "이더넷",
+          "selected": true,
+          "wol_capable": true,
+          "wol_enabled": true
+        },
+        {
+          "ip": "192.168.1.11",
+          "mac": "3C-A9-F4-11-22-33",
+          "name": "Wi-Fi",
+          "selected": false,
+          "wol_capable": true,
+          "wol_enabled": false
+        }
+      ],
+      "ready": true,
+      "selected": {
+        "ip": "192.168.1.10",
+        "mac": "B4-2E-99-45-B4-F5",
+        "name": "이더넷",
+        "source": "auto",
+        "wol_capable": true,
+        "wol_enabled": true
+      }
+    }
+  },
+  "type": "schedule.cancelled"
+}

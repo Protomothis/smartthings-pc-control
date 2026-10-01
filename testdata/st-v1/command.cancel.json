@@ -1,0 +1,12 @@
+{
+  "_doc": "pcDefer.cancel(): DELETE without a body. The driver reads response.body.cancelled for its note.",
+  "method": "DELETE",
+  "path": "/st/v1/schedule",
+  "request": null,
+  "response": {
+    "body": {
+      "cancelled": true
+    },
+    "code": 200
+  }
+}
