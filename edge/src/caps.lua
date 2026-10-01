@@ -14,89 +14,30 @@ local caps = {}
 
 caps.NAMESPACE = NAMESPACE
 
+-- The hub caches a capability definition by id, so every change to one (an
+-- attribute, an argument, an enum value, a range) needs a new id (platform
+-- notes "허브의 정의 캐시"). The constants keep their role names; the ids are
+-- the latest of each line (git log has the renames).
 caps.POWER_STATE = NAMESPACE .. ".pcpower"
--- #82: the definition gained `lastAction`, and the hub caches capability
--- definitions by id for the whole hub (platform notes "허브의 정의 캐시"), so the new definition needed a
--- new id: `pcControl` became `pcAction`. The Lua constant keeps its name -
--- what it points at is "the command capability", whatever it is called.
--- #84: same rule once more. `execute` gained a `none` argument (a dismissed
--- list sends the row's current value, platform notes "상세 화면(detailView) 위젯") and the definition gained
--- `planCommand`, so `pcAction` became `pcRun`.
--- #85: and again. `planCommand`/`setPlanCommand` moved to the schedule
--- capability - the app groups detail rows by the capability that owns them, so
--- "what a schedule runs" has to live in the schedule card - which made this a
--- different definition: `pcRun` became `pcExec`.
--- #93: and once more. While the PC is shutting down or waking the list rests on
--- a `busyX` value instead of `none` ("종료 진행 중…"), and the row learns which
--- entries are still worth offering from a new `supportedCommands` attribute.
--- Five enum values and an attribute are both definition changes, so `pcExec`
--- became `pcRemote` - and the name is honest again: the card is the remote
--- control, not just the `execute` command.
+-- The command list (`execute`, `lastAction`, `supportedCommands`).
 caps.COMMAND = NAMESPACE .. ".pcremote"
--- #83: same rule again - the definition gained a `status` enum (a detailView
--- list cannot read a boolean, platform notes "상세 화면(detailView) 위젯"), so `pcTimer` became `pcPlan`.
--- #85: `schedule(minutes)` now accepts 0 (the list's Cancel entry; the cloud
--- validates arguments against the definition and rejected `minimum: 1`, so the
--- entry never reached the hub) and the definition gained `planCommand` /
--- `setPlanCommand`, so `pcPlan` became `pcCountdown`.
--- #88: and once more. A dismissed list sends the row's CURRENT value as the
--- command argument (platform notes "상세 화면(detailView) 위젯"), and the 예약 시간 row was bound to
--- `status` - `idle`/`scheduled`, which `schedule(minutes: integer)` cannot
--- take, so the cloud answered "network error" without reaching the hub. The
--- fix needs both a resting attribute the row can show (`minutesPick`, always
--- "-1") and a `minutes` range that accepts it (`minimum: -1`, the no-op), and
--- both are definition changes: `pcCountdown` became `pcPlanner`.
--- #89: and once more. The preset list now goes up to three days, so
--- `schedule(minutes)` accepts up to 4320 and `remainingSeconds` up to 259200 -
--- a range is part of the definition and the hub caches definitions by id
--- (platform notes "허브의 정의 캐시"), so `pcPlanner` became `pcDelay`.
--- #91: and once more, for the last remaining hole in #88's fix. The phone does
--- send the row's current value when the list is closed without a pick, but that
--- path does NOT go through the presentation's `argumentType: "integer"`
--- conversion: the argument leaves as the STRING "-1", and the cloud rejects it
--- against `minutes: integer` with a 422 before the hub sees it (platform notes
--- "상세 화면(detailView) 위젯"). A list argument therefore has to be defined as a
--- string enum, which is a definition change: `pcDelay` became `pcDefer`.
+-- The schedule card. A list argument is a string enum: a list closed without a
+-- pick sends its value unconverted (platform notes "상세 화면(detailView) 위젯").
 caps.SCHEDULE = NAMESPACE .. ".pcdefer"
--- #85: the definition gained a `versions` attribute (the row that says which
--- service, driver and screen template a device is actually running), so by the
--- same rule it needed a new id: `pcHealth` became `pcInfo`. The Lua constant
--- keeps its name - what it points at is "the status capability".
 caps.STATUS = NAMESPACE .. ".pcinfo"
 caps.SESSION = NAMESPACE .. ".pcuser"
--- #86: the version row is a capability of its own. Two `state` rows of the SAME
--- capability are drawn side by side in two narrow columns and both are cut off
--- (measured on the phone 2026-09-22, platform notes "화면 배치"), so "상태" and "버전" - which sat on
--- pcInfo together - had to be split. A capability with one state row renders
--- full width. `pcInfo.versions` keeps its definition and is still emitted: the
--- definition cannot change without another rename (platform notes "허브의 정의 캐시"), and an attribute
--- that is never emitted makes the app say the state was not fully reported.
+-- The version row: two state rows of one capability are drawn half-width and
+-- cut off (platform notes "화면 배치"). pcInfo still defines `versions`.
 caps.VERSION = NAMESPACE .. ".pcversion"
--- #113: the presets the PC's own app defines (media-notify.md §10). A new
--- capability, not a change to an existing one, so there is no cache to fight
--- (platform notes "허브의 정의 캐시") - the account owner creates it once.
+-- The presets the PC app defines (media-notify.md §10).
 caps.PRESET = NAMESPACE .. ".pcpreset"
--- #123: the opt-in watch list (media-notify.md §11), as one child device per
--- app instead of one kind-based value on the PC. The PC keeps a summary row
--- ("Steam 실행 중 · 외 1개"), each child a `running` enum a routine can use
--- ("Steam이 실행 중이 되면"). Both are new ids; the kind-based `pcActivity`
--- (#114) was never published and is deleted from the account later.
+-- The watch list (media-notify.md §11): the PC's summary row, and each app
+-- child's `running` (only `pc-app.v1` lists `pcApp`, `caps.CHILD`).
 caps.APPS = NAMESPACE .. ".pcapps"
--- The child's capability. Only `pc-app.v1` lists it (`caps.CHILD`).
 caps.APP = NAMESPACE .. ".pcapp"
--- #108 follow-up: "PC에 메시지 보내기", one command `send(text)`. The standard
--- `notification` did the job, but the app labels it with Samsung's own words
--- ("텍스트 표시") and an embedded device configuration cannot override a
--- standard capability's labels (platform notes "표준 capability"). Our own
--- capability carries our own label. (`pcmessage`, which also had a read-aloud
--- command, was never shipped; read-aloud was dropped.)
--- And `pcNotify` (`send` only, no attribute) became `pcToast`: the app waits
--- for an event on the attribute a detail row is bound to, and a row bound to
--- no attribute never gets one - the message reached the PC, the row span and
--- ended in "네트워크 오류" (measured 2026-10-01, platform notes "상세
--- 화면(detailView) 위젯"). The row is now bound to `lastMessage`, which the
--- driver answers on every `send`. An attribute is a definition change, so a
--- new id (platform notes "허브의 정의 캐시"); `pcnotify` was never published.
+-- "PC에 메시지 보내기": our own capability, because the app labels a standard
+-- one with Samsung's words (platform notes "표준 capability"), bound to
+-- `lastMessage` because a row bound to no attribute never gets its event.
 caps.TOAST = NAMESPACE .. ".pctoast"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
@@ -113,7 +54,7 @@ caps.ids = {
   toast = caps.TOAST,
 }
 
--- #123: the ids that belong on the app child's profile, not on the PC's.
+-- The ids that belong on the app child's profile, not on the PC's.
 caps.CHILD = { [caps.APP] = true }
 
 --- Resolve the custom capability objects from `st.capabilities`.

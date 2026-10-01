@@ -79,7 +79,7 @@ local deleting = {}
 
 --- True when `device` is a child device - an app child of this driver, or a
 --- leftover display child of an older one (profiles.is_legacy_child, which
---- init.lua checks first).
+--- handlers/lifecycle.lua checks first).
 function apps.is_child(device)
   if type(device) ~= "table" then
     return false

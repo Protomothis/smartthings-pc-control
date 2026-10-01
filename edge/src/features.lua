@@ -2,10 +2,10 @@
 -- them a PC offers, what their status blocks become on screen, and whether a
 -- command that needs one may go out at all.
 --
--- Pure, like state.lua: nothing here touches st.* or cosock. `apply_status`
--- returns the same `{ cap, attr, value }` records state.apply_status does (and
--- is called from it), `refusal` / `error_note` return i18n keys, and init.lua
--- does the sending.
+-- Pure, like model/: nothing here touches st.* or cosock. `apply_status`
+-- returns the same `{ cap, attr, value }` records model/status.lua does (and
+-- is called from it), `refusal` / `error_note` return i18n keys, and the handlers
+-- (handlers/) do the sending.
 --
 -- #107: volume, mute and the media keys, on the STANDARD capabilities
 -- `audioVolume`, `audioMute`, `mediaPlayback` and `mediaTrackControl`. A
@@ -65,7 +65,7 @@ features.CAP_TRACK = "mediaTrackControl"
 features.CAP_TRACK_DATA = "audioTrackData"
 
 -- #118: the media group, and the component it moves to in the alternative
--- profile layout (`gen-profiles.js --media-component`). poll.emit sends these
+-- profile layout (`gen-profiles.js --media-component`). emit.rows sends these
 -- capabilities' events to that component when the device's profile has it.
 features.MEDIA_COMPONENT = "media"
 features.MEDIA_CAPS = {
@@ -493,8 +493,8 @@ function features.is_preset_slot(slot)
 end
 
 --- #113: the preset rows a status body carries. `lastPreset` is not one of
---- them - it is the list's resting value, and poll.lua owns it like
---- `lastAction` (poll.ensure_preset).
+--- them - it is the list's resting value, and device/rows.lua owns it like
+--- `lastAction` (rows.ensure_preset).
 function features.preset_events(status, lang)
   local events = {}
   ev(events, caps.PRESET, "names", features.preset_names(status, lang))

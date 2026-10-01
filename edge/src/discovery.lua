@@ -1,10 +1,10 @@
 -- Device discovery: SSDP search (design doc §3.6) plus the identity and
 -- duplicate rules of §6.5.
 --
--- #94: SSDP is the only way a device is added. A search that nobody answers
--- creates nothing at all any more - the PC is off, the service is not running
--- or UDP 1900 is closed, and a blank device named after the problem only got
--- in the way of the next scan.
+-- SSDP is the only way a device is added. A search that nobody answers
+-- creates nothing: the PC is off, the service is not running or UDP 1900 is
+-- closed, and a blank device named after the problem only gets in the way of
+-- the next scan.
 --
 -- The parsing (`msearch`, `parse_response`) and every decision (`plan`,
 -- `should_search`) are pure; only `ssdp_search` and the `apply*` helpers touch a
@@ -51,13 +51,6 @@ discovery.SSDP_TIMEOUT = 4
 -- §6.5: at most one targeted re-search per device per five minutes, so an
 -- unreachable PC cannot turn into a multicast storm.
 discovery.SEARCH_COOLDOWN = 300
-
--- Device fields. The machine_id is the identity (§6.5); hostname is kept to
--- notice two PCs sharing one MachineGuid, and the last search time enforces
--- the cooldown above.
--- #94: the short id already written into this device's `model`. A device
--- created before #94 has "PC Control" there, so the update runs once per
--- device and the field stops it from running on every poll afterwards.
 
 local function logger()
   local ok, log = pcall(require, "log")
@@ -480,7 +473,7 @@ function discovery.remember(dni, info)
   end
 end
 
---- Take the remembered address for a DNI (init.lua calls this once).
+--- Take the remembered address for a DNI (`adopt` calls this once).
 function discovery.take(dni)
   local info = pending[dni or ""]
   pending[dni or ""] = nil

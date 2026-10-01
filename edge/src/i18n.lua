@@ -217,11 +217,9 @@ local STRINGS = {
     ko = "PC %d대를 찾았습니다",
     en = "Found %d PC(s)",
   },
-  -- #94: nobody answered the M-SEARCH. Nothing is created any more, so this
-  -- line in the driver log is the whole explanation - and it is the first
-  -- step of the diagnosis order in edge/README ("검색이 안 될 때"). Written
-  -- in both languages at once: a log line does not follow the `language`
-  -- preference, because it belongs to no device.
+  -- Nobody answered the M-SEARCH and nothing is created: this log line is the
+  -- whole explanation, and the first step of edge/README "검색이 안 될 때".
+  -- Both languages at once - a log line belongs to no device's `language`.
   discovery_none = {
     ko = "응답한 PC가 없습니다 · PC와 PC Control이 켜져 있고 UDP 1900이 열려 있어야 합니다"
       .. " (No PC answered · the PC and PC Control must be running and UDP 1900 reachable)",
@@ -271,11 +269,9 @@ local STRINGS = {
   conn_short_unreachable = { ko = "응답 없음", en = "No response" },
   conn_short_incompatible = { ko = "버전 불일치", en = "Version mismatch" },
 
-  -- #87: the only notice `pcInfo.summary` still carries. A PC that answers but
-  -- cannot be woken is the one fact the status row has to warn about, because
-  -- the switch will silently do nothing. The advice notices ("set a secret",
-  -- "an update is out") were dropped from the row in #87: neither is something
-  -- to act on at a glance, and both stay in `pcInfo.message`.
+  -- The one notice `pcInfo.summary` carries: a PC that answers but cannot be
+  -- woken, because the switch will silently do nothing. Advice ("set a
+  -- secret", "an update is out") is `pcInfo.message`'s.
   wol_off_short = { ko = "WoL 꺼짐", en = "WoL off" },
 
   -- #97: the same warning with the chosen adapter's name, used only while the
@@ -301,25 +297,23 @@ local STRINGS = {
   ago_h = { ko = "%d시간 전", en = "%dh ago" },
   ago_d = { ko = "%d일 전", en = "%dd ago" },
 
-  -- #87: the `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0". The screen
-  -- (profile) name left it: it answered a question only the author asks, and
-  -- it pushed the two numbers that matter off the end of a narrow row.
-  -- `?` stands in for a service version we have not been told yet.
+  -- The `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0": two numbers, short
+  -- enough for a narrow row. `?` for a service version not told yet.
   versions = {
     ko = "v%s · 드라이버 %s",
     en = "v%s · Driver %s",
   },
   version_unknown = { ko = "?", en = "?" },
-  -- Appended to the row only while `update.available` is set (#87).
+  -- Appended to the row only while `update.available` is set.
   versions_update = { ko = "업데이트 v%s", en = "Update v%s" },
   versions_update_plain = { ko = "업데이트 있음", en = "Update available" },
 
-  -- #86: `pcRemote.lastCommand` before the PC has run anything. An empty string
-  -- is drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as a fault rather than as "nothing has
-  -- happened yet", so the row always carries a sentence.
+  -- `pcRemote.lastCommand` before the PC has run anything: an empty string is
+  -- drawn as "-" (platform notes "상세 화면(detailView) 위젯"), which reads as
+  -- a fault.
   last_command_none = { ko = "없음 (None)", en = "None" },
 
-  -- schedule / session summaries (#78, reworded in #87). Every one of these is
+  -- schedule / session summaries. Every one of these is
   -- half of a row that already carries a label, so the label's words are not
   -- repeated in the value: the schedule row says "없음", not "예약 없음".
   schedule_remaining = { ko = "%d분 후", en = "in %d min" },
