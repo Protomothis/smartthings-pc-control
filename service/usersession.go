@@ -45,6 +45,12 @@ var (
 		return t, err
 	}
 	wtsEnumerateSessions = enumerateWTSSessions
+	// wtsSessionLocked reads one session's lock state through st_session.go's
+	// WTSSessionInfoEx query — the same reading the status block reports.
+	wtsSessionLocked = func(session uint32) (bool, error) {
+		info, err := querySessionInfoID(session)
+		return info.Locked, err
+	}
 )
 
 // enumerateWTSSessions lists the sessions on this machine.
@@ -63,11 +69,21 @@ func enumerateWTSSessions() ([]wtsSession, error) {
 }
 
 // findUserSession returns the interactive user's session and a primary
-// token for them; the caller closes the token. The console session comes
-// first — it is the one with the monitor and the speakers — then any other
-// active session (an RDP login). A session "has a user" when
+// token for them; the caller closes the token. A session "has a user" when
 // WTSQueryUserToken gives a token for it; the logon screen answers
-// ERROR_NO_TOKEN.
+// ERROR_NO_TOKEN. The candidates are the console session, then every other
+// active session (an RDP login) in enumeration order, never session 0.
+//
+// Of those, the session someone is actually using wins: the first one that
+// is positively unlocked. Commands, the heartbeat filter and the status all
+// follow this one choice, so a mute, a toast or a media key reaches the
+// person at the keyboard — next to a locked console that is the RDP
+// session, whose audio is what that remote user hears. Only when no
+// candidate is known to be unlocked (all locked, or the lock state cannot
+// be read — unknown is not unlocked) does the order alone decide, and the
+// console comes first: it has the monitor and the speakers. The target can
+// therefore move as sessions are locked and unlocked; observeTargetSession
+// (st_idle.go) notices that and drops the old session's samples.
 //
 // Nobody logged in is errNoUserSession. Any other WTS failure (a missing
 // privilege, say) is returned as itself so it is not mistaken for an
@@ -78,13 +94,32 @@ func enumerateWTSSessions() ([]wtsSession, error) {
 // and also missed a user whose shell had crashed.
 func findUserSession() (uint32, syscall.Token, error) {
 	var firstErr error
+	// The first candidate with a user, kept in case none is unlocked.
+	var fallbackID uint32
+	var fallbackTok syscall.Token
+	haveFallback := false
+	// try reports whether session id has a user and is unlocked; a
+	// candidate that is merely logged in may become the fallback. Every
+	// token not handed to the caller is closed.
 	try := func(id uint32) (syscall.Token, bool) {
-		tok, err := wtsQueryUserToken(id)
-		if err == nil {
-			return syscall.Token(tok), true
+		t, err := wtsQueryUserToken(id)
+		if err != nil {
+			if !errors.Is(err, errorNoToken) && firstErr == nil {
+				firstErr = fmt.Errorf("WTSQueryUserToken(session %d): %w", id, err)
+			}
+			return 0, false
 		}
-		if !errors.Is(err, errorNoToken) && firstErr == nil {
-			firstErr = fmt.Errorf("WTSQueryUserToken(session %d): %w", id, err)
+		tok := syscall.Token(t)
+		if locked, err := wtsSessionLocked(id); err == nil && !locked {
+			if haveFallback {
+				fallbackTok.Close()
+			}
+			return tok, true
+		}
+		if haveFallback {
+			tok.Close()
+		} else {
+			fallbackID, fallbackTok, haveFallback = id, tok, true
 		}
 		return 0, false
 	}
@@ -107,6 +142,9 @@ func findUserSession() (uint32, syscall.Token, error) {
 		if tok, ok := try(s.ID); ok {
 			return s.ID, tok, nil
 		}
+	}
+	if haveFallback {
+		return fallbackID, fallbackTok, nil
 	}
 	if firstErr != nil {
 		return 0, 0, firstErr

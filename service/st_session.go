@@ -82,9 +82,12 @@ type sessionInfo struct {
 }
 
 // querySessionInfo describes the interactive user session, or fails when
-// there is none to describe.
+// there is none to describe. It is the target session of the commands
+// (targetUserSession), so the lock watcher's 5s poll also notices the
+// target moving when a session is locked or unlocked, and the session it
+// reports is the one the commands act on.
 func querySessionInfo() (sessionInfo, error) {
-	sessionID, err := getActiveUserSessionID()
+	sessionID, err := targetUserSession()
 	if err != nil {
 		return sessionInfo{}, err
 	}

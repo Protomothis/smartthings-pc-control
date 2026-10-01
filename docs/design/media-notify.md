@@ -74,13 +74,17 @@
   이 시각으로 한다(명령 결과는 완료 시각). 없으면 받은 시각, 미래 값은 받은 시각으로 자르고, 형식이 틀리면 400.
   트레이는 `expose_session`과 무관하게 `media.enabled`가 켜져 있으면 `audio`를 보낸다(같은 Core Audio 코드를 프로세스 안에서 부름).
 - (#104) 사용자 세션 찾기는 PowerShell `Get-Process explorer` 대신 `WTSGetActiveConsoleSessionId` →
-  `WTSQueryUserToken`, 콘솔에 사용자가 없으면 `WTSEnumerateSessions`의 활성 세션(RDP)을 본다. 토큰이 없는 세션만
+  `WTSQueryUserToken`, 그다음 `WTSEnumerateSessions`의 활성 세션(RDP)을 후보로 본다. 토큰이 없는 세션만
   "사용자 없음"이고, 권한 부족 같은 다른 실패는 그대로 오류로 올린다.
+  후보 중 **잠기지 않은 세션**이 이긴다(콘솔 먼저, `WTSSessionInfoEx`의 SessionFlags — status의 `locked`와 같은 읽기).
+  잠긴 콘솔 옆 RDP 세션이면 RDP 세션이다: 알림·소리는 그 사람이 보고 듣는 세션에 가야 한다(v1.2.0-rc7에서
+  잠긴 콘솔에 토스트·음소거가 사라졌다). 모두 잠겼거나 잠금 상태를 읽지 못하면(모름 ≠ 잠금 해제) 콘솔이 먼저다.
+  그래서 잠금·해제만으로도 대상 세션이 바뀔 수 있다.
 - 하트비트 본문의 `session_id`(트레이가 도는 Windows 세션, `ProcessIdToSessionId`)는 선택이다. 명령이 실행되는 세션
   (위 세션 찾기와 같은 `findUserSession`)과 다르면 `idle_seconds`·`audio`·`media`를 모두 버리고
   `200 {"status":"ignored","reason":"other_session"}`로 답한다(형식 검사는 그대로, 틀리면 400). 없으면(옛 트레이) 예전처럼 받는다.
   잠긴 콘솔 세션 옆 RDP 세션의 트레이가 콘솔에 보낸 음소거를 20초 안에 되돌리던 문제(v1.2.0-rc6)를 막는다.
-  대상 세션이 바뀌면(로그온·로그오프) 이전 세션의 idle·audio·media 표본을 지운다. 대상 세션에 트레이가 없으면
+  대상 세션이 바뀌면(로그온·로그오프·잠금·해제, 로그는 바뀔 때 한 줄) 이전 세션의 idle·audio·media 표본을 지운다. 대상 세션에 트레이가 없으면
   audio는 그 세션에서 돈 `user-action`의 마지막 결과, media·idle은 90초 뒤 `none`·`null`이다.
 
 ## 3. 서비스 API 추가 (`/st/v1`, protocol 1 유지)
