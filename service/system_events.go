@@ -133,7 +133,7 @@ func saveState(path string, st serviceState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return writePrivateFile(path, data) // #131, like config.json
 }
 
 // isReleaseVersion reports whether v is a tagged build ("v1.2.3"); "dev"

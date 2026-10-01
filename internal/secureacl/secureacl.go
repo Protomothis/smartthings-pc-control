@@ -140,6 +140,13 @@ func apply(dir, extraACEs string) (bool, error) {
 		if clean {
 			return nil
 		}
+		// A private file (LockFile, #131) is tighter than the folder on
+		// purpose; resetting it would hand config.json back to Users.
+		if !d.IsDir() {
+			if tight, err := tighterThan(path, want); err == nil && tight {
+				return nil
+			}
+		}
 		if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 			windows.DACL_SECURITY_INFORMATION|windows.UNPROTECTED_DACL_SECURITY_INFORMATION,
 			nil, nil, empty, nil); err != nil {
