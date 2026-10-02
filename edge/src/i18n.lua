@@ -185,11 +185,13 @@ local STRINGS = {
   preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
   -- #123: the watch card. `pcWatch.summary`: the lowest-slot app that runs
-  -- (slot 1 is the highest priority) and how many others run with it.
-  -- `apps_none` / `apps_off` are also the `names` row's "없음" / "꺼짐". Each
-  -- slot's own state is an enum row (`slotOne`..`slotFive`), not a sentence here.
-  apps_running = { ko = "%s 실행 중", en = "%s running" },
-  apps_running_more = { ko = "%s 실행 중 · 외 %d개", en = "%s running · %d more" },
+  -- (slot 1 is the highest priority) and how many others run with it. One app
+  -- is its label alone ("Claude"): the row's label "실행 중인 앱" already says
+  -- running, and the card's preview gives the value a third of the width
+  -- (platform notes "화면 배치"). `apps_none` / `apps_off` are also the
+  -- `names` row's "없음" / "꺼짐". Each slot's own state is an enum row
+  -- (`slotOne`..`slotFive`), not a sentence here.
+  apps_running_more = { ko = "%s 외 %d", en = "%s +%d" },
   apps_none = { ko = "없음", en = "None" },
   apps_off = { ko = "꺼짐", en = "Off" },
 

@@ -455,24 +455,45 @@ function T.test_the_watch_definition_is_summary_names_and_five_slots()
   h.assert_deep_equal(definition("watch").commands, {})
 end
 
-function T.test_the_watch_detail_view_is_summary_names_then_the_slots()
+-- The card's preview in the main view shows its first three state rows side
+-- by side, a third of the width each in large type (platform notes "화면
+-- 배치", 2026-10-02): summary, 감시 1, 감시 2. The names row, a list of
+-- labels, comes last and is read in the card's detail.
+local WATCH_PREVIEW_ROWS = 3
+
+-- A slot's value in the card: one short Korean word, no "(Running)" - the
+-- preview cell wrapped "실행 중 (Running)" onto a second line and cut it.
+local WATCH_SLOT_VALUES = { running = "실행 중", stopped = "꺼짐", empty = "비어 있음" }
+
+function T.test_the_watch_detail_view_is_summary_the_slots_then_names()
   local rows = {}
   for _, item in ipairs(presentation("watch").detailView) do
     h.assert_equal(item.displayType, "state")
     rows[#rows + 1] = item.state.label
   end
-  h.assert_deep_equal(rows, { "{{summary.value}}", "{{names.value}}",
-    "{{slotOne.value}}", "{{slotTwo.value}}", "{{slotThree.value}}", "{{slotFour.value}}", "{{slotFive.value}}" })
+  h.assert_deep_equal(rows, { "{{summary.value}}",
+    "{{slotOne.value}}", "{{slotTwo.value}}", "{{slotThree.value}}", "{{slotFour.value}}", "{{slotFive.value}}",
+    "{{names.value}}" })
+  h.assert_equal(presentation("watch").detailView[#rows].label, "{{i18n.attributes.names.label}}")
+  for i = 1, WATCH_PREVIEW_ROWS do
+    h.assert_true(rows[i] ~= "{{names.value}}", "the names row is not in the preview")
+  end
+  h.assert_equal(#presentation("watch").dashboard.states, 0)
+end
+
+function T.test_the_watch_slot_values_are_one_short_word()
   for i, attr in ipairs(WATCH_SLOTS) do
-    local item = presentation("watch").detailView[i + 2]
+    local item = presentation("watch").detailView[i + 1]
     h.assert_equal(item.label, "{{i18n.attributes." .. attr .. ".label}}")
     local keys = {}
     for _, alternative in ipairs(item.state.alternatives) do
       keys[#keys + 1] = alternative.key
+      h.assert_equal(alternative.value, WATCH_SLOT_VALUES[alternative.key], attr .. " " .. alternative.key)
     end
     h.assert_deep_equal(keys, { "running", "stopped", "empty" }, attr)
   end
-  h.assert_equal(#presentation("watch").dashboard.states, 0)
+  -- The English words stay in the translation's value labels
+  -- (`test_the_watch_translations_name_the_slots`).
 end
 
 function T.test_the_watch_conditions_are_the_five_slots_without_empty()
@@ -1451,6 +1472,12 @@ end
 -- the convention the command menus already used.
 local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch" }
 
+-- Except the watch card's own rows: its preview in the main view gives each
+-- of its first three rows a third of the width, and "실행 중 (Running)"
+-- wrapped and was cut (platform notes "화면 배치", 2026-10-02). They are one
+-- short Korean word; its routine conditions keep both languages.
+local SHORT_DETAIL_VALUES = { watch = true }
+
 local function assert_bilingual(alternatives, where)
   h.assert_true(#(alternatives or {}) > 0, where .. " has no alternatives")
   for _, alternative in ipairs(alternatives) do
@@ -1476,7 +1503,7 @@ function T.test_every_state_value_label_is_bilingual()
       elseif item.displayType == "state" then
         alternatives = (item.state or {}).alternatives
       end
-      if alternatives then
+      if alternatives and not SHORT_DETAIL_VALUES[key] then
         assert_bilingual(alternatives, string.format("%s detailView[%d]", id, i))
       end
     end
@@ -1954,6 +1981,10 @@ function T.test_the_watch_translations_name_the_slots()
     h.assert_equal(values.running.label, "실행 중")
     h.assert_equal(values.stopped.label, "꺼짐")
     h.assert_equal(values.empty.label, "비어 있음")
+    -- The card's own values are Korean only (the preview is too narrow for
+    -- "실행 중 (Running)"); the English words stay here in case the app
+    -- localises enum values from the translation (platform notes "번역":
+    -- not seen so far, to be checked live).
     local en_values = en.attributes[attr].i18n.value
     h.assert_equal(en_values.running.label, "Running")
     h.assert_equal(en_values.stopped.label, "Stopped")
