@@ -21,10 +21,10 @@
       }
     },
     {
-      "label": "{{i18n.attributes.slot1.label}}",
+      "label": "{{i18n.attributes.slotOne.label}}",
       "displayType": "state",
       "state": {
-        "label": "{{slot1.value}}",
+        "label": "{{slotOne.value}}",
         "alternatives": [
           {
             "key": "running",
@@ -45,10 +45,10 @@
       }
     },
     {
-      "label": "{{i18n.attributes.slot2.label}}",
+      "label": "{{i18n.attributes.slotTwo.label}}",
       "displayType": "state",
       "state": {
-        "label": "{{slot2.value}}",
+        "label": "{{slotTwo.value}}",
         "alternatives": [
           {
             "key": "running",
@@ -69,10 +69,10 @@
       }
     },
     {
-      "label": "{{i18n.attributes.slot3.label}}",
+      "label": "{{i18n.attributes.slotThree.label}}",
       "displayType": "state",
       "state": {
-        "label": "{{slot3.value}}",
+        "label": "{{slotThree.value}}",
         "alternatives": [
           {
             "key": "running",
@@ -93,10 +93,10 @@
       }
     },
     {
-      "label": "{{i18n.attributes.slot4.label}}",
+      "label": "{{i18n.attributes.slotFour.label}}",
       "displayType": "state",
       "state": {
-        "label": "{{slot4.value}}",
+        "label": "{{slotFour.value}}",
         "alternatives": [
           {
             "key": "running",
@@ -117,10 +117,10 @@
       }
     },
     {
-      "label": "{{i18n.attributes.slot5.label}}",
+      "label": "{{i18n.attributes.slotFive.label}}",
       "displayType": "state",
       "state": {
-        "label": "{{slot5.value}}",
+        "label": "{{slotFive.value}}",
         "alternatives": [
           {
             "key": "running",
@@ -144,10 +144,10 @@
   "automation": {
     "conditions": [
       {
-        "label": "{{i18n.attributes.slot1.label}}",
+        "label": "{{i18n.attributes.slotOne.label}}",
         "displayType": "list",
         "list": {
-          "value": "slot1.value",
+          "value": "slotOne.value",
           "alternatives": [
             {
               "key": "running",
@@ -163,10 +163,10 @@
         }
       },
       {
-        "label": "{{i18n.attributes.slot2.label}}",
+        "label": "{{i18n.attributes.slotTwo.label}}",
         "displayType": "list",
         "list": {
-          "value": "slot2.value",
+          "value": "slotTwo.value",
           "alternatives": [
             {
               "key": "running",
@@ -182,10 +182,10 @@
         }
       },
       {
-        "label": "{{i18n.attributes.slot3.label}}",
+        "label": "{{i18n.attributes.slotThree.label}}",
         "displayType": "list",
         "list": {
-          "value": "slot3.value",
+          "value": "slotThree.value",
           "alternatives": [
             {
               "key": "running",
@@ -201,10 +201,10 @@
         }
       },
       {
-        "label": "{{i18n.attributes.slot4.label}}",
+        "label": "{{i18n.attributes.slotFour.label}}",
         "displayType": "list",
         "list": {
-          "value": "slot4.value",
+          "value": "slotFour.value",
           "alternatives": [
             {
               "key": "running",
@@ -220,10 +220,10 @@
         }
       },
       {
-        "label": "{{i18n.attributes.slot5.label}}",
+        "label": "{{i18n.attributes.slotFive.label}}",
         "displayType": "list",
         "list": {
-          "value": "slot5.value",
+          "value": "slotFive.value",
           "alternatives": [
             {
               "key": "running",

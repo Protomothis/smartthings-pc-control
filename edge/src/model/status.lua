@@ -52,7 +52,7 @@ local ATTRIBUTES = {
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
   [caps.WATCH] = {
     summary = true, names = true,
-    slot1 = true, slot2 = true, slot3 = true, slot4 = true, slot5 = true,
+    slotOne = true, slotTwo = true, slotThree = true, slotFour = true, slotFive = true,
   },
   [caps.TOAST] = { lastMessage = true },
   [features.CAP_BATTERY] = { battery = true },

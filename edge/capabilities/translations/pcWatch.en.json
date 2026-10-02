@@ -8,7 +8,7 @@
     "names": {
       "label": "Watch names"
     },
-    "slot1": {
+    "slotOne": {
       "label": "Watch 1",
       "i18n": {
         "value": {
@@ -24,7 +24,7 @@
         }
       }
     },
-    "slot2": {
+    "slotTwo": {
       "label": "Watch 2",
       "i18n": {
         "value": {
@@ -40,7 +40,7 @@
         }
       }
     },
-    "slot3": {
+    "slotThree": {
       "label": "Watch 3",
       "i18n": {
         "value": {
@@ -56,7 +56,7 @@
         }
       }
     },
-    "slot4": {
+    "slotFour": {
       "label": "Watch 4",
       "i18n": {
         "value": {
@@ -72,7 +72,7 @@
         }
       }
     },
-    "slot5": {
+    "slotFive": {
       "label": "Watch 5",
       "i18n": {
         "value": {

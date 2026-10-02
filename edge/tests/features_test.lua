@@ -714,7 +714,7 @@ local function card(events)
     names = h.last_value(events, WATCH, caps.WATCH, "names"),
   }
   for slot = 1, features.WATCH_SLOTS do
-    out[slot] = h.last_value(events, WATCH, caps.WATCH, "slot" .. slot)
+    out[slot] = h.last_value(events, WATCH, caps.WATCH, features.slot_attr(slot))
   end
   return out
 end
@@ -827,7 +827,7 @@ function T.test_a_list_edit_holds_running_for_one_status()
   h.assert_deep_equal(s.extras.watch, { "running", "stopped", "running", "empty", "empty" },
     "held; the new slot 2 is what the service says")
   local events = state.apply_status(s, with_apps({ placeholder, renamed, CODE }), { lang = "ko" })
-  h.assert_equal(h.last_value(events, WATCH, caps.WATCH, "slot1"), "running", "the rows follow the hold")
+  h.assert_equal(h.last_value(events, WATCH, caps.WATCH, "slotOne"), "running", "the rows follow the hold")
   h.assert_equal(h.last_value(events, WATCH, caps.WATCH, "names"), "1 Steam · 2 VS Code · 3 OBS Studio")
   features.remember(s, with_apps({ placeholder, renamed, CODE }))
   h.assert_deep_equal(s.extras.watch, { "stopped", "stopped", "stopped", "empty", "empty" }, "then it decides")
@@ -877,11 +877,11 @@ function T.test_an_unreachable_pc_or_an_off_list_keeps_the_slots()
     later[#later + 1] = h.emitted(device)[i]
   end
   for slot = 1, features.WATCH_SLOTS do
-    h.assert_nil(h.last_value(later, WATCH, caps.WATCH, "slot" .. slot), "slot" .. slot .. " is not touched")
+    h.assert_nil(h.last_value(later, WATCH, caps.WATCH, features.slot_attr(slot)), features.slot_attr(slot) .. " is not touched")
   end
   h.assert_deep_equal({ h.last_value(later, WATCH, caps.WATCH, "summary"),
     h.last_value(later, WATCH, caps.WATCH, "names") }, { "서비스 v1.2.0 필요", "없음" })
-  h.assert_equal(h.last_value(h.emitted(device), WATCH, caps.WATCH, "slot1"), "running")
+  h.assert_equal(h.last_value(h.emitted(device), WATCH, caps.WATCH, "slotOne"), "running")
 end
 
 function T.test_an_activity_push_repaints_at_once()
@@ -1000,7 +1000,7 @@ function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
   -- #123: the watch card too, every row forced, the empty slots included.
   h.assert_deep_equal(card(emitted), { summary = "Steam 실행 중", names = "2 Steam",
     "empty", "running", "empty", "empty", "empty" })
-  h.assert_true(h.component_forced(emitted, WATCH, caps.WATCH, "slot2"))
+  h.assert_true(h.component_forced(emitted, WATCH, caps.WATCH, "slotTwo"))
   -- A device nothing has been read for gets the resting defaults.
   local fresh = device_with(nil)
   poll.repaint(fresh)
@@ -1037,8 +1037,8 @@ function T.test_a_repaint_of_an_off_list_keeps_what_the_slots_showed()
   for i = mark + 1, #h.emitted(device) do
     again[#again + 1] = h.emitted(device)[i]
   end
-  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slot3"), "running", "from the hub's state cache")
-  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slot2"), "empty")
+  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slotThree"), "running", "from the hub's state cache")
+  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slotTwo"), "empty")
 end
 
 function T.test_an_awake_push_moves_the_switch_at_once()

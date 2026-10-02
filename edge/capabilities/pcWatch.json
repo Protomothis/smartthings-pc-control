@@ -37,7 +37,7 @@
       },
       "enumCommands": []
     },
-    "slot1": {
+    "slotOne": {
       "schema": {
         "type": "object",
         "properties": {
@@ -57,7 +57,7 @@
       },
       "enumCommands": []
     },
-    "slot2": {
+    "slotTwo": {
       "schema": {
         "type": "object",
         "properties": {
@@ -77,7 +77,7 @@
       },
       "enumCommands": []
     },
-    "slot3": {
+    "slotThree": {
       "schema": {
         "type": "object",
         "properties": {
@@ -97,7 +97,7 @@
       },
       "enumCommands": []
     },
-    "slot4": {
+    "slotFour": {
       "schema": {
         "type": "object",
         "properties": {
@@ -117,7 +117,7 @@
       },
       "enumCommands": []
     },
-    "slot5": {
+    "slotFive": {
       "schema": {
         "type": "object",
         "properties": {

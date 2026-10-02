@@ -255,7 +255,7 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
   보내지 않는다. `data`는 status의 `activity` 블록과 똑같은 JSON이다.
 - **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatch`
   (`numbersystem53811.pcwatch`): `summary`(≤ 60) "Steam 실행 중" / "Steam 실행 중 · 외 1개" / "없음" / "꺼짐" / "서비스 v1.2.0 필요",
-  `names`(≤ 120) "1 Steam · 3 OBS" / "없음" / "꺼짐", `slot1`–`slot5` enum `running`/`stopped`/`empty`("실행 중"/"꺼짐"/"비어 있음").
+  `names`(≤ 120) "1 Steam · 3 OBS" / "없음" / "꺼짐", `slotOne`–`slotFive` enum `running`/`stopped`/`empty`("실행 중"/"꺼짐"/"비어 있음").
   루틴 조건은 "감시 1"–"감시 5"이고 값은 실행 중/꺼짐 둘뿐이다("감시 1이 실행 중이 되면"). 앱 이름은 `names` 줄과 PC 앱의 번호로 맞춰 본다.
   꺼짐·옛 서비스·PC 응답 없음에서는 슬롯을 움직이지 않는다(마지막 값 유지, 처음이면 `empty`). 목록 편집 직후의 status 하나는
   "실행 중"인 슬롯을 "꺼짐"으로 옮기지 않는다. 바뀔 때만 내보낸다(이벤트 예산). 자세한 것은 edge-driver.md §4.2.

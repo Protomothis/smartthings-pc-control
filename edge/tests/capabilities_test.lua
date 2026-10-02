@@ -421,7 +421,7 @@ end
 -- #123: the watch card
 --------------------------------------------------------------------------------
 
-local WATCH_SLOTS = { "slot1", "slot2", "slot3", "slot4", "slot5" }
+local WATCH_SLOTS = { "slotOne", "slotTwo", "slotThree", "slotFour", "slotFive" }
 
 function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
   local profiles = require "profiles"
@@ -462,7 +462,7 @@ function T.test_the_watch_detail_view_is_summary_names_then_the_slots()
     rows[#rows + 1] = item.state.label
   end
   h.assert_deep_equal(rows, { "{{summary.value}}", "{{names.value}}",
-    "{{slot1.value}}", "{{slot2.value}}", "{{slot3.value}}", "{{slot4.value}}", "{{slot5.value}}" })
+    "{{slotOne.value}}", "{{slotTwo.value}}", "{{slotThree.value}}", "{{slotFour.value}}", "{{slotFive.value}}" })
   for i, attr in ipairs(WATCH_SLOTS) do
     local item = presentation("watch").detailView[i + 2]
     h.assert_equal(item.label, "{{i18n.attributes." .. attr .. ".label}}")

@@ -8,7 +8,7 @@
     "names": {
       "label": "감시 이름"
     },
-    "slot1": {
+    "slotOne": {
       "label": "감시 1",
       "i18n": {
         "value": {
@@ -24,7 +24,7 @@
         }
       }
     },
-    "slot2": {
+    "slotTwo": {
       "label": "감시 2",
       "i18n": {
         "value": {
@@ -40,7 +40,7 @@
         }
       }
     },
-    "slot3": {
+    "slotThree": {
       "label": "감시 3",
       "i18n": {
         "value": {
@@ -56,7 +56,7 @@
         }
       }
     },
-    "slot4": {
+    "slotFour": {
       "label": "감시 4",
       "i18n": {
         "value": {
@@ -72,7 +72,7 @@
         }
       }
     },
-    "slot5": {
+    "slotFive": {
       "label": "감시 5",
       "i18n": {
         "value": {

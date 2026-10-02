@@ -515,7 +515,7 @@ end
 -- contract v2: `activity = { enabled, apps = [ { slot, id, label, running } ],
 -- top }`, by slot (1-5, 1 = highest priority), filled slots only. The PC shows
 -- it on a card of its own, the `apps` component's `pcWatch`: a summary row, a
--- names row ("1 Steam · 3 OBS") and one state per slot, `slot1`..`slot5`
+-- names row ("1 Steam · 3 OBS") and one state per slot, `slotOne`..`slotFive`
 -- (`running` / `stopped` / `empty`), which is what a routine reads as
 -- "감시 1".."감시 5". A slot number is a stable thing to name in a routine;
 -- an app name is not something a capability presentation can list
@@ -558,9 +558,11 @@ local function clean(text)
   return (text:gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
---- The attribute of slot `n`: "slot1".."slot5".
+--- The attribute of slot `n`: "slotOne".."slotFive" (attribute names take
+--- letters only, platform notes "capability id와 네임스페이스").
+local SLOT_ATTRS = { "slotOne", "slotTwo", "slotThree", "slotFour", "slotFive" }
 function features.slot_attr(n)
-  return "slot" .. tostring(n)
+  return SLOT_ATTRS[n]
 end
 
 --- `value` when it is a `slotN` enum value, else nil.

@@ -187,7 +187,7 @@ local STRINGS = {
   -- #123: the watch card. `pcWatch.summary`: the lowest-slot app that runs
   -- (slot 1 is the highest priority) and how many others run with it.
   -- `apps_none` / `apps_off` are also the `names` row's "없음" / "꺼짐". Each
-  -- slot's own state is an enum row (`slot1`..`slot5`), not a sentence here.
+  -- slot's own state is an enum row (`slotOne`..`slotFive`), not a sentence here.
   apps_running = { ko = "%s 실행 중", en = "%s running" },
   apps_running_more = { ko = "%s 실행 중 · 외 %d개", en = "%s running · %d more" },
   apps_none = { ko = "없음", en = "None" },

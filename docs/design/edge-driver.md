@@ -259,7 +259,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
 
 | `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
-| `pcWatch` (커스텀 `numbersystem53811.pcwatch`, #123) | **`apps`** (label "감시 목록") | `summary` string(≤ 60) ← `activity.apps`/`top`: "Steam 실행 중" / "Steam 실행 중 · 외 2개" / 실행 중인 것 없음 "없음" / 옵트인 꺼짐 "꺼짐" / 옛 서비스 "서비스 v1.2.0 필요". `names` string(≤ 120): "1 Steam · 3 OBS" / "없음" / "꺼짐". `slot1`–`slot5` enum `running`/`stopped`/`empty` — 루틴 조건 "감시 1"–"감시 5"(§4.2) | – |
+| `pcWatch` (커스텀 `numbersystem53811.pcwatch`, #123) | **`apps`** (label "감시 목록") | `summary` string(≤ 60) ← `activity.apps`/`top`: "Steam 실행 중" / "Steam 실행 중 · 외 2개" / 실행 중인 것 없음 "없음" / 옵트인 꺼짐 "꺼짐" / 옛 서비스 "서비스 v1.2.0 필요". `names` string(≤ 120): "1 Steam · 3 OBS" / "없음" / "꺼짐". `slotOne`–`slotFive` enum `running`/`stopped`/`empty` — 루틴 조건 "감시 1"–"감시 5"(§4.2) | – |
 | `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
 | `pcToast` (커스텀 `numbersystem53811.pctoast`, #108) | main | `lastMessage` string(200자) — status가 아니라 드라이버가 가진다: 마지막으로 보낸 문구, 보낸 적이 없으면 "없음"/"None" | `send(text: string, maxLength 200)` → `POST /st/v1/notify {text}` |
 | `battery`, `powerSource` (표준, #116) | **`battery`** (label "배터리", `-battery` 프로필에만) | `battery` ← `battery.percent`(-1이면 내보내지 않음), `powerSource` ← `battery.ac` (`mains`/`battery`). `present`가 거짓이면 아무것도 내보내지 않는다 | – |
@@ -285,7 +285,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 |---|---|
 | 서비스 → 드라이버 | status·모든 푸시의 `activity = { enabled, apps: [ {slot, id, label, running} ], top }`. `apps`는 slot 순서이고 채워진 슬롯만, `id`는 소문자 프로세스 이름, `top`은 실행 중인 것 중 가장 작은 슬롯의 `id`(없으면 `""`). 꺼져 있으면 `{enabled: false, apps: [], top: ""}` |
 | 프로필 | `pc*.v7`의 컴포넌트 `apps`: `numbersystem53811.pcwatch` 하나. main의 요약 줄 `pcApps`(v6)는 없앴다 |
-| capability `pcWatch` | `summary` string(≤ 60), `names` string(≤ 120), `slot1`–`slot5` enum `running`/`stopped`/`empty`. 명령 없음 |
+| capability `pcWatch` | `summary` string(≤ 60), `names` string(≤ 120), `slotOne`–`slotFive` enum `running`/`stopped`/`empty`. 명령 없음 |
 | 상세 화면 | 요약("실행 중인 앱") → 이름("감시 이름") → "감시 1"…"감시 5"(값 "실행 중 (Running)" / "꺼짐 (Stopped)" / "비어 있음 (Empty)"). 대시보드 상태 없음 |
 | 루틴 조건 | 목록 다섯: "감시 1"…"감시 5", 값은 `running`/`stopped` 둘뿐. `empty`는 기다릴 사건이 아니라 쉬는 값이라 조건에 없다 |
 
@@ -358,7 +358,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
   - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
   - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다. #92: 성공한 폴링마다 `service_version`을 장치 필드(persist)에 남기고, 연결이 끊긴 동안에도 그 값을 그대로 보여 준다 — 꺼진 PC의 버전은 바뀌지 않는다. `v?`는 **한 번도 응답받지 못한** PC에만 쓴다. 업데이트 꼬리말(" · 업데이트 v1.2.0")은 기억하지 않는다. 있다/없다는 살아 있는 응답만 말할 수 있다.
   - `pcDefer.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). #89: 1시간부터는 시간으로("종료 · 2시간 후", "종료 · 1시간 30분 후"), 하루부터는 일과 시간으로("종료 · 1일 3시간 후") 읽는다 — "4320분 후"는 아무도 3일로 읽지 못한다. 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
-- 자동화용 조건은 `powerState`, `pcDefer.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`, 감시 목록의 `pcWatch.slot1`–`slot5`("감시 1"–"감시 5", 실행 중/꺼짐, #123). 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
+- 자동화용 조건은 `powerState`, `pcDefer.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`, 감시 목록의 `pcWatch.slotOne`–`slotFive`("감시 1"–"감시 5", 실행 중/꺼짐, #123). 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
 
 ## 6. 드라이버 동작
 

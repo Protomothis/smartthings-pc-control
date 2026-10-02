@@ -705,7 +705,7 @@ function T.test_init_moves_a_dev_generation_device_to_v7_keeping_style_and_batte
     { "pc-hub-battery.v5", "hub", "pc-hub-battery.v7", "apps", caps.WATCH, "summary", "없음" },
     -- #123: the v6 device of the app-children build; every slot is new too.
     { "pc-plug.v6", "plug", "pc-plug.v7", "apps", caps.WATCH, "names", "없음" },
-    { "pc-plug-battery.v6", "plug", "pc-plug-battery.v7", "apps", caps.WATCH, "slot5", "empty" },
+    { "pc-plug-battery.v6", "plug", "pc-plug-battery.v7", "apps", caps.WATCH, "slotFive", "empty" },
   }) do
     local from, style, to, component, cap, attr, want = table.unpack(c, 1, 7)
     profiles.reset()
