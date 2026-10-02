@@ -819,24 +819,24 @@ function T.test_a_profile_change_forces_every_row_once()
   end)
 end
 
---- The Dev channel device on pc-monitor.v7 after the driver update (#123:
---- v8, the watch card whose preview fits), through the real `init` and then
+--- The Dev channel device on pc-monitor.v8 after the driver update (#123:
+--- v9, the watch card whose preview fits), through the real `init` and then
 --- `minutes` of driver life on the clock: the default 30 s polls, the
 --- batches, the follow-ups.
 --- `landing`: the profile change lands that many seconds in (`infoChanged`).
 local function migrate(pc, minutes, landing)
   local device = new_device()
-  device.profile = { id = "v7", name = "pc-monitor.v7", components = h.components_for("pc-monitor.v7") }
-  device:set_field(fields.ROWS_PAINTED, "7")
+  device.profile = { id = "v8", name = "pc-monitor.v8", components = h.components_for("pc-monitor.v8") }
+  device:set_field(fields.ROWS_PAINTED, "8")
   local trace = stamped(device, pc)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v8")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v9")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
-      { old_st_store = { profile = { id = "v7" } } })
+      { old_st_store = { profile = { id = "v8" } } })
   end
   run_until(d, pc, start + minutes * 60)
   return device, trace, start
@@ -1005,7 +1005,7 @@ function T.test_a_preference_change_that_moves_no_profile_does_not_repaint()
   -- change says whether its profile moved.
   with_pc(function()
     local device = new_device()
-    device.profile = { id = "profile-1", name = "pc.v8", components = h.components_for("pc.v8") }
+    device.profile = { id = "profile-1", name = "pc.v9", components = h.components_for("pc.v9") }
     local d = Driver("budget", {})
     poll.once(d, device)
     local mark = #device.emitted
