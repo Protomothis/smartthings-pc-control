@@ -16,12 +16,12 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
 
-func watch(process, label string) config.ActivityWatch {
-	return config.ActivityWatch{Process: process, Label: label}
+func watch(slot int, process, label string) config.ActivityWatch {
+	return config.ActivityWatch{Slot: slot, Process: process, Label: label}
 }
 
-func app(id, label string, running bool) status.ActivityApp {
-	return status.ActivityApp{ID: id, Label: label, Running: running}
+func app(slot int, id, label string, running bool) status.ActivityApp {
+	return status.ActivityApp{Slot: slot, ID: id, Label: label, Running: running}
 }
 
 // scannerOver is a scanner over a fixed process list; the counter says how
@@ -40,10 +40,11 @@ func scannerRunning(running *[]string) *Scanner {
 }
 
 func TestMatchActivity(t *testing.T) {
+	// Out of slot order on purpose: the apps come out sorted by slot.
 	list := []config.ActivityWatch{
-		watch("Steam.exe", "Steam"),
-		watch("obs64.exe", "OBS"),
-		watch("code.exe", "VS Code"),
+		watch(5, "code.exe", "VS Code"),
+		watch(1, "Steam.exe", "Steam"),
+		watch(3, "obs64.exe", "OBS"),
 	}
 	for _, tc := range []struct {
 		name    string
@@ -52,17 +53,17 @@ func TestMatchActivity(t *testing.T) {
 		top     string
 	}{
 		{"nothing running", nil,
-			[]status.ActivityApp{app("steam.exe", "Steam", false), app("obs64.exe", "OBS", false), app("code.exe", "VS Code", false)}, ""},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", false), app(5, "code.exe", "VS Code", false)}, ""},
 		{"nothing watched running", []string{"explorer.exe", "svchost.exe"},
-			[]status.ActivityApp{app("steam.exe", "Steam", false), app("obs64.exe", "OBS", false), app("code.exe", "VS Code", false)}, ""},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", false), app(5, "code.exe", "VS Code", false)}, ""},
 		{"case-insensitive, id lower-cased", []string{"STEAM.EXE"},
-			[]status.ActivityApp{app("steam.exe", "Steam", true), app("obs64.exe", "OBS", false), app("code.exe", "VS Code", false)}, "steam.exe"},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", true), app(3, "obs64.exe", "OBS", false), app(5, "code.exe", "VS Code", false)}, "steam.exe"},
 		{"many instances count once", []string{"code.exe", "Code.exe", "CODE.EXE"},
-			[]status.ActivityApp{app("steam.exe", "Steam", false), app("obs64.exe", "OBS", false), app("code.exe", "VS Code", true)}, "code.exe"},
-		{"top is the first running in list order", []string{"code.exe", "obs64.exe"},
-			[]status.ActivityApp{app("steam.exe", "Steam", false), app("obs64.exe", "OBS", true), app("code.exe", "VS Code", true)}, "obs64.exe"},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", false), app(5, "code.exe", "VS Code", true)}, "code.exe"},
+		{"top is the running app in the lowest slot", []string{"code.exe", "obs64.exe"},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", true), app(5, "code.exe", "VS Code", true)}, "obs64.exe"},
 		{"all running", []string{"code.exe", "obs64.exe", "steam.exe"},
-			[]status.ActivityApp{app("steam.exe", "Steam", true), app("obs64.exe", "OBS", true), app("code.exe", "VS Code", true)}, "steam.exe"},
+			[]status.ActivityApp{app(1, "steam.exe", "Steam", true), app(3, "obs64.exe", "OBS", true), app(5, "code.exe", "VS Code", true)}, "steam.exe"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := Match(list, tc.running)
@@ -72,10 +73,14 @@ func TestMatchActivity(t *testing.T) {
 		})
 	}
 
-	// Reordering the list moves the top.
-	reordered := []config.ActivityWatch{list[2], list[1], list[0]}
-	if got := Match(reordered, []string{"steam.exe", "code.exe"}); got.Top != "code.exe" || got.Apps[0].ID != "code.exe" {
-		t.Errorf("reordered = %+v", got)
+	// Moving an app to a lower slot makes it the top; the list order
+	// itself does not matter.
+	moved := []config.ActivityWatch{watch(4, "Steam.exe", "Steam"), watch(2, "code.exe", "VS Code")}
+	if got := Match(moved, []string{"steam.exe", "code.exe"}); got.Top != "code.exe" || got.Apps[0].ID != "code.exe" || got.Apps[0].Slot != 2 {
+		t.Errorf("moved = %+v", got)
+	}
+	if list[0].Slot != 5 {
+		t.Error("Match sorted its argument in place")
 	}
 	if got := Match(nil, []string{"steam.exe"}); got.Apps == nil || len(got.Apps) != 0 || got.Top != "" {
 		t.Errorf("empty list = %+v", got)
@@ -83,7 +88,7 @@ func TestMatchActivity(t *testing.T) {
 }
 
 func TestMatchActivityNeverCarriesUnlistedNames(t *testing.T) {
-	list := []config.ActivityWatch{watch("steam.exe", "Steam")}
+	list := []config.ActivityWatch{watch(1, "steam.exe", "Steam")}
 	running := []string{"steam.exe", "secret-project.exe", "bank-client.exe"}
 	raw, _ := json.Marshal(Match(list, running))
 	if s := string(raw); strings.Contains(s, "secret") || strings.Contains(s, "bank") {
@@ -93,7 +98,7 @@ func TestMatchActivityNeverCarriesUnlistedNames(t *testing.T) {
 
 func TestActivityTopLabel(t *testing.T) {
 	a := status.Activity{Enabled: true, Top: "obs64.exe", Apps: []status.ActivityApp{
-		app("steam.exe", "Steam", false), app("obs64.exe", "OBS", true), app("code.exe", "VS Code", true), app("x.exe", "X", true),
+		app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", true), app(5, "code.exe", "VS Code", true), app(4, "x.exe", "X", true),
 	}}
 	if label, others := a.TopLabel(); label != "OBS" || others != 2 {
 		t.Errorf("topLabel = %q, %d", label, others)
@@ -105,7 +110,7 @@ func TestActivityTopLabel(t *testing.T) {
 
 func TestActivityScannerDisabledDoesNotReadProcesses(t *testing.T) {
 	s, calls := scannerOver("steam.exe")
-	cfg := config.ActivityConfig{Enabled: false, Watch: []config.ActivityWatch{watch("steam.exe", "Steam")}}
+	cfg := config.ActivityConfig{Enabled: false, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
 	got, changed := s.Scan(cfg)
 	if calls.Load() != 0 {
 		t.Errorf("the process list was read %d times while the option is off", calls.Load())
@@ -118,13 +123,13 @@ func TestActivityScannerDisabledDoesNotReadProcesses(t *testing.T) {
 	}
 }
 
-// TestActivityScannerChangeDetection: a flip, a list edit (add, reorder,
-// relabel) and the switch are changes; an unchanged scan is not.
+// TestActivityScannerChangeDetection: a flip, a list edit (add, slot
+// change, relabel) and the switch are changes; an unchanged scan is not.
 func TestActivityScannerChangeDetection(t *testing.T) {
 	running := []string{"explorer.exe"}
 	s := scannerRunning(&running)
 
-	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("steam.exe", "Steam")}}
+	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
 	if _, changed := s.Scan(cfg); changed {
 		t.Error("the first scan reported a change (it only sets the baseline)")
 	}
@@ -133,7 +138,7 @@ func TestActivityScannerChangeDetection(t *testing.T) {
 	}
 	running = []string{"explorer.exe", "Steam.exe"}
 	got, changed := s.Scan(cfg)
-	if !changed || got.Top != "steam.exe" || !slices.Equal(got.Apps, []status.ActivityApp{app("steam.exe", "Steam", true)}) {
+	if !changed || got.Top != "steam.exe" || !slices.Equal(got.Apps, []status.ActivityApp{app(1, "steam.exe", "Steam", true)}) {
 		t.Errorf("steam started: %+v changed=%v", got, changed)
 	}
 	if cur := s.Current(cfg); cur.Top != "steam.exe" {
@@ -149,11 +154,12 @@ func TestActivityScannerChangeDetection(t *testing.T) {
 		name string
 		cfg  config.ActivityConfig
 	}{
-		{"an entry added (not running)", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("steam.exe", "Steam"), watch("code.exe", "VS Code")}}},
-		{"reordered", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("code.exe", "VS Code"), watch("steam.exe", "Steam")}}},
-		{"relabelled", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("code.exe", "Code"), watch("steam.exe", "Steam")}}},
-		{"disabled", config.ActivityConfig{Enabled: false, Watch: []config.ActivityWatch{watch("code.exe", "Code"), watch("steam.exe", "Steam")}}},
-		{"enabled again", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("code.exe", "Code"), watch("steam.exe", "Steam")}}},
+		{"an entry added (not running)", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "code.exe", "VS Code")}}},
+		{"slots swapped", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "code.exe", "VS Code"), watch(2, "steam.exe", "Steam")}}},
+		{"moved to a free slot", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "code.exe", "VS Code"), watch(5, "steam.exe", "Steam")}}},
+		{"relabelled", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "code.exe", "Code"), watch(5, "steam.exe", "Steam")}}},
+		{"disabled", config.ActivityConfig{Enabled: false, Watch: []config.ActivityWatch{watch(1, "code.exe", "Code"), watch(5, "steam.exe", "Steam")}}},
+		{"enabled again", config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "code.exe", "Code"), watch(5, "steam.exe", "Steam")}}},
 	}
 	for _, step := range steps {
 		if _, changed := s.Scan(step.cfg); !changed {
@@ -171,13 +177,13 @@ func TestActivityScannerChangeDetection(t *testing.T) {
 
 func TestActivityStatusIgnoresScanForAnotherList(t *testing.T) {
 	s, _ := scannerOver("steam.exe")
-	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("steam.exe", "Steam")}}
+	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
 	s.Scan(cfg)
 	// The user edits the list: until the (immediate) rescan the apps are
 	// listed, none running, and the removed one is gone at once.
-	edited := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("obs64.exe", "OBS"), watch("steam.exe", "Steam")}}
+	edited := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(3, "obs64.exe", "OBS"), watch(1, "steam.exe", "Steam")}}
 	cur := s.Current(edited)
-	want := []status.ActivityApp{app("obs64.exe", "OBS", false), app("steam.exe", "Steam", false)}
+	want := []status.ActivityApp{app(1, "steam.exe", "Steam", false), app(3, "obs64.exe", "OBS", false)}
 	if !cur.Enabled || cur.Top != "" || !slices.Equal(cur.Apps, want) {
 		t.Errorf("status after an edit = %+v, want %+v until rescanned", cur, want)
 	}
@@ -194,7 +200,7 @@ func TestActivityScannerListFailureKeepsLastResult(t *testing.T) {
 
 	// No earlier scan: listed, nothing running.
 	fail = true
-	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch("steam.exe", "Steam")}}
+	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
 	if got, _ := s.Scan(cfg); !got.Enabled || got.Top != "" || len(got.Apps) != 1 || got.Apps[0].Running {
 		t.Errorf("failed first scan = %+v", got)
 	}

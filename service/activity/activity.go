@@ -2,7 +2,9 @@
 // (docs/design/media-notify.md §11, #110, #123).
 //
 // The user lists the programs worth reporting — "steam.exe, label it
-// Steam" — in priority order, and the service reports, for each of them
+// Steam" — in up to five numbered slots (slot 1 ranks highest; the PC
+// device's routine conditions are "감시 1".."감시 5"), and the service
+// reports, for each of them
 // only, whether it is running. Nothing else about the process list leaves
 // the scanner:
 //
@@ -56,11 +58,13 @@ func Listed(watch []config.ActivityWatch) status.Activity {
 }
 
 // Match compares the running process names against watch. Every entry
-// becomes one app, in list order, running when at least one process has
-// its file name (case-insensitive); top is the first running one. Nothing
-// from running that is not on the list can reach the result: only watch
-// entries are ever copied.
+// becomes one app, sorted by slot, running when at least one process has
+// its file name (case-insensitive); top is the running one in the lowest
+// slot. Nothing from running that is not on the list can reach the
+// result: only watch entries are ever copied.
 func Match(watch []config.ActivityWatch, running []string) status.Activity {
+	watch = slices.Clone(watch)
+	config.SortWatch(watch)
 	out := status.Activity{Enabled: true, Apps: make([]status.ActivityApp, 0, len(watch))}
 	wanted := make(map[string]bool, len(watch))
 	for _, w := range watch {
@@ -75,7 +79,7 @@ func Match(watch []config.ActivityWatch, running []string) status.Activity {
 		}
 	}
 	for _, w := range watch {
-		app := status.ActivityApp{ID: w.ID(), Label: w.Label, Running: present[w.ID()]}
+		app := status.ActivityApp{Slot: w.Slot, ID: w.ID(), Label: w.Label, Running: present[w.ID()]}
 		if app.Running && out.Top == "" {
 			out.Top = app.ID
 		}
@@ -180,7 +184,7 @@ type Scanner struct {
 }
 
 // sigOf identifies what a scan was made for: the switch, and the list with
-// its order and labels.
+// its slots and labels.
 func sigOf(a config.ActivityConfig) string {
 	if !a.Enabled {
 		return "off"
@@ -188,14 +192,14 @@ func sigOf(a config.ActivityConfig) string {
 	var b strings.Builder
 	b.WriteString("on")
 	for _, w := range a.Watch {
-		fmt.Fprintf(&b, "\x00%s\x01%s", w.ID(), w.Label)
+		fmt.Fprintf(&b, "\x00%d\x01%s\x01%s", w.Slot, w.ID(), w.Label)
 	}
 	return b.String()
 }
 
 // Scan reads the process list for cfg (none at all while it is off),
 // stores the result and reports it with whether it differs from the
-// previous one — an app started or stopped, the list, its order or a label
+// previous one — an app started or stopped, the list, a slot or a label
 // changed, or the option was switched. The very first result only sets the
 // baseline (changed is false), so starting the service never invents a
 // transition.

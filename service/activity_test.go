@@ -41,8 +41,8 @@ func stubRunning(t *testing.T, running *[]string) {
 	t.Cleanup(func() { sys.processes = orig; activityScan.Reset() })
 }
 
-func watch(process, label string) ActivityWatch {
-	return ActivityWatch{Process: process, Label: label}
+func watch(slot int, process, label string) ActivityWatch {
+	return ActivityWatch{Slot: slot, Process: process, Label: label}
 }
 
 // ---- config ----------------------------------------------------------------
@@ -50,11 +50,11 @@ func watch(process, label string) ActivityWatch {
 func TestConfigAPIValidatesActivity(t *testing.T) {
 	protectConfigFile(t)
 	withLiveConfig(t, Config{Port: 5001, Activity: ActivityConfig{
-		Watch: []ActivityWatch{watch("steam.exe", "Steam")},
+		Watch: []ActivityWatch{watch(1, "steam.exe", "Steam")},
 	}})
 
 	w := httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"C:\\bad.exe","label":"x"}]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":1,"process":"C:\\bad.exe","label":"x"}]}}`))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("a path was accepted: %d %s", w.Code, w.Body.String())
 	}
@@ -62,15 +62,29 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 		t.Error("a rejected save changed the live config")
 	}
 
-	// Eleven programs are refused at save time.
+	// Six programs are refused at save time.
 	var list []string
-	for i := 0; i < 11; i++ {
-		list = append(list, `{"process":"app`+string(rune('a'+i))+`.exe"}`)
+	for i := 0; i < 6; i++ {
+		list = append(list, `{"slot":`+string(rune('1'+i))+`,"process":"app`+string(rune('a'+i))+`.exe"}`)
 	}
 	w = httptest.NewRecorder()
 	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[`+strings.Join(list, ",")+`]}}`))
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "at most 10") {
-		t.Errorf("eleven programs: %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "at most 5") {
+		t.Errorf("six programs: %d %s", w.Code, w.Body.String())
+	}
+
+	// A save names every slot: none, one out of range or one used twice is
+	// refused (only a load gives slots out).
+	for body, want := range map[string]string{
+		`[{"process":"obs64.exe"}]`:                                       "must be 1-5 (got 0)",
+		`[{"slot":6,"process":"obs64.exe"}]`:                              "must be 1-5 (got 6)",
+		`[{"slot":2,"process":"obs64.exe"},{"slot":2,"process":"a.exe"}]`: "slot 2 is used twice",
+	} {
+		w = httptest.NewRecorder()
+		webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":`+body+`}}`))
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), want) {
+			t.Errorf("%s: %d %s", body, w.Code, w.Body.String())
+		}
 	}
 
 	// The WebUI page sends only the switch: the list must survive, and the
@@ -94,14 +108,15 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 		t.Error("the save did not ask for an immediate rescan")
 	}
 
-	// An old client still sending kind is accepted; the key is dropped.
+	// A stray kind is accepted and dropped; the list is stored in slot
+	// order whatever order it came in.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"obs64.exe","label":"OBS","kind":"stream"},{"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
+	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":4,"process":"obs64.exe","label":"OBS","kind":"stream"},{"slot":2,"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("with kind: %d %s", w.Code, w.Body.String())
 	}
-	if got := getConfig().Activity.Watch; !slices.Equal(got, []ActivityWatch{watch("obs64.exe", "OBS"), watch("steam.exe", "Steam")}) {
-		t.Errorf("order after save = %+v", got)
+	if got := getConfig().Activity.Watch; !slices.Equal(got, []ActivityWatch{watch(2, "steam.exe", "Steam"), watch(4, "obs64.exe", "OBS")}) {
+		t.Errorf("list after save = %+v", got)
 	}
 
 	// An empty list is a real edit.
@@ -125,7 +140,7 @@ func TestActivityChangePushes(t *testing.T) {
 	running := []string{"explorer.exe"}
 	stubRunning(t, &running)
 
-	cfg := Config{Port: 5001, Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("obs64.exe", "OBS")}}}
+	cfg := Config{Port: 5001, Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch(3, "obs64.exe", "OBS")}}}
 	stPushSetup(t, cfg)
 	startNotifier(nil) // a bus with the push tap, no notification sink
 	t.Cleanup(stopNotifier)
@@ -174,18 +189,24 @@ func TestActivityChangePushes(t *testing.T) {
 	activityTick(cfg.Activity) // baseline, no push
 	running = []string{"explorer.exe", "obs64.exe", "diary.exe"}
 	activityTick(cfg.Activity)
-	expect("obs started", `{"enabled":true,"apps":[{"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
+	expect("obs started", `{"enabled":true,"apps":[{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
 	if body := lastBody(); strings.Contains(body, "diary") {
 		t.Errorf("push body leaks an unlisted process name: %s", body)
 	}
 	noPush("no change")
 
-	// A list change (Steam added on top, not running) pushes.
-	cfg.Activity.Watch = []ActivityWatch{watch("steam.exe", "Steam"), watch("obs64.exe", "OBS")}
+	// A list change (Steam added in slot 1, not running) pushes.
+	cfg.Activity.Watch = []ActivityWatch{watch(1, "steam.exe", "Steam"), watch(3, "obs64.exe", "OBS")}
 	setConfig(cfg)
 	activityTick(cfg.Activity)
-	expect("list changed", `{"enabled":true,"apps":[{"id":"steam.exe","label":"Steam","running":false},{"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
+	expect("list changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
 	noPush("no change after the edit")
+
+	// So does moving an entry to another slot, nothing else changed.
+	cfg.Activity.Watch = []ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "obs64.exe", "OBS")}
+	setConfig(cfg)
+	activityTick(cfg.Activity)
+	expect("slot changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":2,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
 
 	// Disabling pushes the off block.
 	cfg.Activity.Enabled = false

@@ -45,7 +45,8 @@ type Status struct {
 	// Features so the driver keeps the profile without a battery.
 	Battery status.Battery `json:"battery"`
 	// Activity is the opt-in running-app block (#110, #123, §11): one
-	// entry per watched program in priority order, and the top one.
+	// entry per filled watch slot (1–5) in slot order, and the top one
+	// (the running app in the lowest slot).
 	Activity status.Activity `json:"activity"`
 	// Audio is the default playback device's last known state (#104, §3).
 	Audio status.Audio `json:"audio"`

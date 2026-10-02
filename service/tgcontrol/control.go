@@ -831,7 +831,8 @@ func (c *Control) statusText() string {
 }
 
 // activityLine is the /status "활동: Steam 실행 중 · 외 1개" line: the
-// highest-priority running app and how many other watched apps run. It is
+// running app in the lowest watch slot (status.Activity.Top) and how many
+// other watched apps run. It is
 // "" while the option is off or nothing watched is running — an idle PC
 // needs no line saying so. Labels are the user's own words, so they are
 // escaped.
