@@ -38,11 +38,17 @@ type fakeBot struct {
 	script []scriptedReply
 	polls  chan map[string]any // every getUpdates request body
 	calls  chan apiCall        // every other request
+	// release ends every blocked long poll when the test tears the fake
+	// down. The hang-up alone is not enough: on Windows the server now and
+	// then misses the client closing the connection, r.Context() is not
+	// cancelled and httptest.Server.Close waits for TCP keep-alive to give
+	// up on it (15s + 9×15s = 150s).
+	release chan struct{}
 }
 
 func newFakeBot(t *testing.T, script ...scriptedReply) (*Client, *fakeBot) {
 	t.Helper()
-	fb := &fakeBot{script: script, polls: make(chan map[string]any, 64), calls: make(chan apiCall, 64)}
+	fb := &fakeBot{script: script, polls: make(chan map[string]any, 64), calls: make(chan apiCall, 64), release: make(chan struct{})}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		body := map[string]any{}
@@ -68,13 +74,19 @@ func newFakeBot(t *testing.T, script ...scriptedReply) (*Client, *fakeBot) {
 		fb.mu.Unlock()
 		if reply == nil {
 			// Script exhausted: behave like an idle long poll.
-			<-r.Context().Done()
+			select {
+			case <-r.Context().Done():
+			case <-fb.release:
+			}
 			return
 		}
 		w.WriteHeader(reply.status)
 		fmt.Fprint(w, reply.body)
 	}))
+	// Cleanups run last-in first-out: the poller (runPoller) stops first,
+	// then the long polls are released, then the server closes.
 	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(fb.release) })
 	return NewClient(testToken, WithBaseURL(srv.URL), WithHTTPClient(srv.Client())), fb
 }
 
