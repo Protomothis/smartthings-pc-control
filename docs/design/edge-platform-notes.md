@@ -11,6 +11,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 프레젠테이션 본문의 `id`는 경로의 capability id와 같아야 한다.
 - CLI 2.x에는 `login` 명령이 없다. 인증이 필요한 첫 명령에서 브라우저가 열린다.
 - `capabilities:update`는 존재하지 않는 id를 거부한다. 새 capability는 `capabilities:create`로만 만든다.
+- **새 capability는 만든 뒤 몇 분 동안 드라이버 패키징이 거절한다**: `edge:drivers:package`가 `Invalid device profile specification`(400)으로 실패하고, 그동안 `capabilities <id>` 조회도 403이다. 2026-10-02 `pcwatch`는 약 6분 뒤에 통과했다. 만든 직후에는 기다렸다가 다시 패키징한다.
 - **속성·명령 이름은 영문자만**(camelCase, 1–36자, 패턴 `^[[a-z]*([A-Z][a-z]*)*]{1,36}# SmartThings 플랫폼 실측 노트
 
 허브와 휴대폰에서 직접 확인한 플랫폼 동작만 모은 참조 목록이다. 드라이버 설계는
