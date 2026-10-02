@@ -35,7 +35,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. `numbersystem53811.pcactivity`(kind 방식 앱 감지, Dev 채널의 `pc*.v5`, #123에서 `pcapps` + 자식 장치의 `pcapp`로 바뀜)와 `numbersystem53811.pcapps`·`numbersystem53811.pcapp`(Dev 채널의 `pc*.v6`과 `pc-app.v1`, 2026-10-02 감시 목록 카드 `pcwatch`로 바뀜, 아래 "자식 장치 대신 슬롯"), 그리고 `numbersystem53811.pcwatch`(Dev 채널의 `pc*.v7`–`v9`, 화면이 첫 프레젠테이션으로 굳어 2026-10-02 `pcwatchlist`로 바뀜, 아래 "프로필과 화면 생성")는 개발 장치가 `pc*.v10` 이상으로 옮겨지고 앱 자식 장치가 지워진 뒤 지운다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. `numbersystem53811.pcactivity`(kind 방식 앱 감지, Dev 채널의 `pc*.v5`, #123에서 `pcapps` + 자식 장치의 `pcapp`로 바뀜)와 `numbersystem53811.pcapps`·`numbersystem53811.pcapp`(Dev 채널의 `pc*.v6`과 `pc-app.v1`, 2026-10-02 감시 목록 카드 `pcwatch`로 바뀜, 아래 "자식 장치 대신 슬롯"), 그리고 `numbersystem53811.pcwatch`(Dev 채널의 `pc*.v7`–`v9`, 화면이 첫 프레젠테이션으로 굳어 2026-10-02 `pcwatchlist`로 바뀜, 아래 "프로필과 화면 생성")는 개발 장치가 `pc*.v10`으로 옮겨지고 앱 자식 장치가 지워진 뒤 2026-10-02에 지웠다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
 
 ## 프로필과 화면 생성
 
@@ -139,7 +139,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - **허브에서 확인**(2026-09-22, #73의 모니터 자식): LAN 드라이버가 `driver:try_create_device{ type = "EDGE_CHILD", parent_device_id, parent_assigned_child_key, … }`로 자식을 만들 수 있다. `device_network_id`를 주면 허브가 경고하고 버린다 — 자식은 `parent_assigned_child_key`로 알아본다.
 - **소스에서 읽음**:
   - `try_create_device`의 메타데이터 값은 **전부 문자열**이어야 하고(아니면 `error`), `type`·`label`·`profile`이 필수, EDGE_CHILD는 `parent_device_id`가 필수다. `vendor_provided_label`은 LAN에만 실린다(EDGE_CHILD에는 무시). 생성은 비동기다 — 장치는 나중에 `added` lifecycle로 온다.
-  - `driver:try_delete_device(device_uuid)`가 LAN·EDGE_CHILD 장치를 지운다. 지원하지 않는 허브에서는 `nil, "hub does not support device delete functionality"`를 돌려준다. `device:try_delete_device`라는 메서드는 없다(#81의 `remove_legacy_child`가 둘 다 시도하는 이유).
+  - `driver:try_delete_device(device_uuid)`가 LAN·EDGE_CHILD 장치를 지운다(2026-10-02 Dev 허브에서 v6 앱 자식 장치가 실제로 지워짐을 확인). 지원하지 않는 허브에서는 `nil, "hub does not support device delete functionality"`를 돌려준다. `device:try_delete_device`라는 메서드는 없다(#81의 `remove_legacy_child`가 둘 다 시도하는 이유).
   - 자식 장치 객체에는 `parent_device_id`와 `parent_assigned_child_key`가 있다. `device:get_child_list()`·`get_child_by_parent_assigned_key(key)`는 `driver:get_devices()`를 훑는다.
   - `device:get_parent_device()`는 부모의 장치 정보를 막히는 호출로 가져올 수 있어 **`init`·`added` 안에서 쓰지 말라**고 적혀 있다. 그래서 드라이버는 이번 구동에서 본 부모를 메모리에 기억해 쓴다.
   - `try_update_metadata`가 바꿀 수 있는 것은 `profile`·`provisioning_state`(LAN은 `manufacturer`·`model`·`vendor_provided_label`도)뿐이다. **라벨은 생성 뒤 드라이버가 바꿀 수 없다.**
@@ -185,6 +185,5 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 아직 기기에서 확인하지 않은 것. 확인되면 위 해당 절에 결과를 적고 여기서 지운다.
 
 - `supportedValues`가 목록 항목을 숨기는지, 속성이 바뀌면 다시 그려지는지(#93, #113).
-- `driver:try_delete_device`가 이 허브에서 자식을 지우는지(#123: v6의 앱 자식 장치를 드라이버가 구동마다 한 번 지우려 한다).
 - `pc*.v10`(`pcWatchList`)의 감시 목록 카드 미리보기 세 칸("실행 중인 앱 · 감시 1 · 감시 2")이 각각 한 줄에 드는지, 영어 로케일에서 슬롯 값이 번역의 `Running`/`Stopped`/`Empty`로 바뀌는지(#123, "화면 배치"·"번역").
 - 프로필 이전의 착지 `infoChanged`에서 `args.old_st_store.profile.id`가 달라지는지(#129).

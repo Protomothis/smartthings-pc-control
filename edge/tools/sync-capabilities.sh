@@ -41,17 +41,10 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
-# And once the Dev channel device has moved onto `pc*.v10` or later and its app
-# child devices are gone (#123: the kind-based `pcActivity` of `pc*.v5` gave way
-# to `pcApps` on the PC plus one `pcApp` child per watched app in `pc*.v6`,
-# both to the watch card `pcWatch` on the `apps` component in `pc*.v7`-`v9`,
-# and that to `pcWatchList` in `pc*.v10`, because pcWatch's screen stayed on its
-# first presentation; none of them was published):
-#
-#   smartthings capabilities:delete numbersystem53811.pcwatch --capability-version 1
-#   smartthings capabilities:delete numbersystem53811.pcapps --capability-version 1
-#   smartthings capabilities:delete numbersystem53811.pcapp --capability-version 1
-#   smartthings capabilities:delete numbersystem53811.pcactivity --capability-version 1
+# (#123's Dev-only predecessors of `pcWatchList` — the kind-based `pcActivity`
+# (pc*.v5), `pcApps` + the `pcApp` app children (pc*.v6) and the first watch
+# card `pcWatch` (pc*.v7-v9, its screen stayed on its first presentation) —
+# were deleted on 2026-10-02 with `capabilities:delete <id> --capability-version 1`.)
 #
 # (`numbersystem53811.pcmessage` and `numbersystem53811.pcnotify`, the Dev-only
 # predecessors of pcToast, were deleted on 2026-10-01 with
