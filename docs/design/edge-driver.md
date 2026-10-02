@@ -258,15 +258,15 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
 
-| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "서비스 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
-| `pcWatchList` (커스텀 `numbersystem53811.pcwatchlist`, #123. `pc*.v7`–`v9`의 `pcWatch`를 대신한다, §4.2) | **`apps`** (label "감시 목록") | `summary` string(≤ 60) ← `activity.apps`/`top`: "Steam" / "Steam 외 2"(en "Steam +2") / 실행 중인 것 없음 "없음" / 옵트인 꺼짐 "꺼짐" / 옛 서비스 "서비스 v1.2.0 필요". `names` string(≤ 120): "1 Steam · 3 OBS" / "없음" / "꺼짐". `slotOne`–`slotFive` enum `running`/`stopped`/`empty` — 루틴 조건 "감시 1"–"감시 5"(§4.2) | – |
+| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "PC 앱 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
+| `pcWatchList` (커스텀 `numbersystem53811.pcwatchlist`, #123. `pc*.v7`–`v9`의 `pcWatch`를 대신한다, §4.2) | **`apps`** (label "감시 목록") | `summary` string(≤ 60) ← `activity.apps`/`top`: "Steam" / "Steam 외 2"(en "Steam +2") / 실행 중인 것 없음 "없음" / 옵트인 꺼짐 "꺼짐" / 옛 서비스 "PC 앱 v1.2.0 필요". `names` string(≤ 120): "1 Steam · 3 OBS" / "없음" / "꺼짐". `slotOne`–`slotFive` enum `running`/`stopped`/`empty` — 루틴 조건 "감시 1"–"감시 5"(§4.2) | – |
 | `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
 | `pcToast` (커스텀 `numbersystem53811.pctoast`, #108) | main | `lastMessage` string(200자) — status가 아니라 드라이버가 가진다: 마지막으로 보낸 문구, 보낸 적이 없으면 "없음"/"None" | `send(text: string, maxLength 200)` → `POST /st/v1/notify {text}` |
 | `battery`, `powerSource` (표준, #116) | **`battery`** (label "배터리", `-battery` 프로필에만) | `battery` ← `battery.percent`(-1이면 내보내지 않음), `powerSource` ← `battery.ac` (`mains`/`battery`). `present`가 거짓이면 아무것도 내보내지 않는다 | – |
 
 - 요청 본문은 `{command, value?}`(`client.action`)이다. `mode`·`minutes`는 보내지 않는다 — 이 명령들은 즉시 실행이고 예약되지 않는다.
 - **볼륨·음소거는 읽은 값이 있을 때만** 내보낸다(`audio.available` 참, 또는 `updated_at`이 있음). 서비스가 한 번도 재지 않은 0으로 슬라이더를 끌어내리지 않는다.
-- **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없으면 옛 서비스 → "서비스 v1.2.0 필요", 키는 있는데 기능이 없으면 "이 PC에서 지원 안 함" — 단 `audio`·`media`는 서비스가 `media.enabled`일 때만 싣으므로(#104/#105) "미디어 제어 꺼짐" — , `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐", `501 unsupported` → "이 PC에서 지원 안 함", `502 failed`·`504 timeout` → "PC에서 실행 실패"(`features.error_note`, 본문의 `error` 코드로 가른다 — `client.classify`는 5xx를 `unreachable`로 보므로 그보다 먼저). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
+- **명령 가드**(`features.refusal`): 마지막 status의 `features`에 해당 기능(`audio`·`media`)이 없으면 보내지 않는다. 키 자체가 없거나, 기능이 없는데 서비스가 `RECOMMENDED_SERVICE_VERSION`보다 낮으면 → "PC 앱 v%s 필요"(§10.1), 새 서비스인데 기능이 없으면 "이 PC에서 지원 안 함" — 단 `audio`·`media`는 서비스가 `media.enabled`일 때만 싣으므로(#104/#105) "미디어 제어 꺼짐" — , `audio.available=false`면 "사용자 없음". 서비스의 거절은 `409 no_user_session` → "사용자 없음", `403 media_disabled` → "미디어 제어 꺼짐", `501 unsupported` → "이 PC에서 지원 안 함", `502 failed`·`504 timeout` → "PC에서 실행 실패"(`features.error_note`, 본문의 `error` 코드로 가른다 — `client.classify`는 5xx를 `unreachable`로 보므로 그보다 먼저). 코드 없는 403은 예전대로 허브 허용 목록이다. 409는 `client.classify`에서 `conflict`다(전에는 `unreachable`로 떨어졌다).
 - 막힌 명령은 그 줄의 현재 값을 강제로 다시 내보내고(회전 표시 뒤 오류 방지), `pcInfo.message`·`summary`에 이유를 띄운다(§6.9의 `emit_note`와 같은 모양). 성공하면 바로 폴링하면서 그 줄들을 강제로 내보낸다(`poll.once(..., {force = rows})`).
 - 이번 구동에서 아직 status를 읽지 못했으면(허브 재시작 직후) 명령 전에 한 번 폴링한다. 그래도 모르면 "PC에 연결할 수 없습니다".
 - 전원 전환 가드(§6.9)는 적용하지 않는다. 종료 유예 중의 볼륨 조절은 해가 없고, 깨우는 중에는 요청이 연결 실패로 끝난다.
@@ -297,7 +297,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 켜짐, 항목 있음 | "Steam" / "Steam 외 1"(en "Steam +1") / 실행 중 없음 "없음". 앱 이름은 13자, 넘으면 12자 + "…"(`WATCH_SUMMARY_LABEL_MAX_CHARS`). 줄 라벨 "실행 중인 앱"이 이미 실행 중을 말한다 | "1 Steam · 3 OBS"(채워진 슬롯 순, 120자에서 "…") | 채워진 슬롯은 `running`/`stopped`, 나머지 `empty` |
 | 켜짐, 목록이 빔 | "없음" | "없음" | 모두 `empty` |
 | 옵트인 꺼짐(`features`에 `activity` 없음 포함) | "꺼짐" | "꺼짐" | **보내지 않는다**(마지막 값 유지) |
-| 옛 서비스(`features` 없음) | "서비스 v1.2.0 필요" | "없음" — 목록이 없다. 요약 줄이 이유를 말하므로 같은 문구를 두 번 쓰지 않는다 | **보내지 않는다** |
+| 옛 서비스(`features` 없음) | "PC 앱 v1.2.0 필요" | "없음" — 목록이 없다. 요약 줄이 이유를 말하므로 같은 문구를 두 번 쓰지 않는다 | **보내지 않는다** |
 | PC 응답 없음(실패한 폴링) | 그대로 | 그대로 | 그대로 |
 
 - **슬롯은 "켜짐"인 status만 움직인다.** 꺼진 PC·옵트인 꺼짐·옛 서비스에서 슬롯을 "꺼짐"으로 칠하면 가짜 "꺼지면" 루틴이 돈다. 기능을 잠시 끈 것은 앱이 꺼진 것이 아니다. 요약·이름 줄만 이유를 말한다.
@@ -351,11 +351,11 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 - 라벨은 번역 파일(ko/en)의 `{{i18n…}}` 템플릿이고, **값 문구는 프레젠테이션의 `alternatives[].value`에 "한국어 (English)"로 병기**한다. 앱이 값 라벨에 번역을 적용하지 않기 때문이다.
 - 모든 상태 줄은 해당 사항이 없을 때도 문구를 갖는다("없음 (None)", 예약 "없음", 세션 "꺼짐", 버전의 서비스 자리에 `v?`). 빈 문자열은 화면에서 "-"로 보인다.
 - **값 문구는 줄 라벨을 되풀이하지 않는다**(#87). 라벨이 이미 "예약"·"세션"이라고 말하고 있고, 값 칸은 휴대폰이 잘라 낸다. 각 줄이 말하는 것:
-  - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". 시크릿 권장·업데이트 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
+  - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". PC 앱이 드라이버가 바라는 버전보다 낮으면 끝에 " · 앱 업데이트 필요"("Update app")가 붙는다(§10.1). 시크릿 권장과 새 릴리스 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
     - #102 **가동 시간**: 연결됨이면 `status.uptime_seconds`를 붙인다 — "연결됨 · 3일 2시간" / "Connected · 3d 2h". 1분 미만은 붙이지 않고, 1시간 미만은 "N분"("Nm"), 하루 미만은 "N시간 M분"("Nh Mm", 딱 떨어지면 "N시간"), 하루부터는 "N일 M시간"("Nd Mh", 딱 떨어지면 "N일")이다. 예약 요약(#89)과 같은 단위 사다리다.
     - #102 **마지막 확인**: `unreachable`이고 성공한 폴링이 한 번이라도 있었으면 "응답 없음 · 마지막 확인 12분 전" / "No reply · seen 12m ago". 단위는 가장 큰 하나만("N분 전" → "N시간 전" → "N일 전", 1분 미만도 "1분 전"). 한 번도 응답받지 못한 PC는 예전 그대로 "연결 안 됨 · 응답 없음"이고, 시크릿·버전 불일치도 예전 문구다 — 그 PC는 답은 하고 있으므로 "언제 봤나"가 요점이 아니다. 전원 낱말("꺼짐")은 넣지 않는다(#82, 바로 위 전원 상태 줄의 몫). 영어가 "No response" 대신 "No reply"인 것은 24자 때문이다.
     - 시각은 `fields.LAST_SEEN`(epoch 초, persist)에 남는다. 성공한 폴링과 모든 푸시가 쓰지만, 저장된 값이 `fields.LAST_SEEN_STEP`(60초)보다 오래됐을 때만 쓴다 — 줄은 분 단위로만 말하고 persist 필드 쓰기는 허브 쓰기다. 실패한 폴링은 읽기만 한다.
-    - **24자 예산**(`state.SUMMARY_MAX_CHARS`, 코드 포인트) 안의 우선순위: WoL 꺼짐 경고 > 어댑터 이름 > 가동 시간. 넘치면 가동 시간을 먼저, 그다음 어댑터 이름을 뺀다("연결됨 · WoL 꺼짐 (이더넷) · 5분" → "연결됨 · WoL 꺼짐 (이더넷)" → "연결됨 · WoL 꺼짐"). 마지막 확인 줄이 넘치면 예전 문구로 돌아간다.
+    - **24자 예산**(`state.SUMMARY_MAX_CHARS`, 코드 포인트) 안의 우선순위: WoL 꺼짐 경고 > 앱 업데이트 필요 > 어댑터 이름 > 가동 시간. 넘치면 가동 시간을 먼저, 그다음 어댑터 이름을 뺀다("연결됨 · WoL 꺼짐 (이더넷) · 5분" → "연결됨 · WoL 꺼짐 (이더넷)" → "연결됨 · WoL 꺼짐"). 마지막 확인 줄이 넘치면 예전 문구로 돌아간다.
   - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
   - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다. #92: 성공한 폴링마다 `service_version`을 장치 필드(persist)에 남기고, 연결이 끊긴 동안에도 그 값을 그대로 보여 준다 — 꺼진 PC의 버전은 바뀌지 않는다. `v?`는 **한 번도 응답받지 못한** PC에만 쓴다. 업데이트 꼬리말(" · 업데이트 v1.2.0")은 기억하지 않는다. 있다/없다는 살아 있는 응답만 말할 수 있다.
   - `pcDefer.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). #89: 1시간부터는 시간으로("종료 · 2시간 후", "종료 · 1시간 30분 후"), 하루부터는 일과 시간으로("종료 · 1일 3시간 후") 읽는다 — "4320분 후"는 아무도 3일로 읽지 못한다. 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
@@ -575,6 +575,20 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - 필요한 저장소 시크릿: `SMARTTHINGS_TOKEN`(Devices·Drivers·Channels 권한 PAT), `ST_CHANNEL_ID`.
 - 드라이버와 서비스는 **따로 버전을 매긴다.** 드라이버는 채널로, 서비스는 GitHub Release로 나간다.
 - capability 정의·프레젠테이션·번역은 드라이버 패키지에 들어가지 않는다. 계정에 올리는 것은 `tools/sync-capabilities.sh`(갱신)와 `tools/create-capabilities.sh`(최초 생성)다.
+
+### 10.1 버전 짝 맞춤
+
+허브의 드라이버는 채널이 자동으로 올리지만 PC 앱(서비스)은 사용자가 올린다. 그래서 드라이버가 PC 앱보다 앞서는 때가 늘 있고, 드라이버는 두 기준으로 그 차이를 말한다(`features.lua` 맨 위, 사용자에게는 "서비스"가 아니라 "PC 앱").
+
+| 상수 | 뜻 | 아래면 |
+|---|---|---|
+| `MIN_SERVICE_VERSION` (`1.1.0`, `poll.MIN_SERVICE_VERSION`) | 프로토콜 바닥. 이보다 낮으면 말이 통하지 않는다 | **거절**: 연결 "버전 불일치", 안내 "PC 앱 v1.1.0 이상 필요". 드라이버가 낮으면 "드라이버 업데이트 필요 (허브)" |
+| `RECOMMENDED_SERVICE_VERSION` (`1.2.0`) | 드라이버가 쓰는 기능의 서비스 버전 | **권유**: 전원·예약은 그대로 되고, 요약 끝 " · 앱 업데이트 필요", 안내 "PC 앱을 v1.2.0 이상으로 업데이트하세요"(`update.latest`가 더 새것이면 " (최신 v1.2.1)"), 새 기능 줄과 거절 "PC 앱 v1.2.0 필요" |
+
+- 비교는 `service_version`의 major.minor.patch만 본다. `v1.2.0-rc14`는 `1.2.0`이라 rc 빌드는 권유를 받지 않는다. `dev`나 빈 값은 판단하지 않는다 — 단 `features`가 아예 없는 status는 v1.2.0 전 서비스이므로 낮은 것으로 본다.
+- `pcInfo.message`에서 권유는 오류·불일치 바로 다음, WoL 꺼짐보다 앞이다(`state.MESSAGE_ORDER`의 `app_update`). PC 앱이 충분히 새것인데 새 릴리스가 있으면 예전 자리(WoL 다음)의 "PC 앱 업데이트 v1.2.1 있음"이다.
+- **올리는 때**: 드라이버가 새 서비스 기능(새 `features` 이름, 새 명령·블록)을 쓰기 시작하는 커밋에서 `RECOMMENDED_SERVICE_VERSION`을 그 서비스 버전으로 올린다. 문구는 모두 이 상수에서 만들어지므로(i18n에 버전을 적지 않는다, `i18n_test`가 지킨다) 상수 하나만 바꾼다. 그보다 낮은 PC에서 목록에 없는 기능은 "이 PC에서 지원 안 함"이 아니라 "PC 앱 v%s 필요"가 된다. `MIN_SERVICE_VERSION`은 프로토콜(`client.PROTOCOL`)이 바뀔 때만 올린다.
+- 릴리스 순서는 앱 먼저다(CONTRIBUTING.md "릴리스 순서"): 권유 문구가 가리키는 버전이 GitHub Latest에 있어야 한다.
 
 ## 11. 첫 공개 때 정한 것 (edge-v1.0.0)
 
