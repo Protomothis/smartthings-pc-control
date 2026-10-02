@@ -64,5 +64,5 @@ seam이 없는 값만 **명시적으로** 자리표시자로 바꾼다. 키가 �
 
 ## activity 블록
 
-#123의 앱별 모양이다. 감시 목록은 `steam.exe`(Steam), `obs64.exe`(OBS) 순서(위가 우선)이고, status에서는 Steam만 실행 중(`top` = `steam.exe`), `push.activity.changed.json`에서는 OBS가 켜져 둘 다 실행 중이다(`top`은 그대로 `steam.exe`). 이 푸시의 `data`는 status의 `activity` 블록과 **똑같은** JSON이다.
+#123의 감시 칸 모양이다. 감시 목록은 1번 칸 `steam.exe`(Steam), 3번 칸 `obs64.exe`(OBS)이고 2·4·5번 칸은 비어 있다(번호가 작을수록 우선, `apps`는 채워진 칸만 칸 순서로). status에서는 Steam만 실행 중(`top` = `steam.exe`), `push.activity.changed.json`에서는 OBS가 켜져 둘 다 실행 중이다(`top`은 그대로 `steam.exe`). 이 푸시의 `data`는 status의 `activity` 블록과 **똑같은** JSON이다.
 바꿀 곳은 Go의 `goldenActivityConfig`/`goldenActivity`와 `push.activity.changed.json` 케이스, Lua의 "activity (#123)" 구역뿐이다.

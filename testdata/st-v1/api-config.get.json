@@ -4,11 +4,13 @@
     "watch": [
       {
         "label": "Steam",
-        "process": "steam.exe"
+        "process": "steam.exe",
+        "slot": 1
       },
       {
         "label": "OBS",
-        "process": "obs64.exe"
+        "process": "obs64.exe",
+        "slot": 3
       }
     ]
   },

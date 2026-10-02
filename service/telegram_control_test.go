@@ -152,12 +152,12 @@ func TestTelegramStatusLines(t *testing.T) {
 		{"laptop in English", "en", onBattery(systemPowerStatus{ACLineStatus: 1, BatteryFlag: 8, BatteryLifePercent: 42}), []string{"Battery: 42% · charging"}, nil},
 		{"apps running", "ko", func(t *testing.T, cfg *Config) {
 			stubProcesses(t, "steam.exe", "obs64.exe")
-			cfg.Activity = ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam"), watch("obs64.exe", "OBS"), watch("code.exe", "VS Code")}}
+			cfg.Activity = ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "obs64.exe", "OBS"), watch(3, "code.exe", "VS Code")}}
 			activityScan.Scan(cfg.Activity)
 		}, []string{"\n활동: Steam 실행 중 · 외 1개"}, nil},
 		{"apps running, option off", "ko", func(t *testing.T, cfg *Config) {
 			stubProcesses(t, "steam.exe")
-			activityScan.Scan(ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch("steam.exe", "Steam")}})
+			activityScan.Scan(ActivityConfig{Enabled: true, Watch: []ActivityWatch{watch(1, "steam.exe", "Steam")}})
 		}, nil, []string{"활동"}},
 		{"playing", "ko", func(t *testing.T, cfg *Config) {
 			cfg.Media = MediaConfig{Enabled: true, NowPlaying: true}

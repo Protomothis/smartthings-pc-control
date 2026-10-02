@@ -74,7 +74,7 @@ func TestChangedKeysEachKey(t *testing.T) {
 		"smartthings.expose_session_user": func(c *Config) { c.SmartThings.ExposeSessionUser = true },
 		"smartthings.wol_mac":             func(c *Config) { c.SmartThings.WoLMAC = "B4-2E-99-45-B4-F5" },
 		"activity.enabled":                func(c *Config) { c.Activity.Enabled = true },
-		"activity.watch":                  func(c *Config) { c.Activity.Watch = []ActivityWatch{{Process: "a.exe", Label: "a"}} },
+		"activity.watch":                  func(c *Config) { c.Activity.Watch = []ActivityWatch{{Slot: 1, Process: "a.exe", Label: "a"}} },
 		"media.enabled":                   func(c *Config) { c.Media.Enabled = false },
 		"media.now_playing":               func(c *Config) { c.Media.NowPlaying = true },
 		"notify_pc.enabled":               func(c *Config) { c.NotifyPC.Enabled = false },
@@ -94,12 +94,13 @@ func TestChangedKeysEachKey(t *testing.T) {
 	if got := strings.Join(ChangedKeys(base, all), ","); got != strings.Join(auditedKeys, ",") {
 		t.Errorf("all changed: %s", got)
 	}
-	// The watch list's order is its priority (#123): a reorder alone is a change.
+	// A watch entry's slot is its priority and routine condition (#123):
+	// moving an entry to another slot alone is a change.
 	a, b := base, base
-	a.Activity.Watch = []ActivityWatch{{Process: "a.exe", Label: "A"}, {Process: "b.exe", Label: "B"}}
-	b.Activity.Watch = []ActivityWatch{{Process: "b.exe", Label: "B"}, {Process: "a.exe", Label: "A"}}
+	a.Activity.Watch = []ActivityWatch{{Slot: 1, Process: "a.exe", Label: "A"}, {Slot: 2, Process: "b.exe", Label: "B"}}
+	b.Activity.Watch = []ActivityWatch{{Slot: 1, Process: "a.exe", Label: "A"}, {Slot: 3, Process: "b.exe", Label: "B"}}
 	if got := ChangedKeys(a, b); !slices.Equal(got, []string{"activity.watch"}) {
-		t.Errorf("reorder: ChangedKeys = %v", got)
+		t.Errorf("slot change: ChangedKeys = %v", got)
 	}
 	// Not audited, and a missing list equals an empty one.
 	quiet := base

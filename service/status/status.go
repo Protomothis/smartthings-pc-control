@@ -111,14 +111,16 @@ type Battery = devstate.BatteryInfo
 // (#110, #123).
 type Activity struct {
 	Enabled bool `json:"enabled"`
-	// Apps has one entry per watch entry, in priority order; never null.
+	// Apps has one entry per filled watch slot, sorted by slot; never null.
 	Apps []ActivityApp `json:"apps"`
-	// Top is the id of the highest-priority running app, "" when none.
+	// Top is the id of the running app in the lowest slot, "" when none.
 	Top string `json:"top"`
 }
 
-// ActivityApp is one watched program in the status block.
+// ActivityApp is one watched program in the status block. Slot (1–5) is
+// its priority and the SmartThings condition "감시 N" it answers to.
 type ActivityApp struct {
+	Slot    int    `json:"slot"`
 	ID      string `json:"id"`
 	Label   string `json:"label"`
 	Running bool   `json:"running"`
@@ -138,7 +140,8 @@ func (a Activity) Clone() Activity {
 	return a
 }
 
-// TopLabel is the label of the top app and how many others run.
+// TopLabel is the label of the top app (the lowest running slot) and how
+// many others run.
 func (a Activity) TopLabel() (label string, others int) {
 	for _, app := range a.Apps {
 		if !app.Running {
