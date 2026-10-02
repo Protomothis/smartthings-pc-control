@@ -686,7 +686,7 @@ function T.test_without_timers_the_polls_still_put_the_preset_row_back()
 end
 
 --------------------------------------------------------------------------------
--- #123: watched apps (the PC's summary row; the children are apps_test.lua's)
+-- #123: the watch card (component `apps`, pcWatch)
 --------------------------------------------------------------------------------
 
 local function with_apps(apps, opts)
@@ -700,75 +700,188 @@ local function with_apps(apps, opts)
   return status
 end
 
-local STEAM = { id = "steam.exe", label = "Steam", running = true }
-local CODE = { id = "code.exe", label = "VS Code", running = false }
-local OBS = { id = "obs64.exe", label = "OBS", running = true }
-local DISCORD = { id = "discord.exe", label = "Discord", running = true }
+local STEAM = { slot = 1, id = "steam.exe", label = "Steam", running = true }
+local CODE = { slot = 2, id = "code.exe", label = "VS Code", running = false }
+local OBS = { slot = 3, id = "obs64.exe", label = "OBS", running = true }
+local DISCORD = { slot = 5, id = "discord.exe", label = "Discord", running = true }
 
--- The PC's one apps row (#123): the highest-priority app that runs, how many
--- others do, and its own words for nothing running, the option off and a
--- service older than v1.2.0.
-function T.test_the_apps_summary()
-  local status = with_apps({ STEAM, CODE }, { top = "steam.exe" })
-  h.assert_equal(h.event_value(features.apps_events(status, "ko"), caps.APPS, "summary"), "Steam 실행 중")
-  h.assert_equal(features.apps_summary(status, "en"), "Steam running")
-  status = with_apps({ CODE, STEAM, OBS, DISCORD }, { top = "steam.exe" })
-  h.assert_equal(features.apps_summary(status, "ko"), "Steam 실행 중 · 외 2개")
-  h.assert_equal(features.apps_summary(status, "en"), "Steam running · 2 more")
-  -- `top` that names nothing running: the first running entry, in list order.
-  local stale = with_apps({ CODE, OBS, STEAM }, { top = "code.exe" })
-  h.assert_equal(features.apps_summary(stale, "ko"), "OBS 실행 중 · 외 1개")
-  local missing = with_apps({ CODE, OBS }, { top = "" })
-  h.assert_equal(features.apps_summary(missing, "ko"), "OBS 실행 중")
+local WATCH = features.WATCH_COMPONENT
 
-  h.assert_equal(features.apps_summary(with_apps({ CODE }), "ko"), "없음")
-  h.assert_equal(features.apps_summary(with_apps({}), "en"), "None")
-  -- The service lists "activity" only while the opt-in is on (#110).
-  local off = with_apps({}, { enabled = false, features = { "audio", "media", "awake" } })
-  h.assert_equal(features.apps_mode(off), features.APPS_OFF)
-  h.assert_equal(features.apps_summary(off, "ko"), "꺼짐")
-  h.assert_equal(features.apps_summary(off, "en"), "Off")
-  -- A block that claims to be on without the feature is not trusted either.
+--- The card's rows of one record list: summary, names and the five slots.
+local function card(events)
+  local out = {
+    summary = h.last_value(events, WATCH, caps.WATCH, "summary"),
+    names = h.last_value(events, WATCH, caps.WATCH, "names"),
+  }
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = h.last_value(events, WATCH, caps.WATCH, "slot" .. slot)
+  end
+  return out
+end
+
+-- Each case: a status, and the card it paints (ko). `nil` slots: not sent at
+-- all, so the hub keeps the last value.
+local WATCH_CASES = {
+  { "full, sorted by slot whatever the list order", with_apps({ OBS, STEAM, CODE }, { top = "steam.exe" }),
+    { summary = "Steam 실행 중 · 외 1개", names = "1 Steam · 2 VS Code · 3 OBS",
+      "running", "stopped", "running", "empty", "empty" } },
+  { "nothing running", with_apps({ CODE }),
+    { summary = "없음", names = "2 VS Code", "empty", "stopped", "empty", "empty", "empty" } },
+  { "an empty list", with_apps({}),
+    { summary = "없음", names = "없음", "empty", "empty", "empty", "empty", "empty" } },
+  { "the opt-in off: the slots keep their values", with_apps({}, { enabled = false, features = { "audio" } }),
+    { summary = "꺼짐", names = "꺼짐" } },
+  { "a service older than v1.2.0: the same", { service_version = "v1.1.0" },
+    { summary = "서비스 v1.2.0 필요", names = "없음" } },
+}
+
+function T.test_the_watch_card_rows()
+  for _, c in ipairs(WATCH_CASES) do
+    local what, status, want = table.unpack(c, 1, 3)
+    local events = features.watch_events(status, "ko")
+    h.assert_deep_equal(card(events), want, what)
+    for _, e in ipairs(events) do
+      h.assert_equal(e.component, WATCH, what .. ": on the apps component")
+      h.assert_true(e.value ~= "", what .. ": never an empty row")
+    end
+  end
+  h.assert_equal(features.apps_summary(with_apps({ STEAM }), "en"), "Steam running")
+  h.assert_equal(features.apps_summary(with_apps({ CODE, STEAM, OBS, DISCORD }), "en"), "Steam running · 2 more")
+  h.assert_equal(features.watch_names(with_apps({ STEAM, OBS }), "en"), "1 Steam · 3 OBS")
+  h.assert_equal(features.watch_names(with_apps({}, { enabled = false, features = {} }), "en"), "Off")
+  h.assert_equal(features.watch_names({ service_version = "v1.1.0" }, "en"), "None")
+end
+
+function T.test_the_summary_leads_with_the_lowest_running_slot()
+  -- `top` that names a running entry is the service's own answer...
+  h.assert_equal(features.apps_summary(with_apps({ STEAM, OBS }, { top = "obs64.exe" }), "ko"),
+    "OBS 실행 중 · 외 1개")
+  -- ...one that names nothing running (or nothing) gives way to the lowest slot.
+  h.assert_equal(features.apps_summary(with_apps({ CODE, OBS, DISCORD }, { top = "code.exe" }), "ko"),
+    "OBS 실행 중 · 외 1개")
+  h.assert_equal(features.apps_summary(with_apps({ DISCORD, OBS }), "ko"), "OBS 실행 중 · 외 1개")
+  -- The service lists "activity" only while the opt-in is on (#110); a block
+  -- that claims to be on without the feature is not trusted either.
   local stray = with_apps({ STEAM }, { features = { "audio" } })
-  h.assert_equal(features.apps_summary(stray, "ko"), "꺼짐")
+  h.assert_equal(features.apps_mode(stray), features.APPS_OFF)
   h.assert_deep_equal(features.apps_of(stray), {}, "and it lists nothing")
   -- The kind-based block of a #114 Dev build has no `apps`: off, not "none".
   local kind = status_v12({ activity = { enabled = true, kind = "game", labels = { "Steam" } } })
   h.assert_equal(features.apps_mode(kind), features.APPS_OFF)
-  -- No `features` at all: a service older than v1.2.0.
-  local old = { service_version = "v1.1.0" }
-  h.assert_equal(features.apps_mode(old), features.APPS_OLD)
-  h.assert_equal(features.apps_summary(old, "ko"), "서비스 v1.2.0 필요")
-  h.assert_equal(features.apps_summary(old, "en"), "Requires service v1.2.0")
+  h.assert_equal(features.apps_mode({ service_version = "v1.1.0" }), features.APPS_OLD)
 end
 
 function T.test_the_watch_list_is_read_defensively()
   local list = {
-    { id = "Steam.EXE", label = " Steam\n", running = true },
-    { id = "steam.exe", label = "twice", running = false },
-    { id = "", label = "no id", running = true },
+    { slot = 4, id = "Steam.EXE", label = " Steam\n", running = true },
+    { slot = 2, id = "steam.exe", label = "twice", running = false },
+    { slot = 1, id = "", label = "no id", running = true },
     "not an entry",
-    { id = "notepad.exe", running = "yes" },
-    { id = "x.exe", label = string.rep("가", 40), running = false },
+    { slot = 2, id = "notepad.exe", running = "yes" },
+    { slot = 2, id = "taken.exe", running = true },
+    { slot = 6, id = "six.exe", running = true },
+    { slot = 1.5, id = "half.exe", running = true },
+    { slot = "3", id = "x.exe", label = string.rep("가", 40), running = false },
+    -- No slot at all (a Dev service before contract v2): the lowest free one.
+    { id = "late.exe", label = "Late", running = true },
+    { id = "later.exe", label = "Later", running = true },
+    { id = "none-left.exe", running = true },
   }
-  for i = 1, 12 do
-    list[#list + 1] = { id = "extra" .. i .. ".exe", label = "E" .. i, running = false }
-  end
   local apps = features.apps_of(with_apps(list))
-  h.assert_equal(#apps, features.APPS_MAX, "never more than the service's ten")
-  h.assert_deep_equal(apps[1], { id = "steam.exe", label = "Steam", running = true },
-    "the key is lowercased, the label cleaned")
-  h.assert_deep_equal(apps[2], { id = "notepad.exe", label = "notepad.exe", running = false },
-    "a repeated id, an entry without one and a non-table are skipped; a missing label is the id; only true runs")
-  h.assert_equal(apps[3].label, string.rep("가", 29) .. "…", "30 code points at most")
-  h.assert_equal(apps[4].id, "extra1.exe")
+  h.assert_deep_equal(apps, {
+    { slot = 1, id = "late.exe", label = "Late", running = true },
+    { slot = 2, id = "notepad.exe", label = "notepad.exe", running = false },
+    { slot = 3, id = "x.exe", label = string.rep("가", 29) .. "…", running = false },
+    { slot = 4, id = "steam.exe", label = "Steam", running = true },
+    { slot = 5, id = "later.exe", label = "Later", running = true },
+  }, "by slot; a repeated id or slot, a bad slot, no id and a non-table are skipped; "
+    .. "a missing label is the id; only true runs; 30 code points at most")
+  h.assert_equal(#apps, features.WATCH_SLOTS, "never more than five")
 end
 
-function T.test_a_long_label_still_fits_the_definition()
-  local long = { id = "a.exe", label = string.rep("가", 30), running = true }
-  local line = features.apps_summary(with_apps({ long, STEAM, OBS }), "ko")
-  h.assert_true(#(line:gsub("[\128-\191]", "")) <= features.APPS_SUMMARY_MAX_CHARS, line)
-  h.assert_contains(line, "외 2개")
+function T.test_long_labels_still_fit_the_definition()
+  local long = string.rep("가", 30)
+  local list = {}
+  for slot = 1, 5 do
+    list[slot] = { slot = slot, id = slot .. ".exe", label = long, running = true }
+  end
+  local status = with_apps(list)
+  local summary = features.apps_summary(status, "ko")
+  h.assert_true(#(summary:gsub("[\128-\191]", "")) <= features.WATCH_SUMMARY_MAX_CHARS, summary)
+  h.assert_contains(summary, "외 4개")
+  local names = features.watch_names(status, "ko")
+  h.assert_equal(#(names:gsub("[\128-\191]", "")), features.WATCH_NAMES_MAX_CHARS, names)
+  h.assert_equal(names:sub(-3), "…")
+end
+
+function T.test_a_list_edit_holds_running_for_one_status()
+  -- Right after a config change the service lists every entry as stopped
+  -- until its next scan: a slot that shows "running" stays there for that
+  -- one status; the next one, with the list unchanged, decides.
+  local s = state.new(state.ON)
+  features.remember(s, with_apps({ STEAM, OBS }))
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "running", "empty", "empty" })
+  local renamed = { slot = 3, id = "obs64.exe", label = "OBS Studio", running = false }
+  local placeholder = { slot = 1, id = "steam.exe", label = "Steam", running = false }
+  features.remember(s, with_apps({ placeholder, renamed, CODE }))
+  h.assert_deep_equal(s.extras.watch, { "running", "stopped", "running", "empty", "empty" },
+    "held; the new slot 2 is what the service says")
+  local events = state.apply_status(s, with_apps({ placeholder, renamed, CODE }), { lang = "ko" })
+  h.assert_equal(h.last_value(events, WATCH, caps.WATCH, "slot1"), "running", "the rows follow the hold")
+  h.assert_equal(h.last_value(events, WATCH, caps.WATCH, "names"), "1 Steam · 2 VS Code · 3 OBS Studio")
+  features.remember(s, with_apps({ placeholder, renamed, CODE }))
+  h.assert_deep_equal(s.extras.watch, { "stopped", "stopped", "stopped", "empty", "empty" }, "then it decides")
+  -- Switching the feature back on is an edit too.
+  features.remember(s, with_apps({ STEAM }))
+  features.remember(s, with_apps({}, { enabled = false }))
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "empty", "empty", "empty" }, "off keeps the values")
+  features.remember(s, with_apps({ placeholder }))
+  h.assert_equal(s.extras.watch[1], "running", "held after the opt-in came back")
+end
+
+--- Polls with `client.get_status` answering `answers` in turn (`false` = the
+--- PC does not answer).
+local function polling(device, answers)
+  local original = client.get_status
+  local i = 0
+  client.get_status = function()
+    i = i + 1
+    local body = answers[i]
+    if body == false then
+      return false, nil, "unreachable"
+    end
+    return true, body, nil
+  end
+  local ok, err = pcall(function()
+    for _ = 1, #answers do
+      poll.once(nil, device)
+    end
+  end)
+  client.get_status = original
+  if not ok then
+    error(err, 0)
+  end
+end
+
+function T.test_an_unreachable_pc_or_an_off_list_keeps_the_slots()
+  -- Only an "on" list moves a slot: a PC that does not answer, an opt-in
+  -- switched off and a service without the list leave every slot where it
+  -- was (a made-up "stopped" would fire every "꺼지면" routine).
+  local device = device_with(nil)
+  device:set_field(fields.ROWS_PAINTED, poll.ROWS_VERSION)
+  polling(device, { with_apps({ STEAM, OBS }, { top = "steam.exe" }) })
+  local mark = #h.emitted(device)
+  polling(device, { false, false, with_apps({}, { enabled = false }), { service_version = "v1.1.0", protocol = 1 } })
+  local later = {}
+  for i = mark + 1, #h.emitted(device) do
+    later[#later + 1] = h.emitted(device)[i]
+  end
+  for slot = 1, features.WATCH_SLOTS do
+    h.assert_nil(h.last_value(later, WATCH, caps.WATCH, "slot" .. slot), "slot" .. slot .. " is not touched")
+  end
+  h.assert_deep_equal({ h.last_value(later, WATCH, caps.WATCH, "summary"),
+    h.last_value(later, WATCH, caps.WATCH, "names") }, { "서비스 v1.2.0 필요", "없음" })
+  h.assert_equal(h.last_value(h.emitted(device), WATCH, caps.WATCH, "slot1"), "running")
 end
 
 function T.test_an_activity_push_repaints_at_once()
@@ -778,8 +891,9 @@ function T.test_an_activity_push_repaints_at_once()
   local status = with_apps({ STEAM }, { top = "steam.exe" })
   local nxt, events = push.apply(state.new(state.ON),
     { type = "activity.changed", status = status }, { lang = "ko" })
-  h.assert_equal(h.event_value(events, caps.APPS, "summary"), "Steam 실행 중")
-  h.assert_deep_equal(nxt.extras.apps, { STEAM }, "what the children are painted from")
+  h.assert_deep_equal(card(events), { summary = "Steam 실행 중", names = "1 Steam",
+    "running", "empty", "empty", "empty", "empty" })
+  h.assert_deep_equal(nxt.extras.apps, { STEAM })
   h.assert_equal(nxt.extras.apps_mode, features.APPS_ON)
 end
 
@@ -877,16 +991,54 @@ function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
   -- the keep-awake switch with its never-polled "off" would fire every routine
   -- that watches it, so a repaint uses what the PC last said.
   local device = device_with(status_v12({ awake = { on = true },
-    activity = { enabled = true, apps = { { id = "steam.exe", label = "Steam", running = true } }, top = "steam.exe" } }))
+    activity = { enabled = true, apps = { { slot = 2, id = "steam.exe", label = "Steam", running = true } },
+      top = "steam.exe" } }))
   poll.repaint(device)
   local emitted = h.emitted(device)
   h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "on")
   h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
-  h.assert_equal(h.last_value(emitted, nil, caps.APPS, "summary"), "Steam 실행 중")
+  -- #123: the watch card too, every row forced, the empty slots included.
+  h.assert_deep_equal(card(emitted), { summary = "Steam 실행 중", names = "2 Steam",
+    "empty", "running", "empty", "empty", "empty" })
+  h.assert_true(h.component_forced(emitted, WATCH, caps.WATCH, "slot2"))
   -- A device nothing has been read for gets the resting defaults.
   local fresh = device_with(nil)
   poll.repaint(fresh)
   h.assert_equal(h.last_value(h.emitted(fresh), "awake", "switch", "switch"), "off")
+  h.assert_deep_equal(card(h.emitted(fresh)), { summary = "없음", names = "없음",
+    "empty", "empty", "empty", "empty", "empty" })
+end
+
+function T.test_a_repaint_of_an_off_list_keeps_what_the_slots_showed()
+  -- #123: an icon switch while the list is off (or before this run has read an
+  -- "on" status) paints the slots with what they last had - this run's last
+  -- send, else the hub's state cache - never a made-up value.
+  local device = h.with_state_cache(device_with(with_apps({ STEAM, OBS })))
+  poll.repaint(device)
+  fields.set_state(device, (function()
+    local s = state.new(state.ON)
+    features.remember(s, with_apps({}, { enabled = false }))
+    return s
+  end)())
+  local mark = #h.emitted(device)
+  poll.repaint(device)
+  local again = {}
+  for i = mark + 1, #h.emitted(device) do
+    again[#again + 1] = h.emitted(device)[i]
+  end
+  h.assert_deep_equal(card(again), { summary = "꺼짐", names = "꺼짐",
+    "running", "empty", "running", "empty", "empty" }, "from what was sent")
+  -- A restart: nothing sent in this run, the hub's cache still has them.
+  h.restart(device, {})
+  fields.set_state(device, state.new(state.ON))
+  mark = #h.emitted(device)
+  poll.repaint(device)
+  again = {}
+  for i = mark + 1, #h.emitted(device) do
+    again[#again + 1] = h.emitted(device)[i]
+  end
+  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slot3"), "running", "from the hub's state cache")
+  h.assert_equal(h.last_value(again, WATCH, caps.WATCH, "slot2"), "empty")
 end
 
 function T.test_an_awake_push_moves_the_switch_at_once()
@@ -940,10 +1092,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc-tv.v6")
+  local device = device_on_profile("pc-tv.v7")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v6", "the style is kept")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v6" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v7", "the style is kept")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v7" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -952,15 +1104,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v6")
+  local device = device_on_profile("pc-battery.v7")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v6")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v7")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v6")
+  local device = device_on_profile("pc.v7")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -977,7 +1129,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v6")
+  local device = device_on_profile("pc.v7")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -997,35 +1149,35 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v6")
+  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v7")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v6")
+  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v7")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v6")
+  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v7")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v6")
+  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v7")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v6")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v7")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
-  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v6")
+  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v7")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
   plain_v4:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v6")
+  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v7")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v6", "polled-laptop")
+  local device = device_on_profile("pc.v7", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v6")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v7")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -1035,11 +1187,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v6", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v7", "pushed-laptop")
   emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v6", "pushed-desktop")
+  local desktop = device_on_profile("pc.v7", "pushed-desktop")
   emit.rows(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end

@@ -184,19 +184,14 @@ local STRINGS = {
   presets_none = { ko = "없음", en = "None" },
   preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
-  -- #123: the `pcApps.summary` row. The highest-priority app that runs (the
-  -- watch list's order is its priority), and how many others run with it.
-  -- Each app's own state is its child device's row, not a sentence here.
+  -- #123: the watch card. `pcWatch.summary`: the lowest-slot app that runs
+  -- (slot 1 is the highest priority) and how many others run with it.
+  -- `apps_none` / `apps_off` are also the `names` row's "없음" / "꺼짐". Each
+  -- slot's own state is an enum row (`slot1`..`slot5`), not a sentence here.
   apps_running = { ko = "%s 실행 중", en = "%s running" },
   apps_running_more = { ko = "%s 실행 중 · 외 %d개", en = "%s running · %d more" },
   apps_none = { ko = "없음", en = "None" },
   apps_off = { ko = "꺼짐", en = "Off" },
-  -- #123: an app left the watch list but the hub would not delete its child
-  -- device (apps.delete). `pcInfo.message`, once per run.
-  app_child_stale = {
-    ko = "%s 장치를 지우지 못했습니다 · 앱에서 직접 삭제하세요",
-    en = "Could not remove %s · delete it in the app",
-  },
 
   -- command outcomes (§3.3/§3.4)
   schedule_replaced = {

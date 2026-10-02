@@ -1,12 +1,12 @@
 -- The PC's power: the main `switch`, `refresh`, and `pcRemote` - the command
 -- list (`execute`) and the no-argument commands (design doc §4, §6.2, §6.9).
 
-local apps = require "apps"
 local caps = require "caps"
 local client = require "client"
 local common = require "handlers.common"
 local fields = require "device.fields"
 local poll = require "poll"
+local profiles = require "profiles"
 local rows = require "device.rows"
 local state = require "state"
 local wol = require "wol"
@@ -53,14 +53,11 @@ function power.switch_off(driver, device)
   poll.answer(driver, device, POWER_ROWS)
 end
 
---- refresh. An app child asks its PC.
+--- refresh. A leftover child (#123's app children had `refresh`) has nothing
+--- to poll.
 function power.refresh(driver, device)
-  if apps.is_child(device) then
-    local parent = apps.parent_of(driver, device)
-    if not parent then
-      return false
-    end
-    return poll.once(driver, parent)
+  if profiles.is_child(device) then
+    return false
   end
   poll.once(driver, device)
 end

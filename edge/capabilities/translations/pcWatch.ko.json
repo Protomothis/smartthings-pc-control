@@ -1,0 +1,93 @@
+{
+  "tag": "ko",
+  "label": "감시 목록",
+  "attributes": {
+    "summary": {
+      "label": "실행 중인 앱"
+    },
+    "names": {
+      "label": "감시 이름"
+    },
+    "slot1": {
+      "label": "감시 1",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          },
+          "empty": {
+            "label": "비어 있음"
+          }
+        }
+      }
+    },
+    "slot2": {
+      "label": "감시 2",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          },
+          "empty": {
+            "label": "비어 있음"
+          }
+        }
+      }
+    },
+    "slot3": {
+      "label": "감시 3",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          },
+          "empty": {
+            "label": "비어 있음"
+          }
+        }
+      }
+    },
+    "slot4": {
+      "label": "감시 4",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          },
+          "empty": {
+            "label": "비어 있음"
+          }
+        }
+      }
+    },
+    "slot5": {
+      "label": "감시 5",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "실행 중"
+          },
+          "stopped": {
+            "label": "꺼짐"
+          },
+          "empty": {
+            "label": "비어 있음"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

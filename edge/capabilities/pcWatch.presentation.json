@@ -1,0 +1,244 @@
+{
+  "id": "numbersystem53811.pcwatch",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.names.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{names.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.slot1.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{slot1.value}}",
+        "alternatives": [
+          {
+            "key": "running",
+            "value": "실행 중 (Running)",
+            "type": "active"
+          },
+          {
+            "key": "stopped",
+            "value": "꺼짐 (Stopped)",
+            "type": "inactive"
+          },
+          {
+            "key": "empty",
+            "value": "비어 있음 (Empty)",
+            "type": "inactive"
+          }
+        ]
+      }
+    },
+    {
+      "label": "{{i18n.attributes.slot2.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{slot2.value}}",
+        "alternatives": [
+          {
+            "key": "running",
+            "value": "실행 중 (Running)",
+            "type": "active"
+          },
+          {
+            "key": "stopped",
+            "value": "꺼짐 (Stopped)",
+            "type": "inactive"
+          },
+          {
+            "key": "empty",
+            "value": "비어 있음 (Empty)",
+            "type": "inactive"
+          }
+        ]
+      }
+    },
+    {
+      "label": "{{i18n.attributes.slot3.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{slot3.value}}",
+        "alternatives": [
+          {
+            "key": "running",
+            "value": "실행 중 (Running)",
+            "type": "active"
+          },
+          {
+            "key": "stopped",
+            "value": "꺼짐 (Stopped)",
+            "type": "inactive"
+          },
+          {
+            "key": "empty",
+            "value": "비어 있음 (Empty)",
+            "type": "inactive"
+          }
+        ]
+      }
+    },
+    {
+      "label": "{{i18n.attributes.slot4.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{slot4.value}}",
+        "alternatives": [
+          {
+            "key": "running",
+            "value": "실행 중 (Running)",
+            "type": "active"
+          },
+          {
+            "key": "stopped",
+            "value": "꺼짐 (Stopped)",
+            "type": "inactive"
+          },
+          {
+            "key": "empty",
+            "value": "비어 있음 (Empty)",
+            "type": "inactive"
+          }
+        ]
+      }
+    },
+    {
+      "label": "{{i18n.attributes.slot5.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{slot5.value}}",
+        "alternatives": [
+          {
+            "key": "running",
+            "value": "실행 중 (Running)",
+            "type": "active"
+          },
+          {
+            "key": "stopped",
+            "value": "꺼짐 (Stopped)",
+            "type": "inactive"
+          },
+          {
+            "key": "empty",
+            "value": "비어 있음 (Empty)",
+            "type": "inactive"
+          }
+        ]
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.slot1.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "slot1.value",
+          "alternatives": [
+            {
+              "key": "running",
+              "value": "실행 중 (Running)",
+              "type": "active"
+            },
+            {
+              "key": "stopped",
+              "value": "꺼짐 (Stopped)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.slot2.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "slot2.value",
+          "alternatives": [
+            {
+              "key": "running",
+              "value": "실행 중 (Running)",
+              "type": "active"
+            },
+            {
+              "key": "stopped",
+              "value": "꺼짐 (Stopped)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.slot3.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "slot3.value",
+          "alternatives": [
+            {
+              "key": "running",
+              "value": "실행 중 (Running)",
+              "type": "active"
+            },
+            {
+              "key": "stopped",
+              "value": "꺼짐 (Stopped)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.slot4.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "slot4.value",
+          "alternatives": [
+            {
+              "key": "running",
+              "value": "실행 중 (Running)",
+              "type": "active"
+            },
+            {
+              "key": "stopped",
+              "value": "꺼짐 (Stopped)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.slot5.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "slot5.value",
+          "alternatives": [
+            {
+              "key": "running",
+              "value": "실행 중 (Running)",
+              "type": "active"
+            },
+            {
+              "key": "stopped",
+              "value": "꺼짐 (Stopped)",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

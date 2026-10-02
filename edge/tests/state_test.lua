@@ -119,9 +119,11 @@ local function golden(lang)
     { cap = caps.PRESET, attr = "names",
       value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
     { cap = caps.PRESET, attr = "supportedSlots", value = { "none" } },
-    -- #123: no watch list on a v1.1.0 service, and the row says why.
-    { cap = caps.APPS, attr = "summary",
+    -- #123: no watch list on a v1.1.0 service: the summary says why, the
+    -- names row has none, and the slots are left where they are.
+    { cap = caps.WATCH, attr = "summary", component = "apps",
       value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
+    { cap = caps.WATCH, attr = "names", component = "apps", value = en and "None" or "없음" },
     -- #115: the keep-awake switch, on its own component. A v1.1.0 service
     -- cannot keep the PC awake.
     { cap = state.CAP_SWITCH, attr = "switch", value = "off", component = "awake" },

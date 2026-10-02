@@ -1,8 +1,7 @@
--- Device and driver lifecycle (design doc §6.1, §6.3, §6.6). An app child
--- (#123) gets its own short path: it is painted from its PC and has no
--- profile migration, poll timer or push subscription of its own.
+-- Device and driver lifecycle (design doc §6.1, §6.3, §6.6). This driver
+-- creates no child device; one an older build left on a development hub (#81's
+-- display child, #123's app children) is deleted and otherwise ignored.
 
-local apps = require "apps"
 local client = require "client"
 local discovery = require "discovery"
 local emit = require "device.emit"
@@ -19,18 +18,23 @@ local wol = require "wol"
 
 local lifecycle = {}
 
+--- A leftover child (`profiles.is_child`): asked to be deleted once per run,
+--- and no PC path at all - no migration, poll, push or emit. True for one.
+function lifecycle.leftover_child(driver, device)
+  if not profiles.is_child(device) then
+    return false
+  end
+  profiles.remove_child(driver, device)
+  return true
+end
+
 function lifecycle.init(driver, device)
   log.info(string.format("init %s (driver %s)", device.id, version))
-  -- A display child from an older driver has no profile in the package any
-  -- more: deleted, once per device per run.
-  if profiles.remove_legacy_child(driver, device) then
+  if lifecycle.leftover_child(driver, device) then
     return
   end
-  if apps.is_child(device) then
-    apps.child_init(driver, device)
-    return
-  end
-  apps.remember_parent(device)
+  -- And the leftovers whose own `init` has not come (yet).
+  profiles.remove_children(driver)
   -- A device keeps the screen it was created with (platform notes "프로필과
   -- 화면 생성"): one on an older profile moves to the current one, once. An
   -- `iconStyle` change the restart interrupted is applied now.
@@ -49,10 +53,10 @@ end
 
 function lifecycle.added(driver, device)
   log.info("added " .. device.id)
-  if apps.is_child(device) then
-    apps.child_init(driver, device)
+  if lifecycle.leftover_child(driver, device) then
     return
   end
+  profiles.remove_children(driver)
   -- Created by this run, so on the current profile: record the name (the hub
   -- does not always expose it) and let `ensure` confirm there is nothing to do.
   profiles.remember(device)
@@ -74,11 +78,9 @@ end
 
 function lifecycle.removed(driver, device)
   log.info("removed " .. device.id)
-  if apps.is_child(device) then
-    apps.child_removed(driver, device)
+  if profiles.is_child(device) then
     return
   end
-  apps.parent_removed(driver, device)
   poll.stop(driver, device)
   wol.cancel_wake(driver, device)
   push.stop(driver, device)
@@ -108,8 +110,8 @@ end
 
 function lifecycle.info_changed(driver, device, _event, args)
   log.info("preferences changed for " .. device.id)
-  -- A child has no preferences: this is the user renaming it, theirs to do.
-  if apps.is_child(device) then
+  -- A leftover child has no preferences: this is the user renaming it.
+  if profiles.is_child(device) then
     return
   end
   -- A new `iconStyle` moves the device onto the profile with that category.
@@ -125,7 +127,7 @@ function lifecycle.info_changed(driver, device, _event, args)
 end
 
 function lifecycle.do_configure(driver, device)
-  if apps.is_child(device) then
+  if profiles.is_child(device) then
     return
   end
   poll.start(driver, device)
@@ -140,7 +142,7 @@ function lifecycle.driver(driver, event)
   end
   local ok, devices = pcall(function() return driver:get_devices() end)
   for _, device in ipairs(ok and devices or {}) do
-    if not apps.is_child(device) then
+    if not profiles.is_child(device) then
       pcall(function() push.stop(driver, device) end)
     end
   end

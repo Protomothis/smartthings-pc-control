@@ -60,36 +60,37 @@ end
 
 -- #107: every name edge-v1.0.x shipped, and where each of them goes.
 local V1 = {
-  ["pc.v1"] = "pc.v6",
-  ["pc-monitor.v1"] = "pc-monitor.v6",
-  ["pc-switch.v1"] = "pc-switch.v6",
-  ["pc-plug.v1"] = "pc-plug.v6",
-  ["pc-tv.v1"] = "pc-tv.v6",
-  ["pc-projector.v1"] = "pc-projector.v6",
-  ["pc-network.v1"] = "pc-network.v6",
-  ["pc-hub.v1"] = "pc-hub.v6",
-  ["pc-theater.v1"] = "pc-theater.v6",
-  ["pc-remote.v1"] = "pc-remote.v6",
+  ["pc.v1"] = "pc.v7",
+  ["pc-monitor.v1"] = "pc-monitor.v7",
+  ["pc-switch.v1"] = "pc-switch.v7",
+  ["pc-plug.v1"] = "pc-plug.v7",
+  ["pc-tv.v1"] = "pc-tv.v7",
+  ["pc-projector.v1"] = "pc-projector.v7",
+  ["pc-network.v1"] = "pc-network.v7",
+  ["pc-hub.v1"] = "pc-hub.v7",
+  ["pc-theater.v1"] = "pc-theater.v7",
+  ["pc-remote.v1"] = "pc-remote.v7",
 }
 
--- pcToast: every name the three unpublished generations made (#107: ten
--- styles, with and without the battery component; v2 with the standard
--- notification pair, v3 with pcMessage, v4 with pcNotify), and where each of
--- them goes - the same style and the same battery half, on v5.
+-- Every name the five unpublished generations made (#107: ten styles, with
+-- and without the battery component; v2 with the standard notification pair,
+-- v3 with pcMessage, v4 with pcNotify, v5 with pcActivity, v6 with pcApps and
+-- the app children), and where each of them goes - the same style and the
+-- same battery half, on v7 (#123: the watch card).
 local DEV = {}
-for _, version in ipairs({ 2, 3, 4, 5 }) do
+for _, version in ipairs({ 2, 3, 4, 5, 6 }) do
   for _, battery in ipairs({ false, true }) do
     for _, style in ipairs(profiles.STYLES) do
-      DEV[profiles.name_for(style, battery, version)] = profiles.name_for(style, battery, 6)
+      DEV[profiles.name_for(style, battery, version)] = profiles.name_for(style, battery, 7)
     end
   end
 end
 
 function T.test_every_v1_profile_migrates_to_the_current_one_of_its_style()
-  -- #107: v2 replaced all ten v1 names at once, then v3, then v4, then v5. A v1 device
-  -- goes straight to v5. The icon a device wears survives the move, and until
+  -- #107: v2 replaced all ten v1 names at once, then v3 … v7. A v1 device
+  -- goes straight to v7. The icon a device wears survives the move, and until
   -- a status has said "battery" it lands on the plain profile.
-  h.assert_equal(profiles.PC, "pc.v6")
+  h.assert_equal(profiles.PC, "pc.v7")
   for old, new in pairs(V1) do
     h.assert_equal(profiles.migration_for(old), new, old)
     h.assert_equal(profiles.migration_for(old, false), new, old)
@@ -97,11 +98,11 @@ function T.test_every_v1_profile_migrates_to_the_current_one_of_its_style()
   -- The development names that never left the author's hub stay unknown, and
   -- so does a generation this driver has not shipped yet.
   h.assert_nil(profiles.migration_for("pc.v17"))
-  h.assert_nil(profiles.migration_for("pc.v7"))
+  h.assert_nil(profiles.migration_for("pc.v8"))
 end
 
-function T.test_every_v2_to_v5_profile_migrates_to_the_v6_of_its_style_and_battery_half()
-  -- pcToast: the sixty development names each land on their v5 twin.
+function T.test_every_v2_to_v6_profile_migrates_to_the_v7_of_its_style_and_battery_half()
+  -- The hundred development names each land on their v7 twin.
   local count = 0
   for old, new in pairs(DEV) do
     count = count + 1
@@ -110,31 +111,31 @@ function T.test_every_v2_to_v5_profile_migrates_to_the_v6_of_its_style_and_batte
       old .. ": the name's battery half wins over a field that says no")
     h.assert_false(profiles.is_current(old), old .. " must not be current any more")
   end
-  h.assert_equal(count, 80)
+  h.assert_equal(count, 100)
   -- A plain v2/v3 laptop whose statuses already said "battery" goes straight
   -- onto the battery twin.
-  h.assert_equal(profiles.migration_for("pc-tv.v2", true), "pc-tv-battery.v6")
-  h.assert_equal(profiles.migration_for("pc-tv.v3", true), "pc-tv-battery.v6")
-  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-hub-battery.v6")
+  h.assert_equal(profiles.migration_for("pc-tv.v2", true), "pc-tv-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-tv.v3", true), "pc-tv-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-hub-battery.v7")
   -- pcToast: and the pcNotify screen the same way.
-  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-tv-battery.v6")
-  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc-monitor.v6")
-  h.assert_equal(profiles.migration_for("pc.v4", true), "pc-battery.v6")
+  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-tv-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc-monitor.v7")
+  h.assert_equal(profiles.migration_for("pc.v4", true), "pc-battery.v7")
 end
 
 function T.test_a_v1_profile_can_migrate_straight_onto_a_battery_profile()
   -- #107: the caller decides the battery half (a laptop whose status has said
   -- so), the name decides the style.
-  h.assert_equal(profiles.migration_for("pc.v1", true), "pc-battery.v6")
-  h.assert_equal(profiles.migration_for("pc-tv.v1", true), "pc-tv-battery.v6")
+  h.assert_equal(profiles.migration_for("pc.v1", true), "pc-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-tv.v1", true), "pc-tv-battery.v7")
 end
 
-function T.test_known_is_every_v1_name_then_every_v2_v3_v4_name_then_every_current_one()
+function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every_current_one()
   local expected = {}
   for _, style in ipairs(profiles.STYLES) do
     expected[#expected + 1] = style == "others" and "pc.v1" or ("pc-" .. style .. ".v1")
   end
-  for _, version in ipairs({ 2, 3, 4, 5 }) do
+  for _, version in ipairs({ 2, 3, 4, 5, 6 }) do
     for _, battery in ipairs({ false, true }) do
       for _, style in ipairs(profiles.STYLES) do
         expected[#expected + 1] = profiles.name_for(style, battery, version)
@@ -147,18 +148,17 @@ function T.test_known_is_every_v1_name_then_every_v2_v3_v4_name_then_every_curre
     end
   end
   h.assert_deep_equal(profiles.KNOWN, expected)
-  h.assert_equal(#profiles.KNOWN, 110)
+  h.assert_equal(#profiles.KNOWN, 130)
 end
 
 function T.test_only_v1_and_the_current_generation_are_shipped()
-  -- v2, v3 and v4 never left the Dev channel, so their files are not in the
+  -- v2 to v6 never left the Dev channel, so their files are not in the
   -- package (the 655360-byte limit) - but their names are still KNOWN.
-  h.assert_true(profiles.UNSHIPPED_VERSIONS[2] == true)
-  h.assert_true(profiles.UNSHIPPED_VERSIONS[3] == true)
-  h.assert_true(profiles.UNSHIPPED_VERSIONS[4] == true)
   h.assert_nil(profiles.UNSHIPPED_VERSIONS[1])
-  h.assert_true(profiles.UNSHIPPED_VERSIONS[5] == true)
-  h.assert_nil(profiles.UNSHIPPED_VERSIONS[6])
+  for version = 2, 6 do
+    h.assert_true(profiles.UNSHIPPED_VERSIONS[version] == true, "v" .. version)
+  end
+  h.assert_nil(profiles.UNSHIPPED_VERSIONS[7])
   h.assert_true(profiles.is_shipped("pc.v1"))
   h.assert_true(profiles.is_shipped("pc-tv.v1"))
   h.assert_true(profiles.is_shipped(profiles.PC))
@@ -220,12 +220,12 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_every_style_maps_to_its_profile_and_back()
-  h.assert_equal(profiles.for_style("others"), "pc.v6")
-  h.assert_equal(profiles.style_of("pc.v6"), "others")
+  h.assert_equal(profiles.for_style("others"), "pc.v7")
+  h.assert_equal(profiles.style_of("pc.v7"), "others")
   local expected = {
-    monitor = "pc-monitor.v6", switch = "pc-switch.v6", plug = "pc-plug.v6",
-    tv = "pc-tv.v6", projector = "pc-projector.v6", network = "pc-network.v6",
-    hub = "pc-hub.v6", theater = "pc-theater.v6", remote = "pc-remote.v6",
+    monitor = "pc-monitor.v7", switch = "pc-switch.v7", plug = "pc-plug.v7",
+    tv = "pc-tv.v7", projector = "pc-projector.v7", network = "pc-network.v7",
+    hub = "pc-hub.v7", theater = "pc-theater.v7", remote = "pc-remote.v7",
   }
   h.assert_deep_equal(profiles.VARIANTS, expected)
   for _, style in ipairs(profiles.STYLES) do
@@ -246,10 +246,10 @@ end
 
 function T.test_the_battery_variants_are_named_after_the_plain_ones()
   -- #107: `pc-<style>-battery.v5`, and `pc-battery.v5` for the default style.
-  h.assert_equal(profiles.BATTERY, "pc-battery.v6")
-  h.assert_equal(profiles.for_style("others", true), "pc-battery.v6")
-  h.assert_equal(profiles.for_style("tv", true), "pc-tv-battery.v6")
-  h.assert_equal(profiles.for_style("bogus", true), "pc-battery.v6")
+  h.assert_equal(profiles.BATTERY, "pc-battery.v7")
+  h.assert_equal(profiles.for_style("others", true), "pc-battery.v7")
+  h.assert_equal(profiles.for_style("tv", true), "pc-tv-battery.v7")
+  h.assert_equal(profiles.for_style("bogus", true), "pc-battery.v7")
   h.assert_nil(profiles.battery_of("pc.v1"), "a name that is not current has no battery half")
   h.assert_nil(profiles.battery_of("pc-battery.v1"))
 end
@@ -271,8 +271,10 @@ function T.test_a_name_that_is_not_current_has_no_style()
   h.assert_nil(profiles.style_of("pc-tv-battery.v4"))
   h.assert_nil(profiles.style_of("pc.v5"), "#123: nor is v5")
   h.assert_nil(profiles.style_of("pc-tv-battery.v5"))
-  h.assert_nil(profiles.style_of("pc.v7"))
-  h.assert_nil(profiles.style_of(profiles.APP), "the app child is no PC profile")
+  h.assert_nil(profiles.style_of("pc.v8"))
+  h.assert_nil(profiles.style_of("pc.v6"), "#123: nor is v6")
+  h.assert_nil(profiles.style_of("pc-tv-battery.v6"))
+  h.assert_nil(profiles.style_of("pc-app.v1"), "the app child was no PC profile")
   h.assert_nil(profiles.style_of("pc-display.v1"))
   h.assert_nil(profiles.style_of("thermostat"))
   h.assert_nil(profiles.style_of(nil))
@@ -315,9 +317,9 @@ function T.test_apply_style_switches_once_and_remembers()
   profiles.reset()
   local device = device_on(profiles.PC, "styled-pc")
   device.preferences.iconStyle = "monitor"
-  h.assert_equal(profiles.apply_style(device), "pc-monitor.v6")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-monitor.v6" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v6")
+  h.assert_equal(profiles.apply_style(device), "pc-monitor.v7")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-monitor.v7" } })
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v7")
   h.assert_nil(profiles.apply_style(device), "the same preference asks for nothing")
   h.assert_equal(#device.metadata_updates, 1)
 end
@@ -333,7 +335,7 @@ function T.test_apply_style_does_not_loop_on_a_hub_that_keeps_the_old_name()
     self.metadata_updates[#self.metadata_updates + 1] = update
     return true
   end
-  h.assert_equal(profiles.apply_style(device), "pc-tv.v6")
+  h.assert_equal(profiles.apply_style(device), "pc-tv.v7")
   h.assert_nil(profiles.apply_style(device))
   h.assert_nil(profiles.apply_style(device))
   h.assert_equal(#device.metadata_updates, 1)
@@ -346,7 +348,7 @@ end
 function T.test_apply_style_leaves_alone_what_it_does_not_own()
   profiles.reset()
   -- No preference yet: not a request for the default.
-  local unset = device_on("pc-hub.v6", "unset-pc")
+  local unset = device_on("pc-hub.v7", "unset-pc")
   h.assert_nil(profiles.apply_style(unset))
   -- A foreign or superseded profile is `ensure`'s business, not the icon's.
   local foreign = device_on("someone-else.v1", "foreign-pc")
@@ -384,66 +386,121 @@ function T.test_apply_style_survives_a_hub_that_refuses_the_update()
 end
 
 --------------------------------------------------------------------------------
--- #81: leftover display children
+-- leftover child devices (#81's display child, #123's app children)
 --------------------------------------------------------------------------------
 
-function T.test_a_child_key_marks_a_legacy_child()
-  -- What an EDGE_CHILD created by an older driver looks like: no DNI of its
-  -- own, identified by the key the parent assigned.
-  local child = h.fake_device({})
-  child.parent_assigned_child_key = "display"
-  h.assert_true(profiles.is_legacy_child(child))
-end
-
-function T.test_a_display_profile_marks_a_legacy_child()
-  -- The other mark: no child key on this firmware, but the profile name is
-  -- from the removed series.
-  local child = device_on("pc-display.v3", "leftover-child")
-  h.assert_true(profiles.is_legacy_child(child))
-  local reported = h.fake_device({})
-  reported.profile = { id = "abc-123", name = "pc-display.v1", components = {} }
-  h.assert_true(profiles.is_legacy_child(reported))
-end
-
-function T.test_a_pc_is_not_a_legacy_child()
-  h.assert_false(profiles.is_legacy_child(device_on(profiles.PC, "a-pc")))
-  -- A device with no name at all falls back to LEGACY, which is still a PC.
-  h.assert_false(profiles.is_legacy_child(device_on(nil, "old-pc")))
-  h.assert_false(profiles.is_legacy_child(nil))
-  h.assert_false(profiles.is_legacy_child("not a device"))
-end
-
-function T.test_a_legacy_child_is_deleted_once()
-  profiles.reset()
-  local child = device_on("pc-display.v3", "doomed-child")
-  child.deleted = 0
-  function child:try_delete_device()
-    self.deleted = self.deleted + 1
+--- A driver whose `try_delete_device` records the ids and answers `answer`
+--- (a function of the id: return values, or raise).
+local function deleting_driver(devices, answer)
+  local driver = { devices = devices or {}, deleted = {} }
+  function driver:get_devices()
+    return self.devices
+  end
+  function driver:try_delete_device(id)
+    self.deleted[#self.deleted + 1] = id
+    if answer then
+      return answer(id)
+    end
     return true
   end
-  h.assert_true(profiles.remove_legacy_child(nil, child))
-  h.assert_equal(child.deleted, 1)
-  h.assert_false(profiles.remove_legacy_child(nil, child),
-    "a second init must not ask the hub again")
-  h.assert_equal(child.deleted, 1)
+  return driver
 end
 
-function T.test_a_hub_without_the_device_method_falls_back_to_the_driver()
+local function app_child(key, id)
+  local child = h.fake_device({})
+  child.id = id or ("child-" .. key)
+  child.parent_assigned_child_key = key
+  child.parent_device_id = "a-pc"
+  child.profile = { id = "pc-app-profile", name = "pc-app.v1", components = { main = { id = "main" } } }
+  return child
+end
+
+function T.test_a_child_key_marks_a_leftover_child()
+  -- What an EDGE_CHILD looks like: no DNI of its own, identified by the key
+  -- the parent assigned - "display" (#81) or a process name (#123).
+  local child = h.fake_device({})
+  child.parent_assigned_child_key = "display"
+  h.assert_true(profiles.is_child(child))
+  local app = h.fake_device({})
+  app.parent_assigned_child_key = "steam.exe"
+  h.assert_true(profiles.is_child(app))
+end
+
+function T.test_a_child_profile_marks_a_leftover_child()
+  -- The other mark: no child key on this firmware, but the profile name is
+  -- from a removed series.
+  h.assert_true(profiles.is_child(device_on("pc-display.v3", "leftover-display")))
+  h.assert_true(profiles.is_child(device_on("pc-app.v1", "leftover-app")))
+  local reported = h.fake_device({})
+  reported.profile = { id = "abc-123", name = "pc-display.v1", components = {} }
+  h.assert_true(profiles.is_child(reported))
+  h.assert_true(profiles.is_child_profile("pc-app.v1"))
+  h.assert_false(profiles.is_child_profile(profiles.PC))
+end
+
+function T.test_a_pc_is_not_a_child()
+  h.assert_false(profiles.is_child(device_on(profiles.PC, "a-pc")))
+  -- A device with no name at all falls back to LEGACY, which is still a PC.
+  h.assert_false(profiles.is_child(device_on(nil, "old-pc")))
+  local blank = device_on(profiles.PC, "blank-key")
+  blank.parent_assigned_child_key = ""
+  h.assert_false(profiles.is_child(blank))
+  h.assert_false(profiles.is_child(nil))
+  h.assert_false(profiles.is_child("not a device"))
+end
+
+function T.test_a_leftover_child_is_deleted_once_through_the_driver()
   profiles.reset()
-  local child = device_on("pc-display.v1", "stubborn-child")
-  local asked = {}
-  local driver = { try_delete_device = function(_, id) asked[#asked + 1] = id end }
-  h.assert_true(profiles.remove_legacy_child(driver, child))
-  h.assert_deep_equal(asked, { "stubborn-child" })
+  local child = app_child("steam.exe")
+  local driver = deleting_driver({ child })
+  h.assert_true(profiles.remove_child(driver, child))
+  h.assert_deep_equal(driver.deleted, { "child-steam.exe" })
+  h.assert_false(profiles.remove_child(driver, child), "a second init must not ask the hub again")
+  h.assert_equal(profiles.remove_children(driver), 0, "nor the next PC's init")
+  h.assert_deep_equal(driver.deleted, { "child-steam.exe" })
 end
 
-function T.test_remove_legacy_child_leaves_a_pc_alone()
+function T.test_a_child_the_hub_will_not_delete_is_left_and_not_asked_again()
+  -- `nil, "<why>"` (a hub without the feature) and a raise are both survived
+  -- and logged; the child is asked once per run, like any other.
+  for i, answer in ipairs({
+    function() return nil, "hub does not support device delete functionality" end,
+    function() error("boom", 0) end,
+  }) do
+    profiles.reset()
+    local child = app_child("obs64.exe", "stubborn-" .. i)
+    local driver = deleting_driver({ child }, answer)
+    h.assert_true(profiles.remove_child(driver, child))
+    h.assert_false(profiles.remove_child(driver, child))
+    h.assert_equal(#driver.deleted, 1)
+  end
+  -- No driver at all: nothing to ask, nothing raised.
+  profiles.reset()
+  h.assert_true(profiles.remove_child(nil, app_child("x.exe")))
+end
+
+function T.test_remove_children_deletes_every_leftover_and_no_pc()
+  profiles.reset()
+  local pc = device_on(profiles.PC, "a-real-pc")
+  local display = device_on("pc-display.v1", "old-display")
+  local steam, obs = app_child("steam.exe"), app_child("obs64.exe")
+  local driver = deleting_driver({ pc, steam, display, obs })
+  h.assert_equal(profiles.remove_children(driver), 3)
+  h.assert_deep_equal(driver.deleted, { "child-steam.exe", "old-display", "child-obs64.exe" })
+  -- A device list that cannot be read is no reason to fail.
+  local broken = deleting_driver()
+  function broken:get_devices() error("no list", 0) end
+  h.assert_equal(profiles.remove_children(broken), 0)
+end
+
+function T.test_remove_child_leaves_a_pc_alone()
   profiles.reset()
   local device = device_on(profiles.PC, "a-real-pc")
-  function device:try_delete_device()
+  local driver = deleting_driver({ device }, function()
     error("the PC must never be deleted", 0)
-  end
-  h.assert_false(profiles.remove_legacy_child(nil, device))
+  end)
+  h.assert_false(profiles.remove_child(driver, device))
+  h.assert_equal(#driver.deleted, 0)
 end
 
 --------------------------------------------------------------------------------
@@ -503,7 +560,7 @@ function T.test_ensure_moves_every_v1_device_once_and_keeps_its_style()
     h.assert_equal(device:get_field(fields.PROFILE_NAME), new)
   end
   -- Neither a current device nor a development name moves.
-  for _, name in ipairs({ "pc.v6", "pc-tv-battery.v6", "pc.v17" }) do
+  for _, name in ipairs({ "pc.v7", "pc-tv-battery.v7", "pc.v17" }) do
     local device = device_on(name, "release-" .. name)
     h.assert_nil(profiles.ensure(device))
     h.assert_equal(#device.metadata_updates, 0)
@@ -536,19 +593,19 @@ function T.test_an_icon_switch_right_after_a_migration_starts_from_the_new_name(
     return true
   end
   device.preferences.iconStyle = "hub"
-  h.assert_equal(profiles.ensure(device), "pc-tv.v6")
-  h.assert_equal(profiles.apply_style(device), "pc-hub.v6")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv.v6" }, { profile = "pc-hub.v6" } })
+  h.assert_equal(profiles.ensure(device), "pc-tv.v7")
+  h.assert_equal(profiles.apply_style(device), "pc-hub.v7")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv.v7" }, { profile = "pc-hub.v7" } })
 end
 
 function T.test_apply_style_keeps_the_battery_component()
   -- #107: a laptop that changes its icon keeps its battery card.
   profiles.reset()
-  local device = device_on("pc-battery.v6", "laptop")
+  local device = device_on("pc-battery.v7", "laptop")
   device.preferences.iconStyle = "monitor"
-  h.assert_equal(profiles.apply_style(device), "pc-monitor-battery.v6")
+  h.assert_equal(profiles.apply_style(device), "pc-monitor-battery.v7")
   device.preferences.iconStyle = "others"
-  h.assert_equal(profiles.apply_style(device), "pc-battery.v6")
+  h.assert_equal(profiles.apply_style(device), "pc-battery.v7")
 end
 
 function T.test_ensure_does_nothing_for_a_current_device()
@@ -610,10 +667,10 @@ function T.test_init_migrates_a_device_left_on_an_older_profile()
   end)
 end
 
-function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
+function T.test_init_moves_a_v1_device_to_v7_and_repaints_it()
   -- #107: the same device on the real constants is a v1 device (no name, no
   -- field: LEGACY), so its first init after the update moves it to the current
-  -- profile (pc.v5 since pcToast) and paints the new generation of rows.
+  -- profile (pc.v7 since the watch card) and paints the new generation of rows.
   profiles.reset()
   local poll = require "poll"
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
@@ -622,8 +679,8 @@ function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   device:set_field(fields.ROWS_PAINTED, "1")
   lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v6" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v6")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v7" } })
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v7")
   h.assert_equal(device:get_field(fields.ROWS_PAINTED), poll.ROWS_VERSION,
     "the rows of the new capabilities start unset and are painted once")
   -- #129: the row generation is the profile generation.
@@ -631,22 +688,26 @@ function T.test_init_moves_a_v1_device_to_v6_and_repaints_it()
 end
 
 -- The Dev channel generations (never packaged, still known): a device on any
--- of them moves to the v6 of its style and battery half on its first init
+-- of them moves to the v7 of its style and battery half on its first init
 -- after the update and paints the new row generation. A row the new profile
 -- adds is painted at once, forced, because the cloud record of the new
 -- profile starts empty: pcToast's `lastMessage` for a v4 device (whose
 -- pcNotify text row was bound to nothing and spun into "네트워크 오류"),
--- `pcApps.summary` for a v5 one (the kind-based pcActivity row, #123).
-function T.test_init_moves_a_dev_generation_device_to_v6_keeping_style_and_battery()
+-- and the watch card (#123, on its own component) for a v5 one (the
+-- kind-based pcActivity row) and a v6 one (pcApps and the app children).
+function T.test_init_moves_a_dev_generation_device_to_v7_keeping_style_and_battery()
   local caps = require "caps"
   for i, c in ipairs({
-    { "pc-battery.v2", "others", "pc-battery.v6" },
+    { "pc-battery.v2", "others", "pc-battery.v7" },
     -- the reviewer's own device: pcMessage's two text fields
-    { "pc-tv-battery.v3", "tv", "pc-tv-battery.v6" },
-    { "pc-tv-battery.v4", "tv", "pc-tv-battery.v6", caps.TOAST, "lastMessage" },
-    { "pc-hub-battery.v5", "hub", "pc-hub-battery.v6", caps.APPS, "summary" },
+    { "pc-tv-battery.v3", "tv", "pc-tv-battery.v7" },
+    { "pc-tv-battery.v4", "tv", "pc-tv-battery.v7", nil, caps.TOAST, "lastMessage", "없음" },
+    { "pc-hub-battery.v5", "hub", "pc-hub-battery.v7", "apps", caps.WATCH, "summary", "없음" },
+    -- #123: the v6 device of the app-children build; every slot is new too.
+    { "pc-plug.v6", "plug", "pc-plug.v7", "apps", caps.WATCH, "names", "없음" },
+    { "pc-plug-battery.v6", "plug", "pc-plug-battery.v7", "apps", caps.WATCH, "slot5", "empty" },
   }) do
-    local from, style, to, cap, attr = table.unpack(c, 1, 5)
+    local from, style, to, component, cap, attr, want = table.unpack(c, 1, 7)
     profiles.reset()
     local device = h.fake_device({ ipAddress = "192.168.1.20", iconStyle = style })
     device.id = "init-" .. from
@@ -654,48 +715,96 @@ function T.test_init_moves_a_dev_generation_device_to_v6_keeping_style_and_batte
     device.profile = { id = "abc-123", name = from,
       components = { { id = "main" }, { id = "awake" }, { id = "battery" } } }
     device:set_field(fields.ROWS_PAINTED, from:match("%.v(%d+)$"))
-    lifecycle().init(fake_driver({ device }), device)
+    local driver = fake_driver({ device })
+    lifecycle().init(driver, device)
+    -- The rest of the spread repaint (emit.paint).
+    h.fire_all(driver, "repaint-batch")
     h.assert_deep_equal(device.metadata_updates, { { profile = to } }, from)
     h.assert_equal(device:get_field(fields.PROFILE_NAME), to, from)
     h.assert_equal(device:get_field(fields.ROWS_PAINTED), (require "poll").ROWS_VERSION, from)
     if cap then
       local events = h.emitted(device)
-      h.assert_equal(h.event_value(events, cap, attr), "없음", from)
-      h.assert_true(h.event_forced(events, cap, attr), from)
+      h.assert_equal(h.component_value(events, component, cap, attr), want, from)
+      h.assert_true(h.component_forced(events, component, cap, attr), from)
     end
   end
   -- And the plain twin keeps its half too.
-  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc-tv.v6")
-  h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v6")
+  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc-tv.v7")
+  h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v7")
 end
 
-function T.test_init_leaves_a_v6_device_where_it_is()
+function T.test_init_leaves_a_v7_device_where_it_is()
   profiles.reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
-  device.id = "init-pc-v6"
+  device.id = "init-pc-v7"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-4"
-  device.profile = { id = "abc-123", name = "pc.v6", components = { { id = "main" } } }
+  device.profile = { id = "abc-123", name = "pc.v7", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
   h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)
 end
 
-function T.test_init_deletes_a_leftover_display_child()
-  -- #81: a child created by an older driver has no profile in the package any
-  -- more, so init removes it instead of migrating it.
+function T.test_init_deletes_a_leftover_child_and_touches_nothing_else()
+  -- #81/#123: a child created by an older build has no profile in the package
+  -- any more, so init asks the hub to delete it instead of migrating it, and
+  -- no lifecycle event of it - a second init, added, infoChanged, doConfigure,
+  -- refresh, removed - takes a PC path (poll, push, emit) or raises.
+  for _, key in ipairs({ "display", "steam.exe" }) do
+    profiles.reset()
+    local child = h.fake_device({})
+    child.id = "init-child-" .. key
+    child.parent_assigned_child_key = key
+    local driver = fake_driver({ child })
+    driver.deleted = {}
+    driver.timers = {}
+    lifecycle().init(driver, child)
+    h.assert_deep_equal(driver.deleted, { child.id }, key)
+    h.assert_equal(#child.metadata_updates, 0, "a device on its way out must not be migrated")
+    lifecycle().init(driver, child)
+    lifecycle().added(driver, child)
+    lifecycle().infoChanged(driver, child, "infoChanged", {})
+    lifecycle().doConfigure(driver, child)
+    h.assert_false((require "handlers.power").refresh(driver, child))
+    lifecycle().removed(driver, child)
+    h.assert_deep_equal(driver.deleted, { child.id }, key .. ": asked once per run")
+    h.assert_equal(#h.emitted(child), 0, key .. ": nothing is emitted on a leftover child")
+    h.assert_equal(#driver.timers, 0, key .. ": no poll timer for a leftover child")
+  end
+end
+
+function T.test_a_pc_init_deletes_the_leftover_children_once()
+  -- #123: the app children of the v6 build, found from the PC's own init
+  -- (their own init may come later, or not at all on an older hub).
   profiles.reset()
-  local child = h.fake_device({})
-  child.id = "init-child"
-  child.parent_assigned_child_key = "display"
-  child.deleted = 0
-  function child:try_delete_device()
-    self.deleted = self.deleted + 1
+  local pc = h.fake_device({ ipAddress = "192.168.1.20" })
+  pc.id = "pc-with-children"
+  pc.device_network_id = discovery.DNI_PREFIX .. "manual-children"
+  pc.profile = { id = "abc-123", name = profiles.PC, components = h.components_for(profiles.PC) }
+  local steam = h.fake_device({})
+  steam.id = "child-steam"
+  steam.parent_assigned_child_key = "steam.exe"
+  steam.parent_device_id = pc.id
+  local obs = h.fake_device({})
+  obs.id = "child-obs"
+  obs.profile = { id = "app-profile", name = "pc-app.v1", components = {} }
+  local driver = fake_driver({ pc, steam, obs })
+  driver.deleted = {}
+  -- The hub refuses one of them: logged, not asked again, nothing raised.
+  local real = driver.try_delete_device
+  function driver:try_delete_device(id)
+    real(self, id)
+    if id == "child-obs" then
+      return nil, "hub does not support device delete functionality"
+    end
     return true
   end
-  lifecycle().init(fake_driver({ child }), child)
-  h.assert_equal(child.deleted, 1)
-  h.assert_equal(#child.metadata_updates, 0,
-    "a device on its way out must not be migrated")
+  lifecycle().init(driver, pc)
+  h.assert_deep_equal(driver.deleted, { "child-steam", "child-obs" })
+  lifecycle().init(driver, steam)
+  lifecycle().init(driver, obs)
+  lifecycle().added(driver, pc)
+  h.assert_deep_equal(driver.deleted, { "child-steam", "child-obs" }, "once per child per run")
+  driver.try_delete_device = nil
 end
 
 function T.test_added_records_the_profile_and_migrates_nothing()
@@ -749,8 +858,8 @@ function T.test_info_changed_switches_the_profile_once_and_repaints()
     local device = styled_device("icon-pc", "projector")
     local driver = fake_driver({ device })
     lifecycle().infoChanged(driver, device, "infoChanged", {})
-    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-projector.v6" } })
-    h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-projector.v6")
+    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-projector.v7" } })
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-projector.v7")
     h.assert_equal(#repaints, 1, "the new profile starts with empty rows")
     -- The switch landing fires infoChanged again: no second update.
     lifecycle().infoChanged(driver, device, "infoChanged", {})
@@ -774,7 +883,7 @@ function T.test_info_changed_with_an_unknown_style_goes_back_to_the_default()
   profiles.reset()
   counting_repaints(function()
     local device = styled_device("typo-pc", "others")
-    device.profile.name = "pc-hub.v6"
+    device.profile.name = "pc-hub.v7"
     device.preferences.iconStyle = "sparkly"
     lifecycle().infoChanged(fake_driver({ device }), device, "infoChanged", {})
     h.assert_deep_equal(device.metadata_updates, { { profile = profiles.PC } })
@@ -787,7 +896,7 @@ function T.test_init_reconciles_a_style_the_profile_does_not_match()
   counting_repaints(function(repaints)
     local device = styled_device("restarted-pc", "theater")
     lifecycle().init(fake_driver({ device }), device)
-    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-theater.v6" } })
+    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-theater.v7" } })
     h.assert_equal(#repaints, 1)
   end)
 end
@@ -796,8 +905,8 @@ function T.test_init_leaves_a_matching_style_alone()
   profiles.reset()
   counting_repaints(function(repaints)
     local device = styled_device("settled-pc", "remote")
-    device.profile.name = "pc-remote.v6"
-    device:set_field(fields.PROFILE_NAME, "pc-remote.v6")
+    device.profile.name = "pc-remote.v7"
+    device:set_field(fields.PROFILE_NAME, "pc-remote.v7")
     lifecycle().init(fake_driver({ device }), device)
     h.assert_equal(#device.metadata_updates, 0)
     h.assert_equal(#repaints, 0, "nothing changed, nothing to repaint")

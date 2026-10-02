@@ -9,7 +9,6 @@
 -- socket is reached through a lazily required cosock and injectable `deps`, so
 -- loading this module in a test never opens anything.
 
-local apps = require "apps"
 local client = require "client"
 local clock = require "device.clock"
 local discovery = require "discovery"
@@ -476,12 +475,9 @@ function push.apply_to_device(driver, device, payload, deps)
   pcall(function() fields.remember_last_seen(device, clock.epoch(deps)) end)
 
   if events then
+    -- Every push carries the watch list too (`activity.changed` is only the
+    -- reason): the watch card follows at once.
     emit.rows(device, events)
-    -- Every push carries the watch list; the app children follow at once.
-    local synced, sync_err = pcall(function() apps.sync(driver, device, payload.status, deps) end)
-    if not synced then
-      logger().warn("app children not updated: " .. tostring(sync_err))
-    end
     pcall(function() device:online() end)
     -- Every push carries the battery block too.
     pcall(function() wired.follow_battery(driver, device, payload.status) end)

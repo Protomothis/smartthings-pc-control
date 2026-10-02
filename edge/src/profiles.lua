@@ -15,22 +15,17 @@
 -- style and the battery half the old name carries.
 --
 -- Everything here is pure except `remember`, `ensure`, `apply_style`,
--- `apply_battery` and `remove_legacy_child`, which touch the device, and all of
--- them are guarded: a hub that refuses `try_update_metadata` or
--- `try_delete_device` must not take the lifecycle handler down with it.
+-- `apply_battery`, `remove_child` and `remove_children`, which touch the
+-- device or the driver, and all of them are guarded: a hub that refuses
+-- `try_update_metadata` or `try_delete_device` must not take the lifecycle
+-- handler down with it.
 
 local fields = require "device.fields"
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v6`, …).
-profiles.VERSION = 6
-
--- #123: the app child device's profile (profiles/pc-app.yml). Not a PC
--- profile: `ensure`, `apply_style` and `apply_battery` never see a child, and
--- the name is in neither `CURRENT` nor `KNOWN`.
-profiles.APP = "pc-app.v1"
-profiles.APP_PREFIX = "pc-app."
+-- The profile generation every current name carries (`pc.v7`, …).
+profiles.VERSION = 7
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -57,7 +52,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v6`, `pc-tv.v6`, `pc-battery.v6`, `pc-tv-battery.v6`.
+--- `pc.v7`, `pc-tv.v7`, `pc-battery.v7`, `pc-tv-battery.v7`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -70,7 +65,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v6` once its status says so (#116).
+-- moves to `pc-battery.v7` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -101,7 +96,7 @@ end
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone. #107: the ten v1 names (the default and the nine
 -- icon variants of #100), then twenty names per later generation (every style
--- with and without the battery, #116): v2, v3 and the twenty current ones.
+-- with and without the battery, #116): v2 to v6 and the twenty current ones.
 profiles.KNOWN = {}
 for _, style in ipairs(profiles.STYLES) do
   profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, false, 1)
@@ -117,7 +112,7 @@ end
 -- Generations that only ever lived on the Dev channel. Their names stay in
 -- KNOWN so a development device still on one migrates, but their files are
 -- not packaged: the package limit is 655360 bytes.
-profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true }
+profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true }
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)
@@ -129,12 +124,12 @@ end
 -- on: the oldest name this driver ever created a device with.
 profiles.LEGACY = "pc.v1"
 
--- A display child of a pre-release driver has no profile in the package and
--- is deleted on init (`remove_legacy_child`); only a development hub can still
--- carry one, and the check is one comparison per device per run.
-profiles.DISPLAY_PREFIX = "pc-display"
--- The key that child was created with.
-profiles.LEGACY_CHILD_KEY = "display"
+-- This driver creates no child device any more. Two kinds may be left on a
+-- development hub, neither with a profile in the package, and both are
+-- deleted (`remove_child`): #81's display child (`pc-display.vN`, key
+-- "display") and #123's app children (`pc-app.v1`, keyed by process name),
+-- which the watch card's slots replaced before anything was published.
+profiles.CHILD_PREFIXES = { "pc-display", "pc-app." }
 
 local function logger()
   local ok, log = pcall(require, "log")
@@ -220,9 +215,9 @@ end
 --
 -- nil covers all three "do nothing" cases: already current (any variant,
 -- #100), not a name this driver ever used (foreign device, or a version from
--- the future), and no name at all. A `pc-display.vN` name is not ours to
--- migrate either: #81 removed that series, and such a device is deleted
--- instead (`is_legacy_child`). A known older name keeps its style, and a
+-- the future), and no name at all. A child profile name is not ours to
+-- migrate either: no such series is packaged any more, and such a device is deleted
+-- instead (`is_child`). A known older name keeps its style, and a
 -- `-battery` name (v2 on) keeps its battery half.
 -- @param battery #107: whether the target is the battery variant. The v1 names
 --   never had one, so the caller says, and "no" until a status has said
@@ -248,28 +243,34 @@ function profiles.migration_for(device_profile_name, battery)
 end
 
 
---- #123: true when `name` is the app child's profile (any version of it).
-function profiles.is_app_profile(name)
-  return type(name) == "string" and name:sub(1, #profiles.APP_PREFIX) == profiles.APP_PREFIX
+--- True when `name` is the profile of a child device an older build created
+--- (`CHILD_PREFIXES`).
+function profiles.is_child_profile(name)
+  if type(name) ~= "string" then
+    return false
+  end
+  for _, prefix in ipairs(profiles.CHILD_PREFIXES) do
+    if name:sub(1, #prefix) == prefix then
+      return true
+    end
+  end
+  return false
 end
 
---- True when `device` is a leftover display child of an older driver.
+--- True when `device` is a leftover child device (see `CHILD_PREFIXES`).
 --
--- Two independent marks, because a hub may only carry one of them: the
--- `parent_assigned_child_key` the display child was created with ("display",
--- `LEGACY_CHILD_KEY`), and a profile name from the removed `pc-display`
--- series. Any other child key is an app child of this driver (apps.lua).
-function profiles.is_legacy_child(device)
+-- Two independent marks, because a hub may only carry one of them: a
+-- `parent_assigned_child_key` (only an EDGE_CHILD has one, and this driver
+-- creates none any more), and a profile name from a child series.
+function profiles.is_child(device)
   if type(device) ~= "table" then
     return false
   end
-  local name = profiles.name_of(device)
-  if type(name) == "string"
-      and name:sub(1, #profiles.DISPLAY_PREFIX) == profiles.DISPLAY_PREFIX then
+  local key = device.parent_assigned_child_key
+  if type(key) == "string" and key ~= "" then
     return true
   end
-  return device.parent_assigned_child_key == profiles.LEGACY_CHILD_KEY
-    and not profiles.is_app_profile(name)
+  return profiles.is_child_profile(profiles.name_of(device))
 end
 
 --------------------------------------------------------------------------------
@@ -530,17 +531,20 @@ function profiles.apply_battery(device, present)
   return target
 end
 
--- Devices this driver run has already tried to delete (#81), for the same
--- reason `attempted` exists: `init` fires more than once per device.
+-- Devices this driver run has already tried to delete, for the same reason
+-- `attempted` exists: `init` fires more than once per device, and every PC's
+-- `init` walks the device list.
 local removed = {}
 
---- #81: delete a leftover display child, once per device per driver run.
+--- Delete one leftover child (`is_child`), once per device per driver run.
 --
--- Returns true when the delete was attempted. Both APIs are tried because
--- `try_delete_device` sits on the device on some firmwares and on the driver
--- on others, and neither may take the lifecycle handler down.
-function profiles.remove_legacy_child(driver, device)
-  if not profiles.is_legacy_child(device) then
+-- Returns true when the delete was asked for now. `driver:try_delete_device`
+-- is the API (lua_libs st/driver.lua; there is no device method); it answers
+-- `nil, "<why>"` on a hub without the feature and may raise. A failure is
+-- logged once and the child stays - it does nothing any more (its lifecycle
+-- is ignored, nothing is emitted on it), and the user can delete it in the app.
+function profiles.remove_child(driver, device)
+  if not profiles.is_child(device) then
     return false
   end
   local key = attempt_key(device)
@@ -549,12 +553,30 @@ function profiles.remove_legacy_child(driver, device)
   end
   removed[key] = true
 
-  logger().info("removing legacy display child " .. tostring(device.id))
-  local ok = pcall(function() return device:try_delete_device() end)
-  if not ok and driver then
-    pcall(function() return driver:try_delete_device(device.id) end)
+  local what = tostring(device.parent_assigned_child_key or profiles.name_of(device))
+  logger().info(string.format("removing leftover child %s (%s)", tostring(device.id), what))
+  local ok, result, why = pcall(function() return driver:try_delete_device(device.id) end)
+  if not ok or (result == nil and why ~= nil) then
+    logger().warn(string.format("could not delete leftover child %s (%s): %s",
+      tostring(device.id), what, tostring(ok and why or result)))
   end
   return true
+end
+
+--- Delete every leftover child among the driver's devices (`remove_child`).
+--- Called from a PC's `init` and `added`. Returns how many were asked for.
+function profiles.remove_children(driver)
+  local ok, devices = pcall(function() return driver:get_devices() end)
+  if not ok or type(devices) ~= "table" then
+    return 0
+  end
+  local count = 0
+  for _, device in ipairs(devices) do
+    if profiles.remove_child(driver, device) then
+      count = count + 1
+    end
+  end
+  return count
 end
 
 --- Forget the one-attempt-per-device guards (tests only).

@@ -55,7 +55,7 @@ local function lf(text)
 end
 
 --- The file a profile name is packaged as: the frozen v1 files are
---- `pc.yml`/`pc-tv.yml`, later generations `pc-v6.yml`/`pc-tv-battery-v6.yml`.
+--- `pc.yml`/`pc-tv.yml`, later generations `pc-v7.yml`/`pc-tv-battery-v7.yml`.
 local function file_name(name)
   if name:match("%.v1$") then
     return (name:gsub("%.v1$", "")) .. ".yml"
@@ -69,12 +69,12 @@ end
 
 -- The package (`profiles/` is uploaded whole, and the upload limit is 655360
 -- bytes): every shipped name the driver knows - the ten frozen v1 files and
--- the twenty current ones, not the Dev-only v2 to v5 (UNSHIPPED_VERSIONS) -
--- plus the app child's pc-app.yml (#123), each declaring its own name, and
--- nothing else (a style dropped from the list but not from the disk, or the
--- template, would otherwise ship as a profile).
+-- the twenty current ones, not the Dev-only v2 to v6 (UNSHIPPED_VERSIONS) -
+-- each declaring its own name, and nothing else (a style dropped from the
+-- list but not from the disk, the template, or #123's removed pc-app.yml
+-- would otherwise ship as a profile).
 function T.test_the_package_is_exactly_the_shipped_profiles()
-  local want = { [file_name(profiles.APP)] = profiles.APP }
+  local want = {}
   for _, name in ipairs(profiles.KNOWN) do
     if profiles.is_shipped(name) then
       want[file_name(name)] = name
@@ -148,10 +148,14 @@ function T.test_every_current_profile_keeps_the_layout_rules()
       for k, id in ipairs(media_group) do
         h.assert_equal(main[at + k], id, name .. " media group position " .. k)
       end
-      h.assert_deep_equal({ main[at + 6], main[at + 7], main[at + 8] }, {
-        "numbersystem53811.pcpreset", "numbersystem53811.pcapps", "numbersystem53811.pctoast",
-      }, name .. " closes main with presets, apps, toast")
-      h.assert_equal(#main, at + 8, name .. ": pcToast is the last capability of main")
+      h.assert_deep_equal({ main[at + 6], main[at + 7] }, {
+        "numbersystem53811.pcpreset", "numbersystem53811.pctoast",
+      }, name .. " closes main with presets, toast")
+      h.assert_equal(#main, at + 7, name .. ": pcToast is the last capability of main")
+      -- #123: the watch card is a component of its own, its one capability.
+      h.assert_deep_equal(component_capabilities(text, "apps"), { "numbersystem53811.pcwatch" },
+        name .. " watch card")
+      h.assert_contains(text, "\n  - id: apps\n    label: 감시 목록\n", name .. " watch card label")
 
       h.assert_nil(text:find("\n      - id: notification\n", 1, true), name .. " still lists notification")
       h.assert_nil(text:find("\n      - id: speechSynthesis\n", 1, true), name .. " still lists speechSynthesis")

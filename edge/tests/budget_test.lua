@@ -55,7 +55,8 @@ local function pc_status()
     audio = { available = true, volume = 30, muted = false, device = "스피커" },
     media = { status = "playing", title = "Blinding Lights", artist = "The Weeknd", app = "Spotify" },
     presets = { { slot = 1, name = "게임 모드" }, { slot = 2, name = "방송 시작" } },
-    activity = { enabled = true, apps = { { id = "steam.exe", label = "Steam", running = true } }, top = "steam.exe" },
+    activity = { enabled = true, apps = { { slot = 1, id = "steam.exe", label = "Steam", running = true } },
+      top = "steam.exe" },
     awake = { on = false },
     session = { exposed = true, locked = false, idle_seconds = 0, user = "kim" },
     wol = {
@@ -67,10 +68,9 @@ local function pc_status()
 end
 
 local function new_device()
-  -- Every test's device has the same id: the battery votes and the app
-  -- children one test left behind must not decide another's profile.
+  -- Every test's device has the same id: the battery votes one test left
+  -- behind must not decide another's profile.
   require("profiles").reset()
-  require("apps").reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s", language = "ko" })
   device.device_network_id = "pc-control-budget"
   device.id = "budget-device"
@@ -155,7 +155,8 @@ end
 local MUTE = features.CAP_MUTE .. ".mute"
 local VOLUME = features.CAP_VOLUME .. ".volume"
 local LAST_SEEN = caps.STATUS .. ".lastSeen"
-local APPS_SUMMARY = caps.APPS .. ".summary"
+-- #123: the watch card's summary (was `pcApps.summary` on main).
+local APPS_SUMMARY = features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".summary"
 
 -- What a hub keeps over a driver restart (`set_field(…, { persist = true })`).
 local PERSISTED = { fields.ROWS_PAINTED, fields.LAST_ACTION, fields.PLAN_COMMAND, fields.SERVICE_VERSION,
@@ -614,20 +615,24 @@ function T.test_a_row_the_cloud_lost_heals_within_the_cycle_even_across_a_restar
   with_pc(function(pc)
     local device = h.with_state_cache(new_device())
     local cloud = {}
-    local emit_event = device.emit_event
+    local emit_event, emit_component_event = device.emit_event, device.emit_component_event
     local dropped = false
     function device:emit_event(event)
-      local key = event.capability .. "." .. event.attribute
+      cloud[event.capability .. "." .. event.attribute] = event.value
+      return emit_event(self, event)
+    end
+    function device:emit_component_event(component, event)
+      local key = component.id .. "/" .. event.capability .. "." .. event.attribute
       if key == APPS_SUMMARY and not dropped then
         dropped = true -- the hub took it (the cache wrapper below), the cloud did not
-        local by_cap = self.state_cache.main or {}
-        self.state_cache.main = by_cap
+        local by_cap = self.state_cache[component.id] or {}
+        self.state_cache[component.id] = by_cap
         by_cap[event.capability] = by_cap[event.capability] or {}
         by_cap[event.capability][event.attribute] = { value = event.value }
         return
       end
       cloud[key] = event.value
-      return emit_event(self, event)
+      return emit_component_event(self, component, event)
     end
     local d = Driver("budget", {})
     poll.once(d, device)
@@ -814,23 +819,23 @@ function T.test_a_profile_change_forces_every_row_once()
   end)
 end
 
---- The Dev channel device on pc-monitor.v5 after the driver update (#123:
---- v6), through the real `init` and then `minutes` of driver life on the
---- clock: the default 30 s polls, the batches, the follow-ups. `landing`:
---- the profile change lands that many seconds in (`infoChanged`).
+--- The Dev channel device on pc-monitor.v6 after the driver update (#123:
+--- v7, the watch card), through the real `init` and then `minutes` of driver
+--- life on the clock: the default 30 s polls, the batches, the follow-ups.
+--- `landing`: the profile change lands that many seconds in (`infoChanged`).
 local function migrate(pc, minutes, landing)
   local device = new_device()
-  device.profile = { id = "v5", name = "pc-monitor.v5", components = h.components_for("pc-monitor.v5") }
-  device:set_field(fields.ROWS_PAINTED, "5")
+  device.profile = { id = "v6", name = "pc-monitor.v6", components = h.components_for("pc-monitor.v6") }
+  device:set_field(fields.ROWS_PAINTED, "6")
   local trace = stamped(device, pc)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v6")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v7")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
-      { old_st_store = { profile = { id = "v5" } } })
+      { old_st_store = { profile = { id = "v6" } } })
   end
   run_until(d, pc, start + minutes * 60)
   return device, trace, start
@@ -999,7 +1004,7 @@ function T.test_a_preference_change_that_moves_no_profile_does_not_repaint()
   -- change says whether its profile moved.
   with_pc(function()
     local device = new_device()
-    device.profile = { id = "profile-1", name = "pc.v6", components = h.components_for("pc.v6") }
+    device.profile = { id = "profile-1", name = "pc.v7", components = h.components_for("pc.v7") }
     local d = Driver("budget", {})
     poll.once(d, device)
     local mark = #device.emitted
