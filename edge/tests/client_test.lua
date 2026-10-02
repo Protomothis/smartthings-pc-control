@@ -230,8 +230,8 @@ function T.test_a_protocol_mismatch_is_incompatible()
   -- The body comes back so the caller can say "driver too old" (§3.1).
   h.assert_equal(body.protocol, 2)
   h.assert_equal(poll.connection_for(err), "incompatible")
-  h.assert_equal(poll.message_for(err, body, "en"), "Driver update required")
-  h.assert_equal(poll.message_for(err, body, "ko"), "드라이버 업데이트 필요")
+  h.assert_equal(poll.message_for(err, body, "en"), "Driver update required (hub)")
+  h.assert_equal(poll.message_for(err, body, "ko"), "드라이버 업데이트 필요 (허브)")
 end
 
 function T.test_a_status_without_protocol_is_incompatible()
@@ -239,14 +239,14 @@ function T.test_a_status_without_protocol_is_incompatible()
   local _, body, err = client.get_status(device(), { http = http })
   h.assert_equal(err, "incompatible")
   -- No `protocol` at all means the service predates it: it is the old side.
-  h.assert_contains(poll.message_for(err, body, "en"), "Requires service v1.1.0")
+  h.assert_contains(poll.message_for(err, body, "en"), "Requires PC app v1.1.0")
 end
 
 function T.test_an_older_protocol_says_the_service_is_too_old()
   local http = fake_http(200, status_body({ protocol = 0 }))
   local _, body, err = client.get_status(device(), { http = http })
   h.assert_equal(err, "incompatible")
-  h.assert_contains(poll.message_for(err, body, "ko"), "서비스 v1.1.0 이상 필요")
+  h.assert_contains(poll.message_for(err, body, "ko"), "PC 앱 v1.1.0 이상 필요")
 end
 
 function T.test_404_is_incompatible()
@@ -348,7 +348,8 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
     deps = { http = fake_http(200, status_body({ uptime_seconds = 266400 })), now = clock },
   }))
   h.assert_equal(d:get_field(fields.LAST_SEEN), 3000000)
-  h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결됨 · 3일 2시간")
+  -- The sample is a v1.1.0 PC: older than features.RECOMMENDED_SERVICE_VERSION.
+  h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결됨 · 3일 2시간 · 앱 업데이트 필요")
 
   for _, minutes in ipairs({ 5, 12 }) do
     now = 3000000 + minutes * 60

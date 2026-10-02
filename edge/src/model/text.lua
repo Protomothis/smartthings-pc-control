@@ -7,6 +7,7 @@
 -- and cut with "…" without saying so, so an optional part is only added while
 -- the line still fits.
 
+local features = require "features"
 local i18n = require "i18n"
 local wolinfo = require "model.wol"
 
@@ -106,13 +107,15 @@ end
 --- "응답 없음 · 마지막 확인 12분 전", "연결 안 됨 · 시크릿 불일치". No power word
 --- (the pcPower row says it) and no advice (that is `pcInfo.message`'s).
 -- Inside SUMMARY_MAX_CHARS the WoL warning comes first (it changes what the
--- switch does), then the adapter's name, then the uptime.
+-- switch does), then "앱 업데이트 필요" (the PC app is older than the driver
+-- wants), then the adapter's name, then the uptime.
 -- @param connection a `pcInfo.connection` value; nil counts as `ok`
 -- @param wol_off true when the PC answers but its adapter has WoL disabled
 -- @param adapter the chosen adapter's name, optional
 -- @param extra optional: `uptime_seconds` for the connected line, `seen_ago`
 --   (seconds since the last successful poll, nil when there never was one)
---   for the unreachable one
+--   for the unreachable one, `app_update` (features.needs_app_update) for
+--   the " · 앱 업데이트 필요" ending of the connected one
 function text.status_summary(connection, lang, wol_off, adapter, extra)
   extra = extra or {}
   if connection ~= nil and connection ~= "ok" then
@@ -134,8 +137,12 @@ function text.status_summary(connection, lang, wol_off, adapter, extra)
   local ok = i18n.t(lang, "conn_ok")
   local uptime = text.uptime_text(extra.uptime_seconds, lang)
   local candidates = {}
+  -- Every line without the update ending, longest first. With it, the same
+  -- lines ending in it come first, so the uptime and then the adapter's name
+  -- are dropped before the ending is; the plain ones are the fallback.
+  local lines = {}
   local function add(...)
-    candidates[#candidates + 1] = table.concat({ ok, ... }, " · ")
+    lines[#lines + 1] = { ... }
   end
   if wol_off == true then
     local warnings = {}
@@ -154,6 +161,23 @@ function text.status_summary(connection, lang, wol_off, adapter, extra)
       add(uptime)
     end
     add()
+  end
+  local function join(parts, ending)
+    local all = { ok }
+    for _, part in ipairs(parts) do
+      all[#all + 1] = part
+    end
+    all[#all + 1] = ending
+    return table.concat(all, " · ")
+  end
+  if extra.app_update == true then
+    local ending = i18n.t(lang, "app_update_short")
+    for _, parts in ipairs(lines) do
+      candidates[#candidates + 1] = join(parts, ending)
+    end
+  end
+  for _, parts in ipairs(lines) do
+    candidates[#candidates + 1] = join(parts)
   end
   return first_fitting(candidates)
 end
@@ -278,13 +302,28 @@ end
 --
 --   error            a failed request (from poll.lua's err_kind, `opts.error`)
 --   incompatible     protocol mismatch, service or driver too old
+--   app_update       the PC app is older than features.RECOMMENDED_SERVICE_VERSION
 --   wol_not_ready    WoL is off on the PC's adapter, so `switch on` may not land
---   update_available a newer service release is out
+--   update_available a newer PC app release is out (the installed one is new
+--                    enough)
 --   no_secret        the service accepts unauthenticated calls (§3.1)
 --   note             a one-off confirmation from a command handler
 text.MESSAGE_ORDER = {
-  "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
+  "error", "incompatible", "app_update", "wol_not_ready", "update_available", "no_secret", "note",
 }
+
+--- "PC 앱을 v1.2.0 이상으로 업데이트하세요", plus " (최신 v1.2.1)" when the
+--- service names a release newer than the one asked for.
+function text.app_update_message(status, lang)
+  local wanted = features.RECOMMENDED_SERVICE_VERSION
+  local line = i18n.t(lang, "app_update", wanted)
+  local latest = ((status or {}).update or {}).latest
+  if features.version_below(wanted, latest) == true then
+    local tag = "v" .. bare_version(latest)
+    line = line .. i18n.t(lang, "app_update_latest", tag)
+  end
+  return line
+end
 
 --- The single `pcInfo.message` for a status body, by MESSAGE_ORDER.
 -- @param opts `lang`, `error` (a ready-made message that outranks the body),
@@ -298,6 +337,11 @@ function text.status_message(status, opts)
   status = status or {}
   local lang = opts.lang
 
+  if features.needs_app_update(status) then
+    -- Before WoL: a PC app this old is why commands are refused, and the
+    -- summary row can only hint at it.
+    return text.app_update_message(status, lang)
+  end
   if wolinfo.wol_off(status) then
     -- §6.4: the packet still goes; this says why it may not work, naming the
     -- adapter to go and open when the service gave one.

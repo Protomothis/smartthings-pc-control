@@ -35,7 +35,7 @@ function preset.run(driver, device, cmd)
   end
   if refusal then
     rows.answer_preset(device)
-    rows.emit_note(device, i18n.t(lang, refusal, slot))
+    rows.emit_note(device, features.note_text(lang, refusal, slot))
     log.info(string.format("preset %s not sent on %s: %s", slot, tostring(device.id), refusal))
     return false
   end

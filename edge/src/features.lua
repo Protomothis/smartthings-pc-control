@@ -17,6 +17,76 @@ local i18n = require "i18n"
 
 local features = {}
 
+--------------------------------------------------------------------------------
+-- which service (PC app) this driver wants (edge-driver.md "버전 짝 맞춤")
+--------------------------------------------------------------------------------
+
+-- The protocol floor: the first service release that speaks protocol 1 (§3).
+-- Below it the driver cannot talk to the PC at all, and says so
+-- (`incompatible_service`, poll.message_for). poll.MIN_SERVICE_VERSION is this.
+features.MIN_SERVICE_VERSION = "1.1.0"
+
+-- The service release whose features this driver uses. A PC below it still
+-- works - power, schedules - but what is newer is refused with "PC 앱 v%s
+-- 필요", and the summary and message rows nudge the user to update the PC
+-- app (`needs_app_update`).
+-- 드라이버가 새 서비스 기능을 쓰기 시작하면 이 값을 그 서비스 버전으로 올린다.
+features.RECOMMENDED_SERVICE_VERSION = "1.2.0"
+
+--- "v1.2.0", "1.2.0", "v1.2.0-rc14" -> { 1, 2, 0 }: major.minor.patch only,
+--- so a prerelease counts as its release (our rc builds do not nag). A
+--- missing patch reads as 0. Nil for anything else ("dev", "", nil).
+function features.parse_version(v)
+  if type(v) ~= "string" then
+    return nil
+  end
+  local major, minor, rest = v:match("^%s*[vV]?(%d+)%.(%d+)(.*)$")
+  if not major then
+    return nil
+  end
+  local patch = rest:match("^%.(%d+)") or "0"
+  return { tonumber(major), tonumber(minor), tonumber(patch) }
+end
+
+--- True when version `a` is older than `b`, false when not, nil when either
+--- does not parse (`parse_version`).
+function features.version_below(a, b)
+  local x, y = features.parse_version(a), features.parse_version(b)
+  if not x or not y then
+    return nil
+  end
+  for i = 1, 3 do
+    if x[i] ~= y[i] then
+      return x[i] < y[i]
+    end
+  end
+  return false
+end
+
+--- True when the PC's service is older than RECOMMENDED_SERVICE_VERSION, by
+--- the status body's `service_version`. A version that does not parse ("dev",
+--- missing) is not flagged - unless the body has no `features` at all, which
+--- only a service older than v1.2.0 sends.
+function features.needs_app_update(status)
+  if type(status) ~= "table" then
+    return false
+  end
+  local below = features.version_below(status.service_version, features.RECOMMENDED_SERVICE_VERSION)
+  if below ~= nil then
+    return below
+  end
+  return type(status.features) ~= "table"
+end
+
+--- The sentence for a note key (`refusal`, `error_note`, …): `needs_service`
+--- names RECOMMENDED_SERVICE_VERSION, any other key is formatted with `...`.
+function features.note_text(lang, key, ...)
+  if key == "needs_service" then
+    return i18n.t(lang, key, features.RECOMMENDED_SERVICE_VERSION)
+  end
+  return i18n.t(lang, key, ...)
+end
+
 -- The names `status.features` carries (media-notify.md §3). An older service
 -- sends no `features` key at all, which is how the driver tells "too old" from
 -- "this PC does not offer it".
@@ -212,8 +282,10 @@ end
 --- user is shown instead (media-notify.md §5).
 --
 --   unreachable      no status has been read in this driver run at all
---   needs_service    the service sends no `features` - older than v1.2.0
---   feature_missing  a v1.2.0 service that does not list this feature
+--   needs_service    the service sends no `features` - older than v1.2.0 -
+--                    or does not list this feature while it is older than
+--                    RECOMMENDED_SERVICE_VERSION (a feature of a newer release)
+--   feature_missing  a new enough service that does not list this feature
 --   no_user          `audio.available = false`: nobody is logged in, and
 --                    volume and media keys only mean something in a session
 --
@@ -231,6 +303,10 @@ function features.refusal(extras, service_command, feature)
     return "needs_service"
   end
   if not features.has(extras, feature) then
+    if features.version_below((extras.last_status or {}).service_version,
+        features.RECOMMENDED_SERVICE_VERSION) == true then
+      return "needs_service"
+    end
     -- A v1.2.0 service lists "audio" and "media" only while `media.enabled`
     -- is on (service #104/#105), so for those two a missing entry IS the
     -- setting.
@@ -453,12 +529,12 @@ end
 features.NAMES_MAX_CHARS = 200
 
 --- `pcPreset.names`: "1 게임 모드 · 2 방송 시작", or "없음" when the PC has no
---- preset. A service older than v1.2.0 gets "서비스 v1.2.0 필요" - the row is
+--- preset. A service older than v1.2.0 gets "PC 앱 v1.2.0 필요" - the row is
 --- there on every v2 screen and has to say why it is empty. Never "": an empty
 --- state row reads "-" (platform notes "상세 화면(detailView) 위젯").
 function features.preset_names(status, lang)
   if features.parse(status) == false then
-    return i18n.t(lang, "needs_service")
+    return features.note_text(lang, "needs_service")
   end
   local parts = {}
   for _, preset in ipairs(features.presets_of(status)) do
@@ -582,7 +658,8 @@ end
 --- What a status says about the watch list.
 ---
 ---   "old"  a service older than v1.2.0 (no `features` at all): the summary
----          says "서비스 v1.2.0 필요"; the names row says "없음"
+---          says "PC 앱 v1.2.0 필요" (RECOMMENDED_SERVICE_VERSION); the
+---          names row says "없음"
 ---   "off"  the opt-in is off, the service does not list the feature, or the
 ---          block is not one this driver can read (a Dev build of the
 ---          kind-based #114 block): summary and names say "꺼짐"
@@ -685,8 +762,8 @@ function features.apps_top(status, apps)
 end
 
 --- `pcWatchList.summary`: "Steam", "Steam 외 2" ("Steam +2"), "없음" when
---- nothing on the list runs, "꺼짐" when the list is off, and "서비스 v1.2.0
---- 필요" for a service that has no such list. Never "" (an empty state row
+--- nothing on the list runs, "꺼짐" when the list is off, and "PC 앱 v1.2.0
+--- 필요" (RECOMMENDED_SERVICE_VERSION) for a service that has no such list. Never "" (an empty state row
 --- reads "-", platform notes "상세 화면(detailView) 위젯").
 ---
 --- Short on purpose: the row is the first of the card's preview in the main
@@ -696,7 +773,7 @@ end
 function features.apps_summary(status, lang)
   local mode = features.apps_mode(status)
   if mode == features.APPS_OLD then
-    return i18n.t(lang, "needs_service")
+    return features.note_text(lang, "needs_service")
   end
   if mode == features.APPS_OFF then
     return i18n.t(lang, "apps_off")

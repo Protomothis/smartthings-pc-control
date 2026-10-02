@@ -72,7 +72,7 @@ function common.run_feature(driver, device, service_command, value, answer, keys
     if answer then
       answer(device)
     end
-    rows.emit_note(device, i18n.t(lang, refusal))
+    rows.emit_note(device, features.note_text(lang, refusal))
     log.info(string.format("%s not sent on %s: %s", tostring(service_command),
       tostring(device.id), refusal))
     return false

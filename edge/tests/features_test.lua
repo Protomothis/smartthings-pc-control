@@ -332,9 +332,9 @@ function T.test_a_refused_media_command_says_why()
   for _, c in ipairs({
     -- name, status the driver knows, language, the service's answer, handler, actions sent, summary
     { "a v1.1.0 service does not know volumeup", { service_version = "v1.1.0" }, "ko", nil,
-      { "audioVolume", "volumeUp" }, 0, "서비스 v1.2.0 필요" },
+      { "audioVolume", "volumeUp" }, 0, "PC 앱 v1.2.0 필요" },
     { "the same in English", { service_version = "v1.1.0" }, "en", nil,
-      { "audioMute", "mute" }, 0, "Requires service v1.2.0" },
+      { "audioMute", "mute" }, 0, "Needs PC app v1.2.0" },
     { "a PC that never answered", nil, "ko", nil,
       { "mediaPlayback", "pause" }, 0, i18n.t("ko", "unreachable") },
     { "409 no_user_session", status_v12(), "ko", refused("conflict", "no_user_session"),
@@ -424,7 +424,7 @@ function T.test_the_names_row_lists_the_presets_by_slot()
   h.assert_equal(features.preset_names(with_presets(PRESETS), "ko"), "1 게임 모드 · 2 방송 시작 · 5 이름 없음")
   h.assert_equal(features.preset_names(with_presets({}), "ko"), "없음")
   h.assert_equal(features.preset_names(with_presets({}), "en"), "None")
-  h.assert_equal(features.preset_names({ service_version = "v1.1.0" }, "ko"), "서비스 v1.2.0 필요")
+  h.assert_equal(features.preset_names({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.2.0 필요")
 end
 
 function T.test_a_long_names_row_is_cut_on_a_character()
@@ -510,7 +510,7 @@ function T.test_a_preset_on_an_old_service_or_without_a_user()
     handlers_for(caps.PRESET).run(driver, old, { args = { slot = "1" } })
   end)
   h.assert_equal(#calls.actions, 0)
-  h.assert_equal(info_summary(old), "서비스 v1.2.0 필요")
+  h.assert_equal(info_summary(old), "PC 앱 v1.2.0 필요")
 
   local nobody = device_with(with_presets(PRESETS))
   with_service({ ok = false, kind = "conflict", body = { error = "no_user_session" } }, function()
@@ -732,7 +732,7 @@ local WATCH_CASES = {
   { "the opt-in off: the slots keep their values", with_apps({}, { enabled = false, features = { "audio" } }),
     { summary = "꺼짐", names = "꺼짐" } },
   { "a service older than v1.2.0: the same", { service_version = "v1.1.0" },
-    { summary = "서비스 v1.2.0 필요", names = "없음" } },
+    { summary = "PC 앱 v1.2.0 필요", names = "없음" } },
 }
 
 function T.test_the_watch_card_rows()
@@ -782,7 +782,7 @@ function T.test_the_summary_is_one_short_cell()
   local off = with_apps({}, { enabled = false, features = { "audio" } })
   h.assert_equal(features.apps_summary(off, "ko"), "꺼짐")
   h.assert_equal(features.apps_summary(off, "en"), "Off")
-  h.assert_equal(features.apps_summary({ service_version = "v1.1.0" }, "ko"), "서비스 v1.2.0 필요")
+  h.assert_equal(features.apps_summary({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.2.0 필요")
   -- The names row is not cut that short: it is not in the preview any more.
   h.assert_equal(features.watch_names(with_apps({
     { slot = 1, id = "code.exe", label = "Visual Studio Code", running = true } }), "ko"), "1 Visual Studio Code")
@@ -916,7 +916,7 @@ function T.test_an_unreachable_pc_or_an_off_list_keeps_the_slots()
     h.assert_nil(h.last_value(later, WATCH, caps.WATCH, features.slot_attr(slot)), features.slot_attr(slot) .. " is not touched")
   end
   h.assert_deep_equal({ h.last_value(later, WATCH, caps.WATCH, "summary"),
-    h.last_value(later, WATCH, caps.WATCH, "names") }, { "서비스 v1.2.0 필요", "없음" })
+    h.last_value(later, WATCH, caps.WATCH, "names") }, { "PC 앱 v1.2.0 필요", "없음" })
   h.assert_equal(h.last_value(h.emitted(device), WATCH, caps.WATCH, "slotOne"), "running")
 end
 
@@ -1019,7 +1019,7 @@ function T.test_an_old_service_springs_the_awake_toggle_back()
   local emitted = h.emitted(device)
   h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "off")
   h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
-  h.assert_equal(info_summary(device), "서비스 v1.2.0 필요")
+  h.assert_equal(info_summary(device), "PC 앱 v1.2.0 필요")
 end
 
 function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
@@ -1368,7 +1368,7 @@ end
 
 function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
   local cases = {
-    { status = { service_version = "v1.1.0" }, message = "서비스 v1.2.0 필요", sends = 0 },
+    { status = { service_version = "v1.1.0" }, message = "PC 앱 v1.2.0 필요", sends = 0 },
     { status = status_v12({ features = { "audio" } }), message = "이 PC에서 지원 안 함", sends = 0 },
     { status = status_v12(), service = { ok = false, kind = "forbidden", body = { error = "notify_disabled" } },
       message = "PC 알림 꺼짐", sends = 1 },
@@ -1588,6 +1588,113 @@ function T.test_the_row_key_names_the_component()
   h.assert_equal(emit.row_key({ cap = "switch", attr = "switch" }), "switch.switch")
   h.assert_equal(emit.row_key({ cap = "switch", attr = "switch", component = "main" }), "switch.switch")
   h.assert_equal(emit.row_key({ cap = "switch", attr = "switch", component = "awake" }), "awake/switch.switch")
+end
+
+--------------------------------------------------------------------------------
+-- which PC app the driver wants (edge-driver.md "버전 짝 맞춤")
+--------------------------------------------------------------------------------
+
+function T.test_service_versions_compare_on_major_minor_patch()
+  h.assert_deep_equal(features.parse_version("v1.2.0"), { 1, 2, 0 })
+  h.assert_deep_equal(features.parse_version("1.2.0"), { 1, 2, 0 })
+  -- A prerelease is its release: our rc builds do not ask for themselves.
+  h.assert_deep_equal(features.parse_version("v1.2.0-rc14"), { 1, 2, 0 })
+  h.assert_deep_equal(features.parse_version("V1.10.3+build.7"), { 1, 10, 3 })
+  h.assert_deep_equal(features.parse_version("1.2"), { 1, 2, 0 })
+  for _, unknown in ipairs({ "dev", "", "v", "release-1", 12, {} }) do
+    h.assert_nil(features.parse_version(unknown), tostring(unknown))
+  end
+  h.assert_nil(features.parse_version(nil))
+
+  for _, c in ipairs({
+    { "v1.1.2", "1.2.0", true },
+    { "v1.1.9-rc1", "1.2.0", true },
+    { "v1.2.0", "1.2.0", false },
+    { "v1.2.0-rc14", "1.2.0", false },
+    { "1.2.1", "1.2.0", false },
+    { "v1.10.0", "1.9.0", false }, -- numbers, not strings
+    { "v0.9.9", "1.0.0", true },
+    { "v2.0.0", "1.99.99", false },
+  }) do
+    h.assert_equal(features.version_below(c[1], c[2]), c[3], c[1] .. " < " .. c[2])
+  end
+  h.assert_nil(features.version_below("dev", "1.2.0"))
+  h.assert_nil(features.version_below(nil, "1.2.0"))
+end
+
+function T.test_needs_app_update_flags_only_a_known_older_pc_app()
+  local with = { "awake" }
+  for _, c in ipairs({
+    { "an old service", { service_version = "v1.1.2" }, true },
+    { "an old service that somehow lists features", { service_version = "v1.1.2", features = with }, true },
+    { "the recommended one", { service_version = "v1.2.0", features = with }, false },
+    { "an rc of it", { service_version = "v1.2.0-rc14", features = with }, false },
+    { "without the v", { service_version = "1.2.0", features = with }, false },
+    { "a newer one", { service_version = "v1.3.0", features = with }, false },
+    { "a dev build with features", { service_version = "dev", features = with }, false },
+    { "no version, with features", { features = with }, false },
+    -- No `features` at all is a service older than v1.2.0, whatever it says.
+    { "no version, no features", {}, true },
+    { "a dev build without features", { service_version = "dev" }, true },
+  }) do
+    h.assert_equal(features.needs_app_update(c[2]), c[3], c[1])
+  end
+  h.assert_false(features.needs_app_update(nil), "no body says nothing")
+end
+
+-- The refusals and the watch card ask for RECOMMENDED_SERVICE_VERSION, by
+-- name; no string has a version of its own.
+function T.test_the_notes_name_the_recommended_version()
+  h.assert_equal(features.note_text("ko", "needs_service"), "PC 앱 v1.2.0 필요")
+  h.assert_equal(features.note_text("en", "needs_service"), "Needs PC app v1.2.0")
+  -- Any other key is formatted with its own arguments.
+  h.assert_equal(features.note_text("ko", "preset_empty", 3), i18n.t("ko", "preset_empty", 3))
+  h.assert_equal(features.preset_names({ service_version = "v1.1.2" }, "en"), "Needs PC app v1.2.0")
+  h.assert_equal(features.apps_summary({ service_version = "v1.1.2" }, "ko"), "PC 앱 v1.2.0 필요")
+end
+
+-- Bumping the constant is the whole job (edge-driver.md "버전 짝 맞춤"): every
+-- notice follows it, and a PC app that was new enough becomes "old".
+function T.test_changing_the_recommended_version_changes_every_text()
+  local saved = features.RECOMMENDED_SERVICE_VERSION
+  local ok, err = pcall(function()
+    features.RECOMMENDED_SERVICE_VERSION = "9.9.9"
+    local current = status_v12({ uptime_seconds = 300, wol = { ready = true } })
+
+    h.assert_true(features.needs_app_update(current))
+    -- The rows of a status body.
+    local events = state.apply_status(state.new(state.ON), current, { lang = "ko", now = "21:00" })
+    h.assert_equal(h.event_value(events, caps.STATUS, "summary"), "연결됨 · 5분 · 앱 업데이트 필요")
+    h.assert_equal(h.event_value(events, caps.STATUS, "message"), "PC 앱을 v9.9.9 이상으로 업데이트하세요")
+    events = state.apply_status(state.new(state.ON), current, { lang = "en", now = "21:00" })
+    h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Update the PC app to v9.9.9 or newer")
+
+    -- A feature the v1.2.0 PC does not list is a newer release's, not one
+    -- this PC lacks.
+    local extras = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
+    h.assert_equal(features.refusal(extras, "preset"), "needs_service")
+    h.assert_equal(features.refusal(extras, "volume"), "needs_service")
+    h.assert_equal(features.note_text("ko", "needs_service"), "PC 앱 v9.9.9 필요")
+    h.assert_equal(features.note_text("en", "needs_service"), "Needs PC app v9.9.9")
+    h.assert_equal(features.apps_summary({ service_version = "v1.1.2" }, "ko"), "PC 앱 v9.9.9 필요")
+    h.assert_equal(features.preset_names({ service_version = "v1.1.2" }, "en"), "Needs PC app v9.9.9")
+
+    -- And through a handler, as the hub calls it.
+    local device = device_with({ service_version = "v1.1.2" })
+    local calls = with_service(nil, function()
+      handlers_for("audioVolume").volumeUp(driver, device, { args = {} })
+    end)
+    h.assert_equal(#calls.actions, 0)
+    h.assert_equal(info_summary(device), "PC 앱 v9.9.9 필요")
+  end)
+  features.RECOMMENDED_SERVICE_VERSION = saved
+  if not ok then
+    error(err, 0)
+  end
+  -- Back at 1.2.0, the same PC is new enough again.
+  h.assert_false(features.needs_app_update(status_v12()))
+  local extras = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
+  h.assert_equal(features.refusal(extras, "preset"), "feature_missing")
 end
 
 return T

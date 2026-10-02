@@ -30,8 +30,10 @@ local poll = {}
 -- (`ensure_rows`; platform notes "허브의 정의 캐시").
 poll.ROWS_VERSION = tostring(profiles.VERSION)
 poll.DEFAULT_INTERVAL = 30
--- First service release that speaks protocol 1 (§3).
-poll.MIN_SERVICE_VERSION = "1.1.0"
+-- First service release that speaks protocol 1 (§3): the floor below which the
+-- driver refuses. The feature level it nudges towards is
+-- features.RECOMMENDED_SERVICE_VERSION, next to where this is defined.
+poll.MIN_SERVICE_VERSION = features.MIN_SERVICE_VERSION
 
 local function logger()
   local ok, log = pcall(require, "log")
