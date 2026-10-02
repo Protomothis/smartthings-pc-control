@@ -4,12 +4,14 @@
       {
         "id": "steam.exe",
         "label": "Steam",
-        "running": true
+        "running": true,
+        "slot": 1
       },
       {
         "id": "obs64.exe",
         "label": "OBS",
-        "running": false
+        "running": false,
+        "slot": 3
       }
     ],
     "enabled": true,
