@@ -9,19 +9,25 @@ import (
 	"strings"
 	"testing"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
+
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
+func aw(slot int, process, label string) ActivityWatch {
+	return ActivityWatch{Slot: slot, Process: process, Label: label}
+}
+
 func TestNormalizeActivity(t *testing.T) {
 	got := normalizeActivity(ActivityConfig{Enabled: true, Watch: []ActivityWatch{
-		{Process: " Steam.exe ", Label: ""},
-		{Process: "", Label: " "}, // a blank row the user added
-		{Process: "obs64.exe", Label: " OBS "},
+		aw(4, "obs64.exe", " OBS "),
+		aw(2, "", " "), // a blank row the user added
+		aw(1, " Steam.exe ", ""),
 	}})
-	want := []ActivityWatch{
-		{Process: "Steam.exe", Label: "Steam"},
-		{Process: "obs64.exe", Label: "OBS"},
-	}
+	// Trimmed, labelled, the blank row gone, in slot order.
+	want := []ActivityWatch{aw(1, "Steam.exe", "Steam"), aw(4, "obs64.exe", "OBS")}
 	if !got.Enabled || !slices.Equal(got.Watch, want) {
 		t.Errorf("normalized = %+v, want %+v", got, want)
 	}
@@ -34,24 +40,28 @@ func TestActivityProblem(t *testing.T) {
 	if activityMaxWatch != config.ActivityMaxWatch {
 		t.Fatalf("activityMaxWatch = %d, the service caps at %d", activityMaxWatch, config.ActivityMaxWatch)
 	}
-	many := make([]ActivityWatch, 11)
+	many := make([]ActivityWatch, 6)
 	for i := range many {
-		many[i] = ActivityWatch{Process: strings.Repeat("a", i+1) + ".exe"}
+		many[i] = aw(i+1, strings.Repeat("a", i+1)+".exe", "")
 	}
 	for _, tc := range []struct {
 		name  string
 		watch []ActivityWatch
 		key   string // "" = fine
 	}{
-		{"ok", []ActivityWatch{{Process: "steam.exe", Label: "Steam"}}, ""},
-		{"blank rows are ignored", []ActivityWatch{{}}, ""},
-		{"ten", many[:10], ""},
-		{"label only", []ActivityWatch{{Label: "Steam"}}, "activity.err.process"},
-		{"path", []ActivityWatch{{Process: `C:\Games\steam.exe`}}, "activity.err.path"},
-		{"not exe", []ActivityWatch{{Process: "steam"}}, "activity.err.exe"},
-		{"label too long", []ActivityWatch{{Process: "a.exe", Label: strings.Repeat("x", 31)}}, "activity.err.label"},
-		{"duplicate", []ActivityWatch{{Process: "a.exe"}, {Process: "A.EXE"}}, "activity.err.dup"},
-		{"eleven", many, "activity.err.max"},
+		{"ok", []ActivityWatch{aw(1, "steam.exe", "Steam")}, ""},
+		{"a gap", []ActivityWatch{aw(2, "steam.exe", "Steam"), aw(5, "obs64.exe", "")}, ""},
+		{"blank rows are ignored", []ActivityWatch{aw(1, "", "")}, ""},
+		{"five", many[:5], ""},
+		{"no slot", []ActivityWatch{aw(0, "steam.exe", "")}, "activity.err.slot"},
+		{"slot 6", []ActivityWatch{aw(6, "steam.exe", "")}, "activity.err.slot"},
+		{"slot twice", []ActivityWatch{aw(2, "a.exe", ""), aw(2, "b.exe", "")}, "activity.err.slotdup"},
+		{"label only", []ActivityWatch{aw(1, "", "Steam")}, "activity.err.process"},
+		{"path", []ActivityWatch{aw(1, `C:\Games\steam.exe`, "")}, "activity.err.path"},
+		{"not exe", []ActivityWatch{aw(1, "steam", "")}, "activity.err.exe"},
+		{"label too long", []ActivityWatch{aw(1, "a.exe", strings.Repeat("x", 31))}, "activity.err.label"},
+		{"duplicate", []ActivityWatch{aw(1, "a.exe", ""), aw(2, "A.EXE", "")}, "activity.err.dup"},
+		{"six", many, "activity.err.max"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := activityProblem(LangEn, ActivityConfig{Watch: tc.watch})
@@ -75,55 +85,80 @@ func TestActivityProblem(t *testing.T) {
 	}
 }
 
-func TestAddActivityProcess(t *testing.T) {
-	watch := []ActivityWatch{{Process: "steam.exe", Label: "Steam"}}
-	got, ok := addActivityProcess(watch, "Discord.exe")
-	if !ok || len(got) != 2 || got[1] != (ActivityWatch{Process: "Discord.exe", Label: "Discord"}) {
-		t.Errorf("added = %+v ok=%v (a pick goes to the bottom, lowest priority)", got, ok)
+func TestActivityFreeSlotAndChoices(t *testing.T) {
+	watch := []ActivityWatch{aw(1, "a.exe", ""), aw(3, "c.exe", ""), aw(4, "d.exe", "")}
+	if got := activityFreeSlot(watch); got != 2 {
+		t.Errorf("free slot = %d, want 2", got)
 	}
-	if len(watch) != 1 {
+	if got := activityFreeSlot(nil); got != 1 {
+		t.Errorf("free slot of an empty list = %d, want 1", got)
+	}
+	full := []ActivityWatch{aw(1, "", ""), aw(2, "", ""), aw(3, "", ""), aw(4, "", ""), aw(5, "", "")}
+	if got := activityFreeSlot(full); got != 0 {
+		t.Errorf("free slot of a full list = %d, want 0", got)
+	}
+	// A row is offered its own slot and the free ones, never another row's.
+	if got := activitySlotChoices(watch, 1); !slices.Equal(got, []int{2, 3, 5}) {
+		t.Errorf("choices for the slot-3 row = %v, want [2 3 5]", got)
+	}
+	if got := activitySlotChoices(full, 4); !slices.Equal(got, []int{5}) {
+		t.Errorf("choices in a full list = %v, want [5]", got)
+	}
+}
+
+func TestSetActivitySlot(t *testing.T) {
+	watch := []ActivityWatch{aw(1, "a.exe", "A"), aw(3, "c.exe", "C")}
+	got, ok := setActivitySlot(watch, 0, 5)
+	if !ok || !slices.Equal(got, []ActivityWatch{aw(3, "c.exe", "C"), aw(5, "a.exe", "A")}) {
+		t.Errorf("moved = %+v ok=%v (want slot order)", got, ok)
+	}
+	if watch[0].Slot != 1 {
+		t.Error("setActivitySlot wrote into its argument")
+	}
+	for _, tc := range []struct {
+		name    string
+		i, slot int
+	}{
+		{"taken by another row", 0, 3},
+		{"its own slot", 0, 1},
+		{"out of range", 0, 6},
+		{"no such row", 2, 2},
+	} {
+		if got, ok := setActivitySlot(watch, tc.i, tc.slot); ok || !slices.Equal(got, watch) {
+			t.Errorf("%s: got %+v ok=%v", tc.name, got, ok)
+		}
+	}
+}
+
+func TestAddActivityRowAndProcess(t *testing.T) {
+	watch := []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(3, "obs64.exe", "OBS")}
+	got, ok := addActivityProcess(watch, "Discord.exe")
+	// A pick takes the lowest free slot, 2, and lands in slot order.
+	want := []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(2, "Discord.exe", "Discord"), aw(3, "obs64.exe", "OBS")}
+	if !ok || !slices.Equal(got, want) {
+		t.Errorf("picked = %+v ok=%v, want %+v", got, ok, want)
+	}
+	if len(watch) != 2 {
 		t.Error("addActivityProcess wrote into its argument")
 	}
 	if _, ok := addActivityProcess(watch, "STEAM.EXE"); ok {
 		t.Error("a listed program (other case) was added again")
 	}
-	full := make([]ActivityWatch, activityMaxWatch)
+	if got, ok := addActivityRow(watch); !ok || len(got) != 3 || got[1] != (ActivityWatch{Slot: 2}) {
+		t.Errorf("blank row = %+v ok=%v (want it in slot 2)", got, ok)
+	}
+	full := []ActivityWatch{aw(1, "a.exe", ""), aw(2, "b.exe", ""), aw(3, "c.exe", ""), aw(4, "d.exe", ""), aw(5, "e.exe", "")}
 	if _, ok := addActivityProcess(full, "x.exe"); ok {
-		t.Error("a full list grew")
+		t.Error("a full list grew by a pick")
 	}
-}
-
-func TestMoveActivity(t *testing.T) {
-	a, b, c := ActivityWatch{Process: "a.exe"}, ActivityWatch{Process: "b.exe"}, ActivityWatch{Process: "c.exe"}
-	watch := []ActivityWatch{a, b, c}
-	for _, tc := range []struct {
-		name     string
-		i, delta int
-		want     []ActivityWatch
-		moved    bool
-	}{
-		{"second up", 1, -1, []ActivityWatch{b, a, c}, true},
-		{"second down", 1, 1, []ActivityWatch{a, c, b}, true},
-		{"last up", 2, -1, []ActivityWatch{a, c, b}, true},
-		{"first up", 0, -1, watch, false},
-		{"last down", 2, 1, watch, false},
-		{"out of range", 5, -1, watch, false},
-		{"negative index", -1, 1, watch, false},
-		{"a jump is not a move", 0, 2, watch, false},
-	} {
-		got, moved := moveActivity(watch, tc.i, tc.delta)
-		if moved != tc.moved || !slices.Equal(got, tc.want) {
-			t.Errorf("%s: got %v moved=%v, want %v moved=%v", tc.name, got, moved, tc.want, tc.moved)
-		}
-	}
-	if !slices.Equal(watch, []ActivityWatch{a, b, c}) {
-		t.Error("moveActivity wrote into its argument")
+	if _, ok := addActivityRow(full); ok {
+		t.Error("a full list grew by a blank row")
 	}
 }
 
 func TestPickerCandidates(t *testing.T) {
 	running := []string{"Code.exe", "explorer.exe", "Steam.exe", "steamwebhelper.exe"}
-	watch := []ActivityWatch{{Process: "steam.exe"}}
+	watch := []ActivityWatch{aw(1, "steam.exe", "")}
 	if got := pickerCandidates(running, watch, ""); !slices.Equal(got, []string{"Code.exe", "explorer.exe", "steamwebhelper.exe"}) {
 		t.Errorf("unfiltered = %v", got)
 	}
@@ -134,10 +169,7 @@ func TestPickerCandidates(t *testing.T) {
 
 func TestShareFormCarriesActivity(t *testing.T) {
 	base := stBaseConfig()
-	base.Activity = ActivityConfig{Watch: []ActivityWatch{
-		{Process: "steam.exe", Label: "Steam"},
-		{Process: "obs64.exe", Label: "OBS"},
-	}}
+	base.Activity = ActivityConfig{Watch: []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(3, "obs64.exe", "OBS")}}
 	s := shareStateFromConfig(base)
 	if s.dirty(base) {
 		t.Fatal("a freshly filled section is dirty")
@@ -149,7 +181,7 @@ func TestShareFormCarriesActivity(t *testing.T) {
 	for _, mutate := range []func(*shareFormState){
 		func(s *shareFormState) { s.Activity.Enabled = true },
 		func(s *shareFormState) { s.Activity.Watch[0].Label = "Valve" },
-		func(s *shareFormState) { s.Activity.Watch, _ = moveActivity(s.Activity.Watch, 1, -1) },
+		func(s *shareFormState) { s.Activity.Watch, _ = setActivitySlot(s.Activity.Watch, 1, 2) },
 		func(s *shareFormState) { s.Activity.Watch = nil },
 		func(s *shareFormState) {
 			s.Activity.Watch, _ = addActivityProcess(s.Activity.Watch, "code.exe")
@@ -168,15 +200,15 @@ func TestShareFormCarriesActivity(t *testing.T) {
 			t.Error("applyTo sent a null watch list")
 		}
 	}
-	// The saved order is the edited order.
+	// The saved list carries the slots, in slot order.
 	moved := shareStateFromConfig(base)
-	moved.Activity.Watch, _ = moveActivity(moved.Activity.Watch, 1, -1)
-	if got := moved.applyTo(base).Activity.Watch; got[0].Process != "obs64.exe" || got[1].Process != "steam.exe" {
-		t.Errorf("saved order = %+v", got)
+	moved.Activity.Watch, _ = setActivitySlot(moved.Activity.Watch, 0, 5)
+	if got := moved.applyTo(base).Activity.Watch; !slices.Equal(got, []ActivityWatch{aw(3, "obs64.exe", "OBS"), aw(5, "steam.exe", "Steam")}) {
+		t.Errorf("saved = %+v", got)
 	}
 	// A blank row the user added and left empty is not a change.
 	s = shareStateFromConfig(base)
-	s.Activity.Watch = append(s.Activity.Watch, ActivityWatch{})
+	s.Activity.Watch, _ = addActivityRow(s.Activity.Watch)
 	if s.dirty(base) {
 		t.Error("an empty row counts as a change")
 	}
@@ -185,16 +217,16 @@ func TestShareFormCarriesActivity(t *testing.T) {
 func TestActivityConfigRoundTrip(t *testing.T) {
 	// The service's JSON shape decodes into the mirror and back unchanged;
 	// a "kind" from a v1.2.0 development service is dropped.
-	raw := `{"port":5001,"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam","kind":"game"},{"process":"obs64.exe","label":"OBS"}]}}`
+	raw := `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":1,"process":"steam.exe","label":"Steam","kind":"game"},{"slot":3,"process":"obs64.exe","label":"OBS"}]}}`
 	var cfg Config
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Activity.Enabled || len(cfg.Activity.Watch) != 2 || cfg.Activity.Watch[0].Process != "steam.exe" {
+	if !cfg.Activity.Enabled || len(cfg.Activity.Watch) != 2 || cfg.Activity.Watch[1] != aw(3, "obs64.exe", "OBS") {
 		t.Fatalf("decoded = %+v", cfg.Activity)
 	}
 	out, _ := json.Marshal(cfg)
-	if !strings.Contains(string(out), `"activity":{"enabled":true,"watch":[{"process":"steam.exe","label":"Steam"},{"process":"obs64.exe","label":"OBS"}]}`) {
+	if !strings.Contains(string(out), `"activity":{"enabled":true,"watch":[{"slot":1,"process":"steam.exe","label":"Steam"},{"slot":3,"process":"obs64.exe","label":"OBS"}]}`) {
 		t.Errorf("encoded = %s", out)
 	}
 }
@@ -214,5 +246,82 @@ func TestClientRunningProcesses(t *testing.T) {
 	got, err := c.RunningProcesses()
 	if err != nil || !slices.Equal(got, []string{"Code.exe", "steam.exe"}) {
 		t.Errorf("RunningProcesses = %v, %v", got, err)
+	}
+}
+
+// activityRowSelect is the slot selector of editor row i.
+func activityRowSelect(t *testing.T, a *activityBox, i int) *widget.Select {
+	t.Helper()
+	var found *widget.Select
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		switch v := o.(type) {
+		case *widget.Select:
+			if found == nil {
+				found = v
+			}
+		case *fyne.Container:
+			for _, c := range v.Objects {
+				walk(c)
+			}
+		}
+	}
+	walk(a.rows.Objects[i])
+	if found == nil {
+		t.Fatalf("row %d has no slot selector", i)
+	}
+	return found
+}
+
+// TestActivityEditorSlots drives the real editor: rows come in slot order,
+// each selector offers its own and the free slots, choosing one re-sorts
+// the rows, adding takes the lowest free slot and stops at five.
+func TestActivityEditorSlots(t *testing.T) {
+	u := newTestUI(t, LangKo, nil)
+	a := &u.share.activity
+	u.fillShareTab(Config{Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{
+		aw(4, "obs64.exe", "OBS"), aw(1, "steam.exe", "Steam"),
+	}}})
+	if !slices.Equal(a.watch, []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(4, "obs64.exe", "OBS")}) {
+		t.Fatalf("filled rows = %+v, want slot order", a.watch)
+	}
+	sel := activityRowSelect(t, a, 1)
+	if want := []string{"감시 2", "감시 3", "감시 4", "감시 5"}; !slices.Equal(sel.Options, want) || sel.Selected != "감시 4" {
+		t.Errorf("row 2 offers %v (selected %q), want %v with 감시 4", sel.Options, sel.Selected, want)
+	}
+	if a.addBtn.Disabled() || a.pickBtn.Disabled() {
+		t.Error("add/pick disabled with three free slots")
+	}
+
+	// OBS to slot 2: the entry moves, and slot 2 leaves Steam's choices.
+	sel.SetSelected("감시 2")
+	if !slices.Equal(a.watch, []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(2, "obs64.exe", "OBS")}) {
+		t.Errorf("after choosing 감시 2: %+v", a.watch)
+	}
+	if got := activityRowSelect(t, a, 0).Options; !slices.Equal(got, []string{"감시 1", "감시 3", "감시 4", "감시 5"}) {
+		t.Errorf("row 1 offers %v after the move (2 is taken now)", got)
+	}
+	// Steam to slot 5 puts it last.
+	activityRowSelect(t, a, 0).SetSelected("감시 5")
+	if !slices.Equal(a.watch, []ActivityWatch{aw(2, "obs64.exe", "OBS"), aw(5, "steam.exe", "Steam")}) {
+		t.Errorf("after moving Steam to 감시 5: %+v", a.watch)
+	}
+
+	// [추가] fills the lowest free slot, then 3, 4; at five it is disabled.
+	for _, want := range []int{1, 3, 4} {
+		test.Tap(a.addBtn)
+		if !slices.ContainsFunc(a.watch, func(w ActivityWatch) bool { return w.Slot == want && w.Process == "" }) {
+			t.Fatalf("add did not fill slot %d: %+v", want, a.watch)
+		}
+	}
+	if len(a.watch) != 5 || len(a.rows.Objects) != 5 {
+		t.Fatalf("%d entries, %d rows", len(a.watch), len(a.rows.Objects))
+	}
+	if !a.addBtn.Disabled() || !a.pickBtn.Disabled() {
+		t.Error("add/pick still enabled with all five slots used")
+	}
+	test.Tap(a.addBtn)
+	if len(a.watch) != 5 {
+		t.Error("a sixth row was added")
 	}
 }

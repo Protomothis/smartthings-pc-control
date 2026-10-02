@@ -63,9 +63,11 @@ type ActivityConfig struct {
 	Watch   []ActivityWatch `json:"watch"`
 }
 
-// ActivityWatch is one watched program: a file name ("steam.exe") and the
-// label it is shown by. The list order is the priority (#123).
+// ActivityWatch is one watched program: its slot (1–5, unique; the
+// priority and the SmartThings condition "감시 N", #123), a file name
+// ("steam.exe") and the label it is shown by.
 type ActivityWatch struct {
+	Slot    int    `json:"slot"`
 	Process string `json:"process"`
 	Label   string `json:"label"`
 }
