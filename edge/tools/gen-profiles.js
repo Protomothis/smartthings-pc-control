@@ -68,7 +68,11 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 //    three state rows side by side, so the slots come before `names` and
 //    their values are short ("실행 중", not "실행 중 (Running)"); v7 was
 //    never published either.
-const VERSION = 8;
+// 9: no screen change - the capability presentation of pcWatch was updated
+//    seconds before v8 was packaged, and v8's device presentation was built
+//    from the old one; a fresh name regenerates it. v8 was never published
+//    either.
+const VERSION = 9;
 
 const DEFAULT_STYLE = 'others';
 

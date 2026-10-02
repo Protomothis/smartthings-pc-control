@@ -10,7 +10,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v8, pc-tv.v8, pc-battery.v8, pc-tv-battery.v8
+#   __NAME__       the profile name - pc.v9, pc-tv.v9, pc-battery.v9, pc-tv-battery.v9
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
