@@ -55,7 +55,7 @@ local function lf(text)
 end
 
 --- The file a profile name is packaged as: the frozen v1 files are
---- `pc.yml`/`pc-tv.yml`, later generations `pc-v9.yml`/`pc-tv-battery-v9.yml`.
+--- `pc.yml`/`pc-tv.yml`, later generations `pc-v10.yml`/`pc-tv-battery-v10.yml`.
 local function file_name(name)
   if name:match("%.v1$") then
     return (name:gsub("%.v1$", "")) .. ".yml"
@@ -69,7 +69,7 @@ end
 
 -- The package (`profiles/` is uploaded whole, and the upload limit is 655360
 -- bytes): every shipped name the driver knows - the ten frozen v1 files and
--- the twenty current ones, not the Dev-only v2 to v8 (UNSHIPPED_VERSIONS) -
+-- the twenty current ones, not the Dev-only v2 to v9 (UNSHIPPED_VERSIONS) -
 -- each declaring its own name, and nothing else (a style dropped from the
 -- list but not from the disk, the template, or #123's removed pc-app.yml
 -- would otherwise ship as a profile).
@@ -153,7 +153,7 @@ function T.test_every_current_profile_keeps_the_layout_rules()
       }, name .. " closes main with presets, toast")
       h.assert_equal(#main, at + 7, name .. ": pcToast is the last capability of main")
       -- #123: the watch card is a component of its own, its one capability.
-      h.assert_deep_equal(component_capabilities(text, "apps"), { "numbersystem53811.pcwatch" },
+      h.assert_deep_equal(component_capabilities(text, "apps"), { "numbersystem53811.pcwatchlist" },
         name .. " watch card")
       h.assert_contains(text, "\n  - id: apps\n    label: 감시 목록\n", name .. " watch card label")
 

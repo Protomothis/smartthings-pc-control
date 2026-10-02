@@ -35,7 +35,11 @@ caps.PRESET = NAMESPACE .. ".pcpreset"
 -- a summary row, the names row and one state per slot ("감시 1".."감시 5"),
 -- which is what a routine reads. It replaced `pcapps` (a summary row on main)
 -- and `pcapp` (one child device per app), and before them `pcactivity`.
-caps.WATCH = NAMESPACE .. ".pcwatch"
+-- `pcwatchlist`, not `pcwatch`: the cloud builds a device presentation from
+-- a capability's FIRST presentation, whatever `presentation:update` stored
+-- later (platform notes "프로필과 화면 생성", 2026-10-02), so the card's
+-- current layout needed a new id.
+caps.WATCH = NAMESPACE .. ".pcwatchlist"
 -- "PC에 메시지 보내기": our own capability, because the app labels a standard
 -- one with Samsung's words (platform notes "표준 capability"), bound to
 -- `lastMessage` because a row bound to no attribute never gets its event.

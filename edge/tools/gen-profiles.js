@@ -72,7 +72,12 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 //    seconds before v8 was packaged, and v8's device presentation was built
 //    from the old one; a fresh name regenerates it. v8 was never published
 //    either.
-const VERSION = 9;
+// 10: the watch card moved to a new capability id, pcWatchList
+//    (`numbersystem53811.pcwatchlist`): v9's device presentation was still
+//    built from pcWatch's FIRST presentation, ten minutes after the update -
+//    a capability presentation is frozen at first use, like its definition.
+//    v9 was never published either.
+const VERSION = 10;
 
 const DEFAULT_STYLE = 'others';
 

@@ -153,7 +153,7 @@
 - 표준 capability는 정의 캐시 문제가 없고 앱 기본 UI를 그대로 쓴다.
 - `mediaPlayback.playbackStatus`는 서비스가 `media` 블록을 줄 때만 보고한다(#118, §15). 블록이 없는 옛 서비스에서는
   상태를 `stopped`로 꾸며 내지 않고 `supportedPlaybackCommands`만 내보낸다.
-- **프로필:** capability가 늘어 프로필 세대를 올렸다(지금 `pc*.v9`, §14). 공개된 `pc*.v1`은 `KNOWN`으로 자동 이전한다
+- **프로필:** capability가 늘어 프로필 세대를 올렸다(지금 `pc*.v10`, §14). 공개된 `pc*.v1`은 `KNOWN`으로 자동 이전한다
   (edge-driver.md §6.6). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
@@ -171,10 +171,10 @@
   표시"라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의 라벨을 바꿀 방법이 없다(플랫폼 노트 "표준
   capability"). "PC에 메시지 보내기"라고 읽히려면 라벨이 우리 번역 파일에 있어야 하므로 커스텀 capability를 만들었다. 모양은
   표준 `notification`을 따르되(`textField` + `argumentType: "string"`, 인자 하나) 상세 화면 줄에 `"value": "lastMessage.value"`를
-  더한다. `pc.v5`부터의 프로필에 있다(지금은 `pc.v9`, §14).
+  더한다. `pc.v5`부터의 프로필에 있다(지금은 `pc.v10`, §14).
 - **소리내어 읽기는 없다.** Dev 채널에서는 `pc.v2`가 표준 `notification`·`speechSynthesis`를, `pc.v3`가 `send`·`speak` 둘짜리
   `pcMessage`를, `pc.v4`가 속성 없는 `pcNotify`를 썼다. 정의가 바뀔 때마다 새 id가 됐고(`pcnotify` → `pctoast`), 어느 것도 공개된
-  적이 없으므로 그 핸들러는 남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 현재 버전(v9)으로 옮겨지고, v2·v3·v4에서 만든
+  적이 없으므로 그 핸들러는 남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 현재 버전(v10)으로 옮겨지고, v2·v3·v4에서 만든
   루틴 동작은 capability가 달라 사라지므로 다시 고른다.
 
 ## 6. 텔레그램
@@ -253,11 +253,11 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
   `features`의 `"activity"`는 켜져 있을 때만.
 - **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때 보낸다. 바뀐 게 없는 스캔은
   보내지 않는다. `data`는 status의 `activity` 블록과 똑같은 JSON이다.
-- **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatch`
-  (`numbersystem53811.pcwatch`): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "서비스 v1.2.0 필요",
+- **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatchList`
+  (`numbersystem53811.pcwatchlist`, `pc*.v10`부터. v7–v9의 `pcWatch`는 화면이 첫 프레젠테이션으로 굳어 새 id로 옮겼다, §14): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "서비스 v1.2.0 필요",
   `slotOne`–`slotFive` enum `running`/`stopped`/`empty`("실행 중"/"꺼짐"/"비어 있음", 한국어 한 단어), `names`(≤ 120) "1 Steam · 3 OBS" / "없음" / "꺼짐".
   상세 줄은 이 순서다: 메인 화면의 카드 미리보기가 처음 세 줄을 1/3 폭으로 보여 주므로(플랫폼 노트 "화면 배치") 미리보기는
-  "실행 중인 앱 · 감시 1 · 감시 2"이고, 그 값은 한 줄에 드는 길이다(`pc*.v9`).
+  "실행 중인 앱 · 감시 1 · 감시 2"이고, 그 값은 한 줄에 드는 길이다(`pc*.v10`).
   루틴 조건은 "감시 1"–"감시 5"이고 값은 실행 중/꺼짐 둘뿐이다("감시 1이 실행 중이 되면"). 앱 이름은 `names` 줄과 PC 앱의 번호로 맞춰 본다.
   꺼짐·옛 서비스·PC 응답 없음에서는 슬롯을 움직이지 않는다(마지막 값 유지, 처음이면 `empty`). 목록 편집 직후의 status 하나는
   "실행 중"인 슬롯을 "꺼짐"으로 옮기지 않는다. 바뀔 때만 내보낸다(이벤트 예산). 자세한 것은 edge-driver.md §4.2.
@@ -295,15 +295,15 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
   `tools/gen-profiles.js`가 템플릿 `tools/profile-template.yml` 하나에서 생성한다(동기 테스트가 생성 결과와 파일을 비교). 템플릿이 `profiles/` 밖에 있는 것은 패키저가 그 폴더의 YAML을 전부 프로필로 올리기 때문이고, `profiles/pc.yml`은 v1 장치가 쓰는 고정 파일로 남는다(edge-driver.md §6.6).
 - 루틴 예: "배터리 20% 이하면 충전기 플러그 켜기".
 
-## 14. 프로필 pc.v9 구성
+## 14. 프로필 pc.v10 구성
 
 - main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcToast — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
-- apps(label "감시 목록", #123): `pcWatch` — 요약·슬롯 다섯·이름 줄(§11). main의 요약 줄 `pcApps`를 대신한다
-- Dev 채널에만 있던 `pc.v2`(마지막 두 자리가 표준 `notification`, `speechSynthesis`), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)는 마지막 자리만 다르고 그 밖에는 같다. `pc.v5`는 `pcToast`에 kind 방식 `pcActivity`(#114)였고, `pc.v6`은 main의 요약 줄 `pcApps`에 앱마다 자식 장치(`pc-app.v1`의 `pcApp`)였다. `pc.v7`은 지금과 같은 카드에 요약 → 이름 → 슬롯 순서와 병기 값("실행 중 (Running)")이었는데, 메인 화면의 미리보기 세 칸에서 값이 두 줄로 감겨 잘렸다(v8은 프레젠테이션만 바꿨다). `pc.v8`은 지금과 같은 프로필인데, capability 프레젠테이션을 갱신한 직후에 패키징해 화면이 옛 프레젠테이션으로 만들어졌다(v9는 새 이름만, 플랫폼 노트 "프로필과 화면 생성"). 일곱 다 공개된 적이 없어 파일은 패키지에서 뺐고(`profiles.UNSHIPPED_VERSIONS`), 이름만 `KNOWN`에 남는다(§5). `pc-app.yml`도 지웠고, 남은 앱 자식 장치는 드라이버가 지운다(edge-driver.md §4.2)
+- apps(label "감시 목록", #123): `pcWatchList` — 요약·슬롯 다섯·이름 줄(§11). main의 요약 줄 `pcApps`와 v7–v9의 `pcWatch`를 대신한다
+- Dev 채널에만 있던 `pc.v2`(마지막 두 자리가 표준 `notification`, `speechSynthesis`), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)는 마지막 자리만 다르고 그 밖에는 같다. `pc.v5`는 `pcToast`에 kind 방식 `pcActivity`(#114)였고, `pc.v6`은 main의 요약 줄 `pcApps`에 앱마다 자식 장치(`pc-app.v1`의 `pcApp`)였다. `pc.v7`은 지금과 같은 카드에 요약 → 이름 → 슬롯 순서와 병기 값("실행 중 (Running)")이었는데, 메인 화면의 미리보기 세 칸에서 값이 두 줄로 감겨 잘렸다(v8은 프레젠테이션만 바꿨다). `pc.v8`·`pc.v9`는 `pcWatch`의 프레젠테이션을 갱신(`presentation:update`)한 뒤 낸 새 이름이었는데, 둘 다 화면이 옛 프레젠테이션으로 만들어졌다 — capability 프레젠테이션은 처음 쓰인 내용으로 굳는다(플랫폼 노트 "프로필과 화면 생성"). 그래서 `pc.v10`은 같은 정의를 새 id `pcWatchList`로 만들어 지금의 프레젠테이션을 처음부터 달았다. 여덟 다 공개된 적이 없어 파일은 패키지에서 뺐고(`profiles.UNSHIPPED_VERSIONS`), 이름만 `KNOWN`에 남는다(§5). `pc-app.yml`도 지웠고, 남은 앱 자식 장치는 드라이버가 지운다(edge-driver.md §4.2)
 - media(대안 배치만, #118): audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute — `gen-profiles.js --media-component`. 기본은 위의 main 배치
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
-- 이름: `pc.v9`, `pc-<style>.v9`, `pc-battery.v9`, `pc-<style>-battery.v9`. `pc*.v1`~`pc*.v8`은 `KNOWN`으로 자동 이전(v2부터는 배터리 쪽도 이름 그대로).
+- 이름: `pc.v10`, `pc-<style>.v10`, `pc-battery.v10`, `pc-<style>-battery.v10`. `pc*.v1`~`pc*.v9`는 `KNOWN`으로 자동 이전(v2부터는 배터리 쪽도 이름 그대로).
 
 ## 15. 재생 정보와 앱 단위 재생 제어 (#117 / #118)
 
@@ -354,9 +354,9 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 2026-10-01 Dev 허브에서 확인한 것: `pcToast` 입력 줄이 회전 표시 없이 끝나고 마지막 문구를 보여 준다,
 이벤트 예산 대책(순환 재전송·나눠 칠하기), 앱 자식 장치가 허브에 생긴다(v6, 2026-10-02 감시 목록 카드로 대체), 하위 폴더 모듈의 `require`가 허브에서 풀린다.
 
-1. 미디어 묶음 — 표준 줄이 우리 상태·조작 카드와 섞이는지, 기본(main)과 `--media-component` 중 어느 배치가 나은지(#107, #118). 컴포넌트로 가면 프로필 세대를 올린다(`pc.v9`).
+1. 미디어 묶음 — 표준 줄이 우리 상태·조작 카드와 섞이는지, 기본(main)과 `--media-component` 중 어느 배치가 나은지(#107, #118). 컴포넌트로 가면 프로필 세대를 올린다(`pc.v11`).
 2. 값이 없는 표준 줄 — `media` 블록이 없는 옛 서비스의 재생 줄, 읽은 적 없는 볼륨이 "-"로 남는지. 그렇다면 `features.PLAYBACK_RESTING`을 켠다(#107).
 3. 프리셋 — 빈 슬롯 숨기기(`supportedValues: "supportedSlots.value"`), 슬롯이 바뀔 때 다시 그려지는지(#113).
-4. 감시 목록 카드(#123, `pc*.v9`) — 메인 화면의 미리보기 세 칸("실행 중인 앱 · 감시 1 · 감시 2")이 각각 한 줄에 드는지(v7은 두 줄로 감겨 잘렸다, 플랫폼 노트 "화면 배치"), 영어 로케일에서 슬롯 값이 한국어로 남는지 번역의 `Running`/`Stopped`/`Empty`로 바뀌는지(플랫폼 노트 "번역"). 루틴 조건 "감시 1"–"감시 5"(실행 중/꺼짐)는 v7에서 확인했다. 그리고 v6의 앱 자식 장치가 `driver:try_delete_device`로 지워지는지(지우지 못하면 로그 한 줄, 앱에서 직접 삭제).
+4. 감시 목록 카드(#123, `pc*.v10`, `pcWatchList`) — 메인 화면의 미리보기 세 칸("실행 중인 앱 · 감시 1 · 감시 2")이 각각 한 줄에 드는지(v7은 두 줄로 감겨 잘렸다, 플랫폼 노트 "화면 배치"), 영어 로케일에서 슬롯 값이 한국어로 남는지 번역의 `Running`/`Stopped`/`Empty`로 바뀌는지(플랫폼 노트 "번역"). 루틴 조건 "감시 1"–"감시 5"(실행 중/꺼짐)는 v7에서 확인했다. 그리고 v6의 앱 자식 장치가 `driver:try_delete_device`로 지워지는지(지우지 못하면 로그 한 줄, 앱에서 직접 삭제).
 5. 컴포넌트 — `잠들지 않기`·`배터리` 라벨과 위치, 배터리 프로필 이동 뒤 채우기, 루틴 조건 "배터리 20% 이하"(#115, #116).
 6. 음성 비서가 이 장치의 볼륨을 인식하는지(선택, #107).

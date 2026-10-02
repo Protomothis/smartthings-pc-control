@@ -514,7 +514,7 @@ end
 -- The opt-in watch list (media-notify.md §11) as the service reports it since
 -- contract v2: `activity = { enabled, apps = [ { slot, id, label, running } ],
 -- top }`, by slot (1-5, 1 = highest priority), filled slots only. The PC shows
--- it on a card of its own, the `apps` component's `pcWatch`: a summary row, a
+-- it on a card of its own, the `apps` component's `pcWatchList`: a summary row, a
 -- names row ("1 Steam · 3 OBS") and one state per slot, `slotOne`..`slotFive`
 -- (`running` / `stopped` / `empty`), which is what a routine reads as
 -- "감시 1".."감시 5". A slot number is a stable thing to name in a routine;
@@ -528,7 +528,7 @@ features.CAP_WATCH = caps.WATCH
 -- The service watches at most this many processes, one per slot.
 features.WATCH_SLOTS = 5
 
--- `pcWatch.summary` is defined with `maxLength: 60`, `names` with 120.
+-- `pcWatchList.summary` is defined with `maxLength: 60`, `names` with 120.
 features.WATCH_SUMMARY_MAX_CHARS = 60
 features.WATCH_NAMES_MAX_CHARS = 120
 
@@ -684,7 +684,7 @@ function features.apps_top(status, apps)
   return top, running - 1
 end
 
---- `pcWatch.summary`: "Steam", "Steam 외 2" ("Steam +2"), "없음" when
+--- `pcWatchList.summary`: "Steam", "Steam 외 2" ("Steam +2"), "없음" when
 --- nothing on the list runs, "꺼짐" when the list is off, and "서비스 v1.2.0
 --- 필요" for a service that has no such list. Never "" (an empty state row
 --- reads "-", platform notes "상세 화면(detailView) 위젯").
@@ -713,7 +713,7 @@ function features.apps_summary(status, lang)
   return features.truncate(line, features.WATCH_SUMMARY_MAX_CHARS)
 end
 
---- `pcWatch.names`: the filled slots in order, "1 Steam · 3 OBS"; "없음" for
+--- `pcWatchList.names`: the filled slots in order, "1 Steam · 3 OBS"; "없음" for
 --- an empty list (and for a service too old to have one - the summary row
 --- says why), "꺼짐" for a list that is off. Never "".
 function features.watch_names(status, lang)

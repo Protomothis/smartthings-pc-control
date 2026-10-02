@@ -184,7 +184,7 @@ local STRINGS = {
   presets_none = { ko = "없음", en = "None" },
   preset_unnamed = { ko = "이름 없음", en = "unnamed" },
 
-  -- #123: the watch card. `pcWatch.summary`: the lowest-slot app that runs
+  -- #123: the watch card. `pcWatchList.summary`: the lowest-slot app that runs
   -- (slot 1 is the highest priority) and how many others run with it. One app
   -- is its label alone ("Claude"): the row's label "실행 중인 앱" already says
   -- running, and the card's preview gives the value a third of the width

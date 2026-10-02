@@ -686,7 +686,7 @@ function T.test_without_timers_the_polls_still_put_the_preset_row_back()
 end
 
 --------------------------------------------------------------------------------
--- #123: the watch card (component `apps`, pcWatch)
+-- #123: the watch card (component `apps`, pcWatchList)
 --------------------------------------------------------------------------------
 
 local function with_apps(apps, opts)
@@ -1128,10 +1128,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc-tv.v9")
+  local device = device_on_profile("pc-tv.v10")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v9", "the style is kept")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v9" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-tv-battery.v10", "the style is kept")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv-battery.v10" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -1140,15 +1140,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v9")
+  local device = device_on_profile("pc-battery.v10")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v9")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v10")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v9")
+  local device = device_on_profile("pc.v10")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -1165,7 +1165,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v9")
+  local device = device_on_profile("pc.v10")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -1185,35 +1185,35 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v9")
+  h.assert_equal(profiles.ensure(device), "pc-hub-battery.v10")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v9")
+  h.assert_equal(profiles.ensure(plain), "pc-tv-battery.v10")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v9")
+  h.assert_equal(profiles.ensure(named), "pc-tv-battery.v10")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v9")
+  h.assert_equal(profiles.ensure(named_v3), "pc-hub-battery.v10")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v9")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-remote-battery.v10")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
-  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v9")
+  h.assert_equal(profiles.ensure(named_v4), "pc-plug-battery.v10")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
   plain_v4:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v9")
+  h.assert_equal(profiles.ensure(plain_v4), "pc-plug-battery.v10")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v9", "polled-laptop")
+  local device = device_on_profile("pc.v10", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v9")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v10")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -1223,11 +1223,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v9", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v10", "pushed-laptop")
   emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v9", "pushed-desktop")
+  local desktop = device_on_profile("pc.v10", "pushed-desktop")
   emit.rows(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
