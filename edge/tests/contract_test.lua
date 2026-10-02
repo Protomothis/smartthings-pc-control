@@ -150,8 +150,8 @@ local WATCH = "apps"
 function T.test_full_status_activity_rows()
   local status = h.fixture("status.full.json")
   local events = rows_of(status)
-  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "Steam 실행 중", "activity.top / apps[].label")
-  h.assert_equal(features.apps_summary(status, "en"), "Steam running")
+  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "Steam", "activity.top / apps[].label")
+  h.assert_equal(features.apps_summary(status, "en"), "Steam")
   h.assert_equal(value(events, caps.WATCH, "names", WATCH), "1 Steam · 3 OBS", "apps[].slot + label")
   h.assert_equal(value(events, caps.WATCH, "slotOne", WATCH), "running", "apps[0].running")
   h.assert_equal(value(events, caps.WATCH, "slotTwo", WATCH), "empty", "a slot the list leaves out")
@@ -275,7 +275,7 @@ local PUSHES = {
   -- activity (#123): `data` is the status block itself.
   ["push.activity.changed.json"] = function(events, nxt, event, payload)
     h.assert_equal(event, "status_ok")
-    h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "Steam 실행 중 · 외 1개")
+    h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "Steam 외 1")
     h.assert_equal(value(events, caps.WATCH, "slotThree", WATCH), "running", "status.activity.apps[].running")
     h.assert_deep_equal(nxt.extras.apps, {
       { slot = 1, id = "steam.exe", label = "Steam", running = true },

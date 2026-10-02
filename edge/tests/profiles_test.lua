@@ -60,37 +60,38 @@ end
 
 -- #107: every name edge-v1.0.x shipped, and where each of them goes.
 local V1 = {
-  ["pc.v1"] = "pc.v7",
-  ["pc-monitor.v1"] = "pc-monitor.v7",
-  ["pc-switch.v1"] = "pc-switch.v7",
-  ["pc-plug.v1"] = "pc-plug.v7",
-  ["pc-tv.v1"] = "pc-tv.v7",
-  ["pc-projector.v1"] = "pc-projector.v7",
-  ["pc-network.v1"] = "pc-network.v7",
-  ["pc-hub.v1"] = "pc-hub.v7",
-  ["pc-theater.v1"] = "pc-theater.v7",
-  ["pc-remote.v1"] = "pc-remote.v7",
+  ["pc.v1"] = "pc.v8",
+  ["pc-monitor.v1"] = "pc-monitor.v8",
+  ["pc-switch.v1"] = "pc-switch.v8",
+  ["pc-plug.v1"] = "pc-plug.v8",
+  ["pc-tv.v1"] = "pc-tv.v8",
+  ["pc-projector.v1"] = "pc-projector.v8",
+  ["pc-network.v1"] = "pc-network.v8",
+  ["pc-hub.v1"] = "pc-hub.v8",
+  ["pc-theater.v1"] = "pc-theater.v8",
+  ["pc-remote.v1"] = "pc-remote.v8",
 }
 
--- Every name the five unpublished generations made (#107: ten styles, with
+-- Every name the six unpublished generations made (#107: ten styles, with
 -- and without the battery component; v2 with the standard notification pair,
 -- v3 with pcMessage, v4 with pcNotify, v5 with pcActivity, v6 with pcApps and
--- the app children), and where each of them goes - the same style and the
--- same battery half, on v7 (#123: the watch card).
+-- the app children, v7 with the first watch card), and where each of them
+-- goes - the same style and the same battery half, on v8 (#123: the watch
+-- card whose preview fits).
 local DEV = {}
-for _, version in ipairs({ 2, 3, 4, 5, 6 }) do
+for _, version in ipairs({ 2, 3, 4, 5, 6, 7 }) do
   for _, battery in ipairs({ false, true }) do
     for _, style in ipairs(profiles.STYLES) do
-      DEV[profiles.name_for(style, battery, version)] = profiles.name_for(style, battery, 7)
+      DEV[profiles.name_for(style, battery, version)] = profiles.name_for(style, battery, 8)
     end
   end
 end
 
 function T.test_every_v1_profile_migrates_to_the_current_one_of_its_style()
-  -- #107: v2 replaced all ten v1 names at once, then v3 … v7. A v1 device
-  -- goes straight to v7. The icon a device wears survives the move, and until
+  -- #107: v2 replaced all ten v1 names at once, then v3 … v8. A v1 device
+  -- goes straight to v8. The icon a device wears survives the move, and until
   -- a status has said "battery" it lands on the plain profile.
-  h.assert_equal(profiles.PC, "pc.v7")
+  h.assert_equal(profiles.PC, "pc.v8")
   for old, new in pairs(V1) do
     h.assert_equal(profiles.migration_for(old), new, old)
     h.assert_equal(profiles.migration_for(old, false), new, old)
@@ -98,11 +99,11 @@ function T.test_every_v1_profile_migrates_to_the_current_one_of_its_style()
   -- The development names that never left the author's hub stay unknown, and
   -- so does a generation this driver has not shipped yet.
   h.assert_nil(profiles.migration_for("pc.v17"))
-  h.assert_nil(profiles.migration_for("pc.v8"))
+  h.assert_nil(profiles.migration_for("pc.v9"))
 end
 
-function T.test_every_v2_to_v6_profile_migrates_to_the_v7_of_its_style_and_battery_half()
-  -- The hundred development names each land on their v7 twin.
+function T.test_every_v2_to_v7_profile_migrates_to_the_v8_of_its_style_and_battery_half()
+  -- The 120 development names each land on their v8 twin.
   local count = 0
   for old, new in pairs(DEV) do
     count = count + 1
@@ -111,23 +112,23 @@ function T.test_every_v2_to_v6_profile_migrates_to_the_v7_of_its_style_and_batte
       old .. ": the name's battery half wins over a field that says no")
     h.assert_false(profiles.is_current(old), old .. " must not be current any more")
   end
-  h.assert_equal(count, 100)
+  h.assert_equal(count, 120)
   -- A plain v2/v3 laptop whose statuses already said "battery" goes straight
   -- onto the battery twin.
-  h.assert_equal(profiles.migration_for("pc-tv.v2", true), "pc-tv-battery.v7")
-  h.assert_equal(profiles.migration_for("pc-tv.v3", true), "pc-tv-battery.v7")
-  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-hub-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-tv.v2", true), "pc-tv-battery.v8")
+  h.assert_equal(profiles.migration_for("pc-tv.v3", true), "pc-tv-battery.v8")
+  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-hub-battery.v8")
   -- pcToast: and the pcNotify screen the same way.
-  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-tv-battery.v7")
-  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc-monitor.v7")
-  h.assert_equal(profiles.migration_for("pc.v4", true), "pc-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-tv-battery.v8")
+  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc-monitor.v8")
+  h.assert_equal(profiles.migration_for("pc.v4", true), "pc-battery.v8")
 end
 
 function T.test_a_v1_profile_can_migrate_straight_onto_a_battery_profile()
   -- #107: the caller decides the battery half (a laptop whose status has said
   -- so), the name decides the style.
-  h.assert_equal(profiles.migration_for("pc.v1", true), "pc-battery.v7")
-  h.assert_equal(profiles.migration_for("pc-tv.v1", true), "pc-tv-battery.v7")
+  h.assert_equal(profiles.migration_for("pc.v1", true), "pc-battery.v8")
+  h.assert_equal(profiles.migration_for("pc-tv.v1", true), "pc-tv-battery.v8")
 end
 
 function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every_current_one()
@@ -135,7 +136,7 @@ function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every
   for _, style in ipairs(profiles.STYLES) do
     expected[#expected + 1] = style == "others" and "pc.v1" or ("pc-" .. style .. ".v1")
   end
-  for _, version in ipairs({ 2, 3, 4, 5, 6 }) do
+  for _, version in ipairs({ 2, 3, 4, 5, 6, 7 }) do
     for _, battery in ipairs({ false, true }) do
       for _, style in ipairs(profiles.STYLES) do
         expected[#expected + 1] = profiles.name_for(style, battery, version)
@@ -148,17 +149,17 @@ function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every
     end
   end
   h.assert_deep_equal(profiles.KNOWN, expected)
-  h.assert_equal(#profiles.KNOWN, 130)
+  h.assert_equal(#profiles.KNOWN, 150)
 end
 
 function T.test_only_v1_and_the_current_generation_are_shipped()
-  -- v2 to v6 never left the Dev channel, so their files are not in the
+  -- v2 to v7 never left the Dev channel, so their files are not in the
   -- package (the 655360-byte limit) - but their names are still KNOWN.
   h.assert_nil(profiles.UNSHIPPED_VERSIONS[1])
-  for version = 2, 6 do
+  for version = 2, 7 do
     h.assert_true(profiles.UNSHIPPED_VERSIONS[version] == true, "v" .. version)
   end
-  h.assert_nil(profiles.UNSHIPPED_VERSIONS[7])
+  h.assert_nil(profiles.UNSHIPPED_VERSIONS[8])
   h.assert_true(profiles.is_shipped("pc.v1"))
   h.assert_true(profiles.is_shipped("pc-tv.v1"))
   h.assert_true(profiles.is_shipped(profiles.PC))
@@ -220,12 +221,12 @@ end
 --------------------------------------------------------------------------------
 
 function T.test_every_style_maps_to_its_profile_and_back()
-  h.assert_equal(profiles.for_style("others"), "pc.v7")
-  h.assert_equal(profiles.style_of("pc.v7"), "others")
+  h.assert_equal(profiles.for_style("others"), "pc.v8")
+  h.assert_equal(profiles.style_of("pc.v8"), "others")
   local expected = {
-    monitor = "pc-monitor.v7", switch = "pc-switch.v7", plug = "pc-plug.v7",
-    tv = "pc-tv.v7", projector = "pc-projector.v7", network = "pc-network.v7",
-    hub = "pc-hub.v7", theater = "pc-theater.v7", remote = "pc-remote.v7",
+    monitor = "pc-monitor.v8", switch = "pc-switch.v8", plug = "pc-plug.v8",
+    tv = "pc-tv.v8", projector = "pc-projector.v8", network = "pc-network.v8",
+    hub = "pc-hub.v8", theater = "pc-theater.v8", remote = "pc-remote.v8",
   }
   h.assert_deep_equal(profiles.VARIANTS, expected)
   for _, style in ipairs(profiles.STYLES) do
@@ -246,10 +247,10 @@ end
 
 function T.test_the_battery_variants_are_named_after_the_plain_ones()
   -- #107: `pc-<style>-battery.v5`, and `pc-battery.v5` for the default style.
-  h.assert_equal(profiles.BATTERY, "pc-battery.v7")
-  h.assert_equal(profiles.for_style("others", true), "pc-battery.v7")
-  h.assert_equal(profiles.for_style("tv", true), "pc-tv-battery.v7")
-  h.assert_equal(profiles.for_style("bogus", true), "pc-battery.v7")
+  h.assert_equal(profiles.BATTERY, "pc-battery.v8")
+  h.assert_equal(profiles.for_style("others", true), "pc-battery.v8")
+  h.assert_equal(profiles.for_style("tv", true), "pc-tv-battery.v8")
+  h.assert_equal(profiles.for_style("bogus", true), "pc-battery.v8")
   h.assert_nil(profiles.battery_of("pc.v1"), "a name that is not current has no battery half")
   h.assert_nil(profiles.battery_of("pc-battery.v1"))
 end
@@ -271,9 +272,11 @@ function T.test_a_name_that_is_not_current_has_no_style()
   h.assert_nil(profiles.style_of("pc-tv-battery.v4"))
   h.assert_nil(profiles.style_of("pc.v5"), "#123: nor is v5")
   h.assert_nil(profiles.style_of("pc-tv-battery.v5"))
-  h.assert_nil(profiles.style_of("pc.v8"))
+  h.assert_nil(profiles.style_of("pc.v9"))
   h.assert_nil(profiles.style_of("pc.v6"), "#123: nor is v6")
   h.assert_nil(profiles.style_of("pc-tv-battery.v6"))
+  h.assert_nil(profiles.style_of("pc.v7"), "nor is v7, the first watch card")
+  h.assert_nil(profiles.style_of("pc-tv-battery.v7"))
   h.assert_nil(profiles.style_of("pc-app.v1"), "the app child was no PC profile")
   h.assert_nil(profiles.style_of("pc-display.v1"))
   h.assert_nil(profiles.style_of("thermostat"))
@@ -317,9 +320,9 @@ function T.test_apply_style_switches_once_and_remembers()
   profiles.reset()
   local device = device_on(profiles.PC, "styled-pc")
   device.preferences.iconStyle = "monitor"
-  h.assert_equal(profiles.apply_style(device), "pc-monitor.v7")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-monitor.v7" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v7")
+  h.assert_equal(profiles.apply_style(device), "pc-monitor.v8")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-monitor.v8" } })
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v8")
   h.assert_nil(profiles.apply_style(device), "the same preference asks for nothing")
   h.assert_equal(#device.metadata_updates, 1)
 end
@@ -335,7 +338,7 @@ function T.test_apply_style_does_not_loop_on_a_hub_that_keeps_the_old_name()
     self.metadata_updates[#self.metadata_updates + 1] = update
     return true
   end
-  h.assert_equal(profiles.apply_style(device), "pc-tv.v7")
+  h.assert_equal(profiles.apply_style(device), "pc-tv.v8")
   h.assert_nil(profiles.apply_style(device))
   h.assert_nil(profiles.apply_style(device))
   h.assert_equal(#device.metadata_updates, 1)
@@ -348,7 +351,7 @@ end
 function T.test_apply_style_leaves_alone_what_it_does_not_own()
   profiles.reset()
   -- No preference yet: not a request for the default.
-  local unset = device_on("pc-hub.v7", "unset-pc")
+  local unset = device_on("pc-hub.v8", "unset-pc")
   h.assert_nil(profiles.apply_style(unset))
   -- A foreign or superseded profile is `ensure`'s business, not the icon's.
   local foreign = device_on("someone-else.v1", "foreign-pc")
@@ -560,7 +563,7 @@ function T.test_ensure_moves_every_v1_device_once_and_keeps_its_style()
     h.assert_equal(device:get_field(fields.PROFILE_NAME), new)
   end
   -- Neither a current device nor a development name moves.
-  for _, name in ipairs({ "pc.v7", "pc-tv-battery.v7", "pc.v17" }) do
+  for _, name in ipairs({ "pc.v8", "pc-tv-battery.v8", "pc.v17" }) do
     local device = device_on(name, "release-" .. name)
     h.assert_nil(profiles.ensure(device))
     h.assert_equal(#device.metadata_updates, 0)
@@ -593,19 +596,19 @@ function T.test_an_icon_switch_right_after_a_migration_starts_from_the_new_name(
     return true
   end
   device.preferences.iconStyle = "hub"
-  h.assert_equal(profiles.ensure(device), "pc-tv.v7")
-  h.assert_equal(profiles.apply_style(device), "pc-hub.v7")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv.v7" }, { profile = "pc-hub.v7" } })
+  h.assert_equal(profiles.ensure(device), "pc-tv.v8")
+  h.assert_equal(profiles.apply_style(device), "pc-hub.v8")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-tv.v8" }, { profile = "pc-hub.v8" } })
 end
 
 function T.test_apply_style_keeps_the_battery_component()
   -- #107: a laptop that changes its icon keeps its battery card.
   profiles.reset()
-  local device = device_on("pc-battery.v7", "laptop")
+  local device = device_on("pc-battery.v8", "laptop")
   device.preferences.iconStyle = "monitor"
-  h.assert_equal(profiles.apply_style(device), "pc-monitor-battery.v7")
+  h.assert_equal(profiles.apply_style(device), "pc-monitor-battery.v8")
   device.preferences.iconStyle = "others"
-  h.assert_equal(profiles.apply_style(device), "pc-battery.v7")
+  h.assert_equal(profiles.apply_style(device), "pc-battery.v8")
 end
 
 function T.test_ensure_does_nothing_for_a_current_device()
@@ -667,10 +670,10 @@ function T.test_init_migrates_a_device_left_on_an_older_profile()
   end)
 end
 
-function T.test_init_moves_a_v1_device_to_v7_and_repaints_it()
+function T.test_init_moves_a_v1_device_to_v8_and_repaints_it()
   -- #107: the same device on the real constants is a v1 device (no name, no
   -- field: LEGACY), so its first init after the update moves it to the current
-  -- profile (pc.v7 since the watch card) and paints the new generation of rows.
+  -- profile (pc.v8 since the watch card's preview fix) and paints the new generation of rows.
   profiles.reset()
   local poll = require "poll"
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
@@ -679,8 +682,8 @@ function T.test_init_moves_a_v1_device_to_v7_and_repaints_it()
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   device:set_field(fields.ROWS_PAINTED, "1")
   lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v7" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v7")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v8" } })
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v8")
   h.assert_equal(device:get_field(fields.ROWS_PAINTED), poll.ROWS_VERSION,
     "the rows of the new capabilities start unset and are painted once")
   -- #129: the row generation is the profile generation.
@@ -688,24 +691,29 @@ function T.test_init_moves_a_v1_device_to_v7_and_repaints_it()
 end
 
 -- The Dev channel generations (never packaged, still known): a device on any
--- of them moves to the v7 of its style and battery half on its first init
+-- of them moves to the v8 of its style and battery half on its first init
 -- after the update and paints the new row generation. A row the new profile
 -- adds is painted at once, forced, because the cloud record of the new
 -- profile starts empty: pcToast's `lastMessage` for a v4 device (whose
 -- pcNotify text row was bound to nothing and spun into "네트워크 오류"),
 -- and the watch card (#123, on its own component) for a v5 one (the
 -- kind-based pcActivity row) and a v6 one (pcApps and the app children).
-function T.test_init_moves_a_dev_generation_device_to_v7_keeping_style_and_battery()
+-- A v7 device already has the card, but its new profile's record is empty
+-- too, so every slot is painted again - and its style and battery stay.
+function T.test_init_moves_a_dev_generation_device_to_v8_keeping_style_and_battery()
   local caps = require "caps"
   for i, c in ipairs({
-    { "pc-battery.v2", "others", "pc-battery.v7" },
+    { "pc-battery.v2", "others", "pc-battery.v8" },
     -- the reviewer's own device: pcMessage's two text fields
-    { "pc-tv-battery.v3", "tv", "pc-tv-battery.v7" },
-    { "pc-tv-battery.v4", "tv", "pc-tv-battery.v7", nil, caps.TOAST, "lastMessage", "없음" },
-    { "pc-hub-battery.v5", "hub", "pc-hub-battery.v7", "apps", caps.WATCH, "summary", "없음" },
+    { "pc-tv-battery.v3", "tv", "pc-tv-battery.v8" },
+    { "pc-tv-battery.v4", "tv", "pc-tv-battery.v8", nil, caps.TOAST, "lastMessage", "없음" },
+    { "pc-hub-battery.v5", "hub", "pc-hub-battery.v8", "apps", caps.WATCH, "summary", "없음" },
     -- #123: the v6 device of the app-children build; every slot is new too.
-    { "pc-plug.v6", "plug", "pc-plug.v7", "apps", caps.WATCH, "names", "없음" },
-    { "pc-plug-battery.v6", "plug", "pc-plug-battery.v7", "apps", caps.WATCH, "slotFive", "empty" },
+    { "pc-plug.v6", "plug", "pc-plug.v8", "apps", caps.WATCH, "names", "없음" },
+    { "pc-plug-battery.v6", "plug", "pc-plug-battery.v8", "apps", caps.WATCH, "slotFive", "empty" },
+    -- The first watch card (v7, the preview that wrapped): same card, new screen.
+    { "pc-monitor.v7", "monitor", "pc-monitor.v8", "apps", caps.WATCH, "slotOne", "empty" },
+    { "pc-tv-battery.v7", "tv", "pc-tv-battery.v8", "apps", caps.WATCH, "summary", "없음" },
   }) do
     local from, style, to, component, cap, attr, want = table.unpack(c, 1, 7)
     profiles.reset()
@@ -729,16 +737,16 @@ function T.test_init_moves_a_dev_generation_device_to_v7_keeping_style_and_batte
     end
   end
   -- And the plain twin keeps its half too.
-  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc-tv.v7")
-  h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v7")
+  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc-tv.v8")
+  h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v8")
 end
 
-function T.test_init_leaves_a_v7_device_where_it_is()
+function T.test_init_leaves_a_v8_device_where_it_is()
   profiles.reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
-  device.id = "init-pc-v7"
+  device.id = "init-pc-v8"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-4"
-  device.profile = { id = "abc-123", name = "pc.v7", components = { { id = "main" } } }
+  device.profile = { id = "abc-123", name = "pc.v8", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
   h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)
@@ -858,8 +866,8 @@ function T.test_info_changed_switches_the_profile_once_and_repaints()
     local device = styled_device("icon-pc", "projector")
     local driver = fake_driver({ device })
     lifecycle().infoChanged(driver, device, "infoChanged", {})
-    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-projector.v7" } })
-    h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-projector.v7")
+    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-projector.v8" } })
+    h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-projector.v8")
     h.assert_equal(#repaints, 1, "the new profile starts with empty rows")
     -- The switch landing fires infoChanged again: no second update.
     lifecycle().infoChanged(driver, device, "infoChanged", {})
@@ -883,7 +891,7 @@ function T.test_info_changed_with_an_unknown_style_goes_back_to_the_default()
   profiles.reset()
   counting_repaints(function()
     local device = styled_device("typo-pc", "others")
-    device.profile.name = "pc-hub.v7"
+    device.profile.name = "pc-hub.v8"
     device.preferences.iconStyle = "sparkly"
     lifecycle().infoChanged(fake_driver({ device }), device, "infoChanged", {})
     h.assert_deep_equal(device.metadata_updates, { { profile = profiles.PC } })
@@ -896,7 +904,7 @@ function T.test_init_reconciles_a_style_the_profile_does_not_match()
   counting_repaints(function(repaints)
     local device = styled_device("restarted-pc", "theater")
     lifecycle().init(fake_driver({ device }), device)
-    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-theater.v7" } })
+    h.assert_deep_equal(device.metadata_updates, { { profile = "pc-theater.v8" } })
     h.assert_equal(#repaints, 1)
   end)
 end
@@ -905,8 +913,8 @@ function T.test_init_leaves_a_matching_style_alone()
   profiles.reset()
   counting_repaints(function(repaints)
     local device = styled_device("settled-pc", "remote")
-    device.profile.name = "pc-remote.v7"
-    device:set_field(fields.PROFILE_NAME, "pc-remote.v7")
+    device.profile.name = "pc-remote.v8"
+    device:set_field(fields.PROFILE_NAME, "pc-remote.v8")
     lifecycle().init(fake_driver({ device }), device)
     h.assert_equal(#device.metadata_updates, 0)
     h.assert_equal(#repaints, 0, "nothing changed, nothing to repaint")

@@ -532,6 +532,12 @@ features.WATCH_SLOTS = 5
 features.WATCH_SUMMARY_MAX_CHARS = 60
 features.WATCH_NAMES_MAX_CHARS = 120
 
+-- The app label inside `summary`: 13 characters at most, a longer one keeps
+-- twelve and "…" (`truncate`). The
+-- summary is the first cell of the card's preview, a third of the width in
+-- large type (platform notes "화면 배치"); "Claude 외 1" has to fit one line.
+features.WATCH_SUMMARY_LABEL_MAX_CHARS = 13
+
 -- The service keeps labels to 30 characters; the driver cuts anything longer
 -- the same way rather than trusting it.
 features.APP_LABEL_MAX_CHARS = 30
@@ -678,10 +684,15 @@ function features.apps_top(status, apps)
   return top, running - 1
 end
 
---- `pcWatch.summary`: "Steam 실행 중", "Steam 실행 중 · 외 2개", "없음" when
+--- `pcWatch.summary`: "Steam", "Steam 외 2" ("Steam +2"), "없음" when
 --- nothing on the list runs, "꺼짐" when the list is off, and "서비스 v1.2.0
 --- 필요" for a service that has no such list. Never "" (an empty state row
 --- reads "-", platform notes "상세 화면(detailView) 위젯").
+---
+--- Short on purpose: the row is the first of the card's preview in the main
+--- view, a third of the width in large type, and its label "실행 중인 앱"
+--- already says running (platform notes "화면 배치"). The app label is cut to
+--- `WATCH_SUMMARY_LABEL_MAX_CHARS`.
 function features.apps_summary(status, lang)
   local mode = features.apps_mode(status)
   if mode == features.APPS_OLD then
@@ -694,11 +705,10 @@ function features.apps_summary(status, lang)
   if not top then
     return i18n.t(lang, "apps_none")
   end
-  local line
+  local label = features.truncate(top.label, features.WATCH_SUMMARY_LABEL_MAX_CHARS)
+  local line = label
   if others > 0 then
-    line = i18n.t(lang, "apps_running_more", top.label, others)
-  else
-    line = i18n.t(lang, "apps_running", top.label)
+    line = i18n.t(lang, "apps_running_more", label, others)
   end
   return features.truncate(line, features.WATCH_SUMMARY_MAX_CHARS)
 end

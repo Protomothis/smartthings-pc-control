@@ -14,13 +14,6 @@
       }
     },
     {
-      "label": "{{i18n.attributes.names.label}}",
-      "displayType": "state",
-      "state": {
-        "label": "{{names.value}}"
-      }
-    },
-    {
       "label": "{{i18n.attributes.slotOne.label}}",
       "displayType": "state",
       "state": {
@@ -28,17 +21,17 @@
         "alternatives": [
           {
             "key": "running",
-            "value": "실행 중 (Running)",
+            "value": "실행 중",
             "type": "active"
           },
           {
             "key": "stopped",
-            "value": "꺼짐 (Stopped)",
+            "value": "꺼짐",
             "type": "inactive"
           },
           {
             "key": "empty",
-            "value": "비어 있음 (Empty)",
+            "value": "비어 있음",
             "type": "inactive"
           }
         ]
@@ -52,17 +45,17 @@
         "alternatives": [
           {
             "key": "running",
-            "value": "실행 중 (Running)",
+            "value": "실행 중",
             "type": "active"
           },
           {
             "key": "stopped",
-            "value": "꺼짐 (Stopped)",
+            "value": "꺼짐",
             "type": "inactive"
           },
           {
             "key": "empty",
-            "value": "비어 있음 (Empty)",
+            "value": "비어 있음",
             "type": "inactive"
           }
         ]
@@ -76,17 +69,17 @@
         "alternatives": [
           {
             "key": "running",
-            "value": "실행 중 (Running)",
+            "value": "실행 중",
             "type": "active"
           },
           {
             "key": "stopped",
-            "value": "꺼짐 (Stopped)",
+            "value": "꺼짐",
             "type": "inactive"
           },
           {
             "key": "empty",
-            "value": "비어 있음 (Empty)",
+            "value": "비어 있음",
             "type": "inactive"
           }
         ]
@@ -100,17 +93,17 @@
         "alternatives": [
           {
             "key": "running",
-            "value": "실행 중 (Running)",
+            "value": "실행 중",
             "type": "active"
           },
           {
             "key": "stopped",
-            "value": "꺼짐 (Stopped)",
+            "value": "꺼짐",
             "type": "inactive"
           },
           {
             "key": "empty",
-            "value": "비어 있음 (Empty)",
+            "value": "비어 있음",
             "type": "inactive"
           }
         ]
@@ -124,20 +117,27 @@
         "alternatives": [
           {
             "key": "running",
-            "value": "실행 중 (Running)",
+            "value": "실행 중",
             "type": "active"
           },
           {
             "key": "stopped",
-            "value": "꺼짐 (Stopped)",
+            "value": "꺼짐",
             "type": "inactive"
           },
           {
             "key": "empty",
-            "value": "비어 있음 (Empty)",
+            "value": "비어 있음",
             "type": "inactive"
           }
         ]
+      }
+    },
+    {
+      "label": "{{i18n.attributes.names.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{names.value}}"
       }
     }
   ],

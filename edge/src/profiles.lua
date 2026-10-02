@@ -24,8 +24,8 @@ local fields = require "device.fields"
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v7`, …).
-profiles.VERSION = 7
+-- The profile generation every current name carries (`pc.v8`, …).
+profiles.VERSION = 8
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
 profiles.DEFAULT_STYLE = "others"
@@ -52,7 +52,7 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v7`, `pc-tv.v7`, `pc-battery.v7`, `pc-tv-battery.v7`.
+--- `pc.v8`, `pc-tv.v8`, `pc-battery.v8`, `pc-tv-battery.v8`.
 function profiles.name_for(style, battery, version)
   local name = "pc"
   if style ~= nil and style ~= profiles.DEFAULT_STYLE then
@@ -65,7 +65,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v7` once its status says so (#116).
+-- moves to `pc-battery.v8` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -96,7 +96,7 @@ end
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone. #107: the ten v1 names (the default and the nine
 -- icon variants of #100), then twenty names per later generation (every style
--- with and without the battery, #116): v2 to v6 and the twenty current ones.
+-- with and without the battery, #116): v2 to v7 and the twenty current ones.
 profiles.KNOWN = {}
 for _, style in ipairs(profiles.STYLES) do
   profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, false, 1)
@@ -112,7 +112,7 @@ end
 -- Generations that only ever lived on the Dev channel. Their names stay in
 -- KNOWN so a development device still on one migrates, but their files are
 -- not packaged: the package limit is 655360 bytes.
-profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true }
+profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true }
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)

@@ -10,7 +10,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v7, pc-tv.v7, pc-battery.v7, pc-tv-battery.v7
+#   __NAME__       the profile name - pc.v8, pc-tv.v8, pc-battery.v8, pc-tv-battery.v8
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -27,7 +27,7 @@
 # every YAML file in profiles/ as a profile, and a template there would be a
 # twenty-first one with a placeholder for a name. The published older
 # generation stays in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml). The v2 to v6 files this template made
+# v1 files (pc.yml and pc-<style>.yml). The v2 to v7 files this template made
 # were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
 # app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #

@@ -36,7 +36,7 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
-# And once the Dev channel device has moved onto `pc*.v7` and its app child
+# And once the Dev channel device has moved onto `pc*.v7` or later and its app child
 # devices are gone (#123: the kind-based `pcActivity` of `pc*.v5` gave way to
 # `pcApps` on the PC plus one `pcApp` child per watched app in `pc*.v6`, and
 # both to the watch card `pcWatch` on the `apps` component; none of them was
