@@ -186,7 +186,7 @@ It runs locally on the hub and talks to the PC's `/st/v1` API (service **v1.1.0+
 
 - Real power state, visible grace periods and schedules, Wake-on-LAN through the adapter the PC picks.
 - SSDP discovery fills in address, port and hostname; only the secret has to be typed.
-- Driver 1.1: media controls, presets, "send a message to the PC", keep awake, laptop battery, and one child device per watched app (running/stopped) for routines.
+- Driver 1.1: media controls, presets, "send a message to the PC", keep awake, laptop battery, and a "Watch list" card with "Watch 1"–"Watch 5" (running/stopped) for routines.
 - Failures are named: secret mismatch, unreachable, incompatible version, WoL not ready.
 
 **Install** — enroll in the channel (link above), install the driver, then *Add device → Scan nearby* with the PC and PC Control running; the scan is the only way to add a device.

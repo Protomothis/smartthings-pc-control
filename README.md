@@ -106,7 +106,7 @@ A dedicated SmartThings Edge driver talks to it locally from the hub.
 - **Volume, mute and media** — set volume and mute, send play/pause, stop, next and previous. Sharing what is playing is opt-in.
 - **PC notifications** — a SmartThings routine or Telegram `/say` puts a line of text on the PC's screen.
 - **Presets** — up to ten programs, URLs or scripts registered in the app, run remotely by slot number.
-- **Running-app detection (opt-in)** — each watched app gets its own SmartThings device (running/stopped) for routines.
+- **Running-app detection (opt-in)** — up to five watched apps appear on the PC device's "Watch list" card; routines use "Watch 1"–"Watch 5" (running/stopped).
 - **Laptop battery** level and charging state, **Telegram** (optional), a Korean/English **desktop app**, and **signed auto-update**.
 
 Volume, media, notifications and presets need a signed-in user on the PC.
