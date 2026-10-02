@@ -19,8 +19,8 @@ end
 -- capabilities_test.lua checks it against the JSON in `capabilities/`, so an
 -- attribute that is emitted but never defined fails the suite. `apply_status`
 -- makes all of them but the rows no status body carries: `lastAction`,
--- `planCommand`, `minutesPick`, `lastPreset`, `lastMessage` (device/rows.lua)
--- and the app child's `running` (apps.lua).
+-- `planCommand`, `minutesPick`, `lastPreset` and `lastMessage`
+-- (device/rows.lua).
 local ATTRIBUTES = {
   [power.CAP_SWITCH] = { switch = true },
   [caps.POWER_STATE] = { powerState = true },
@@ -50,8 +50,10 @@ local ATTRIBUTES = {
   [features.CAP_TRACK] = { supportedTrackControlCommands = true },
   [features.CAP_TRACK_DATA] = { audioTrackData = true },
   [caps.PRESET] = { lastPreset = true, names = true, supportedSlots = true },
-  [caps.APPS] = { summary = true },
-  [caps.APP] = { running = true },
+  [caps.WATCH] = {
+    summary = true, names = true,
+    slot1 = true, slot2 = true, slot3 = true, slot4 = true, slot5 = true,
+  },
   [caps.TOAST] = { lastMessage = true },
   [features.CAP_BATTERY] = { battery = true },
   [features.CAP_POWER_SOURCE] = { powerSource = true },
@@ -70,7 +72,9 @@ end
 -- @param service_version the last version a successful poll saw, or nil
 -- @param last_status the last status body this run read, or nil: with one,
 --   the v1.2.0 rows come from it rather than from their defaults
-function status.initial_rows(lang, service_version, last_status)
+-- @param watch #123: the watch card's slot values to keep (`extras.watch`, or
+--   what the hub last had), or nil; a slot with none reads `empty`
+function status.initial_rows(lang, service_version, last_status, watch)
   local events = {}
   ev(events, caps.COMMAND, "lastCommand", text.format_last_command(nil, lang))
   -- Not transitioning, so the whole menu (an unsent `supportedValues` could
@@ -91,9 +95,9 @@ function status.initial_rows(lang, service_version, last_status)
   ev(events, caps.STATUS, "versions", versions)
   local extra_rows
   if type(last_status) == "table" then
-    extra_rows = features.apply_status(last_status, { lang = lang })
+    extra_rows = features.apply_status(last_status, { lang = lang, watch = watch, fill = true })
   else
-    extra_rows = features.initial_rows(lang)
+    extra_rows = features.initial_rows(lang, watch)
   end
   for _, e in ipairs(extra_rows) do
     events[#events + 1] = e
@@ -171,7 +175,10 @@ function status.apply_status(device_state, body, opts)
   end
   ev(events, caps.SESSION, "summary", text.session_summary(session, lang))
 
-  for _, e in ipairs(features.apply_status(body, opts)) do
+  -- #123: the slot values `features.remember` settled on (a list edit holds
+  -- "running"); without them, the body's own.
+  for _, e in ipairs(features.apply_status(body,
+      { lang = lang, watch = (device_state.extras or {}).watch })) do
     events[#events + 1] = e
   end
 

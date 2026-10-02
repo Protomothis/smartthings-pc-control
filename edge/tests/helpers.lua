@@ -209,6 +209,11 @@ function h.components_for(profile_name)
   if type(profile_name) == "string" and profile_name:find("%-battery%.v%d+$") then
     components.battery = { id = "battery" }
   end
+  -- #123: the watch card's component, from v7 on (no name = a current device).
+  local version = type(profile_name) == "string" and tonumber(profile_name:match("%.v(%d+)$"))
+  if not version or version >= 7 then
+    components.apps = { id = "apps" }
+  end
   return components
 end
 

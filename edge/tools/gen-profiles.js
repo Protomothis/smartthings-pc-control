@@ -16,10 +16,10 @@
  * and without the `battery` component (#116 - a desktop must not carry an
  * empty battery card). Names and files:
  *
- *   pc.v6            profiles/pc-v6.yml             others, no battery
- *   pc-tv.v6         profiles/pc-tv-v6.yml          tv, no battery
- *   pc-battery.v6    profiles/pc-battery-v6.yml     others, battery
- *   pc-tv-battery.v6 profiles/pc-tv-battery-v6.yml  tv, battery
+ *   pc.v7            profiles/pc-v7.yml             others, no battery
+ *   pc-tv.v7         profiles/pc-tv-v7.yml          tv, no battery
+ *   pc-battery.v7    profiles/pc-battery-v7.yml     others, battery
+ *   pc-tv-battery.v7 profiles/pc-tv-battery-v7.yml  tv, battery
  *
  * The rules are deliberately small; `--check` (CI: npm run check-profiles)
  * fails when a file on disk is not what they produce:
@@ -61,7 +61,10 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 //    never published either.
 // 6: pcApps (a summary row; one child device per watched app, #123) replaced
 //    the kind-based pcActivity; v5 was never published either.
-const VERSION = 6;
+// 7: the watch card - component `apps` with pcWatch (summary, names, five
+//    slots a routine reads) replaced pcApps and the per-app child devices;
+//    v6 was never published either.
+const VERSION = 7;
 
 const DEFAULT_STYLE = 'others';
 

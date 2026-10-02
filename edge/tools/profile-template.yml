@@ -10,7 +10,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v6, pc-tv.v6, pc-battery.v6, pc-tv-battery.v6
+#   __NAME__       the profile name - pc.v7, pc-tv.v7, pc-battery.v7, pc-tv-battery.v7
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -27,10 +27,9 @@
 # every YAML file in profiles/ as a profile, and a template there would be a
 # twenty-first one with a placeholder for a name. The published older
 # generation stays in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml). The v2, v3, v4 and v5 files this
-# template made were never published and are gone (profiles.UNSHIPPED_VERSIONS).
-# The app child's profile (pc-app.yml, #123) is hand-written and not part of
-# this matrix: one capability, one category, no preferences.
+# v1 files (pc.yml and pc-<style>.yml). The v2 to v6 files this template made
+# were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
+# app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #
 # The capability ORDER below is the reading order on screen: the app collects
 # every state-only row of our own capabilities into one card and every
@@ -89,11 +88,6 @@ components:
       # #113: the preset list and the names row.
       - id: numbersystem53811.pcpreset
         version: 1
-      # #123: what runs on the PC (the opt-in watch list), as one summary row
-      # ("Steam 실행 중 · 외 1개"). Each watched app is a child device of its
-      # own on profiles/pc-app.yml, which is not generated from this file.
-      - id: numbersystem53811.pcapps
-        version: 1
       # #108: "PC에 메시지 보내기" - one text field on the detail view and in
       # the routine actions. Our own capability: the standard `notification`
       # showed Samsung's label ("텍스트 표시"), which a device configuration
@@ -105,6 +99,16 @@ components:
     categories:
       - name: __CATEGORY__
 # @media-component
+  # #123: the watch card - what runs on the PC (the opt-in watch list): a
+  # summary row ("Steam 실행 중 · 외 1개"), the names row ("1 Steam · 3 OBS")
+  # and one state per slot, which a routine reads as "감시 1".."감시 5". A
+  # component of its own so the card is one card, under the PC device where
+  # a user looks for it (platform notes "자식 장치 대신 슬롯").
+  - id: apps
+    label: 감시 목록
+    capabilities:
+      - id: numbersystem53811.pcwatch
+        version: 1
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
   # an action and as a condition like any other switch; it cannot be the main
   # component's, which is the PC's power.

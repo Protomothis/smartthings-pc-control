@@ -1,0 +1,93 @@
+{
+  "tag": "en",
+  "label": "Watch list",
+  "attributes": {
+    "summary": {
+      "label": "Running apps"
+    },
+    "names": {
+      "label": "Watch names"
+    },
+    "slot1": {
+      "label": "Watch 1",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "Running"
+          },
+          "stopped": {
+            "label": "Stopped"
+          },
+          "empty": {
+            "label": "Empty"
+          }
+        }
+      }
+    },
+    "slot2": {
+      "label": "Watch 2",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "Running"
+          },
+          "stopped": {
+            "label": "Stopped"
+          },
+          "empty": {
+            "label": "Empty"
+          }
+        }
+      }
+    },
+    "slot3": {
+      "label": "Watch 3",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "Running"
+          },
+          "stopped": {
+            "label": "Stopped"
+          },
+          "empty": {
+            "label": "Empty"
+          }
+        }
+      }
+    },
+    "slot4": {
+      "label": "Watch 4",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "Running"
+          },
+          "stopped": {
+            "label": "Stopped"
+          },
+          "empty": {
+            "label": "Empty"
+          }
+        }
+      }
+    },
+    "slot5": {
+      "label": "Watch 5",
+      "i18n": {
+        "value": {
+          "running": {
+            "label": "Running"
+          },
+          "stopped": {
+            "label": "Stopped"
+          },
+          "empty": {
+            "label": "Empty"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

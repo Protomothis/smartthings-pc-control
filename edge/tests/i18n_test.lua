@@ -91,7 +91,7 @@ function T.test_every_string_has_both_languages_with_the_same_verbs()
     end
     h.assert_deep_equal(verbs(entry.en), verbs(entry.ko), key .. ": the format verbs differ")
   end
-  h.assert_true(count > 100, "found only " .. count .. " strings; is the upvalue the table?")
+  h.assert_true(count > 90, "found only " .. count .. " strings; is the upvalue the table?")
 end
 
 -- Every key the driver looks up exists: the literal ones in src/ (any

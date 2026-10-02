@@ -243,16 +243,11 @@ end
 
 --- True when this run may take the hub's state cache (`device:get_latest_state`,
 --- persisted across restarts) as "already sent" for `device`: on a restart
---- with the profile unchanged. Not after a repaint (`forget`), and never for an
---- app child, whose one row is forced once per run. The cache can hold a value
---- the cloud never stored; the rotation corrects that within one cycle
---- (platform notes "상태 캐시와 infoChanged").
+--- with the profile unchanged. Not after a repaint (`forget`). The cache can
+--- hold a value the cloud never stored; the rotation corrects that within one
+--- cycle (platform notes "상태 캐시와 infoChanged").
 function emit.seeding(device)
   if type(device) ~= "table" then
-    return false
-  end
-  local key = device.parent_assigned_child_key
-  if type(key) == "string" and key ~= "" then
     return false
   end
   return fields.get(device, fields.ROWS_SEED_OFF) ~= true
@@ -265,6 +260,19 @@ local function cached_state(device, cap, e, component)
       cap.ID or e.cap, e.attr)
   end)
   return value
+end
+
+--- The value row `e` (a record without a value) last had: what this run sent,
+--- else the hub's state cache, else nil. #123: a repaint keeps the watch
+--- card's slots on what they showed instead of inventing one (an "off" list
+--- moves no slot).
+function emit.last_value(device, e)
+  local value = emit.sent_value(device, emit.row_key(e))
+  if value ~= nil then
+    return value
+  end
+  local component = e.component ~= nil and e.component ~= "main" and { id = e.component } or nil
+  return cached_state(device, {}, e, component)
 end
 
 --------------------------------------------------------------------------------
@@ -313,7 +321,7 @@ emit.PAINT_FIRST = {
   state.CAP_SWITCH .. ".switch",
   caps.POWER_STATE .. ".powerState",
   caps.STATUS .. ".summary",
-  caps.APPS .. ".summary",
+  features.WATCH_COMPONENT .. "/" .. features.CAP_WATCH .. ".summary",
   features.CAP_MUTE .. ".mute",
   features.CAP_VOLUME .. ".volume",
   features.CAP_PLAYBACK .. ".playbackStatus",

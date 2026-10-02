@@ -4,11 +4,11 @@
 --
 -- Sending is device/emit.lua's, the rows the driver writes itself are
 -- device/rows.lua's, the stored values device/fields.lua's. This module is the
--- top of that layer: it is the one that calls into apps, push, wol and
--- discovery, and it hands the two of them that need a poll back (`once`,
+-- top of that layer: it is the one that calls into push, wol and discovery,
+-- and it hands the two of them that need a poll back (`once`,
 -- `follow_battery`) through their `use`, so none of them requires this one.
 
-local apps = require "apps"
+local caps = require "caps"
 local client = require "client"
 local clock = require "device.clock"
 local discovery = require "discovery"
@@ -58,11 +58,30 @@ function poll.ensure_rows(device, driver)
   return true
 end
 
+--- #123: the watch card's slot values a repaint keeps - what the last status
+--- settled on, else what this run sent or the hub's state cache holds. A slot
+--- with none of those is painted `empty` (features.watch_events).
+function poll.kept_watch(device)
+  local watch = (fields.extras(device) or {}).watch
+  if type(watch) == "table" then
+    return watch
+  end
+  local out = {}
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = features.watch_value(emit.last_value(device, {
+      cap = caps.WATCH, attr = features.slot_attr(slot), component = features.WATCH_COMPONENT,
+    }))
+  end
+  return out
+end
+
 --- Repaint every row, forced: the cloud starts a new profile with empty
 --- states. Rows only a later poll carries are forced by that poll (`forget`
 --- starts a new "first emit is forced" generation). `driver` (optional): in
 --- batches (`emit.paint`).
 function poll.repaint(device, driver)
+  -- Read before `forget` drops what this run has sent.
+  local watch = poll.kept_watch(device)
   emit.forget(device)
   -- The resting value, not the remembered one: mid-transition the row has to
   -- keep saying "in progress". A repeat `ensure_action` owed is this event.
@@ -74,7 +93,7 @@ function poll.repaint(device, driver)
     rows.answer_toast(device)
     -- The v1.2.0 rows from the last status this run read, when there was one.
     emit.rows(device, state.initial_rows(fields.lang(device), fields.service_version(device),
-      (fields.extras(device) or {}).last_status))
+      (fields.extras(device) or {}).last_status, watch))
   end)
   return emit.paint(driver, device, records)
 end
@@ -241,10 +260,9 @@ end
 --- A rotation step when one is due (`emit.rotate`): at most once per poll
 --- interval (less a fifth, for timer jitter), so a command burst's answer
 --- polls add none. The first step of a run only starts the clock, and there
---- is none while a paint is sending every row anyway. App children take part
---- through `apps.rotate`. Called at the end of every poll, successful or not.
---- Returns how many of the device's own rows went out.
-function poll.rotate_due(driver, device, deps)
+--- is none while a paint is sending every row anyway. Called at the end of
+--- every poll, successful or not. Returns how many rows went out.
+function poll.rotate_due(_driver, device, deps)
   if emit.painting(device) then
     return 0
   end
@@ -259,12 +277,7 @@ function poll.rotate_due(driver, device, deps)
     return 0
   end
   fields.set(device, fields.ROTATE_AT, now)
-  local n = emit.rotate(device, interval)
-  local ok, err = pcall(function() apps.rotate(driver, device, now) end)
-  if not ok then
-    logger().warn("app children not rotated: " .. tostring(err))
-  end
-  return n
+  return emit.rotate(device, interval)
 end
 
 --------------------------------------------------------------------------------
@@ -399,12 +412,6 @@ local function once(driver, device, opts)
       emit.rows(device, records, { reason = "paint" })
     else
       emit.rows(device, records, { answer = opts.force })
-    end
-    -- The app children follow the status; never a failed poll's (an
-    -- unreachable PC leaves every child on its last value).
-    local synced, sync_err = pcall(function() apps.sync(driver, device, body, opts.deps) end)
-    if not synced then
-      logger().warn("app children not updated: " .. tostring(sync_err))
     end
     rows.ensure_action(device)
     rows.ensure_plan_command(device)

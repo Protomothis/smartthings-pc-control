@@ -214,12 +214,7 @@ function T.test_the_current_profile_lists_every_capability()
   local name, text = profile_file_for(profiles.current())
   h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
   for _, id in pairs(caps.ids) do
-    if caps.CHILD[id] then
-      -- #123: the app child's capability belongs on its own profile.
-      h.assert_nil(text:find(id .. "\n", 1, true), "profiles/" .. tostring(name) .. " lists the child's " .. id)
-    else
-      h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
-    end
+    h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
   end
 end
 
@@ -299,7 +294,7 @@ function T.test_every_older_profile_still_ends_with_the_card_it_shipped_with()
   }
   for name, text in pairs(profile_files) do
     -- #100: the icon variants are current, and checked against pc.yml below.
-    if not profiles.is_current(profile_name(text)) and not profiles.is_app_profile(profile_name(text)) then
+    if not profiles.is_current(profile_name(text)) then
       local order = capability_order(text)
       h.assert_true(#order > 0, "profiles/" .. name .. " lists no custom capability")
       local at
@@ -412,24 +407,91 @@ function T.test_every_icon_style_has_a_profile_with_its_category()
   end
 end
 
-function T.test_the_app_child_profile_is_its_one_capability_and_refresh()
-  -- #123: one row ("실행 중 / 꺼짐"), and a pull-to-refresh that asks the PC.
+function T.test_no_child_profile_is_packaged()
+  -- #123: the watch card replaced the per-app child devices (pc-app.v1), as
+  -- #81 had removed the display child: every file here is a PC profile.
   local profiles = require "profiles"
-  local name, text = profile_file_for(profiles.APP)
-  h.assert_equal(name, "pc-app.yml", "pc-app.v1 lives in profiles/pc-app.yml")
-  text = text:gsub("\r\n", "\n")
-  h.assert_deep_equal(capability_order(text), { (caps.APP:gsub("^.*%.", "")) })
-  h.assert_contains(text, "\n      - id: " .. caps.APP .. "\n")
-  h.assert_contains(text, "\n      - id: refresh\n")
-  h.assert_equal(profile_category(text), "Others")
-  h.assert_nil(text:find("\npreferences:", 1, true), "the child has no preferences of its own")
-  for child_id in pairs(caps.CHILD) do
-    for file, other in pairs(profile_files) do
-      if file ~= name then
-        h.assert_nil(other:find(child_id .. "\n", 1, true), "profiles/" .. file .. " lists " .. child_id)
-      end
+  for file, text in pairs(profile_files) do
+    h.assert_false(profiles.is_child_profile(profile_name(text)), "profiles/" .. file .. " is a child profile")
+    h.assert_nil(text:find("numbersystem53811.pcapp", 1, true), "profiles/" .. file .. " lists pcApps/pcApp")
+  end
+end
+
+--------------------------------------------------------------------------------
+-- #123: the watch card
+--------------------------------------------------------------------------------
+
+local WATCH_SLOTS = { "slot1", "slot2", "slot3", "slot4", "slot5" }
+
+function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
+  local profiles = require "profiles"
+  local checked = 0
+  for file, text in pairs(profile_files) do
+    if profiles.is_current(profile_name(text)) then
+      checked = checked + 1
+      text = text:gsub("\r\n", "\n")
+      h.assert_contains(text, "\n  - id: apps\n    label: 감시 목록\n    capabilities:\n      - id: "
+        .. caps.WATCH .. "\n        version: 1\n", "profiles/" .. file)
+      -- Only there: the main component no longer has a watch summary row.
+      local main = text:match("\n  %- id: main\n(.-)\n  %- id: ")
+      h.assert_nil(main:find("pcwatch", 1, true), "profiles/" .. file .. " main")
     end
   end
+  h.assert_equal(checked, 20)
+end
+
+function T.test_the_watch_definition_is_summary_names_and_five_slots()
+  local attributes = definition("watch").attributes
+  h.assert_equal(attributes.summary.schema.properties.value.maxLength, 60)
+  h.assert_equal(attributes.names.schema.properties.value.maxLength, 120)
+  for _, attr in ipairs(WATCH_SLOTS) do
+    h.assert_deep_equal(attributes[attr].schema.properties.value.enum, { "running", "stopped", "empty" }, attr)
+  end
+  local count = 0
+  for _ in pairs(attributes) do
+    count = count + 1
+  end
+  h.assert_equal(count, 7)
+  h.assert_deep_equal(definition("watch").commands, {})
+end
+
+function T.test_the_watch_detail_view_is_summary_names_then_the_slots()
+  local rows = {}
+  for _, item in ipairs(presentation("watch").detailView) do
+    h.assert_equal(item.displayType, "state")
+    rows[#rows + 1] = item.state.label
+  end
+  h.assert_deep_equal(rows, { "{{summary.value}}", "{{names.value}}",
+    "{{slot1.value}}", "{{slot2.value}}", "{{slot3.value}}", "{{slot4.value}}", "{{slot5.value}}" })
+  for i, attr in ipairs(WATCH_SLOTS) do
+    local item = presentation("watch").detailView[i + 2]
+    h.assert_equal(item.label, "{{i18n.attributes." .. attr .. ".label}}")
+    local keys = {}
+    for _, alternative in ipairs(item.state.alternatives) do
+      keys[#keys + 1] = alternative.key
+    end
+    h.assert_deep_equal(keys, { "running", "stopped", "empty" }, attr)
+  end
+  h.assert_equal(#presentation("watch").dashboard.states, 0)
+end
+
+function T.test_the_watch_conditions_are_the_five_slots_without_empty()
+  -- A routine reads "감시 N이 실행 중 / 꺼짐"; `empty` is a resting value, not
+  -- something to wait for.
+  local conditions = presentation("watch").automation.conditions
+  h.assert_equal(#conditions, 5)
+  for i, attr in ipairs(WATCH_SLOTS) do
+    local condition = conditions[i]
+    h.assert_equal(condition.displayType, "list")
+    h.assert_equal(condition.label, "{{i18n.attributes." .. attr .. ".label}}")
+    h.assert_equal(condition.list.value, attr .. ".value")
+    local keys = {}
+    for _, alternative in ipairs(condition.list.alternatives) do
+      keys[#keys + 1] = alternative.key
+    end
+    h.assert_deep_equal(keys, { "running", "stopped" }, attr)
+  end
+  h.assert_deep_equal(presentation("watch").automation.actions, {})
 end
 
 --------------------------------------------------------------------------------
@@ -564,9 +626,8 @@ local EXPECTED_COMMANDS = {
   version = {},
   -- #113: one list argument, the slot as a string enum.
   preset = { run = { "slot" } },
-  -- #123: a summary row on the PC and a condition on each app child.
-  apps = {},
-  app = {},
+  -- #123: the watch card is rows and routine conditions only.
+  watch = {},
   -- #108/pcToast: one command, one text argument.
   toast = { send = { "text" } },
 }
@@ -776,7 +837,7 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "apps", "toast" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -1388,7 +1449,7 @@ end
 -- The only text the user reads is the one in the presentation, so every value
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
-local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule" }
+local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch" }
 
 local function assert_bilingual(alternatives, where)
   h.assert_true(#(alternatives or {}) > 0, where .. " has no alternatives")
@@ -1672,11 +1733,19 @@ function T.test_no_detail_state_row_is_ever_emitted_empty()
     samples[#samples + 1] = state.apply_status(state.new("on"), full,
       { lang = lang, now = "23:05:00" })
   end
-  -- #123: the app child's one row, emitted on the child device.
+  -- #123: the watch card of a list that is on (two filled slots, three empty),
+  -- off, and on but empty.
   local features = require "features"
-  samples[#samples + 1] = features.app_events({ running = true })
-  samples[#samples + 1] = features.app_events({ running = false })
-  samples[#samples + 1] = features.app_events(nil)
+  local on = { features = { "activity" }, activity = { enabled = true, top = "",
+    apps = { { slot = 2, id = "a.exe", label = "A", running = true }, { slot = 4, id = "b.exe", running = false } } } }
+  local off = { features = {}, activity = { enabled = false, apps = {}, top = "" } }
+  local empty = { features = { "activity" }, activity = { enabled = true, apps = {}, top = "" } }
+  for _, lang in ipairs({ "ko", "en" }) do
+    for _, sample in ipairs({ on, off, empty }) do
+      samples[#samples + 1] = features.watch_events(sample, lang)
+      samples[#samples + 1] = features.watch_events(sample, lang, nil, true)
+    end
+  end
 
   local rows = detail_state_rows()
   h.assert_true(#rows >= 5, "far too few state rows were checked: " .. #rows)
@@ -1869,6 +1938,26 @@ function T.test_pc_toast_reads_as_ours_in_both_languages()
       h.assert_true(type(argument.description) == "string" and argument.description ~= "",
         doc.tag .. " " .. name .. "(text) description")
     end
+  end
+end
+
+function T.test_the_watch_translations_name_the_slots()
+  local ko, en = translation("watch", "ko"), translation("watch", "en")
+  h.assert_equal(ko.label, "감시 목록")
+  h.assert_equal(en.label, "Watch list")
+  h.assert_equal(ko.attributes.summary.label, "실행 중인 앱")
+  h.assert_equal(ko.attributes.names.label, "감시 이름")
+  for n, attr in ipairs(WATCH_SLOTS) do
+    h.assert_equal(ko.attributes[attr].label, "감시 " .. n)
+    h.assert_equal(en.attributes[attr].label, "Watch " .. n)
+    local values = ko.attributes[attr].i18n.value
+    h.assert_equal(values.running.label, "실행 중")
+    h.assert_equal(values.stopped.label, "꺼짐")
+    h.assert_equal(values.empty.label, "비어 있음")
+    local en_values = en.attributes[attr].i18n.value
+    h.assert_equal(en_values.running.label, "Running")
+    h.assert_equal(en_values.stopped.label, "Stopped")
+    h.assert_equal(en_values.empty.label, "Empty")
   end
 end
 

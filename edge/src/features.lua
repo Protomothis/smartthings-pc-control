@@ -166,6 +166,9 @@ function features.remember(device_state, status)
   for _, preset in ipairs(features.presets_of(status)) do
     slots[tostring(preset.slot)] = true
   end
+  -- #123: read before `extras` is replaced - the slots it showed are what a
+  -- list edit holds and an "off" list keeps (`watch_state`).
+  local watch, watch_signature = features.watch_state(status, device_state.extras)
   device_state.extras = {
     features = features.parse(status),
     audio = {
@@ -181,10 +184,12 @@ function features.remember(device_state, status)
     awake_on = features.awake_on(status),
     -- #118: and what the play/pause row does.
     playback = features.playback_status(status),
-    -- #123: the watch list, for the app children (apps.lua): a child that is
-    -- added between two statuses paints itself from this.
+    -- #123: the watch list, by slot, and the five slot values the card shows
+    -- (`watch_state`: a list edit holds "running", an "off" list keeps them).
     apps_mode = features.apps_mode(status),
     apps = features.apps_of(status),
+    watch = watch,
+    watch_signature = watch_signature,
     -- The body itself, so a repaint (poll.repaint) paints these rows with
     -- what the PC last said instead of the never-polled defaults - a forced
     -- "off" on the keep-awake switch would fire every routine that watches it.
@@ -503,29 +508,43 @@ function features.preset_events(status, lang)
 end
 
 --------------------------------------------------------------------------------
--- #123: watched apps
+-- #123: the watch card
 --------------------------------------------------------------------------------
 
 -- The opt-in watch list (media-notify.md §11) as the service reports it since
--- #123: `activity = { enabled, apps = [ { id, label, running } ], top }`, the
--- list in priority order (first = highest). The PC shows one summary row
--- (`pcApps.summary`); every app is a child device of its own whose `running`
--- row a routine reads (apps.lua). This part is the pure reading of the block.
+-- contract v2: `activity = { enabled, apps = [ { slot, id, label, running } ],
+-- top }`, by slot (1-5, 1 = highest priority), filled slots only. The PC shows
+-- it on a card of its own, the `apps` component's `pcWatch`: a summary row, a
+-- names row ("1 Steam · 3 OBS") and one state per slot, `slot1`..`slot5`
+-- (`running` / `stopped` / `empty`), which is what a routine reads as
+-- "감시 1".."감시 5". A slot number is a stable thing to name in a routine;
+-- an app name is not something a capability presentation can list
+-- (platform notes "자식 장치 대신 슬롯").
 
--- The service watches at most this many processes, and the driver holds to
--- the same number: a status can never make it create more children than that.
-features.APPS_MAX = 10
+-- The component and its capability.
+features.WATCH_COMPONENT = "apps"
+features.CAP_WATCH = caps.WATCH
 
--- `pcApps.summary` is defined with `maxLength: 60`.
-features.APPS_SUMMARY_MAX_CHARS = 60
+-- The service watches at most this many processes, one per slot.
+features.WATCH_SLOTS = 5
+
+-- `pcWatch.summary` is defined with `maxLength: 60`, `names` with 120.
+features.WATCH_SUMMARY_MAX_CHARS = 60
+features.WATCH_NAMES_MAX_CHARS = 120
 
 -- The service keeps labels to 30 characters; the driver cuts anything longer
--- the same way rather than trusting it (the label becomes a device label).
+-- the same way rather than trusting it.
 features.APP_LABEL_MAX_CHARS = 30
 
--- The child's `pcApp.running` enum.
-features.APP_RUNNING = "running"
-features.APP_STOPPED = "stopped"
+-- The `slotN` enum. A routine condition offers `running` and `stopped` only;
+-- `empty` is the value of a slot nothing is assigned to (never "", which
+-- reads "-").
+features.WATCH_RUNNING = "running"
+features.WATCH_STOPPED = "stopped"
+features.WATCH_EMPTY = "empty"
+local WATCH_VALUES = {
+  [features.WATCH_RUNNING] = true, [features.WATCH_STOPPED] = true, [features.WATCH_EMPTY] = true,
+}
 
 -- What `apps_mode` answers.
 features.APPS_OLD = "old"
@@ -539,18 +558,31 @@ local function clean(text)
   return (text:gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+--- The attribute of slot `n`: "slot1".."slot5".
+function features.slot_attr(n)
+  return "slot" .. tostring(n)
+end
+
+--- `value` when it is a `slotN` enum value, else nil.
+function features.watch_value(value)
+  if WATCH_VALUES[value] then
+    return value
+  end
+  return nil
+end
+
 --- What a status says about the watch list.
 ---
----   "old"  a service older than v1.2.0 (no `features` at all): the rows say
----          "서비스 v1.2.0 필요" and every child keeps the value it has
+---   "old"  a service older than v1.2.0 (no `features` at all): the summary
+---          says "서비스 v1.2.0 필요"; the names row says "없음"
 ---   "off"  the opt-in is off, the service does not list the feature, or the
 ---          block is not one this driver can read (a Dev build of the
----          kind-based #114 block): "꺼짐", and the children are left alone
+---          kind-based #114 block): summary and names say "꺼짐"
 ---   "on"   the list is on and `activity.apps` is its contents, possibly empty
 ---
--- Only "on" ever creates or deletes a child (apps.lua): a list that is
--- switched off has no entries, and deleting every child (and every routine
--- that uses one) because the user paused the feature would be wrong.
+-- Only "on" moves a slot. "old" and "off" leave every slot on its last value:
+-- a made-up "stopped" would fire every "꺼지면" routine, and a paused feature
+-- is not a stopped app.
 function features.apps_mode(status)
   local set = features.parse(status)
   if set == false then
@@ -566,23 +598,20 @@ function features.apps_mode(status)
   return features.APPS_ON
 end
 
---- The watch list of a status, in priority order: `{ id, label, running }`.
+--- The watch list of a status, by slot: `{ slot, id, label, running }`.
 --
--- `id` is the process name the service lowercased - the stable key of the
--- child (`parent_assigned_child_key`), which survives label edits and
--- reordering - and it is lowercased here too, so a key never depends on the
--- service having done it. An entry without an id, a repeated id and anything
--- past `APPS_MAX` are left out. A label that is missing or blank falls back to
--- the id. Empty for anything but an "on" list.
+-- `id` is the process name, lowercased here too. An entry without an id, a
+-- repeated id, a slot outside 1-5 or one taken by an earlier entry is left
+-- out. An entry with no `slot` at all (a Dev service from before contract v2)
+-- takes the lowest free slot in list order - the rule the service itself uses
+-- for an old config. A label that is missing or blank falls back to the id.
+-- Empty for anything but an "on" list.
 function features.apps_of(status)
-  local out, seen = {}, {}
+  local out, seen, taken, unslotted = {}, {}, {}, {}
   if features.apps_mode(status) ~= features.APPS_ON then
     return out
   end
   for _, app in ipairs(status.activity.apps) do
-    if #out >= features.APPS_MAX then
-      break
-    end
     local id = type(app) == "table" and clean(app.id):lower() or ""
     if id ~= "" and not seen[id] then
       seen[id] = true
@@ -590,21 +619,41 @@ function features.apps_of(status)
       if label == "" then
         label = id
       end
-      out[#out + 1] = {
+      local entry = {
         id = id,
         label = features.truncate(label, features.APP_LABEL_MAX_CHARS),
         running = app.running == true,
       }
+      local slot = tonumber(app.slot)
+      if app.slot == nil then
+        unslotted[#unslotted + 1] = entry
+      elseif slot and slot == math.floor(slot) and slot >= 1 and slot <= features.WATCH_SLOTS
+          and not taken[slot] then
+        entry.slot = math.floor(slot)
+        taken[entry.slot] = true
+        out[#out + 1] = entry
+      end
     end
   end
+  for _, entry in ipairs(unslotted) do
+    for slot = 1, features.WATCH_SLOTS do
+      if not taken[slot] then
+        entry.slot = slot
+        taken[slot] = true
+        out[#out + 1] = entry
+        break
+      end
+    end
+  end
+  table.sort(out, function(a, b) return a.slot < b.slot end)
   return out
 end
 
 --- The running app that leads the summary, and how many others run.
 --
--- `top` is the service's own answer (the highest-priority running app); it is
--- taken when it names a running entry, and otherwise the first running entry
--- in list order is - the same rule, read off the list.
+-- `top` is the service's own answer (the lowest-slot running app); it is
+-- taken when it names a running entry, and otherwise the lowest-slot running
+-- entry is - the same rule, read off the list.
 -- @param apps `features.apps_of(status)`
 function features.apps_top(status, apps)
   local running = 0
@@ -627,7 +676,7 @@ function features.apps_top(status, apps)
   return top, running - 1
 end
 
---- `pcApps.summary`: "Steam 실행 중", "Steam 실행 중 · 외 2개", "없음" when
+--- `pcWatch.summary`: "Steam 실행 중", "Steam 실행 중 · 외 2개", "없음" when
 --- nothing on the list runs, "꺼짐" when the list is off, and "서비스 v1.2.0
 --- 필요" for a service that has no such list. Never "" (an empty state row
 --- reads "-", platform notes "상세 화면(detailView) 위젯").
@@ -649,26 +698,107 @@ function features.apps_summary(status, lang)
   else
     line = i18n.t(lang, "apps_running", top.label)
   end
-  return features.truncate(line, features.APPS_SUMMARY_MAX_CHARS)
+  return features.truncate(line, features.WATCH_SUMMARY_MAX_CHARS)
 end
 
---- #123: the PC's apps row of a status body. The children's rows are not
---- here - they belong to other devices (apps.lua).
-function features.apps_events(status, lang)
+--- `pcWatch.names`: the filled slots in order, "1 Steam · 3 OBS"; "없음" for
+--- an empty list (and for a service too old to have one - the summary row
+--- says why), "꺼짐" for a list that is off. Never "".
+function features.watch_names(status, lang)
+  local mode = features.apps_mode(status)
+  if mode == features.APPS_OFF then
+    return i18n.t(lang, "apps_off")
+  end
+  local parts = {}
+  for _, app in ipairs(features.apps_of(status)) do
+    parts[#parts + 1] = tostring(app.slot) .. " " .. app.label
+  end
+  if #parts == 0 then
+    return i18n.t(lang, "apps_none")
+  end
+  return features.truncate(table.concat(parts, " · "), features.WATCH_NAMES_MAX_CHARS)
+end
+
+--- The five slot values of an "on" list: `running` / `stopped`, `empty` for
+--- a slot nothing is assigned to.
+-- @param apps `features.apps_of(status)`
+function features.watch_slots(apps)
+  local out = {}
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = features.WATCH_EMPTY
+  end
+  for _, app in ipairs(apps or {}) do
+    out[app.slot] = app.running and features.WATCH_RUNNING or features.WATCH_STOPPED
+  end
+  return out
+end
+
+--- The list's identity for the hold below: slots, ids and labels.
+function features.watch_signature(apps)
+  local parts = {}
+  for _, app in ipairs(apps or {}) do
+    parts[#parts + 1] = tostring(app.slot) .. "=" .. app.id .. "=" .. app.label
+  end
+  return table.concat(parts, "\n")
+end
+
+--- The slot values a status leaves the card on, and the list's signature, given
+--- what the previous status left (`previous` = the extras `remember` replaces).
+--
+-- "old" and "off" keep the previous values (nil when there were none: the
+-- slots are then not sent at all and the hub keeps what it has).
+--
+-- The hold: right after the list is edited on the PC (or the feature switched
+-- on), the service lists every entry as `running: false` until its next scan
+-- (contract). So a status whose list differs from the previous one - or that
+-- follows one that was not "on" - does not move a slot from "running" to
+-- "stopped"; the next status, with the list unchanged, decides. A real stop
+-- that coincides with an edit is late by one status; a fake one would have
+-- fired every "꺼지면" routine.
+function features.watch_state(status, previous)
+  previous = type(previous) == "table" and previous or {}
+  if features.apps_mode(status) ~= features.APPS_ON then
+    return previous.watch, previous.watch_signature
+  end
+  local apps = features.apps_of(status)
+  local values = features.watch_slots(apps)
+  local signature = features.watch_signature(apps)
+  local shown = previous.watch
+  local changed = previous.apps_mode ~= features.APPS_ON or previous.watch_signature ~= signature
+  if changed and type(shown) == "table" then
+    for slot = 1, features.WATCH_SLOTS do
+      if shown[slot] == features.WATCH_RUNNING and values[slot] == features.WATCH_STOPPED then
+        values[slot] = features.WATCH_RUNNING
+      end
+    end
+  end
+  return values, signature
+end
+
+--- #123: the watch card's rows of a status body, on the `apps` component.
+--
+-- @param watch the slot values to show (`extras.watch`, from `watch_state`),
+--   or nil: then an "on" status's own values, and nothing for the slots of an
+--   "old" or "off" one - they keep their last values
+-- @param fill true for a repaint: a slot with no value at all gets `empty`
+--   (a row never sent reads "-")
+function features.watch_events(status, lang, watch, fill)
   local events = {}
-  ev(events, caps.APPS, "summary", features.apps_summary(status, lang))
-  return events
-end
-
---- #123: the `running` value of one app entry.
-function features.app_running(app)
-  return (app or {}).running == true and features.APP_RUNNING or features.APP_STOPPED
-end
-
---- #123: the one row of an app child (emitted on the child device).
-function features.app_events(app)
-  local events = {}
-  ev(events, caps.APP, "running", features.app_running(app))
+  ev(events, features.CAP_WATCH, "summary", features.apps_summary(status, lang), features.WATCH_COMPONENT)
+  ev(events, features.CAP_WATCH, "names", features.watch_names(status, lang), features.WATCH_COMPONENT)
+  local values = watch
+  if values == nil and features.apps_mode(status) == features.APPS_ON then
+    values = features.watch_slots(features.apps_of(status))
+  end
+  if values == nil and fill then
+    values = {}
+  end
+  if values then
+    for slot = 1, features.WATCH_SLOTS do
+      ev(events, features.CAP_WATCH, features.slot_attr(slot),
+        features.watch_value(values[slot]) or features.WATCH_EMPTY, features.WATCH_COMPONENT)
+    end
+  end
   return events
 end
 
@@ -779,29 +909,37 @@ local function append(into, list)
 end
 
 --- Every v1.2.0 row a status body paints. Called by state.apply_status.
--- @param opts `lang`
+-- @param opts `lang`; #123: `watch` and `fill` (`watch_events`)
 function features.apply_status(status, opts)
-  local lang = (opts or {}).lang
+  opts = opts or {}
+  local lang = opts.lang
   local events = {}
   -- #118: in the order of the media group on screen.
   append(events, features.track_events(status, lang))
   append(events, features.media_events(features.playback_status(status)))
   append(events, features.audio_events(status))
   append(events, features.preset_events(status, lang))
-  append(events, features.apps_events(status, lang))
+  append(events, features.watch_events(status, lang, opts.watch, opts.fill))
   append(events, features.awake_events(status))
   append(events, features.battery_events(status))
   return events
 end
 
 --- Every v1.2.0 row a device that has never been polled paints (state.initial_rows).
-function features.initial_rows(lang)
+-- @param watch #123: slot values to keep (a repaint), else every slot `empty`
+function features.initial_rows(lang, watch)
   local events = features.media_events()
   -- #113: before the first status there is no list of presets to show.
   ev(events, caps.PRESET, "names", i18n.t(lang, "presets_none"))
   ev(events, caps.PRESET, "supportedSlots", { features.PRESET_NONE })
-  -- #123: nothing known yet, which reads as "nothing running".
-  ev(events, caps.APPS, "summary", i18n.t(lang, "apps_none"))
+  -- #123: nothing known yet, which reads as "nothing running" and "nothing
+  -- watched"; a slot the hub still knows a value for keeps it.
+  ev(events, features.CAP_WATCH, "summary", i18n.t(lang, "apps_none"), features.WATCH_COMPONENT)
+  ev(events, features.CAP_WATCH, "names", i18n.t(lang, "apps_none"), features.WATCH_COMPONENT)
+  for slot = 1, features.WATCH_SLOTS do
+    ev(events, features.CAP_WATCH, features.slot_attr(slot),
+      features.watch_value((watch or {})[slot]) or features.WATCH_EMPTY, features.WATCH_COMPONENT)
+  end
   -- #115: a service that has just started has keep-awake off (it does not
   -- carry the period over a restart, §12), so "off" is the honest default.
   ev(events, features.CAP_SWITCH, "switch", "off", features.AWAKE_COMPONENT)

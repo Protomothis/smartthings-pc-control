@@ -1,7 +1,7 @@
 -- SmartThings Edge driver for PC Control.
 --
 -- Entry point only: the handlers in handlers/ are registered here. The logic
--- lives in poll/apps/push/wol/discovery, device/ and model/, so it can be
+-- lives in poll/push/wol/discovery, device/ and model/, so it can be
 -- tested without a hub (design doc §2).
 
 local Driver = require "st.driver"

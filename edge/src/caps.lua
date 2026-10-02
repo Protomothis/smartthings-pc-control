@@ -31,10 +31,11 @@ caps.SESSION = NAMESPACE .. ".pcuser"
 caps.VERSION = NAMESPACE .. ".pcversion"
 -- The presets the PC app defines (media-notify.md §10).
 caps.PRESET = NAMESPACE .. ".pcpreset"
--- The watch list (media-notify.md §11): the PC's summary row, and each app
--- child's `running` (only `pc-app.v1` lists `pcApp`, `caps.CHILD`).
-caps.APPS = NAMESPACE .. ".pcapps"
-caps.APP = NAMESPACE .. ".pcapp"
+-- The watch card (media-notify.md §11, #123): on the PC's `apps` component,
+-- a summary row, the names row and one state per slot ("감시 1".."감시 5"),
+-- which is what a routine reads. It replaced `pcapps` (a summary row on main)
+-- and `pcapp` (one child device per app), and before them `pcactivity`.
+caps.WATCH = NAMESPACE .. ".pcwatch"
 -- "PC에 메시지 보내기": our own capability, because the app labels a standard
 -- one with Samsung's words (platform notes "표준 capability"), bound to
 -- `lastMessage` because a row bound to no attribute never gets its event.
@@ -49,13 +50,9 @@ caps.ids = {
   session = caps.SESSION,
   version = caps.VERSION,
   preset = caps.PRESET,
-  apps = caps.APPS,
-  app = caps.APP,
+  watch = caps.WATCH,
   toast = caps.TOAST,
 }
-
--- The ids that belong on the app child's profile, not on the PC's.
-caps.CHILD = { [caps.APP] = true }
 
 --- Resolve the custom capability objects from `st.capabilities`.
 -- Indexing `st.capabilities` with an unknown id raises, so each lookup is
