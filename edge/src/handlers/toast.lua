@@ -33,7 +33,7 @@ function toast.send(driver, device, cmd)
   local refusal = features.refusal(fields.extras(device), nil, features.NOTIFY)
   if refusal then
     rows.answer_toast(device)
-    rows.emit_message(device, i18n.t(lang, refusal))
+    rows.emit_message(device, features.note_text(lang, refusal))
     log.info(string.format("notification not sent on %s: %s", tostring(device.id), refusal))
     return false
   end

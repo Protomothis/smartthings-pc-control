@@ -155,12 +155,12 @@
   상태를 `stopped`로 꾸며 내지 않고 `supportedPlaybackCommands`만 내보낸다.
 - **프로필:** capability가 늘어 프로필 세대를 올렸다(지금 `pc*.v10`, §14). 공개된 `pc*.v1`은 `KNOWN`으로 자동 이전한다
   (edge-driver.md §6.6). 이전 직후 `repaint_soon`.
-- **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("서비스 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
+- **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("PC 앱 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
 - **PC 알림(#108):** `pcToast.send(text)` → `POST /st/v1/notify {text}`(제목은 보내지 않아 서비스 기본 "SmartThings").
   제어 문자를 지우고 200자(코드 포인트)에서 "…"로 자른다(서비스 한도 — 정의의 `maxLength`와 입력 줄의 `range [1, 200]`도
   같은 200이다). `features`에 "notify"가 있어야 보낸다. 결과 문구는 `pcInfo.message`에만 쓴다(루틴이 자주 보낼 수 있어 요약 줄을
-  덮지 않는다): 보냈으면 "PC에 메시지를 보냈습니다", 옛 서비스 "서비스 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐",
+  덮지 않는다): 보냈으면 "PC에 메시지를 보냈습니다", 옛 서비스 "PC 앱 v1.2.0 필요", `403 notify_disabled` "PC 알림 꺼짐",
   `409 no_user_session` "사용자 없음", `429` "잠시 후 다시".
 - **입력 줄은 `lastMessage`에 묶는다.** 앱은 명령을 보낸 뒤 줄이 묶인 속성의 이벤트를 기다린다. 속성 없는 `pcNotify`는 PC에
   토스트가 뜨는데도 줄이 돌다가 "네트워크 오류"로 끝났다(2026-10-01). 그래서 `send`마다 `lastMessage`를 `state_change`로
@@ -254,7 +254,7 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
 - **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때 보낸다. 바뀐 게 없는 스캔은
   보내지 않는다. `data`는 status의 `activity` 블록과 똑같은 JSON이다.
 - **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatchList`
-  (`numbersystem53811.pcwatchlist`, `pc*.v10`부터. v7–v9의 `pcWatch`는 화면이 첫 프레젠테이션으로 굳어 새 id로 옮겼다, §14): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "서비스 v1.2.0 필요",
+  (`numbersystem53811.pcwatchlist`, `pc*.v10`부터. v7–v9의 `pcWatch`는 화면이 첫 프레젠테이션으로 굳어 새 id로 옮겼다, §14): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "PC 앱 v1.2.0 필요",
   `slotOne`–`slotFive` enum `running`/`stopped`/`empty`("실행 중"/"꺼짐"/"비어 있음", 한국어 한 단어), `names`(≤ 120) "1 Steam · 3 OBS" / "없음" / "꺼짐".
   상세 줄은 이 순서다: 메인 화면의 카드 미리보기가 처음 세 줄을 1/3 폭으로 보여 주므로(플랫폼 노트 "화면 배치") 미리보기는
   "실행 중인 앱 · 감시 1 · 감시 2"이고, 그 값은 한 줄에 드는 길이다(`pc*.v10`).

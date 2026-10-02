@@ -54,6 +54,15 @@ smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 패키지는 주석을 뗀 `build/edge/`로 만든다(커밋하지 않는다).
 화면을 바꾸면 프로필 버전을, capability 정의를 바꾸면 id를 새로 해야 한다. 규칙은 [`edge/README.md`](edge/README.md)와 [`docs/design/edge-driver.md`](docs/design/edge-driver.md) §6.6에 있다.
 
+### 릴리스 순서
+
+허브는 채널에 배정된 드라이버를 자동으로 받지만 PC 앱은 사용자가 올린다. 드라이버가 가리키는 앱이 먼저 나가 있어야 한다(edge-driver.md §10.1 "버전 짝 맞춤").
+
+1. 드라이버가 새 서비스 기능을 쓰면 `edge/src/features.lua`의 `RECOMMENDED_SERVICE_VERSION`을 그 서비스 버전으로 올린다(그 기능을 쓰는 커밋에서).
+2. **앱 릴리스 먼저** — `vX.Y.Z` 태그와 GitHub Release.
+3. **GitHub Latest가 그 앱 릴리스인지 확인**한다. 앱의 업데이트 확인과 드라이버의 "(최신 vX.Y.Z)"가 이것을 본다.
+4. 그다음 드라이버를 공개 채널에 배정한다(`edge-vX.Y.Z`). 허브는 자동으로 업데이트되고, 낮은 PC 앱을 쓰는 사용자는 상태 줄에서 "앱 업데이트 필요"를 본다.
+
 ## 문서
 
 - 사용자 안내의 정본은 [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki)다. README는 150줄, `edge/README.md`는 200줄 안으로 둔다.

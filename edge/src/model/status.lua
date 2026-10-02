@@ -158,7 +158,7 @@ function status.apply_status(device_state, body, opts)
   -- A successful status is always `ok` here; the failure wording is
   -- device/rows.lua's `emit_connection`.
   ev(events, caps.STATUS, "summary", text.status_summary("ok", lang, wol_off, wol_adapter,
-    { uptime_seconds = body.uptime_seconds }))
+    { uptime_seconds = body.uptime_seconds, app_update = features.needs_app_update(body) }))
 
   -- §3.2: the session block is opt-in. `exposed` goes out either way; the
   -- values themselves are left alone while it is off, so the tiles keep what

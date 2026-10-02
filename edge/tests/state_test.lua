@@ -1,5 +1,6 @@
 local h = require "helpers"
 local caps = require "caps"
+local features = require "features"
 local state = require "state"
 local i18n = require "i18n"
 
@@ -53,6 +54,16 @@ local function sample_status()
   }
 end
 
+-- The same body from a PC app as new as the driver wants
+-- (features.RECOMMENDED_SERVICE_VERSION), for the tests about the other
+-- notices: nothing asks for an update.
+local CURRENT_VERSION = "v" .. features.RECOMMENDED_SERVICE_VERSION
+local function current_status()
+  local status = sample_status()
+  status.service_version = CURRENT_VERSION
+  return status
+end
+
 local function events_for(status, power_state, lang)
   local s = state.new(power_state or state.ON)
   return state.apply_status(s, status, { now = NOW, lang = lang or "en" })
@@ -98,11 +109,15 @@ local function golden(lang)
     -- two narrow, truncated columns), and still on pcInfo, which defines it.
     { cap = caps.VERSION, attr = "versions", value = state.versions("v1.1.0", lang) },
     { cap = caps.STATUS, attr = "versions", value = state.versions("v1.1.0", lang) },
-    { cap = caps.STATUS, attr = "message", value = "" },
+    -- A v1.1.0 PC is older than features.RECOMMENDED_SERVICE_VERSION: the
+    -- message asks for the PC app update before anything else.
+    { cap = caps.STATUS, attr = "message",
+      value = en and "Update the PC app to v1.2.0 or newer" or "PC 앱을 v1.2.0 이상으로 업데이트하세요" },
     -- #87: the connection alone. The version moved to the row below, and the
-    -- advice notices are `message`'s job. #102: plus the uptime (12345 s).
+    -- advice notices are `message`'s job. #102: plus the uptime (12345 s) -
+    -- dropped here, since " · 3h 25m" and the update ending do not both fit.
     { cap = caps.STATUS, attr = "summary",
-      value = en and "Connected · 3h 25m" or "연결됨 · 3시간 25분" },
+      value = en and "Connected · Update app" or "연결됨 · 앱 업데이트 필요" },
     -- #78: emitted either way, so the session row can be hidden again.
     { cap = caps.SESSION, attr = "exposed", value = true },
     { cap = caps.SESSION, attr = "locked", value = true },
@@ -117,12 +132,12 @@ local function golden(lang)
       value = { "nextTrack", "previousTrack" } },
     -- #113: a v1.1.0 service has no presets to name, and says why.
     { cap = caps.PRESET, attr = "names",
-      value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
+      value = en and "Needs PC app v1.2.0" or "PC 앱 v1.2.0 필요" },
     { cap = caps.PRESET, attr = "supportedSlots", value = { "none" } },
     -- #123: no watch list on a v1.1.0 service: the summary says why, the
     -- names row has none, and the slots are left where they are.
     { cap = caps.WATCH, attr = "summary", component = "apps",
-      value = en and "Requires service v1.2.0" or "서비스 v1.2.0 필요" },
+      value = en and "Needs PC app v1.2.0" or "PC 앱 v1.2.0 필요" },
     { cap = caps.WATCH, attr = "names", component = "apps", value = en and "None" or "없음" },
     -- #115: the keep-awake switch, on its own component. A v1.1.0 service
     -- cannot keep the PC awake.
@@ -428,16 +443,19 @@ function T.test_the_notices_go_to_the_message_row()
     { "no uptime", function(s) s.uptime_seconds = nil end, "en", "Connected", "" },
     { "no secret (§3.1)", function(s) s.secret_set = false end, "ko",
       "연결됨 · 3시간 25분", "시크릿이 설정되지 않았습니다 · 설정을 권장합니다" },
-    { "an update", function(s) s.update = { available = true, latest = "v1.2.0" } end, "en",
-      "Connected · 3h 25m", "Service update v1.2.0 available",
-      "v1.1.0 · Driver " .. major_minor .. " · Update v1.2.0" },
+    { "an update", function(s) s.update = { available = true, latest = "v9.9.1" } end, "en",
+      "Connected · 3h 25m", "PC app update v9.9.1 available",
+      CURRENT_VERSION .. " · Driver " .. major_minor .. " · Update v9.9.1" },
+    { "an update (ko)", function(s) s.update = { available = true, latest = "v9.9.1" } end, "ko",
+      "연결됨 · 3시간 25분", "PC 앱 업데이트 v9.9.1 있음",
+      CURRENT_VERSION .. " · 드라이버 " .. major_minor .. " · 업데이트 v9.9.1" },
     { "an update without a version", function(s) s.update = { available = true } end, "en",
-      "Connected · 3h 25m", "A service update is available" },
+      "Connected · 3h 25m", "A PC app update is available" },
     { "WoL off", function(s) s.wol = { ready = false, adapters = {} } end, "ko",
       "연결됨 · WoL 꺼짐 · 3시간 25분", "PC의 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인" },
   }) do
     local name, tweak, lang, summary, message, versions = c[1], c[2], c[3], c[4], c[5], c[6]
-    local status = sample_status()
+    local status = current_status()
     tweak(status)
     local events = events_for(status, state.ON, lang)
     h.assert_equal(h.event_value(events, caps.STATUS, "connection"), "ok", name)
@@ -457,7 +475,7 @@ end
 function T.test_the_wol_warning_follows_the_selected_adapter()
   -- #97: three rows, one answer. The sample PC's Wi-Fi card has WoL on, but
   -- the service picked the Ethernet one and that is the adapter that matters.
-  local status = sample_status()
+  local status = current_status()
   status.wol.selected.wol_enabled = false
   status.wol.adapters[2] = { name = "Wi-Fi", mac = "11:22:33:44:55:66", wol_enabled = true }
   local events = events_for(status, state.ON, "ko")
@@ -862,15 +880,15 @@ end
 
 function T.test_message_order_is_the_documented_one()
   h.assert_deep_equal(state.MESSAGE_ORDER, {
-    "error", "incompatible", "wol_not_ready", "update_available", "no_secret", "note",
+    "error", "incompatible", "app_update", "wol_not_ready", "update_available", "no_secret", "note",
   })
 end
 
 function T.test_message_priority_picks_one_notice()
   -- All four at once: only the most important sentence is shown.
-  local status = sample_status()
+  local status = current_status()
   status.wol = { ready = false }
-  status.update = { available = true, latest = "v1.2.0" }
+  status.update = { available = true, latest = "v9.9.1" }
   status.secret_set = false
 
   local message = h.event_value(events_for(status), caps.STATUS, "message")
@@ -879,7 +897,7 @@ function T.test_message_priority_picks_one_notice()
 
   -- WoL fixed: the update notice is next.
   status.wol = { ready = true }
-  h.assert_contains(h.event_value(events_for(status), caps.STATUS, "message"), "v1.2.0")
+  h.assert_contains(h.event_value(events_for(status), caps.STATUS, "message"), "v9.9.1")
 
   -- Nothing left but the missing secret.
   status.update = { available = false }
@@ -902,7 +920,7 @@ function T.test_an_error_outranks_every_status_notice()
 end
 
 function T.test_a_note_shows_only_when_nothing_is_wrong()
-  local status = sample_status()
+  local status = current_status()
   local events = state.apply_status(state.new(state.ON), status,
     { now = NOW, lang = "en", note = "Schedule cancelled" })
   h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Schedule cancelled")
@@ -1185,6 +1203,103 @@ end
 function T.test_transition_tolerates_a_nil_state()
   local s = state.transition(nil, "status_ok")
   h.assert_equal(s.power_state, state.ON)
+end
+
+--------------------------------------------------------------------------------
+-- a PC app older than the driver wants (edge-driver.md "버전 짝 맞춤")
+--------------------------------------------------------------------------------
+
+local function rows_for(version, tweak, lang)
+  local status = sample_status()
+  status.service_version = version
+  status.features = { "awake" }
+  if tweak then
+    tweak(status)
+  end
+  local events = events_for(status, state.ON, lang)
+  return h.event_value(events, caps.STATUS, "summary"), h.event_value(events, caps.STATUS, "message")
+end
+
+function T.test_the_summary_asks_for_the_app_update_only_below_the_recommended_version()
+  local short = function(s) s.uptime_seconds = 300 end
+  for _, c in ipairs({
+    { "v1.1.2", "ko", "연결됨 · 5분 · 앱 업데이트 필요" },
+    { "v1.1.2", "en", "Connected · Update app" }, -- the uptime is dropped first
+    { "v1.2.0", "ko", "연결됨 · 5분" },
+    { "v1.2.0-rc14", "ko", "연결됨 · 5분" }, -- our rc builds do not nag
+    { "v1.3.0", "en", "Connected · 5m" },
+    { "dev", "ko", "연결됨 · 5분" },
+  }) do
+    h.assert_equal((rows_for(c[1], short, c[2])), c[3], c[1] .. " " .. c[2])
+  end
+  -- A service older than v1.2.0 sends no `features` and no version is needed
+  -- to tell.
+  local summary = rows_for(nil, function(s) s.features = nil; s.uptime_seconds = nil end, "ko")
+  h.assert_equal(summary, "연결됨 · 앱 업데이트 필요")
+end
+
+function T.test_the_summary_keeps_the_wol_warning_over_the_app_update()
+  local adapter = function(name)
+    return function(s)
+      s.uptime_seconds = 300
+      s.wol.selected.name = name
+      s.wol.selected.wol_enabled = false
+    end
+  end
+  -- The update ending outranks the adapter's name and the uptime, never the
+  -- WoL warning.
+  h.assert_equal((rows_for("v1.1.2", adapter("Ethernet"), "ko")), "연결됨 · WoL 꺼짐 · 앱 업데이트 필요")
+  h.assert_equal((rows_for("v1.1.2", adapter("Ethernet"), "en")), "Connected · WoL off")
+  for _, lang in ipairs({ "ko", "en" }) do
+    for _, name in ipairs({ "LAN", "Ethernet", "vEthernet (Default Switch)" }) do
+      for _, up in ipairs({ 0, 300, 7500, 266400 }) do
+        local line = state.status_summary("ok", lang, true, name, { uptime_seconds = up, app_update = true })
+        h.assert_true(chars(line) <= state.SUMMARY_MAX_CHARS, string.format("%q is %d characters", line, chars(line)))
+        h.assert_contains(line, i18n.t(lang, "wol_off_short"), "the warning is never dropped")
+      end
+      local line = state.status_summary("ok", lang, false, nil, { uptime_seconds = 266400, app_update = true })
+      h.assert_true(chars(line) <= state.SUMMARY_MAX_CHARS, line)
+      h.assert_contains(line, i18n.t(lang, "app_update_short"), "without a WoL warning the ending always fits")
+    end
+  end
+  -- Only the connected line has it.
+  h.assert_equal(state.status_summary("unreachable", "ko", nil, nil, { app_update = true }), "연결 안 됨 · 응답 없음")
+end
+
+function T.test_the_message_asks_for_the_app_update_right_after_an_error()
+  -- Before WoL off, a newer release and a missing secret.
+  local everything = function(s)
+    s.wol = { ready = false }
+    s.update = { available = true, latest = "v1.2.1" }
+    s.secret_set = false
+  end
+  local _, ko = rows_for("v1.1.2", everything, "ko")
+  h.assert_equal(ko, "PC 앱을 v1.2.0 이상으로 업데이트하세요 (최신 v1.2.1)")
+  local _, en = rows_for("v1.1.2", everything, "en")
+  h.assert_equal(en, "Update the PC app to v1.2.0 or newer (latest v1.2.1)")
+  -- `update.latest` only when it is newer than what is asked for: the
+  -- service's own stale answer (a v1.1.2 PC that still sees v1.1.2 as the
+  -- latest) or the same version adds nothing.
+  for _, latest in ipairs({ "v1.1.2", "v1.2.0", "v1.2.0-rc3", "", false }) do
+    local _, message = rows_for("v1.1.2", function(s) s.update = { available = false, latest = latest or nil } end, "ko")
+    h.assert_equal(message, "PC 앱을 v1.2.0 이상으로 업데이트하세요", tostring(latest))
+  end
+  -- An error still outranks it.
+  local status = sample_status()
+  local events = state.apply_status(state.new(state.ON), status,
+    { now = NOW, lang = "en", error = "Cannot reach the PC" })
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Cannot reach the PC")
+  -- A note waits too.
+  events = state.apply_status(state.new(state.ON), status, { now = NOW, lang = "en", note = "Schedule cancelled" })
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Update the PC app to v1.2.0 or newer")
+
+  -- A new enough PC app: a newer release is the lower `update_available`.
+  local _, current = rows_for("v1.2.0", function(s) s.update = { available = true, latest = "v1.2.1" } end, "ko")
+  h.assert_equal(current, "PC 앱 업데이트 v1.2.1 있음")
+  local _, rc = rows_for("v1.2.0-rc14", function(s) s.update = { available = true, latest = "v1.2.0" } end, "en")
+  h.assert_equal(rc, "PC app update v1.2.0 available")
+  local _, quiet = rows_for("v1.2.0", nil, "ko")
+  h.assert_equal(quiet, "")
 end
 
 return T

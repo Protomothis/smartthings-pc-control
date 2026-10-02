@@ -81,7 +81,7 @@ local function payload(overrides)
     data = {},
     status = {
       protocol = 1,
-      service_version = "v1.1.0",
+      service_version = "v1.2.0", -- new enough: no "update the PC app" message
       machine_id = "9f3c-guid",
       hostname = "DESKTOP-ABC",
       secret_set = true,

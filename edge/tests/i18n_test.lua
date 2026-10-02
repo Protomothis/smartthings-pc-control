@@ -94,6 +94,17 @@ function T.test_every_string_has_both_languages_with_the_same_verbs()
   h.assert_true(count > 90, "found only " .. count .. " strings; is the upvalue the table?")
 end
 
+-- No sentence names a service version of its own: "PC 앱 v%s 필요" gets
+-- features.RECOMMENDED_SERVICE_VERSION or poll.MIN_SERVICE_VERSION, so bumping
+-- the constant is the whole change (edge-driver.md "버전 짝 맞춤").
+function T.test_no_string_hard_codes_a_version()
+  for key, entry in pairs(strings_table()) do
+    for _, lang in ipairs(LANGS) do
+      h.assert_nil(entry[lang]:match("%d+%.%d+%.%d+"), key .. " (" .. lang .. ") names a version: " .. entry[lang])
+    end
+  end
+end
+
 -- Every key the driver looks up exists: the literal ones in src/ (any
 -- i18n.t(...) call's quoted keys), and the ones a refusal, an error note or a
 -- poll failure hands to i18n.t as a variable.
@@ -217,7 +228,8 @@ end
 function T.test_goldens()
   for _, g in ipairs({
     { "wake_failed", {}, "깨우기 실패: WoL 응답 없음", "Wake failed: no WoL response" },
-    { "incompatible_service", { "1.1.0" }, "서비스 v1.1.0 이상 필요", "Requires service v1.1.0 or newer" },
+    { "incompatible_service", { "1.1.0" }, "PC 앱 v1.1.0 이상 필요", "Requires PC app v1.1.0 or newer" },
+    { "incompatible_driver", {}, "드라이버 업데이트 필요 (허브)", "Driver update required (hub)" },
     -- #97: the WoL warning names the adapter the service chose.
     { "wol_not_ready_on", { "이더넷" }, "이더넷 어댑터에 WoL이 꺼져 있습니다 · SmartThings 탭 확인",
       "Wake-on-LAN is off on 이더넷 · check the SmartThings tab" },
@@ -228,7 +240,9 @@ function T.test_goldens()
     { "schedule_remaining_dh", { 1, 3 }, "1일 3시간 후", "in 1 d 3 h" },
     -- #87: the row writes the "v" itself (state.versions strips the tag's).
     { "versions", { "1.1.0", "1.0" }, "v1.1.0 · 드라이버 1.0", "v1.1.0 · Driver 1.0" },
-    { "update_available", { "v1.2.0" }, "서비스 업데이트 v1.2.0 사용 가능", "Service update v1.2.0 available" },
+    { "update_available", { "v1.2.0" }, "PC 앱 업데이트 v1.2.0 있음", "PC app update v1.2.0 available" },
+    { "app_update", { "1.2.0" }, "PC 앱을 v1.2.0 이상으로 업데이트하세요", "Update the PC app to v1.2.0 or newer" },
+    { "needs_service", { "1.2.0" }, "PC 앱 v1.2.0 필요", "Needs PC app v1.2.0" },
     { "discovery_found", { 2 }, "PC 2대를 찾았습니다", "Found 2 PC(s)" },
     { "pc_label", { "DESKTOP-ABC" }, "DESKTOP-ABC 컴퓨터", "DESKTOP-ABC PC" },
   }) do

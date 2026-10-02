@@ -55,13 +55,15 @@ local STRINGS = {
     ko = "PC에 연결할 수 없습니다",
     en = "Cannot reach the PC",
   },
+  -- Users know the service as "the PC app" (the tray app they installed), so
+  -- every notice that asks for a newer one says so.
   incompatible_service = {
-    ko = "서비스 v%s 이상 필요",
-    en = "Requires service v%s or newer",
+    ko = "PC 앱 v%s 이상 필요",
+    en = "Requires PC app v%s or newer",
   },
   incompatible_driver = {
-    ko = "드라이버 업데이트 필요",
-    en = "Driver update required",
+    ko = "드라이버 업데이트 필요 (허브)",
+    en = "Driver update required (hub)",
   },
   badrequest = {
     ko = "서비스가 명령을 거부했습니다",
@@ -83,14 +85,32 @@ local STRINGS = {
   },
 
   -- service state notices (§3.2)
+  -- The PC app is older than features.RECOMMENDED_SERVICE_VERSION (the
+  -- driver uses features it does not have). `%s` is that version; the
+  -- message row appends `app_update_latest` when a newer release is known.
+  app_update = {
+    ko = "PC 앱을 v%s 이상으로 업데이트하세요",
+    en = "Update the PC app to v%s or newer",
+  },
+  app_update_latest = {
+    ko = " (최신 %s)",
+    en = " (latest %s)",
+  },
+  -- The same, as the end of `pcInfo.summary` ("연결됨 · 앱 업데이트 필요").
+  -- English is short because the whole line has 24 characters.
+  app_update_short = {
+    ko = "앱 업데이트 필요",
+    en = "Update app",
+  },
+  -- The PC app is new enough, but a newer release is out.
   update_available = {
-    ko = "서비스 업데이트 %s 사용 가능",
-    en = "Service update %s available",
+    ko = "PC 앱 업데이트 %s 있음",
+    en = "PC app update %s available",
   },
   -- `update.available` without a usable `update.latest`.
   update_available_plain = {
-    ko = "서비스 업데이트 사용 가능",
-    en = "A service update is available",
+    ko = "PC 앱 업데이트 있음",
+    en = "A PC app update is available",
   },
 
   -- #93: what a command that arrived during a power transition is answered
@@ -123,9 +143,10 @@ local STRINGS = {
   -- the service said about it (features.refusal / features.error_note). Like
   -- the busy notes above they go on `pcInfo.message` and `pcInfo.summary` until
   -- the next poll, so they are short enough for the summary row.
+  -- `%s` is features.RECOMMENDED_SERVICE_VERSION (features.note_text).
   needs_service = {
-    ko = "서비스 v1.2.0 필요",
-    en = "Requires service v1.2.0",
+    ko = "PC 앱 v%s 필요",
+    en = "Needs PC app v%s",
   },
   feature_missing = {
     ko = "이 PC에서 지원 안 함",
