@@ -519,6 +519,10 @@ func TestTelegramUnauthorizedEmitsUnknownChat(t *testing.T) {
 func TestTelegramControlLifecycle(t *testing.T) {
 	initLogger()
 	calls := make(chan string, 64)
+	// release ends the blocked long polls at teardown: on Windows the
+	// server occasionally misses the client hanging up, and Close would
+	// then wait for TCP keep-alive (150s). See telegram's fakeBot.
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]any
@@ -528,12 +532,17 @@ func TestTelegramControlLifecycle(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if method == "getUpdates" {
 			// Like a real long poll: nothing to report until the client hangs up.
-			<-r.Context().Done()
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
 			return
 		}
 		fmt.Fprint(w, `{"ok":true,"result":true}`)
 	}))
-	defer srv.Close()
+	// Last-in first-out: stop the poller, release the polls, close.
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
 	origBase := telegramBaseURL
 	telegramBaseURL = srv.URL
 	t.Cleanup(func() {
