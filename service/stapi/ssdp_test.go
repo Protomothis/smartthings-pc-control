@@ -285,11 +285,68 @@ func TestSSDPStartOpensOnlyOnce(t *testing.T) {
 	}
 }
 
+// Loopback UDP is not lossless: on Windows a datagram now and then never
+// reaches the reader (seen about once in a few thousand runs, either way
+// round). The tests below therefore search again, as a hub would, instead
+// of waiting on one packet; ssdpTries bounds that, ssdpTryWait is how long
+// each try waits.
+const (
+	ssdpTries   = 20
+	ssdpTryWait = 250 * time.Millisecond
+)
+
+// frozenSSDPClock stops the rate limiter's clock so a test decides which
+// searches fall into the same one-per-second window; advance moves it on.
+// Call it before the responder starts.
+func frozenSSDPClock(s *Server) (advance func(time.Duration)) {
+	var mu sync.Mutex
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	return func(d time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		now = now.Add(d)
+	}
+}
+
+// searchUntilSeen clears the last search and calls send until the
+// responder records one, logging each try that was lost.
+func searchUntilSeen(t *testing.T, s *Server, what string, send func()) {
+	t.Helper()
+	s.ResetSSDPLastSearch()
+	for try := 0; try < ssdpTries; try++ {
+		send()
+		if waitSSDPSearch(s, ssdpTryWait) {
+			return
+		}
+		t.Logf("%s: try %d was lost, searching again", what, try+1)
+	}
+	t.Fatalf("the responder never saw the %s in %d tries", what, ssdpTries)
+}
+
+// waitSSDPSearch reports whether the responder records a search within d.
+func waitSSDPSearch(s *Server, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for {
+		if _, ok := s.LastSSDPSearch(); ok {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestSSDPResponderAnswersOnLoopback(t *testing.T) {
 	s := newTestServer(t, config.Config{Port: 5001})
-	// No MX jitter, so the reply lands well inside the one-per-second
-	// window the repeat below has to fall foul of.
+	// No MX jitter: the answer goes out at once.
 	s.randFloat = func() float64 { return 0 }
+	advance := frozenSSDPClock(s)
 	dst := loopbackSSDP(t, s)
 
 	client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
@@ -297,23 +354,34 @@ func TestSSDPResponderAnswersOnLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	send := func(lines ...string) {
+		t.Helper()
+		if _, err := client.WriteToUDP(mSearchPacket(append([]string{`MAN: "ssdp:discover"`}, lines...)...), dst); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// A packet the responder must ignore, then one it must answer. Both go
-	// out before the read, so a reply to the first would arrive first.
-	if _, err := client.WriteToUDP(mSearchPacket(`MAN: "ssdp:discover"`, "ST: upnp:rootdevice"), dst); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.WriteToUDP(mSearchPacket(`MAN: "ssdp:discover"`, "MX: 1", "ST: "+ssdpDeviceST), dst); err != nil {
-		t.Fatal(err)
-	}
-
-	client.SetReadDeadline(time.Now().Add(10 * time.Second))
+	// out before the read, so a reply to the first would arrive first. Each
+	// try is a new rate-limit window, so a lost try does not block the next.
 	buf := make([]byte, ssdpMaxPacket)
-	n, _, err := client.ReadFromUDP(buf)
-	if err != nil {
-		t.Fatalf("no reply: %v", err)
+	reply := ""
+	for try := 0; try < ssdpTries && reply == ""; try++ {
+		advance(2 * ssdpPerSourceInterval)
+		send("ST: upnp:rootdevice")
+		send("MX: 1", "ST: "+ssdpDeviceST)
+		client.SetReadDeadline(time.Now().Add(ssdpTryWait))
+		n, _, err := client.ReadFromUDP(buf)
+		if err != nil {
+			t.Logf("try %d got no reply (%v), searching again", try+1, err)
+			continue
+		}
+		reply = string(buf[:n])
 	}
-	start, h := ssdpHeaders(t, string(buf[:n]))
+	if reply == "" {
+		t.Fatalf("no reply to %d searches", ssdpTries)
+	}
+	start, h := ssdpHeaders(t, reply)
 	if start != "HTTP/1.1 200 OK" {
 		t.Errorf("start line = %q", start)
 	}
@@ -325,11 +393,26 @@ func TestSSDPResponderAnswersOnLoopback(t *testing.T) {
 	}
 
 	// The repeat a hub sends straight after is dropped by the rate limit.
-	if _, err := client.WriteToUDP(mSearchPacket(`MAN: "ssdp:discover"`, "ST: "+ssdpDeviceST), dst); err != nil {
+	// A fresh window first takes one search (the first one the responder
+	// sees in it is answered) ...
+	advance(2 * ssdpPerSourceInterval)
+	searchUntilSeen(t, s, "first search", func() { send("ST: " + ssdpDeviceST) })
+	// ... then the repeat comes from a second socket on the same IP (the
+	// limiter's key), so no late answer to the client above can land on
+	// it. It is resent until the responder has seen it, so the silence
+	// below is the limiter and not a lost packet.
+	repeat, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	if n, _, err := client.ReadFromUDP(buf); err == nil {
+	defer repeat.Close()
+	searchUntilSeen(t, s, "repeat", func() {
+		if _, err := repeat.WriteToUDP(mSearchPacket(`MAN: "ssdp:discover"`, "ST: "+ssdpDeviceST), dst); err != nil {
+			t.Fatal(err)
+		}
+	})
+	repeat.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if n, _, err := repeat.ReadFromUDP(buf); err == nil {
 		t.Errorf("a repeat within a second was answered: %q", buf[:n])
 	}
 }
@@ -383,6 +466,7 @@ func TestNoteSSDPSearch(t *testing.T) {
 func TestServeSSDPRecordsTheSearch(t *testing.T) {
 	s := newTestServer(t, config.Config{Port: 5001})
 	s.randFloat = func() float64 { return 0 }
+	frozenSSDPClock(s)
 	dst := loopbackSSDP(t, s)
 
 	client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
@@ -406,19 +490,13 @@ func TestServeSSDPRecordsTheSearch(t *testing.T) {
 		t.Fatalf("another device's search was recorded: %+v", got)
 	}
 
-	send(ssdpDeviceST)
-	send(ssdpDeviceST) // the burst repeat the per-source limiter drops
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if got, ok := s.LastSSDPSearch(); ok {
-			if got.IP != "127.0.0.1" {
-				t.Errorf("last search = %+v, want 127.0.0.1", got)
-			}
-			break
+	// Searches are resent until one lands (see ssdpTries). With the clock
+	// frozen, every one after the first the responder sees is a burst
+	// repeat the per-source limiter drops.
+	for _, what := range []string{"M-SEARCH", "burst repeat"} {
+		searchUntilSeen(t, s, what, func() { send(ssdpDeviceST) })
+		if got, _ := s.LastSSDPSearch(); got.IP != "127.0.0.1" {
+			t.Errorf("%s: last search = %+v, want 127.0.0.1", what, got)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the responder never recorded the M-SEARCH")
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
