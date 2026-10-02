@@ -12,7 +12,7 @@
 
 [한국어](#한국어) · [English](#english)
 
-<img src="docs/gui-settings.png" alt="설정 탭" width="49%"> <img src="docs/gui-logs.png" alt="로그 탭" width="49%">
+<img src="docs/gui-commands.png" alt="명령 탭" width="49%"> <img src="docs/gui-share.png" alt="공유 탭" width="49%">
 
 </div>
 
