@@ -19,7 +19,12 @@
 # DEFINITION means: the hub caches a capability definition by id for the whole
 # hub and never re-reads a changed one, so an attribute or command that is
 # added, removed or re-typed needs a new capability id (see
-# ../docs/design/edge-platform-notes.md):
+# ../docs/design/edge-platform-notes.md). The same goes for a PRESENTATION
+# change that has to reach the phone: `presentation:update` is stored and read
+# back, but device screens - even for brand-new profile names - keep being
+# built from the capability's first presentation (2026-10-02: `pcwatch` gave
+# way to `pcwatchlist` for that reason). What this script pushes to an
+# existing id is good for translations and for the record, not for the screen:
 #
 #   smartthings capabilities:create -i capabilities/<name>.json
 #   smartthings capabilities:presentation:create <new id> --capability-version 1 \
@@ -36,12 +41,14 @@
 #   smartthings capabilities:delete numbersystem53811.pcdelay
 #   smartthings capabilities:delete numbersystem53811.pcexec
 #
-# And once the Dev channel device has moved onto `pc*.v7` or later and its app child
-# devices are gone (#123: the kind-based `pcActivity` of `pc*.v5` gave way to
-# `pcApps` on the PC plus one `pcApp` child per watched app in `pc*.v6`, and
-# both to the watch card `pcWatch` on the `apps` component; none of them was
-# published):
+# And once the Dev channel device has moved onto `pc*.v10` or later and its app
+# child devices are gone (#123: the kind-based `pcActivity` of `pc*.v5` gave way
+# to `pcApps` on the PC plus one `pcApp` child per watched app in `pc*.v6`,
+# both to the watch card `pcWatch` on the `apps` component in `pc*.v7`-`v9`,
+# and that to `pcWatchList` in `pc*.v10`, because pcWatch's screen stayed on its
+# first presentation; none of them was published):
 #
+#   smartthings capabilities:delete numbersystem53811.pcwatch --capability-version 1
 #   smartthings capabilities:delete numbersystem53811.pcapps --capability-version 1
 #   smartthings capabilities:delete numbersystem53811.pcapp --capability-version 1
 #   smartthings capabilities:delete numbersystem53811.pcactivity --capability-version 1
@@ -59,7 +66,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcWatch pcToast)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcWatchList pcToast)
 VERSION=1
 TAGS=(ko en)
 

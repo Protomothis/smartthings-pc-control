@@ -1,8 +1,8 @@
 {
-  "id": "numbersystem53811.pcwatch",
+  "id": "numbersystem53811.pcwatchlist",
   "version": 1,
   "status": "proposed",
-  "name": "pcWatch",
+  "name": "pcWatchList",
   "ephemeral": false,
   "attributes": {
     "summary": {
