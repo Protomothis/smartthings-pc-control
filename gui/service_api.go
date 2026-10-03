@@ -11,7 +11,7 @@ type serviceAPI interface {
 	LocalLogin() error
 
 	GetConfig() (Config, error)
-	SaveConfig(cfg Config) (string, error)
+	SaveConfig(cfg Config) (SaveReply, error)
 	Logs() ([]string, error)
 	RestartService() error
 
@@ -38,7 +38,7 @@ type serviceAPI interface {
 
 	TestNotify() (NotifyResult, error)
 	RunPreset(slot int) error
-	TestPreset(p Preset) error
+	TestPreset(p Preset) ([]PresetWarning, error)
 }
 
 var _ serviceAPI = (*Client)(nil)

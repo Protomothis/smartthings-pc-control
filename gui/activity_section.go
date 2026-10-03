@@ -2,6 +2,7 @@ package gui
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"image/color"
 	"slices"
@@ -29,7 +30,9 @@ import (
 // slot selector offers its own slot and the free ones only.
 //
 // [실행 중인 프로그램에서 고르기] asks the service for the running .exe
-// names (GET /api/processes, loopback only) and shows them in a dialog.
+// names (GET /api/processes, the local trusted session only — C5) and
+// shows them in a dialog. Without that session the list is locked under a
+// note (locallogin.go); the detection toggle stays usable.
 // That list exists only inside the dialog: nothing but the picked name is
 // kept, and it only goes anywhere once the user saves it as an entry.
 
@@ -233,6 +236,9 @@ type activityBox struct {
 	rows    *fyne.Container
 	addBtn  *widget.Button
 	pickBtn *widget.Button
+	// lockNote says why the list is locked: the service refused the local
+	// session (C5). The detection toggle stays usable.
+	lockNote *widget.Label
 	// slotSize is the slot column's fixed size, so the selectors line up
 	// with their column title.
 	slotSize fyne.Size
@@ -269,6 +275,10 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 		}
 	})
 	a.pickBtn = widget.NewButtonWithIcon(u.t("activity.pick"), theme.SearchIcon(), func() { u.pickRunningProgram() })
+	a.lockNote = widget.NewLabel(u.t("localonly.note"))
+	a.lockNote.Wrapping = fyne.TextWrapWord
+	a.lockNote.Importance = widget.WarningImportance
+	a.lockNote.Hide()
 
 	// Every selector is as wide as one showing the widest slot name.
 	sample := widget.NewSelect([]string{u.slotLabel(activityMaxWatch)}, nil)
@@ -293,6 +303,7 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 		a.toggle,
 		hint(u.t("activity.hint")),
 		widget.NewLabelWithStyle(u.t("activity.watch"), fyne.TextAlignLeading, bold),
+		a.lockNote,
 		hint(u.t("activity.priority")),
 		header,
 		a.rows,
@@ -317,6 +328,12 @@ func (u *ui) renderActivityRows() {
 		return
 	}
 	a := &t.activity
+	locked := u.editorsLocked()
+	if locked {
+		a.lockNote.Show()
+	} else {
+		a.lockNote.Hide()
+	}
 	a.rows.RemoveAll()
 	if len(a.watch) == 0 {
 		a.rows.Add(hint(u.t("activity.empty")))
@@ -369,16 +386,17 @@ func (u *ui) renderActivityRows() {
 				u.refreshDirty()
 			}
 		})
+		if locked {
+			slot.Disable()
+			proc.Disable()
+			label.Disable()
+			del.Disable()
+		}
 		a.rows.Add(container.NewBorder(nil, nil, u.activitySlotCell(slot), del, container.NewGridWithColumns(2, proc, label)))
 	}
 	a.rows.Refresh()
-	if len(a.watch) >= activityMaxWatch {
-		a.addBtn.Disable()
-		a.pickBtn.Disable()
-	} else {
-		a.addBtn.Enable()
-		a.pickBtn.Enable()
-	}
+	setEnabled(a.addBtn, len(a.watch) < activityMaxWatch && !locked)
+	setEnabled(a.pickBtn, len(a.watch) < activityMaxWatch && !locked)
 	// The rows changed height after the tab was laid out (see renderHubs).
 	if u.share != nil && u.share.root != nil {
 		u.share.root.Refresh()
@@ -402,11 +420,16 @@ func (u *ui) fillActivityBox(a ActivityConfig) {
 func (u *ui) pickRunningProgram() {
 	a := &u.share.activity
 	busy := func(on bool) {
-		// Back on afterwards only while a slot is free, the rule
-		// renderActivityRows applies.
-		setEnabled(a.pickBtn, !on && len(a.watch) < activityMaxWatch)
+		// Back on afterwards only while a slot is free and the list is
+		// not locked, the rule renderActivityRows applies.
+		setEnabled(a.pickBtn, !on && len(a.watch) < activityMaxWatch && !u.editorsLocked())
 	}
-	runAsync(busy, u.client.RunningProcesses, func(names []string, err error) {
+	list := func() ([]string, error) { return withLocalSession(u, u.client.RunningProcesses) }
+	runAsync(busy, list, func(names []string, err error) {
+		if errors.Is(err, errLocalOnly) {
+			dialog.ShowError(errors.New(u.t("localonly.note")), u.win)
+			return
+		}
 		if err != nil {
 			u.markDisconnectedOnNetError(err)
 			dialog.ShowError(fmt.Errorf(u.t("activity.pick.fail"), err), u.win)

@@ -52,7 +52,13 @@ type ui struct {
 	// localGate holds back the automatic local login after a refusal
 	// (locallogin.go, #131).
 	localGate localLoginGate
-	quit      chan struct{}
+	// trustAt is a trustState (locallogin.go): whether the service vouched
+	// for this process, which the presets and watch editors need (C5).
+	trustAt atomic.Int32
+	// confirm asks a yes/no question; nil is Fyne's confirm dialog. The
+	// tests answer it themselves.
+	confirm func(title, body, ok string, cb func(bool))
+	quit    chan struct{}
 
 	// visible is whether the window was on screen at pollLoop's last look,
 	// shownTab the tab in front (mirrors curTab) — both read by pollLoop.
@@ -452,7 +458,7 @@ func (u *ui) rebuild() {
 	if u.forms.base != nil {
 		u.onConfig(*u.forms.base)
 	}
-	u.refreshDirty()
+	u.applyTrust() // the editors' lock (C5); refreshes the dirty markers too
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
@@ -514,9 +520,13 @@ func (u *ui) applyConnected(on bool) {
 // --- Data loading / polling ---
 
 func (u *ui) initialLoad() {
+	// The local trusted session first, secret or not (C5): the config read
+	// without it has the preset paths masked.
+	u.ensureLocalSession()
 	cfg, err := u.client.GetConfig()
 	if err != nil && !errors.Is(err, errUnauthorized) && u.followPortChange() {
 		// The service came back on the port saved in the settings (#121).
+		u.ensureLocalSession()
 		cfg, err = u.client.GetConfig()
 	}
 	if errors.Is(err, errUnauthorized) && u.tryLocalLogin() {
@@ -537,6 +547,7 @@ func (u *ui) initialLoad() {
 		}
 		if err != nil {
 			u.connected.Store(false)
+			u.forgetLocalSession()
 			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
@@ -651,6 +662,7 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 		return
 	}
 	if u.connected.Swap(false) {
+		u.forgetLocalSession()
 		fyne.Do(func() {
 			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)

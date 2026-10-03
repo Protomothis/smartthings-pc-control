@@ -230,25 +230,49 @@ func (c *Client) GetConfig() (Config, error) {
 	return cfg, json.NewDecoder(resp.Body).Decode(&cfg)
 }
 
+// PresetWarning is one entry of the "warnings" list a preset save or test
+// may return (review C6): the preset in Slot points at a file whose file
+// or folder (Path) others can modify — Code "writable_by_others". The save
+// or test went through regardless.
+type PresetWarning struct {
+	Slot int    `json:"slot"`
+	Code string `json:"code"`
+	Path string `json:"path"`
+}
+
+// SaveReply is the ok answer of POST /api/config.
+type SaveReply struct {
+	Message  string
+	Warnings []PresetWarning
+}
+
 // SaveConfig persists a new config via the service (hot-reloads secret).
-func (c *Client) SaveConfig(cfg Config) (string, error) {
+// A change to the presets or the watch list without the local trusted
+// session is errLocalOnly (C5).
+func (c *Client) SaveConfig(cfg Config) (SaveReply, error) {
 	resp, err := c.do("POST", "/api/config", cfg)
 	if err != nil {
-		return "", err
+		return SaveReply{}, err
 	}
 	defer resp.Body.Close()
 	var r struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
+		Status   string          `json:"status"`
+		Error    string          `json:"error"`
+		Message  string          `json:"message"`
+		Warnings []PresetWarning `json:"warnings"`
 	}
 	json.NewDecoder(resp.Body).Decode(&r)
-	if resp.StatusCode != http.StatusOK || r.Status != "ok" {
-		if r.Message != "" {
-			return "", fmt.Errorf("%s", r.Message)
-		}
-		return "", fmt.Errorf("save failed (HTTP %d)", resp.StatusCode)
+	switch {
+	case resp.StatusCode == http.StatusOK && r.Status == "ok":
+		return SaveReply{Message: r.Message, Warnings: r.Warnings}, nil
+	case resp.StatusCode == http.StatusUnauthorized:
+		return SaveReply{}, errUnauthorized
+	case resp.StatusCode == http.StatusForbidden && r.Error == "local_only":
+		return SaveReply{}, errLocalOnly
+	case r.Message != "":
+		return SaveReply{}, fmt.Errorf("%s", r.Message)
 	}
-	return r.Message, nil
+	return SaveReply{}, fmt.Errorf("save failed (HTTP %d)", resp.StatusCode)
 }
 
 // Logs returns the last log lines from the service.
@@ -387,8 +411,9 @@ func (c *Client) GetSTHub() (STHub, error) {
 }
 
 // RunningProcesses returns the unique .exe names running on this PC, for
-// the watch-list picker (#110). The service answers loopback callers only;
-// the list is shown in the picker dialog and kept nowhere.
+// the watch-list picker (#110). The service answers the local trusted
+// session only (errLocalOnly otherwise, C5); the list is shown in the
+// picker dialog and kept nowhere.
 func (c *Client) RunningProcesses() ([]string, error) {
 	resp, err := c.do("GET", "/api/processes", nil)
 	if err != nil {
@@ -397,6 +422,9 @@ func (c *Client) RunningProcesses() ([]string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, errUnauthorized
+	}
+	if resp.StatusCode == http.StatusForbidden && localOnlyReply(resp.Body) {
+		return nil, errLocalOnly
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)

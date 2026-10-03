@@ -17,7 +17,13 @@ type fakeAPI struct {
 	mu    sync.Mutex
 	cfg   Config // BotToken in plain text
 	posts []Config
+	// warnings is what a save answers with (C6).
+	warnings []PresetWarning
 }
+
+// LocalLogin vouches for the test process: the fake has no secret and
+// grants the local trusted session (C5).
+func (f *fakeAPI) LocalLogin() error { return nil }
 
 func (f *fakeAPI) GetConfig() (Config, error) {
 	f.mu.Lock()
@@ -28,7 +34,7 @@ func (f *fakeAPI) GetConfig() (Config, error) {
 	return jsonRoundTrip(out), nil
 }
 
-func (f *fakeAPI) SaveConfig(cfg Config) (string, error) {
+func (f *fakeAPI) SaveConfig(cfg Config) (SaveReply, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	in := jsonRoundTrip(cfg)
@@ -41,9 +47,16 @@ func (f *fakeAPI) SaveConfig(cfg Config) (string, error) {
 	default:
 		token = t
 	}
+	// The service reads a null list as "keep the stored one".
+	if in.Presets == nil {
+		in.Presets = f.cfg.Presets
+	}
+	if in.Activity.Watch == nil {
+		in.Activity.Watch = f.cfg.Activity.Watch
+	}
 	f.cfg = in
 	f.cfg.Telegram.BotToken = token
-	return "saved", nil
+	return SaveReply{Message: "saved", Warnings: f.warnings}, nil
 }
 
 func (f *fakeAPI) Login(string) error                    { return nil }

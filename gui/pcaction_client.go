@@ -53,6 +53,9 @@ func (c *Client) actionCall(path string, body, out any) error {
 		// Not one of ours: the settings page or a 404 of an older service.
 		return errActionUnsupported
 	}
+	if r.Error == "local_only" && resp.StatusCode == http.StatusForbidden {
+		return errLocalOnly
+	}
 	if r.Error == "" {
 		r.Error = "failed"
 	}
@@ -76,7 +79,13 @@ func (c *Client) RunPreset(slot int) error {
 	return c.actionCall("/api/presets/run", map[string]int{"slot": slot}, nil)
 }
 
-// TestPreset starts p as typed in the editor, before it is saved.
-func (c *Client) TestPreset(p Preset) error {
-	return c.actionCall("/api/presets/test", p, nil)
+// TestPreset starts p as typed in the editor, before it is saved. It needs
+// the local trusted session (errLocalOnly otherwise, C5); the warnings are
+// the service's file-permission findings (C6).
+func (c *Client) TestPreset(p Preset) ([]PresetWarning, error) {
+	var r struct {
+		Warnings []PresetWarning `json:"warnings"`
+	}
+	err := c.actionCall("/api/presets/test", p, &r)
+	return r.Warnings, err
 }

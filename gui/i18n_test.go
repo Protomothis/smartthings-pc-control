@@ -89,9 +89,12 @@ func TestRuntimeLocaleKeysExist(t *testing.T) {
 	for _, k := range []string{"st.rel.sec", "st.rel.min", "st.rel.hour", "st.rel.day"} {
 		want[k] = "%d"
 	}
-	for _, k := range []string{"slot", "name", "namelong", "type", "path", "quote", "args", "url", "urlargs", "abs", "exe", "script", "dup"} {
+	for _, k := range []string{"slot", "name", "namelong", "namedup", "type", "path", "quote", "args", "url", "abs", "exe", "script", "dup"} {
 		want["presets.err."+k] = "%d" // the row's slot
 	}
+	want["presets.path.placeholder.script"] = "%s" // the Documents folder
+	want["presets.path.placeholder.program"] = ""
+	want["presets.path.placeholder.url"] = ""
 	for _, code := range []string{"no_user_session", "notify_disabled", "rate_limited", "no_such_preset", "timeout", "unsupported", "service_too_old"} {
 		key := actionErrorKey(&actionError{Code: code})
 		if key == "" {

@@ -3,6 +3,7 @@ package gui
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -79,7 +80,6 @@ func TestRowProblem(t *testing.T) {
 		"presets.err.quote":    {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: `"open`},
 		"presets.err.args":     {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: strings.Repeat("a ", 33)},
 		"presets.err.url":      {Slot: 1, Name: "x", Type: "url", Path: "file:///C:/x"},
-		"presets.err.urlargs":  {Slot: 1, Name: "x", Type: "url", Path: "https://x", Args: "a"},
 		"presets.err.abs":      {Slot: 1, Name: "x", Type: "program", Path: "notepad.exe"},
 		"presets.err.exe":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
 		"presets.err.script":   {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
@@ -91,6 +91,40 @@ func TestRowProblem(t *testing.T) {
 	rows := []presetRow{ok[0], {Slot: 1, Name: "again", Type: "url", Path: "https://x"}}
 	if key, slot := rowsProblem(rows); key != "presets.err.dup" || slot != 1 {
 		t.Errorf("rowsProblem = %q, %d", key, slot)
+	}
+
+	// A URL row's arguments are ignored, whatever is in them (review 3):
+	// the editor clears them, and preset() drops them.
+	for _, args := range []string{"a", `"open`, strings.Repeat("a ", 40)} {
+		r := presetRow{Slot: 1, Name: "x", Type: "url", Path: "https://x", Args: args}
+		if key := rowProblem(r); key != "" {
+			t.Errorf("url row with args %q: %s", args, key)
+		}
+		if p, err := r.preset(); err != nil || p.Args != nil {
+			t.Errorf("url row with args %q -> %+v, %v", args, p, err)
+		}
+	}
+}
+
+// Preset names are unique, ignoring case and outer spaces (C6): the editor
+// marks every row of a clash and the save names the first.
+func TestDuplicatePresetNames(t *testing.T) {
+	rows := []presetRow{
+		{Slot: 1, Name: "Game Mode", Type: "url", Path: "https://a"},
+		{Slot: 2, Name: "work", Type: "url", Path: "https://b"},
+		{Slot: 3, Name: " game mode ", Type: "url", Path: "https://c"},
+		{Slot: 4, Name: "", Type: "url", Path: "https://d"},
+		{Slot: 5, Name: "", Type: "url", Path: "https://e"},
+	}
+	if got := duplicateNames(rows); !slices.Equal(got, []bool{true, false, true, false, false}) {
+		t.Errorf("duplicateNames = %v", got)
+	}
+	if key, slot := rowsProblem(rows[:3]); key != "presets.err.namedup" || slot != 3 {
+		t.Errorf("rowsProblem = %q, %d, want namedup on slot 3", key, slot)
+	}
+	rows[2].Name = "game mode 2"
+	if key, _ := rowsProblem(rows[:3]); key != "" {
+		t.Errorf("distinct names: %q", key)
 	}
 }
 
@@ -149,6 +183,36 @@ func TestPresetButtonLabel(t *testing.T) {
 	}
 	if actionErrorKey(errors.New("plain")) != "" || actionErrorKey(&actionError{Code: "failed"}) != "" {
 		t.Error("unknown errors should show the service's message")
+	}
+}
+
+// The service's writable_by_others warnings (C6) in the user's words: on
+// the row of their slot, and led by the slot in the "Saved" dialog.
+func TestPresetWarningTexts(t *testing.T) {
+	ws := []PresetWarning{
+		{Slot: 2, Code: "writable_by_others", Path: `C:\Shared\run.ps1`},
+		{Slot: 2, Code: "writable_by_others", Path: `C:\Shared`},
+		{Slot: 5, Code: "something_new"},
+	}
+	want := T(LangKo, "presets.warn.writable") + "\n" + `C:\Shared\run.ps1`
+	if got := presetWarningText(LangKo, ws[0]); got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if !strings.Contains(want, "다른 사용자도 고칠 수 있습니다") {
+		t.Errorf("ko text = %q", want)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 2); strings.Count(got, T(LangKo, "presets.warn.writable")) != 2 || !strings.Contains(got, `C:\Shared`) {
+		t.Errorf("slot 2 = %q", got)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 5); got != "something_new" {
+		t.Errorf("an unknown code = %q, want the code itself", got)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 1); got != "" {
+		t.Errorf("slot without warnings = %q", got)
+	}
+	lines := presetWarningLines(LangKo, ws)
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "프리셋 2: ") || !strings.HasPrefix(lines[2], "프리셋 5: ") {
+		t.Errorf("dialog lines = %q", lines)
 	}
 }
 

@@ -3,6 +3,7 @@ package gui
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
@@ -120,6 +121,15 @@ func rowProblem(r presetRow) string {
 	case path == "":
 		return "presets.err.path"
 	}
+	if r.Type == "url" {
+		// A URL takes no arguments; whatever the (cleared, greyed) entry
+		// holds is dropped by preset(), so it is not checked either.
+		u, err := url.Parse(path)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return "presets.err.url"
+		}
+		return ""
+	}
 	args, err := splitArgs(r.Args)
 	if err != nil {
 		return "presets.err.quote"
@@ -129,14 +139,6 @@ func rowProblem(r presetRow) string {
 	}
 	lower := strings.ToLower(path)
 	switch r.Type {
-	case "url":
-		u, err := url.Parse(path)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return "presets.err.url"
-		}
-		if len(args) > 0 {
-			return "presets.err.urlargs"
-		}
 	case "program":
 		if !isAbsPath(path) {
 			return "presets.err.abs"
@@ -167,12 +169,12 @@ func isAbsPath(p string) bool {
 // preset turns a row into the wire form (trimmed name and path, split
 // arguments; a URL never carries any).
 func (r presetRow) preset() (Preset, error) {
-	args, err := splitArgs(r.Args)
-	if err != nil {
-		return Preset{}, err
-	}
-	if r.Type == "url" {
-		args = nil
+	var args []string
+	if r.Type != "url" {
+		var err error
+		if args, err = splitArgs(r.Args); err != nil {
+			return Preset{}, err
+		}
 	}
 	return Preset{
 		Slot: r.Slot,
@@ -183,10 +185,12 @@ func (r presetRow) preset() (Preset, error) {
 	}, nil
 }
 
-// rowsProblem checks every row and that no slot is used twice. It returns
-// the i18n key and the slot it is about.
+// rowsProblem checks every row, that no slot is used twice and that no two
+// rows share a name (C6: Telegram's /run takes a name too). It returns the
+// i18n key and the slot it is about.
 func rowsProblem(rows []presetRow) (string, int) {
 	seen := map[int]bool{}
+	names := map[string]bool{}
 	for _, r := range rows {
 		if key := rowProblem(r); key != "" {
 			return key, r.Slot
@@ -195,8 +199,35 @@ func rowsProblem(rows []presetRow) (string, int) {
 			return "presets.err.dup", r.Slot
 		}
 		seen[r.Slot] = true
+		name := presetNameKey(r.Name)
+		if names[name] {
+			return "presets.err.namedup", r.Slot
+		}
+		names[name] = true
 	}
 	return "", 0
+}
+
+// presetNameKey is the form two names are compared in: trimmed, case
+// folded — the service's rule for unique names.
+func presetNameKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// duplicateNames marks, by row index, every row whose name another row
+// also has (case-insensitive, trimmed). Empty names are left to rowProblem.
+func duplicateNames(rows []presetRow) []bool {
+	count := map[string]int{}
+	for _, r := range rows {
+		if k := presetNameKey(r.Name); k != "" {
+			count[k]++
+		}
+	}
+	out := make([]bool, len(rows))
+	for i, r := range rows {
+		out[i] = count[presetNameKey(r.Name)] > 1
+	}
+	return out
 }
 
 // sortedPresets is a copy in slot order with empty argument lists as nil,
@@ -284,6 +315,42 @@ func (s presetsFormState) dirty(base Config) bool {
 	return !presetsEqual(ps, base.Presets)
 }
 
+// presetWarningText is one service warning (C6) in the user's words, the
+// file or folder it is about on the next line. An unknown code shows as
+// itself.
+func presetWarningText(l Lang, w PresetWarning) string {
+	text := w.Code
+	if w.Code == "writable_by_others" {
+		text = T(l, "presets.warn.writable")
+	}
+	if w.Path != "" {
+		text += "\n" + w.Path
+	}
+	return text
+}
+
+// presetSlotWarnings is what the editor row of slot shows: its warnings,
+// one per paragraph; "" when it has none.
+func presetSlotWarnings(l Lang, ws []PresetWarning, slot int) string {
+	var parts []string
+	for _, w := range ws {
+		if w.Slot == slot {
+			parts = append(parts, presetWarningText(l, w))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// presetWarningLines are the warnings for the "Saved" dialog, each led by
+// its slot: "프리셋 3: …".
+func presetWarningLines(l Lang, ws []PresetWarning) []string {
+	out := make([]string, len(ws))
+	for i, w := range ws {
+		out[i] = fmt.Sprintf(T(l, "presets.warn.line"), w.Slot, presetWarningText(l, w))
+	}
+	return out
+}
+
 // presetButtonLabel is the command-tab button text: "1 · 게임 모드".
 func presetButtonLabel(p Preset) string {
 	return strconv.Itoa(p.Slot) + " · " + p.Name
@@ -292,6 +359,9 @@ func presetButtonLabel(p Preset) string {
 // actionErrorKey is the i18n key for the service codes the app words
 // itself; "" means show the service's message.
 func actionErrorKey(err error) string {
+	if errors.Is(err, errLocalOnly) {
+		return "localonly.note"
+	}
 	var ae *actionError
 	if !errors.As(err, &ae) {
 		return ""
