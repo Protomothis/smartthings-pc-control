@@ -168,6 +168,27 @@ function T.test_full_status_activity_rows()
   h.assert_equal(others, 0)
 end
 
+function T.test_full_status_activity_scanned_decides_the_hold()
+  -- C2: `activity.scanned` is a boolean, true once the scanner has looked.
+  local status = h.fixture("status.full.json")
+  h.assert_true(status.activity.scanned, "activity.scanned")
+  -- A card that showed OBS running under a different list: with the scan
+  -- done, "stopped" is taken as it is - no list-signature guess.
+  local s = state.new(state.ON)
+  s.extras = { apps_mode = features.APPS_ON, watch_signature = "another list",
+    watch = { "running", "empty", "running", "empty", "empty" } }
+  features.remember(s, status)
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "stopped", "empty", "empty" },
+    "scanned: true applies the values")
+  -- The same body before the scan: OBS stays running.
+  status.activity.scanned = false
+  s.extras = { apps_mode = features.APPS_ON, watch_signature = features.watch_signature(features.apps_of(status)),
+    watch = { "running", "empty", "running", "empty", "empty" } }
+  features.remember(s, status)
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "running", "empty", "empty" },
+    "scanned: false never moves running to stopped")
+end
+
 function T.test_full_status_activity_slots_are_numbers_by_slot()
   -- The wire shape itself: `slot` is a JSON number, the list is sorted by it
   -- and has only the filled slots.
@@ -239,7 +260,8 @@ function T.test_off_status_rows()
   h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
-  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "꺼짐", "activity.enabled: false")
+  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
+  h.assert_false(status.activity.scanned, "activity.scanned: a disabled block was never scanned")
   h.assert_equal(value(events, caps.WATCH, "names", WATCH), "꺼짐", "activity.apps: []")
   h.assert_nil(value(events, caps.WATCH, "slotOne", WATCH), "an off list moves no slot")
   h.assert_equal(features.apps_mode(status), features.APPS_OFF)
@@ -287,6 +309,8 @@ local PUSHES = {
     }, "status.activity.apps")
     local data = payload.data
     h.assert_true(data.enabled, "data.enabled is a boolean")
+    h.assert_true(data.scanned, "data.scanned is a boolean")
+    h.assert_true(payload.status.activity.scanned, "status.activity.scanned")
     h.assert_equal(data.top, "steam.exe", "data.top")
     h.assert_equal(#data.apps, 2, "data.apps")
     h.assert_equal(data.apps[1].slot, 1, "data.apps[].slot")

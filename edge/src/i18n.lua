@@ -221,11 +221,14 @@ local STRINGS = {
   -- (slot 1 is the highest priority) and how many others run with it. One app
   -- is its label alone ("Claude"): the row's label "실행 중인 앱" already says
   -- running, and the card's preview gives the value a third of the width
-  -- (platform notes "화면 배치"). `apps_none` / `apps_off` are also the
-  -- `names` row's "없음" / "꺼짐". Each slot's own state is an enum row
+  -- (platform notes "화면 배치"). `apps_none` is also the `names` row's
+  -- "없음". A list that is off: the summary says "감지 꺼짐" - a bare "꺼짐"
+  -- is what a stopped slot reads, and the summary would look like one - and
+  -- the names row "꺼짐" (`apps_off`). Each slot's own state is an enum row
   -- (`slotOne`..`slotFive`), not a sentence here.
   apps_running_more = { ko = "%s 외 %d", en = "%s +%d" },
   apps_none = { ko = "없음", en = "None" },
+  apps_detection_off = { ko = "감지 꺼짐", en = "Detection off" },
   apps_off = { ko = "꺼짐", en = "Off" },
 
   -- command outcomes (§3.3/§3.4)

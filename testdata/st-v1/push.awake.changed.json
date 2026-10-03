@@ -23,6 +23,7 @@
         }
       ],
       "enabled": true,
+      "scanned": true,
       "top": "steam.exe"
     },
     "audio": {
