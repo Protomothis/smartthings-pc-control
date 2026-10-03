@@ -336,10 +336,14 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 
 	// service_version and update: the build stamp and the checker cache.
 	savedVersion := Version
+	// Drain the push worker first: it reads Version while delivering, and
+	// an earlier test's late push would race this write (-race).
+	stPushFlush(t)
 	Version = "v1.2.0"
 	savedLatest := latestReleaseTag()
 	noteLatestRelease("v1.2.1")
 	t.Cleanup(func() {
+		stPushFlush(t)
 		Version = savedVersion
 		latestRelease.Store(savedLatest)
 	})
