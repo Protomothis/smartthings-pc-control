@@ -1177,6 +1177,46 @@ function T.test_app_stop_does_not_take_back_a_shutdown_under_way()
   s = state.transition(s, "stopping", "app_stop")
   h.assert_equal(s.power_state, state.SHUTTING_DOWN)
   h.assert_equal(s.last_stopping_reason, "shutdown")
+  -- Nor does it start a hold window: the silence after it is the PC going.
+  s = state.transition(state.transition(state.new(state.ON), "stopping", "shutdown"),
+    { type = "stopping", reason = "app_stop", at = 1000 })
+  h.assert_nil(s.app_stopped_at)
+  h.assert_false(state.app_stop_holding(s, 1001))
+end
+
+-- The hold window of an `app_stop` push (`APP_STOP_HOLD`, ten minutes): it
+-- runs from the push's time, and whatever ends the outage ends it.
+function T.test_the_app_stop_hold_window()
+  h.assert_equal(state.APP_STOP_HOLD, 600)
+  local s = state.transition(state.new(state.ON), { type = "stopping", reason = "app_stop", at = 1000 })
+  h.assert_equal(s.app_stopped_at, 1000)
+  h.assert_true(state.app_stop_holding(s, 1000))
+  h.assert_true(state.app_stop_holding(s, 1599))
+  h.assert_false(state.app_stop_holding(s, 1600), "ten minutes on")
+  h.assert_false(state.app_stop_holding(s, 999), "a clock that went back ends it")
+  h.assert_false(state.app_stop_holding(s, nil))
+  -- Refusals (and the timeouts read as them) keep the window.
+  local held = state.transition(s, "app_down")
+  h.assert_equal(held.app_stopped_at, 1000)
+  h.assert_true(state.app_stop_holding(held, 1300))
+  -- Without a time (the string form) there is no window, only the marker.
+  local untimed = state.transition(state.new(state.ON), "stopping", "app_stop")
+  h.assert_true(untimed.app_stopped)
+  h.assert_nil(untimed.app_stopped_at)
+  h.assert_false(state.app_stop_holding(untimed, 1000))
+  -- What ends the outage ends the window.
+  for _, event in ipairs({ "status_ok", "app_answered" }) do
+    h.assert_nil(state.transition(s, event).app_stopped_at, event)
+    h.assert_false(state.app_stop_holding(state.transition(s, event), 1001), event)
+  end
+  for _, reason in ipairs({ "shutdown", "restart", "suspend", "hibernate", "unknown" }) do
+    h.assert_nil(state.transition(s, "stopping", reason).app_stopped_at, reason)
+  end
+  -- Another app_stop starts it again.
+  local again = state.transition(held, { type = "stopping", reason = "app_stop", at = 1400 })
+  h.assert_equal(again.app_stopped_at, 1400)
+  -- The input is not touched.
+  h.assert_equal(s.app_stopped_at, 1000)
 end
 
 function T.test_a_refusal_means_the_pc_has_come_up()

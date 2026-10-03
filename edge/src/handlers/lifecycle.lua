@@ -35,6 +35,9 @@ function lifecycle.init(driver, device)
   end
   -- And the leftovers whose own `init` has not come (yet).
   profiles.remove_children(driver)
+  -- An `app_stop` hold window the restart fell into runs on (§6.2): the
+  -- silent polls that follow stay "PC 앱 응답 없음", not off.
+  poll.restore_app_stop(device)
   -- A device keeps the screen it was created with (platform notes "프로필과
   -- 화면 생성"): one on an older profile moves to the current one, once. An
   -- `iconStyle` change the restart interrupted is applied now.
