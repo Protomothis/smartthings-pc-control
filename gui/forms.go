@@ -1,6 +1,9 @@
 package gui
 
 import (
+	"errors"
+	"strings"
+
 	"fyne.io/fyne/v2/dialog"
 )
 
@@ -196,18 +199,19 @@ func (u *ui) onConfig(cfg Config) {
 
 // saveResult is what the background part of a save hands back.
 type saveResult struct {
-	msg   string
-	fresh Config
+	msg string
+	// warnings are the service's preset findings (C6).
+	warnings []PresetWarning
+	fresh    Config
 	// reloginErr is set when the secret changed and logging in with the
 	// new one failed.
 	reloginErr error
 }
 
 // saveForms is the one save path: merge the tabs over the baseline, POST,
-// log in again if the secret changed, re-read and adopt the result. Every
-// Save button is busy meanwhile. quiet skips the "Saved" dialog (the
-// unsaved-changes prompt). onDone (may be nil) learns whether it worked.
-// UI goroutine only.
+// log in again if the secret changed, re-read and adopt the result. Every Save button is busy
+// meanwhile. quiet skips the "Saved" dialog (the unsaved-changes prompt).
+// onDone (may be nil) learns whether it worked. UI goroutine only.
 func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
 	f := u.forms
 	done := func(ok bool) {
@@ -225,6 +229,37 @@ func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
 		done(false)
 		return
 	}
+	u.postForms(sent, quiet, done)
+}
+
+// wireConfig is what a save posts for sent. Without the local session
+// (C5) the presets came masked and the service refuses any change to them
+// or to the watch list, so both travel as null: "keep the stored ones".
+func wireConfig(sent Config, locked bool) Config {
+	if locked {
+		sent.Presets = nil
+		sent.Activity.Watch = nil
+	}
+	return sent
+}
+
+// saveError is a failed save in the user's words.
+func (u *ui) saveError(err error) error {
+	if errors.Is(err, errLocalOnly) {
+		return errors.New(u.t("localonly.note"))
+	}
+	return err
+}
+
+// postForms is the second half of saveForms: the request and adopting the
+// result. UI goroutine only.
+func (u *ui) postForms(sent Config, quiet bool, done func(ok bool)) {
+	f := u.forms
+	if f.base == nil || f.saving {
+		done(false)
+		return
+	}
+	wire := wireConfig(sent, u.editorsLocked())
 	oldSecret, oldToken := f.base.Secret, f.base.Telegram.BotToken
 	busy := func(on bool) {
 		f.saving = on
@@ -235,16 +270,21 @@ func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
 		}
 	}
 	runAsync(busy, func() (saveResult, error) {
-		msg, err := u.client.SaveConfig(sent)
+		// A session lost meanwhile (a service restart) is asked for again
+		// once before the save fails (C5).
+		reply, err := withLocalSession(u, func() (SaveReply, error) { return u.client.SaveConfig(wire) })
 		if err != nil {
 			return saveResult{}, err
 		}
-		res := saveResult{msg: msg}
+		res := saveResult{msg: reply.Message, warnings: reply.Warnings}
 		// A new secret (notably the first one) leaves this client without
-		// a valid session; log in with it now rather than letting the
-		// re-read or the next poll hit a 401 and pop the login dialog (#98).
+		// a valid session; get one now rather than letting the re-read or
+		// the next poll hit a 401 and pop the login dialog (#98). The local
+		// session first: a secret session would mask the presets (C5).
 		if shouldReloginAfterSave(oldSecret, sent.Secret) {
-			res.reloginErr = u.client.Login(sent.Secret)
+			if u.trust() != trustLocal || u.client.LocalLogin() != nil {
+				res.reloginErr = u.client.Login(sent.Secret)
+			}
 		}
 		if res.fresh, err = u.client.GetConfig(); err != nil {
 			res.fresh = savedFallback(sent, oldToken)
@@ -252,13 +292,18 @@ func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
 		return res, nil
 	}, func(res saveResult, err error) {
 		if err != nil {
-			dialog.ShowError(err, u.win)
+			dialog.ShowError(u.saveError(err), u.win)
 			done(false)
 			return
 		}
 		u.adoptConfig(res.fresh, &sent)
+		u.showPresetWarnings(res.warnings)
 		if !quiet {
-			dialog.ShowInformation(u.t("settings.saved"), res.msg, u.win)
+			msg := res.msg
+			if lines := presetWarningLines(u.lang, res.warnings); len(lines) > 0 {
+				msg = strings.TrimSpace(msg + "\n\n" + strings.Join(lines, "\n\n"))
+			}
+			dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
 		}
 		if res.reloginErr != nil {
 			u.promptLogin(func() { go u.initialLoad() })

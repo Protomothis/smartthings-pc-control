@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -30,6 +31,10 @@ type presetsTab struct {
 	rows    []*presetRowWidgets
 	addBtn  *widget.Button
 	empty   *widget.Label
+	// lockNote says why the editor is locked: the service refused the
+	// local session (C5).
+	lockNote *widget.Label
+	bar      *saveBar
 }
 
 // presetRowWidgets is one editor row.
@@ -42,7 +47,10 @@ type presetRowWidgets struct {
 	args   *widget.Entry
 	browse *widget.Button
 	test   *widget.Button
-	status *widget.Label
+	remove *widget.Button
+	// nameErr is the inline "another preset has this name" line.
+	nameErr *widget.Label
+	status  *widget.Label
 }
 
 // slotOptions are "1" … "10".
@@ -72,26 +80,32 @@ func (w *presetRowWidgets) row() presetRow {
 	return r
 }
 
-// setTypeEnabled greys what a URL does not use.
-func (w *presetRowWidgets) setTypeEnabled() {
-	if w.row().Type == "url" {
-		w.browse.Disable()
-		w.args.Disable()
+// setEditable enables the row's controls — all off while the editor is
+// locked (C5), and what a URL does not use (browse, arguments) off for a
+// URL row.
+func (w *presetRowWidgets) setEditable(locked bool) {
+	url := w.row().Type == "url"
+	for _, c := range []fyne.Disableable{w.slot, w.name, w.typ, w.path, w.test, w.remove} {
+		setEnabled(c, !locked)
+	}
+	setEnabled(w.browse, !locked && !url)
+	setEnabled(w.args, !locked && !url)
+}
+
+// showLabel writes text into l and shows it, or hides it when empty.
+func showLabel(l *widget.Label, text string, imp widget.Importance) {
+	l.Importance = imp
+	l.SetText(text)
+	if text == "" {
+		l.Hide()
 	} else {
-		w.browse.Enable()
-		w.args.Enable()
+		l.Show()
 	}
 }
 
 // setStatus writes a row's result line (hidden when empty).
 func (w *presetRowWidgets) setStatus(text string, imp widget.Importance) {
-	w.status.Importance = imp
-	w.status.SetText(text)
-	if text == "" {
-		w.status.Hide()
-	} else {
-		w.status.Show()
-	}
+	showLabel(w.status, text, imp)
 }
 
 // state reads the tab into the pure form model.
@@ -117,10 +131,16 @@ func (u *ui) buildPresetsTab() fyne.CanvasObject {
 		u.relayoutPresets()
 		u.refreshDirty()
 	})
+	t.lockNote = widget.NewLabel(u.t("localonly.note"))
+	t.lockNote.Wrapping = fyne.TextWrapWord
+	t.lockNote.Importance = widget.WarningImportance
+	t.lockNote.Hide()
 	ft := u.forms.register(u.presetsForm(tabPresets))
 	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
+	t.bar = ft.bar
 	t.root = container.NewVBox(
 		section(u.t("presets.section"), container.NewVBox(
+			t.lockNote,
 			hint(u.t("presets.hint")),
 			t.empty,
 			t.rowsBox,
@@ -154,7 +174,10 @@ func (u *ui) addPresetRow(r presetRow) {
 	w.name = widget.NewEntry()
 	w.name.SetPlaceHolder(u.t("presets.name.placeholder"))
 	w.name.SetText(r.Name)
-	w.name.OnChanged = onEdit
+	w.name.OnChanged = func(string) {
+		u.checkPresetNames()
+		u.refreshDirty()
+	}
 	w.typ = widget.NewSelect(u.presetTypeLabels(), nil)
 	if i := slices.Index(presetTypes, r.Type); i >= 0 {
 		w.typ.SetSelectedIndex(i)
@@ -169,23 +192,27 @@ func (u *ui) addPresetRow(r presetRow) {
 	w.status = widget.NewLabel("")
 	w.status.Wrapping = fyne.TextWrapWord
 	w.status.Hide()
+	w.nameErr = widget.NewLabel("")
+	w.nameErr.Wrapping = fyne.TextWrapWord
+	w.nameErr.Hide()
 
 	w.browse = widget.NewButtonWithIcon(u.t("presets.browse"), theme.FolderOpenIcon(), func() { u.browsePresetPath(w) })
 	w.test = widget.NewButtonWithIcon(u.t("presets.test"), theme.MediaPlayIcon(), func() { u.testPresetRow(w) })
-	remove := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
-	remove.OnTapped = func() {
+	w.remove = widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
+	w.remove.OnTapped = func() {
 		t.rows = slices.DeleteFunc(t.rows, func(x *presetRowWidgets) bool { return x == w })
 		t.rowsBox.Remove(w.box)
+		u.checkPresetNames()
 		u.relayoutPresets()
 		u.refreshDirty()
 	}
 	w.typ.OnChanged = func(string) {
 		w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
-		w.setTypeEnabled()
+		w.setEditable(u.editorsLocked())
 		u.refreshDirty()
 	}
 	w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
-	w.setTypeEnabled()
+	w.setEditable(u.editorsLocked())
 
 	label := func(key string) fyne.CanvasObject {
 		l := widget.NewLabel(u.t(key))
@@ -194,10 +221,11 @@ func (u *ui) addPresetRow(r presetRow) {
 	}
 	top := container.NewBorder(nil, nil,
 		container.NewHBox(label("presets.slot"), w.slot, w.typ),
-		container.NewHBox(w.test, remove),
+		container.NewHBox(w.test, w.remove),
 		w.name)
 	w.box = container.NewVBox(
 		top,
+		w.nameErr,
 		container.NewBorder(nil, nil, label("presets.path"), w.browse, w.path),
 		container.NewBorder(nil, nil, label("presets.args"), nil, w.args),
 		w.status,
@@ -216,12 +244,62 @@ func (u *ui) relayoutPresets() {
 	} else {
 		t.empty.Hide()
 	}
-	if len(t.rows) >= presetMaxSlots {
-		t.addBtn.Disable()
-	} else {
-		t.addBtn.Enable()
-	}
+	setEnabled(t.addBtn, len(t.rows) < presetMaxSlots && !u.editorsLocked())
 	t.rowsBox.Refresh()
+	t.root.Refresh()
+}
+
+// applyPresetsLock locks the editor while the service refuses the local
+// session (C5) — every control, the add button and Save, under a note
+// saying why — and unlocks it otherwise. UI thread only.
+func (u *ui) applyPresetsLock() {
+	t := u.presets
+	if t == nil {
+		return
+	}
+	locked := u.editorsLocked()
+	if locked {
+		t.lockNote.Show()
+	} else {
+		t.lockNote.Hide()
+	}
+	for _, w := range t.rows {
+		w.setEditable(locked)
+	}
+	t.bar.setLocked(locked)
+	u.relayoutPresets()
+}
+
+// checkPresetNames shows the inline error under every row whose name
+// another row has too (any case). UI thread only.
+func (u *ui) checkPresetNames() {
+	t := u.presets
+	if t == nil {
+		return
+	}
+	dup := duplicateNames(t.state().Rows)
+	for i, w := range t.rows {
+		text := ""
+		if dup[i] {
+			text = fmt.Sprintf(u.t("presets.err.namedup"), w.row().Slot)
+		}
+		showLabel(w.nameErr, text, widget.DangerImportance)
+	}
+	t.root.Refresh()
+}
+
+// showPresetWarnings puts the service's warnings (C6) under the rows they
+// are about. UI thread only.
+func (u *ui) showPresetWarnings(ws []PresetWarning) {
+	t := u.presets
+	if t == nil || len(ws) == 0 {
+		return
+	}
+	for _, w := range t.rows {
+		if text := presetSlotWarnings(u.lang, ws, w.row().Slot); text != "" {
+			w.setStatus(text, widget.WarningImportance)
+		}
+	}
 	t.root.Refresh()
 }
 
@@ -256,10 +334,22 @@ func (u *ui) testPresetRow(w *presetRowWidgets) {
 	}
 	p, _ := r.preset()
 	w.setStatus(u.t("presets.testing"), widget.LowImportance)
-	runAsyncErr(busyControls(w.test), func() error { return u.client.TestPreset(p) }, func(err error) {
-		if err != nil {
+	busy := func(on bool) { setEnabled(w.test, !on && !u.editorsLocked()) }
+	runAsync(busy, func() ([]PresetWarning, error) {
+		return withLocalSession(u, func() ([]PresetWarning, error) { return u.client.TestPreset(p) })
+	}, func(ws []PresetWarning, err error) {
+		switch {
+		case err != nil:
 			w.setStatus(u.actionErrorText(err), widget.DangerImportance)
-		} else {
+		case len(ws) > 0:
+			// Every warning is about this one preset, whatever slot the
+			// service put in it.
+			parts := []string{u.t("presets.started")}
+			for _, pw := range ws {
+				parts = append(parts, presetWarningText(u.lang, pw))
+			}
+			w.setStatus(strings.Join(parts, "\n"), widget.WarningImportance)
+		default:
 			w.setStatus(u.t("presets.started"), widget.SuccessImportance)
 		}
 		if u.presets != nil {
@@ -281,6 +371,7 @@ func (u *ui) fillPresetsTab(cfg Config) {
 	for _, r := range presetsStateFromConfig(cfg).Rows {
 		u.addPresetRow(r)
 	}
+	u.checkPresetNames()
 	u.relayoutPresets()
 }
 

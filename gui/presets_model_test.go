@@ -3,6 +3,7 @@ package gui
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,28 @@ func TestRowProblem(t *testing.T) {
 	}
 }
 
+// Preset names are unique, ignoring case and outer spaces (C6): the editor
+// marks every row of a clash and the save names the first.
+func TestDuplicatePresetNames(t *testing.T) {
+	rows := []presetRow{
+		{Slot: 1, Name: "Game Mode", Type: "url", Path: "https://a"},
+		{Slot: 2, Name: "work", Type: "url", Path: "https://b"},
+		{Slot: 3, Name: " game mode ", Type: "url", Path: "https://c"},
+		{Slot: 4, Name: "", Type: "url", Path: "https://d"},
+		{Slot: 5, Name: "", Type: "url", Path: "https://e"},
+	}
+	if got := duplicateNames(rows); !slices.Equal(got, []bool{true, false, true, false, false}) {
+		t.Errorf("duplicateNames = %v", got)
+	}
+	if key, slot := rowsProblem(rows[:3]); key != "presets.err.namedup" || slot != 3 {
+		t.Errorf("rowsProblem = %q, %d, want namedup on slot 3", key, slot)
+	}
+	rows[2].Name = "game mode 2"
+	if key, _ := rowsProblem(rows[:3]); key != "" {
+		t.Errorf("distinct names: %q", key)
+	}
+}
+
 func TestPresetsStateRoundTrip(t *testing.T) {
 	base := Config{
 		Port:     5001,
@@ -149,6 +172,36 @@ func TestPresetButtonLabel(t *testing.T) {
 	}
 	if actionErrorKey(errors.New("plain")) != "" || actionErrorKey(&actionError{Code: "failed"}) != "" {
 		t.Error("unknown errors should show the service's message")
+	}
+}
+
+// The service's writable_by_others warnings (C6) in the user's words: on
+// the row of their slot, and led by the slot in the "Saved" dialog.
+func TestPresetWarningTexts(t *testing.T) {
+	ws := []PresetWarning{
+		{Slot: 2, Code: "writable_by_others", Path: `C:\Shared\run.ps1`},
+		{Slot: 2, Code: "writable_by_others", Path: `C:\Shared`},
+		{Slot: 5, Code: "something_new"},
+	}
+	want := T(LangKo, "presets.warn.writable") + "\n" + `C:\Shared\run.ps1`
+	if got := presetWarningText(LangKo, ws[0]); got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if !strings.Contains(want, "다른 사용자도 고칠 수 있습니다") {
+		t.Errorf("ko text = %q", want)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 2); strings.Count(got, T(LangKo, "presets.warn.writable")) != 2 || !strings.Contains(got, `C:\Shared`) {
+		t.Errorf("slot 2 = %q", got)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 5); got != "something_new" {
+		t.Errorf("an unknown code = %q, want the code itself", got)
+	}
+	if got := presetSlotWarnings(LangKo, ws, 1); got != "" {
+		t.Errorf("slot without warnings = %q", got)
+	}
+	lines := presetWarningLines(LangKo, ws)
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "프리셋 2: ") || !strings.HasPrefix(lines[2], "프리셋 5: ") {
+		t.Errorf("dialog lines = %q", lines)
 	}
 }
 

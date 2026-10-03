@@ -67,7 +67,18 @@ type saveBar struct {
 	anim  *fyne.Animation
 	// dirty is whether the tab has something to save, shown whether the
 	// indicator is up, busy whether a save is in flight (Save is off then).
-	dirty, shown, busy bool
+	// locked keeps Save off while the service would refuse the tab (the
+	// presets without the local session, C5).
+	dirty, shown, busy, locked bool
+}
+
+// canSave is whether Save is usable.
+func (b *saveBar) canSave() bool { return b.dirty && !b.busy && !b.locked }
+
+// setLocked turns Save off for good (until unlocked). UI thread only.
+func (b *saveBar) setLocked(on bool) {
+	b.locked = on
+	setEnabled(b.save, b.canSave())
 }
 
 // newSaveBar builds the footer. onSave runs when Save is pressed.
@@ -102,7 +113,7 @@ func newSaveBar(u *ui, onSave func()) *saveBar {
 // indicator while on; hides both otherwise. UI thread only.
 func (b *saveBar) setDirty(on bool) {
 	b.dirty = on
-	setEnabled(b.save, on && !b.busy)
+	setEnabled(b.save, b.canSave())
 	if on == b.shown {
 		return
 	}
@@ -122,7 +133,7 @@ func (b *saveBar) setDirty(on bool) {
 // state afterwards. UI thread only.
 func (b *saveBar) setBusy(on bool) {
 	b.busy = on
-	setEnabled(b.save, b.dirty && !on)
+	setEnabled(b.save, b.canSave())
 }
 
 // withSaveBar lays out a tab as scrollable content over a fixed footer.
