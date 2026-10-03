@@ -32,7 +32,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **볼륨 · 음소거 · 미디어** — 볼륨과 음소거를 바꾸고 재생 · 일시정지 · 이전/다음 곡을 보냅니다. 재생 정보 공유는 옵트인입니다.
 - **PC 알림** — SmartThings 루틴이나 텔레그램 `/say`로 PC 화면에 문구를 띄웁니다.
 - **프리셋** — 앱에 등록한 프로그램 · URL · 스크립트(최대 10개)를 원격에서 슬롯 번호로 실행합니다.
-- **실행 중 앱 감지(옵트인)** — 감시 목록(최대 5개)의 프로그램이 실행 중인지 PC 장치의 '감시 목록' 카드에 보여 주고, 감시 1~5 칸의 실행 중/꺼짐을 루틴 조건으로 씁니다.
+- **실행 중 앱 감지(옵트인)** — 감시 목록(최대 5개)의 프로그램이 실행 중인지 PC 장치의 '감시 목록' 카드에 보여 주고, 감시 1~5 칸의 실행 중/꺼짐을 루틴 조건으로 씁니다. 실행 파일 이름으로만 구분하므로 이름이 같은 다른 프로그램 · 스토어 앱의 호스트 프로세스 · 다른 사용자의 프로그램도 세고, 10초보다 짧은 실행은 놓칠 수 있습니다.
 - **노트북 배터리** — 잔량과 충전 상태를 SmartThings · 텔레그램 · 앱에 보여 줍니다.
 - **텔레그램(선택)** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다.
 - **데스크톱 앱** — 명령 · 예약 · 프리셋 · 공유 · SmartThings · 텔레그램 · 설정 · 로그 탭, 한국어/English.
@@ -76,8 +76,10 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 
 - 드라이버는 시크릿을 URL이 아니라 `X-PC-Secret` 헤더로 보냅니다. 시크릿이 비어 있으면 LAN의 누구나 PC를 제어할 수 있으니 꼭 정하세요.
 - `smartthings.allowed_hubs`에 허브 IP를 넣으면 그 허브만 드라이버 API를 씁니다.
-- 앱의 로컬 API는 `127.0.0.1:5002`에만 열립니다. 트레이는 관리자 계정일 때 시크릿 없이 로컬 로그인합니다.
+- 앱의 로컬 API는 `127.0.0.1:5002`에만 열립니다. 앱과 트레이는 관리자 계정일 때 시크릿 없이 로컬 로그인합니다(시크릿이 없는 PC에서도).
 - 브라우저 WebUI는 시크릿을 정하고 원격 접속을 켰을 때만 LAN에 열리고, 상태 · 전원 명령 · 예약 · 핵심 설정만 다룹니다.
+- 프리셋 편집 · 테스트, 감시 목록 편집, 실행 중 프로그램 목록은 이 PC의 앱 로컬 로그인으로만 됩니다. 시크릿 로그인(브라우저, 관리자가 아닌 계정의 앱)에는 프리셋 경로와 인자도 보이지 않습니다.
+- 텔레그램 · SmartThings로 가는 프리셋 실패 문구에는 경로 대신 파일 이름만 씁니다. 프리셋 파일이나 그 폴더를 다른 계정도 고칠 수 있으면 앱이 저장할 때 경고합니다.
 - 시크릿이 든 `config.json`은 관리자만 읽습니다. 텔레그램 봇 토큰은 DPAPI로 암호화합니다.
 - 앱 감지는 감시 목록에 넣은 프로그램만 보고하고, 다른 프로그램 이름은 저장 · 로그 · 전송하지 않습니다.
 - 자동 업데이트는 Ed25519 매니페스트 서명과 exe의 SHA-256을 확인한 뒤에만 설치합니다.
@@ -106,7 +108,7 @@ A dedicated SmartThings Edge driver talks to it locally from the hub.
 - **Volume, mute and media** — set volume and mute, send play/pause, stop, next and previous. Sharing what is playing is opt-in.
 - **PC notifications** — a SmartThings routine or Telegram `/say` puts a line of text on the PC's screen.
 - **Presets** — up to ten programs, URLs or scripts registered in the app, run remotely by slot number.
-- **Running-app detection (opt-in)** — up to five watched apps appear on the PC device's "Watch list" card; routines use "Watch 1"–"Watch 5" (running/stopped).
+- **Running-app detection (opt-in)** — up to five watched apps appear on the PC device's "Watch list" card; routines use "Watch 1"–"Watch 5" (running/stopped). Apps are told apart by executable name only: another program with the same name, a Store app's host process or another user's program counts too, and a run shorter than ~10 s can be missed.
 - **Laptop battery** level and charging state, **Telegram** (optional), a Korean/English **desktop app**, and **signed auto-update**.
 
 Volume, media, notifications and presets need a signed-in user on the PC.
@@ -128,7 +130,7 @@ The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, 
 If discovery finds nothing, check the discovery status and last search request on the **SmartThings** tab.
 Logs: `service.log` next to the exe (Logs tab) and `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
 The driver sends the secret in the `X-PC-Secret` header; an empty secret lets anyone on the LAN control the PC.
-The local API binds to `127.0.0.1:5002`, and the WebUI opens to the LAN only when you enable remote access with a secret set.
+The local API binds to `127.0.0.1:5002`, and the WebUI opens to the LAN only when you enable remote access with a secret set. The browser WebUI covers status, power commands, schedules and core settings; editing and testing presets, the watch list and the running-program list are for the desktop app on the PC only (its local login).
 Running-app detection reports only programs on your watch list.
 Updates install only after the Ed25519 manifest signature and the exe's SHA-256 check out.
 
