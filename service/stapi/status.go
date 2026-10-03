@@ -8,6 +8,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
+	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 
 	"golang.org/x/sys/windows"
@@ -109,21 +110,52 @@ func presetList(ps []config.Preset) []status.PresetRef {
 // status every 10–30s and each scan runs a PowerShell query.
 const wolCacheTTL = time.Minute
 
+// wolCache keeps the newest adapter scan. The value has a lock of its own,
+// held only to copy it, and the scan another: a status build that has to
+// scan (about a second of PowerShell, up to three more when the public IP
+// is due) must never hold up the power.stopping push, which takes whatever
+// is here without scanning (wolCached).
 type wolCache struct {
-	mu  sync.Mutex
-	val status.WoLStatus
-	at  time.Time
+	scanMu sync.Mutex // one scan at a time
+	mu     sync.Mutex // val and at
+	val    status.WoLStatus
+	at     time.Time
+}
+
+// wolFresh returns the cached scan while it is younger than wolCacheTTL.
+func (s *Server) wolFresh() (status.WoLStatus, bool) {
+	s.wol.mu.Lock()
+	defer s.wol.mu.Unlock()
+	if s.wol.at.IsZero() || time.Since(s.wol.at) > wolCacheTTL {
+		return status.WoLStatus{}, false
+	}
+	return s.wol.val, true
 }
 
 // wolScan returns the adapter scan, refreshing it at most once per
 // wolCacheTTL.
 func (s *Server) wolScan() status.WoLStatus {
+	if v, ok := s.wolFresh(); ok {
+		return v
+	}
+	s.wol.scanMu.Lock()
+	defer s.wol.scanMu.Unlock()
+	// Whoever held scanMu before us may have refreshed it meanwhile.
+	if v, ok := s.wolFresh(); ok {
+		return v
+	}
+	v := s.d.Status.WoLScan()
+	s.wol.mu.Lock()
+	s.wol.val, s.wol.at = v, time.Now()
+	s.wol.mu.Unlock()
+	return v
+}
+
+// wolCached returns the newest scan whatever its age and never scans; it
+// is empty before the first scan. The power.stopping push reads this.
+func (s *Server) wolCached() status.WoLStatus {
 	s.wol.mu.Lock()
 	defer s.wol.mu.Unlock()
-	if s.wol.at.IsZero() || time.Since(s.wol.at) > wolCacheTTL {
-		s.wol.val = s.d.Status.WoLScan()
-		s.wol.at = time.Now()
-	}
 	return s.wol.val
 }
 
@@ -144,7 +176,11 @@ func (s *Server) ResetWoLCache() {
 // config is read on every call, so a changed wol_mac takes effect on the
 // next poll without a restart.
 func (s *Server) WoLView(cfg config.SmartThingsConfig) (block status.WoL, auto *status.WoLSelected) {
-	scan := s.wolScan()
+	return s.wolViewOf(s.wolScan(), cfg)
+}
+
+// wolViewOf is WoLView over a scan the caller already has.
+func (s *Server) wolViewOf(scan status.WoLStatus, cfg config.SmartThingsConfig) (block status.WoL, auto *status.WoLSelected) {
 	hubIP := s.lastHubLocalIP()
 
 	sel, haveSel := selectWoLAdapter(scan.Adapters, cfg.WoLMAC, hubIP)
@@ -209,7 +245,10 @@ func (s *Server) scheduleView() map[string]any {
 // app's heartbeat (#77) and is independent of them, so a machine with no
 // tray app still reports the lock state and one with WTS refusing still
 // reports the idle time.
-func (s *Server) sessionInfo(cfg config.SmartThingsConfig) status.Session {
+//
+// fromCache (the power.stopping push) asks WTS nothing and reports what the
+// last status build learned instead.
+func (s *Server) sessionInfo(cfg config.SmartThingsConfig, fromCache bool) status.Session {
 	if !cfg.ExposeSession {
 		return status.Session{Exposed: false}
 	}
@@ -217,12 +256,22 @@ func (s *Server) sessionInfo(cfg config.SmartThingsConfig) status.Session {
 	if idle, ok := s.d.Status.IdleSeconds(); ok {
 		out.IdleSeconds = &idle
 	}
-	info, err := s.d.Status.Session()
-	if err != nil {
-		// Nobody is logged in, or WTS refused: locked stays null rather
-		// than guessing.
-		logx.Printf("ST API: session info unavailable: %v", err)
-		return out
+	var info session.Info
+	if fromCache {
+		var ok bool
+		if info, ok = s.memo.lastSession(); !ok {
+			return out
+		}
+	} else {
+		var err error
+		info, err = s.d.Status.Session()
+		s.memo.noteSession(info, err == nil)
+		if err != nil {
+			// Nobody is logged in, or WTS refused: locked stays null
+			// rather than guessing.
+			logx.Printf("ST API: session info unavailable: %v", err)
+			return out
+		}
 	}
 	locked := info.Locked
 	out.Locked = &locked
@@ -241,11 +290,76 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, s.BuildStatus(s.d.Config()))
 }
 
+// statusMemo is what the last full status build learned from the sources
+// that are not plain memory reads — the WTS session query and the update
+// record (state.json until the release checker has run) — for the
+// power.stopping push, which must not wait on either (§3.5).
+type statusMemo struct {
+	mu        sync.Mutex
+	session   session.Info
+	sessionOK bool
+	update    status.Update
+	updateOK  bool
+}
+
+func (m *statusMemo) noteSession(info session.Info, ok bool) {
+	m.mu.Lock()
+	m.session, m.sessionOK = info, ok
+	m.mu.Unlock()
+}
+
+// lastSession is the newest successful session query; false when the last
+// query failed or none has run.
+func (m *statusMemo) lastSession() (session.Info, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.session, m.sessionOK
+}
+
+func (m *statusMemo) noteUpdate(u status.Update) {
+	m.mu.Lock()
+	m.update, m.updateOK = u, true
+	m.mu.Unlock()
+}
+
+func (m *statusMemo) lastUpdate() (status.Update, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.update, m.updateOK
+}
+
+// updateView is the update block: from the source, or with fromCache from
+// the last build (the source itself only before the first one).
+func (s *Server) updateView(fromCache bool) status.Update {
+	if fromCache {
+		if u, ok := s.memo.lastUpdate(); ok {
+			return u
+		}
+	}
+	u := s.d.Status.Update()
+	s.memo.noteUpdate(u)
+	return u
+}
+
 // BuildStatus assembles the §3.2 status document for cfg.
-func (s *Server) BuildStatus(cfg config.Config) Status {
+func (s *Server) BuildStatus(cfg config.Config) Status { return s.buildStatus(cfg, false) }
+
+// StoppingStatus is the status document the power.stopping push carries
+// (§3.5): the same document, but built from memory only. The WoL block is
+// the newest adapter scan whatever its age, and the session and update
+// blocks are what the last full build saw — nothing here runs PowerShell,
+// asks WTS, reads a file or goes to the network, so the push leaves within
+// its deadline. Every other block is an in-memory reading in any case.
+func (s *Server) StoppingStatus(cfg config.Config) Status { return s.buildStatus(cfg, true) }
+
+func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 	src := s.d.Status
 	bat := src.Battery()
-	block, _ := s.WoLView(cfg.SmartThings)
+	scan := s.wolCached()
+	if !fromCache {
+		scan = s.wolScan()
+	}
+	block, _ := s.wolViewOf(scan, cfg.SmartThings)
 	return Status{
 		Protocol:       Protocol,
 		ServiceVersion: s.d.Version(),
@@ -262,10 +376,10 @@ func (s *Server) BuildStatus(cfg config.Config) Status {
 		Grace:             status.Grace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:          s.scheduleView(),
 		LastCommand:       src.LastCommand(),
-		Update:            src.Update(),
+		Update:            s.updateView(fromCache),
 		WoL:               block,
 		Display:           src.Display(),
-		Session:           s.sessionInfo(cfg.SmartThings),
+		Session:           s.sessionInfo(cfg.SmartThings, fromCache),
 		Features:          features(bat, cfg),
 		Awake:             s.d.Awake.View().Wire(),
 		Battery:           bat,

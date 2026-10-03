@@ -78,6 +78,8 @@ type Server struct {
 	hubLocalIP net.IP
 
 	wol wolCache
+	// memo is what the stopping push reuses (status.go).
+	memo statusMemo
 
 	subs *subStore
 	push pusher

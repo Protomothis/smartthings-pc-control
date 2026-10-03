@@ -111,3 +111,44 @@ func TestLegacyDiscoveryKeyIsIgnoredAndDropped(t *testing.T) {
 		t.Errorf("the save lost allowed_hubs: %s", saved)
 	}
 }
+
+// LoadMigrated reports a config.json that Load had to bring up to date —
+// so the service saves it once — and stops reporting it after that save.
+func TestLoadMigratedReportsAnOlderFormOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name, doc string
+		want      bool
+	}{
+		{"watch list without slots", `{"port": 5001, "activity": {"enabled": true, "watch": [{"process": "steam.exe", "label": "Steam"}, {"process": "obs64.exe", "label": "OBS"}]}}`, true},
+		{"repeated slot", `{"port": 5001, "activity": {"watch": [{"slot": 1, "process": "steam.exe"}, {"slot": 1, "process": "obs64.exe"}]}}`, true},
+		{"retired discovery key", `{"port": 5001, "smartthings": {"discovery": true}}`, true},
+		{"current form", `{"port": 5001, "activity": {"watch": [{"slot": 2, "process": "steam.exe", "label": "Steam"}]}}`, false},
+		{"unparseable", `{"port": 5001, "activity": {"watch": [{"process": "steam.exe"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeConfig(t, dir, tc.doc)
+			cfg, migrated := LoadMigrated(dir)
+			if migrated != tc.want {
+				t.Fatalf("migrated = %v, want %v", migrated, tc.want)
+			}
+			if !migrated {
+				return
+			}
+			if _, err := Save(dir, cfg); err != nil {
+				t.Fatal(err)
+			}
+			again, migrated := LoadMigrated(dir)
+			if migrated {
+				t.Error("still reported as migrated after the save")
+			}
+			if len(again.Activity.Watch) != len(cfg.Activity.Watch) {
+				t.Errorf("watch after the save = %+v, want %+v", again.Activity.Watch, cfg.Activity.Watch)
+			}
+		})
+	}
+	// Without a file there is nothing to migrate.
+	if _, migrated := LoadMigrated(t.TempDir()); migrated {
+		t.Error("a missing config.json reported as migrated")
+	}
+}

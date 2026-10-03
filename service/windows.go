@@ -15,6 +15,8 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
+	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 const serviceName = "RemoteShutdownService"
@@ -37,7 +39,8 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// config.json and state.json are tighter than the folder (#131).
 	securePrivateFilesAtStart()
 	go cleanupStaleUpdateFiles()
-	cfg := loadConfig()
+	// An older config.json is migrated and saved back once, here.
+	cfg := loadConfigAtStart()
 	setConfig(cfg)
 	// The tray finds the port and its switches here, not in config.json.
 	config.WriteTrayFile(installDir(), cfg)
@@ -71,33 +74,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 		c := <-r
 		switch c.Cmd {
 		case svc.Stop, svc.Shutdown:
-			changes <- svc.Status{State: svc.StopPending}
-			reason := "stop"
-			if c.Cmd == svc.Shutdown {
-				reason = "shutdown"
-			}
-			logMsg("Service stopping (%s)", reason)
-			// The next start reads this back as last_shutdown_clean; a
-			// power cut never reaches here, so the flag stays false.
-			markCleanShutdown(statePath())
-			// The SmartThings push sink taps this event and delivers it
-			// synchronously (up to 1.5s, edge-driver doc §3.5) so the hub
-			// learns the PC is going away before it stops answering; the
-			// stop continues right afterwards either way. reason is
-			// shutdown/restart/suspend/hibernate/app_stop (§6.2): the SCM
-			// only distinguishes a system shutdown from a plain stop, so
-			// the command this service just ran refines it. A plain stop
-			// nothing explains is app_stop: the service goes away
-			// (update, uninstall, a service restart) and the PC stays on.
-			//
-			// #87: when nothing this service ran explains the stop - the
-			// user pressed 다시 시작 in the Start menu, or Windows Update
-			// did - the System log's User32/1074 record still knows
-			// whether this is a restart or a power off. That query costs
-			// up to 1.5s, so it runs only on that path, never when a
-			// remote command already answered.
-			emit("power", "stopping", map[string]string{"reason": stopReason(c.Cmd == svc.Shutdown)})
-			close(s.stop)
+			s.announceStop(c.Cmd == svc.Shutdown, changes)
 			// Keep-awake (#111) is released here, synchronously, rather
 			// than left to the goroutine watching s.stop: the process may
 			// be gone before that goroutine runs.
@@ -115,6 +92,63 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			changes <- c.CurrentStatus
 		}
 	}
+}
+
+// stopTeardownHint is the wait hint for what follows the power.stopping
+// push: the notification bus gets up to notify.CloseGrace to deliver what
+// is queued, and the rest (keep-awake, Telegram control, SSDP, the log)
+// is quick.
+const stopTeardownHint = notify.CloseGrace + time.Second
+
+// stopWaitHint is the StopPending wait hint reported as soon as a stop or
+// shutdown arrives, so the SCM does not give up on the service while the
+// power.stopping push is still in flight: the reason lookup (the System
+// log query, system shutdown only), the push's own deadline and a second
+// of slack. A plain stop may still turn out to be suspend or hibernate
+// (a power command this service just ran), so it allows for the longer
+// app_stop deadline either way.
+func stopWaitHint(systemShutdown bool) time.Duration {
+	if systemShutdown {
+		return localShutdownTimeout + stapi.StoppingDeadline("shutdown") + time.Second
+	}
+	return stapi.StoppingDeadline("app_stop") + time.Second
+}
+
+// announceStop is the first half of a stop: StopPending, the clean-shutdown
+// mark, and the power.stopping push — before s.stop closes and anything
+// is torn down, so the hub hears it while every part of the service is
+// still there. It then reports the second checkpoint with the teardown's
+// own wait hint.
+func (s *shutdownService) announceStop(systemShutdown bool, changes chan<- svc.Status) {
+	changes <- svc.Status{State: svc.StopPending, CheckPoint: 1, WaitHint: uint32(stopWaitHint(systemShutdown) / time.Millisecond)}
+	what := "stop"
+	if systemShutdown {
+		what = "shutdown"
+	}
+	logMsg("Service stopping (%s)", what)
+	// The next start reads this back as last_shutdown_clean; a power cut
+	// never reaches here, so the flag stays false.
+	markCleanShutdown(statePath())
+	// The SmartThings push sink taps this event and delivers it
+	// synchronously (edge-driver doc §3.5) so the hub learns the PC is
+	// going away before it stops answering; the stop continues right
+	// afterwards either way. The body is built from memory only, and the
+	// delivery may take up to 4s for app_stop and 1.5s otherwise
+	// (stapi.StoppingDeadline). reason is
+	// shutdown/restart/suspend/hibernate/app_stop (§6.2): the SCM only
+	// distinguishes a system shutdown from a plain stop, so the command
+	// this service just ran refines it. A plain stop nothing explains is
+	// app_stop: the service goes away (update, uninstall, a service
+	// restart) and the PC stays on.
+	//
+	// #87: when nothing this service ran explains the stop - the user
+	// pressed 다시 시작 in the Start menu, or Windows Update did - the
+	// System log's User32/1074 record still knows whether this is a
+	// restart or a power off. That query costs up to 1.5s, so it runs only
+	// on that path, never when a remote command already answered.
+	emit("power", "stopping", map[string]string{"reason": stopReason(systemShutdown)})
+	close(s.stop)
+	changes <- svc.Status{State: svc.StopPending, CheckPoint: 2, WaitHint: uint32(stopTeardownHint / time.Millisecond)}
 }
 
 // RunService runs as a Windows service. Interactive launches are routed to

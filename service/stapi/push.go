@@ -52,8 +52,17 @@ const (
 	// pushTimeout bounds one callback POST (§3.5).
 	pushTimeout = 2 * time.Second
 	// PushStoppingDeadline bounds the whole synchronous power.stopping
-	// delivery, retry included, before the stop proceeds (§3.5).
+	// delivery, retry included, before the stop proceeds (§3.5), when
+	// Windows itself is going down (shutdown, restart, suspend,
+	// hibernate): the OS gives services only a few seconds then.
 	PushStoppingDeadline = 1500 * time.Millisecond
+	// PushAppStopDeadline is the same bound for reason app_stop, a plain
+	// service stop with the PC staying on (§3.5). Nothing presses the stop
+	// then, and this push is the hub's only sign that the app went away —
+	// a stopped service's port answers with silence, not a refusal
+	// (edge-platform-notes "연결 거부와 시간 초과") — so it gets room for a
+	// full attempt (pushTimeout) and most of the retry.
+	PushAppStopDeadline = 4 * time.Second
 	// PushMaxFailures removes a subscription after this many consecutive
 	// failed deliveries (§3.5).
 	PushMaxFailures = 3
@@ -417,6 +426,8 @@ type pushJob struct {
 	Type string
 	At   time.Time
 	Data map[string]string
+	// fromCache builds the status from memory only (StoppingStatus).
+	fromCache bool
 	// flushed marks a no-op job: the worker closes it once every job
 	// queued before it has been delivered (see FlushPush).
 	flushed chan struct{}
@@ -441,9 +452,15 @@ func (p *pusher) init() {
 // worker — except power.stopping, which is delivered inline. That event is
 // emitted from the SCM stop handler and from the suspend broadcast, right
 // before the PC stops answering, and blocking those paths for up to
-// PushStoppingDeadline is the only way the hub learns the difference
+// StoppingDeadline(reason) is the only way the hub learns the difference
 // between "shutting down" and "fell off the network". Both call sites are
-// prepared to wait; the stop continues afterwards either way.
+// prepared to wait; the stop continues afterwards either way. Its body is
+// built from memory only (StoppingStatus), so the deadline is spent on the
+// network and not on status lookups.
+//
+// The connection itself cannot be kept warm: the driver answers every push
+// with "Connection: close" (edge/src/push.lua), so each push dials anew —
+// a LAN connect, a few milliseconds.
 func (s *Server) PushTap(ev notify.Event) {
 	typ, ok := pushEventType(ev, s.d.Config().SmartThings)
 	if !ok {
@@ -455,7 +472,12 @@ func (s *Server) PushTap(ev notify.Event) {
 	}
 	job := pushJob{Type: typ, At: ev.At, Data: ev.Fields}
 	if typ == "power.stopping" {
-		ctx, cancel := context.WithTimeout(context.Background(), PushStoppingDeadline)
+		// The body comes from memory only (StoppingStatus): a status
+		// build that had to rescan the adapters spent a second of the
+		// deadline in PowerShell before the POST started, and the push
+		// never reached the hub (2026-10-03).
+		job.fromCache = true
+		ctx, cancel := context.WithTimeout(context.Background(), StoppingDeadline(ev.Fields["reason"]))
 		defer cancel()
 		s.dispatch(ctx, job)
 		return
@@ -466,6 +488,16 @@ func (s *Server) PushTap(ev notify.Event) {
 	default:
 		logx.Printf("ST push: queue full, dropping %s", job.Type)
 	}
+}
+
+// StoppingDeadline is how long the synchronous power.stopping delivery for
+// reason may hold the stop (§3.5): PushAppStopDeadline for app_stop,
+// PushStoppingDeadline for everything Windows itself is doing.
+func StoppingDeadline(reason string) time.Duration {
+	if reason == "app_stop" {
+		return PushAppStopDeadline
+	}
+	return PushStoppingDeadline
 }
 
 // pushWorker delivers queued events one at a time, in emit order.
@@ -557,7 +589,7 @@ func (s *Server) pushBody(job pushJob) ([]byte, error) {
 	if at.IsZero() {
 		at = s.PushNow()
 	}
-	st := s.BuildStatus(cfg)
+	st := s.buildStatus(cfg, job.fromCache)
 	var data any = pushData(job.Data, cfg.Secret)
 	if job.Type == "activity.changed" {
 		data = st.Activity

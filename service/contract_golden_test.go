@@ -853,6 +853,10 @@ var pushCases = map[string]pushCase{
 		trigger: func(t *testing.T, _ *fakeAwake) { cancelScheduleBy("smartthings") },
 	},
 	"push.power.stopping.json": {trigger: func(t *testing.T, _ *fakeAwake) {
+		// The hub polled before it subscribed. power.stopping is built
+		// from memory only (§3.5), so the adapter scan, the session and
+		// the update it carries are what that poll saw.
+		stSrv.BuildStatus(getConfig())
 		// The suspend broadcast; no power command ran, so the reason is
 		// the broadcast's own.
 		(&powerTracker{now: func() time.Time { return goldenNow }}).handle(pbtAPMSuspend)
