@@ -525,7 +525,7 @@ function push.apply_to_device(driver, device, payload, deps)
     watch = fields.extras(device) == nil and rows.kept_watch(device) or nil,
   })
   fields.set_state(device, nxt)
-  local app_stop = push.app_stopping(event, (payload.data or {}).reason)
+  local app_stop = push.app_stopping(event, ((payload or {}).data or {}).reason)
 
   if event == "status_ok" or app_stop then
     -- A push proves the PC is up: a pending wake timeout is done with (§6.4).
