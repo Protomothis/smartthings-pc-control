@@ -2,7 +2,7 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
-## [Unreleased]
+## [v1.2.0] - 2026-10-03
 
 v1.2.0입니다. 함께 나오는 Edge 드라이버 1.1.0의 새 기능은 이 버전의 서비스가 있어야 동작합니다([edge/CHANGELOG.md](edge/CHANGELOG.md)).
 

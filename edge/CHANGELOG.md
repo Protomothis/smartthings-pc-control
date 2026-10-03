@@ -2,7 +2,7 @@
 
 허브 안에서 도는 Edge 드라이버(`edge/`)의 변경 이력입니다. 드라이버는 Windows 앱과 버전이 따로 돌고(`src/driver_version.lua`, 태그 `edge-vX.Y.Z`), 사용자는 GitHub 릴리스가 아니라 SmartThings 채널을 통해 자동으로 업데이트를 받습니다. Windows 서비스·트레이 앱의 이력은 [../CHANGELOG.md](../CHANGELOG.md)에 있습니다.
 
-## [Unreleased]
+## [1.1.0] - 2026-10-03
 
 드라이버 1.1.0입니다. 아래 새 기능은 PC Control 서비스 **v1.2.0**이 필요합니다. 그보다 오래된 서비스에서는 해당 줄이 `PC 앱 v1.2.0 필요`를 띄우고 명령을 보내지 않습니다. 기존 기능은 지금처럼 v1.1.0 이상에서 동작합니다.
 
