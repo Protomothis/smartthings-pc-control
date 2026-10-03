@@ -3,7 +3,8 @@
 // idle time, the display, the battery and which user session the
 // commands act on. Every store is safe for concurrent use and knows
 // nothing about HTTP, the hub or Telegram; the service decides what a
-// change sets off.
+// change sets off. Refresh gates the background readings that fill a
+// store when no other source does.
 package devstate
 
 import (

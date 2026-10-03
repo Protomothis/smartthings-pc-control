@@ -76,8 +76,16 @@ func stAudioStatus(cfg Config) stAudio {
 	if !cfg.Media.Enabled {
 		return stAudio{}
 	}
+	if !sys.sessionPresent() {
+		return stAudio{}
+	}
+	// No sample, or an old one nobody refreshes: read the session in the
+	// background (session_fill.go). This answer does not wait for it; the
+	// reading pushes audio.changed when it lands. available=false thus
+	// means nobody is logged in, or the session could not be read.
+	requestFill(fillAudio, false)
 	s, ok := currentAudio()
-	if !ok || !sys.sessionPresent() {
+	if !ok {
 		return stAudio{}
 	}
 	return stAudioView(s)

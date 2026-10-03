@@ -24,6 +24,10 @@ var dev = struct {
 	idle    devstate.Sample[int64]
 	display *devstate.Value[string]
 	target  devstate.SessionTracker
+	// tray is when a heartbeat from the target session last arrived: while
+	// one is recent the tray app supplies audio and media, and the service
+	// does not read them itself (session_fill.go).
+	tray devstate.Sample[struct{}]
 }{
 	// "unknown" until a screen command has run in this process.
 	display: devstate.NewValue("unknown"),
@@ -56,13 +60,18 @@ func noteAudioSample(a useraction.Audio, at time.Time) bool {
 func recordAudioSample(a useraction.Audio, at time.Time) bool {
 	stored, changed := dev.audio.Note(a, at)
 	if changed {
-		emitDevice("audio", "changed", map[string]string{
-			"volume": strconv.Itoa(a.Volume),
-			"muted":  strconv.FormatBool(a.Muted),
-			"device": a.Device,
-		})
+		emitAudioChanged(a)
 	}
 	return stored
+}
+
+// emitAudioChanged pushes audio.changed for a.
+func emitAudioChanged(a useraction.Audio) {
+	emitDevice("audio", "changed", map[string]string{
+		"volume": strconv.Itoa(a.Volume),
+		"muted":  strconv.FormatBool(a.Muted),
+		"device": a.Device,
+	})
 }
 
 // currentAudio returns the newest reading; ok is false when there has been

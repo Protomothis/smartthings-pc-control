@@ -152,11 +152,25 @@ type heartbeatStore struct {
 
 var heartbeat = &heartbeatStore{target: targetUserSession}
 
-func (h *heartbeatStore) Now() time.Time                         { return clock.audio() }
-func (h *heartbeatStore) Target() (uint32, error)                { return h.target() }
-func (h *heartbeatStore) Ignored(from, target uint32)            { noteIgnoredHeartbeat(from, target) }
-func (h *heartbeatStore) Idle(seconds int64)                     { noteIdleHeartbeat(seconds) }
-func (h *heartbeatStore) Audio(a useraction.Audio, at time.Time) { recordAudioSample(a, at) }
+func (h *heartbeatStore) Now() time.Time              { return clock.audio() }
+func (h *heartbeatStore) Target() (uint32, error)     { return h.target() }
+func (h *heartbeatStore) Ignored(from, target uint32) { noteIgnoredHeartbeat(from, target) }
+
+// Idle, Audio and Media are called only for a heartbeat from the target
+// session (or from a tray app too old to name its session), so each also
+// marks the tray app as the source of the audio and media state
+// (session_fill.go).
+func (h *heartbeatStore) Idle(seconds int64) {
+	noteTrayReport()
+	noteIdleHeartbeat(seconds)
+}
+
+func (h *heartbeatStore) Audio(a useraction.Audio, at time.Time) {
+	noteTrayReport()
+	recordAudioSample(a, at)
+}
+
 func (h *heartbeatStore) Media(np useraction.NowPlaying, at time.Time) {
+	noteTrayReport()
 	recordMediaSample(np, at)
 }

@@ -67,6 +67,9 @@ var sys = struct {
 	// mediaRefresh reads the media session again shortly after a media
 	// command.
 	mediaRefresh func()
+	// startFill runs a background reading of the audio or media state
+	// (session_fill.go); the tests run it inline or drop it.
+	startFill func(run func())
 }{
 	tool:           runSystemTool,
 	netsh:          runNetshCommand,
@@ -77,4 +80,5 @@ var sys = struct {
 	processes:      activity.ToolhelpNames,
 	sessionPresent: userSessionPresent,
 	mediaRefresh:   refreshMediaSoon,
+	startFill:      func(run func()) { go run() },
 }
