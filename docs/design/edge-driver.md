@@ -195,7 +195,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 - 보내는 `type`: `power.stopping|started|resumed`, `schedule.*`, `remote.*`, `system.updated|update_available`, `display.changed`, `session.locked|unlocked`(세션 노출을 켠 경우만).
 - 알림 카테고리 필터와 조용한 시간대는 **적용되지 않는다.** 장치 상태는 알림이 아니다.
 - `power.stopping`은 종료가 진행되기 전에 **동기로**(최대 1.5초) 보낸다. `data.reason`이 `suspend`/`hibernate`/`shutdown`/`restart`를 구분해 주므로 타일이 "꺼짐" 대신 "절전"을 보여 준다.
-- `reason`을 정하는 순서(#87): ① 최근 2분 안에 이 서비스가 실행한 전원 명령(절전·최대 절전을 아는 유일한 출처) → ② 시스템 종료면 **System 로그의 User32 이벤트 1074**(최근 120초, `wevtutil qe … /f:xml`의 `param5` = Shutdown Type)로 `restart`/`shutdown` 구분 → ③ 시스템 종료면 `shutdown`, 단순 서비스 중지면 `unknown`. SCM은 시스템 종료인지만 알려 줄 뿐 재시작인지 전원 끄기인지는 말해 주지 않는다. ②는 ①이 없을 때만, 1.5초 제한으로 돈다.
+- `reason`을 정하는 순서(#87): ① 최근 2분 안에 이 서비스가 실행한 전원 명령(절전·최대 절전을 아는 유일한 출처) → ② 시스템 종료면 **System 로그의 User32 이벤트 1074**(최근 120초, `wevtutil qe … /f:xml`의 `param5` = Shutdown Type)로 `restart`/`shutdown` 구분 → ③ 시스템 종료면 `shutdown`, 단순 서비스 중지면 `app_stop`(업데이트·제거·서비스 재시작·사용자가 멈춤 — 서비스만 내려가고 PC는 켜져 있다. 드라이버는 `shuttingDown`/`off`로 가지 않고 앱 응답 없음 상태를 바로 보인다). `unknown`은 프로토콜에 남아 있지만 지금 서비스는 보내지 않는다. SCM은 시스템 종료인지만 알려 줄 뿐 재시작인지 전원 끄기인지는 말해 주지 않는다. ②는 ①이 없을 때만, 1.5초 제한으로 돈다.
 - 전송은 2초 타임아웃에 재시도 1회, 연속 3회 실패하면 구독을 지운다. 매 이벤트에 전체 status가 실려 드라이버는 차이를 계산하지 않는다.
 
 ### 3.6 SSDP와 `GET /st/v1/description`
@@ -286,7 +286,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 
 | | |
 |---|---|
-| 서비스 → 드라이버 | status·모든 푸시의 `activity = { enabled, apps: [ {slot, id, label, running} ], top }`. `apps`는 slot 순서이고 채워진 슬롯만, `id`는 소문자 프로세스 이름, `top`은 실행 중인 것 중 가장 작은 슬롯의 `id`(없으면 `""`). 꺼져 있으면 `{enabled: false, apps: [], top: ""}` |
+| 서비스 → 드라이버 | status·모든 푸시의 `activity = { enabled, apps: [ {slot, id, label, running} ], top, scanned }`. `apps`는 slot 순서이고 채워진 슬롯만, `id`는 소문자 프로세스 이름, `top`은 실행 중인 것 중 가장 작은 슬롯의 `id`(없으면 `""`). `scanned`는 지금 설정(목록·칸·라벨, 켜기)으로 스캔이 한 번 끝났으면 `true`, 설정을 바꾸거나 켠 직후 첫 스캔 전에는 `false`(그동안 `running`은 자리표시자다). 꺼져 있으면 `{enabled: false, apps: [], top: "", scanned: false}` |
 | 프로필 | `pc*.v10`의 컴포넌트 `apps`: `numbersystem53811.pcwatchlist` 하나. main의 요약 줄 `pcApps`(v6)는 없앴다. v7–v9는 같은 카드를 옛 id `numbersystem53811.pcwatch`로 썼다: v7은 첫 배치(아래 "미리보기"), v8·v9는 `pcwatch`의 프레젠테이션을 갱신한 뒤의 새 프로필 이름이었지만 화면이 처음 프레젠테이션으로 만들어졌다(§6.6, 플랫폼 노트 "프로필과 화면 생성") |
 | capability `pcWatchList` | `summary` string(≤ 60), `names` string(≤ 120), `slotOne`–`slotFive` enum `running`/`stopped`/`empty`. 명령 없음. 정의는 `pcWatch`와 같고, 프레젠테이션은 처음부터 지금의 것(아래)이다 — capability 프레젠테이션은 처음 쓰인 내용으로 굳어 `presentation:update`로는 화면이 바뀌지 않았다 |
 | 상세 화면 | 요약("실행 중인 앱") → "감시 1"…"감시 5"(값 "실행 중" / "꺼짐" / "비어 있음", 한국어만) → 이름("감시 이름"). 대시보드 상태 없음 |

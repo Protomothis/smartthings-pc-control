@@ -45,6 +45,10 @@
   때만 세션을 준다. 관리자 조건은 `config.json`을 읽을 수 있는 사람과 같게 맞춘 것이다 — 관리자가 아닌 계정의
   트레이는 앱 창에서 시크릿으로 로그인해야 하트비트가 들어간다. 로컬 세션은 `/api/login`의 세션과 따로이고
   루프백에서만 유효하다. 트레이가 세션 없이 읽는 포트와 스위치(`expose_session`·`media.*`)는 서비스가 `tray.json`에 쓴다.
+  이 세션이 **로컬 신뢰 세션**이다(리뷰 C5): 시크릿이 없어도 같은 검사로 발급하고, 앱은 연결할 때마다 받는다.
+  `POST /api/presets/test`, `GET /api/processes`, 프리셋이나 `activity.watch`를 바꾸는 `POST /api/config`는 이 세션만 쓸 수 있고
+  그 밖에는 `403 {"error":"local_only"}`(시크릿이 있는데 세션이 없으면 먼저 401). 다른 세션의 `GET /api/config`에는 프리셋
+  `path`가 `""`, `args`가 빠진다. 본문의 `"presets": null`·`"watch": null`(또는 키 없음)은 "저장값 유지"라 바뀐 것으로 보지 않는다.
 - **사용자 세션이 없을 때:** 로그인한 사용자가 없으면 명령을 `409 no_user_session`으로 거절하고
   status의 `audio.available=false`로 알린다. 드라이버는 요약 줄에 "사용자 없음"을 쓴다.
 - **구현 선택:** Core Audio는 COM(`IMMDeviceEnumerator` → `IAudioEndpointVolume`)을 Go에서 직접 부른다
@@ -218,13 +222,22 @@ PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 *
     `.bat`/`.cmd`는 `%SystemRoot%\System32\cmd.exe /d /v:off /s /c ""<path>" "<arg>"…"` — 모든 부분을 따옴표로 감싸고
     따옴표 안에서도 해석되는 `"`와 `%`는 경로·인자에서 거절한다. 나머지는 `syscall.EscapeArg`. 작업 폴더는 파일의 폴더.
   - 저장할 때 규칙에 어긋나면 400, 손으로 고친 `config.json`은 그 항목만 무시하고 로그를 남긴다.
+  - 이름은 겹칠 수 없다(앞뒤 공백을 빼고 대소문자 무시, 저장 400 · 불러올 때 뒤쪽 항목을 버림) — `/run 이름`이 하나만 가리키게.
+  - 프리셋을 바꾸는 저장과 [테스트]에서 `program`/`script` 파일이나 그 폴더를 SYSTEM · Administrators · TrustedInstaller ·
+    파일 소유자 · 실행 사용자(대상 세션) 말고도 쓸 수 있으면(쓰기 · 삭제 · 권한/소유자 변경 허용 ACE, NULL DACL 포함) 저장은 하되
+    `warnings: [{slot, code: "writable_by_others", path}]`를 돌려주고 앱이 보여 준다(`internal/secureacl.WritableByOthers`).
+    그 계정이 원격 버튼으로 무엇이 실행될지 정할 수 있기 때문이다. UNC 경로는 보지 않는다.
 - **API:** status `presets: [{slot, name}]`, `features`에 "presets"(프리셋이 없어도 — 드라이버가 옛 서비스와 빈 슬롯을 가른다). command `preset`(value = 슬롯 번호, 없으면 400,
   없는 슬롯은 `404 no_such_preset`). `last_command`에 `preset: {slot, name}`과 `result`("started" 또는 오류 코드).
   응답은 `{accepted, executed, schedule, preset: {slot, name, started}}`. 실행은 `remote.received`로도 알린다.
-- **텔레그램:** `/presets`(목록), `/run 이름|번호`.
-- **데스크톱 앱:** 명령 탭에 프리셋 목록과 [실행], 새 **프리셋** 탭(네트워크와 로그 사이)에 편집기(슬롯·이름·종류·경로·인자·[찾아보기]·[테스트]).
+- **텔레그램:** `/presets`(목록), `/run 이름|번호`. 숫자가 채워진 칸이 아니면(1–10 밖이거나 빈 칸) 이름으로 다시 찾는다(`/run 2077`).
+- **실패 문구(리뷰 C6):** 텔레그램 · `/st/v1` · WebUI로 가는 실패에는 경로 · 폴더 · 인자 · URL을 싣지 않는다. 고정 문구 + 파일 이름
+  ("파일을 찾을 수 없음: run.ps1" / "file not found: run.ps1"). `user-action preset`이 `reason`(`not_found`/`access_denied`/
+  `start_failed`/`url_failed`)과 전체 오류 `detail`을 함께 답하고, 서비스는 `detail`을 `service.log`에만 쓴다(`action.PresetFailure`).
+- **데스크톱 앱:** 명령 탭에 프리셋 목록과 [실행], **프리셋** 탭(예약과 공유 사이)에 편집기(슬롯·이름·종류·경로·인자·[찾아보기]·[테스트]).
   설정 탭의 한 섹션이 아니라 탭인 것은 행 최대 10개 × 3줄이 서비스 설정을 밀어내기 때문이다.
-  로컬 API `POST /api/presets/run {slot}`(저장된 것), `POST /api/presets/test {preset}`(저장 전 행).
+  로컬 API `POST /api/presets/run {slot}`(저장된 것), `POST /api/presets/test {preset}`(저장 전 행, 로컬 신뢰 세션만 — §2).
+  편집과 [테스트]는 이 PC의 앱에서만 된다. 브라우저 WebUI에는 프리셋 화면이 없다.
 - **드라이버 제약:** SmartThings 목록 항목은 프레젠테이션에 고정된다. 그래서 목록은 "프리셋 1 (Preset 1)"…"프리셋 10" 슬롯이고,
   비어 있는 슬롯은 `supportedValues`로 숨긴다(§16). 슬롯 이름은 별도 줄 "1 게임 모드 · 2 방송 시작 …"으로 보여 준다.
   무동작 쉬는 값 `none`(목록 닫기 대비, 플랫폼 노트). 커스텀 capability `pcPreset`: `run(slot)`, `lastPreset`, `names`, `supportedSlots`.
@@ -245,13 +258,17 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
   무시되고 다음 저장에서 빠진다.
 - **스캔:** 켜져 있을 때만 10초마다(저장 직후에는 바로) 프로세스 목록(세션 무관)을 읽어 감시 목록과 파일 이름만 맞춰 본다. 같은 이름이
   하나라도 있으면 실행 중. 목록에 없는 프로세스 이름은 저장·로그·전송하지 않는다. 목록을 읽지 못하면 같은 설정의 마지막 결과를 유지한다
-  (가짜 "꺼짐" 루틴 방지).
+  (가짜 "꺼짐" 루틴 방지). `service.log`(모든 사용자가 읽는다)에는 "Activity: 2 of 3 watched running"처럼 개수만 쓰고 라벨도 쓰지 않는다.
+- **한계 — 감시는 실행 파일 이름으로만 구분한다:** 이름이 같은 다른 프로그램도 실행 중으로 센다. 스토어(UWP) 앱은 호스트 프로세스
+  이름(`ApplicationFrameHost.exe` 등)으로 보인다. 10초 스캔 사이에 시작하고 끝난 실행(약 10초 미만)은 놓칠 수 있다. 세션을 가리지 않아
+  다른 사용자가 실행한 프로그램도 센다.
+- **편집 권한:** 감시 목록을 바꾸는 저장과 실행 중 프로그램 목록(`GET /api/processes`)은 로컬 신뢰 세션만(§2). 켜기/끄기는 아니다.
 - **API:** status
-  `activity: { enabled, apps: [{ slot: 1, id: "steam.exe", label: "Steam", running: true }, …], top: "steam.exe" }`.
+  `activity: { enabled, apps: [{ slot: 1, id: "steam.exe", label: "Steam", running: true }, …], top: "steam.exe", scanned: true }`.
   `apps`는 채워진 칸만 칸 순서로, `id`는 소문자 프로세스 이름(라벨·칸을 바꿔도 그대로), `top`은 실행 중인 것 중 칸 번호가 가장 작은
-  앱의 `id`(없으면 `""`). 꺼져 있으면 `{enabled:false, apps:[], top:""}`. 설정을 고친 직후 다음 스캔까지는 모두 `running:false`.
+  앱의 `id`(없으면 `""`). 꺼져 있으면 `{enabled:false, apps:[], top:"", scanned:false}`. 설정을 고치거나 켠 직후 그 설정의 첫 스캔이 끝날 때까지는 모두 `running:false`이고 `scanned:false`다(드라이버는 이때 실행 중이던 칸을 꺼짐으로 바꾸지 않는다). 첫 스캔이 끝나면 `scanned:true`.
   `features`의 `"activity"`는 켜져 있을 때만.
-- **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때 보낸다. 바뀐 게 없는 스캔은
+- **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때, 그리고 `scanned`가 `true`로 바뀔 때 보낸다. 바뀐 게 없는 스캔은
   보내지 않는다. `data`는 status의 `activity` 블록과 똑같은 JSON이다.
 - **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatchList`
   (`numbersystem53811.pcwatchlist`, `pc*.v10`부터. v7–v9의 `pcWatch`는 화면이 첫 프레젠테이션으로 굳어 새 id로 옮겼다, §14): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "PC 앱 v1.2.0 필요",

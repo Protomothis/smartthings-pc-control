@@ -97,10 +97,18 @@ func presetRuleMessage(err error) string {
 	return strings.TrimPrefix(msg, "preset: ")
 }
 
-// ValidatePresets checks every entry and that slots are unique; "" when
-// the list is fine, otherwise one message naming the slot.
+// presetNameKey is how names are compared for uniqueness and for /run:
+// trimmed, case-insensitive.
+func presetNameKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// ValidatePresets checks every entry and that slots and names are unique
+// (names case-insensitively, so /run 이름 always means one preset); ""
+// when the list is fine, otherwise one message naming the slot.
 func ValidatePresets(ps []Preset) string {
 	seen := map[int]bool{}
+	names := map[string]int{}
 	for i, p := range ps {
 		if err := ValidatePreset(p); err != nil {
 			return fmt.Sprintf("presets[%d] (slot %d): %v", i, p.Slot, err)
@@ -109,16 +117,22 @@ func ValidatePresets(ps []Preset) string {
 			return fmt.Sprintf("presets: slot %d is used twice", p.Slot)
 		}
 		seen[p.Slot] = true
+		if other, dup := names[presetNameKey(p.Name)]; dup {
+			return fmt.Sprintf("presets: slot %d has the same name as slot %d (%q)", p.Slot, other, truncate(p.Name, 40))
+		}
+		names[presetNameKey(p.Name)] = p.Slot
 	}
 	return ""
 }
 
 // DropInvalidPresets is the load-time counterpart of ValidatePresets: a
 // config.json edited by hand keeps its valid entries, and each ignored one
-// gets a log line. A later duplicate of a slot is the one dropped.
+// gets a log line. A later duplicate of a slot or a name is the one
+// dropped.
 func DropInvalidPresets(ps []Preset) []Preset {
 	out := []Preset{}
 	seen := map[int]bool{}
+	names := map[string]bool{}
 	for i, p := range ps {
 		if err := ValidatePreset(p); err != nil {
 			logx.Printf("WARNING: config.json presets[%d] (slot %d) ignored: %v", i, p.Slot, err)
@@ -128,7 +142,12 @@ func DropInvalidPresets(ps []Preset) []Preset {
 			logx.Printf("WARNING: config.json presets[%d] ignored: slot %d is used twice", i, p.Slot)
 			continue
 		}
+		if names[presetNameKey(p.Name)] {
+			logx.Printf("WARNING: config.json presets[%d] (slot %d) ignored: its name is used twice", i, p.Slot)
+			continue
+		}
 		seen[p.Slot] = true
+		names[presetNameKey(p.Name)] = true
 		out = append(out, p)
 	}
 	return out
@@ -145,11 +164,15 @@ func FindPreset(ps []Preset, slot int) (Preset, bool) {
 }
 
 // FindPresetByName matches a Telegram /run argument: a slot number, or a
-// name compared without regard to case or surrounding space.
+// name compared without regard to case or surrounding space. A number that
+// is no filled slot (out of 1–10, or an empty one) is tried as a name
+// next, so a preset called "2077" still runs with /run 2077.
 func FindPresetByName(ps []Preset, arg string) (Preset, bool) {
 	arg = strings.TrimSpace(arg)
 	if n, err := strconv.Atoi(arg); err == nil {
-		return FindPreset(ps, n)
+		if p, ok := FindPreset(ps, n); ok {
+			return p, true
+		}
 	}
 	for _, p := range ps {
 		if strings.EqualFold(p.Name, arg) {

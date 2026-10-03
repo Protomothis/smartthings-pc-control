@@ -350,11 +350,60 @@ func TestLocalLoginRequestChecks(t *testing.T) {
 		t.Errorf("GET: %d, want 405", w.Code)
 	}
 
-	// No secret: nothing needs a session, so no lookup and no cookie.
+	// No secret: the same checks (C5) — the session is what the local-only
+	// endpoints ask for, so a LAN caller still gets nothing.
 	s.cfg = config.Config{Port: 5001}
 	w := do("POST", lanClient.String(), true)
-	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 0 {
-		t.Errorf("without a secret: %d %v, want a plain 200", w.Code, w.Result().Cookies())
+	if w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 || !strings.Contains(w.Body.String(), "not_loopback") {
+		t.Errorf("without a secret, from the LAN: %d %v %s, want 403 not_loopback", w.Code, w.Result().Cookies(), w.Body.String())
+	}
+}
+
+// TestLocalLoginWithoutSecret: with no secret configured the desktop app
+// still logs in (C5) and its session opens the local-only endpoints, which
+// no session at all does not.
+func TestLocalLoginWithoutSecret(t *testing.T) {
+	s, srv, pids := localLoginSetup(t, trustedTray())
+	s.cfg = config.Config{Port: 5001}
+	c := &http.Client{Timeout: 5 * time.Second}
+
+	processes := func(cookie *http.Cookie) (int, string) {
+		req, _ := http.NewRequest("GET", srv.URL+"/api/processes", nil)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body map[string]any
+		json.NewDecoder(resp.Body).Decode(&body)
+		code, _ := body["error"].(string)
+		return resp.StatusCode, code
+	}
+	if code, e := processes(nil); code != http.StatusForbidden || e != "local_only" {
+		t.Errorf("before the login: %d %s, want 403 local_only", code, e)
+	}
+	resp, body := localLoginPost(t, c, srv.URL)
+	if resp.StatusCode != http.StatusOK || body["status"] != "ok" || len(*pids) != 1 {
+		t.Fatalf("local login without a secret: %d %v (looked up %v)", resp.StatusCode, body, *pids)
+	}
+	cookie := sessionCookie(resp)
+	if cookie == nil {
+		t.Fatal("no session cookie without a secret")
+	}
+	if code, e := processes(cookie); code != http.StatusOK {
+		t.Errorf("with the local session: %d %s, want 200", code, e)
+	}
+
+	// A refused peer (another program) gets no session, secret or not.
+	p := trustedTray()
+	p.Image = `C:\Program Files\Browser\browser.exe`
+	_, srv2, _ := localLoginSetup(t, p)
+	resp, body = localLoginPost(t, c, srv2.URL)
+	if resp.StatusCode != http.StatusForbidden || body["code"] != "other_exe" || sessionCookie(resp) != nil {
+		t.Errorf("other exe: %d %v", resp.StatusCode, body)
 	}
 }
 

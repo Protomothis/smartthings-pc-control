@@ -142,6 +142,27 @@ func postJSON(path, body string) *http.Request {
 	return req
 }
 
+// localAppToken is the local trusted session the tests hand the desktop
+// app; the peer-process check behind /api/local-login is webui's own test.
+const localAppToken = "local-app-session"
+
+// asLocalApp makes r the desktop app's: from loopback, with the local
+// trusted session's cookie.
+func asLocalApp(t *testing.T, r *http.Request) *http.Request {
+	t.Helper()
+	prev := webSrv.SetLocalSessionToken(localAppToken)
+	t.Cleanup(func() { webSrv.SetLocalSessionToken(prev) })
+	r.RemoteAddr = "127.0.0.1:52431"
+	r.AddCookie(&http.Cookie{Name: "session", Value: localAppToken})
+	return r
+}
+
+// localPostJSON is postJSON from the desktop app (asLocalApp).
+func localPostJSON(t *testing.T, path, body string) *http.Request {
+	t.Helper()
+	return asLocalApp(t, postJSON(path, body))
+}
+
 func decodeBody(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var out map[string]any

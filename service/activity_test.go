@@ -54,7 +54,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 	}})
 
 	w := httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":1,"process":"C:\\bad.exe","label":"x"}]}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":1,"process":"C:\\bad.exe","label":"x"}]}}`))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("a path was accepted: %d %s", w.Code, w.Body.String())
 	}
@@ -68,7 +68,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 		list = append(list, `{"slot":`+string(rune('1'+i))+`,"process":"app`+string(rune('a'+i))+`.exe"}`)
 	}
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[`+strings.Join(list, ",")+`]}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[`+strings.Join(list, ",")+`]}}`))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "at most 5") {
 		t.Errorf("six programs: %d %s", w.Code, w.Body.String())
 	}
@@ -81,7 +81,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 		`[{"slot":2,"process":"obs64.exe"},{"slot":2,"process":"a.exe"}]`: "slot 2 is used twice",
 	} {
 		w = httptest.NewRecorder()
-		webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":`+body+`}}`))
+		webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true,"watch":`+body+`}}`))
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), want) {
 			t.Errorf("%s: %d %s", body, w.Code, w.Body.String())
 		}
@@ -94,7 +94,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 	default:
 	}
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("toggle only: %d %s", w.Code, w.Body.String())
 	}
@@ -111,7 +111,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 	// A stray kind is accepted and dropped; the list is stored in slot
 	// order whatever order it came in.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":4,"process":"obs64.exe","label":"OBS","kind":"stream"},{"slot":2,"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[{"slot":4,"process":"obs64.exe","label":"OBS","kind":"stream"},{"slot":2,"process":"steam.exe","label":"Steam","kind":"game"}]}}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("with kind: %d %s", w.Code, w.Body.String())
 	}
@@ -121,7 +121,7 @@ func TestConfigAPIValidatesActivity(t *testing.T) {
 
 	// An empty list is a real edit.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[]}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"activity":{"enabled":true,"watch":[]}}`))
 	if w.Code != http.StatusOK || len(getConfig().Activity.Watch) != 0 {
 		t.Errorf("clearing the list: %d, %+v", w.Code, getConfig().Activity)
 	}
@@ -189,7 +189,7 @@ func TestActivityChangePushes(t *testing.T) {
 	activityTick(cfg.Activity) // baseline, no push
 	running = []string{"explorer.exe", "obs64.exe", "diary.exe"}
 	activityTick(cfg.Activity)
-	expect("obs started", `{"enabled":true,"apps":[{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
+	expect("obs started", `{"enabled":true,"apps":[{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe","scanned":true}`)
 	if body := lastBody(); strings.Contains(body, "diary") {
 		t.Errorf("push body leaks an unlisted process name: %s", body)
 	}
@@ -199,21 +199,52 @@ func TestActivityChangePushes(t *testing.T) {
 	cfg.Activity.Watch = []ActivityWatch{watch(1, "steam.exe", "Steam"), watch(3, "obs64.exe", "OBS")}
 	setConfig(cfg)
 	activityTick(cfg.Activity)
-	expect("list changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
+	expect("list changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":3,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe","scanned":true}`)
 	noPush("no change after the edit")
 
 	// So does moving an entry to another slot, nothing else changed.
 	cfg.Activity.Watch = []ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "obs64.exe", "OBS")}
 	setConfig(cfg)
 	activityTick(cfg.Activity)
-	expect("slot changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":2,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe"}`)
+	expect("slot changed", `{"enabled":true,"apps":[{"slot":1,"id":"steam.exe","label":"Steam","running":false},{"slot":2,"id":"obs64.exe","label":"OBS","running":true}],"top":"obs64.exe","scanned":true}`)
 
 	// Disabling pushes the off block.
 	cfg.Activity.Enabled = false
 	setConfig(cfg)
 	activityTick(cfg.Activity)
-	expect("disabled", `{"enabled":false,"apps":[],"top":""}`)
+	expect("disabled", `{"enabled":false,"apps":[],"top":"","scanned":false}`)
 	noPush("still off")
+}
+
+// TestActivityStatusScannedAcrossASave: the status block says scanned
+// false between a config change and the scanner's next look at it.
+func TestActivityStatusScannedAcrossASave(t *testing.T) {
+	running := []string{"steam.exe"}
+	stubRunning(t, &running)
+	cfg := Config{Port: 5001, Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{watch(1, "steam.exe", "Steam")}}}
+	withLiveConfig(t, cfg)
+
+	if got := stActivityStatus(getConfig()); got.Scanned || got.Enabled {
+		t.Errorf("off: %+v", got)
+	}
+	cfg.Activity.Enabled = true
+	setConfig(cfg)
+	if got := stActivityStatus(getConfig()); got.Scanned {
+		t.Errorf("enabled, not scanned yet: %+v", got)
+	}
+	activityTick(getConfig().Activity)
+	if got := stActivityStatus(getConfig()); !got.Scanned || got.Top != "steam.exe" {
+		t.Errorf("after the first scan: %+v", got)
+	}
+	cfg.Activity.Watch = append(cfg.Activity.Watch, watch(2, "obs64.exe", "OBS"))
+	setConfig(cfg)
+	if got := stActivityStatus(getConfig()); got.Scanned || got.Apps[0].Running {
+		t.Errorf("list edited, not rescanned: %+v", got)
+	}
+	activityTick(getConfig().Activity)
+	if got := stActivityStatus(getConfig()); !got.Scanned || !got.Apps[0].Running {
+		t.Errorf("after the rescan: %+v", got)
+	}
 }
 
 // ---- /api/processes ----------------------------------------------------------
@@ -222,10 +253,9 @@ func TestProcessesAPI(t *testing.T) {
 	stubProcesses(t, "svchost.exe", "System", "[System Process]", "Registry", "Steam.exe", "steam.exe", "explorer.exe", "  ", "Code.exe")
 	withLiveConfig(t, Config{Port: 5001})
 
-	r := httptest.NewRequest("GET", "/api/processes", nil)
-	r.RemoteAddr = "127.0.0.1:50000"
+	// The desktop app (its local trusted session) gets the list.
 	w := httptest.NewRecorder()
-	webAPI(w, r)
+	webAPI(w, asLocalApp(t, httptest.NewRequest("GET", "/api/processes", nil)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -239,8 +269,8 @@ func TestProcessesAPI(t *testing.T) {
 		t.Errorf("processes = %v, want %v", got, want)
 	}
 
-	// Not from another machine, even with a valid session.
-	r = httptest.NewRequest("GET", "/api/processes", nil)
+	// Not from another machine, even with the local session's cookie.
+	r := asLocalApp(t, httptest.NewRequest("GET", "/api/processes", nil))
 	r.RemoteAddr = "192.168.1.30:50000"
 	w = httptest.NewRecorder()
 	webAPI(w, r)
@@ -248,7 +278,17 @@ func TestProcessesAPI(t *testing.T) {
 		t.Errorf("LAN caller: %d %s", w.Code, w.Body.String())
 	}
 
-	// A secret requires the session cookie.
+	// Loopback without the local session: no secret means no 401, but
+	// still no list. The full matrix is in webui_localonly_test.go.
+	r = httptest.NewRequest("GET", "/api/processes", nil)
+	r.RemoteAddr = "127.0.0.1:50000"
+	w = httptest.NewRecorder()
+	webAPI(w, r)
+	if w.Code != http.StatusForbidden || decodeBody(t, w)["error"] != "local_only" {
+		t.Errorf("loopback without the local session: %d %s", w.Code, w.Body.String())
+	}
+
+	// A secret requires the session cookie first.
 	withLiveConfig(t, Config{Port: 5001, Secret: "s3cr3t"})
 	r = httptest.NewRequest("GET", "/api/processes", nil)
 	r.RemoteAddr = "127.0.0.1:50000"

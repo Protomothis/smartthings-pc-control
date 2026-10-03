@@ -24,6 +24,10 @@ package webui
 // trusted caller (the tray and the toast handler), so they do not log each
 // other — or a browser on the WebUI — out the way /api/login's single
 // session does; it is valid from loopback only, until the service stops.
+//
+// This "local trusted session" is also the only key to the local-only
+// endpoints (localOnly in server.go): a secret login, from the browser or
+// the app's login dialog, is not enough for them.
 
 import (
 	"errors"
@@ -183,8 +187,12 @@ func (s *Server) localSessionValid(r *http.Request, value string) bool {
 
 // handleLocalLogin serves POST /api/local-login. Replies: 200
 // {"status":"ok"} with the session cookie; 403 {"status":"error",
-// "code":…} when the caller is not trusted; 429 when rate limited. With no
-// secret configured nothing needs a session and the reply is a plain ok.
+// "code":…} when the caller is not trusted; 429 when rate limited.
+//
+// It works the same with no secret configured. Most of the API needs no
+// session then, but the local trusted session is also what the local-only
+// endpoints ask for (preset editing and testing, the process list, the
+// watch list; see localOnly), so the desktop app always logs in here.
 func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -192,10 +200,6 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !checkCSRF(r) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	if s.d.Config().Secret == "" {
-		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
 	if ok, _ := s.local.limiter.Allow(""); !ok {

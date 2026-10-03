@@ -88,8 +88,11 @@ func runLocalShutdownQuery(ctx context.Context) ([]byte, error) {
 //     caused;
 //  2. for a system shutdown, the newest User32/1074 record, which is how
 //     restart is told from power off (#87);
-//  3. "shutdown" for a system shutdown, "unknown" for a plain stop — the
-//     service is going away but the PC is not.
+//  3. "shutdown" for a system shutdown, "app_stop" for a plain stop — the
+//     service is going away (update, uninstall, a service restart, the
+//     user stopped it) but the PC stays on, so the driver shows the
+//     app-down state rather than shuttingDown/off. "unknown" stays in the
+//     protocol but this ladder no longer produces it.
 func stopReason(systemShutdown bool) string {
 	// "" means "no recent command hint"; stoppingReason returns whatever
 	// it is given when there is one.
@@ -97,7 +100,7 @@ func stopReason(systemShutdown bool) string {
 		return reason
 	}
 	if !systemShutdown {
-		return "unknown"
+		return "app_stop"
 	}
 	if reason, ok := localShutdownReason(); ok {
 		return reason

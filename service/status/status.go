@@ -115,6 +115,12 @@ type Activity struct {
 	Apps []ActivityApp `json:"apps"`
 	// Top is the id of the running app in the lowest slot, "" when none.
 	Top string `json:"top"`
+	// Scanned is true once the scanner has read the process list for the
+	// live watch list. It is false while the option is off and from a
+	// config change (list, slots, labels) or enable until that first scan
+	// finishes: the running flags are placeholders then, and the driver
+	// must not turn a running slot into stopped on them.
+	Scanned bool `json:"scanned"`
 }
 
 // ActivityApp is one watched program in the status block. Slot (1–5) is
@@ -126,9 +132,11 @@ type ActivityApp struct {
 	Running bool   `json:"running"`
 }
 
-// Equal compares two blocks, apps in order.
+// Equal compares two blocks, apps in order. Scanned counts: the first scan
+// after an edit is news to the driver even when no flag flipped.
 func (a Activity) Equal(b Activity) bool {
-	return a.Enabled == b.Enabled && a.Top == b.Top && slices.Equal(a.Apps, b.Apps)
+	return a.Enabled == b.Enabled && a.Top == b.Top && a.Scanned == b.Scanned &&
+		slices.Equal(a.Apps, b.Apps)
 }
 
 // Clone copies the block so a caller cannot alias the scanner's slice.

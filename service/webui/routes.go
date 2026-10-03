@@ -99,14 +99,15 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	mux.HandleFunc("/api/media", s.apiAuth(s.serveMedia, http.MethodGet, http.MethodPost))
 
 	// API: running program names for the app's watch-list picker (#110);
-	// loopback callers only.
-	mux.HandleFunc("/api/processes", s.apiAuth(s.serveProcesses, http.MethodGet))
+	// the desktop app's local trusted session only.
+	mux.HandleFunc("/api/processes", s.apiAuth(s.localOnly(s.serveProcesses), http.MethodGet))
 
 	// API: the app's [테스트 알림] (#106) and the preset [실행]/[테스트]
-	// buttons (#109)
+	// buttons (#109). [테스트] runs a row as typed — any program, as the
+	// user — so it is local-only; [실행] runs a saved preset.
 	mux.HandleFunc("/api/notify/test", s.apiAuth(s.serveNotifyTest, "POST"))
 	mux.HandleFunc("/api/presets/run", s.apiAuth(s.servePresetsRun, "POST"))
-	mux.HandleFunc("/api/presets/test", s.apiAuth(s.servePresetsTest, "POST"))
+	mux.HandleFunc("/api/presets/test", s.apiAuth(s.localOnly(s.servePresetsTest), "POST"))
 
 	// API: Telegram helpers for the GUI notify tab (design doc §11, #63)
 	mux.HandleFunc("/api/telegram/test", s.apiAuth(s.serveTelegramTest, "POST"))
@@ -358,10 +359,19 @@ func maskedConfig(cfg config.Config) configView {
 }
 
 // serveConfig serves GET/POST /api/config.
+//
+// Without the local trusted session (C5) GET masks what the presets run
+// (maskPresets) and a POST that changes the presets or the watch list is
+// 403 local_only; everything else works as before for a secret login.
 func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	liveCfg := s.d.Config()
+	local := s.localTrusted(r)
 	if r.Method == http.MethodGet {
-		httpx.WriteJSON(w, http.StatusOK, maskedConfig(liveCfg))
+		view := maskedConfig(liveCfg)
+		if !local {
+			view.Presets = maskPresets(view.Presets)
+		}
+		httpx.WriteJSON(w, http.StatusOK, view)
 		return
 	}
 	// POST. Decode over the live config: keys the client omits (an older
@@ -381,6 +391,14 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Normalize applies the token rules: ""/masked keep, "-" clears.
 	newCfg = config.Normalize(newCfg, liveCfg)
+	// What a preset runs and what the watch list looks for are the desktop
+	// app's alone (C5): checked before validation, so a remote caller
+	// learns nothing from the rules either.
+	presetsChanged := len(config.ChangedPresetSlots(liveCfg.Presets, newCfg.Presets)) > 0
+	if !local && localOnlyChange(liveCfg, newCfg) {
+		writeLocalOnly(w)
+		return
+	}
 	if msg := config.ValidateGraceSeconds(newCfg.GraceSeconds); msg != "" {
 		writeAPIError(w, http.StatusBadRequest, msg)
 		return
@@ -413,5 +431,14 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	if oldCfg.Port != newCfg.Port || oldCfg.WebUIRemote != newCfg.WebUIRemote {
 		msg = "Settings saved. Restart service to apply port/remote-access changes."
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
+	reply := map[string]any{"status": "ok", "message": msg}
+	// C6: saved all the same, but the app says which preset files others
+	// could rewrite. Only on a save that changed the presets, so an
+	// unrelated save does not repeat it.
+	if presetsChanged {
+		if warnings := s.presetWarnings(newCfg.Presets); len(warnings) > 0 {
+			reply["warnings"] = warnings
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, reply)
 }

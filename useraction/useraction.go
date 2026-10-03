@@ -169,6 +169,12 @@ func knownAction(action string) bool {
 type Error struct {
 	Code    string
 	Message string
+	// Reason refines a failure for a client that words it itself (a
+	// preset's PresetNotFound, …); "" when the code says it all.
+	Reason string
+	// Detail is the full underlying error (paths, system messages). It is
+	// for service.log only: Message is what a client may be shown.
+	Detail string
 }
 
 func (e *Error) Error() string {
@@ -481,7 +487,9 @@ func render(fields map[string]any, err error) ([]byte, int) {
 			OK      bool   `json:"ok"`
 			Error   string `json:"error"`
 			Message string `json:"message"`
-		}{false, ue.Code, ue.Message})
+			Reason  string `json:"reason,omitempty"`
+			Detail  string `json:"detail,omitempty"`
+		}{false, ue.Code, ue.Message, ue.Reason, ue.Detail})
 		return append(b, '\n'), 1
 	}
 	var buf bytes.Buffer

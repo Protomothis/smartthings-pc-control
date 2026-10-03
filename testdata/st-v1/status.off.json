@@ -2,6 +2,7 @@
   "activity": {
     "apps": [],
     "enabled": false,
+    "scanned": false,
     "top": ""
   },
   "audio": {

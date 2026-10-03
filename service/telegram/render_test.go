@@ -223,8 +223,10 @@ func TestPowerStoppingNamesTheReason(t *testing.T) {
 		{"restart", "재시작", "Restart"},
 		{"suspend", "절전", "Sleep"},
 		{"hibernate", "최대 절전", "Hibernate"},
-		// A plain service stop: the service cannot tell it apart from the
-		// beginning of a shutdown, and "unknown" says nothing to a reader.
+		// A plain service stop: the PC stays on.
+		{"app_stop", "앱만 중지 (PC는 켜져 있음)", "App only (the PC stays on)"},
+		// A system shutdown with nothing better to say: "unknown" says
+		// nothing to a reader.
 		{"unknown", "종료", "Shut down"},
 	} {
 		for lang, want := range map[string]string{LangKo: tc.ko, LangEn: tc.en} {

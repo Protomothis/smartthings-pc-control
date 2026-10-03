@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -170,22 +169,12 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 
 // ---- /api/processes (#110) -------------------------------------------------
 
-// isLoopbackRequest reports whether r came from this PC.
-func isLoopbackRequest(r *http.Request) bool {
-	ip := net.ParseIP(httpx.RemoteHost(r.RemoteAddr))
-	return ip != nil && ip.IsLoopback()
-}
-
 // serveProcesses serves GET /api/processes for the desktop app's "pick
-// from running programs" dialog. Besides the usual session check it
-// refuses anything but a loopback caller: the WebUI may be open to the LAN
-// (webui_remote), and the process list is meant for this PC's screen only.
-// Nothing is logged about the names.
+// from running programs" dialog. The route is localOnly: the WebUI may be
+// open to the LAN (webui_remote), and the process list is meant for this
+// PC's screen only — a secret login is not enough, the local trusted
+// session (loopback only) is. Nothing is logged about the names.
 func (s *Server) serveProcesses(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		writeAPIError(w, http.StatusForbidden, "The process list is only available on this PC.")
-		return
-	}
 	names, err := s.d.Status.Processes()
 	if err != nil {
 		logx.Printf("Activity: process list for the app unavailable: %v", err)
@@ -246,12 +235,13 @@ func (s *Server) servePresetsRun(w http.ResponseWriter, r *http.Request) {
 			"message": fmt.Sprintf("slot %d has no preset", body.Slot)})
 		return
 	}
-	writePresetResult(w, p, s.d.Presets.Run(r.Context(), p, "app"))
+	writePresetResult(w, p, s.d.Presets.Run(r.Context(), p, "app"), nil)
 }
 
 // servePresetsTest serves POST /api/presets/test {slot, name, type, path,
 // args} — the editor's [테스트] button, which runs the row as typed, before
-// it is saved. It passes the same validation a save does.
+// it is saved. It passes the same validation a save does, is local-only
+// (the route), and carries the writable_by_others warnings a save would.
 func (s *Server) servePresetsTest(w http.ResponseWriter, r *http.Request) {
 	var p config.Preset
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&p); err != nil {
@@ -268,14 +258,27 @@ func (s *Server) servePresetsTest(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writePresetResult(w, p, s.d.Presets.Run(r.Context(), p, "app test"))
+	warnings := s.presetWarnings([]config.Preset{p})
+	writePresetResult(w, p, s.d.Presets.Run(r.Context(), p, "app test"), warnings)
 }
 
-func writePresetResult(w http.ResponseWriter, p config.Preset, err error) {
+// writePresetResult answers a preset run. A failure's message is
+// action.PresetFailure's: no path, no URL (the run endpoint is reachable
+// from a remote WebUI login). warnings, when there are any, ride along
+// either way.
+func writePresetResult(w http.ResponseWriter, p config.Preset, err error, warnings []PresetWarning) {
 	if err != nil {
-		status, code, msg := action.Status(err)
-		httpx.WriteJSON(w, status, map[string]string{"status": "error", "error": code, "message": msg})
+		f, _ := action.PresetFailure(err, p)
+		body := map[string]any{"status": "error", "error": f.Code, "message": f.Message}
+		if len(warnings) > 0 {
+			body["warnings"] = warnings
+		}
+		httpx.WriteJSON(w, f.Status, body)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "started": true, "slot": p.Slot, "name": p.Name})
+	body := map[string]any{"status": "ok", "started": true, "slot": p.Slot, "name": p.Name}
+	if len(warnings) > 0 {
+		body["warnings"] = warnings
+	}
+	httpx.WriteJSON(w, http.StatusOK, body)
 }
