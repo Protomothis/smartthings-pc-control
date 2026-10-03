@@ -288,6 +288,9 @@ func startupHooks(stop <-chan struct{}) {
 	// Running-app detection (#110): reads activity.enabled on every tick
 	// and does not look at processes while it is off.
 	go watchActivity(stop)
+	// Audio and media state when no tray app reports for the target
+	// session: read it there shortly after the start (session_fill.go).
+	startSessionFill(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP

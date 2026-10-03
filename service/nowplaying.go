@@ -150,8 +150,12 @@ func stMediaStatus(cfg Config) stMedia {
 	if !cfg.Media.Enabled {
 		return stMedia{Status: useraction.MediaNone}
 	}
+	if !sys.sessionPresent() {
+		return stMedia{Status: useraction.MediaNone}
+	}
+	requestFill(fillMedia, false) // as for the audio block (stAudioStatus)
 	s, ok := currentMedia()
-	if !ok || !sys.sessionPresent() {
+	if !ok {
 		return stMedia{Status: useraction.MediaNone}
 	}
 	np := shareNowPlaying(s.NowPlaying, cfg)

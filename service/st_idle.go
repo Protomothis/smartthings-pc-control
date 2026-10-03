@@ -66,7 +66,13 @@ func observeTargetSession(id uint32) {
 		resetIdleHeartbeat()
 		resetAudioSample()
 		resetMediaSample()
+		dev.tray.Reset()
 		logMsg("user session changed from %d to %d: idle, audio and media samples cleared", prev, id)
+		// Read the new session at once rather than wait for a tray app
+		// that may not run there (session_fill.go).
+		if id != 0 {
+			fillOnTargetChange()
+		}
 	}
 }
 

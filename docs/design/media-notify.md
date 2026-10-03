@@ -38,6 +38,17 @@
   - 결과는 한 줄 JSON(`{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}`)으로 stdout에 쓴다.
 - **상태 보고:** 볼륨은 사용자가 키보드로도 바꾸므로, 트레이 하트비트(30초)에 `audio` 블록을 실어 보낸다.
   명령 직후에는 `user-action`의 결과로 즉시 갱신하고 푸시로 허브에 알린다.
+- **대상 세션에 트레이가 없을 때(v1.2.0-rc15 실측):** 하트비트는 명령이 실행되는 대상 세션의 것만 받으므로, 트레이가 다른 세션
+  (잠기지 않은 콘솔 옆의 RDP 세션)에만 있거나 아예 없으면(설치·서비스 재시작 직후) 오디오 표본을 채울 곳이 없었다. 그러면 status가
+  `audio.available=false`라 드라이버가 명령을 보내지 않고("사용자 없음"), 명령 답으로 채워질 기회도 없었다. 이제 **서비스가 직접**
+  대상 세션에서 `user-action audio get`·`user-action media info`를 실행해 명령 답처럼 저장한다(`service/session_fill.go`).
+  - 언제: 서비스 시작 5초 뒤, 대상 세션이 바뀔 때(간격 무시), 그리고 status 읽기가 표본이 없거나 60초보다 오래된 것을 볼 때.
+    대상 세션의 트레이가 60초 안에 하트비트를 보냈으면 트레이가 계속 출처이고 아무것도 실행하지 않는다.
+  - 어떻게: 백그라운드에서, 저장소마다 한 번에 하나, 30초에 최대 한 번. status 응답은 기다리지 않는다(첫 응답은 아직 `false`).
+    읽은 값이 처음 들어오면 `audio.changed`(재생 중이면 `media.changed`)를 푸시해 허브가 다음 폴링을 기다리지 않게 한다.
+    읽는 중에 대상이 바뀌면 끝난 뒤 한 번 더 읽는다(옛 세션 값을 지운다). 곡 정보는 저장할 때 옵트인을 적용한다.
+  - 그래서 `audio.available=false`는 "로그인한 사용자 없음" 또는 "그 세션의 오디오를 읽지 못함"(기본 재생 장치 없음 등)만 뜻한다.
+    실패는 연속 실패의 첫 번째와 회복만 로그에 남긴다.
 - **하트비트 인증(#131):** 시크릿을 정해 두면 하트비트도 세션이 필요하다. 트레이는 예전처럼 `config.json`의
   시크릿을 읽지 않고(이제 SYSTEM·Administrators 전용) 루프백 `POST /api/local-login`으로 세션을 받는다.
   서비스는 연결의 클라이언트 포트를 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_ALL)`로 PID에 매핑해, 그 프로세스가
@@ -328,7 +339,7 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
 재생 중인 앱의 세션을 모아 준다. 이것으로 곡 정보를 읽고, 미디어 키 대신 **세션에 직접** 재생·일시정지를 보낸다.
 
 - **읽는 곳:** 사용자 세션의 트레이 앱. 3초마다 현재 세션을 확인하고, 바뀌면 즉시 하트비트(`sampled_at` 포함)로 보낸다.
-  트레이 앱이 없으면 곡 정보는 비고, 제어는 `user-action media`가 세션 API → 실패 시 미디어 키 순으로 처리한다.
+  대상 세션에 트레이 앱이 없으면 서비스가 `user-action media info`로 직접 읽는다(§2, 60초보다 오래되면 다시). 제어는 `user-action media`가 세션 API → 실패 시 미디어 키 순으로 처리한다.
 - **보내는 값:** `media: { status: playing|paused|stopped|none, title, artist, album, app, updated_at }`.
   `status`는 제어 정확도를 위해 `media.enabled`면 보낸다. `title`·`artist`·`album`·`app`은 옵트인 `media.now_playing`(기본 끔)일 때만.
   파일 경로·URL·썸네일은 보내지 않는다. 크롬 등 브라우저는 탭 제목(유튜브 영상 제목)이 제목으로 오므로 옵트인 설명에 적는다.
@@ -341,7 +352,7 @@ Windows 10 1809+의 `Windows.Media.Control.GlobalSystemMediaTransportControlsSes
   `{"ok":true,"media":{"status","title","artist","album","app"}}`. `app`은 AUMID를 표시 이름으로 바꾼 것(Spotify · Chrome · Edge ·
   Firefox · VLC · foobar2000 …, 기본 앱은 표시 언어에 따라 `미디어 플레이어`/`Media Player`, 모르면 AUMID 끝부분).
 - (#117 구현) status `media`는 늘 있고 `status`만은 `media.enabled`면 온다. 세션이 없거나, 로그인한 사용자가 없거나, 90초 넘게
-  새 표본이 없으면(트레이 앱이 없음) `none`. 옵트인이 꺼져 있으면 저장할 때도 보여 줄 때도 곡 정보를 뺀다. 미디어 명령 뒤에는 답의
+  새 표본이 없으면 `none`(트레이 앱이 없으면 서비스가 직접 읽어 채운다, §2). 옵트인이 꺼져 있으면 저장할 때도 보여 줄 때도 곡 정보를 뺀다. 미디어 명령 뒤에는 답의
   상태를 바로 저장하고(같은 앱이면 곡 정보 유지) 1.2초 뒤 `media info`로 다시 읽는다. 트레이는 3초마다 오디오·미디어를 읽어 바뀐 블록만
   하트비트로 보낸다(30초 하트비트는 전부). 앱의 미디어 카드는 새 로컬 API `GET/POST /api/media`를 쓴다.
 - **드라이버:** 표준 `audioTrackData`(title/artist/album)와 `mediaPlayback.playbackStatus`. 미디어 묶음을 main에 둘지 컴포넌트 `media`로

@@ -16,6 +16,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	configDir = func() string { return dir }
+	// No background session readings (session_fill.go) unless a test asks
+	// for them: they would run user-action for real, next to the fakes.
+	sys.startFill = func(func()) {}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
