@@ -55,6 +55,9 @@ type ui struct {
 	// trustAt is a trustState (locallogin.go): whether the service vouched
 	// for this process, which the presets and watch editors need (C5).
 	trustAt atomic.Int32
+	// confirm asks a yes/no question; nil is Fyne's confirm dialog. The
+	// tests answer it themselves.
+	confirm func(title, body, ok string, cb func(bool))
 	quit    chan struct{}
 
 	// visible is whether the window was on screen at pollLoop's last look,

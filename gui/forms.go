@@ -208,8 +208,9 @@ type saveResult struct {
 	reloginErr error
 }
 
-// saveForms is the one save path: merge the tabs over the baseline, POST,
-// log in again if the secret changed, re-read and adopt the result. Every Save button is busy
+// saveForms is the one save path: merge the tabs over the baseline, ask
+// when a routine's slot would change owner, POST, log in again if the
+// secret changed, re-read and adopt the result. Every Save button is busy
 // meanwhile. quiet skips the "Saved" dialog (the unsaved-changes prompt).
 // onDone (may be nil) learns whether it worked. UI goroutine only.
 func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
@@ -227,6 +228,16 @@ func (u *ui) saveForms(tabs []*formTab, quiet bool, onDone func(ok bool)) {
 	if err != nil {
 		dialog.ShowError(err, u.win)
 		done(false)
+		return
+	}
+	if changes := configSlotChanges(*f.base, sent); len(changes) > 0 {
+		u.confirmSlotChanges(changes, func(ok bool) {
+			if !ok {
+				done(false)
+				return
+			}
+			u.postForms(sent, quiet, done)
+		})
 		return
 	}
 	u.postForms(sent, quiet, done)
