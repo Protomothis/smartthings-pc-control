@@ -39,7 +39,8 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// config.json and state.json are tighter than the folder (#131).
 	securePrivateFilesAtStart()
 	go cleanupStaleUpdateFiles()
-	cfg := loadConfig()
+	// An older config.json is migrated and saved back once, here.
+	cfg := loadConfigAtStart()
 	setConfig(cfg)
 	// The tray finds the port and its switches here, not in config.json.
 	config.WriteTrayFile(installDir(), cfg)

@@ -173,6 +173,15 @@ func ValidateActivity(a ActivityConfig) string {
 // whatever finds no free slot is dropped, with one log line. The result is
 // sorted by slot and always valid; the next save writes the slots.
 func SanitizeActivity(a ActivityConfig) ActivityConfig {
+	out, _ := sanitizeActivity(a)
+	return out
+}
+
+// sanitizeActivity is SanitizeActivity, also reporting whether any entry
+// was given a slot (a list from before slots, or a repeated or invalid
+// slot). That is a migration the next save writes down; LoadMigrated
+// reports it so the service can write it at once.
+func sanitizeActivity(a ActivityConfig) (ActivityConfig, bool) {
 	var kept []ActivityWatch
 	seen := map[string]bool{}
 	for i, w := range a.Watch {
@@ -233,5 +242,5 @@ func SanitizeActivity(a ActivityConfig) ActivityConfig {
 	if over > 0 {
 		logx.Printf("WARNING: config.json activity.watch holds more than %d programs; the last %d ignored", ActivityMaxWatch, over)
 	}
-	return out
+	return out, unslotted > 0 || moved > 0
 }

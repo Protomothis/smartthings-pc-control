@@ -35,22 +35,35 @@ const TrayFileName = "tray.json"
 // bot token this machine cannot decrypt. A missing or unreadable file, or
 // dir "", is the default configuration.
 func Load(dir string) Config {
+	cfg, _ := LoadMigrated(dir)
+	return cfg
+}
+
+// LoadMigrated is Load, also reporting whether config.json is in an older
+// form that Load had to bring up to date in memory — a watch list without
+// slots (#123), the retired smartthings.discovery key (#95) — so the
+// service can save the result once instead of redoing (and logging) the
+// migration at every start. A file that does not parse is never reported:
+// saving over it would throw the user's settings away.
+func LoadMigrated(dir string) (Config, bool) {
 	cfg := Default()
 	if dir == "" {
-		return cfg.WithDefaults()
+		return cfg.WithDefaults(), false
 	}
 	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if err != nil {
 		// No config file, use defaults
-		return cfg.WithDefaults()
+		return cfg.WithDefaults(), false
 	}
 
 	// Decoding over Default keeps the default for every missing key
 	// (shutdown_grace, telegram.quiet_hours.security_bypass, ...).
+	parsed := true
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		logx.Printf("WARNING: config.json 파싱 실패 (기본값 사용): %v", err)
 		fmt.Fprintf(os.Stderr, "WARNING: config.json parse error (using defaults): %v\n", err)
 		cfg = Default()
+		parsed = false
 	}
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		logx.Printf("WARNING: invalid port %d, using default 5001", cfg.Port)
@@ -74,8 +87,10 @@ func Load(dir string) Config {
 	}
 	// A hand-edited watch list keeps its valid entries; the rest are
 	// dropped with a log line each rather than failing the whole load.
-	cfg.Activity = SanitizeActivity(cfg.Activity)
-	return cfg.WithDefaults()
+	activity, reslotted := sanitizeActivity(cfg.Activity)
+	cfg.Activity = activity
+	migrated := parsed && (reslotted || legacyDiscoveryKey(data))
+	return cfg.WithDefaults(), migrated
 }
 
 // legacyDiscoveryKey reports whether raw config.json data still carries
