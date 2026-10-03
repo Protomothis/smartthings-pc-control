@@ -73,6 +73,10 @@ fields.RECENT_COMMANDS = "recent_commands"
 -- The push subscription (design doc §3.5).
 fields.PUSH_SUB = "push_sub"
 
+-- The last transport failure logged for the device, "transport error: <raw>
+-- -> <kind>" (client.note_transport); cleared by any HTTP answer.
+fields.TRANSPORT_ERROR = "transport_error"
+
 fields.PERSISTED = {
   [fields.MACHINE_ID] = true,
   [fields.HOSTNAME] = true,
