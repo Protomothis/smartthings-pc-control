@@ -115,10 +115,16 @@ end
 -- @param extra optional: `uptime_seconds` for the connected line, `seen_ago`
 --   (seconds since the last successful poll, nil when there never was one)
 --   for the unreachable one, `app_update` (features.needs_app_update) for
---   the " · 앱 업데이트 필요" ending of the connected one
+--   the " · 앱 업데이트 필요" ending of the connected one, `app_down` (the
+--   connection was refused, client.transport_kind) for "PC 앱 응답 없음" -
+--   the PC is on, so "when was it last seen" is not the point, and the line
+--   stays one fixed short phrase
 function text.status_summary(connection, lang, wol_off, adapter, extra)
   extra = extra or {}
   if connection ~= nil and connection ~= "ok" then
+    if extra.app_down == true then
+      return i18n.t(lang, "offline_app_down")
+    end
     local parts = { i18n.t(lang, "conn_down") }
     local reason = i18n.connection(lang, connection)
     if reason ~= "" then

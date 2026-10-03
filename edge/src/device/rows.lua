@@ -81,7 +81,10 @@ end
 --- poll saw (a PC that is off has not changed its version); the summary says
 --- when the PC last answered.
 -- @param deps optional; `deps.now` replaces the clock
-function rows.emit_connection(device, connection, message, deps)
+-- @param kind optional, the err_kind (client.lua): `app_down` (connection
+--   refused, `connection` is "unreachable") says "PC 앱 응답 없음" instead of
+--   when the PC was last seen
+function rows.emit_connection(device, connection, message, deps, kind)
   local lang = fields.lang(device)
   local versions = state.versions(fields.service_version(device), lang)
   local seen = fields.last_seen(device)
@@ -90,11 +93,64 @@ function rows.emit_connection(device, connection, message, deps)
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, lang, nil, nil, { seen_ago = seen_ago }) },
+      value = state.status_summary(connection, lang, nil, nil,
+        { seen_ago = seen_ago, app_down = kind == "app_down" }) },
     -- The row is pcVersion's; pcInfo still defines the attribute.
     { cap = caps.VERSION, attr = "versions", value = versions },
     { cap = caps.STATUS, attr = "versions", value = versions },
   })
+end
+
+--------------------------------------------------------------------------------
+-- the rows that only describe a live PC
+--------------------------------------------------------------------------------
+
+--- While the PC is not there (`state.offline_mode`: off, asleep, or on with
+--- its app not answering), the rows that only ever describe a running PC say
+--- so instead of the last status's values: the watch card's summary
+--- ("Steam 외 1"), the track title, and `pcUser.summary` ("사용 중 · kim").
+--- Empty when the mode is nil.
+---
+--- Never a row a routine reads or a list rests on: `switch`/`powerState`
+--- (§6.2), the watch slots `slotOne`..`slotFive` (an "off" PC keeps them, #123),
+--- `playbackStatus` (a routine may trigger on "stopped"), `audioVolume`,
+--- `audioMute`, the keep-awake switch, `pcUser.locked`/`user`/`idleMinutes`,
+--- the watch card's `names` (which app sits in which slot does not change).
+---
+--- The track row only when it has been painted: from the last status this
+--- run read (a `media` block), else from the hub's state cache - a service
+--- without the block never paints it, and the restore would not either.
+function rows.offline_rows(device, s)
+  local mode = state.offline_mode(s)
+  if not mode then
+    return {}
+  end
+  local text = i18n.offline(fields.lang(device), mode)
+  local records = {
+    { cap = caps.WATCH, attr = "summary", value = text, component = features.WATCH_COMPONENT },
+    { cap = caps.SESSION, attr = "summary", value = text },
+  }
+  local track = { cap = features.CAP_TRACK_DATA, attr = "audioTrackData" }
+  local last_status = (fields.extras(device) or {}).last_status
+  local painted
+  if type(last_status) == "table" then
+    painted = features.track_data(last_status) ~= nil
+  else
+    painted = emit.last_value(device, track) ~= nil
+  end
+  if painted then
+    track.value = { title = text }
+    records[#records + 1] = track
+  end
+  return records
+end
+
+--- Send `offline_rows` (an ordinary emit: a value already sent is not sent
+--- again, so a PC that stays off costs nothing after the first poll). The
+--- status that answers next paints the real values back - they differ, so
+--- the dedupe cache lets them through.
+function rows.emit_offline(device, s)
+  emit.rows(device, rows.offline_rows(device, s))
 end
 
 --------------------------------------------------------------------------------

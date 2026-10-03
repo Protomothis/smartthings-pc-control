@@ -109,7 +109,10 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 400 | 알 수 없는 명령·모드·범위 | `incompatible` |
 | 404 | `/st/v1`이 없는 구버전 서비스 | `incompatible` |
 | 429 | 레이트 리밋 | (상태 유지, 아무것도 다시 칠하지 않음) |
-| 연결 실패 | PC 응답 없음 | `unreachable` |
+| 연결 거부(RST, `connection refused`) | PC는 켜져 있고 PC 앱이 응답 없음 — err_kind `app_down` | `unreachable` (enum이 고정이라 같은 값, 요약·메시지·전원이 다르다, §6.2) |
+| 그 밖의 연결 실패(시간 초과, 경로 없음, DNS, `closed`) | PC 응답 없음 | `unreachable` |
+
+전송 오류의 분류는 `client.transport_kind`다. 오류 문구에 `refused`(대소문자 무관 — luasocket "connection refused", Rust 계층 "Connection refused (os error 111)", `ECONNREFUSED`)가 있을 때만 `app_down`이고, 나머지는 모두 `unreachable`이다. 서비스가 자기 TCP 포트에 인바운드 허용 규칙을 만들므로(`service/firewall.go`) 서비스가 멈춘 PC는 SYN에 RST로 답하고(거부), 꺼지거나 잠들거나 선이 빠진 PC는 아무 답도 없다(시간 초과). luasocket은 연결 단계의 RST도, 응답 도중 끊긴 연결도 `closed`라고 해서 구별되지 않으므로 `closed`는 `unreachable`에 둔다(보수적). 허브에서의 실측은 플랫폼 노트 "연결 거부와 시간 초과".
 
 ### 3.2 `GET /st/v1/status`
 
@@ -298,7 +301,8 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 켜짐, 목록이 빔 | "없음" | "없음" | 모두 `empty` |
 | 옵트인 꺼짐(`features`에 `activity` 없음 포함) | "꺼짐" | "꺼짐" | **보내지 않는다**(마지막 값 유지) |
 | 옛 서비스(`features` 없음) | "PC 앱 v1.2.0 필요" | "없음" — 목록이 없다. 요약 줄이 이유를 말하므로 같은 문구를 두 번 쓰지 않는다 | **보내지 않는다** |
-| PC 응답 없음(실패한 폴링) | 그대로 | 그대로 | 그대로 |
+| PC 응답 없음, 아직 켜짐(첫 실패) | 그대로 | 그대로 | 그대로 |
+| PC 꺼짐·절전 / PC 앱 응답 없음(§6.2 "꺼진 PC의 표시 줄") | "PC 꺼짐" / "PC 절전" / "PC 최대 절전" / "PC 앱 응답 없음" | 그대로 | 그대로 |
 
 - **슬롯은 "켜짐"인 status만 움직인다.** 꺼진 PC·옵트인 꺼짐·옛 서비스에서 슬롯을 "꺼짐"으로 칠하면 가짜 "꺼지면" 루틴이 돈다. 기능을 잠시 끈 것은 앱이 꺼진 것이 아니다. 요약·이름 줄만 이유를 말한다.
 - **빈 문자열은 없다.** 한 번도 칠하지 않은 장치(추가 직후, 이전 직후)의 슬롯은 `empty`, 요약·이름은 "없음"이다(`features.initial_rows`).
@@ -354,9 +358,10 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
   - `pcInfo.summary` — "연결됨" / "연결 안 됨 · 시크릿 불일치·응답 없음·버전 불일치" / 어댑터 WoL이 꺼져 있으면 "연결됨 · WoL 꺼짐". PC 앱이 드라이버가 바라는 버전보다 낮으면 끝에 " · 앱 업데이트 필요"("Update app")가 붙는다(§10.1). 시크릿 권장과 새 릴리스 안내는 `pcInfo.message`에만 남는다(당장 할 일이 아니라 읽을 거리다).
     - #102 **가동 시간**: 연결됨이면 `status.uptime_seconds`를 붙인다 — "연결됨 · 3일 2시간" / "Connected · 3d 2h". 1분 미만은 붙이지 않고, 1시간 미만은 "N분"("Nm"), 하루 미만은 "N시간 M분"("Nh Mm", 딱 떨어지면 "N시간"), 하루부터는 "N일 M시간"("Nd Mh", 딱 떨어지면 "N일")이다. 예약 요약(#89)과 같은 단위 사다리다.
     - #102 **마지막 확인**: `unreachable`이고 성공한 폴링이 한 번이라도 있었으면 "응답 없음 · 마지막 확인 12분 전" / "No reply · seen 12m ago". 단위는 가장 큰 하나만("N분 전" → "N시간 전" → "N일 전", 1분 미만도 "1분 전"). 한 번도 응답받지 못한 PC는 예전 그대로 "연결 안 됨 · 응답 없음"이고, 시크릿·버전 불일치도 예전 문구다 — 그 PC는 답은 하고 있으므로 "언제 봤나"가 요점이 아니다. 전원 낱말("꺼짐")은 넣지 않는다(#82, 바로 위 전원 상태 줄의 몫). 영어가 "No response" 대신 "No reply"인 것은 24자 때문이다.
+    - **PC 앱 응답 없음**: 연결이 거부됐으면(`app_down`, §3.1) 마지막 확인 대신 고정 문구 "PC 앱 응답 없음" / "PC app not responding"이다. PC는 켜져 있으므로 "언제 봤나"가 요점이 아니고, 메시지 줄이 "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요"라고 할 일을 말한다. 명령이 거부돼도 같은 문구다. `unreachable`로 PC가 꺼짐(§6.2)이 된 뒤의 메시지는 "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다" / "The PC is off or offline"이고, 아직 켜짐인 첫 실패는 예전대로 "PC에 연결할 수 없습니다"다.
     - 시각은 `fields.LAST_SEEN`(epoch 초, persist)에 남는다. 성공한 폴링과 모든 푸시가 쓰지만, 저장된 값이 `fields.LAST_SEEN_STEP`(60초)보다 오래됐을 때만 쓴다 — 줄은 분 단위로만 말하고 persist 필드 쓰기는 허브 쓰기다. 실패한 폴링은 읽기만 한다.
     - **24자 예산**(`state.SUMMARY_MAX_CHARS`, 코드 포인트) 안의 우선순위: WoL 꺼짐 경고 > 앱 업데이트 필요 > 어댑터 이름 > 가동 시간. 넘치면 가동 시간을 먼저, 그다음 어댑터 이름을 뺀다("연결됨 · WoL 꺼짐 (이더넷) · 5분" → "연결됨 · WoL 꺼짐 (이더넷)" → "연결됨 · WoL 꺼짐"). 마지막 확인 줄이 넘치면 예전 문구로 돌아간다.
-  - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim".
+  - `pcUser.summary` — "사용 중" / "잠김"(유휴 1분부터 " · 23분") / 노출을 끄면 "꺼짐". 서비스가 사용자 이름을 보내 줄 때만 " · kim". PC가 꺼져 있거나 PC 앱이 응답하지 않으면 "PC 꺼짐"·"PC 앱 응답 없음" 등(§6.2 "꺼진 PC의 표시 줄").
   - `pcVersion.versions` — "v1.1.0 · 드라이버 1.0". 드라이버는 major.minor까지만, 화면(프로필) 이름은 넣지 않는다. #92: 성공한 폴링마다 `service_version`을 장치 필드(persist)에 남기고, 연결이 끊긴 동안에도 그 값을 그대로 보여 준다 — 꺼진 PC의 버전은 바뀌지 않는다. `v?`는 **한 번도 응답받지 못한** PC에만 쓴다. 업데이트 꼬리말(" · 업데이트 v1.2.0")은 기억하지 않는다. 있다/없다는 살아 있는 응답만 말할 수 있다.
   - `pcDefer.summary` — "없음" / "종료 · 4분 후"(1분 미만이면 "곧"). #89: 1시간부터는 시간으로("종료 · 2시간 후", "종료 · 1시간 30분 후"), 하루부터는 일과 시간으로("종료 · 1일 3시간 후") 읽는다 — "4320분 후"는 아무도 3일로 읽지 못한다. 누가 걸었는지는 `origin` 줄과 `lastCommand`가 말한다.
 - 자동화용 조건은 `powerState`, `pcDefer.status`/`active`/`planCommand`, `pcInfo.connection`, `pcUser.locked`, 감시 목록의 `pcWatchList.slotOne`–`slotFive`("감시 1"–"감시 5", 실행 중/꺼짐, #123). 동작은 `execute`·`schedule`·`setPlanCommand`의 `multiArgCommand`다.
@@ -383,13 +388,32 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 이벤트 | 전이 |
 |---|---|
 | `status_ok` | → `on`, 실패 카운터 0 |
-| `unreachable` | `waking`이면 유지, `sleeping`/`hibernated`면 유지, 그 밖에는 **연속 2회**에서 `off`(직전 `stopping` 사유가 절전이면 그 상태 유지) |
+| `unreachable` | `waking`이면 유지, `sleeping`/`hibernated`면 유지, 그 밖에는 **연속 2회**에서 `off`(직전 `stopping` 사유가 절전이면 그 상태 유지). `app_down` 표시를 지운다 |
+| `app_down`(연결 거부, §3.1) | 실패 카운터 0(**`off` 쪽으로 세지 않는다**), `app_down` 표시. `shuttingDown`이면 유지(Windows가 서비스를 먼저 멈추고, 네트워크가 내려가면 `unreachable` 2회로 `off`), 그 밖에는 → `on` — 켜져 있던 PC는 그대로, `off`·`sleeping`·`hibernated`·`unknown`·`waking`에서는 PC가 올라왔고 앱만 아직이다. `waking`이었으면 깨우기 타이머를 취소한다("깨우기 실패"가 뜨지 않게) |
+| `app_answered` | 401·404 등 PC 앱이 (틀리게라도) 답했다: `app_down` 표시만 지운다 |
 | `stopping`(reason) | `suspend`→`sleeping`, `hibernate`→`hibernated`, `shutdown`/`restart`/기타→`shuttingDown` |
 | `switch_on` | → `waking`, 직전 상태를 기억 |
 | `wake_timeout` | `waking`이면 기억해 둔 직전 상태로 |
 | `schedule_cancelled` | `shuttingDown`이면 → `on` (유예 취소가 스위치를 되살린다) |
 
 `switch`는 상태에서 파생된다: `on`·`waking`·`shuttingDown`이면 켜짐, 나머지는 꺼짐.
+
+연결 상태별 화면(2026-10-03 이전 → 이후):
+
+| 상황 | `connection` | 전원 | `pcInfo.summary` | `pcInfo.message` | 표시 전용 줄 |
+|---|---|---|---|---|---|
+| 첫 실패(시간 초과), 켜져 있던 PC | `unreachable` | `on` 유지 → 같음 | "응답 없음 · 마지막 확인 N분 전" → 같음 | "PC에 연결할 수 없습니다" → 같음 | 마지막 값 → 같음 |
+| 두 번째 실패(시간 초과) | `unreachable` | `off` → 같음 | 같음 | "PC에 연결할 수 없습니다" → "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다" | 마지막 값("Steam", 곡, "사용 중 · kim") → "PC 꺼짐" |
+| 절전·최대 절전 뒤 실패 | `unreachable` | `sleeping`/`hibernated` → 같음 | 같음 | 같음 | 마지막 값 → "PC 절전"·"PC 최대 절전" |
+| 연결 거부(PC 켜짐, 앱 멈춤) | `unreachable` | 2회에 `off` → **`on` 유지**(꺼져 있었으면 `on`) | "응답 없음 · 마지막 확인 …" → "PC 앱 응답 없음" | "PC에 연결할 수 없습니다" → "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요" | 마지막 값 → "PC 앱 응답 없음" |
+
+#### 꺼진 PC의 표시 줄
+
+`state.offline_mode`가 `off`·`sleeping`·`hibernated`·`app_down`이면(첫 실패, `waking`, `shuttingDown`은 아니다) 실패한 폴링마다 `rows.emit_offline`이 살아 있는 PC만 설명하는 줄을 그 문구("PC 꺼짐"·"PC 절전"·"PC 최대 절전"·"PC 앱 응답 없음", en "PC off"·"PC asleep"·"PC hibernated"·"PC app not responding")로 보낸다: 감시 목록 카드의 `summary`, `audioTrackData`의 `title`(이번 실행의 status가 `media` 블록을 실었을 때, status를 아직 못 읽었으면 허브 캐시에 값이 있을 때만 — 칠한 적 없는 줄은 되돌릴 status도 없다), `pcUser.summary`.
+
+- **루틴이 읽거나 목록이 쉬는 줄은 건드리지 않는다**: `switch`·`powerState`(위 표), 감시 슬롯 `slotOne`–`slotFive`(꺼진 PC는 마지막 값을 지킨다, §4.2), `playbackStatus`("정지"로 바꾸면 그 값에 걸린 루틴이 PC가 꺼질 때마다 돈다), `audioVolume`·`audioMute`, 잠들지 않기 스위치, `pcUser.locked`·`user`·`idleMinutes`, 감시 목록의 `names`(어느 앱이 어느 번호인지는 바뀌지 않았다).
+- 일반 emit이라 같은 값은 **한 번만** 나간다(§6.1 중복 거르기). PC가 다시 답하면 그 status가 실제 값을 보내고, 값이 다르므로 중복 거르기에 막히지 않는다. 순환 재전송은 마지막으로 보낸 값(이 문구)을 그대로 돈다.
+- 꺼진 동안 프로필이 바뀌어 다시 칠하면(`poll.repaint`) 마지막 status의 줄 뒤에 이 문구를 큐에 넣어, 큐에는 이 값이 남는다.
 
 ### 6.3 푸시
 
@@ -603,4 +627,5 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - `supportedValues`로 명령 목록·프리셋 슬롯을 줄이는지(#93, #113, 플랫폼 노트).
 - 대시보드 타일에 전원 상태 문구가 보이는지(#101), 카테고리별 실제 아이콘(#100).
 - 표준 capability 줄(미디어 묶음)이 상태·조작 카드와 섞이는지, 값이 없는 재생 줄의 모양(`features.PLAYBACK_RESTING`, #107, #118).
+- 서비스를 멈춘 PC에 허브가 연결하면 실제로 `connection refused`(또는 `refused`가 든 문구)를 받는지, 꺼진 PC는 시간 초과인지(§3.1, `app_down`). 플랫폼 노트 "연결 거부와 시간 초과".
 - 감시 목록 카드(컴포넌트 `apps`)가 한 카드로 그려지는지, 상태 줄 일곱이 반 폭으로 잘리는지, 루틴 조건 "감시 1"–"감시 5"(#123). v6의 앱 자식 장치가 `driver:try_delete_device`로 지워지는지.

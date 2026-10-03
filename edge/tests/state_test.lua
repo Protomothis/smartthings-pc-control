@@ -327,6 +327,11 @@ function T.test_status_summary_goldens()
     { { "unreachable", "en", nil, nil, { seen_ago = 720 } }, "No reply · seen 12m ago" },
     { { "unreachable", "ko", nil, nil, { seen_ago = 3 * 86400 } }, "응답 없음 · 마지막 확인 3일 전" },
     { { "unreachable", "ko", nil, nil, {} }, "연결 안 됨 · 응답 없음" }, -- never seen
+    -- A refused connection: the PC is on, its app is not; "last seen" is not
+    -- the point, so one fixed phrase.
+    { { "unreachable", "ko", nil, nil, { seen_ago = 720, app_down = true } }, "PC 앱 응답 없음" },
+    { { "unreachable", "en", nil, nil, { app_down = true } }, "PC app not responding" },
+    { { "ok", "ko", nil, nil, { app_down = true } }, "연결됨" },
     { { "unreachable", "en", nil, nil, { seen_ago = 1000 * 86400 } }, "Not connected · No response" }, -- too long
     -- A PC that answers wrongly keeps its reason; "last seen" is not its point.
     { { "unauthorized", "ko", nil, nil, { seen_ago = 720 } }, "연결 안 됨 · 시크릿 불일치" },
@@ -1092,6 +1097,103 @@ function T.test_two_consecutive_unreachable_polls_turn_the_pc_off()
   s = state.transition(s, "unreachable")
   h.assert_equal(s.power_state, state.OFF)
   h.assert_equal(s.unreachable_count, 2)
+end
+
+-- A refused connection (client.transport_kind): the PC answered, so it is on,
+-- and the miss never counts towards `off`.
+function T.test_a_refused_poll_keeps_the_pc_on_and_never_counts_towards_off()
+  local s = state.new(state.ON)
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.unreachable_count, 1)
+  for _ = 1, 5 do
+    s = state.transition(s, "app_down")
+    h.assert_equal(s.power_state, state.ON)
+    h.assert_equal(s.unreachable_count, 0, "a refusal resets the miss counter")
+    h.assert_true(s.app_down)
+  end
+  h.assert_equal(state.offline_mode(s), "app_down")
+  -- Then the PC goes away: still two misses to `off`, and no longer app_down.
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.power_state, state.ON)
+  h.assert_false(s.app_down)
+  h.assert_nil(state.offline_mode(s), "one miss of a PC that was on says nothing yet")
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.power_state, state.OFF)
+  h.assert_equal(state.offline_mode(s), "off")
+  -- The app answers again.
+  s = state.transition(state.transition(s, "app_down"), "status_ok")
+  h.assert_false(s.app_down)
+  h.assert_nil(state.offline_mode(s))
+end
+
+function T.test_a_refusal_means_the_pc_has_come_up()
+  -- Booted, woken by hand, or woken by the driver: the app is not up yet, the
+  -- PC is. A wake is over (no wake_from left for a timeout to fall back to).
+  for _, from in ipairs({ state.OFF, state.SLEEPING, state.HIBERNATED, state.UNKNOWN }) do
+    local s = state.transition(state.new(from), "app_down")
+    h.assert_equal(s.power_state, state.ON, from)
+    h.assert_equal(state.switch_for(s.power_state), "on", from)
+  end
+  local waking = state.transition(state.new(state.OFF), "switch_on")
+  h.assert_equal(waking.power_state, state.WAKING)
+  local up = state.transition(waking, "app_down")
+  h.assert_equal(up.power_state, state.ON)
+  h.assert_nil(up.wake_from)
+  h.assert_equal(state.transition(up, "wake_timeout").power_state, state.ON,
+    "a timeout after the PC came up changes nothing")
+  -- A suspend the PC announced is over too.
+  local slept = state.transition(state.new(state.ON), "stopping", "suspend")
+  h.assert_nil(state.transition(slept, "app_down").last_stopping_reason)
+end
+
+function T.test_a_refusal_while_shutting_down_keeps_shutting_down()
+  -- Windows stops the service first; the PC refuses until its network goes.
+  local s = state.transition(state.new(state.ON), "stopping", "shutdown")
+  s = state.transition(s, "app_down")
+  h.assert_equal(s.power_state, state.SHUTTING_DOWN)
+  s = state.transition(s, "unreachable")
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.power_state, state.OFF)
+end
+
+function T.test_an_app_that_answers_wrongly_is_not_down()
+  local s = state.transition(state.new(state.ON), "app_down")
+  s = state.transition(s, "app_answered")
+  h.assert_false(s.app_down)
+  h.assert_equal(s.power_state, state.ON)
+  h.assert_equal(state.transition(state.new(state.OFF), "app_answered").power_state, state.OFF,
+    "nothing else moves")
+end
+
+function T.test_offline_mode_names_why_the_pc_is_not_there()
+  h.assert_nil(state.offline_mode(nil))
+  for power, want in pairs({
+    [state.ON] = false, [state.WAKING] = false, [state.SHUTTING_DOWN] = false, [state.UNKNOWN] = false,
+    [state.OFF] = "off", [state.SLEEPING] = "sleeping", [state.HIBERNATED] = "hibernated",
+  }) do
+    h.assert_equal(state.offline_mode(state.new(power)), want or nil, power)
+  end
+  local down = state.new(state.ON)
+  down.app_down = true
+  h.assert_equal(state.offline_mode(down), "app_down")
+end
+
+function T.test_the_offline_texts_are_short_in_both_languages()
+  local wanted = {
+    ko = { app_down = "PC 앱 응답 없음", off = "PC 꺼짐", sleeping = "PC 절전", hibernated = "PC 최대 절전" },
+    en = { app_down = "PC app not responding", off = "PC off", sleeping = "PC asleep",
+      hibernated = "PC hibernated" },
+  }
+  for lang, texts in pairs(wanted) do
+    for mode, text in pairs(texts) do
+      h.assert_equal(i18n.offline(lang, mode), text, lang .. " " .. mode)
+      -- The watch summary is a third of the card's preview; the label rule
+      -- there is 13 characters, and the summary row has 24.
+      h.assert_true(chars(text) <= state.SUMMARY_MAX_CHARS, text)
+    end
+  end
+  h.assert_equal(i18n.offline("ko", "on"), "")
+  h.assert_equal(i18n.offline("ko", nil), "")
 end
 
 function T.test_sleeping_is_preserved_while_unreachable()

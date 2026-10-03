@@ -3,8 +3,10 @@
 -- Every call returns `(ok, body, err_kind)`:
 --   ok = true   -> body is the decoded JSON table, err_kind is nil
 --   ok = false  -> err_kind is one of "unauthorized", "forbidden",
---                  "unreachable", "incompatible", "badrequest",
---                  "ratelimited"; body may still carry the decoded response
+--                  "unreachable", "app_down" (connection refused: the PC is
+--                  up, the PC app is not - `transport_kind`), "incompatible",
+--                  "badrequest", "conflict", "ratelimited"; body may still
+--                  carry the decoded response
 --                  (the service answers errors with `{"error": "..."}`, and a
 --                  protocol mismatch needs `body.protocol` to tell "service
 --                  too old" from "driver too old").
@@ -94,11 +96,35 @@ local function request_fn(deps)
   return mod.request
 end
 
+--- A transport failure (no HTTP status at all) -> `app_down` or `unreachable`.
+--
+-- `app_down`: the TCP connection was actively refused. The PC answered the SYN
+-- with a RST, so it is on and on the network, but nothing listens on the port:
+-- the service creates an inbound allow rule for its TCP port at install
+-- (service/firewall.go), so with the service stopped Windows refuses instead
+-- of dropping. luasocket words ECONNREFUSED "connection refused"; a Rust
+-- socket layer "Connection refused (os error 111)"; the errno name is matched
+-- too. Case does not matter.
+--
+-- `unreachable`: everything else - "timeout" (a PC that is off, asleep or
+-- unplugged answers nothing), "No route to host", "Host is unreachable", DNS,
+-- and "closed". luasocket says "closed" for ECONNRESET as well as for a
+-- connection that dropped mid-reply, and the message does not say which phase
+-- it was, so it is not taken as proof that the PC is up.
+function client.transport_kind(message)
+  local text = string.lower(tostring(message or ""))
+  if text:find("refused", 1, true) or text:find("econnrefused", 1, true) then
+    return "app_down"
+  end
+  return "unreachable"
+end
+
 --- Map an HTTP status code to an err_kind, or nil when the code is a success.
+--- A non-number is socket.http's error message for a request that got no
+--- answer at all (`client.transport_kind`).
 function client.classify(code)
   if type(code) ~= "number" then
-    -- socket.http returns a string here (connection refused, timeout, ...).
-    return "unreachable"
+    return client.transport_kind(code)
   end
   if code >= 200 and code < 300 then
     return nil
@@ -172,11 +198,13 @@ function client.request(device, opts, deps)
 
   local called, result, code = pcall(request_fn(deps), req)
   if not called then
-    -- A raised socket error is still just an unreachable PC.
-    return false, nil, "unreachable"
+    -- A raised socket error is still a transport failure: `result` is the
+    -- error it raised.
+    return false, nil, client.transport_kind(result)
   end
   if not result then
-    return false, nil, "unreachable"
+    -- socket.http's `nil, message`: refused (`app_down`) or anything else.
+    return false, nil, client.transport_kind(code)
   end
 
   local raw = table.concat(chunks)

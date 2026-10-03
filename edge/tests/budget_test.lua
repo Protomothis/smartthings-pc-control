@@ -1094,6 +1094,199 @@ function T.test_the_guard_warns_once_per_window_and_drops_nothing()
   end)
 end
 
+--------------------------------------------------------------------------------
+-- a PC that is off, or on with its app not answering
+--------------------------------------------------------------------------------
+
+local TRACK = features.CAP_TRACK_DATA .. ".audioTrackData"
+local SESSION_SUMMARY = caps.SESSION .. ".summary"
+local POWER = caps.POWER_STATE .. ".powerState"
+local SWITCH = state.CAP_SWITCH .. ".switch"
+-- The rows a routine reads or a list rests on: an offline PC never moves them
+-- (switch and powerState aside, which say the power).
+local ROUTINE_ROWS = {
+  features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".slotOne",
+  features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".slotTwo",
+  features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".names",
+  features.CAP_PLAYBACK .. ".playbackStatus",
+  MUTE, VOLUME,
+  features.AWAKE_COMPONENT .. "/" .. features.CAP_SWITCH .. ".switch",
+  caps.SESSION .. ".locked", caps.SESSION .. ".user", caps.SESSION .. ".idleMinutes",
+}
+
+local function values_by_key(events)
+  local out = {}
+  for _, e in ipairs(events) do
+    out[emit.row_key(e)] = e.value
+  end
+  return out
+end
+
+local function fail_with(kind)
+  client.get_status = function() return false, nil, kind end
+end
+
+local function assert_routine_rows_untouched(events, context)
+  local sent = values_by_key(events)
+  for _, key in ipairs(ROUTINE_ROWS) do
+    h.assert_nil(sent[key], context .. ": " .. key .. " is not the offline texts' row")
+  end
+end
+
+function T.test_an_off_pc_says_so_on_the_display_rows_once_and_paints_them_back()
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    h.assert_equal(emit.sent_value(device, APPS_SUMMARY), "Steam")
+    local live_track = emit.sent_value(device, TRACK)
+    h.assert_equal(live_track.title, "Blinding Lights")
+    h.assert_equal(emit.sent_value(device, SESSION_SUMMARY), "사용 중 · kim")
+
+    fail_with("unreachable")
+    -- One poll without an answer is not a PC that is off: nothing changes yet.
+    local mark = #device.emitted
+    poll.once(d, device)
+    local first = values_by_key(since(device, mark))
+    h.assert_nil(first[POWER], "still on after one miss")
+    h.assert_equal(first[caps.STATUS .. ".connection"], "unreachable")
+    h.assert_equal(first[caps.STATUS .. ".message"], "PC에 연결할 수 없습니다")
+    h.assert_nil(first[APPS_SUMMARY], "one miss leaves the watch card alone")
+    h.assert_nil(first[TRACK])
+    h.assert_nil(first[SESSION_SUMMARY])
+
+    -- The second miss: off, and the rows that only describe a live PC say so.
+    mark = #device.emitted
+    poll.once(d, device)
+    local off = since(device, mark)
+    local sent = values_by_key(off)
+    h.assert_equal(sent[POWER], state.OFF)
+    h.assert_equal(sent[SWITCH], "off")
+    h.assert_equal(sent[APPS_SUMMARY], "PC 꺼짐")
+    h.assert_deep_equal(sent[TRACK], { title = "PC 꺼짐" })
+    h.assert_equal(sent[SESSION_SUMMARY], "PC 꺼짐")
+    h.assert_equal(sent[caps.STATUS .. ".message"], "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다")
+    assert_routine_rows_untouched(off, "off")
+
+    -- Once: the polls after it send none of them again (event budget).
+    for _ = 1, 3 do
+      mark = #device.emitted
+      poll.once(d, device)
+      local again = values_by_key(since(device, mark))
+      for _, key in ipairs({ APPS_SUMMARY, TRACK, SESSION_SUMMARY, POWER, SWITCH }) do
+        h.assert_nil(again[key], key .. " is not re-sent while the PC stays off")
+      end
+    end
+
+    -- The PC answers: the status paints every one of them back.
+    client.get_status = function() return true, copy(pc.status), nil end
+    mark = #device.emitted
+    poll.once(d, device)
+    local back = values_by_key(since(device, mark))
+    h.assert_equal(back[POWER], state.ON)
+    h.assert_equal(back[APPS_SUMMARY], "Steam")
+    h.assert_deep_equal(back[TRACK], live_track)
+    h.assert_equal(back[SESSION_SUMMARY], "사용 중 · kim")
+  end)
+end
+
+function T.test_a_refused_poll_keeps_the_pc_on_and_says_the_app_is_down()
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+
+    fail_with("app_down")
+    local mark = #device.emitted
+    poll.once(d, device)
+    local down = since(device, mark)
+    local sent = values_by_key(down)
+    h.assert_nil(sent[POWER], "the PC answered the connection: it stays on")
+    h.assert_nil(sent[SWITCH])
+    h.assert_equal(sent[caps.STATUS .. ".connection"], "unreachable")
+    h.assert_equal(sent[caps.STATUS .. ".summary"], "PC 앱 응답 없음")
+    h.assert_equal(sent[caps.STATUS .. ".message"],
+      "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요")
+    h.assert_equal(sent[APPS_SUMMARY], "PC 앱 응답 없음")
+    h.assert_deep_equal(sent[TRACK], { title = "PC 앱 응답 없음" })
+    h.assert_equal(sent[SESSION_SUMMARY], "PC 앱 응답 없음")
+    assert_routine_rows_untouched(down, "app down")
+
+    -- However long the app stays down, the PC is never counted off, and
+    -- nothing is sent again.
+    for _ = 1, 4 do
+      mark = #device.emitted
+      poll.once(d, device)
+      h.assert_deep_equal(keys_of(since(device, mark)), {}, "an app that stays down costs nothing")
+    end
+    h.assert_equal(fields.state(device).power_state, state.ON)
+    h.assert_equal(fields.state(device).unreachable_count, 0)
+
+    -- The PC goes away for real: two misses, off, and the rows follow.
+    fail_with("unreachable")
+    poll.once(d, device)
+    mark = #device.emitted
+    poll.once(d, device)
+    sent = values_by_key(since(device, mark))
+    h.assert_equal(sent[POWER], state.OFF)
+    h.assert_equal(sent[APPS_SUMMARY], "PC 꺼짐")
+
+    -- It boots, and the app is not up yet: the PC is on again at once.
+    fail_with("app_down")
+    mark = #device.emitted
+    poll.once(d, device)
+    sent = values_by_key(since(device, mark))
+    h.assert_equal(sent[POWER], state.ON)
+    h.assert_equal(sent[SWITCH], "on")
+    h.assert_equal(sent[APPS_SUMMARY], "PC 앱 응답 없음")
+
+    client.get_status = function() return true, copy(pc.status), nil end
+    mark = #device.emitted
+    poll.once(d, device)
+    sent = values_by_key(since(device, mark))
+    h.assert_equal(sent[APPS_SUMMARY], "Steam")
+    h.assert_equal(sent[caps.STATUS .. ".connection"], "ok")
+  end)
+end
+
+function T.test_a_repaint_of_an_off_pc_keeps_the_off_texts()
+  with_pc(function()
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    fail_with("unreachable")
+    poll.once(d, device)
+    poll.once(d, device)
+    -- A profile change while the PC is off: every row once, from the last
+    -- status - but not its "Steam".
+    local mark = #device.emitted
+    poll.repaint(device, nil)
+    local sent = values_by_key(since(device, mark))
+    h.assert_equal(sent[APPS_SUMMARY], "PC 꺼짐")
+    h.assert_deep_equal(sent[TRACK], { title = "PC 꺼짐" })
+    h.assert_equal(sent[SESSION_SUMMARY], "PC 꺼짐")
+    h.assert_equal(sent[features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".slotOne"], "running",
+      "the slot a routine reads keeps its value")
+  end)
+end
+
+function T.test_the_track_row_is_left_alone_when_the_pc_never_painted_it()
+  with_pc(function(pc)
+    -- A service that sends no `media` block never painted the track row, and
+    -- would not paint it back either.
+    pc.status.media = nil
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    h.assert_nil(emit.sent_value(device, TRACK))
+    fail_with("unreachable")
+    poll.once(d, device)
+    poll.once(d, device)
+    h.assert_nil(emit.sent_value(device, TRACK), "no track title appears for an off PC")
+    h.assert_equal(emit.sent_value(device, APPS_SUMMARY), "PC 꺼짐")
+  end)
+end
+
 function T.test_a_steady_poll_stays_under_the_guard()
   with_pc(function(pc)
     local device = new_device()
