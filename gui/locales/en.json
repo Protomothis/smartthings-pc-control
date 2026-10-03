@@ -258,6 +258,8 @@
   "settings.restarting": "Service restarting...",
   "settings.save": "Save",
   "settings.saved": "Saved",
+  "settings.saved.body": "Settings saved.",
+  "settings.saved.restart": "Settings saved. Restart the service to apply port or remote-access changes.",
   "settings.secret": "Secret",
   "settings.service": "Service Settings",
   "settings.tools": "Tools",

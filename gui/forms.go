@@ -310,7 +310,7 @@ func (u *ui) postForms(sent Config, quiet bool, done func(ok bool)) {
 		u.adoptConfig(res.fresh, &sent)
 		u.showPresetWarnings(res.warnings)
 		if !quiet {
-			msg := res.msg
+			msg := u.savedMessage(res.msg)
 			if lines := presetWarningLines(u.lang, res.warnings); len(lines) > 0 {
 				msg = strings.TrimSpace(msg + "\n\n" + strings.Join(lines, "\n\n"))
 			}
@@ -321,6 +321,16 @@ func (u *ui) postForms(sent Config, quiet bool, done func(ok bool)) {
 		}
 		done(true)
 	})
+}
+
+// savedMessage localises the service's English save confirmation: it only
+// ever says "Settings saved." or adds that port/remote-access changes need
+// a service restart.
+func (u *ui) savedMessage(serviceMsg string) string {
+	if strings.Contains(serviceMsg, "Restart service") {
+		return u.t("settings.saved.restart")
+	}
+	return u.t("settings.saved.body")
 }
 
 // saveTab is the Save button of one tab.
