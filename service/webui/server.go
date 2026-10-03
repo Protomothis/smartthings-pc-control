@@ -191,10 +191,10 @@ func (s *Server) localOnly(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// writeLocalOnly is localOnly's refusal.
+// writeLocalOnly is localOnly's refusal: exactly {"error":"local_only"},
+// which the desktop app keys on to log in locally again once.
 func writeLocalOnly(w http.ResponseWriter) {
-	httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"status": "error", "error": "local_only",
-		"message": "Only the desktop app on this PC can do this."})
+	httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "local_only"})
 }
 
 // SetLocalSessionToken replaces the local trusted session's token and

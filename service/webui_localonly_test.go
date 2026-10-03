@@ -140,9 +140,23 @@ func TestConfigSaveWithoutLocalSession(t *testing.T) {
 	if w := remote(`{"port":5001,"presets":` + string(presets) + `,"activity":{"enabled":true,"watch":[{"slot":1,"process":"steam.exe","label":"Steam"}]}}`); w.Code != http.StatusOK {
 		t.Errorf("unchanged lists: %d %s", w.Code, w.Body.String())
 	}
-	// Sending back the masked view is a change, and refused.
-	if w := remote(`{"port":5001,"presets":[{"slot":3,"name":"게임 모드","type":"program","path":""},{"slot":1,"name":"대시보드","type":"url","path":""}]}`); w.Code != http.StatusForbidden {
+	// The non-admin app sends null for "keep the stored value": no change.
+	if w := remote(`{"port":5001,"presets":null,"activity":{"enabled":true,"watch":null}}`); w.Code != http.StatusOK {
+		t.Errorf("null lists: %d %s", w.Code, w.Body.String())
+	}
+	if got := getConfig(); len(got.Presets) != 2 || got.Presets[1].Path != `C:\Games\Steam\steam.exe` ||
+		len(got.Activity.Watch) != 1 || got.Activity.Watch[0].Process != "steam.exe" {
+		t.Errorf("null lists did not keep the stored values: %+v / %+v", got.Presets, got.Activity)
+	}
+	// Sending back the masked view is a change, and refused with exactly
+	// {"error":"local_only"} (the app keys on it).
+	w := remote(`{"port":5001,"presets":[{"slot":3,"name":"게임 모드","type":"program","path":""},{"slot":1,"name":"대시보드","type":"url","path":""}]}`)
+	if w.Code != http.StatusForbidden || strings.TrimSpace(w.Body.String()) != `{"error":"local_only"}` {
 		t.Errorf("masked presets sent back: %d %s", w.Code, w.Body.String())
+	}
+	// So is clearing the watch list.
+	if w := remote(`{"port":5001,"activity":{"enabled":true,"watch":[]}}`); w.Code != http.StatusForbidden {
+		t.Errorf("watch list cleared remotely: %d %s", w.Code, w.Body.String())
 	}
 	if got := getConfig().Presets; len(got) != 2 || got[1].Path != `C:\Games\Steam\steam.exe` {
 		t.Errorf("presets changed by a refused save: %+v", got)
