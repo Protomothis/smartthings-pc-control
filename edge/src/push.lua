@@ -456,8 +456,9 @@ function push.handle_connection(driver, sock, deps)
     pcall(function() sock:send(push.response(404, "Not Found")) end)
     return false
   end
-  -- §3.5: the service waits at most 2s (1.5s for power.stopping) and retries
-  -- once, so the answer goes out before the payload is applied.
+  -- §3.5: the service waits at most 2s per attempt (power.stopping: 1.5s in
+  -- total for a system stop, 4s for app_stop) and retries, so the answer goes
+  -- out before the payload is applied.
   pcall(function() sock:send(push.response(200)) end)
   push.deliver(driver, body, deps)
   return true
