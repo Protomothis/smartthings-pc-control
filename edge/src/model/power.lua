@@ -27,6 +27,17 @@ local STOPPING_STATE = {
   unknown = power.SHUTTING_DOWN,
 }
 
+-- §6.2 / §3.5: the `power.stopping` reason of a plain service stop (an
+-- update, an uninstall, a service restart, the user stopping it). The service
+-- goes away, the PC stays on: not a power transition at all.
+power.APP_STOP = "app_stop"
+
+-- §6.2 / #123: the reasons after which the apps on the PC really stopped, so
+-- the watch slots that ran go to `stopped` (push.lua). Not suspend/hibernate
+-- (the apps sleep with the PC), not `app_stop` (the PC and its apps stay up),
+-- not `unknown` (nothing says the apps went).
+power.APPS_STOP_REASONS = { shutdown = true, restart = true }
+
 --- A fresh device state: a plain table, so it can live in a device field.
 function power.new(power_state)
   return {
@@ -36,6 +47,11 @@ function power.new(power_state)
     -- true while the last poll was refused (`app_down`): the PC is on, the PC
     -- app is not answering
     app_down = false,
+    -- true from a `power.stopping` `app_stop` until the PC app answers again
+    -- (or the PC counts as off): the outage began with the service saying it
+    -- was stopping, so a reset connection is the PC refusing, not a lost one
+    -- (client.transport_kind)
+    app_stopped = false,
     -- the reason of the last power.stopping push, so a PC that said it was
     -- suspending is not reported as off once it stops answering
     last_stopping_reason = nil,
@@ -59,6 +75,7 @@ local function copy(s)
     power_state = s.power_state,
     unreachable_count = s.unreachable_count or 0,
     app_down = s.app_down == true,
+    app_stopped = s.app_stopped == true,
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
     schedule_active = s.schedule_active or false,
@@ -103,6 +120,7 @@ function power.transition(s, event, arg)
     nxt.power_state = power.ON
     nxt.unreachable_count = 0
     nxt.app_down = false
+    nxt.app_stopped = false
     nxt.last_stopping_reason = nil
     nxt.wake_from = nil
   elseif event == "app_down" then
@@ -126,6 +144,7 @@ function power.transition(s, event, arg)
     -- The PC app answered with an error (401, 404, …): it is not down, and
     -- nothing else is known about the PC.
     nxt.app_down = false
+    nxt.app_stopped = false
   elseif event == "unreachable" then
     nxt.unreachable_count = (s.unreachable_count or 0) + 1
     -- No answer at all now, not even a refusal.
@@ -137,6 +156,8 @@ function power.transition(s, event, arg)
       -- A sleeping PC is supposed to be unreachable; keep the finer state.
       nxt.power_state = cur
     elseif nxt.unreachable_count >= power.UNREACHABLE_LIMIT then
+      -- The PC is gone now: whatever answers next is a new outage's word.
+      nxt.app_stopped = false
       local preserved = STOPPING_STATE[s.last_stopping_reason or ""]
       if preserved == power.SLEEPING or preserved == power.HIBERNATED then
         nxt.power_state = preserved
@@ -144,11 +165,28 @@ function power.transition(s, event, arg)
         nxt.power_state = power.OFF
       end
     end
+  elseif event == "stopping" and reason == power.APP_STOP then
+    -- The service is stopping and the PC is not (an update, an uninstall, a
+    -- service restart, the user stopping it): the app-down state at once,
+    -- exactly as a refused poll would leave it a poll later - never
+    -- `shuttingDown`, never a step towards `off`. The refusals that follow
+    -- keep it; timeouts count towards `off` as usual.
+    nxt.unreachable_count = 0
+    nxt.app_down = true
+    nxt.app_stopped = true
+    nxt.wake_from = nil
+    if cur ~= power.SHUTTING_DOWN then
+      -- The PC was up to push this; a `shuttingDown` already under way (a
+      -- grace period the PC confirmed) is not taken back by the app leaving.
+      nxt.power_state = power.ON
+      nxt.last_stopping_reason = nil
+    end
   elseif event == "stopping" then
     nxt.last_stopping_reason = reason or "unknown"
     nxt.unreachable_count = 0
     -- Only a running PC app pushes.
     nxt.app_down = false
+    nxt.app_stopped = false
     nxt.wake_from = nil
     nxt.power_state = STOPPING_STATE[nxt.last_stopping_reason] or power.SHUTTING_DOWN
   elseif event == "switch_on" then
@@ -184,7 +222,9 @@ end
 --- Why the display-only rows say the PC is not there (design doc §6.2 "꺼진
 --- PC의 표시 줄"), or nil when they keep what the last status said:
 ---
----   "app_down"    the last poll was refused: the PC is on, its app is not
+---   "app_down"    the last poll was refused, or the service said it was
+---                 stopping on its own (`app_stop`): the PC is on, its app
+---                 is not
 ---   "off"         two unreachable polls (or a wake that gave up)
 ---   "sleeping"    unreachable after it said it was going to sleep
 ---   "hibernated"  the same for hibernation

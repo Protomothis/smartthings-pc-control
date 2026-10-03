@@ -1769,4 +1769,22 @@ function T.test_changing_the_recommended_version_changes_every_text()
   h.assert_equal(features.refusal(extras, "preset"), "feature_missing")
 end
 
+-- C3: a shutdown or restart stops the apps; the helper push.lua uses.
+function T.test_stop_watch_moves_only_running_slots()
+  local input = { "running", "stopped", "empty", "running", nil }
+  local out, records = features.stop_watch(input)
+  h.assert_deep_equal(out, { "stopped", "stopped", "empty", "stopped" })
+  h.assert_deep_equal(input, { "running", "stopped", "empty", "running" }, "the input is not modified")
+  h.assert_equal(#records, 2)
+  for i, attr in ipairs({ "slotOne", "slotFour" }) do
+    h.assert_equal(records[i].attr, attr)
+    h.assert_equal(records[i].value, "stopped")
+    h.assert_equal(records[i].component, WATCH)
+    h.assert_true(records[i].force, attr .. " forced")
+  end
+  local none, empty = features.stop_watch(nil)
+  h.assert_nil(none)
+  h.assert_deep_equal(empty, {})
+end
+
 return T

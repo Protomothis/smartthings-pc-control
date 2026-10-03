@@ -8,7 +8,6 @@
 -- and it hands the two of them that need a poll back (`once`,
 -- `follow_battery`) through their `use`, so none of them requires this one.
 
-local caps = require "caps"
 local client = require "client"
 local clock = require "device.clock"
 local discovery = require "discovery"
@@ -60,21 +59,9 @@ function poll.ensure_rows(device, driver)
   return true
 end
 
---- #123: the watch card's slot values a repaint keeps - what the last status
---- settled on, else what this run sent or the hub's state cache holds. A slot
---- with none of those is painted `empty` (features.watch_events).
+--- #123: the watch card's slot values a repaint keeps (`rows.kept_watch`).
 function poll.kept_watch(device)
-  local watch = (fields.extras(device) or {}).watch
-  if type(watch) == "table" then
-    return watch
-  end
-  local out = {}
-  for slot = 1, features.WATCH_SLOTS do
-    out[slot] = features.watch_value(emit.last_value(device, {
-      cap = caps.WATCH, attr = features.slot_attr(slot), component = features.WATCH_COMPONENT,
-    }))
-  end
-  return out
+  return rows.kept_watch(device)
 end
 
 --- Repaint every row, forced: the cloud starts a new profile with empty

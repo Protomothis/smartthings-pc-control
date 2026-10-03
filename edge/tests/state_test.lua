@@ -1126,6 +1126,59 @@ function T.test_a_refused_poll_keeps_the_pc_on_and_never_counts_towards_off()
   h.assert_nil(state.offline_mode(s))
 end
 
+-- C1: `power.stopping` `app_stop` - the service stopped, the PC did not.
+function T.test_app_stop_is_app_down_at_once_and_the_pc_stays_on()
+  for _, from in ipairs({ state.ON, state.UNKNOWN, state.OFF, state.WAKING }) do
+    local s = state.transition(state.new(from), "stopping", "app_stop")
+    h.assert_equal(s.power_state, state.ON, from .. ": never shuttingDown")
+    h.assert_equal(state.switch_for(s.power_state), "on", from)
+    h.assert_true(s.app_down, from)
+    h.assert_true(s.app_stopped, from .. ": the outage began with app_stop")
+    h.assert_nil(s.last_stopping_reason, from .. ": no power transition to remember")
+    h.assert_nil(s.wake_from, from)
+    h.assert_equal(state.offline_mode(s), "app_down", from)
+    h.assert_false(state.is_transitioning(s), from .. ": the command list stays usable")
+  end
+  -- The table form of the event says the same.
+  local s = state.transition(state.new(state.ON), { type = "stopping", reason = "app_stop" })
+  h.assert_true(s.app_down)
+end
+
+function T.test_after_app_stop_refusals_keep_it_and_timeouts_count_to_off()
+  local s = state.transition(state.new(state.ON), "stopping", "app_stop")
+  for _ = 1, 3 do
+    s = state.transition(s, "app_down")
+    h.assert_equal(s.power_state, state.ON)
+    h.assert_true(s.app_down)
+    h.assert_true(s.app_stopped, "a refusal is the same outage")
+  end
+  -- The PC goes away after all: two misses, off - and the marker goes with it.
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.power_state, state.ON, "one miss is not off")
+  h.assert_true(s.app_stopped, "one miss is still the same outage")
+  s = state.transition(s, "unreachable")
+  h.assert_equal(s.power_state, state.OFF)
+  h.assert_false(s.app_stopped, "a PC that counts as off starts a new outage")
+  -- The app answering ends it too, wrongly (401) or rightly.
+  for _, event in ipairs({ "status_ok", "app_answered" }) do
+    local stopped = state.transition(state.new(state.ON), "stopping", "app_stop")
+    h.assert_false(state.transition(stopped, event).app_stopped, event)
+  end
+  -- A real power.stopping after it is the power transition it says.
+  local stopped = state.transition(state.new(state.ON), "stopping", "app_stop")
+  local down = state.transition(stopped, "stopping", "shutdown")
+  h.assert_equal(down.power_state, state.SHUTTING_DOWN)
+  h.assert_false(down.app_down)
+  h.assert_false(down.app_stopped)
+end
+
+function T.test_app_stop_does_not_take_back_a_shutdown_under_way()
+  local s = state.transition(state.new(state.ON), "stopping", "shutdown")
+  s = state.transition(s, "stopping", "app_stop")
+  h.assert_equal(s.power_state, state.SHUTTING_DOWN)
+  h.assert_equal(s.last_stopping_reason, "shutdown")
+end
+
 function T.test_a_refusal_means_the_pc_has_come_up()
   -- Booted, woken by hand, or woken by the driver: the app is not up yet, the
   -- PC is. A wake is over (no wake_from left for a timeout to fall back to).

@@ -486,4 +486,130 @@ function T.test_a_push_and_a_failed_poll_keep_the_message_row_painted()
   h.assert_equal(h.event_value(h.emitted(offline), caps.TOAST, "lastMessage"), "없음")
 end
 
+--------------------------------------------------------------------------------
+-- C1 / C3: the power.stopping reasons that go further than the power state
+--------------------------------------------------------------------------------
+
+local WATCH = "apps"
+
+--- A push whose status has the watch list on: Steam (1) and VS Code (4)
+--- running, OBS (2) not.
+local function watched(event_type, reason)
+  local body = payload({ type = event_type, data = { reason = reason } })
+  body.status.features = { "activity" }
+  body.status.activity = { enabled = true, scanned = true, top = "steam.exe", apps = {
+    { slot = 1, id = "steam.exe", label = "Steam", running = true },
+    { slot = 2, id = "obs64.exe", label = "OBS", running = false },
+    { slot = 4, id = "code.exe", label = "VS Code", running = true },
+  } }
+  return body
+end
+
+local function since(device, mark)
+  local all = h.emitted(device)
+  local out = {}
+  for i = mark + 1, #all do
+    out[#out + 1] = all[i]
+  end
+  return out
+end
+
+--- A PC whose watch card a first push has already painted.
+local function watched_device(id)
+  local device = pc_device(id)
+  local driver = fake_driver({ device })
+  fields.set_state(device, state.new(state.ON))
+  local body = watched("power.started")
+  body.machine_id = id
+  push.route(driver, body)
+  h.assert_equal(h.component_value(h.emitted(device), WATCH, caps.WATCH, "slotOne"), "running")
+  return device, driver
+end
+
+function T.test_shutdown_and_restart_stop_every_running_slot_forced()
+  for _, reason in ipairs({ "shutdown", "restart" }) do
+    local id = "stop-" .. reason
+    local device, driver = watched_device(id)
+    local mark = #device.emitted
+    local body = watched("power.stopping", reason)
+    body.machine_id = id
+    push.route(driver, body)
+    local sent = since(device, mark)
+    for _, attr in ipairs({ "slotOne", "slotFour" }) do
+      h.assert_equal(h.component_value(sent, WATCH, caps.WATCH, attr), "stopped", reason .. " " .. attr)
+      h.assert_true(h.component_forced(sent, WATCH, caps.WATCH, attr), reason .. " " .. attr .. " forced")
+    end
+    h.assert_nil(h.component_value(sent, WATCH, caps.WATCH, "slotTwo"), reason .. ": OBS was stopped already")
+    h.assert_nil(h.component_value(sent, WATCH, caps.WATCH, "slotThree"), reason .. ": an empty slot stays")
+    h.assert_deep_equal(fields.extras(device).watch, { "stopped", "stopped", "empty", "stopped", "empty" },
+      reason .. ": remembered, so a repaint keeps it")
+    h.assert_equal(fields.state(device).power_state, state.SHUTTING_DOWN)
+  end
+end
+
+function T.test_sleep_app_stop_and_unknown_leave_the_slots()
+  for _, reason in ipairs({ "suspend", "hibernate", "app_stop", "unknown" }) do
+    local id = "keep-" .. reason
+    local device, driver = watched_device(id)
+    local mark = #device.emitted
+    local body = watched("power.stopping", reason)
+    body.machine_id = id
+    push.route(driver, body)
+    local sent = since(device, mark)
+    for _, attr in ipairs({ "slotOne", "slotTwo", "slotFour" }) do
+      h.assert_nil(h.component_value(sent, WATCH, caps.WATCH, attr), reason .. ": " .. attr .. " is not sent")
+    end
+    h.assert_equal(fields.extras(device).watch[1], "running", reason)
+  end
+end
+
+function T.test_a_shutdown_without_a_status_stops_what_the_card_shows()
+  -- Nothing read in this run (the hub restarted), no status in the push: the
+  -- slots come from the hub's state cache.
+  local device = h.with_state_cache(pc_device("bare-guid"))
+  device.state_cache = { [WATCH] = { [caps.WATCH] = {
+    slotOne = { value = "running" }, slotTwo = { value = "stopped" },
+  } } }
+  push.route(fake_driver({ device }), { machine_id = "bare-guid", type = "power.stopping",
+    data = { reason = "shutdown" } })
+  local sent = h.emitted(device)
+  h.assert_equal(h.component_value(sent, WATCH, caps.WATCH, "slotOne"), "stopped")
+  h.assert_true(h.component_forced(sent, WATCH, caps.WATCH, "slotOne"))
+  h.assert_nil(h.component_value(sent, WATCH, caps.WATCH, "slotTwo"))
+  h.assert_nil(fields.extras(device), "still nothing read: a command handler asks first")
+  h.assert_equal(fields.state(device).power_state, state.SHUTTING_DOWN)
+end
+
+function T.test_app_stop_paints_the_app_down_rows_and_keeps_the_power_on()
+  local device, driver = watched_device("app-stop-guid")
+  local mark = #device.emitted
+  local body = watched("power.stopping", "app_stop")
+  body.machine_id = "app-stop-guid"
+  push.route(driver, body)
+  local sent = since(device, mark)
+
+  local s = fields.state(device)
+  h.assert_equal(s.power_state, state.ON)
+  h.assert_true(s.app_down)
+  h.assert_nil(h.event_value(sent, caps.POWER_STATE, "powerState"), "the power rows stay on, unsent")
+  h.assert_nil(h.event_value(sent, state.CAP_SWITCH, "switch"))
+  h.assert_equal(h.event_value(sent, caps.STATUS, "connection"), "unreachable")
+  h.assert_equal(h.event_value(sent, caps.STATUS, "summary"), "PC 앱 응답 없음")
+  h.assert_equal(h.event_value(sent, caps.STATUS, "message"),
+    "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요")
+  h.assert_equal(h.component_value(sent, WATCH, caps.WATCH, "summary"), "PC 앱 응답 없음")
+  h.assert_equal(h.event_value(sent, caps.SESSION, "summary"), "PC 앱 응답 없음")
+  h.assert_equal(device.health, "online")
+
+  -- The polls that follow are refused: nothing new to say.
+  mark = #device.emitted
+  local refused = function() return nil, "connection refused" end
+  poll.once(driver, device, { deps = { http = refused } })
+  for _, e in ipairs(since(device, mark)) do
+    h.assert_true(e.attr ~= "summary" and e.attr ~= "powerState" and e.attr ~= "connection",
+      "a refusal after app_stop re-sends " .. tostring(e.cap) .. "." .. tostring(e.attr))
+  end
+  h.assert_true(fields.state(device).app_down)
+end
+
 return T

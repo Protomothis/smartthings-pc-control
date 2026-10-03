@@ -892,6 +892,27 @@ function features.watch_state(status, previous)
   return values, signature
 end
 
+--- Contract C3: the PC shuts down or restarts, so the apps it ran really
+--- stopped. A copy of `watch` with every `running` slot `stopped`, and the
+--- records of the slots that moved - forced, so a routine on "꺼지면" fires
+--- even when a lost event left the cloud elsewhere. `watch` is not modified;
+--- nil (nothing known) moves nothing.
+function features.stop_watch(watch)
+  if type(watch) ~= "table" then
+    return watch, {}
+  end
+  local out, records = {}, {}
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = watch[slot]
+    if watch[slot] == features.WATCH_RUNNING then
+      out[slot] = features.WATCH_STOPPED
+      records[#records + 1] = { cap = features.CAP_WATCH, attr = features.slot_attr(slot),
+        value = features.WATCH_STOPPED, component = features.WATCH_COMPONENT, force = true }
+    end
+  end
+  return out, records
+end
+
 --- #123: the watch card's rows of a status body, on the `apps` component.
 --
 -- @param watch the slot values to show (`extras.watch`, from `watch_state`),

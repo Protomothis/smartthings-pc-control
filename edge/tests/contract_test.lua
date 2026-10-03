@@ -346,10 +346,12 @@ local PUSHES = {
     h.assert_false(value(events, caps.SCHEDULE, "active"))
     h.assert_false(nxt.schedule_active)
   end,
-  ["push.power.stopping.json"] = function(_, nxt, event)
+  ["push.power.stopping.json"] = function(events, nxt, event)
     h.assert_equal(event, "stopping")
     h.assert_equal(nxt.last_stopping_reason, "suspend", "data.reason")
     h.assert_equal(nxt.power_state, state.SLEEPING)
+    -- C3: a PC going to sleep keeps its apps; only shutdown/restart stop them.
+    h.assert_equal(value(events, caps.WATCH, "slotOne", WATCH), "running", "suspend stops no slot")
   end,
 }
 
@@ -388,6 +390,48 @@ function T.test_pushes_route_and_paint()
       error(name .. ": " .. tostring(err), 0)
     end
   end
+end
+
+local function forced_record(events, attr)
+  for _, e in ipairs(events or {}) do
+    if e.component == WATCH and e.attr == attr then
+      return e.force == true
+    end
+  end
+  return nil
+end
+
+function T.test_power_stopping_reasons_on_the_golden_body()
+  -- C1/C3 on the wire shape of push.power.stopping.json, `data.reason`
+  -- swapped: `{ reason, powerState, slotOne (Steam ran), forced }`.
+  local cases = {
+    { "shutdown", state.SHUTTING_DOWN, "stopped", true },
+    { "restart", state.SHUTTING_DOWN, "stopped", true },
+    { "suspend", state.SLEEPING, "running", false },
+    { "hibernate", state.HIBERNATED, "running", false },
+    { "unknown", state.SHUTTING_DOWN, "running", false },
+  }
+  for _, c in ipairs(cases) do
+    local reason, power_state, slot, forced = table.unpack(c, 1, 4)
+    local payload = json.decode(h.read_file(h.FIXTURE_DIR .. "/push.power.stopping.json"))
+    payload.data.reason = reason
+    local nxt, events = push.apply(state.new(state.ON), payload, { lang = LANG, now = "21:00" })
+    h.assert_equal(nxt.power_state, power_state, reason)
+    h.assert_equal(value(events, caps.WATCH, "slotOne", WATCH), slot, reason .. ": slotOne")
+    h.assert_equal(forced_record(events, "slotOne"), forced, reason .. ": forced")
+    h.assert_equal(value(events, caps.WATCH, "slotThree", WATCH), "stopped", reason .. ": OBS was not running")
+    h.assert_false(forced_record(events, "slotThree"), reason .. ": a stopped slot is not re-sent forced")
+    h.assert_equal(nxt.extras.watch[1], slot, reason .. ": remembered")
+  end
+
+  -- `app_stop`: the PC stays on and the PC app is down; no status rows.
+  local payload = json.decode(h.read_file(h.FIXTURE_DIR .. "/push.power.stopping.json"))
+  payload.data.reason = "app_stop"
+  local nxt, events = push.apply(state.new(state.ON), payload, { lang = LANG, now = "21:00" })
+  h.assert_equal(nxt.power_state, state.ON, "app_stop keeps the PC on")
+  h.assert_true(nxt.app_down, "app_stop is app-down")
+  h.assert_nil(events, "app_stop paints no \"연결됨\" rows")
+  h.assert_equal(nxt.extras.watch[1], "running", "app_stop stops no slot")
 end
 
 --------------------------------------------------------------------------------
