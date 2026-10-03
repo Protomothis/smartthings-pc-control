@@ -35,9 +35,17 @@ var ErrOutput = errors.New("user-action: unreadable output")
 type ActionError struct {
 	Code    string
 	Message string
+	// Reason refines the failure (useraction.Preset*), "" when none.
+	Reason string
+	// Detail is the child's full error, for service.log only: Error()
+	// includes it, Message (what clients see) does not.
+	Detail string
 }
 
 func (e *ActionError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("user-action %s: %s (%s)", e.Code, e.Message, e.Detail)
+	}
 	return fmt.Sprintf("user-action %s: %s", e.Code, e.Message)
 }
 
@@ -46,6 +54,8 @@ type Result struct {
 	OK      bool              `json:"ok"`
 	Error   string            `json:"error,omitempty"`
 	Message string            `json:"message,omitempty"`
+	Reason  string            `json:"reason,omitempty"`
+	Detail  string            `json:"detail,omitempty"`
 	Audio   *useraction.Audio `json:"audio,omitempty"`
 	// Fields holds every key of the reply, including the ones above, for
 	// the results a feature adds without a typed field.
@@ -152,7 +162,7 @@ func (rn Runner) Run(ctx context.Context, target Target, args ...string) (Result
 		return Result{}, perr
 	}
 	if !res.OK {
-		return res, &ActionError{Code: res.Error, Message: res.Message}
+		return res, &ActionError{Code: res.Error, Message: res.Message, Reason: res.Reason, Detail: res.Detail}
 	}
 	if tracksTarget && rn.OnReply != nil {
 		rn.OnReply(args, res)

@@ -1,8 +1,13 @@
 package useraction
 
 import (
+	"encoding/json"
 	"errors"
+	"io/fs"
+	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestBuildPresetLaunch(t *testing.T) {
@@ -103,6 +108,57 @@ func TestHandlePreset(t *testing.T) {
 	openURL = func(string) error { return errors.New("no browser") }
 	if _, err := handlePreset(Request{PresetType: "url", Path: "http://x/"}); err == nil {
 		t.Error("a ShellExecute failure must fail the action")
+	}
+}
+
+// TestPresetFailureHidesThePath: a failed start names the file by its base
+// name only, says why in Reason, and keeps the full error in Detail (for
+// service.log). Telegram and SmartThings see the message.
+func TestPresetFailureHidesThePath(t *testing.T) {
+	sp, ou := startProcess, openURL
+	t.Cleanup(func() { startProcess, openURL = sp, ou })
+	const path = `C:\Users\kim\secret-project\run.ps1`
+	for _, tc := range []struct {
+		name   string
+		err    error
+		reason string
+		msg    string
+	}{
+		{"missing", &fs.PathError{Op: "CreateFile", Path: path, Err: windows.ERROR_FILE_NOT_FOUND}, PresetNotFound, "file not found: run.ps1"},
+		{"missing folder", &fs.PathError{Op: "CreateFile", Path: path, Err: windows.ERROR_PATH_NOT_FOUND}, PresetNotFound, "file not found: run.ps1"},
+		{"denied", &fs.PathError{Op: "fork/exec", Path: path, Err: windows.ERROR_ACCESS_DENIED}, PresetAccessDenied, "access denied: run.ps1"},
+		{"other", &fs.PathError{Op: "fork/exec", Path: path, Err: windows.ERROR_BAD_EXE_FORMAT}, PresetStartFailed, "could not start: run.ps1"},
+	} {
+		startProcess = func(presetLaunch) error { return tc.err }
+		_, err := handlePreset(Request{PresetType: "script", Path: path})
+		var ue *Error
+		if !errors.As(err, &ue) {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if ue.Code != CodeFailed || ue.Reason != tc.reason || ue.Message != tc.msg {
+			t.Errorf("%s: %+v, want reason %s message %q", tc.name, ue, tc.reason, tc.msg)
+		}
+		if !strings.Contains(ue.Detail, path) {
+			t.Errorf("%s: detail %q lost the full error", tc.name, ue.Detail)
+		}
+		line, _ := render(nil, err)
+		var reply map[string]any
+		if jerr := json.Unmarshal(line, &reply); jerr != nil {
+			t.Fatal(jerr)
+		}
+		if msg, _ := reply["message"].(string); strings.Contains(msg, "secret-project") || reply["reason"] != tc.reason || reply["detail"] == nil {
+			t.Errorf("%s: reply %s", tc.name, line)
+		}
+	}
+
+	openURL = func(string) error { return errors.New("ShellExecute https://x/?token=abc: no association") }
+	_, err := handlePreset(Request{PresetType: "url", Path: "https://x/?token=abc"})
+	var ue *Error
+	if !errors.As(err, &ue) || ue.Reason != PresetURLFailed || strings.Contains(ue.Message, "token") || strings.Contains(ue.Message, "x/") {
+		t.Errorf("url failure: %+v", ue)
+	}
+	if got := PresetFileName(`C:\a\b\c.exe`); got != "c.exe" {
+		t.Errorf("PresetFileName = %q", got)
 	}
 }
 

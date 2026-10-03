@@ -17,6 +17,8 @@ package useraction
 // launched program is not waited for.
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -202,12 +204,49 @@ var openURL = func(u string) error {
 	return windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL)
 }
 
+// Reasons of a failed preset start (Error.Reason). The message names the
+// file by its base name only; the full error is in Detail, for
+// service.log.
+const (
+	PresetNotFound     = "not_found"     // the program or script file is missing
+	PresetAccessDenied = "access_denied" // Windows refused to open or start it
+	PresetStartFailed  = "start_failed"  // any other start failure
+	PresetURLFailed    = "url_failed"    // the browser could not be asked to open the URL
+)
+
+// PresetFileName is the base name of a preset path ("run.ps1" for
+// C:\Users\kim\scripts\run.ps1): what a message may say about the file
+// without giving away the folder layout.
+func PresetFileName(p string) string {
+	if i := strings.LastIndexAny(p, `\/`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+// presetStartError words a failed start without the path: a fixed text and
+// the file's base name, the reason for a client that words it itself, and
+// the full error as the detail.
+func presetStartError(path string, err error) *Error {
+	name := PresetFileName(path)
+	e := &Error{Code: CodeFailed, Reason: PresetStartFailed, Message: "could not start: " + name, Detail: err.Error()}
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		e.Reason, e.Message = PresetNotFound, "file not found: "+name
+	case errors.Is(err, fs.ErrPermission):
+		e.Reason, e.Message = PresetAccessDenied, "access denied: "+name
+	}
+	return e
+}
+
 // handlePreset starts the preset and answers {"ok":true,"started":true}
-// without waiting for it.
+// without waiting for it. A failure never puts the path or the URL into
+// the message (it reaches Telegram and SmartThings); see presetStartError.
 func handlePreset(req Request) (map[string]any, error) {
 	if req.PresetType == "url" {
 		if err := openURL(req.Path); err != nil {
-			return nil, Failed("open url: %v", err)
+			// The URL may carry a token of its own: not even its host.
+			return nil, &Error{Code: CodeFailed, Reason: PresetURLFailed, Message: "could not open the URL", Detail: err.Error()}
 		}
 		return map[string]any{"started": true}, nil
 	}
@@ -216,7 +255,7 @@ func handlePreset(req Request) (map[string]any, error) {
 		return nil, err
 	}
 	if err := startProcess(l); err != nil {
-		return nil, Failed("start %s: %v", filepath.Base(req.Path), err)
+		return nil, presetStartError(req.Path, err)
 	}
 	return map[string]any{"started": true}, nil
 }

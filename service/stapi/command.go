@@ -234,7 +234,7 @@ func (s *Server) handlePreset(w http.ResponseWriter, r *http.Request, body Comma
 	err := s.d.Presets.Run(r.Context(), p, "smartthings "+from)
 	s.d.Presets.Record(p, from, action.ResultCode(err))
 	if err != nil {
-		action.WriteError(w, err)
+		action.WritePresetError(w, err, p) // no path in the reply (C6)
 		return
 	}
 	// Only a start is "executed"; a refusal is in last_command and the log.

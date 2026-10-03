@@ -16,6 +16,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // presetTexts are merged into texts at start-up; ko then en.
@@ -30,6 +31,14 @@ var presetTexts = map[string][2]string{
 	"type_url":          {"URL", "URL"},
 	"type_script":       {"스크립트", "script"},
 	"preset_list_entry": {"%d · %s <i>(%s)</i>", "%d · %s <i>(%s)</i>"},
+	// A failed /run names the file by its base name only (C6); the full
+	// error is in service.log.
+	"preset_not_found":     {"파일을 찾을 수 없음: <code>%s</code>", "File not found: <code>%s</code>"},
+	"preset_access_denied": {"접근이 거부됨: <code>%s</code>", "Access denied: <code>%s</code>"},
+	"preset_start_failed":  {"실행하지 못함: <code>%s</code>", "Could not start: <code>%s</code>"},
+	"preset_url_failed":    {"URL을 열지 못함", "Could not open the URL"},
+	"preset_bad":           {"저장된 설정으로는 실행할 수 없음: <code>%s</code>", "Cannot be run as saved: <code>%s</code>"},
+	"preset_failed_detail": {"❌ 프리셋 %d · %s 실패: %s", "❌ Preset %d · %s failed: %s"},
 }
 
 func init() {
@@ -71,7 +80,34 @@ func (c *Control) runPreset(args []string) (string, *telegram.InlineKeyboard, er
 	err := c.d.Presets.Run(ctx, p, "telegram")
 	c.d.Presets.Record(p, "telegram", action.ResultCode(err))
 	if err != nil {
-		return c.actionError(err), nil, err
+		return c.presetError(err, p), nil, err
 	}
 	return c.text("run_started", p.Slot, html.EscapeString(p.Name)), nil, nil
+}
+
+// presetError words a failed /run without the preset's path, folder,
+// arguments or URL (C6): a fixed text and the file's base name. Failures
+// that are not about the file (nobody logged in, a timeout) keep their
+// usual texts.
+func (c *Control) presetError(err error, p config.Preset) string {
+	f, reason := action.PresetFailure(err, p)
+	name := html.EscapeString(useraction.PresetFileName(p.Path))
+	var why string
+	switch {
+	case reason == useraction.PresetNotFound:
+		why = c.text("preset_not_found", name)
+	case reason == useraction.PresetAccessDenied:
+		why = c.text("preset_access_denied", name)
+	case reason == useraction.PresetURLFailed:
+		why = c.text("preset_url_failed")
+	case reason == useraction.PresetStartFailed:
+		why = c.text("preset_start_failed", name)
+	case f.Code == useraction.CodeBadArgs:
+		why = c.text("preset_bad", name)
+	default:
+		// no_user_session, timeout, unsupported, an unreadable reply:
+		// fixed texts that never quote the preset.
+		return c.actionError(err)
+	}
+	return c.text("preset_failed_detail", p.Slot, html.EscapeString(p.Name), why)
 }
