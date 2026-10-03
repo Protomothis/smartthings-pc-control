@@ -168,6 +168,27 @@ function T.test_full_status_activity_rows()
   h.assert_equal(others, 0)
 end
 
+function T.test_full_status_activity_scanned_decides_the_hold()
+  -- C2: `activity.scanned` is a boolean, true once the scanner has looked.
+  local status = h.fixture("status.full.json")
+  h.assert_true(status.activity.scanned, "activity.scanned")
+  -- A card that showed OBS running under a different list: with the scan
+  -- done, "stopped" is taken as it is - no list-signature guess.
+  local s = state.new(state.ON)
+  s.extras = { apps_mode = features.APPS_ON, watch_signature = "another list",
+    watch = { "running", "empty", "running", "empty", "empty" } }
+  features.remember(s, status)
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "stopped", "empty", "empty" },
+    "scanned: true applies the values")
+  -- The same body before the scan: OBS stays running.
+  status.activity.scanned = false
+  s.extras = { apps_mode = features.APPS_ON, watch_signature = features.watch_signature(features.apps_of(status)),
+    watch = { "running", "empty", "running", "empty", "empty" } }
+  features.remember(s, status)
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "running", "empty", "empty" },
+    "scanned: false never moves running to stopped")
+end
+
 function T.test_full_status_activity_slots_are_numbers_by_slot()
   -- The wire shape itself: `slot` is a JSON number, the list is sorted by it
   -- and has only the filled slots.
@@ -239,7 +260,8 @@ function T.test_off_status_rows()
   h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
-  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "꺼짐", "activity.enabled: false")
+  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
+  h.assert_false(status.activity.scanned, "activity.scanned: a disabled block was never scanned")
   h.assert_equal(value(events, caps.WATCH, "names", WATCH), "꺼짐", "activity.apps: []")
   h.assert_nil(value(events, caps.WATCH, "slotOne", WATCH), "an off list moves no slot")
   h.assert_equal(features.apps_mode(status), features.APPS_OFF)
@@ -287,6 +309,8 @@ local PUSHES = {
     }, "status.activity.apps")
     local data = payload.data
     h.assert_true(data.enabled, "data.enabled is a boolean")
+    h.assert_true(data.scanned, "data.scanned is a boolean")
+    h.assert_true(payload.status.activity.scanned, "status.activity.scanned")
     h.assert_equal(data.top, "steam.exe", "data.top")
     h.assert_equal(#data.apps, 2, "data.apps")
     h.assert_equal(data.apps[1].slot, 1, "data.apps[].slot")
@@ -322,10 +346,12 @@ local PUSHES = {
     h.assert_false(value(events, caps.SCHEDULE, "active"))
     h.assert_false(nxt.schedule_active)
   end,
-  ["push.power.stopping.json"] = function(_, nxt, event)
+  ["push.power.stopping.json"] = function(events, nxt, event)
     h.assert_equal(event, "stopping")
     h.assert_equal(nxt.last_stopping_reason, "suspend", "data.reason")
     h.assert_equal(nxt.power_state, state.SLEEPING)
+    -- C3: a PC going to sleep keeps its apps; only shutdown/restart stop them.
+    h.assert_equal(value(events, caps.WATCH, "slotOne", WATCH), "running", "suspend stops no slot")
   end,
 }
 
@@ -364,6 +390,48 @@ function T.test_pushes_route_and_paint()
       error(name .. ": " .. tostring(err), 0)
     end
   end
+end
+
+local function forced_record(events, attr)
+  for _, e in ipairs(events or {}) do
+    if e.component == WATCH and e.attr == attr then
+      return e.force == true
+    end
+  end
+  return nil
+end
+
+function T.test_power_stopping_reasons_on_the_golden_body()
+  -- C1/C3 on the wire shape of push.power.stopping.json, `data.reason`
+  -- swapped: `{ reason, powerState, slotOne (Steam ran), forced }`.
+  local cases = {
+    { "shutdown", state.SHUTTING_DOWN, "stopped", true },
+    { "restart", state.SHUTTING_DOWN, "stopped", true },
+    { "suspend", state.SLEEPING, "running", false },
+    { "hibernate", state.HIBERNATED, "running", false },
+    { "unknown", state.SHUTTING_DOWN, "running", false },
+  }
+  for _, c in ipairs(cases) do
+    local reason, power_state, slot, forced = table.unpack(c, 1, 4)
+    local payload = json.decode(h.read_file(h.FIXTURE_DIR .. "/push.power.stopping.json"))
+    payload.data.reason = reason
+    local nxt, events = push.apply(state.new(state.ON), payload, { lang = LANG, now = "21:00" })
+    h.assert_equal(nxt.power_state, power_state, reason)
+    h.assert_equal(value(events, caps.WATCH, "slotOne", WATCH), slot, reason .. ": slotOne")
+    h.assert_equal(forced_record(events, "slotOne"), forced, reason .. ": forced")
+    h.assert_equal(value(events, caps.WATCH, "slotThree", WATCH), "stopped", reason .. ": OBS was not running")
+    h.assert_false(forced_record(events, "slotThree"), reason .. ": a stopped slot is not re-sent forced")
+    h.assert_equal(nxt.extras.watch[1], slot, reason .. ": remembered")
+  end
+
+  -- `app_stop`: the PC stays on and the PC app is down; no status rows.
+  local payload = json.decode(h.read_file(h.FIXTURE_DIR .. "/push.power.stopping.json"))
+  payload.data.reason = "app_stop"
+  local nxt, events = push.apply(state.new(state.ON), payload, { lang = LANG, now = "21:00" })
+  h.assert_equal(nxt.power_state, state.ON, "app_stop keeps the PC on")
+  h.assert_true(nxt.app_down, "app_stop is app-down")
+  h.assert_nil(events, "app_stop paints no \"연결됨\" rows")
+  h.assert_equal(nxt.extras.watch[1], "running", "app_stop stops no slot")
 end
 
 --------------------------------------------------------------------------------

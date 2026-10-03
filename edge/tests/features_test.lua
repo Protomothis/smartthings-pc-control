@@ -428,16 +428,40 @@ function T.test_the_names_row_lists_the_presets_by_slot()
 end
 
 function T.test_a_long_names_row_is_cut_on_a_character()
+  -- C4: each name is cut to twelve characters and "…", so ten long names
+  -- leave every slot number on the row, inside the row's cap.
   local list = {}
   for slot = 1, 10 do
     list[#list + 1] = { slot = slot, name = string.rep("가", 30) }
   end
   local text = features.preset_names(with_presets(list), "ko")
   local count = select(2, text:gsub("[\1-\127\194-\244][\128-\191]*", ""))
-  h.assert_equal(count, features.NAMES_MAX_CHARS)
-  h.assert_equal(text:sub(-3), "…")
+  h.assert_true(count <= features.NAMES_MAX_CHARS, "inside the cap: " .. count)
+  local cut = string.rep("가", 12) .. "…"
+  local parts = {}
+  for slot = 1, 10 do
+    parts[slot] = slot .. " " .. cut
+  end
+  h.assert_equal(text, table.concat(parts, " · "))
   h.assert_equal(features.truncate("짧다", 5), "짧다")
   h.assert_equal(features.truncate("abcdef", 4), "abc…")
+end
+
+function T.test_ten_presets_with_long_names_show_every_number()
+  local list = {}
+  for slot = 1, 10 do
+    list[#list + 1] = { slot = slot, name = "Preset number " .. slot .. " with a very long name" }
+  end
+  local text = features.preset_names(with_presets(list), "en")
+  for slot = 1, 10 do
+    h.assert_contains(text, slot .. " Preset numbe…", "slot " .. slot)
+  end
+  h.assert_true(text:sub(-3) == "…", "the last one is cut, not the row")
+  -- A name of exactly 13 characters stays whole; 12 + "…" is no shorter.
+  h.assert_equal(features.preset_names(with_presets({ { slot = 1, name = "Thirteen char" } }), "en"),
+    "1 Thirteen char")
+  h.assert_equal(features.preset_names(with_presets({ { slot = 1, name = "Fourteen chars" } }), "en"),
+    "1 Fourteen cha…")
 end
 
 function T.test_supported_slots_is_never_empty()
@@ -692,7 +716,7 @@ end
 local function with_apps(apps, opts)
   opts = opts or {}
   local status = status_v12({ activity = {
-    enabled = opts.enabled ~= false, apps = apps, top = opts.top or "",
+    enabled = opts.enabled ~= false, apps = apps, top = opts.top or "", scanned = opts.scanned,
   } })
   if opts.features then
     status.features = opts.features
@@ -730,7 +754,7 @@ local WATCH_CASES = {
   { "an empty list", with_apps({}),
     { summary = "없음", names = "없음", "empty", "empty", "empty", "empty", "empty" } },
   { "the opt-in off: the slots keep their values", with_apps({}, { enabled = false, features = { "audio" } }),
-    { summary = "꺼짐", names = "꺼짐" } },
+    { summary = "감지 꺼짐", names = "꺼짐" } },
   { "a service older than v1.2.0: the same", { service_version = "v1.1.0" },
     { summary = "PC 앱 v1.2.0 필요", names = "없음" } },
 }
@@ -780,12 +804,14 @@ function T.test_the_summary_is_one_short_cell()
   h.assert_equal(features.apps_summary(with_apps({ CODE }), "ko"), "없음")
   h.assert_equal(features.apps_summary(with_apps({ CODE }), "en"), "None")
   local off = with_apps({}, { enabled = false, features = { "audio" } })
-  h.assert_equal(features.apps_summary(off, "ko"), "꺼짐")
-  h.assert_equal(features.apps_summary(off, "en"), "Off")
+  -- C4: "감지 꺼짐", not the bare "꺼짐" a stopped slot reads.
+  h.assert_equal(features.apps_summary(off, "ko"), "감지 꺼짐")
+  h.assert_equal(features.apps_summary(off, "en"), "Detection off")
   h.assert_equal(features.apps_summary({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.2.0 필요")
-  -- The names row is not cut that short: it is not in the preview any more.
+  -- C4: the names row cuts each label the same way, so every slot number
+  -- stays on the row.
   h.assert_equal(features.watch_names(with_apps({
-    { slot = 1, id = "code.exe", label = "Visual Studio Code", running = true } }), "ko"), "1 Visual Studio Code")
+    { slot = 1, id = "code.exe", label = "Visual Studio Code", running = true } }), "ko"), "1 Visual Studi…")
 end
 
 function T.test_the_summary_leads_with_the_lowest_running_slot()
@@ -846,8 +872,10 @@ function T.test_long_labels_still_fit_the_definition()
   h.assert_equal(summary, string.rep("가", 12) .. "… 외 4", "the label is cut, the count stays")
   h.assert_true(#(summary:gsub("[\128-\191]", "")) <= features.WATCH_SUMMARY_MAX_CHARS, summary)
   local names = features.watch_names(status, "ko")
-  h.assert_equal(#(names:gsub("[\128-\191]", "")), features.WATCH_NAMES_MAX_CHARS, names)
-  h.assert_equal(names:sub(-3), "…")
+  h.assert_true(#(names:gsub("[\128-\191]", "")) <= features.WATCH_NAMES_MAX_CHARS, names)
+  -- C4: every slot number is on the row, each label cut to 12 + "…".
+  local cut = string.rep("가", 12) .. "…"
+  h.assert_equal(names, table.concat({ "1 " .. cut, "2 " .. cut, "3 " .. cut, "4 " .. cut, "5 " .. cut }, " · "))
 end
 
 function T.test_a_list_edit_holds_running_for_one_status()
@@ -873,6 +901,50 @@ function T.test_a_list_edit_holds_running_for_one_status()
   h.assert_deep_equal(s.extras.watch, { "running", "empty", "empty", "empty", "empty" }, "off keeps the values")
   features.remember(s, with_apps({ placeholder }))
   h.assert_equal(s.extras.watch[1], "running", "held after the opt-in came back")
+end
+
+-- C2: the service says when its first scan for a list is done. Before it
+-- (`scanned: false`) no slot moves from running to stopped, however many
+-- statuses come and whether or not the list changed; after it the values are
+-- taken as they are, list change or not.
+function T.test_scanned_false_never_moves_running_to_stopped()
+  local s = state.new(state.ON)
+  features.remember(s, with_apps({ STEAM, OBS }, { scanned = true }))
+  h.assert_deep_equal(s.extras.watch, { "running", "empty", "running", "empty", "empty" })
+  local idle_steam = { slot = 1, id = "steam.exe", label = "Steam", running = false }
+  local idle_obs = { slot = 3, id = "obs64.exe", label = "OBS", running = false }
+  for n = 1, 3 do
+    features.remember(s, with_apps({ idle_steam, idle_obs, CODE }, { scanned = false }))
+    h.assert_deep_equal(s.extras.watch, { "running", "stopped", "running", "empty", "empty" },
+      "unscanned status " .. n .. ": held; the new slot 2 is what the service says")
+  end
+  -- Not scanned yet, and an app starts: stopped -> running is real news.
+  features.remember(s, with_apps({ idle_steam, idle_obs, { slot = 2, id = "code.exe", label = "VS Code",
+    running = true } }, { scanned = false }))
+  h.assert_equal(s.extras.watch[2], "running", "an unscanned list may still move a slot to running")
+  -- Scanned: taken as it is, even with a list that changed right now.
+  features.remember(s, with_apps({ idle_steam, { slot = 3, id = "obs64.exe", label = "OBS Studio",
+    running = false } }, { scanned = true }))
+  h.assert_deep_equal(s.extras.watch, { "stopped", "empty", "stopped", "empty", "empty" },
+    "scanned: no hold, not even for the list change")
+end
+
+function T.test_a_status_without_scanned_keeps_the_list_signature_hold()
+  -- An older service: the hold lasts one status after a list change, and an
+  -- unchanged list decides.
+  local s = state.new(state.ON)
+  features.remember(s, with_apps({ STEAM }))
+  local idle_steam = { slot = 1, id = "steam.exe", label = "Steam", running = false }
+  features.remember(s, with_apps({ idle_steam, CODE }))
+  h.assert_equal(s.extras.watch[1], "running", "the list changed: held")
+  features.remember(s, with_apps({ idle_steam, CODE }))
+  h.assert_equal(s.extras.watch[1], "stopped", "unchanged: it decides")
+  -- The same two statuses with `scanned: false` would still hold.
+  local held = state.new(state.ON)
+  features.remember(held, with_apps({ STEAM }, { scanned = true }))
+  features.remember(held, with_apps({ idle_steam, CODE }, { scanned = false }))
+  features.remember(held, with_apps({ idle_steam, CODE }, { scanned = false }))
+  h.assert_equal(held.extras.watch[1], "running")
 end
 
 --- Polls with `client.get_status` answering `answers` in turn (`false` = the
@@ -1062,7 +1134,7 @@ function T.test_a_repaint_of_an_off_list_keeps_what_the_slots_showed()
   for i = mark + 1, #h.emitted(device) do
     again[#again + 1] = h.emitted(device)[i]
   end
-  h.assert_deep_equal(card(again), { summary = "꺼짐", names = "꺼짐",
+  h.assert_deep_equal(card(again), { summary = "감지 꺼짐", names = "꺼짐",
     "running", "empty", "running", "empty", "empty" }, "from what was sent")
   -- A restart: nothing sent in this run, the hub's cache still has them.
   h.restart(device, {})
@@ -1695,6 +1767,24 @@ function T.test_changing_the_recommended_version_changes_every_text()
   h.assert_false(features.needs_app_update(status_v12()))
   local extras = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
   h.assert_equal(features.refusal(extras, "preset"), "feature_missing")
+end
+
+-- C3: a shutdown or restart stops the apps; the helper push.lua uses.
+function T.test_stop_watch_moves_only_running_slots()
+  local input = { "running", "stopped", "empty", "running", nil }
+  local out, records = features.stop_watch(input)
+  h.assert_deep_equal(out, { "stopped", "stopped", "empty", "stopped" })
+  h.assert_deep_equal(input, { "running", "stopped", "empty", "running" }, "the input is not modified")
+  h.assert_equal(#records, 2)
+  for i, attr in ipairs({ "slotOne", "slotFour" }) do
+    h.assert_equal(records[i].attr, attr)
+    h.assert_equal(records[i].value, "stopped")
+    h.assert_equal(records[i].component, WATCH)
+    h.assert_true(records[i].force, attr .. " forced")
+  end
+  local none, empty = features.stop_watch(nil)
+  h.assert_nil(none)
+  h.assert_deep_equal(empty, {})
 end
 
 return T

@@ -145,6 +145,23 @@ function rows.offline_rows(device, s)
   return records
 end
 
+--- #123: the watch card's slot values as they stand - what the last status
+--- settled on, else what this run sent or the hub's state cache holds. A slot
+--- with none of those is nil (painted `empty` by features.watch_events).
+function rows.kept_watch(device)
+  local watch = (fields.extras(device) or {}).watch
+  if type(watch) == "table" then
+    return watch
+  end
+  local out = {}
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = features.watch_value(emit.last_value(device, {
+      cap = caps.WATCH, attr = features.slot_attr(slot), component = features.WATCH_COMPONENT,
+    }))
+  end
+  return out
+end
+
 --- Send `offline_rows` (an ordinary emit: a value already sent is not sent
 --- again, so a PC that stays off costs nothing after the first poll). The
 --- status that answers next paints the real values back - they differ, so

@@ -288,6 +288,123 @@ function T.test_every_other_transport_failure_is_unreachable()
   end
 end
 
+-- After the service's own `power.stopping` `app_stop` (state `app_stopped`),
+-- a reset is read as the refusal it most likely is: the hub may word the RST
+-- a closed port answers with as "closed". A timeout stays a timeout.
+function T.test_a_reset_after_app_stop_is_app_down()
+  for _, message in ipairs({ "closed", "connection reset by peer", "ECONNRESET" }) do
+    h.assert_equal(client.transport_kind(message, true), "app_down", message)
+    h.assert_equal(client.transport_kind(message, false), "unreachable", message)
+  end
+  for _, message in ipairs({ "timeout", "No route to host", "Host is unreachable" }) do
+    h.assert_equal(client.transport_kind(message, true), "unreachable", message)
+  end
+
+  -- Through a request: the device's state decides.
+  local d = device()
+  fields.set_state(d, state.transition(state.new(state.ON), "stopping", "app_stop"))
+  local _, _, err = client.get_status(d, { http = broken_http("closed") })
+  h.assert_equal(err, "app_down", "closed right after app_stop")
+  _, _, err = client.get_status(d, { http = function() error("closed", 0) end })
+  h.assert_equal(err, "app_down", "a raised reset after app_stop")
+  _, _, err = client.get_status(d, { http = broken_http("timeout") })
+  h.assert_equal(err, "unreachable", "a timeout after app_stop")
+  -- The outage is over (the PC counted off): "closed" is unreachable again.
+  local s = fields.state(d)
+  s = state.transition(state.transition(s, "unreachable"), "unreachable")
+  fields.set_state(d, s)
+  _, _, err = client.get_status(d, { http = broken_http("closed") })
+  h.assert_equal(err, "unreachable", "closed in a later outage")
+  -- And without any app_stop at all.
+  _, _, err = client.get_status(device(), { http = broken_http("closed") })
+  h.assert_equal(err, "unreachable")
+end
+
+-- C1 end to end: the push, then the polls of a PC whose app is gone.
+function T.test_after_app_stop_the_polls_keep_the_app_down_until_two_timeouts()
+  local push = require "push"
+  local d = device({ language = "ko" })
+  local driver = { cancel_timer = function() end }
+  fields.set_state(d, state.new(state.ON))
+  push.apply_to_device(driver, d, { machine_id = "x", type = "power.stopping", data = { reason = "app_stop" } })
+  h.assert_equal(fields.state(d).power_state, state.ON)
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음")
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.ON)
+
+  for _, message in ipairs({ "connection refused", "closed", "closed", "Connection refused" }) do
+    local _, kind = poll.once(driver, d, { deps = { http = broken_http(message) } })
+    h.assert_equal(kind, "app_down", message)
+    h.assert_equal(fields.state(d).power_state, state.ON, message)
+    h.assert_equal(fields.state(d).unreachable_count, 0, message)
+  end
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음")
+
+  -- The PC goes away after all: timeouts count, two of them are off.
+  local _, kind = poll.once(driver, d, { deps = { http = broken_http("timeout") } })
+  h.assert_equal(kind, "unreachable")
+  h.assert_equal(fields.state(d).power_state, state.ON, "one timeout is not off")
+  poll.once(driver, d, { deps = { http = broken_http("timeout") } })
+  h.assert_equal(fields.state(d).power_state, state.OFF)
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.OFF)
+  -- A new outage: "closed" is no longer read as a refusal.
+  _, kind = poll.once(driver, d, { deps = { http = broken_http("closed") } })
+  h.assert_equal(kind, "unreachable")
+  h.assert_equal(fields.state(d).power_state, state.OFF)
+end
+
+local function transport_lines()
+  local log = require "log"
+  local out = {}
+  for _, entry in ipairs(log.entries) do
+    if entry.level == "info" and tostring(entry[1]):find("^transport error: ") then
+      out[#out + 1] = entry[1]
+    end
+  end
+  return out
+end
+
+-- The hub's own wording for a refused or reset connection has never been
+-- seen: logged at info, the raw text and the classification, once per change.
+function T.test_a_transport_error_is_logged_when_it_changes()
+  local log = require "log"
+  log.reset()
+  local d = device()
+  d.id = "pc-1"
+  for _ = 1, 3 do
+    client.get_status(d, { http = broken_http("connection refused") })
+  end
+  h.assert_deep_equal(transport_lines(), { "transport error: connection refused -> app_down (pc-1)" },
+    "the same error every poll is logged once")
+
+  client.get_status(d, { http = broken_http("timeout") })
+  client.get_status(d, { http = broken_http("timeout") })
+  h.assert_equal(#transport_lines(), 2, "new raw text: logged")
+  h.assert_equal(transport_lines()[2], "transport error: timeout -> unreachable (pc-1)")
+
+  -- Same raw text, new classification: logged.
+  fields.set_state(d, state.transition(state.new(state.ON), "stopping", "app_stop"))
+  client.get_status(d, { http = broken_http("closed") })
+  client.get_status(d, { http = broken_http("closed") })
+  h.assert_equal(#transport_lines(), 3)
+  h.assert_equal(transport_lines()[3], "transport error: closed -> app_down (pc-1)")
+  fields.set_state(d, state.new(state.ON))
+  client.get_status(d, { http = broken_http("closed") })
+  h.assert_equal(transport_lines()[4], "transport error: closed -> unreachable (pc-1)")
+
+  -- An HTTP answer ends the outage: the next one is logged even with the same
+  -- words.
+  client.get_status(d, { http = fake_http(401, "{}") })
+  client.get_status(d, { http = broken_http("closed") })
+  h.assert_equal(#transport_lines(), 5, "a new outage logs again")
+
+  -- Per device.
+  local other = device()
+  other.id = "pc-2"
+  client.get_status(other, { http = broken_http("closed") })
+  h.assert_equal(#transport_lines(), 6, "another device has its own last line")
+  log.reset()
+end
+
 function T.test_a_timeout_is_unreachable()
   local _, _, err = client.get_status(device(), { http = broken_http("timeout") })
   h.assert_equal(err, "unreachable")

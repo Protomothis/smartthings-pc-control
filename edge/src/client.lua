@@ -111,12 +111,58 @@ end
 -- and "closed". luasocket says "closed" for ECONNRESET as well as for a
 -- connection that dropped mid-reply, and the message does not say which phase
 -- it was, so it is not taken as proof that the PC is up.
-function client.transport_kind(message)
+--
+-- `after_app_stop`: the outage began with the service's own `power.stopping`
+-- `app_stop` (state `app_stopped`). Then a reset ("closed", "reset") is read
+-- as the refusal it most likely is: the hub's socket layer may report the RST
+-- that answers a SYN to a closed port as "closed" rather than "connection
+-- refused" - which wording the hub really uses has not been seen yet (a log
+-- line records it, `note_transport`; LIVE VERIFICATION PENDING). The PC was
+-- demonstrably up a moment ago and said it stays up, so the only thing that
+-- could make it "unreachable" is a shutdown, which would have pushed
+-- `shutdown`/`restart` instead - and the timeouts of a PC that did go away
+-- still count towards `off`. Without that push "closed" stays `unreachable`.
+function client.transport_kind(message, after_app_stop)
   local text = string.lower(tostring(message or ""))
   if text:find("refused", 1, true) or text:find("econnrefused", 1, true) then
     return "app_down"
   end
+  if after_app_stop == true and (text:find("closed", 1, true) or text:find("reset", 1, true)) then
+    return "app_down"
+  end
   return "unreachable"
+end
+
+local function logger()
+  local ok, log = pcall(require, "log")
+  if ok then
+    return log
+  end
+  local noop = function() end
+  return { trace = noop, debug = noop, info = noop, warn = noop, error = noop }
+end
+
+--- Log one transport failure of `device` - its raw error text and what it was
+--- classified as - when either differs from the device's previous one
+--- (`fields.TRANSPORT_ERROR`), so a PC that stays away logs once, not every
+--- poll. The hub's own wording for a refused or reset connection has never
+--- been seen; this is where it shows up in logcat. True when logged.
+function client.note_transport(device, raw, kind)
+  local line = string.format("transport error: %s -> %s", tostring(raw), tostring(kind))
+  if fields.get(device, fields.TRANSPORT_ERROR) == line then
+    return false
+  end
+  fields.set(device, fields.TRANSPORT_ERROR, line)
+  logger().info(string.format("%s (%s)", line, tostring((device or {}).id)))
+  return true
+end
+
+-- A transport failure on `device`: classified with what its state knows (an
+-- outage that began with `app_stop`) and logged on change.
+local function transport_failure(device, raw)
+  local kind = client.transport_kind(raw, fields.state(device).app_stopped == true)
+  client.note_transport(device, raw, kind)
+  return kind
 end
 
 --- Map an HTTP status code to an err_kind, or nil when the code is a success.
@@ -200,11 +246,16 @@ function client.request(device, opts, deps)
   if not called then
     -- A raised socket error is still a transport failure: `result` is the
     -- error it raised.
-    return false, nil, client.transport_kind(result)
+    return false, nil, transport_failure(device, result)
   end
   if not result then
     -- socket.http's `nil, message`: refused (`app_down`) or anything else.
-    return false, nil, client.transport_kind(code)
+    return false, nil, transport_failure(device, code)
+  end
+  -- An HTTP answer: the next transport failure starts a new outage and is
+  -- logged again, even with the same words.
+  if fields.get(device, fields.TRANSPORT_ERROR) ~= nil then
+    fields.set(device, fields.TRANSPORT_ERROR, nil)
   end
 
   local raw = table.concat(chunks)

@@ -112,7 +112,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 연결 거부(RST, `connection refused`) | PC는 켜져 있고 PC 앱이 응답 없음 — err_kind `app_down` | `unreachable` (enum이 고정이라 같은 값, 요약·메시지·전원이 다르다, §6.2) |
 | 그 밖의 연결 실패(시간 초과, 경로 없음, DNS, `closed`) | PC 응답 없음 | `unreachable` |
 
-전송 오류의 분류는 `client.transport_kind`다. 오류 문구에 `refused`(대소문자 무관 — luasocket "connection refused", Rust 계층 "Connection refused (os error 111)", `ECONNREFUSED`)가 있을 때만 `app_down`이고, 나머지는 모두 `unreachable`이다. 서비스가 자기 TCP 포트에 인바운드 허용 규칙을 만들므로(`service/firewall.go`) 서비스가 멈춘 PC는 SYN에 RST로 답하고(거부), 꺼지거나 잠들거나 선이 빠진 PC는 아무 답도 없다(시간 초과). luasocket은 연결 단계의 RST도, 응답 도중 끊긴 연결도 `closed`라고 해서 구별되지 않으므로 `closed`는 `unreachable`에 둔다(보수적). 허브에서의 실측은 플랫폼 노트 "연결 거부와 시간 초과".
+전송 오류의 분류는 `client.transport_kind`다. 오류 문구에 `refused`(대소문자 무관 — luasocket "connection refused", Rust 계층 "Connection refused (os error 111)", `ECONNREFUSED`)가 있을 때만 `app_down`이고, 나머지는 모두 `unreachable`이다. 서비스가 자기 TCP 포트에 인바운드 허용 규칙을 만들므로(`service/firewall.go`) 서비스가 멈춘 PC는 SYN에 RST로 답하고(거부), 꺼지거나 잠들거나 선이 빠진 PC는 아무 답도 없다(시간 초과). luasocket은 연결 단계의 RST도, 응답 도중 끊긴 연결도 `closed`라고 해서 구별되지 않으므로 `closed`는 `unreachable`에 둔다(보수적). **예외 하나**: 그 장애가 서비스 자신의 `power.stopping` `app_stop`(§3.5, §6.2)으로 시작됐으면(상태 `app_stopped`) `closed`·`reset`이 든 문구도 `app_down`이다 — 방금 "PC는 켜진 채 서비스만 멈춘다"고 말한 PC가 꺼졌다면 `shutdown`/`restart`를 보냈을 것이고, 허브가 닫힌 포트의 RST를 "closed"로 적을 수 있기 때문이다. 시간 초과는 그대로 `off` 쪽으로 센다. `app_stopped`는 `status_ok`·`app_answered`·다른 `stopping`·`off`(2회 실패)에서 지워진다. 전송 오류가 나면 `client.request`가 원문과 분류를 `log.info("transport error: <원문> -> app_down|unreachable (<장치>)")`로 남긴다 — 장치마다 직전과 원문이나 분류가 다를 때만(`fields.TRANSPORT_ERROR`, HTTP 응답이 오면 지운다), 그래서 꺼진 PC가 폴링마다 줄을 쌓지 않는다. 허브에서의 실측은 플랫폼 노트 "연결 거부와 시간 초과".
 
 ### 3.2 `GET /st/v1/status`
 
@@ -261,7 +261,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | `audioVolume` (표준) | main | `volume` ← `audio.volume`(0–100) | `setVolume(v)` → `volume` + `value`, `volumeUp`/`volumeDown` → `volumeup`/`volumedown`(`value` 없음 = 서비스 기본 5) |
 | `audioMute` (표준) | main | `mute` ← `audio.muted` (`muted`/`unmuted`) | `mute`/`unmute`, `setMute(state)` |
 
-| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "PC 앱 v1.2.0 필요"), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
+| `pcPreset` (커스텀 `numbersystem53811.pcpreset`, #113) | main | `lastPreset` enum `none` `1`…`10`(목록이 쉬는 값), `names` string ← `presets[]` ("1 게임 모드 · 2 방송 시작" / "없음" / 옛 서비스면 "PC 앱 v1.2.0 필요". 이름마다 13자, 넘으면 12자 + "…"라서 열 개의 번호가 모두 200자 안에 든다, 계약 C4), `supportedSlots` string 배열 ← 등록된 슬롯(없으면 `["none"]`) | `run(slot: 문자열 enum none\|1…10)` → `preset` + `value` N |
 | `pcWatchList` (커스텀 `numbersystem53811.pcwatchlist`, #123. `pc*.v7`–`v9`의 `pcWatch`를 대신한다, §4.2) | **`apps`** (label "감시 목록") | `summary` string(≤ 60) ← `activity.apps`/`top`: "Steam" / "Steam 외 2"(en "Steam +2") / 실행 중인 것 없음 "없음" / 옵트인 꺼짐 "꺼짐" / 옛 서비스 "PC 앱 v1.2.0 필요". `names` string(≤ 120): "1 Steam · 3 OBS" / "없음" / "꺼짐". `slotOne`–`slotFive` enum `running`/`stopped`/`empty` — 루틴 조건 "감시 1"–"감시 5"(§4.2) | – |
 | `switch` (표준, #115) | **`awake`** (label "잠들지 않기") | `switch` ← `awake.on` (`on`/`off`; 블록이 없는 옛 서비스는 `off`) | `on` → `awake` + `value` = 환경설정 `awakeMinutes`(기본 60, 0 = 끌 때까지), `off` → `awakeoff` |
 | `pcToast` (커스텀 `numbersystem53811.pctoast`, #108) | main | `lastMessage` string(200자) — status가 아니라 드라이버가 가진다: 마지막으로 보낸 문구, 보낸 적이 없으면 "없음"/"None" | `send(text: string, maxLength 200)` → `POST /st/v1/notify {text}` |
@@ -297,17 +297,19 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 
 | status | `summary` | `names` | `slotN` |
 |---|---|---|---|
-| 켜짐, 항목 있음 | "Steam" / "Steam 외 1"(en "Steam +1") / 실행 중 없음 "없음". 앱 이름은 13자, 넘으면 12자 + "…"(`WATCH_SUMMARY_LABEL_MAX_CHARS`). 줄 라벨 "실행 중인 앱"이 이미 실행 중을 말한다 | "1 Steam · 3 OBS"(채워진 슬롯 순, 120자에서 "…") | 채워진 슬롯은 `running`/`stopped`, 나머지 `empty` |
+| 켜짐, 항목 있음 | "Steam" / "Steam 외 1"(en "Steam +1") / 실행 중 없음 "없음". 앱 이름은 13자, 넘으면 12자 + "…"(`WATCH_SUMMARY_LABEL_MAX_CHARS`). 줄 라벨 "실행 중인 앱"이 이미 실행 중을 말한다 | "1 Steam · 3 OBS"(채워진 슬롯 순, 앱 이름마다 13자, 넘으면 12자 + "…" — `SLOT_NAME_MAX_CHARS`, 그래서 다섯 번호가 모두 줄에 남는다. 줄 전체 상한 120자는 그대로) | 채워진 슬롯은 `running`/`stopped`, 나머지 `empty` |
 | 켜짐, 목록이 빔 | "없음" | "없음" | 모두 `empty` |
-| 옵트인 꺼짐(`features`에 `activity` 없음 포함) | "꺼짐" | "꺼짐" | **보내지 않는다**(마지막 값 유지) |
+| 옵트인 꺼짐(`features`에 `activity` 없음 포함) | "감지 꺼짐" / "Detection off"(계약 C4 — 그냥 "꺼짐"은 멈춘 슬롯의 값과 같아 앱이 꺼진 것처럼 읽혔다) | "꺼짐" | **보내지 않는다**(마지막 값 유지) |
 | 옛 서비스(`features` 없음) | "PC 앱 v1.2.0 필요" | "없음" — 목록이 없다. 요약 줄이 이유를 말하므로 같은 문구를 두 번 쓰지 않는다 | **보내지 않는다** |
 | PC 응답 없음, 아직 켜짐(첫 실패) | 그대로 | 그대로 | 그대로 |
 | PC 꺼짐·절전 / PC 앱 응답 없음(§6.2 "꺼진 PC의 표시 줄") | "PC 꺼짐" / "PC 절전" / "PC 최대 절전" / "PC 앱 응답 없음" | 그대로 | 그대로 |
 
 - **슬롯은 "켜짐"인 status만 움직인다.** 꺼진 PC·옵트인 꺼짐·옛 서비스에서 슬롯을 "꺼짐"으로 칠하면 가짜 "꺼지면" 루틴이 돈다. 기능을 잠시 끈 것은 앱이 꺼진 것이 아니다. 요약·이름 줄만 이유를 말한다.
+- **예외: 시스템 종료·재시작**(계약 C3, `push.apply`): `power.stopping`의 reason이 `shutdown`·`restart`면 `running`인 슬롯을 모두 `stopped`로, **강제로**(`state_change`) 보낸다 — 앱이 정말 꺼졌다. `extras.watch`에도 남아 다시 칠하기가 그 값을 쓴다. 이번 구동에 읽은 status가 없고 푸시에 status도 없으면 허브 캐시의 슬롯 값에서 고른다(`rows.kept_watch`). `suspend`·`hibernate`(앱은 PC와 함께 잠든다), `app_stop`(PC와 앱이 그대로), `unknown`, 네트워크 끊김·시간 초과는 슬롯을 그대로 둔다.
 - **빈 문자열은 없다.** 한 번도 칠하지 않은 장치(추가 직후, 이전 직후)의 슬롯은 `empty`, 요약·이름은 "없음"이다(`features.initial_rows`).
 - **읽기**(`features.apps_of`): slot 순으로 정렬, 1–5 밖·소수·이미 쓴 번호·빈 `id`·중복 `id`는 버린다. `slot`이 아예 없는 항목(계약 v2 이전의 Dev 서비스)은 목록 순서대로 비어 있는 가장 작은 번호를 받는다 — 서비스가 옛 설정을 읽을 때와 같은 규칙. 라벨은 30자, 비면 `id`.
-- **목록 편집 직후의 보류**(`features.watch_state`): 계약상 설정을 저장한 직후(그리고 옵트인을 다시 켠 직후) 다음 스캔까지 모든 항목이 `running: false`로 나온다. 그래서 목록(slot·id·라벨)이 직전 status와 다르거나 직전이 "켜짐"이 아니었던 status는 "실행 중"인 슬롯을 "꺼짐"으로 옮기지 않고, 목록이 그대로인 다음 status가 정한다. 결과는 `extras.watch`에 남고 `state.apply_status`가 그것을 내보낸다. 목록 편집과 겹친 진짜 종료는 status 하나만큼 늦다.
+- **첫 스캔 전의 보류**(`features.watch_state`, 계약 C2): 설정을 저장한 직후(그리고 옵트인을 켠 직후, 서비스가 막 시작했을 때) 그 설정의 첫 스캔까지 모든 항목이 `running: false`로 나오고 `activity.scanned`가 `false`다. `scanned == false`인 동안은 **어떤 슬롯도 `running`에서 `stopped`로 옮기지 않는다**(`stopped`→`running`과 새로 채워진 슬롯은 그대로 받는다). `scanned == true`면 값을 그대로 쓴다 — 목록이 방금 바뀌었어도. 결과는 `extras.watch`에 남고 `state.apply_status`가 그것을 내보낸다.
+- **`scanned`가 없는 status**(필드 이전의 서비스)는 예전 추측을 쓴다: 목록(slot·id·라벨)이 직전 status와 다르거나 직전이 "켜짐"이 아니었던 status는 "실행 중"인 슬롯을 "꺼짐"으로 옮기지 않고, 목록이 그대로인 다음 status가 정한다. 목록 편집과 겹친 진짜 종료는 status 하나만큼 늦다.
 - **줄은 바뀔 때만 나간다.** 모든 줄이 PC 장치의 `emit.rows`를 지나므로 중복 거르기·실행 첫 전송 강제·순환 재전송·재시작의 상태 캐시 시드(§6.1)가 다른 줄과 똑같다. 행 키는 `apps/numbersystem53811.pcwatchlist.<attr>`이고, 요약 줄은 다시 칠하기의 첫 묶음(`emit.PAINT_FIRST`)에 든다.
 - **다시 칠하기**(`poll.repaint`)는 슬롯을 마지막 값으로 칠한다: 이번 구동의 `extras.watch` → 이번 실행에서 보낸 값 → 허브 상태 캐시(`get_latest_state`) → 없으면 `empty`(`poll.kept_watch`). 옵트인이 꺼진 동안의 아이콘 전환이 슬롯을 지어내지 않는다.
 - **이전**: `pc*.v6`–`pc*.v9` → `pc*.v10`은 스타일·배터리 쪽을 지키고(§6.6), 새 프로필의 기록이 비어 있으므로 일곱 줄을 모두 다시 칠한다(v7–v9 장치의 카드는 옛 id `pcwatch`였으므로 `pcwatchlist`의 줄은 모두 새로 시작한다). 테스트 기준(§6.1의 측정 조건, `pc-monitor.v10` → `pc-monitor.v10`): 줄 48개를 강제로 한 번씩, 9개씩 5초 간격으로 마지막 줄이 25초, 가장 바쁜 10초 18개, 2분 동안 모두 71개.
@@ -391,7 +393,8 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | `unreachable` | `waking`이면 유지, `sleeping`/`hibernated`면 유지, 그 밖에는 **연속 2회**에서 `off`(직전 `stopping` 사유가 절전이면 그 상태 유지). `app_down` 표시를 지운다 |
 | `app_down`(연결 거부, §3.1) | 실패 카운터 0(**`off` 쪽으로 세지 않는다**), `app_down` 표시. `shuttingDown`이면 유지(Windows가 서비스를 먼저 멈추고, 네트워크가 내려가면 `unreachable` 2회로 `off`), 그 밖에는 → `on` — 켜져 있던 PC는 그대로, `off`·`sleeping`·`hibernated`·`unknown`·`waking`에서는 PC가 올라왔고 앱만 아직이다. `waking`이었으면 깨우기 타이머를 취소한다("깨우기 실패"가 뜨지 않게) |
 | `app_answered` | 401·404 등 PC 앱이 (틀리게라도) 답했다: `app_down` 표시만 지운다 |
-| `stopping`(reason) | `suspend`→`sleeping`, `hibernate`→`hibernated`, `shutdown`/`restart`/기타→`shuttingDown` |
+| `stopping`(reason) | `suspend`→`sleeping`, `hibernate`→`hibernated`, `shutdown`/`restart`/기타→`shuttingDown`. `shutdown`/`restart`면 실행 중이던 감시 슬롯도 `stopped`(강제, §4.2) |
+| `stopping`(`app_stop`, 계약 C1) | 서비스만 멈추고 PC는 켜져 있다(업데이트·제거·서비스 재시작·사용자가 멈춤): **전원 전이가 아니다.** `app_down`과 같다 — 실패 카운터 0, `app_down` 표시, `shuttingDown`이 아니면 → `on`, 그리고 `app_stopped` 표시(이 장애는 앱이 스스로 멈춘 것, §3.1의 `closed` 예외). 표시 전용 줄과 pcInfo가 **곧바로** "PC 앱 응답 없음"이 된다(다음 폴링을 기다리지 않는다, `push.apply_to_device`). 푸시에 실린 status는 기억만 하고 그 줄("연결됨")은 내보내지 않는다. 이어지는 거부는 그대로 두고, 시간 초과는 평소처럼 2회에 `off` |
 | `switch_on` | → `waking`, 직전 상태를 기억 |
 | `wake_timeout` | `waking`이면 기억해 둔 직전 상태로 |
 | `schedule_cancelled` | `shuttingDown`이면 → `on` (유예 취소가 스위치를 되살린다) |
@@ -406,10 +409,13 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 | 두 번째 실패(시간 초과) | `unreachable` | `off` → 같음 | 같음 | "PC에 연결할 수 없습니다" → "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다" | 마지막 값("Steam", 곡, "사용 중 · kim") → "PC 꺼짐" |
 | 절전·최대 절전 뒤 실패 | `unreachable` | `sleeping`/`hibernated` → 같음 | 같음 | 같음 | 마지막 값 → "PC 절전"·"PC 최대 절전" |
 | 연결 거부(PC 켜짐, 앱 멈춤) | `unreachable` | 2회에 `off` → **`on` 유지**(꺼져 있었으면 `on`) | "응답 없음 · 마지막 확인 …" → "PC 앱 응답 없음" | "PC에 연결할 수 없습니다" → "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요" | 마지막 값 → "PC 앱 응답 없음" |
+| 서비스 중지 푸시 `power.stopping` `app_stop` (C1) | 그대로 → `unreachable` | `shuttingDown`(그 전 `unknown`) → **`on` 유지** | "연결됨" → "PC 앱 응답 없음"(푸시 즉시) | → "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요" | 마지막 값 → "PC 앱 응답 없음" |
+| `app_stop` 뒤 `closed`/`reset` | `unreachable` | `on` 유지(거부와 같다, §3.1) | 같음 | 같음 | 같음 |
+| `app_stop` 뒤 시간 초과 | `unreachable` | 첫 번째 `on`, 두 번째 `off` | "응답 없음 · …" | 두 번째에 "PC가 꺼져 있거나 …" | 두 번째에 "PC 꺼짐" |
 
 #### 꺼진 PC의 표시 줄
 
-`state.offline_mode`가 `off`·`sleeping`·`hibernated`·`app_down`이면(첫 실패, `waking`, `shuttingDown`은 아니다) 실패한 폴링마다 `rows.emit_offline`이 살아 있는 PC만 설명하는 줄을 그 문구("PC 꺼짐"·"PC 절전"·"PC 최대 절전"·"PC 앱 응답 없음", en "PC off"·"PC asleep"·"PC hibernated"·"PC app not responding")로 보낸다: 감시 목록 카드의 `summary`, `audioTrackData`의 `title`(이번 실행의 status가 `media` 블록을 실었을 때, status를 아직 못 읽었으면 허브 캐시에 값이 있을 때만 — 칠한 적 없는 줄은 되돌릴 status도 없다), `pcUser.summary`.
+`state.offline_mode`가 `off`·`sleeping`·`hibernated`·`app_down`이면(첫 실패, `waking`, `shuttingDown`은 아니다) 실패한 폴링마다(그리고 `power.stopping` `app_stop` 푸시에서 한 번) `rows.emit_offline`이 살아 있는 PC만 설명하는 줄을 그 문구("PC 꺼짐"·"PC 절전"·"PC 최대 절전"·"PC 앱 응답 없음", en "PC off"·"PC asleep"·"PC hibernated"·"PC app not responding")로 보낸다: 감시 목록 카드의 `summary`, `audioTrackData`의 `title`(이번 실행의 status가 `media` 블록을 실었을 때, status를 아직 못 읽었으면 허브 캐시에 값이 있을 때만 — 칠한 적 없는 줄은 되돌릴 status도 없다), `pcUser.summary`.
 
 - **루틴이 읽거나 목록이 쉬는 줄은 건드리지 않는다**: `switch`·`powerState`(위 표), 감시 슬롯 `slotOne`–`slotFive`(꺼진 PC는 마지막 값을 지킨다, §4.2), `playbackStatus`("정지"로 바꾸면 그 값에 걸린 루틴이 PC가 꺼질 때마다 돈다), `audioVolume`·`audioMute`, 잠들지 않기 스위치, `pcUser.locked`·`user`·`idleMinutes`, 감시 목록의 `names`(어느 앱이 어느 번호인지는 바뀌지 않았다).
 - 일반 emit이라 같은 값은 **한 번만** 나간다(§6.1 중복 거르기). PC가 다시 답하면 그 status가 실제 값을 보내고, 값이 다르므로 중복 거르기에 막히지 않는다. 순환 재전송은 마지막으로 보낸 값(이 문구)을 그대로 돈다.
@@ -627,5 +633,5 @@ Edge 환경설정에는 로케일별 변형이 없어 제목·설명을 "한국�
 - `supportedValues`로 명령 목록·프리셋 슬롯을 줄이는지(#93, #113, 플랫폼 노트).
 - 대시보드 타일에 전원 상태 문구가 보이는지(#101), 카테고리별 실제 아이콘(#100).
 - 표준 capability 줄(미디어 묶음)이 상태·조작 카드와 섞이는지, 값이 없는 재생 줄의 모양(`features.PLAYBACK_RESTING`, #107, #118).
-- 서비스를 멈춘 PC에 허브가 연결하면 실제로 `connection refused`(또는 `refused`가 든 문구)를 받는지, 꺼진 PC는 시간 초과인지(§3.1, `app_down`). 플랫폼 노트 "연결 거부와 시간 초과".
+- 서비스를 멈춘 PC에 허브가 연결하면 실제로 `connection refused`(또는 `refused`가 든 문구)를 받는지, `closed`로 적히는지, 꺼진 PC는 시간 초과인지(§3.1, `app_down`). logcat의 `transport error: … -> …` 줄로 본다. `app_stop` 뒤 `closed`를 `app_down`으로 읽는 예외가 맞는지도 여기서 정해진다. 플랫폼 노트 "연결 거부와 시간 초과".
 - 감시 목록 카드(컴포넌트 `apps`)가 한 카드로 그려지는지, 상태 줄 일곱이 반 폭으로 잘리는지, 루틴 조건 "감시 1"–"감시 5"(#123). v6의 앱 자식 장치가 `driver:try_delete_device`로 지워지는지.

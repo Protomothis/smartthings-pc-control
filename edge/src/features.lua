@@ -528,10 +528,19 @@ end
 -- 255 characters and this stays well inside it.
 features.NAMES_MAX_CHARS = 200
 
+-- One slot's name inside a names row (presets and the watch list): twelve
+-- characters, a longer one keeps twelve and "…" (`truncate` to 13). With the
+-- whole row cut at its cap, one long name used to push every later slot - and
+-- its number - off the row; this way ten presets ("10 " + 13 + " · " each)
+-- stay inside `NAMES_MAX_CHARS` and five watch slots inside
+-- `WATCH_NAMES_MAX_CHARS`, so every slot number is on the row.
+features.SLOT_NAME_MAX_CHARS = 13
+
 --- `pcPreset.names`: "1 게임 모드 · 2 방송 시작", or "없음" when the PC has no
 --- preset. A service older than v1.2.0 gets "PC 앱 v1.2.0 필요" - the row is
 --- there on every v2 screen and has to say why it is empty. Never "": an empty
---- state row reads "-" (platform notes "상세 화면(detailView) 위젯").
+--- state row reads "-" (platform notes "상세 화면(detailView) 위젯"). Each
+--- name is cut to `SLOT_NAME_MAX_CHARS`.
 function features.preset_names(status, lang)
   if features.parse(status) == false then
     return features.note_text(lang, "needs_service")
@@ -539,7 +548,8 @@ function features.preset_names(status, lang)
   local parts = {}
   for _, preset in ipairs(features.presets_of(status)) do
     local name = preset.name ~= "" and preset.name or i18n.t(lang, "preset_unnamed")
-    parts[#parts + 1] = tostring(preset.slot) .. " " .. name
+    parts[#parts + 1] = tostring(preset.slot) .. " "
+      .. features.truncate(name, features.SLOT_NAME_MAX_CHARS)
   end
   if #parts == 0 then
     return i18n.t(lang, "presets_none")
@@ -662,7 +672,8 @@ end
 ---          names row says "없음"
 ---   "off"  the opt-in is off, the service does not list the feature, or the
 ---          block is not one this driver can read (a Dev build of the
----          kind-based #114 block): summary and names say "꺼짐"
+---          kind-based #114 block): the summary says "감지 꺼짐", the
+---          names row "꺼짐"
 ---   "on"   the list is on and `activity.apps` is its contents, possibly empty
 ---
 -- Only "on" moves a slot. "old" and "off" leave every slot on its last value:
@@ -762,9 +773,11 @@ function features.apps_top(status, apps)
 end
 
 --- `pcWatchList.summary`: "Steam", "Steam 외 2" ("Steam +2"), "없음" when
---- nothing on the list runs, "꺼짐" when the list is off, and "PC 앱 v1.2.0
---- 필요" (RECOMMENDED_SERVICE_VERSION) for a service that has no such list. Never "" (an empty state row
---- reads "-", platform notes "상세 화면(detailView) 위젯").
+--- nothing on the list runs, "감지 꺼짐" ("Detection off") when the list is
+--- off - not a bare "꺼짐", which is also what a slot that stopped reads - and
+--- "PC 앱 v1.2.0 필요" (RECOMMENDED_SERVICE_VERSION) for a service that has
+--- no such list. Never "" (an empty state row reads "-", platform notes "상세
+--- 화면(detailView) 위젯").
 ---
 --- Short on purpose: the row is the first of the card's preview in the main
 --- view, a third of the width in large type, and its label "실행 중인 앱"
@@ -776,7 +789,7 @@ function features.apps_summary(status, lang)
     return features.note_text(lang, "needs_service")
   end
   if mode == features.APPS_OFF then
-    return i18n.t(lang, "apps_off")
+    return i18n.t(lang, "apps_detection_off")
   end
   local top, others = features.apps_top(status, features.apps_of(status))
   if not top then
@@ -792,7 +805,8 @@ end
 
 --- `pcWatchList.names`: the filled slots in order, "1 Steam · 3 OBS"; "없음" for
 --- an empty list (and for a service too old to have one - the summary row
---- says why), "꺼짐" for a list that is off. Never "".
+--- says why), "꺼짐" for a list that is off. Never "". Each label is cut to
+--- `SLOT_NAME_MAX_CHARS`.
 function features.watch_names(status, lang)
   local mode = features.apps_mode(status)
   if mode == features.APPS_OFF then
@@ -800,7 +814,8 @@ function features.watch_names(status, lang)
   end
   local parts = {}
   for _, app in ipairs(features.apps_of(status)) do
-    parts[#parts + 1] = tostring(app.slot) .. " " .. app.label
+    parts[#parts + 1] = tostring(app.slot) .. " "
+      .. features.truncate(app.label, features.SLOT_NAME_MAX_CHARS)
   end
   if #parts == 0 then
     return i18n.t(lang, "apps_none")
@@ -838,12 +853,17 @@ end
 -- slots are then not sent at all and the hub keeps what it has).
 --
 -- The hold: right after the list is edited on the PC (or the feature switched
--- on), the service lists every entry as `running: false` until its next scan
--- (contract). So a status whose list differs from the previous one - or that
--- follows one that was not "on" - does not move a slot from "running" to
--- "stopped"; the next status, with the list unchanged, decides. A real stop
--- that coincides with an edit is late by one status; a fake one would have
--- fired every "꺼지면" routine.
+-- on, or the service started), the service lists every entry as
+-- `running: false` until its first scan for that list, and says so:
+-- `activity.scanned` is false until then (contract C2). While it is false no
+-- slot moves from "running" to "stopped" - a fake stop would fire every
+-- "꺼지면" routine; once it is true the values are taken as they are.
+--
+-- A service without `scanned` (before the field) gets the old guess: a status
+-- whose list differs from the previous one - or that follows one that was not
+-- "on" - does not move a slot from "running" to "stopped"; the next status,
+-- with the list unchanged, decides. A real stop that coincides with an edit is
+-- late by one status there.
 function features.watch_state(status, previous)
   previous = type(previous) == "table" and previous or {}
   if features.apps_mode(status) ~= features.APPS_ON then
@@ -853,8 +873,16 @@ function features.watch_state(status, previous)
   local values = features.watch_slots(apps)
   local signature = features.watch_signature(apps)
   local shown = previous.watch
-  local changed = previous.apps_mode ~= features.APPS_ON or previous.watch_signature ~= signature
-  if changed and type(shown) == "table" then
+  local scanned = status.activity.scanned
+  local hold
+  if scanned == false then
+    hold = true
+  elseif scanned == true then
+    hold = false
+  else
+    hold = previous.apps_mode ~= features.APPS_ON or previous.watch_signature ~= signature
+  end
+  if hold and type(shown) == "table" then
     for slot = 1, features.WATCH_SLOTS do
       if shown[slot] == features.WATCH_RUNNING and values[slot] == features.WATCH_STOPPED then
         values[slot] = features.WATCH_RUNNING
@@ -862,6 +890,27 @@ function features.watch_state(status, previous)
     end
   end
   return values, signature
+end
+
+--- Contract C3: the PC shuts down or restarts, so the apps it ran really
+--- stopped. A copy of `watch` with every `running` slot `stopped`, and the
+--- records of the slots that moved - forced, so a routine on "꺼지면" fires
+--- even when a lost event left the cloud elsewhere. `watch` is not modified;
+--- nil (nothing known) moves nothing.
+function features.stop_watch(watch)
+  if type(watch) ~= "table" then
+    return watch, {}
+  end
+  local out, records = {}, {}
+  for slot = 1, features.WATCH_SLOTS do
+    out[slot] = watch[slot]
+    if watch[slot] == features.WATCH_RUNNING then
+      out[slot] = features.WATCH_STOPPED
+      records[#records + 1] = { cap = features.CAP_WATCH, attr = features.slot_attr(slot),
+        value = features.WATCH_STOPPED, component = features.WATCH_COMPONENT, force = true }
+    end
+  end
+  return out, records
 end
 
 --- #123: the watch card's rows of a status body, on the `apps` component.

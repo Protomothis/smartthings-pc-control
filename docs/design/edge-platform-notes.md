@@ -187,8 +187,11 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 서비스는 설치 때 자기 TCP 명령 포트에 **인바운드 허용 규칙**을 만든다(`service/firewall.go`). 규칙이 있는 포트에 아무도 듣고 있지 않으면 Windows는 SYN을 버리지 않고 RST로 답한다 → 허브의 connect가 즉시 `ECONNREFUSED`. 규칙이 없으면 기본 방화벽은 조용히 버리므로 거부가 아니라 시간 초과가 된다 — 이 구분은 **규칙에 기대고 있다**(사용자가 규칙을 지웠거나 다른 방화벽이 막으면 앱이 멈춘 PC도 `unreachable`로 보이고, 예전처럼 2회 뒤 꺼짐이 된다. 해롭지는 않다).
 - 꺼졌거나 잠들었거나 선이 빠진 PC는 ARP에도 답하지 않으므로 시간 초과(또는 `No route to host`·`Host is unreachable`)다. 공유기는 LAN 호스트 대신 RST를 보내지 않는다.
 - 오류 문구: luasocket은 `ECONNREFUSED`를 "connection refused"로, `ECONNRESET`과 끊긴 연결을 둘 다 "closed"로, 시간 초과를 "timeout"으로 쓰고, 그 밖은 `strerror`다. 허브의 소켓 계층이 Rust라면 "Connection refused (os error 111)" 꼴일 수 있다. 그래서 대소문자 없이 `refused`가 들어 있는지만 본다. "closed"는 연결 단계인지 알 수 없어 `unreachable`에 둔다.
+- **"closed"의 예외(2026-10-03, 미확인)**: 장애가 서비스의 `power.stopping` `app_stop`(서비스만 멈추고 PC는 켜진 채)으로 시작됐으면, 다음 성공·`off`까지 "closed"·"reset"이 든 문구도 `app_down`으로 읽는다(설계 §3.1). 이유: 허브의 소켓 계층이 닫힌 포트의 RST를 "connection refused"가 아니라 "closed"로 적을 수 있고, 방금 "PC는 그대로"라고 말한 PC가 실제로 꺼졌다면 `shutdown`/`restart`를 보냈을 것이다. 그래도 PC가 사라지면 시간 초과가 평소대로 2회에 꺼짐으로 데려간다. 이 예외가 실제로 필요한지(허브가 정말 "closed"라고 하는지)는 아래 로그로 확인한다.
+- **전송 오류 로그(2026-10-03)**: 허브가 거부된 연결에 실제로 어떤 문구를 주는지는 아직 아무도 보지 못했다. 그래서 `client.request`가 전송 오류마다 `log.info("transport error: <원문> -> app_down|unreachable (<장치 id>)")`를 남긴다 — 장치마다 원문이나 분류가 직전과 다를 때만(`fields.TRANSPORT_ERROR`). HTTP 응답이 한 번 오면 지워지므로 다음 장애의 첫 오류는 같은 문구라도 다시 찍힌다. 꺼진 PC가 30초마다 줄을 쌓지 않는다.
+- 실제로 본 것(2026-10-03, 허브): 서비스를 그냥 멈추자 "PC 꺼짐"이 떴다. 원인은 서비스가 보낸 `power.stopping` `unknown`(→ `shuttingDown` → 2회 실패로 `off`)이었고, 서비스가 `app_stop`을 보내도록 고쳤다(계약 C1). 그때의 허브 오류 문구는 남아 있지 않다.
 - 위험: PC가 다른 주소로 옮기고 옛 주소를 다른 기기가 받아 RST로 답하면 "PC 앱 응답 없음"이 계속된다. 그래서 거부에도 `unreachable`처럼 장치당 5분에 한 번 표적 SSDP 검색을 돈다(설계 §6.5). 다만 PC 앱이 멈춘 PC는 SSDP에도 답하지 않는다(SSDP 응답기는 서비스 안에 있다).
-- **실측할 것**: PC 앱(서비스)을 멈춘 PC에 대한 허브 logcat의 오류 문구가 `refused`를 포함하는지, 꺼진 PC는 "timeout"인지. 문구가 다르면 `client.transport_kind`를 고친다.
+- **실측할 것**: PC 앱(서비스)을 멈춘 PC에 대한 허브 logcat의 `transport error:` 줄 — 문구가 `refused`를 포함하는지, "closed"인지(그러면 `app_stop` 없이 멈춘 앱도 `unreachable`로 보이므로 규칙을 다시 본다), 꺼진 PC는 "timeout"인지. 문구가 다르면 `client.transport_kind`를 고친다.
 
 ## 남은 실측
 

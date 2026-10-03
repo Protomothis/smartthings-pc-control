@@ -15,6 +15,7 @@ local discovery = require "discovery"
 local emit = require "device.emit"
 local features = require "features"
 local fields = require "device.fields"
+local i18n = require "i18n"
 local rows = require "device.rows"
 local state = require "state"
 local wol = require "wol"
@@ -146,29 +147,85 @@ function push.event_for(event_type, data)
   return "status_ok", nil
 end
 
---- Apply one push payload: `next_state, events`.
+--- True for the `power.stopping` of a plain service stop (contract C1).
+function push.app_stopping(event, reason)
+  return event == "stopping" and reason == state.APP_STOP
+end
+
+--- Apply one push payload: `next_state, events, event, stopped`.
 --
 -- Pure, and deliberately the same second half as a poll: the `type` advances
 -- the state machine, then the attached `status` goes through
 -- `state.apply_status` exactly as `poll.once` would (§6.3).
+--
+-- Two `power.stopping` reasons go further:
+--
+--   app_stop          the service is going away and the PC is not (contract
+--                     C1): the state is app-down at once, and `events` is nil
+--                     like a push without a status - the status still updates
+--                     what the driver remembers, but its rows would say
+--                     "연결됨" on the way out. `apply_to_device` paints the
+--                     app-down rows instead.
+--   shutdown/restart  the apps really stopped (C3): every watch slot that ran
+--                     is `stopped`, forced. `stopped` lists those records; in
+--                     `events` they are the slot rows, marked forced.
+--
+-- `opts.watch`: the slot values to stop when no status has been read in this
+-- run (`rows.kept_watch`); otherwise the remembered ones are.
 function push.apply(device_state, payload, opts)
   payload = payload or {}
+  opts = opts or {}
   local event, reason = push.event_for(payload.type, payload.data)
   local nxt = state.transition(device_state or state.new(), event, reason)
 
   local status = payload.status
-  if type(status) ~= "table" then
-    -- No status block: the event still moved the power state, nothing else.
-    return nxt, nil, event
+  if type(status) == "table" then
+    -- #93: the countdown and the command come with `active` now - the grace
+    -- period a `switch off` starts is only ever visible as a pending schedule,
+    -- and `apply_status` reads it back out for `supportedCommands`.
+    state.remember_schedule(nxt, status)
+    -- #107: `audio.changed` and its siblings carry the same status document,
+    -- so what the command handlers check is kept current by pushes too.
+    features.remember(nxt, status)
   end
-  -- #93: the countdown and the command come with `active` now - the grace
-  -- period a `switch off` starts is only ever visible as a pending schedule,
-  -- and `apply_status` reads it back out for `supportedCommands`.
-  state.remember_schedule(nxt, status)
-  -- #107: `audio.changed` and its siblings carry the same status document, so
-  -- what the command handlers check is kept current by pushes too.
-  features.remember(nxt, status)
-  return nxt, state.apply_status(nxt, status, opts), event
+
+  local stopped = {}
+  if event == "stopping" and state.APPS_STOP_REASONS[reason or ""] then
+    local watch
+    if type(nxt.extras) == "table" then
+      watch, stopped = features.stop_watch(nxt.extras.watch)
+      -- `extras` may be shared with the state it was copied from: a new one.
+      local extras = {}
+      for k, v in pairs(nxt.extras) do
+        extras[k] = v
+      end
+      extras.watch = watch
+      nxt.extras = extras
+    else
+      -- Nothing read in this run: what the card shows. `extras` stays nil,
+      -- which is how a command handler knows to ask first.
+      stopped = select(2, features.stop_watch(opts.watch))
+    end
+  end
+
+  if type(status) ~= "table" or push.app_stopping(event, reason) then
+    -- No status block (or rows it should not paint): the event still moved
+    -- the power state, nothing else.
+    return nxt, nil, event, stopped
+  end
+  local events = state.apply_status(nxt, status, opts)
+  if #stopped > 0 then
+    local forced = {}
+    for _, e in ipairs(stopped) do
+      forced[e.attr] = true
+    end
+    for _, e in ipairs(events) do
+      if e.component == features.WATCH_COMPONENT and forced[e.attr] then
+        e.force = true
+      end
+    end
+  end
+  return nxt, events, event, stopped
 end
 
 --------------------------------------------------------------------------------
@@ -460,13 +517,17 @@ end
 --- Apply a payload to one device through the same glue a poll uses (§6.3).
 function push.apply_to_device(driver, device, payload, deps)
   deps = deps or {}
-  local nxt, events, event = push.apply(fields.state(device), payload, {
+  local lang = fields.lang(device)
+  local nxt, events, event, stopped = push.apply(fields.state(device), payload, {
     now = clock.now(),
-    lang = fields.lang(device),
+    lang = lang,
+    -- Only read when no status has been: the hub's state cache, per slot.
+    watch = fields.extras(device) == nil and rows.kept_watch(device) or nil,
   })
   fields.set_state(device, nxt)
+  local app_stop = push.app_stopping(event, ((payload or {}).data or {}).reason)
 
-  if event == "status_ok" then
+  if event == "status_ok" or app_stop then
     -- A push proves the PC is up: a pending wake timeout is done with (§6.4).
     pcall(function() wol.cancel_wake(driver, device) end)
   end
@@ -483,6 +544,17 @@ function push.apply_to_device(driver, device, payload, deps)
     pcall(function() wired.follow_battery(driver, device, payload.status) end)
   else
     rows.emit_power(device, nxt)
+    -- C3 without a status block: the slots that ran, stopped and forced.
+    emit.rows(device, stopped or {})
+  end
+  if app_stop then
+    -- C1: what a refused poll paints, a poll early - the rows that describe a
+    -- live PC and both pcInfo rows say the PC app is not there; the power
+    -- rows stay on. The refusals that follow send none of it again.
+    rows.emit_offline(device, nxt)
+    rows.emit_connection(device, "unreachable", i18n.t(lang, "app_down"), deps, "app_down")
+    pcall(function() device:online() end)
+    logger().info(string.format("PC app on %s stopped (power.stopping app_stop)", tostring(device.id)))
   end
   -- A `power.stopping` push is the fastest the driver learns that the PC is
   -- on its way out: the list rows move to their resting values here.
