@@ -155,15 +155,17 @@ func funcMap(lang string) template.FuncMap {
 }
 
 // stopReasonNames is the power.stopping reason wire value (edge-driver doc
-// §6.2) in the two languages. "unknown" is a plain service stop, which the
-// service cannot tell apart from the start of a shutdown, so it is worded
-// as one rather than as "unknown" (#87).
+// §6.2) in the two languages. "app_stop" is a plain service stop - an
+// update, an uninstall, the service being restarted - and the PC stays on.
+// "unknown" is a system shutdown with nothing better to say, so it is
+// worded as one rather than as "unknown" (#87).
 var stopReasonNames = map[string][2]string{
 	// {ko, en}
 	"shutdown":  {"종료", "Shut down"},
 	"restart":   {"재시작", "Restart"},
 	"suspend":   {"절전", "Sleep"},
 	"hibernate": {"최대 절전", "Hibernate"},
+	"app_stop":  {"앱만 중지 (PC는 켜져 있음)", "App only (the PC stays on)"},
 	"unknown":   {"종료", "Shut down"},
 }
 

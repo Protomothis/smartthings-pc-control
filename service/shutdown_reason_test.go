@@ -193,13 +193,54 @@ func TestStopReasonFallsBackWhenTheLogSaysNothing(t *testing.T) {
 	}
 
 	// A plain SERVICE_CONTROL_STOP is not a system shutdown: the PC stays
-	// on, so the reason stays "unknown" and the event log is not read -
+	// on, so the reason is "app_stop" and the event log is not read -
 	// the newest 1074 would be about the last real shutdown.
 	before := called
-	if got := stopReason(false); got != "unknown" {
-		t.Errorf("stopReason(stop) = %q, want unknown", got)
+	if got := stopReason(false); got != "app_stop" {
+		t.Errorf("stopReason(stop) = %q, want app_stop", got)
 	}
 	if called != before {
 		t.Error("a plain stop must not query the event log")
+	}
+}
+
+// TestStopReasonTable walks the whole ladder for both SCM controls.
+func TestStopReasonTable(t *testing.T) {
+	orig := sys.shutdownLog
+	t.Cleanup(func() { sys.shutdownLog = orig; resetPowerCommandHint() })
+
+	logSays := func(typ string) func(context.Context) ([]byte, error) {
+		if typ == "" {
+			return func(context.Context) ([]byte, error) { return nil, errors.New("no events") }
+		}
+		return func(context.Context) ([]byte, error) { return sampleEvent1074(time.Now(), typ), nil }
+	}
+	for _, tc := range []struct {
+		name           string
+		hint           string // power command run in the last two minutes
+		eventLog       string // param5 of the newest 1074, "" = none
+		systemShutdown bool
+		want           string
+	}{
+		{"plain stop, nothing else", "", "", false, "app_stop"},
+		{"plain stop ignores a recent restart record", "", "restart", false, "app_stop"},
+		{"plain stop right after a remote shutdown", "shutdown", "", false, "shutdown"},
+		{"plain stop right after a remote restart", "restart", "", false, "restart"},
+		{"system shutdown after a suspend command", "suspend", "restart", true, "suspend"},
+		{"system shutdown after a hibernate command", "hibernate", "", true, "hibernate"},
+		{"system shutdown, 1074 restart", "", "restart", true, "restart"},
+		{"system shutdown, 1074 power off", "", "power off", true, "shutdown"},
+		{"system shutdown, log silent", "", "", true, "shutdown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetPowerCommandHint()
+			if tc.hint != "" {
+				notePowerCommand(tc.hint)
+			}
+			sys.shutdownLog = logSays(tc.eventLog)
+			if got := stopReason(tc.systemShutdown); got != tc.want {
+				t.Errorf("stopReason(%v) = %q, want %q", tc.systemShutdown, got, tc.want)
+			}
+		})
 	}
 }

@@ -84,9 +84,11 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// synchronously (up to 1.5s, edge-driver doc §3.5) so the hub
 			// learns the PC is going away before it stops answering; the
 			// stop continues right afterwards either way. reason is
-			// shutdown/restart/suspend/hibernate/unknown (§6.2): the SCM
+			// shutdown/restart/suspend/hibernate/app_stop (§6.2): the SCM
 			// only distinguishes a system shutdown from a plain stop, so
-			// the command this service just ran refines it.
+			// the command this service just ran refines it. A plain stop
+			// nothing explains is app_stop: the service goes away
+			// (update, uninstall, a service restart) and the PC stays on.
 			//
 			// #87: when nothing this service ran explains the stop - the
 			// user pressed 다시 시작 in the Start menu, or Windows Update
