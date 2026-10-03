@@ -208,6 +208,11 @@ func (u *ui) addPresetRow(r presetRow) {
 	}
 	w.typ.OnChanged = func(string) {
 		w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
+		if w.row().Type == "url" {
+			// A URL takes no arguments: clear them rather than keep a
+			// greyed value that would still be saved or checked.
+			w.args.SetText("")
+		}
 		w.setEditable(u.editorsLocked())
 		u.refreshDirty()
 	}

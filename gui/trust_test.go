@@ -234,6 +234,26 @@ func TestSaveShowsPresetWarningsOnTheRow(t *testing.T) {
 	}
 }
 
+// Review 3: switching a row to URL clears its arguments (the entry and
+// what the row reads as), and switching back opens the entry again.
+func TestURLTypeClearsTheArguments(t *testing.T) {
+	u, _ := newFakeServiceUI(t)
+	w := u.presets.rows[0]
+	w.args.SetText(`"open`) // even an unparsable line
+	w.typ.SetSelectedIndex(1)
+	if w.args.Text != "" || w.row().Args != "" || !w.args.Disabled() || !w.browse.Disabled() {
+		t.Errorf("url row: args %q (disabled %v)", w.args.Text, w.args.Disabled())
+	}
+	w.path.SetText("https://example.com")
+	if key, _ := rowsProblem(u.presets.state().Rows); key != "" {
+		t.Errorf("url row problem %q", key)
+	}
+	w.typ.SetSelectedIndex(0)
+	if w.args.Disabled() || w.browse.Disabled() {
+		t.Error("program row: args or browse still disabled")
+	}
+}
+
 // C6: a name another row has too is marked inline on both rows.
 func TestDuplicateNameInline(t *testing.T) {
 	u, _ := newFakeServiceUI(t)

@@ -121,6 +121,15 @@ func rowProblem(r presetRow) string {
 	case path == "":
 		return "presets.err.path"
 	}
+	if r.Type == "url" {
+		// A URL takes no arguments; whatever the (cleared, greyed) entry
+		// holds is dropped by preset(), so it is not checked either.
+		u, err := url.Parse(path)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return "presets.err.url"
+		}
+		return ""
+	}
 	args, err := splitArgs(r.Args)
 	if err != nil {
 		return "presets.err.quote"
@@ -130,14 +139,6 @@ func rowProblem(r presetRow) string {
 	}
 	lower := strings.ToLower(path)
 	switch r.Type {
-	case "url":
-		u, err := url.Parse(path)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return "presets.err.url"
-		}
-		if len(args) > 0 {
-			return "presets.err.urlargs"
-		}
 	case "program":
 		if !isAbsPath(path) {
 			return "presets.err.abs"
@@ -168,12 +169,12 @@ func isAbsPath(p string) bool {
 // preset turns a row into the wire form (trimmed name and path, split
 // arguments; a URL never carries any).
 func (r presetRow) preset() (Preset, error) {
-	args, err := splitArgs(r.Args)
-	if err != nil {
-		return Preset{}, err
-	}
-	if r.Type == "url" {
-		args = nil
+	var args []string
+	if r.Type != "url" {
+		var err error
+		if args, err = splitArgs(r.Args); err != nil {
+			return Preset{}, err
+		}
 	}
 	return Preset{
 		Slot: r.Slot,

@@ -80,7 +80,6 @@ func TestRowProblem(t *testing.T) {
 		"presets.err.quote":    {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: `"open`},
 		"presets.err.args":     {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: strings.Repeat("a ", 33)},
 		"presets.err.url":      {Slot: 1, Name: "x", Type: "url", Path: "file:///C:/x"},
-		"presets.err.urlargs":  {Slot: 1, Name: "x", Type: "url", Path: "https://x", Args: "a"},
 		"presets.err.abs":      {Slot: 1, Name: "x", Type: "program", Path: "notepad.exe"},
 		"presets.err.exe":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
 		"presets.err.script":   {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
@@ -92,6 +91,18 @@ func TestRowProblem(t *testing.T) {
 	rows := []presetRow{ok[0], {Slot: 1, Name: "again", Type: "url", Path: "https://x"}}
 	if key, slot := rowsProblem(rows); key != "presets.err.dup" || slot != 1 {
 		t.Errorf("rowsProblem = %q, %d", key, slot)
+	}
+
+	// A URL row's arguments are ignored, whatever is in them (review 3):
+	// the editor clears them, and preset() drops them.
+	for _, args := range []string{"a", `"open`, strings.Repeat("a ", 40)} {
+		r := presetRow{Slot: 1, Name: "x", Type: "url", Path: "https://x", Args: args}
+		if key := rowProblem(r); key != "" {
+			t.Errorf("url row with args %q: %s", args, key)
+		}
+		if p, err := r.preset(); err != nil || p.Args != nil {
+			t.Errorf("url row with args %q -> %+v, %v", args, p, err)
+		}
 	}
 }
 
