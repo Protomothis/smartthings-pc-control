@@ -15,7 +15,9 @@
 -- `deps` lets tests inject a fake http/json/ltn12 instead of cosock.
 
 local VERSION = require "driver_version"
+local clock = require "device.clock"
 local fields = require "device.fields"
+local state = require "state"
 
 local client = {}
 
@@ -121,10 +123,20 @@ end
 -- demonstrably up a moment ago and said it stays up, so the only thing that
 -- could make it "unreachable" is a shutdown, which would have pushed
 -- `shutdown`/`restart` instead - and the timeouts of a PC that did go away
--- still count towards `off`. Without that push "closed" stays `unreachable`.
-function client.transport_kind(message, after_app_stop)
+-- still count towards `off` once the hold window below is over. Without that
+-- push "closed" stays `unreachable`.
+--
+-- `holding`: inside the hold window of that `app_stop` push
+-- (state.app_stop_holding, `APP_STOP_HOLD`). Then every transport failure is
+-- `app_down`, a timeout too. Seen on a real hub (2026-10-03): after `app_stop`
+-- the next poll failed with `[string "socket"]:98: timeout` - the stopped
+-- service's port is silent, not refusing - and two of them read the PC off.
+function client.transport_kind(message, after_app_stop, holding)
   local text = string.lower(tostring(message or ""))
   if text:find("refused", 1, true) or text:find("econnrefused", 1, true) then
+    return "app_down"
+  end
+  if holding == true then
     return "app_down"
   end
   if after_app_stop == true and (text:find("closed", 1, true) or text:find("reset", 1, true)) then
@@ -158,9 +170,12 @@ function client.note_transport(device, raw, kind)
 end
 
 -- A transport failure on `device`: classified with what its state knows (an
--- outage that began with `app_stop`) and logged on change.
-local function transport_failure(device, raw)
-  local kind = client.transport_kind(raw, fields.state(device).app_stopped == true)
+-- outage that began with `app_stop`, and whether its hold window still runs
+-- at `deps.now`) and logged on change.
+local function transport_failure(device, raw, deps)
+  local s = fields.state(device)
+  local kind = client.transport_kind(raw, s.app_stopped == true,
+    state.app_stop_holding(s, clock.epoch(deps)))
   client.note_transport(device, raw, kind)
   return kind
 end
@@ -246,11 +261,11 @@ function client.request(device, opts, deps)
   if not called then
     -- A raised socket error is still a transport failure: `result` is the
     -- error it raised.
-    return false, nil, transport_failure(device, result)
+    return false, nil, transport_failure(device, result, deps)
   end
   if not result then
     -- socket.http's `nil, message`: refused (`app_down`) or anything else.
-    return false, nil, transport_failure(device, code)
+    return false, nil, transport_failure(device, code, deps)
   end
   -- An HTTP answer: the next transport failure starts a new outage and is
   -- logged again, even with the same words.

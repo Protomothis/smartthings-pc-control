@@ -171,12 +171,15 @@ end
 --                     `events` they are the slot rows, marked forced.
 --
 -- `opts.watch`: the slot values to stop when no status has been read in this
--- run (`rows.kept_watch`); otherwise the remembered ones are.
+-- run (`rows.kept_watch`); otherwise the remembered ones are. `opts.epoch`:
+-- epoch seconds now, which starts an `app_stop` hold window (none without it).
 function push.apply(device_state, payload, opts)
   payload = payload or {}
   opts = opts or {}
   local event, reason = push.event_for(payload.type, payload.data)
-  local nxt = state.transition(device_state or state.new(), event, reason)
+  -- `opts.epoch`: when it came - the start of an `app_stop` hold window.
+  local nxt = state.transition(device_state or state.new(),
+    { type = event, reason = reason, at = opts.epoch })
 
   local status = payload.status
   if type(status) == "table" then
@@ -521,6 +524,7 @@ function push.apply_to_device(driver, device, payload, deps)
   local lang = fields.lang(device)
   local nxt, events, event, stopped = push.apply(fields.state(device), payload, {
     now = clock.now(),
+    epoch = clock.epoch(deps),
     lang = lang,
     -- Only read when no status has been: the hub's state cache, per slot.
     watch = fields.extras(device) == nil and rows.kept_watch(device) or nil,
@@ -551,11 +555,17 @@ function push.apply_to_device(driver, device, payload, deps)
   if app_stop then
     -- C1: what a refused poll paints, a poll early - the rows that describe a
     -- live PC and both pcInfo rows say the PC app is not there; the power
-    -- rows stay on. The refusals that follow send none of it again.
+    -- rows stay on. The polls that follow (refused, or silent for the hold
+    -- window, client.transport_kind) send none of it again.
     rows.emit_offline(device, nxt)
     rows.emit_connection(device, "unreachable", i18n.t(lang, "app_down"), deps, "app_down")
     pcall(function() device:online() end)
-    logger().info(string.format("PC app on %s stopped (power.stopping app_stop)", tostring(device.id)))
+    if nxt.app_stopped_at then
+      logger().info(string.format("PC app on %s stopped (power.stopping app_stop): app_stop hold %ds",
+        tostring(device.id), state.APP_STOP_HOLD))
+    else
+      logger().info(string.format("PC app on %s stopped (power.stopping app_stop)", tostring(device.id)))
+    end
   end
   -- A `power.stopping` push is the fastest the driver learns that the PC is
   -- on its way out: the list rows move to their resting values here.

@@ -320,36 +320,198 @@ function T.test_a_reset_after_app_stop_is_app_down()
   h.assert_equal(err, "unreachable")
 end
 
--- C1 end to end: the push, then the polls of a PC whose app is gone.
-function T.test_after_app_stop_the_polls_keep_the_app_down_until_two_timeouts()
+-- Inside the hold window of an `app_stop` push every transport failure is
+-- `app_down`, a timeout too: a stopped service's port is silent.
+function T.test_inside_the_app_stop_hold_every_transport_failure_is_app_down()
+  for _, message in ipairs({
+    "timeout", '[string "socket"]:98: timeout', "No route to host", "closed", "", nil,
+  }) do
+    h.assert_equal(client.transport_kind(message, true, true), "app_down", tostring(message))
+    h.assert_equal(client.transport_kind(message, false, true), "app_down", tostring(message))
+  end
+  h.assert_equal(client.transport_kind("timeout", true, false), "unreachable", "after the window")
+end
+
+-- The app_stop push at `t`, through the push path with a clock the test sets.
+local APP_STOP_T = 1800000000
+
+local function app_stopped_device(clock_box)
   local push = require "push"
   local d = device({ language = "ko" })
+  d.id = "pc-hold"
   local driver = { cancel_timer = function() end }
   fields.set_state(d, state.new(state.ON))
-  push.apply_to_device(driver, d, { machine_id = "x", type = "power.stopping", data = { reason = "app_stop" } })
-  h.assert_equal(fields.state(d).power_state, state.ON)
-  h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음")
-  h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.ON)
+  push.apply_to_device(driver, d,
+    { machine_id = "x", type = "power.stopping", data = { reason = "app_stop" } },
+    { now = function() return clock_box.t end })
+  return d, driver
+end
 
-  for _, message in ipairs({ "connection refused", "closed", "closed", "Connection refused" }) do
-    local _, kind = poll.once(driver, d, { deps = { http = broken_http(message) } })
-    h.assert_equal(kind, "app_down", message)
+local function poll_at(driver, d, clock_box, message)
+  local _, kind = poll.once(driver, d, { deps = {
+    http = broken_http(message), now = function() return clock_box.t end,
+  } })
+  return kind
+end
+
+local function info_lines(prefix)
+  local log = require "log"
+  local out = {}
+  for _, entry in ipairs(log.entries) do
+    if entry.level == "info" and tostring(entry[1]):find(prefix, 1, true) == 1 then
+      out[#out + 1] = entry[1]
+    end
+  end
+  return out
+end
+
+-- C1 end to end, as seen on a real hub (2026-10-03): the push, then polls that
+-- time out. Ten minutes of "PC 앱 응답 없음" with the PC on, then the normal
+-- rules: two timeouts are off.
+function T.test_after_app_stop_timeouts_stay_app_down_for_the_hold_window()
+  local log = require "log"
+  log.reset()
+  local clock_box = { t = APP_STOP_T }
+  local d, driver = app_stopped_device(clock_box)
+  h.assert_equal(fields.state(d).power_state, state.ON)
+  h.assert_equal(fields.state(d).app_stopped_at, APP_STOP_T)
+  h.assert_equal(d:get_field(fields.APP_STOP_AT), APP_STOP_T, "the window start is stored")
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음")
+  h.assert_deep_equal(info_lines("PC app on "),
+    { "PC app on pc-hold stopped (power.stopping app_stop): app_stop hold 600s" })
+
+  local message = '[string "socket"]:98: timeout'
+  for _, offset in ipairs({ 30, 60, 300, 450, state.APP_STOP_HOLD - 1 }) do
+    clock_box.t = APP_STOP_T + offset
+    h.assert_equal(poll_at(driver, d, clock_box, message), "app_down", message)
     h.assert_equal(fields.state(d).power_state, state.ON, message)
     h.assert_equal(fields.state(d).unreachable_count, 0, message)
+    h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.ON, message)
+    h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음", message)
+    h.assert_contains(h.last_value(h.emitted(d), nil, caps.STATUS, "message"), "PC 앱이 응답하지", message)
   end
-  h.assert_equal(h.last_value(h.emitted(d), nil, caps.STATUS, "summary"), "PC 앱 응답 없음")
+  -- The same timeout every poll is logged once, not per poll.
+  h.assert_deep_equal(info_lines("transport error: "),
+    { 'transport error: [string "socket"]:98: timeout -> app_down (pc-hold)' })
+  h.assert_deep_equal(info_lines("app_stop hold on "), {})
 
-  -- The PC goes away after all: timeouts count, two of them are off.
-  local _, kind = poll.once(driver, d, { deps = { http = broken_http("timeout") } })
-  h.assert_equal(kind, "unreachable")
+  -- Ten minutes on: the normal rules. Two timeouts are off.
+  clock_box.t = APP_STOP_T + state.APP_STOP_HOLD
+  h.assert_equal(poll_at(driver, d, clock_box, message), "unreachable")
+  h.assert_equal(info_lines("transport error: ")[2],
+    'transport error: [string "socket"]:98: timeout -> unreachable (pc-hold)', "the change is logged")
   h.assert_equal(fields.state(d).power_state, state.ON, "one timeout is not off")
-  poll.once(driver, d, { deps = { http = broken_http("timeout") } })
+  h.assert_nil(fields.state(d).app_stopped_at)
+  h.assert_nil(d:get_field(fields.APP_STOP_AT), "the stored start is cleared")
+  h.assert_deep_equal(info_lines("app_stop hold on "), { "app_stop hold on pc-hold ended (elapsed)" })
+  clock_box.t = clock_box.t + 30
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
   h.assert_equal(fields.state(d).power_state, state.OFF)
   h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.OFF)
+  h.assert_equal(#info_lines("app_stop hold on "), 1, "the end is logged once")
   -- A new outage: "closed" is no longer read as a refusal.
-  _, kind = poll.once(driver, d, { deps = { http = broken_http("closed") } })
-  h.assert_equal(kind, "unreachable")
+  h.assert_equal(poll_at(driver, d, clock_box, "closed"), "unreachable")
   h.assert_equal(fields.state(d).power_state, state.OFF)
+  log.reset()
+end
+
+-- After the window a reset still reads as the refusal of the same outage
+-- (the rule from before the window), until the PC counts as off.
+function T.test_after_the_hold_window_a_reset_is_still_app_down()
+  local clock_box = { t = APP_STOP_T }
+  local d, driver = app_stopped_device(clock_box)
+  clock_box.t = APP_STOP_T + state.APP_STOP_HOLD + 60
+  h.assert_equal(poll_at(driver, d, clock_box, "closed"), "app_down")
+  h.assert_nil(fields.state(d).app_stopped_at)
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+end
+
+-- A successful status ends the window: the next timeouts count again.
+function T.test_a_status_ends_the_app_stop_hold()
+  local log = require "log"
+  log.reset()
+  local Driver = require "st.driver"
+  local clock_box = { t = APP_STOP_T }
+  local d = app_stopped_device(clock_box)
+  local driver = Driver("test", {})
+  clock_box.t = APP_STOP_T + 60
+  local ok = poll.once(driver, d, { deps = {
+    http = fake_http(200, status_body()), now = function() return clock_box.t end,
+  } })
+  h.assert_true(ok)
+  h.assert_nil(fields.state(d).app_stopped_at)
+  h.assert_nil(d:get_field(fields.APP_STOP_AT))
+  h.assert_deep_equal(info_lines("app_stop hold on "), { "app_stop hold on pc-hold ended (PC app answered)" })
+  clock_box.t = clock_box.t + 30
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+  clock_box.t = clock_box.t + 30
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+  h.assert_equal(fields.state(d).power_state, state.OFF, "well inside ten minutes of the push")
+  log.reset()
+end
+
+-- Any HTTP answer is the PC app answering: the window ends.
+function T.test_an_http_error_ends_the_app_stop_hold()
+  local clock_box = { t = APP_STOP_T }
+  local d, driver = app_stopped_device(clock_box)
+  clock_box.t = APP_STOP_T + 60
+  local _, kind = poll.once(driver, d, { deps = {
+    http = fake_http(401, "{}"), now = function() return clock_box.t end,
+  } })
+  h.assert_equal(kind, "unauthorized")
+  h.assert_false(fields.state(d).app_down)
+  h.assert_nil(fields.state(d).app_stopped_at)
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+end
+
+-- A system stop pushed inside the window takes over: its own handling.
+function T.test_a_shutdown_push_ends_the_app_stop_hold()
+  local log = require "log"
+  log.reset()
+  local push = require "push"
+  local clock_box = { t = APP_STOP_T }
+  local d, driver = app_stopped_device(clock_box)
+  clock_box.t = APP_STOP_T + 120
+  push.apply_to_device(driver, d,
+    { machine_id = "x", type = "power.stopping", data = { reason = "shutdown" } },
+    { now = function() return clock_box.t end })
+  h.assert_equal(fields.state(d).power_state, state.SHUTTING_DOWN)
+  h.assert_nil(fields.state(d).app_stopped_at)
+  h.assert_nil(d:get_field(fields.APP_STOP_AT))
+  h.assert_deep_equal(info_lines("app_stop hold on "),
+    { "app_stop hold on pc-hold ended (power.stopping shutdown)" })
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+  h.assert_equal(fields.state(d).power_state, state.OFF)
+  log.reset()
+end
+
+-- A driver restart inside the window: the stored start takes the outage up
+-- again; one that ran out meanwhile is dropped.
+function T.test_a_driver_restart_inside_the_app_stop_hold_keeps_it()
+  local clock_box = { t = APP_STOP_T }
+  local d, driver = app_stopped_device(clock_box)
+  h.restart(d, { fields.APP_STOP_AT })
+  h.assert_equal(fields.state(d).power_state, state.UNKNOWN, "the runtime state is gone")
+  clock_box.t = APP_STOP_T + 240
+  h.assert_true(poll.restore_app_stop(d, { now = function() return clock_box.t end }))
+  h.assert_equal(fields.state(d).power_state, state.ON)
+  h.assert_true(fields.state(d).app_down)
+  h.assert_equal(fields.state(d).app_stopped_at, APP_STOP_T, "the window runs from the push")
+  h.assert_false(poll.restore_app_stop(d, { now = function() return clock_box.t end }), "only once")
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "app_down")
+  h.assert_equal(fields.state(d).power_state, state.ON)
+  clock_box.t = APP_STOP_T + state.APP_STOP_HOLD
+  h.assert_equal(poll_at(driver, d, clock_box, "timeout"), "unreachable")
+
+  -- The window ran out during the restart.
+  local late = app_stopped_device({ t = APP_STOP_T })
+  h.restart(late, { fields.APP_STOP_AT })
+  h.assert_false(poll.restore_app_stop(late, { now = function() return APP_STOP_T + 700 end }))
+  h.assert_nil(late:get_field(fields.APP_STOP_AT))
+  h.assert_equal(fields.state(late).power_state, state.UNKNOWN)
+  -- And nothing stored at all.
+  h.assert_false(poll.restore_app_stop(device()))
 end
 
 local function transport_lines()

@@ -360,6 +360,33 @@ function poll.remember_identity(device, body)
   return changed
 end
 
+--- A driver restart inside an `app_stop` hold window (`fields.APP_STOP_AT`):
+--- the runtime state starts fresh, so the outage is taken up again - PC on,
+--- app down, the window running on from the push's own time - before the
+--- first poll times out. A window that ran out meanwhile is dropped. True when
+--- restored. Call before anything stores a state in this run (`set_state`
+--- keeps the field in step with it).
+function poll.restore_app_stop(device, deps)
+  local at = tonumber(fields.get(device, fields.APP_STOP_AT))
+  if not at then
+    return false
+  end
+  local current = fields.state(device)
+  if current.app_stopped_at == at then
+    return false
+  end
+  local nxt = state.transition(current, { type = "stopping", reason = state.APP_STOP, at = at })
+  local now = clock.epoch(deps)
+  if not state.app_stop_holding(nxt, now) then
+    fields.set(device, fields.APP_STOP_AT, nil)
+    return false
+  end
+  fields.set_state(device, nxt)
+  logger().info(string.format("app_stop hold on %s restored (%ds left)",
+    tostring(device.id), math.floor(at + state.APP_STOP_HOLD - now)))
+  return true
+end
+
 -- One poll cycle: GET /st/v1/status, advance the state machine, emit, health.
 -- `opts.force`: the row keys this poll answers a command on (sent forced), or
 -- true for every row. `opts.note`: a one-off confirmation for `pcInfo.message`
@@ -455,6 +482,16 @@ local function once(driver, device, opts)
   elseif current.app_down == true then
     -- 401, 404, …: the PC app answered, wrongly, so it is not down.
     nxt = state.transition(current, "app_answered")
+  end
+  if nxt.app_stopped_at ~= nil and not state.app_stop_holding(nxt, clock.epoch(opts.deps)) then
+    -- The `app_stop` hold window is over (this failure was already classified
+    -- without it): timeouts count towards `off` again from here on.
+    -- `set_state` logs the end and clears the stored time.
+    if nxt == current then
+      -- An event the machine does not know: a plain copy to change.
+      nxt = state.transition(current, "none")
+    end
+    nxt.app_stopped_at = nil
   end
   fields.set_state(device, nxt)
   rows.emit_power(device, nxt)

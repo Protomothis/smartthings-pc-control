@@ -38,6 +38,14 @@ power.APP_STOP = "app_stop"
 -- not `unknown` (nothing says the apps went).
 power.APPS_STOP_REASONS = { shutdown = true, restart = true }
 
+-- §6.2: how long after an `app_stop` push every transport failure still reads
+-- as the PC app being down (`power.app_stop_holding`). A stopped service's
+-- port does not refuse, it is silent (the PC's firewall drops the SYN), so the
+-- polls that follow time out exactly like a PC that is gone - for this long
+-- they are not taken as one. After it, timeouts count towards `off` again: a
+-- PC shut down while its app was stopped reads off in the end.
+power.APP_STOP_HOLD = 600
+
 --- A fresh device state: a plain table, so it can live in a device field.
 function power.new(power_state)
   return {
@@ -52,6 +60,10 @@ function power.new(power_state)
     -- was stopping, so a reset connection is the PC refusing, not a lost one
     -- (client.transport_kind)
     app_stopped = false,
+    -- epoch seconds of that `app_stop` push while its hold window
+    -- (`APP_STOP_HOLD`) may still run; nil otherwise (no time given, a
+    -- `shuttingDown` under way, or the window over - poll.lua clears it)
+    app_stopped_at = nil,
     -- the reason of the last power.stopping push, so a PC that said it was
     -- suspending is not reported as off once it stops answering
     last_stopping_reason = nil,
@@ -76,6 +88,7 @@ local function copy(s)
     unreachable_count = s.unreachable_count or 0,
     app_down = s.app_down == true,
     app_stopped = s.app_stopped == true,
+    app_stopped_at = s.app_stopped_at,
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
     schedule_active = s.schedule_active or false,
@@ -103,12 +116,16 @@ end
 --
 -- Events (§6.2): `status_ok`, `unreachable`, `app_down`, `app_answered`,
 -- `stopping` (+reason), `switch_on`, `wake_timeout`, `schedule_cancelled`. The event may be a string with the
--- reason as third argument, or a table `{ type = ..., reason = ... }`.
+-- reason as third argument, or a table `{ type = ..., reason = ..., at = ... }`;
+-- `at` (epoch seconds) is when an `app_stop` push came and starts its hold
+-- window (`app_stop_holding`).
 function power.transition(s, event, arg)
   s = s or power.new()
   local reason = arg
+  local at
   if type(event) == "table" then
     reason = event.reason or reason
+    at = tonumber(event.at)
     event = event.type
   end
 
@@ -121,12 +138,14 @@ function power.transition(s, event, arg)
     nxt.unreachable_count = 0
     nxt.app_down = false
     nxt.app_stopped = false
+    nxt.app_stopped_at = nil
     nxt.last_stopping_reason = nil
     nxt.wake_from = nil
   elseif event == "app_down" then
     -- The connection was refused: the PC itself answered
     -- (client.transport_kind), so it is on and only the PC app is missing.
-    -- Never a step towards `off`.
+    -- Or any transport failure inside an `app_stop` hold window
+    -- (`app_stop_holding`). Never a step towards `off`.
     nxt.unreachable_count = 0
     nxt.app_down = true
     if cur ~= power.SHUTTING_DOWN then
@@ -145,6 +164,7 @@ function power.transition(s, event, arg)
     -- nothing else is known about the PC.
     nxt.app_down = false
     nxt.app_stopped = false
+    nxt.app_stopped_at = nil
   elseif event == "unreachable" then
     nxt.unreachable_count = (s.unreachable_count or 0) + 1
     -- No answer at all now, not even a refusal.
@@ -158,6 +178,7 @@ function power.transition(s, event, arg)
     elseif nxt.unreachable_count >= power.UNREACHABLE_LIMIT then
       -- The PC is gone now: whatever answers next is a new outage's word.
       nxt.app_stopped = false
+      nxt.app_stopped_at = nil
       local preserved = STOPPING_STATE[s.last_stopping_reason or ""]
       if preserved == power.SLEEPING or preserved == power.HIBERNATED then
         nxt.power_state = preserved
@@ -170,16 +191,21 @@ function power.transition(s, event, arg)
     -- service restart, the user stopping it): the app-down state at once,
     -- exactly as a refused poll would leave it a poll later - never
     -- `shuttingDown`, never a step towards `off`. The refusals that follow
-    -- keep it; timeouts count towards `off` as usual.
+    -- keep it, and for `APP_STOP_HOLD` from `at` so do the timeouts
+    -- (client.transport_kind reads them as `app_down`); after that timeouts
+    -- count towards `off` as usual.
     nxt.unreachable_count = 0
     nxt.app_down = true
     nxt.app_stopped = true
+    nxt.app_stopped_at = nil
     nxt.wake_from = nil
     if cur ~= power.SHUTTING_DOWN then
       -- The PC was up to push this; a `shuttingDown` already under way (a
-      -- grace period the PC confirmed) is not taken back by the app leaving.
+      -- grace period the PC confirmed) is not taken back by the app leaving,
+      -- and the silence after it is the PC going: no hold window then.
       nxt.power_state = power.ON
       nxt.last_stopping_reason = nil
+      nxt.app_stopped_at = at
     end
   elseif event == "stopping" then
     nxt.last_stopping_reason = reason or "unknown"
@@ -187,6 +213,7 @@ function power.transition(s, event, arg)
     -- Only a running PC app pushes.
     nxt.app_down = false
     nxt.app_stopped = false
+    nxt.app_stopped_at = nil
     nxt.wake_from = nil
     nxt.power_state = STOPPING_STATE[nxt.last_stopping_reason] or power.SHUTTING_DOWN
   elseif event == "switch_on" then
@@ -217,6 +244,20 @@ function power.transition(s, event, arg)
   end
 
   return nxt
+end
+
+--- True while `now` (epoch seconds) is inside the hold window of the
+--- `app_stop` push the state remembers (`APP_STOP_HOLD`): every transport
+--- failure then reads as `app_down`. A clock that went back before the push
+--- ends the window rather than stretch it.
+function power.app_stop_holding(s, now)
+  s = s or {}
+  local at = tonumber(s.app_stopped_at)
+  now = tonumber(now)
+  if s.app_stopped ~= true or not at or not now then
+    return false
+  end
+  return now >= at and now - at < power.APP_STOP_HOLD
 end
 
 --- Why the display-only rows say the PC is not there (design doc §6.2 "꺼진

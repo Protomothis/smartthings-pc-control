@@ -77,6 +77,13 @@ fields.PUSH_SUB = "push_sub"
 -- -> <kind>" (client.note_transport); cleared by any HTTP answer.
 fields.TRANSPORT_ERROR = "transport_error"
 
+-- When the last `app_stop` push came, epoch seconds, while its hold window
+-- runs (state `app_stopped_at`, model/power.lua `app_stop_holding`). Kept in
+-- step by `set_state` - one flash write when the window starts, one when it
+-- ends - so a driver restart inside the window keeps it
+-- (`poll.restore_app_stop`).
+fields.APP_STOP_AT = "app_stop_at"
+
 fields.PERSISTED = {
   [fields.MACHINE_ID] = true,
   [fields.HOSTNAME] = true,
@@ -93,6 +100,7 @@ fields.PERSISTED = {
   [fields.LAST_ACTION] = true,
   [fields.PLAN_COMMAND] = true,
   [fields.LAST_TOAST] = true,
+  [fields.APP_STOP_AT] = true,
 }
 
 local PERSIST = { persist = true }
@@ -135,8 +143,42 @@ function fields.state(device)
   return fields.get(device, fields.STATE) or state.new()
 end
 
+local function logger()
+  local ok, log = pcall(require, "log")
+  if ok then
+    return log
+  end
+  local noop = function() end
+  return { info = noop }
+end
+
+-- Why an `app_stop` hold window is over, read off the state that ended it.
+local function hold_end_reason(s)
+  if s.app_stopped == true then
+    -- Only the clock ends a window and leaves the outage as it is.
+    return "elapsed"
+  end
+  if s.last_stopping_reason ~= nil then
+    return "power.stopping " .. tostring(s.last_stopping_reason)
+  end
+  return "PC app answered"
+end
+
+--- Store the runtime state. Its `app_stopped_at` goes to the persisted
+--- `APP_STOP_AT` too when it changed (a window starting or ending - never a
+--- write per poll), and a window that ends is logged once, with why.
 function fields.set_state(device, s)
   fields.set(device, fields.STATE, s)
+  local at = type(s) == "table" and tonumber(s.app_stopped_at) or nil
+  local stored = tonumber(fields.get(device, fields.APP_STOP_AT))
+  if at == stored then
+    return
+  end
+  fields.set(device, fields.APP_STOP_AT, at)
+  if stored and not at then
+    logger().info(string.format("app_stop hold on %s ended (%s)",
+      tostring((device or {}).id), hold_end_reason(s or {})))
+  end
 end
 
 --- What the last status said about the v1.2.0 features (features.remember),
