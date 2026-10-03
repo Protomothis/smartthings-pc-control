@@ -96,6 +96,9 @@ function poll.repaint(device, driver)
     -- The v1.2.0 rows from the last status this run read, when there was one.
     emit.rows(device, state.initial_rows(fields.lang(device), fields.service_version(device),
       (fields.extras(device) or {}).last_status, watch))
+    -- A PC that is off is not painted back to the last status's "Steam":
+    -- these come later in the queue, so they are the values that go.
+    rows.emit_offline(device, fields.state(device))
   end)
   return emit.paint(driver, device, records)
 end
@@ -468,6 +471,9 @@ local function once(driver, device, opts)
   end
   fields.set_state(device, nxt)
   rows.emit_power(device, nxt)
+  -- The rows that only describe a live PC say it is not there (once: an
+  -- unchanged value is not sent again); the next answer paints them back.
+  rows.emit_offline(device, nxt)
   -- A PC that is waking or gone answers nothing: this is the path that keeps
   -- the command list's resting value during a transition, and hands it back
   -- to `none` when `waking` gives up.

@@ -181,6 +181,28 @@ function power.transition(s, event, arg)
   return nxt
 end
 
+--- Why the display-only rows say the PC is not there (design doc §6.2 "꺼진
+--- PC의 표시 줄"), or nil when they keep what the last status said:
+---
+---   "app_down"    the last poll was refused: the PC is on, its app is not
+---   "off"         two unreachable polls (or a wake that gave up)
+---   "sleeping"    unreachable after it said it was going to sleep
+---   "hibernated"  the same for hibernation
+---
+--- A first unreachable poll of a PC that was on is none of them (one lost
+--- answer is not a PC that is gone), nor are `waking` and `shuttingDown`.
+function power.offline_mode(s)
+  s = s or {}
+  if s.app_down == true then
+    return "app_down"
+  end
+  local p = s.power_state
+  if p == power.OFF or p == power.SLEEPING or p == power.HIBERNATED then
+    return p
+  end
+  return nil
+end
+
 --------------------------------------------------------------------------------
 -- transitions (§6.9)
 --------------------------------------------------------------------------------

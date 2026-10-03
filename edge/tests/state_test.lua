@@ -1111,15 +1111,19 @@ function T.test_a_refused_poll_keeps_the_pc_on_and_never_counts_towards_off()
     h.assert_equal(s.unreachable_count, 0, "a refusal resets the miss counter")
     h.assert_true(s.app_down)
   end
+  h.assert_equal(state.offline_mode(s), "app_down")
   -- Then the PC goes away: still two misses to `off`, and no longer app_down.
   s = state.transition(s, "unreachable")
   h.assert_equal(s.power_state, state.ON)
   h.assert_false(s.app_down)
+  h.assert_nil(state.offline_mode(s), "one miss of a PC that was on says nothing yet")
   s = state.transition(s, "unreachable")
   h.assert_equal(s.power_state, state.OFF)
+  h.assert_equal(state.offline_mode(s), "off")
   -- The app answers again.
   s = state.transition(state.transition(s, "app_down"), "status_ok")
   h.assert_false(s.app_down)
+  h.assert_nil(state.offline_mode(s))
 end
 
 function T.test_a_refusal_means_the_pc_has_come_up()
@@ -1159,6 +1163,37 @@ function T.test_an_app_that_answers_wrongly_is_not_down()
   h.assert_equal(s.power_state, state.ON)
   h.assert_equal(state.transition(state.new(state.OFF), "app_answered").power_state, state.OFF,
     "nothing else moves")
+end
+
+function T.test_offline_mode_names_why_the_pc_is_not_there()
+  h.assert_nil(state.offline_mode(nil))
+  for power, want in pairs({
+    [state.ON] = false, [state.WAKING] = false, [state.SHUTTING_DOWN] = false, [state.UNKNOWN] = false,
+    [state.OFF] = "off", [state.SLEEPING] = "sleeping", [state.HIBERNATED] = "hibernated",
+  }) do
+    h.assert_equal(state.offline_mode(state.new(power)), want or nil, power)
+  end
+  local down = state.new(state.ON)
+  down.app_down = true
+  h.assert_equal(state.offline_mode(down), "app_down")
+end
+
+function T.test_the_offline_texts_are_short_in_both_languages()
+  local wanted = {
+    ko = { app_down = "PC 앱 응답 없음", off = "PC 꺼짐", sleeping = "PC 절전", hibernated = "PC 최대 절전" },
+    en = { app_down = "PC app not responding", off = "PC off", sleeping = "PC asleep",
+      hibernated = "PC hibernated" },
+  }
+  for lang, texts in pairs(wanted) do
+    for mode, text in pairs(texts) do
+      h.assert_equal(i18n.offline(lang, mode), text, lang .. " " .. mode)
+      -- The watch summary is a third of the card's preview; the label rule
+      -- there is 13 characters, and the summary row has 24.
+      h.assert_true(chars(text) <= state.SUMMARY_MAX_CHARS, text)
+    end
+  end
+  h.assert_equal(i18n.offline("ko", "on"), "")
+  h.assert_equal(i18n.offline("ko", nil), "")
 end
 
 function T.test_sleeping_is_preserved_while_unreachable()

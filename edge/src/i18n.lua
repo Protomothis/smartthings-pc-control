@@ -327,10 +327,16 @@ local STRINGS = {
   ago_h = { ko = "%d시간 전", en = "%dh ago" },
   ago_d = { ko = "%d일 전", en = "%dd ago" },
 
-  -- What `pcInfo.summary` says for a refused connection (the PC is on, its
-  -- app is not answering), instead of "응답 없음 · 마지막 확인 …". One fixed
-  -- phrase inside the row's 24 characters.
+  -- The PC is not there (state.offline_mode): what `pcInfo.summary` says for a
+  -- refused connection, and what the display-only rows - the watch card's
+  -- summary, the track title, `pcUser.summary` - say instead of the last
+  -- status's values ("Steam", a song, "사용 중 · kim") until it answers again.
+  -- Short: the watch summary is a third of the card's preview, and the
+  -- summary row has 24 characters.
   offline_app_down = { ko = "PC 앱 응답 없음", en = "PC app not responding" },
+  offline_off = { ko = "PC 꺼짐", en = "PC off" },
+  offline_sleeping = { ko = "PC 절전", en = "PC asleep" },
+  offline_hibernated = { ko = "PC 최대 절전", en = "PC hibernated" },
 
   -- The `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0": two numbers, short
   -- enough for a narrow row. `?` for a service version not told yet.
@@ -465,6 +471,25 @@ function i18n.power(lang, power_state)
     return i18n.t(lang, key)
   end
   return tostring(power_state)
+end
+
+-- `state.offline_mode` -> the key of its short text.
+local OFFLINE = {
+  app_down = "offline_app_down",
+  off = "offline_off",
+  sleeping = "offline_sleeping",
+  hibernated = "offline_hibernated",
+}
+
+--- What the display-only rows say while the PC is not there
+--- (`state.offline_mode`: "PC 꺼짐", "PC 앱 응답 없음", …), or "" for a mode
+--- that is none of them.
+function i18n.offline(lang, mode)
+  local key = OFFLINE[tostring(mode or "")]
+  if not key then
+    return ""
+  end
+  return i18n.t(lang, key)
 end
 
 --- Short label for a `pcInfo.connection` value, for the summary line (#78).
