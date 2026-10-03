@@ -163,13 +163,16 @@ type ui struct {
 // minimized set (login autostart) the window stays hidden and only the
 // tray icon appears.
 func Run(version string, minimized bool) {
-	if !acquireSingleInstance() {
+	inst := claimInstance(instanceMutexName, activateEventName)
+	if !inst.first {
 		// A minimized launch (login autostart, or the service waking the
 		// tray app for a grace toast) must stay silent: the running
 		// instance already has the tray and will show the toast itself.
-		// A user double-click, however, brings the existing window forward.
+		// Any other launch (Start menu, double-click, the updater's
+		// relaunch) opens the running instance's window, which a minimized
+		// start may not have created yet (singleinstance.go).
 		if !minimized {
-			focusExistingWindow()
+			activateRunning(inst)
 		}
 		return
 	}
@@ -224,6 +227,10 @@ func Run(version string, minimized bool) {
 		// No dialog against a hidden window — tray notification only.
 		go u.checkForUpdates(!minimized)
 	}
+	// A later launch of the app opens the window like the tray's Open; one
+	// that came while this was starting is waiting in the event already.
+	stopActivation := watchActivation(inst.activate, func() { fyne.Do(u.showWindow) })
+	defer stopActivation()
 
 	if minimized {
 		// The (unshown) window keeps the Fyne loop alive; the tray menu's

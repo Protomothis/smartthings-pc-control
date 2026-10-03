@@ -32,17 +32,22 @@ func (u *ui) ensureContent() {
 	u.rebuild()
 }
 
-// showWindow brings the window up from the tray. UI goroutine only.
+// showWindow brings the window up: the tray's Open entry and left click,
+// and a later launch of the app (singleinstance.go). The first call after
+// a minimized start builds the content and, in Show, the native window.
+// UI goroutine only.
 func (u *ui) showWindow() {
 	u.ensureContent()
 	u.win.Show()
+	restoreIfMinimized(u.win)
 	u.win.RequestFocus()
 }
 
 // checkVisible records whether the window is on screen and, when it has
 // just come up, fills it with what is only loaded while it is. Runs off
 // the UI goroutine (pollLoop). A window shown some other way than
-// showWindow (a second launch restoring it) gets its content here.
+// showWindow (restored by a launch of an older version, which looks for it
+// by title) gets its content here.
 func (u *ui) checkVisible() {
 	vis := windowOnScreen()
 	if u.visible.Swap(vis) == vis || !vis {

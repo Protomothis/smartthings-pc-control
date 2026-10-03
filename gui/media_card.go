@@ -436,7 +436,7 @@ var (
 
 // windowOnScreen reports whether the app window is shown and not minimised:
 // the card's polling is for someone looking at it. The title is fixed
-// (singleinstance.go), which is also how a second launch finds the window.
+// (singleinstance.go).
 // A var: the tests must not see a real app window open on the desktop.
 var windowOnScreen = func() bool {
 	title, err := windows.UTF16PtrFromString(windowTitle)
