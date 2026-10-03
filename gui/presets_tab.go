@@ -3,10 +3,14 @@ package gui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/sys/windows"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -153,13 +157,30 @@ func (u *ui) buildPresetsTab() fyne.CanvasObject {
 	return withSaveBar(t.root, ft.bar)
 }
 
-// pathPlaceholder is the example path for a preset type.
+// pathPlaceholder is the example path for a preset type. The script one
+// sits in the user's own Documents folder: a script in a folder other
+// users can write to is one they could change into anything (C6).
 func (u *ui) pathPlaceholder(typ string) string {
-	if typ == "" {
+	switch typ {
+	case "":
 		return ""
+	case "script":
+		return fmt.Sprintf(u.t("presets.path.placeholder.script"), documentsDir())
 	}
 	return u.t("presets.path.placeholder." + typ)
 }
+
+// documentsDir is the user's Documents folder (wherever it was moved),
+// %USERPROFILE%\Documents when Windows does not say.
+var documentsDir = sync.OnceValue(func() string {
+	if p, err := windows.KnownFolderPath(windows.FOLDERID_Documents, 0); err == nil && p != "" {
+		return p
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, "Documents")
+	}
+	return `%USERPROFILE%\Documents`
+})
 
 // addPresetRow appends an editor row for r. UI thread only.
 func (u *ui) addPresetRow(r presetRow) {

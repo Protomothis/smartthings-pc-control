@@ -271,3 +271,12 @@ func TestDuplicateNameInline(t *testing.T) {
 		t.Error("the mark stayed after the rename")
 	}
 }
+
+// Review 1: the script example sits in the user's Documents folder.
+func TestScriptPlaceholderIsPerUser(t *testing.T) {
+	u, _ := newFakeServiceUI(t)
+	got := u.pathPlaceholder("script")
+	if got != documentsDir()+`\scripts\run.ps1 (.ps1 · .bat · .cmd)` || documentsDir() == "" {
+		t.Errorf("placeholder = %q", got)
+	}
+}
