@@ -19,9 +19,9 @@ const (
 	// heldCapacity bounds the quiet-hours/mute backlog (oldest dropped); the
 	// digest still reports the true count.
 	heldCapacity = 100
-	// closeGrace is how long Close waits for queued events to be delivered
+	// CloseGrace is how long Close waits for queued events to be delivered
 	// before cancelling in-flight sends.
-	closeGrace = 5 * time.Second
+	CloseGrace = 5 * time.Second
 )
 
 // MinSendGap is the throttle: at most one Send per bus per MinSendGap
@@ -245,7 +245,7 @@ func (b *Bus) Held() []Event {
 }
 
 // Close stops the bus. Already-queued events are still delivered and open
-// aggregation windows are closed early for up to closeGrace; after that
+// aggregation windows are closed early for up to CloseGrace; after that
 // in-flight sends are cancelled. Events still held for a digest are
 // dropped. Emit after Close drops. Safe to call more than once and on a
 // nil bus.
@@ -255,7 +255,7 @@ func (b *Bus) Close() {
 	}
 	b.once.Do(func() {
 		close(b.closing)
-		t := time.NewTimer(closeGrace)
+		t := time.NewTimer(CloseGrace)
 		defer t.Stop()
 		select {
 		case <-b.done:
