@@ -126,4 +126,33 @@ func TestFindPresetByName(t *testing.T) {
 	if p, ok := FindPresetByName([]Preset{{Slot: 1, Name: "Steam"}}, "steam"); !ok || p.Slot != 1 {
 		t.Error("names match without regard to case")
 	}
+
+	// A number that is no filled slot is tried as a name.
+	named := []Preset{
+		{Slot: 1, Name: "2077", Type: "program", Path: `C:\Games\cp2077.exe`},
+		{Slot: 2, Name: "7", Type: "url", Path: "https://example.com/7"},
+		{Slot: 7, Name: "seven", Type: "url", Path: "https://example.com/seven"},
+	}
+	for arg, slot := range map[string]int{"2077": 1, " 2077 ": 1, "1": 1, "2": 2, "7": 7, "5": 0, "-3": 0} {
+		p, ok := FindPresetByName(named, arg)
+		if (slot == 0) == ok || (ok && p.Slot != slot) {
+			t.Errorf("numeric fallback %q = %+v, %v; want slot %d", arg, p, ok, slot)
+		}
+	}
+}
+
+func TestPresetNamesUnique(t *testing.T) {
+	a := Preset{Slot: 1, Name: "Game", Type: "url", Path: "https://a.example"}
+	b := Preset{Slot: 2, Name: "game", Type: "url", Path: "https://b.example"}
+	c := Preset{Slot: 3, Name: "Other", Type: "url", Path: "https://c.example"}
+	if msg := ValidatePresets([]Preset{a, b}); !strings.Contains(msg, "slot 2 has the same name as slot 1") {
+		t.Errorf("case-insensitive duplicate: %q", msg)
+	}
+	if msg := ValidatePresets([]Preset{a, c}); msg != "" {
+		t.Errorf("distinct names: %q", msg)
+	}
+	// Hand-edited config.json: the later one goes, the rest stay.
+	if got := DropInvalidPresets([]Preset{a, b, c}); !reflect.DeepEqual(got, []Preset{a, c}) {
+		t.Errorf("drop = %+v", got)
+	}
 }
