@@ -247,11 +247,11 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
   하나라도 있으면 실행 중. 목록에 없는 프로세스 이름은 저장·로그·전송하지 않는다. 목록을 읽지 못하면 같은 설정의 마지막 결과를 유지한다
   (가짜 "꺼짐" 루틴 방지).
 - **API:** status
-  `activity: { enabled, apps: [{ slot: 1, id: "steam.exe", label: "Steam", running: true }, …], top: "steam.exe" }`.
+  `activity: { enabled, apps: [{ slot: 1, id: "steam.exe", label: "Steam", running: true }, …], top: "steam.exe", scanned: true }`.
   `apps`는 채워진 칸만 칸 순서로, `id`는 소문자 프로세스 이름(라벨·칸을 바꿔도 그대로), `top`은 실행 중인 것 중 칸 번호가 가장 작은
-  앱의 `id`(없으면 `""`). 꺼져 있으면 `{enabled:false, apps:[], top:""}`. 설정을 고친 직후 다음 스캔까지는 모두 `running:false`.
+  앱의 `id`(없으면 `""`). 꺼져 있으면 `{enabled:false, apps:[], top:"", scanned:false}`. 설정을 고치거나 켠 직후 그 설정의 첫 스캔이 끝날 때까지는 모두 `running:false`이고 `scanned:false`다(드라이버는 이때 실행 중이던 칸을 꺼짐으로 바꾸지 않는다). 첫 스캔이 끝나면 `scanned:true`.
   `features`의 `"activity"`는 켜져 있을 때만.
-- **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때 보낸다. 바뀐 게 없는 스캔은
+- **푸시 `activity.changed`:** 앱 하나라도 실행/종료가 바뀌거나, 목록·라벨·칸이 바뀌거나, 켜기/끄기 때, 그리고 `scanned`가 `true`로 바뀔 때 보낸다. 바뀐 게 없는 스캔은
   보내지 않는다. `data`는 status의 `activity` 블록과 똑같은 JSON이다.
 - **드라이버(계약 v2, 2026-10-02):** 자식 장치는 없다. PC 장치의 컴포넌트 `apps`("감시 목록")에 커스텀 `pcWatchList`
   (`numbersystem53811.pcwatchlist`, `pc*.v10`부터. v7–v9의 `pcWatch`는 화면이 첫 프레젠테이션으로 굳어 새 id로 옮겼다, §14): `summary`(≤ 60) "Steam" / "Steam 외 1"(en "Steam +1", 앱 이름 13자) / "없음" / "꺼짐" / "PC 앱 v1.2.0 필요",

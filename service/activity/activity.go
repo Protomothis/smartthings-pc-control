@@ -17,13 +17,14 @@
 //     that is not on the list cannot reach the result.
 //   - The one place the full list of names is handed out is GET
 //     /api/processes, which feeds the desktop app's "pick from running
-//     programs" dialog (PickerNames). It answers loopback callers with a
-//     valid session only, so the list stays on this PC.
+//     programs" dialog (PickerNames). It answers a local trusted session
+//     only (the desktop app's /api/local-login), so the list stays on
+//     this PC.
 //
 // While activity.enabled is off the scanner does not look at processes at
-// all, and the status block says {enabled:false, apps:[], top:""}. The
-// watch list itself (ActivityConfig, its limits and rules) is
-// internal/config.
+// all, and the status block says {enabled:false, apps:[], top:"",
+// scanned:false}. The watch list itself (ActivityConfig, its limits and
+// rules) is internal/config.
 package activity
 
 import (
@@ -48,24 +49,29 @@ const pickerMax = 2000
 
 // Off is the block while the option is off.
 func Off() status.Activity {
-	return status.Activity{Enabled: false, Apps: []status.ActivityApp{}, Top: ""}
+	return status.Activity{Enabled: false, Apps: []status.ActivityApp{}, Top: "", Scanned: false}
 }
 
 // Listed is the block for watch with nothing marked running: the answer
-// until a scan has looked at the list.
+// until a scan has looked at the list. Scanned is false, so the driver
+// keeps a running slot as it is rather than reading these placeholders as
+// "stopped".
 func Listed(watch []config.ActivityWatch) status.Activity {
-	return Match(watch, nil)
+	out := Match(watch, nil)
+	out.Scanned = false
+	return out
 }
 
 // Match compares the running process names against watch. Every entry
 // becomes one app, sorted by slot, running when at least one process has
 // its file name (case-insensitive); top is the running one in the lowest
 // slot. Nothing from running that is not on the list can reach the
-// result: only watch entries are ever copied.
+// result: only watch entries are ever copied. The result is a scan, so
+// Scanned is true.
 func Match(watch []config.ActivityWatch, running []string) status.Activity {
 	watch = slices.Clone(watch)
 	config.SortWatch(watch)
-	out := status.Activity{Enabled: true, Apps: make([]status.ActivityApp, 0, len(watch))}
+	out := status.Activity{Enabled: true, Scanned: true, Apps: make([]status.ActivityApp, 0, len(watch))}
 	wanted := make(map[string]bool, len(watch))
 	for _, w := range watch {
 		wanted[w.ID()] = true
@@ -88,21 +94,20 @@ func Match(watch []config.ActivityWatch, running []string) status.Activity {
 	return out
 }
 
-// LogLine describes a block by the users' labels only.
+// LogLine describes a block by counts only. service.log is readable by
+// every user of the PC, so not even the users' own labels go into it -
+// which program someone is running is nobody else's business.
 func LogLine(a status.Activity) string {
 	if !a.Enabled {
 		return "off"
 	}
-	var running []string
+	running := 0
 	for _, app := range a.Apps {
 		if app.Running {
-			running = append(running, app.Label)
+			running++
 		}
 	}
-	if len(running) == 0 {
-		return fmt.Sprintf("nothing running (%d watched)", len(a.Apps))
-	}
-	return fmt.Sprintf("running %s (%d watched)", strings.Join(running, ", "), len(a.Apps))
+	return fmt.Sprintf("%d of %d watched running", running, len(a.Apps))
 }
 
 // ---- process list ----------------------------------------------------------
@@ -246,7 +251,8 @@ func (s *Scanner) Scan(cfg config.ActivityConfig) (status.Activity, bool) {
 // status and push bodies are built on request paths and must stay cheap —
 // and it only trusts a scan made for this very config: while the option is
 // off it reports off, and right after an edit it lists the apps as not
-// running until the scanner (kicked by the save) has looked again.
+// running, with scanned false, until the scanner (kicked by the save) has
+// looked again.
 func (s *Scanner) Current(cfg config.ActivityConfig) status.Activity {
 	if !cfg.Enabled {
 		return Off()

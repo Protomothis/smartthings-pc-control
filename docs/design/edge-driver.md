@@ -286,7 +286,7 @@ init → handlers/* → poll → push · wol · discovery → device/* → state
 
 | | |
 |---|---|
-| 서비스 → 드라이버 | status·모든 푸시의 `activity = { enabled, apps: [ {slot, id, label, running} ], top }`. `apps`는 slot 순서이고 채워진 슬롯만, `id`는 소문자 프로세스 이름, `top`은 실행 중인 것 중 가장 작은 슬롯의 `id`(없으면 `""`). 꺼져 있으면 `{enabled: false, apps: [], top: ""}` |
+| 서비스 → 드라이버 | status·모든 푸시의 `activity = { enabled, apps: [ {slot, id, label, running} ], top, scanned }`. `apps`는 slot 순서이고 채워진 슬롯만, `id`는 소문자 프로세스 이름, `top`은 실행 중인 것 중 가장 작은 슬롯의 `id`(없으면 `""`). `scanned`는 지금 설정(목록·칸·라벨, 켜기)으로 스캔이 한 번 끝났으면 `true`, 설정을 바꾸거나 켠 직후 첫 스캔 전에는 `false`(그동안 `running`은 자리표시자다). 꺼져 있으면 `{enabled: false, apps: [], top: "", scanned: false}` |
 | 프로필 | `pc*.v10`의 컴포넌트 `apps`: `numbersystem53811.pcwatchlist` 하나. main의 요약 줄 `pcApps`(v6)는 없앴다. v7–v9는 같은 카드를 옛 id `numbersystem53811.pcwatch`로 썼다: v7은 첫 배치(아래 "미리보기"), v8·v9는 `pcwatch`의 프레젠테이션을 갱신한 뒤의 새 프로필 이름이었지만 화면이 처음 프레젠테이션으로 만들어졌다(§6.6, 플랫폼 노트 "프로필과 화면 생성") |
 | capability `pcWatchList` | `summary` string(≤ 60), `names` string(≤ 120), `slotOne`–`slotFive` enum `running`/`stopped`/`empty`. 명령 없음. 정의는 `pcWatch`와 같고, 프레젠테이션은 처음부터 지금의 것(아래)이다 — capability 프레젠테이션은 처음 쓰인 내용으로 굳어 `presentation:update`로는 화면이 바뀌지 않았다 |
 | 상세 화면 | 요약("실행 중인 앱") → "감시 1"…"감시 5"(값 "실행 중" / "꺼짐" / "비어 있음", 한국어만) → 이름("감시 이름"). 대시보드 상태 없음 |

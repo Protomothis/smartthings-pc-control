@@ -213,6 +213,113 @@ func TestActivityScannerListFailureKeepsLastResult(t *testing.T) {
 	}
 }
 
+// TestActivityScannedFlag: scanned is false while the option is off and
+// from an enable or an edit until the first scan for that config finishes,
+// true afterwards — and its flip is a change, so it is pushed.
+func TestActivityScannedFlag(t *testing.T) {
+	running := []string{"steam.exe"}
+	fail := false
+	s := &Scanner{List: func() ([]string, error) {
+		if fail {
+			return nil, errors.New("snapshot refused")
+		}
+		return slices.Clone(running), nil
+	}}
+	off := config.ActivityConfig{Enabled: false, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
+	on := config.ActivityConfig{Enabled: true, Watch: off.Watch}
+	edited := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "obs64.exe", "OBS")}}
+	relabelled := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam!"), watch(2, "obs64.exe", "OBS")}}
+
+	// Disabled: the off block, never scanned.
+	if got, _ := s.Scan(off); got.Scanned {
+		t.Errorf("disabled scan = %+v, want scanned false", got)
+	}
+	if cur := s.Current(off); cur.Scanned || cur.Enabled || len(cur.Apps) != 0 || cur.Top != "" {
+		t.Errorf("disabled status = %+v", cur)
+	}
+	raw, _ := json.Marshal(s.Current(off))
+	if string(raw) != `{"enabled":false,"apps":[],"top":"","scanned":false}` {
+		t.Errorf("disabled block = %s", raw)
+	}
+
+	// Enabled: false until the first scan for it, then true.
+	if cur := s.Current(on); cur.Scanned || !cur.Enabled {
+		t.Errorf("status right after enabling = %+v, want scanned false", cur)
+	}
+	got, changed := s.Scan(on)
+	if !got.Scanned || !changed {
+		t.Errorf("first scan after enabling = %+v changed=%v, want scanned and a change", got, changed)
+	}
+	if cur := s.Current(on); !cur.Scanned || cur.Top != "steam.exe" {
+		t.Errorf("status after the scan = %+v", cur)
+	}
+
+	// A list edit and a relabel: false again until rescanned.
+	for _, cfg := range []config.ActivityConfig{edited, relabelled} {
+		if cur := s.Current(cfg); cur.Scanned {
+			t.Errorf("status after an edit = %+v, want scanned false", cur)
+		}
+		if got, changed := s.Scan(cfg); !got.Scanned || !changed {
+			t.Errorf("scan after an edit = %+v changed=%v", got, changed)
+		}
+		if _, changed := s.Scan(cfg); changed {
+			t.Error("a second scan of the same config reported a change")
+		}
+	}
+
+	// The scan after an edit fails: still not scanned, and the next good
+	// scan flips it — a change even though no running flag moved.
+	fail = true
+	got, _ = s.Scan(edited)
+	if got.Scanned {
+		t.Errorf("failed scan after an edit = %+v, want scanned false", got)
+	}
+	fail = false
+	running = nil
+	if got, changed := s.Scan(edited); !got.Scanned || !changed {
+		t.Errorf("good scan after the failed one = %+v changed=%v", got, changed)
+	}
+
+	// A failure for an unchanged config keeps the scanned result.
+	fail = true
+	if got, changed := s.Scan(edited); !got.Scanned || changed {
+		t.Errorf("failed rescan = %+v changed=%v, want the last (scanned) result", got, changed)
+	}
+}
+
+func TestActivityScannedOnServiceStart(t *testing.T) {
+	// A fresh scanner (service start): not scanned until the first scan,
+	// which only sets the baseline.
+	s, _ := scannerOver("steam.exe")
+	cfg := config.ActivityConfig{Enabled: true, Watch: []config.ActivityWatch{watch(1, "steam.exe", "Steam")}}
+	if cur := s.Current(cfg); cur.Scanned {
+		t.Errorf("status before any scan = %+v", cur)
+	}
+	if got, changed := s.Scan(cfg); !got.Scanned || changed {
+		t.Errorf("first scan = %+v changed=%v", got, changed)
+	}
+	if cur := s.Current(cfg); !cur.Scanned {
+		t.Errorf("status after the first scan = %+v", cur)
+	}
+}
+
+func TestActivityLogLineHasNoNames(t *testing.T) {
+	a := Match([]config.ActivityWatch{watch(1, "steam.exe", "Steam"), watch(2, "obs64.exe", "OBS"), watch(3, "code.exe", "VS Code")},
+		[]string{"steam.exe", "obs64.exe"})
+	line := LogLine(a)
+	if line != "2 of 3 watched running" {
+		t.Errorf("LogLine = %q", line)
+	}
+	for _, name := range []string{"Steam", "OBS", "steam", "obs64", "Code"} {
+		if strings.Contains(line, name) {
+			t.Errorf("LogLine %q names %q", line, name)
+		}
+	}
+	if got := LogLine(Off()); got != "off" {
+		t.Errorf("LogLine(off) = %q", got)
+	}
+}
+
 func TestToolhelpProcessNamesSeesThisProcess(t *testing.T) {
 	names, err := ToolhelpNames()
 	if err != nil {

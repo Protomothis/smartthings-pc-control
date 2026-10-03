@@ -16,6 +16,7 @@
       }
     ],
     "enabled": true,
+    "scanned": true,
     "top": "steam.exe"
   },
   "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
@@ -37,6 +38,7 @@
         }
       ],
       "enabled": true,
+      "scanned": true,
       "top": "steam.exe"
     },
     "audio": {
