@@ -33,6 +33,9 @@ function power.new(power_state)
     power_state = power_state or power.UNKNOWN,
     -- consecutive failed polls classified as "unreachable"
     unreachable_count = 0,
+    -- true while the last poll was refused (`app_down`): the PC is on, the PC
+    -- app is not answering
+    app_down = false,
     -- the reason of the last power.stopping push, so a PC that said it was
     -- suspending is not reported as off once it stops answering
     last_stopping_reason = nil,
@@ -55,6 +58,7 @@ local function copy(s)
   return {
     power_state = s.power_state,
     unreachable_count = s.unreachable_count or 0,
+    app_down = s.app_down == true,
     last_stopping_reason = s.last_stopping_reason,
     wake_from = s.wake_from,
     schedule_active = s.schedule_active or false,
@@ -80,8 +84,8 @@ end
 
 --- Apply one event to a device state, returning a NEW state table.
 --
--- Events (§6.2): `status_ok`, `unreachable`, `stopping` (+reason), `switch_on`,
--- `wake_timeout`, `schedule_cancelled`. The event may be a string with the
+-- Events (§6.2): `status_ok`, `unreachable`, `app_down`, `app_answered`,
+-- `stopping` (+reason), `switch_on`, `wake_timeout`, `schedule_cancelled`. The event may be a string with the
 -- reason as third argument, or a table `{ type = ..., reason = ... }`.
 function power.transition(s, event, arg)
   s = s or power.new()
@@ -98,10 +102,34 @@ function power.transition(s, event, arg)
     -- The service answered, so the PC is up regardless of what we believed.
     nxt.power_state = power.ON
     nxt.unreachable_count = 0
+    nxt.app_down = false
     nxt.last_stopping_reason = nil
     nxt.wake_from = nil
+  elseif event == "app_down" then
+    -- The connection was refused: the PC itself answered
+    -- (client.transport_kind), so it is on and only the PC app is missing.
+    -- Never a step towards `off`.
+    nxt.unreachable_count = 0
+    nxt.app_down = true
+    if cur ~= power.SHUTTING_DOWN then
+      -- `on` stays `on`. From `off`, `sleeping`, `hibernated`, `unknown` or
+      -- `waking` the PC has demonstrably come up (booted, woken by hand or by
+      -- this driver's WoL) and the app has not started yet: `on`, so the
+      -- switch tells the truth and a wake is over (poll.lua cancels its timer).
+      -- `shuttingDown` stays: Windows stops the service first, the PC refuses
+      -- until its network goes, and then `unreachable` takes it to `off`.
+      nxt.power_state = power.ON
+      nxt.last_stopping_reason = nil
+      nxt.wake_from = nil
+    end
+  elseif event == "app_answered" then
+    -- The PC app answered with an error (401, 404, …): it is not down, and
+    -- nothing else is known about the PC.
+    nxt.app_down = false
   elseif event == "unreachable" then
     nxt.unreachable_count = (s.unreachable_count or 0) + 1
+    -- No answer at all now, not even a refusal.
+    nxt.app_down = false
     if cur == power.WAKING then
       -- Still waking: silence is expected until the 90s timeout (§6.4).
       nxt.power_state = power.WAKING
@@ -119,6 +147,8 @@ function power.transition(s, event, arg)
   elseif event == "stopping" then
     nxt.last_stopping_reason = reason or "unknown"
     nxt.unreachable_count = 0
+    -- Only a running PC app pushes.
+    nxt.app_down = false
     nxt.wake_from = nil
     nxt.power_state = STOPPING_STATE[nxt.last_stopping_reason] or power.SHUTTING_DOWN
   elseif event == "switch_on" then

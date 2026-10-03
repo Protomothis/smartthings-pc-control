@@ -55,6 +55,18 @@ local STRINGS = {
     ko = "PC에 연결할 수 없습니다",
     en = "Cannot reach the PC",
   },
+  -- The same failure once the PC counts as off (two polls without an answer,
+  -- §6.2): it says what the user can check, not just that it failed.
+  unreachable_off = {
+    ko = "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다",
+    en = "The PC is off or offline",
+  },
+  -- The connection was refused (client.transport_kind): the PC is up, the PC
+  -- app is not answering on its port.
+  app_down = {
+    ko = "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요",
+    en = "The PC is on but the PC app isn't responding · restart the app on the PC",
+  },
   -- Users know the service as "the PC app" (the tray app they installed), so
   -- every notice that asks for a newer one says so.
   incompatible_service = {
@@ -314,6 +326,11 @@ local STRINGS = {
   ago_m = { ko = "%d분 전", en = "%dm ago" },
   ago_h = { ko = "%d시간 전", en = "%dh ago" },
   ago_d = { ko = "%d일 전", en = "%dd ago" },
+
+  -- What `pcInfo.summary` says for a refused connection (the PC is on, its
+  -- app is not answering), instead of "응답 없음 · 마지막 확인 …". One fixed
+  -- phrase inside the row's 24 characters.
+  offline_app_down = { ko = "PC 앱 응답 없음", en = "PC app not responding" },
 
   -- The `pcVersion.versions` row, "v1.1.0 · 드라이버 1.0": two numbers, short
   -- enough for a narrow row. `?` for a service version not told yet.

@@ -24,7 +24,7 @@ function common.report_error(device, kind, body)
     log.warn(string.format("command refused (%s) on %s", tostring(kind), device.id))
     return
   end
-  rows.emit_connection(device, connection, poll.message_for(kind, body, fields.lang(device)))
+  rows.emit_connection(device, connection, poll.message_for(kind, body, fields.lang(device)), nil, kind)
 end
 
 --- The busy value of the transition `device` is in, or nil (§6.9). While the

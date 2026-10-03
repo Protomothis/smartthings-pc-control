@@ -81,7 +81,10 @@ end
 --- poll saw (a PC that is off has not changed its version); the summary says
 --- when the PC last answered.
 -- @param deps optional; `deps.now` replaces the clock
-function rows.emit_connection(device, connection, message, deps)
+-- @param kind optional, the err_kind (client.lua): `app_down` (connection
+--   refused, `connection` is "unreachable") says "PC 앱 응답 없음" instead of
+--   when the PC was last seen
+function rows.emit_connection(device, connection, message, deps, kind)
   local lang = fields.lang(device)
   local versions = state.versions(fields.service_version(device), lang)
   local seen = fields.last_seen(device)
@@ -90,7 +93,8 @@ function rows.emit_connection(device, connection, message, deps)
     { cap = caps.STATUS, attr = "connection", value = connection },
     { cap = caps.STATUS, attr = "message", value = message or "" },
     { cap = caps.STATUS, attr = "summary",
-      value = state.status_summary(connection, lang, nil, nil, { seen_ago = seen_ago }) },
+      value = state.status_summary(connection, lang, nil, nil,
+        { seen_ago = seen_ago, app_down = kind == "app_down" }) },
     -- The row is pcVersion's; pcInfo still defines the attribute.
     { cap = caps.VERSION, attr = "versions", value = versions },
     { cap = caps.STATUS, attr = "versions", value = versions },

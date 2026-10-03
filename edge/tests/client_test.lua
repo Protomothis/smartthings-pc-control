@@ -200,9 +200,92 @@ function T.test_403_is_forbidden()
 end
 
 function T.test_a_connection_failure_is_unreachable()
-  local ok, _, err = client.get_status(device(), { http = broken_http("connection refused") })
+  local ok, _, err = client.get_status(device(), { http = broken_http("No route to host") })
   h.assert_false(ok)
   h.assert_equal(err, "unreachable")
+end
+
+-- A refused connection is the PC answering with a RST: it is on, its app is
+-- not listening (the service's inbound allow rule makes Windows refuse rather
+-- than drop). Every other transport failure stays `unreachable`.
+function T.test_a_refused_connection_is_app_down()
+  for _, message in ipairs({
+    "connection refused", "Connection refused", "Connection refused (os error 111)",
+    "ECONNREFUSED", "connect: CONNECTION REFUSED",
+  }) do
+    h.assert_equal(client.transport_kind(message), "app_down", message)
+    h.assert_equal(client.classify(message), "app_down", message)
+    local ok, body, err = client.get_status(device(), { http = broken_http(message) })
+    h.assert_false(ok, message)
+    h.assert_nil(body, message)
+    h.assert_equal(err, "app_down", message)
+  end
+  -- Raised instead of returned: the same rule.
+  local _, _, err = client.get_status(device(), {
+    http = function() error("connection refused", 0) end,
+  })
+  h.assert_equal(err, "app_down", "a raised refusal")
+end
+
+function T.test_app_down_is_worded_apart_from_an_unreachable_pc()
+  -- The enum has no value of its own (pcInfo.json is published): `unreachable`.
+  h.assert_equal(poll.connection_for("app_down"), "unreachable")
+  h.assert_equal(poll.message_for("app_down", nil, "ko"),
+    "PC는 켜져 있지만 PC 앱이 응답하지 않습니다 · PC에서 앱을 다시 실행하세요")
+  h.assert_equal(poll.message_for("app_down", nil, "en"),
+    "The PC is on but the PC app isn't responding · restart the app on the PC")
+  -- Unreachable: the old sentence while the PC may still be on, the likely
+  -- reasons once it counts as off.
+  h.assert_equal(poll.message_for("unreachable", nil, "ko"), "PC에 연결할 수 없습니다")
+  h.assert_equal(poll.message_for("unreachable", nil, "ko", state.ON), "PC에 연결할 수 없습니다")
+  h.assert_equal(poll.message_for("unreachable", nil, "ko", state.OFF),
+    "PC가 꺼져 있거나 네트워크에 연결되지 않았습니다")
+  h.assert_equal(poll.message_for("unreachable", nil, "en", state.OFF), "The PC is off or offline")
+  h.assert_equal(poll.message_for("app_down", nil, "en", state.OFF),
+    poll.message_for("app_down", nil, "en"), "a refusal is never \"off\"")
+end
+
+function T.test_a_refused_poll_ends_a_wake()
+  -- The PC came up (it refuses), the app has not: on, and no "깨우기 실패" 90 s
+  -- later from a timer that is still waiting for the app.
+  local d = device()
+  fields.set_state(d, state.transition(state.new(state.OFF), "switch_on"))
+  local cancelled = {}
+  local driver = { cancel_timer = function(_, timer) cancelled[#cancelled + 1] = timer end }
+  d:set_field(fields.WAKE_TIMER, "wake-timer")
+  local ok, kind = poll.once(driver, d, { deps = { http = broken_http("Connection refused") } })
+  h.assert_false(ok)
+  h.assert_equal(kind, "app_down")
+  h.assert_equal(fields.state(d).power_state, state.ON)
+  h.assert_nil(d:get_field(fields.WAKE_TIMER))
+  h.assert_deep_equal(cancelled, { "wake-timer" })
+  h.assert_equal(h.last_value(h.emitted(d), nil, caps.POWER_STATE, "powerState"), state.ON)
+  h.assert_equal(d.health, "online")
+end
+
+function T.test_a_refused_command_says_the_app_is_down()
+  -- A command that is refused paints the same words as a refused poll.
+  local common = require "handlers.common"
+  local d = device({ language = "en" })
+  common.report_error(d, "app_down", nil)
+  local emitted = h.emitted(d)
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "connection"), "unreachable")
+  h.assert_equal(h.event_value(emitted, caps.STATUS, "summary"), "PC app not responding")
+  h.assert_contains(h.event_value(emitted, caps.STATUS, "message"), "restart the app")
+end
+
+function T.test_every_other_transport_failure_is_unreachable()
+  for _, message in ipairs({
+    "timeout", "Operation timed out", "No route to host", "Host is unreachable",
+    "Network is unreachable", "host not found", "Name or service not known",
+    -- luasocket says "closed" for a reset and for a reply cut short alike; the
+    -- message does not say it happened at connect time.
+    "closed", "connection reset by peer", "", nil,
+  }) do
+    h.assert_equal(client.transport_kind(message), "unreachable", tostring(message))
+    local _, _, err = client.get_status(device(), { http = broken_http(message or "timeout") })
+    h.assert_equal(err, "unreachable", tostring(message))
+  end
 end
 
 function T.test_a_timeout_is_unreachable()
@@ -298,7 +381,7 @@ function T.test_an_unreachable_poll_does_report()
   -- The contrast to the test above: a real failure is shown.
   local d = device()
   fields.set_state(d, state.new(state.ON))
-  local ok, kind = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
+  local ok, kind = poll.once(nil, d, { deps = { http = broken_http("timeout") } })
   h.assert_false(ok)
   h.assert_equal(kind, "unreachable")
   -- health stays online: an offline device cannot be switched on (WoL) in the app
@@ -317,7 +400,7 @@ function T.test_an_unreachable_poll_keeps_the_last_service_version()
   h.assert_equal(d:get_field(fields.SERVICE_VERSION), "v1.1.0",
     "a successful poll persists the service version")
 
-  local ok = poll.once(nil, d, { deps = { http = broken_http("connection refused") } })
+  local ok = poll.once(nil, d, { deps = { http = broken_http("timeout") } })
   h.assert_false(ok)
   -- The last value of each row: an unchanged one is not emitted again (the
   -- event budget), so what the row shows is what it was last told.
@@ -339,7 +422,7 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
   local clock = function() return now end
 
   -- Never seen: the row keeps its old words.
-  poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } })
+  poll.once(nil, d, { deps = { http = broken_http("timeout"), now = clock } })
   h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"), "연결 안 됨 · 응답 없음")
   h.assert_nil(fields.last_seen(d), "a failed poll is not a sighting")
 
@@ -354,7 +437,7 @@ function T.test_the_last_seen_time_survives_a_failed_poll()
   for _, minutes in ipairs({ 5, 12 }) do
     now = 3000000 + minutes * 60
     d.emitted = {}
-    h.assert_false(poll.once(nil, d, { deps = { http = broken_http("connection refused"), now = clock } }))
+    h.assert_false(poll.once(nil, d, { deps = { http = broken_http("timeout"), now = clock } }))
     h.assert_equal(h.event_value(h.emitted(d), caps.STATUS, "summary"),
       string.format("응답 없음 · 마지막 확인 %d분 전", minutes))
     h.assert_equal(fields.last_seen(d), 3000000, "the failure leaves the time alone")
@@ -420,7 +503,8 @@ function T.test_classify_table()
   h.assert_equal(client.classify(404), "incompatible")
   h.assert_equal(client.classify(429), "ratelimited")
   h.assert_equal(client.classify(502), "unreachable")
-  h.assert_equal(client.classify("connection refused"), "unreachable")
+  h.assert_equal(client.classify("timeout"), "unreachable")
+  h.assert_equal(client.classify("connection refused"), "app_down")
   h.assert_equal(client.classify(nil), "unreachable")
 end
 

@@ -292,6 +292,12 @@ function poll.connection_for(kind)
   if kind == "unauthorized" or kind == "unreachable" or kind == "incompatible" then
     return kind
   end
+  -- A refused connection: the PC is on, its app is not. The enum (pcInfo.json,
+  -- published) has no value of its own for it, and to a routine it is the
+  -- same "cannot reach the PC app"; the summary and message tell the two apart.
+  if kind == "app_down" then
+    return "unreachable"
+  end
   -- 403: the secret was accepted, the hub is not on the allow-list. The enum
   -- has no value of its own for it (§3.1); the message tells the two apart.
   if kind == "forbidden" then
@@ -309,8 +315,16 @@ end
 
 --- The sentence for an err_kind (§3.1). `body` is the decoded response when
 --- there was one: a higher `protocol` means the driver is the old side.
-function poll.message_for(kind, body, lang)
+--- `power_state` (optional, after the poll's transition): an unreachable PC
+--- that counts as off is told so ("꺼져 있거나 네트워크에 연결되지 않았습니다").
+function poll.message_for(kind, body, lang, power_state)
   body = body or {}
+  if kind == "app_down" then
+    return i18n.t(lang, "app_down")
+  end
+  if kind == "unreachable" and power_state == state.OFF then
+    return i18n.t(lang, "unreachable_off")
+  end
   if kind == "incompatible" then
     local protocol = tonumber(body.protocol)
     if protocol and protocol > client.PROTOCOL then
@@ -436,11 +450,21 @@ local function once(driver, device, opts)
   end
 
   local nxt = current
-  if kind == "unreachable" then
-    nxt = state.transition(current, "unreachable")
+  if kind == "unreachable" or kind == "app_down" then
+    -- `app_down` (refused) keeps the PC on and never counts towards `off`
+    -- (state.transition).
+    nxt = state.transition(current, kind)
     pcall(function() device:online() end)
+    if kind == "app_down" then
+      -- The PC is up, so a wake under way is over - not "깨우기 실패" in 90 s.
+      wol.cancel_wake(driver, device)
+    end
     -- §6.5: the PC may have moved; one targeted SSDP search (rate limited).
+    -- For a refusal too: another device may hold the PC's old address now.
     pcall(function() discovery.refresh(driver, device, opts.deps) end)
+  elseif current.app_down == true then
+    -- 401, 404, …: the PC app answered, wrongly, so it is not down.
+    nxt = state.transition(current, "app_answered")
   end
   fields.set_state(device, nxt)
   rows.emit_power(device, nxt)
@@ -450,7 +474,8 @@ local function once(driver, device, opts)
   rows.ensure_action(device)
   rows.ensure_preset(device, opts.deps)
   rows.ensure_toast(device)
-  rows.emit_connection(device, connection, poll.message_for(kind, body, lang), opts.deps)
+  rows.emit_connection(device, connection, poll.message_for(kind, body, lang, nxt.power_state),
+    opts.deps, kind)
   poll.rotate_due(driver, device, opts.deps)
   return false, kind
 end
