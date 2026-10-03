@@ -38,12 +38,12 @@ func TestConfigAPIPresets(t *testing.T) {
 	initLogger()
 
 	w := httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"presets":[{"slot":1,"name":"x","type":"program","path":"notepad.exe"}]}`))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "absolute") {
 		t.Fatalf("invalid preset: %d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"presets":[
 		{"slot":4,"name":"b","type":"url","path":"https://b.example"},
 		{"slot":2,"name":"a","type":"url","path":"https://a.example"}]}`))
 	if w.Code != http.StatusOK {
@@ -55,19 +55,19 @@ func TestConfigAPIPresets(t *testing.T) {
 	}
 	// A body without presets keeps them (an older WebUI page).
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"notify_pc":{"enabled":false}}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 2 || getConfig().NotifyPC.Enabled {
 		t.Errorf("omitted presets: %d, %+v", w.Code, getConfig())
 	}
 	// [] clears them.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"presets":[]}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"presets":[]}`))
 	if w.Code != http.StatusOK || len(getConfig().Presets) != 0 {
 		t.Errorf("cleared: %d, %+v", w.Code, getConfig().Presets)
 	}
 	// The retired notify_pc.speak/voice keys of an older app are ignored.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"notify_pc":{"enabled":true,"speak":true,"voice":"a\nb"}}`))
 	if w.Code != http.StatusOK || !getConfig().NotifyPC.Enabled {
 		t.Errorf("old speech keys: %d, %+v", w.Code, getConfig().NotifyPC)
 	}
@@ -210,7 +210,7 @@ func TestPresetsAPI(t *testing.T) {
 
 	// The editor's test runs an unsaved row, through the save rules.
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
+	webAPI(w, localPostJSON(t, "/api/presets/test", `{"type":"script","path":"C:\\s\\go.ps1","args":["-x"]}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("test: %d %s", w.Code, w.Body.String())
 	}
@@ -219,7 +219,7 @@ func TestPresetsAPI(t *testing.T) {
 	}
 	n := len(*calls)
 	w = httptest.NewRecorder()
-	webAPI(w, postJSON("/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
+	webAPI(w, localPostJSON(t, "/api/presets/test", `{"type":"program","path":"notepad.exe"}`))
 	if w.Code != http.StatusBadRequest || len(*calls) != n {
 		t.Errorf("invalid test: %d, ran %d", w.Code, len(*calls)-n)
 	}
@@ -227,5 +227,102 @@ func TestPresetsAPI(t *testing.T) {
 	webAPI(w, httptest.NewRequest("POST", "/api/presets/run", strings.NewReader(`{"slot":1}`)))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("without CSRF header: %d", w.Code)
+	}
+}
+
+// presetFailures are user-session replies to a failed start: the current
+// child's (a reason, the base name in the message, the path in the
+// detail) and an older one's with the full path in the message.
+var presetFailures = []struct {
+	name   string
+	err    error
+	ko, en string // Telegram's wording of the failure
+	st     string // the /st/v1 and /api message
+}{
+	{"missing file", &userActionError{Code: "failed", Reason: "not_found", Message: "file not found: steam.exe",
+		Detail: `CreateFile C:\Games\Steam\steam.exe: The system cannot find the file specified.`},
+		"파일을 찾을 수 없음: <code>steam.exe</code>", "File not found: <code>steam.exe</code>", "file not found: steam.exe"},
+	{"access denied", &userActionError{Code: "failed", Reason: "access_denied", Message: "access denied: steam.exe",
+		Detail: `fork/exec C:\Games\Steam\steam.exe: Access is denied.`},
+		"접근이 거부됨: <code>steam.exe</code>", "Access denied: <code>steam.exe</code>", "access denied: steam.exe"},
+	{"older child, path in the message", &userActionError{Code: "failed",
+		Message: `start steam.exe: CreateFile C:\Games\Steam\steam.exe: The system cannot find the file specified.`},
+		"실행하지 못함: <code>steam.exe</code>", "Could not start: <code>steam.exe</code>", "could not start: steam.exe"},
+}
+
+// TestPresetFailureMessagesHaveNoPath (C6): Telegram, /st/v1 and the
+// WebUI API name the file by its base name; the path is in service.log.
+func TestPresetFailureMessagesHaveNoPath(t *testing.T) {
+	initLogger()
+	for _, tc := range presetFailures {
+		t.Run(tc.name, func(t *testing.T) {
+			fakePresetRun(t, "", tc.err)
+
+			// Telegram, both languages.
+			for lang, want := range map[string]string{"ko": tc.ko, "en": tc.en} {
+				cfg := tgPresetCfg(testPresets)
+				cfg.Telegram.Lang = lang
+				withLiveConfig(t, cfg)
+				reply, _, err := tgCtl.HandleCommand(context.Background(), "42", "run", []string{"3"})
+				if err == nil || !strings.Contains(reply, want) || strings.Contains(reply, `C:\Games`) || strings.Contains(reply, "Games") {
+					t.Errorf("telegram %s: %q (%v), want %q and no path", lang, reply, err, want)
+				}
+			}
+
+			// /st/v1 command.
+			stSetup(t, Config{Port: 5001, Presets: testPresets})
+			stSrv.ResetRateLimit()
+			w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", `{"command":"preset","value":3}`)
+			body := stJSON(t, w)
+			if w.Code != http.StatusBadGateway || body["error"] != "failed" || body["message"] != tc.st || strings.Contains(w.Body.String(), "Games") {
+				t.Errorf("/st/v1: %d %s, want 502 failed %q", w.Code, w.Body.String(), tc.st)
+			}
+
+			// The app's [실행] (reachable from a remote WebUI login too).
+			withLiveConfig(t, Config{Port: 5001, Presets: testPresets})
+			w = httptest.NewRecorder()
+			webAPI(w, postJSON("/api/presets/run", `{"slot":3}`))
+			if decodeBody(t, w)["message"] != tc.st || strings.Contains(w.Body.String(), "Games") {
+				t.Errorf("/api/presets/run: %d %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestTelegramRunNumericFallback: /run 2077 runs the preset named "2077"
+// when there is no slot 2077; a filled slot still wins.
+func TestTelegramRunNumericFallback(t *testing.T) {
+	initLogger()
+	withLiveConfig(t, tgPresetCfg([]Preset{
+		{Slot: 1, Name: "2077", Type: "program", Path: `C:\Games\cp2077.exe`},
+		{Slot: 2, Name: "1", Type: "url", Path: "https://example.com/one"},
+	}))
+	calls := fakePresetRun(t, `{"ok":true,"started":true}`, nil)
+	reply, _, err := tgCtl.HandleCommand(context.Background(), "42", "run", []string{"2077"})
+	if err != nil || !strings.Contains(reply, "1 · 2077") || len(*calls) != 1 || (*calls)[0][4] != `C:\Games\cp2077.exe` {
+		t.Errorf("/run 2077: %q, %v, calls %q", reply, err, *calls)
+	}
+	// "1" is slot 1, not the preset named "1".
+	reply, _, _ = tgCtl.HandleCommand(context.Background(), "42", "run", []string{"1"})
+	if !strings.Contains(reply, "1 · 2077") {
+		t.Errorf("/run 1: %q, want slot 1", reply)
+	}
+}
+
+// TestConfigAPIPresetNamesUnique: two presets may not share a name (case
+// and surrounding space aside), or /run 이름 would be ambiguous.
+func TestConfigAPIPresetNamesUnique(t *testing.T) {
+	protectConfigFile(t)
+	withLiveConfig(t, Config{Port: 5001})
+	initLogger()
+	w := httptest.NewRecorder()
+	webAPI(w, localPostJSON(t, "/api/config", `{"port":5001,"presets":[
+		{"slot":1,"name":"Game","type":"url","path":"https://a.example"},
+		{"slot":2,"name":"game","type":"url","path":"https://b.example"}]}`))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "same name") {
+		t.Errorf("duplicate names: %d %s", w.Code, w.Body.String())
+	}
+	if len(getConfig().Presets) != 0 {
+		t.Errorf("saved anyway: %+v", getConfig().Presets)
 	}
 }

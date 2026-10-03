@@ -4,7 +4,8 @@
 //
 // Every /api route but the two logins goes through apiAuth (#127): the
 // session (the WebUI login, or the tray's local session from loopback,
-// #131), the method and the CSRF header. The whole server sits behind the
+// #131), the method and the CSRF header. A few go further and need the
+// local trusted session itself (localOnly). The whole server sits behind the
 // Host check that stops DNS rebinding (#120). The JSON shapes are the
 // desktop app's contract; testdata/st-v1/api-config.get.json pins GET
 // /api/config.
@@ -47,6 +48,11 @@ type Server struct {
 	peerSameExe func(image string) bool
 	loginNow    func() time.Time
 
+	// presetUserSID is the SID of the user presets run as, which may write
+	// to its own scripts without a writable_by_others warning
+	// (presetsafety.go).
+	presetUserSID func() string
+
 	// sessionToken is the browser login's session (POST /api/login): one
 	// at a time, a new login replaces it.
 	sessionMu    sync.RWMutex
@@ -65,6 +71,7 @@ func New(d Deps) *Server {
 	s.peerTable = readTCPTable
 	s.peerInspect = s.inspectProcess
 	s.peerSameExe = isServiceExe
+	s.presetUserSID = s.targetUserSID
 	s.local.limiter = ratelimit.New(localLoginMax, localLoginWindow, func() time.Time { return s.loginNow() })
 	return s
 }
@@ -151,6 +158,53 @@ func (s *Server) apiAuth(next http.HandlerFunc, methods ...string) http.HandlerF
 		}
 		next(w, r)
 	}
+}
+
+// localTrusted reports whether r carries the local trusted session: the
+// token POST /api/local-login hands the desktop app after checking the
+// peer process (loopback, this exe, the session's own administrator), and
+// only over loopback. A secret login (/api/login) is not one.
+func (s *Server) localTrusted(r *http.Request) bool {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return false
+	}
+	return s.localSessionValid(r, cookie.Value)
+}
+
+// localOnly wraps a handler that only the desktop app on this PC may use:
+// without a local trusted session it answers 403 {"error":"local_only"},
+// secret or not. It goes inside apiAuth, so a missing session with a
+// secret set is still the usual 401 first.
+//
+// What sits behind it: running an arbitrary program as the user (preset
+// test), the process list, and changing what presets run or what the
+// watch list looks for (POST /api/config, checked there). A WebUI open to
+// the LAN with a guessed or shared secret must not reach any of them.
+func (s *Server) localOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.localTrusted(r) {
+			writeLocalOnly(w)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// writeLocalOnly is localOnly's refusal.
+func writeLocalOnly(w http.ResponseWriter) {
+	httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"status": "error", "error": "local_only",
+		"message": "Only the desktop app on this PC can do this."})
+}
+
+// SetLocalSessionToken replaces the local trusted session's token and
+// returns the one before (tests of the root service, which cannot run the
+// peer-process check).
+func (s *Server) SetLocalSessionToken(token string) (prev string) {
+	s.local.mu.Lock()
+	defer s.local.mu.Unlock()
+	prev, s.local.token = s.local.token, token
+	return prev
 }
 
 // writeAPIError is the {status:"error", message} shape the app expects.

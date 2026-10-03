@@ -903,7 +903,9 @@ func TestContractPushes(t *testing.T) {
 
 // TestContractConfigMasked pins GET /api/config: the desktop app's view of
 // config.json, with the Telegram bot token masked ("****" + last four) and
-// bot_token_set beside it.
+// bot_token_set beside it. It is read with the desktop app's local trusted
+// session (C5): without one the presets' path and args are masked
+// (webui_localonly_test.go).
 func TestContractConfigMasked(t *testing.T) {
 	cfg := goldenConfig()
 	cfg.Telegram = TelegramConfig{
@@ -911,11 +913,8 @@ func TestContractConfigMasked(t *testing.T) {
 		Detail: "simple", Lang: "ko",
 	}
 	withLiveConfig(t, cfg)
-	savedToken := webSrv.SetSessionToken("golden-session")
-	t.Cleanup(func() { webSrv.SetSessionToken(savedToken) })
 
-	r := httptest.NewRequest("GET", "/api/config", nil)
-	r.AddCookie(&http.Cookie{Name: "session", Value: "golden-session"})
+	r := asLocalApp(t, httptest.NewRequest("GET", "/api/config", nil))
 	w := httptest.NewRecorder()
 	webAPI(w, r)
 	if w.Code != http.StatusOK {
