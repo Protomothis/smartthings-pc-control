@@ -74,7 +74,6 @@ type ui struct {
 	statusDot   *canvas.Circle // connection indicator next to the status text
 	portEntry   *widget.Entry
 	secretEntry *widget.Entry
-	logsText    *widget.RichText
 	logsScroll  *container.Scroll
 	logsAuto    *widget.Check
 	// logsAutoOn mirrors logsAuto.Checked for pollLoop, which must not read
@@ -160,13 +159,19 @@ type ui struct {
 	// shows the logsShownMsg locale key instead), so an unchanged poll
 	// leaves it alone. logsOffsetY is the view's offset as last seen, to
 	// tell a scroll up from a scroll down; logsScrolling marks our own
-	// scrolls (logs_tab.go). All touched on the UI thread only.
-	logLines      []string
-	logsFilter    *widget.Entry
-	logsShown     []string
-	logsShownMsg  string
-	logsOffsetY   float32
-	logsScrolling bool
+	// scrolls (logs_tab.go). logsRows holds a row per shown line, from
+	// logRowPool (logs_rows.go); logsMsg stands in for it with a message.
+	// All touched on the UI thread only.
+	logsRows       *fyne.Container
+	logsRowsLayout *logRowsLayout
+	logRowPool     []*logRow
+	logsMsg        *widget.RichText
+	logLines       []string
+	logsFilter     *widget.Entry
+	logsShown      []string
+	logsShownMsg   string
+	logsOffsetY    float32
+	logsScrolling  bool
 }
 
 // Run opens the native GUI window. Blocks until the app quits. With

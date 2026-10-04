@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -26,13 +27,16 @@ import (
 const logsBottomSlack = 1
 
 func (u *ui) buildLogsTab() fyne.CanvasObject {
-	// One paragraph per line, coloured by logSegments; wrapped like the
-	// label it replaced (#134).
-	u.logsText = widget.NewRichText()
-	u.logsText.Wrapping = fyne.TextWrapBreak
+	// A row per line, timestamp and message in two columns (#134,
+	// logs_rows.go), or in their place the dim empty / no-match message.
+	u.logRowPool = nil
+	u.logsRowsLayout = &logRowsLayout{}
+	u.logsRows = container.New(u.logsRowsLayout)
+	u.logsMsg = widget.NewRichText()
+	u.logsMsg.Wrapping = fyne.TextWrapWord
 	u.logsShown, u.logsShownMsg = nil, ""
 	u.setLogsMessage("logs.empty")
-	u.logsScroll = container.NewVScroll(u.logsText)
+	u.logsScroll = container.NewVScroll(container.NewStack(u.logsRows, u.logsMsg))
 	u.logsScroll.OnScrolled = u.onLogsScrolled
 	u.logsOffsetY = 0
 	u.logsScrolling = false
@@ -123,7 +127,7 @@ func (u *ui) loadLogs() {
 // while auto refresh is on; with it off, only a view already at the end
 // stays there. Must be called on the UI thread.
 func (u *ui) renderLogs() {
-	if u.logsText == nil {
+	if u.logsRows == nil {
 		return // not built yet (a minimized start)
 	}
 	var filter string
@@ -151,14 +155,39 @@ func (u *ui) renderLogs() {
 }
 
 // setLogsLines puts lines in the view unless it already shows exactly
-// those. UI goroutine only.
+// those. The rows come from logRowPool and keep their widgets: rotated by
+// logsShift first, so after the usual poll each row whose line moved up
+// still holds it, and only rows with a different line are redrawn. UI
+// goroutine only.
 func (u *ui) setLogsLines(lines []string) {
 	if u.logsShownMsg == "" && u.logsShown != nil && slices.Equal(u.logsShown, lines) {
 		return
 	}
+	if k := logsShift(u.logsShown, lines); k > 0 {
+		old := u.logRowPool[:len(u.logsShown)]
+		copy(old, slices.Concat(old[k:], old[:k]))
+	}
+	for len(u.logRowPool) < len(lines) {
+		u.logRowPool = append(u.logRowPool, newLogRow())
+	}
+	rows := u.logRowPool[:len(lines)]
+	objs := make([]fyne.CanvasObject, 0, 3*len(rows))
+	for i, r := range rows {
+		r.show(lines[i])
+		if i > 0 {
+			objs = append(objs, r.sep)
+		}
+		objs = append(objs, r.stamp, r.msg)
+	}
 	u.logsShown, u.logsShownMsg = lines, ""
-	u.logsText.Segments = logRichSegments(lines)
-	u.logsText.Refresh()
+	u.logsRowsLayout.rows = rows
+	u.logsRows.Objects = objs
+	u.logsMsg.Hide()
+	u.logsRows.Show()
+	// Lay the rows out at the width they have, which wraps the new ones,
+	// without the Refresh of every row a Container.Refresh would do.
+	u.logsRowsLayout.Layout(objs, u.logsRows.Size())
+	canvas.Refresh(u.logsRows)
 }
 
 // setLogsMessage shows the locale message key (logs.empty, logs.nomatch)
@@ -169,8 +198,10 @@ func (u *ui) setLogsMessage(key string) {
 		return
 	}
 	u.logsShown, u.logsShownMsg = nil, key
-	u.logsText.Segments = []widget.RichTextSegment{logTextSegment(u.t(key), theme.ColorNamePlaceHolder, false)}
-	u.logsText.Refresh()
+	u.logsMsg.Segments = []widget.RichTextSegment{logTextSegment(u.t(key), theme.ColorNamePlaceHolder, false)}
+	u.logsMsg.Refresh()
+	u.logsRows.Hide()
+	u.logsMsg.Show()
 }
 
 // logsAtBottom reports whether offset y shows the end of the view (or
@@ -199,9 +230,10 @@ func (u *ui) logsToBottom() {
 	// the tab, the content still has the size of the last layout until the
 	// next frame: Scroll.ScrollToBottom measures the distance on
 	// Content.MinSize but its updateOffset gives up (offset 0) while the
-	// stale Content.Size fits the view. Resizing the RichText to the new
-	// width can re-wrap it and so change its MinSize again; a few rounds
-	// settle it (Fyne's scroll layout: max of MinSize and the view).
+	// stale Content.Size fits the view. Resizing the rows to a new width
+	// re-wraps their messages and so changes their MinSize again; the next
+	// round, at the same width, only moves rows, so a few rounds settle it
+	// (Fyne's scroll layout: max of MinSize and the view).
 	c := s.Content
 	for range 3 {
 		ms := c.MinSize()
