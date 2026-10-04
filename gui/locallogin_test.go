@@ -240,15 +240,15 @@ func TestInitialLoadLocalLogin(t *testing.T) {
 
 func TestReadLocalConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), trayConfigFile)
-	if got := readLocalConfigFile(path); got.Port != 0 || got.Media.Enabled != nil {
+	if got := readLocalConfigFile(path); got.Port != 0 || got.Media.Enabled != nil || got.Debug {
 		t.Errorf("missing file: %+v", got)
 	}
-	data := `{"port": 5101, "smartthings": {"expose_session": true}, "media": {"enabled": false, "now_playing": true}}`
+	data := `{"port": 5101, "smartthings": {"expose_session": true}, "media": {"enabled": false, "now_playing": true}, "debug": true}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := readLocalConfigFile(path)
-	if got.Port != 5101 || !got.SmartThings.ExposeSession || got.Media.Enabled == nil || *got.Media.Enabled || !got.Media.NowPlaying {
+	if got.Port != 5101 || !got.SmartThings.ExposeSession || got.Media.Enabled == nil || *got.Media.Enabled || !got.Media.NowPlaying || !got.Debug {
 		t.Errorf("tray.json read as %+v", got)
 	}
 }

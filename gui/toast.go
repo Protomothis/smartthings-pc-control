@@ -136,6 +136,9 @@ type localConfig struct {
 		// (#117); missing means off.
 		NowPlaying bool `json:"now_playing"`
 	} `json:"media"`
+	// Debug turns the app's crash record on at start, before the service
+	// answers (#133, debug.go); missing means off.
+	Debug bool `json:"debug"`
 }
 
 // readLocalConfig parses tray.json next to the exe; zero values when the
