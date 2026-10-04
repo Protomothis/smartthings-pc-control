@@ -74,7 +74,7 @@ type ui struct {
 	statusDot   *canvas.Circle // connection indicator next to the status text
 	portEntry   *widget.Entry
 	secretEntry *widget.Entry
-	logsLabel   *widget.Label
+	logsText    *widget.RichText
 	logsScroll  *container.Scroll
 	logsAuto    *widget.Check
 	// logsAutoOn mirrors logsAuto.Checked for pollLoop, which must not read
@@ -155,10 +155,18 @@ type ui struct {
 	switching bool
 	returnTab int
 
-	// Logs: every line from the last fetch; the label shows the subset
-	// matching logsFilter. Both touched on the UI thread only.
-	logLines   []string
-	logsFilter *widget.Entry
+	// Logs: every line from the last fetch; the view shows the subset
+	// matching logsFilter. logsShown is what the view shows (nil while it
+	// shows the logsShownMsg locale key instead), so an unchanged poll
+	// leaves it alone. logsOffsetY is the view's offset as last seen, to
+	// tell a scroll up from a scroll down; logsScrolling marks our own
+	// scrolls (logs_tab.go). All touched on the UI thread only.
+	logLines      []string
+	logsFilter    *widget.Entry
+	logsShown     []string
+	logsShownMsg  string
+	logsOffsetY   float32
+	logsScrolling bool
 }
 
 // Run opens the native GUI window. Blocks until the app quits. With

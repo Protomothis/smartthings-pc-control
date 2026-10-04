@@ -207,6 +207,9 @@ func (u *ui) promptUnsaved(bodyKey string, dirty []*formTab, onDone func()) {
 func (u *ui) setCurTab(index int) {
 	u.curTab = index
 	u.shownTab.Store(int32(index))
+	if index == tabLogs {
+		u.logsShownAgain() // back on the newest line (#134)
+	}
 	if !u.connected.Load() {
 		return
 	}
