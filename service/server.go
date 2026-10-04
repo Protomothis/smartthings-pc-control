@@ -120,6 +120,8 @@ func StartHTTPServer(stop chan struct{}) {
 		// client that opens a connection and never finishes its headers no
 		// longer holds it forever. Bodies and responses are not limited.
 		ReadHeaderTimeout: httpReadHeaderTimeout,
+		// A handler panic (recovered by net/http) reaches service.log.
+		ErrorLog: logx.ErrorLog(),
 	}
 
 	go func() {

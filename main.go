@@ -103,8 +103,12 @@ func main() {
 	case "user-action":
 		// Hidden: launched by the service in the logged-in user's session
 		// (#103) with a fixed argument vector. Prints exactly one JSON line
-		// and exits 0/1; see useraction/useraction.go.
-		os.Exit(useraction.Main(os.Args[2:], os.Stdout))
+		// and exits 0/1; see useraction/useraction.go. In debug mode a
+		// crash is recorded (#133); os.Exit skips defers, hence the order.
+		stopCrashDump := useraction.StartCrashDump(Version)
+		code := useraction.Main(os.Args[2:], os.Stdout)
+		stopCrashDump()
+		os.Exit(code)
 
 	case "update-apply":
 		// Hidden: launched elevated by the GUI's self-updater as

@@ -84,6 +84,26 @@ func TestWritePrivateFile(t *testing.T) {
 	checkPrivate(t, old, me, "new")
 }
 
+// A crash record (#133) is private from its first byte, and never
+// replaces a file that is already there.
+func TestCreatePrivateFile(t *testing.T) {
+	me := mySID(t)
+	extra := "(A;;FA;;;" + me + ")"
+	path := filepath.Join(t.TempDir(), "service-20261004-101500-8.txt")
+	f, err := createPrivateFile(path, extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("header"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	checkPrivate(t, path, me, "header")
+	if _, err := createPrivateFile(path, extra); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("second create: %v, want fs.ErrExist", err)
+	}
+}
+
 func TestLockFile(t *testing.T) {
 	me := mySID(t)
 	extra := "(A;;FA;;;" + me + ")"

@@ -118,6 +118,8 @@ type ui struct {
 	svcBox      *fyne.Container
 	remoteCheck *toggle
 	mediaCheck  *toggle
+	// debugCheck is the developer section's debug mode switch (#133).
+	debugCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
 	// 0 is the leading "Off" entry. A period not in graceOptions (set via
 	// the API) is appended so it round-trips unchanged.
@@ -176,6 +178,11 @@ func Run(version string, minimized bool) {
 		}
 		return
 	}
+	// Debug mode (#133, debug.go): tray.json's switch, before anything
+	// else can crash; the adopted config takes over once the service
+	// answers. A normal quit removes the file again.
+	startDebugMode(version, readLocalConfig().Debug)
+	defer stopDebugMode()
 
 	a := app.NewWithID("com.protomothis.smartthings-pc-control")
 	a.Settings().SetTheme(newKoreanTheme())

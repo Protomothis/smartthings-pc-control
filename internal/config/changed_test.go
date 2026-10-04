@@ -11,7 +11,8 @@ import (
 
 // notAuditedKeys are the settings security.config_changed leaves out on
 // purpose: comfort settings that let nobody reach or watch the PC.
-// presets is audited by slot (PresetChangeKey).
+// presets is audited by slot (PresetChangeKey). debug only decides whether
+// a crash leaves a file on this PC (#133).
 var notAuditedKeys = []string{
 	"shutdown_grace",
 	"grace_seconds",
@@ -19,6 +20,7 @@ var notAuditedKeys = []string{
 	"awake.default_minutes",
 	"awake.keep_display",
 	"presets",
+	"debug",
 }
 
 // leafKeys lists every config.json path, descending into the objects

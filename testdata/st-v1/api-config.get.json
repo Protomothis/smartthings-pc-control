@@ -18,6 +18,7 @@
     "default_minutes": 60,
     "keep_display": false
   },
+  "debug": false,
   "grace_seconds": 120,
   "media": {
     "enabled": true,

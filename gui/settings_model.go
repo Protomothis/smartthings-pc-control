@@ -21,6 +21,8 @@ type settingsFormState struct {
 	GraceOn  bool
 	GraceSec int
 	NotifyPC notifyPCState
+	// Debug is the developer section's switch (#133).
+	Debug bool
 }
 
 // settingsStateFromConfig is what the tab shows for cfg.
@@ -32,6 +34,7 @@ func settingsStateFromConfig(cfg Config) settingsFormState {
 		Media:    cfg.Media.Enabled,
 		GraceOn:  cfg.ShutdownGrace,
 		NotifyPC: notifyPCStateFromConfig(cfg),
+		Debug:    cfg.Debug,
 	}
 	if s.GraceOn {
 		s.GraceSec = cfg.GraceSeconds
@@ -49,6 +52,7 @@ func (s settingsFormState) applyTo(cfg *Config, l Lang) error {
 	cfg.Secret = s.Secret
 	cfg.WebUIRemote = s.Remote
 	cfg.Media.Enabled = s.Media
+	cfg.Debug = s.Debug
 	s.NotifyPC.applyTo(cfg)
 	cfg.ShutdownGrace = s.GraceOn
 	switch {
@@ -76,5 +80,6 @@ func (s settingsFormState) dirty(base Config) bool {
 		s.Media != base.Media.Enabled ||
 		s.GraceOn != base.ShutdownGrace ||
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
+		s.Debug != base.Debug ||
 		s.NotifyPC.dirty(base)
 }

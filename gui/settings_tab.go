@@ -1,7 +1,8 @@
 package gui
 
 // The settings tab: the Windows service, the service settings, media and
-// PC notifications (notify_section.go), tools and the app's own options.
+// PC notifications (notify_section.go), tools, the app's own options and
+// the developer section (debug mode, #133).
 // Its pure model is settings_model.go.
 
 import (
@@ -37,6 +38,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
+	u.debugCheck = newToggle(u.t("settings.debug"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
 
@@ -123,6 +125,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			autostartCheck,
 			container.NewHBox(updateCheck, manualUpdateBtn, layout.NewSpacer()),
 		)),
+		widget.NewSeparator(),
+		section(u.t("settings.dev"), u.buildDeveloperSection()),
 		// Trailing padding so the last row never sits flush against the
 		// window edge when the tab fits without scrolling.
 		widget.NewLabel(""),
@@ -135,6 +139,20 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	return withSaveBar(u.settingsRoot, ft.bar)
 }
 
+// buildDeveloperSection is the 개발자 section (#133): the debug mode switch,
+// saved with the rest of the tab, and a button that opens this user's
+// crash folder. The service's records are admin-only, so the hint only
+// names their folder.
+func (u *ui) buildDeveloperSection() fyne.CanvasObject {
+	openBtn := widget.NewButtonWithIcon(u.t("settings.debug.open"), theme.FolderOpenIcon(), u.openCrashFolder)
+	return container.NewVBox(
+		u.debugCheck,
+		hint(u.t("settings.debug.hint")),
+		container.NewHBox(openBtn, layout.NewSpacer()),
+		hint(fmt.Sprintf(u.t("settings.debug.service"), serviceCrashDir())),
+	)
+}
+
 // fillSettingsTab writes cfg into the settings-tab fields (the formTab's
 // Fill; the coordinator mutes the change callbacks). UI thread only.
 func (u *ui) fillSettingsTab(cfg Config) {
@@ -143,6 +161,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.secretEntry.SetText(s.Secret)
 	u.remoteCheck.SetChecked(s.Remote)
 	u.mediaCheck.SetChecked(s.Media)
+	u.debugCheck.SetChecked(s.Debug)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
 }
@@ -155,6 +174,7 @@ func (u *ui) settingsState() settingsFormState {
 		Remote:   u.remoteCheck.Checked,
 		Media:    u.mediaCheck.Checked,
 		NotifyPC: u.notifySectionState(),
+		Debug:    u.debugCheck.Checked,
 	}
 	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
 		s.GraceOn, s.GraceSec = true, u.graceValues[i]

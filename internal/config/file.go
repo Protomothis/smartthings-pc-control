@@ -26,7 +26,8 @@ import (
 const FileName = "config.json"
 
 // TrayFileName is the user-readable subset of config.json for the tray
-// app (gui/toast.go readLocalConfig).
+// app (gui/toast.go readLocalConfig) and the user-action runs
+// (useraction/crashdump.go).
 const TrayFileName = "tray.json"
 
 // Load reads dir\config.json over Default, so every missing key keeps its
@@ -194,6 +195,9 @@ type trayConfig struct {
 		Enabled    bool `json:"enabled"`
 		NowPlaying bool `json:"now_playing"`
 	} `json:"media"`
+	// Debug lets the app and the user-action runs record crashes from
+	// their first instant, before any session (#133).
+	Debug bool `json:"debug"`
 }
 
 // trayConfigFrom picks the tray's settings out of cfg.
@@ -203,6 +207,7 @@ func trayConfigFrom(cfg Config) trayConfig {
 	t.SmartThings.ExposeSession = cfg.SmartThings.ExposeSession
 	t.Media.Enabled = cfg.Media.Enabled
 	t.Media.NowPlaying = cfg.Media.NowPlaying
+	t.Debug = cfg.Debug
 	return t
 }
 

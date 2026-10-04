@@ -27,6 +27,17 @@ func TestMaskSecret(t *testing.T) {
 	}
 }
 
+// ErrorLog lands in the log as one line per message (#133).
+func TestErrorLogWritesThroughPrintf(t *testing.T) {
+	var buf bytes.Buffer
+	restore := Capture(&buf)
+	defer restore()
+	ErrorLog().Printf("http: panic serving 127.0.0.1:1: boom\ngoroutine 7 [running]:\n")
+	if got := buf.String(); got != "http: panic serving 127.0.0.1:1: boom\ngoroutine 7 [running]:\n" {
+		t.Errorf("logged %q", got)
+	}
+}
+
 func TestInitWritesAndCaptureRedirects(t *testing.T) {
 	Close()
 	t.Cleanup(Close)

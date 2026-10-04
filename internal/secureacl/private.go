@@ -50,6 +50,35 @@ func WritePrivateFile(path string, data []byte) error {
 	return writePrivateFile(path, data, "")
 }
 
+// CreatePrivateFile creates a new file at path with the private DACL from
+// the start and returns it open for writing: the service's crash records
+// (#133), which may name paths and settings. An existing file is an error
+// that matches fs.ErrExist.
+func CreatePrivateFile(path string) (*os.File, error) {
+	return createPrivateFile(path, "")
+}
+
+func createPrivateFile(path, extraACEs string) (*os.File, error) {
+	sd, err := privateSD(extraACEs)
+	if err != nil {
+		return nil, err
+	}
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	sa := &windows.SecurityAttributes{SecurityDescriptor: sd}
+	sa.Length = uint32(unsafe.Sizeof(*sa))
+	// Shared like os.OpenFile's handles, so others may read it meanwhile.
+	h, err := windows.CreateFile(p, windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, sa,
+		windows.CREATE_NEW, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil
+}
+
 // privateSD builds the private security descriptor, with extra SDDL ACEs
 // appended (the tests keep their own account able to delete the file).
 func privateSD(extraACEs string) (*windows.SECURITY_DESCRIPTOR, error) {

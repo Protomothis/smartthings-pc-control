@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -91,6 +92,7 @@ func StartWebUI(stop chan struct{}) {
 		Addr:              fmt.Sprintf("%s:%d", bindAddr, webPort),
 		Handler:           webSrv.Handler(webPort, pagesEnabled),
 		ReadHeaderTimeout: httpReadHeaderTimeout, // gosec G112, see server.go
+		ErrorLog:          logx.ErrorLog(),       // handler panics, see server.go
 	}
 
 	go func() {

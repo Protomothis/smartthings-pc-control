@@ -40,6 +40,10 @@ type Config struct {
 	// and the presets tab (presets_tab.go) edit them.
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
 	Presets  []Preset       `json:"presets"`
+	// Debug is the settings tab's developer switch (#133). Never
+	// omitempty: a POST without the key keeps the stored value, so "off"
+	// has to be sent.
+	Debug bool `json:"debug"`
 }
 
 // NotifyPCConfig mirrors service.NotifyPCConfig.

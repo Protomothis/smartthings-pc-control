@@ -75,5 +75,6 @@
   "notify_pc": {
     "enabled": true
   },
-  "presets": []
+  "presets": [],
+  "debug": false
 }

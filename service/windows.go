@@ -44,6 +44,9 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	setConfig(cfg)
 	// The tray finds the port and its switches here, not in config.json.
 	config.WriteTrayFile(installDir(), cfg)
+	// Debug mode (#133): from here on a crash leaves a record, and the
+	// switch follows every save.
+	startDebugMode(cfg)
 
 	// Notification bus (#55) must exist before the servers emit. The live
 	// Telegram sink (#63) follows getConfig().Telegram on every event, so
@@ -82,6 +85,8 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			tgCtl.Stop()
 			stSrv.StopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
+			// A clean stop: the crash file goes unless it recorded something.
+			stopDebugMode()
 			closeLogger()
 			return false, 0
 		case svc.PowerEvent:
@@ -181,6 +186,8 @@ func RunConsole() {
 	setConfig(loadConfig())
 	// The tray finds the port in tray.json (#131).
 	config.WriteTrayFile(installDir(), getConfig())
+	startDebugMode(getConfig())
+	defer stopDebugMode()
 	startLiveNotifier() // live Telegram sink + grace-message hook; see Execute
 	tgCtl.Start()
 	defer tgCtl.Stop()

@@ -68,6 +68,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **어느 장치가 어느 PC인지** — 장치 정보의 모델 `PC Control · <8자리>`가 SmartThings 탭의 **이 PC의 ID**와 같습니다.
 - **WoL이 안 될 때** — SmartThings 탭의 **WoL 어댑터**에서 고른 랜카드와 그 WoL 상태를 확인합니다.
 - **로그** — 서비스는 exe 옆 `service.log`(앱 로그 탭), 트레이는 `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
+- **앱이나 서비스가 갑자기 꺼질 때** — 설정 탭 맨 아래 **개발자 → 디버그 모드**를 켜 두면 다음 비정상 종료 때 크래시 기록이 `%LOCALAPPDATA%\SmartThings PC Control\crash\`(앱, [크래시 폴더 열기])와 설치 폴더의 `crash\`(서비스, 관리자만 읽기)에 남습니다.
 - **`config.json`을 직접 고칠 때** — 관리자 권한 편집기가 필요합니다. 키는 Wiki [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스)에 있습니다.
 
 더 많은 사례는 Wiki [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ)에 있습니다.
@@ -129,6 +130,7 @@ The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, 
 
 If discovery finds nothing, check the discovery status and last search request on the **SmartThings** tab.
 Logs: `service.log` next to the exe (Logs tab) and `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
+If the app or the service quits unexpectedly, turn on **Developer → Debug mode** at the bottom of the Settings tab: the next crash leaves a record in `%LOCALAPPDATA%\SmartThings PC Control\crash\` (the app; **Open crash folder**) and in `crash\` in the install folder (the service; administrators only).
 The driver sends the secret in the `X-PC-Secret` header; an empty secret lets anyone on the LAN control the PC.
 The local API binds to `127.0.0.1:5002`, and the WebUI opens to the LAN only when you enable remote access with a secret set. The browser WebUI covers status, power commands, schedules and core settings; editing and testing presets, the watch list and the running-program list are for the desktop app on the PC only (its local login).
 Running-app detection reports only programs on your watch list.

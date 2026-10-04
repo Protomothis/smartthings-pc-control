@@ -191,10 +191,12 @@ func (u *ui) adoptConfig(fresh Config, ref *Config) {
 
 // onConfig updates the parts of the window that show the saved config but
 // are not forms: the command tab's preset buttons and the SmartThings
-// section's "no secret" hint.
+// section's "no secret" hint. The app's crash record follows the saved
+// debug switch too (#133, debug.go).
 func (u *ui) onConfig(cfg Config) {
 	u.fillPresetButtons(cfg.Presets)
 	u.setSTSecretHint(cfg.Secret == "")
+	setDebugMode(cfg.Debug)
 }
 
 // saveResult is what the background part of a save hands back.
