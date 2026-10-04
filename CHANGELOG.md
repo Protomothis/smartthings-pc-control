@@ -2,6 +2,18 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 추가
+
+- **디버그 모드** — 설정 탭 맨 아래 **개발자** 섹션의 스위치입니다(기본 꺼짐, `config.json`의 `debug`). 켜 두면 앱 · 서비스 · 사용자 세션 작업(`user-action`)이 비정상 종료될 때 모든 고루틴의 스택이 담긴 크래시 기록 파일을 남깁니다. 저장하면 서비스 재시작 없이 바로 적용되고, 정상 종료하면 파일을 지웁니다. 종류별로 최근 10개만 남깁니다 (#133)
+- 앱과 `user-action`의 기록은 `%LOCALAPPDATA%\SmartThings PC Control\crash\`(`gui-*` · `useraction-*`)에, 서비스의 기록은 설치 폴더의 `crash\`(`service-*`, 관리자만 읽기)에 남습니다. [크래시 폴더 열기]는 앱 쪽 폴더를 엽니다. 켜고 끌 때와 이전 실행의 기록을 찾았을 때 `gui.log` · `service.log`에 한 줄씩 남습니다 (#133)
+- 서비스 HTTP 처리 중 난 패닉(서비스는 계속 동작)이 이제 `service.log`에 스택과 함께 남습니다 (#133)
+
+### 수정
+
+- 프리셋 탭에서 프로그램 프리셋의 '찾아보기'를 누르면 앱이 바로 꺼지던 문제를 고쳤습니다 (#132)
+
 ## [v1.2.0] - 2026-10-03
 
 v1.2.0입니다. 함께 나오는 Edge 드라이버 1.1.0의 새 기능은 이 버전의 서비스가 있어야 동작합니다([edge/CHANGELOG.md](edge/CHANGELOG.md)).
