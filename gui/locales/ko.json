@@ -372,12 +372,17 @@
   "update.later": "나중에",
   "update.manual": "업데이트 확인",
   "update.minversion": "현재 버전에서는 바로 업데이트할 수 없습니다. 먼저 %s 이상으로 올려 주세요.",
+  "update.morenotes": "더 보기: 릴리스 페이지",
   "update.noasset": "이 릴리스에는 자동 업데이트용 exe가 없습니다. 릴리스 페이지에서 직접 다운로드하세요.",
+  "update.nonotes": "릴리스 노트가 없습니다.",
   "update.now": "지금 업데이트",
   "update.open": "다운로드 페이지 열기",
   "update.releasepage": "릴리스 페이지 열기",
+  "update.skip": "이 버전 건너뛰기",
+  "update.skipped": "이 버전은 건너뛰도록 해 두어 자동 확인에서는 알리지 않습니다.",
   "update.title": "업데이트 가능",
   "update.unsigned": "이 릴리스에는 서명된 업데이트 정보가 없어 자동 업데이트를 할 수 없습니다. 릴리스 페이지에서 직접 받으세요.",
+  "update.unskip": "건너뛰기 취소",
   "update.uptodate": "최신 버전입니다 (%s).",
   "update.verifying": "다운로드한 파일 확인 중..."
 }

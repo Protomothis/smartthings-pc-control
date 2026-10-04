@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // API lists the project's releases, newest first. The app does not use
@@ -51,6 +53,12 @@ type Info struct {
 	Draft      bool    `json:"draft"`
 	Prerelease bool    `json:"prerelease"`
 	Assets     []Asset `json:"assets"`
+	// Body is the release notes: the tag's CHANGELOG.md section in
+	// Markdown (see .github/workflows/release.yml). Notes cleans it up for
+	// display.
+	Body string `json:"body"`
+	// PublishedAt is zero for a draft (GitHub sends null).
+	PublishedAt time.Time `json:"published_at"`
 }
 
 // Latest asks GitHub for the newest published app release (see Newest). A
@@ -60,40 +68,62 @@ func Latest(ctx context.Context, client *http.Client) (*Info, error) {
 	return Fetch(ctx, client, API)
 }
 
+// LatestWithList is Latest that also returns the whole release list it
+// decoded, for NotesSince. Still a single request.
+func LatestWithList(ctx context.Context, client *http.Client) (*Info, []Info, error) {
+	return FetchWithList(ctx, client, API)
+}
+
 // Fetch is Latest against an arbitrary release-list URL (tests point it at
 // an httptest.Server). Any status other than 200 is an error, as is a list
 // without an app release (ErrNoRelease).
 func Fetch(ctx context.Context, client *http.Client, url string) (*Info, error) {
+	rel, _, err := FetchWithList(ctx, client, url)
+	return rel, err
+}
+
+// FetchWithList is Fetch that also returns the decoded list as GitHub sent
+// it (Edge driver releases, drafts and all). rel points into list; both
+// are nil when err is set.
+func FetchWithList(ctx context.Context, client *http.Client, url string) (rel *Info, list []Info, err error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API: HTTP %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("GitHub API: HTTP %d", resp.StatusCode)
 	}
-	var list []Info
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	rel := Newest(list)
+	rel = Newest(list)
 	if rel == nil {
-		return nil, ErrNoRelease
+		return nil, nil, ErrNoRelease
 	}
-	return rel, nil
+	return rel, list, nil
 }
 
 // stableTag is an app release tag with no suffix: v1.2.3, never
 // v1.2.3-rc1 or edge-v1.2.3.
 var stableTag = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+// appRelease parses r's tag when r is a published app release: a plain
+// vX.Y.Z tag, neither a draft nor a prerelease. ok is false otherwise.
+func appRelease(r *Info) (v Version, ok bool) {
+	if r.Draft || r.Prerelease || !stableTag.MatchString(r.TagName) {
+		return Version{}, false
+	}
+	return ParseVersion(r.TagName)
+}
 
 // Newest returns the highest app release in list by version (not by date,
 // so a hotfix for an older line published later does not win): the tag must
@@ -104,10 +134,7 @@ func Newest(list []Info) *Info {
 	var bestV Version
 	for i := range list {
 		r := &list[i]
-		if r.Draft || r.Prerelease || !stableTag.MatchString(r.TagName) {
-			continue
-		}
-		v, ok := ParseVersion(r.TagName)
+		v, ok := appRelease(r)
 		if !ok {
 			continue
 		}
@@ -116,6 +143,48 @@ func Newest(list []Info) *Info {
 		}
 	}
 	return best
+}
+
+// NotesSince returns the app releases in list (same filter as Newest) that
+// are newer than current by IsNewer, highest version first: the releases
+// whose notes the update dialog shows. An rc install gets its own final
+// release (v1.2.1-rc3 gets v1.2.1, not v1.2.0); a build whose version does
+// not parse ("dev") gets nothing, as IsNewer never offers it anything.
+func NotesSince(list []Info, current string) []Info {
+	type entry struct {
+		v Version
+		r Info
+	}
+	var found []entry
+	for i := range list {
+		v, ok := appRelease(&list[i])
+		if ok && IsNewer(current, list[i].TagName) {
+			found = append(found, entry{v, list[i]})
+		}
+	}
+	sort.SliceStable(found, func(i, j int) bool { return found[i].v.Compare(found[j].v) > 0 })
+	out := make([]Info, len(found))
+	for i, e := range found {
+		out[i] = e.r
+	}
+	return out
+}
+
+// versionHeading is the "## [v1.2.0] - 2026-10-03" line a CHANGELOG.md
+// section, and so a release body, starts with.
+var versionHeading = regexp.MustCompile(`^#{1,6}\s+\[?v?\d+\.\d+\.\d+`)
+
+// Notes is the release body ready to show under a version heading of its
+// own: a byte-order mark dropped, line endings normalised to "\n", a
+// leading version heading removed and surrounding blank lines trimmed. ""
+// when the release has no notes.
+func (r *Info) Notes() string {
+	s := strings.TrimPrefix(r.Body, string(rune(0xFEFF)))
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+	if first, rest, _ := strings.Cut(s, "\n"); versionHeading.MatchString(first) {
+		s = strings.TrimSpace(rest)
+	}
+	return s
 }
 
 // ExeAsset returns the download URL of the release's exe asset, or "" when

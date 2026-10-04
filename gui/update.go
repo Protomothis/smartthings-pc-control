@@ -22,18 +22,28 @@ import (
 // fast, but a stalled connection must not hang the progress dialog forever).
 const downloadTimeout = 10 * time.Minute
 
+// updateCheck is one answer from GitHub: the newest app release and the
+// release list it was picked from, for the release notes (#135).
+type updateCheck struct {
+	rel  *release.Info
+	list []release.Info
+}
+
 // checkLatestRelease asks GitHub for the newest published app release
 // (plain vX.Y.Z, no prerelease, no Edge driver tag; #119). The request,
 // selection, asset lookup and version comparison live in internal/release
-// so the service can share them for system.update_available.
-func checkLatestRelease() (*release.Info, error) {
-	return release.Latest(context.Background(), &http.Client{Timeout: 8 * time.Second})
+// so the service can share them for system.update_available. A variable so
+// tests can answer without the network.
+var checkLatestRelease = func() (updateCheck, error) {
+	rel, list, err := release.LatestWithList(context.Background(), &http.Client{Timeout: 8 * time.Second})
+	return updateCheck{rel: rel, list: list}, err
 }
 
 // fetchManifest downloads and verifies rel's signed update manifest (#66).
 // Errors: release.ErrNoManifest (unsigned release), release.ErrBadSignature
 // (tampered / wrong key / other release's manifest), or a network error.
-func fetchManifest(rel *release.Info) (*release.Manifest, error) {
+// A variable so tests can answer without the network.
+var fetchManifest = func(rel *release.Info) (*release.Manifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	return release.FetchManifest(ctx, &http.Client{Timeout: 20 * time.Second}, rel)

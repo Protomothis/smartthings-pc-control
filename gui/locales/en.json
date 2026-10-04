@@ -372,12 +372,17 @@
   "update.later": "Later",
   "update.manual": "Check for updates",
   "update.minversion": "This version cannot update directly. Please update to %s or later first.",
+  "update.morenotes": "More: release page",
   "update.noasset": "This release has no auto-update exe. Download it from the release page.",
+  "update.nonotes": "No release notes.",
   "update.now": "Update now",
   "update.open": "Open download page",
   "update.releasepage": "Open release page",
+  "update.skip": "Skip this version",
+  "update.skipped": "You chose to skip this version, so automatic checks do not mention it.",
   "update.title": "Update Available",
   "update.unsigned": "This release has no signed update manifest, so it cannot be installed automatically. Download it from the release page.",
+  "update.unskip": "Stop skipping",
   "update.uptodate": "You are up to date (%s).",
   "update.verifying": "Verifying download..."
 }
