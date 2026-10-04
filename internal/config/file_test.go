@@ -67,6 +67,58 @@ func TestWriteTrayFileCarriesNoSecret(t *testing.T) {
 	}
 }
 
+// tray.json carries the debug switch (#133), and TrayDebug reads it back;
+// a missing file or an older one without the key reads as off.
+func TestTrayFileCarriesDebug(t *testing.T) {
+	dir := t.TempDir()
+	if TrayDebug(dir) {
+		t.Error("no tray.json reads as debug on")
+	}
+	cfg := Default()
+	WriteTrayFile(dir, cfg)
+	data, _ := os.ReadFile(filepath.Join(dir, TrayFileName))
+	if !strings.Contains(string(data), `"debug": false`) || TrayDebug(dir) {
+		t.Errorf("debug off: tray.json = %s", data)
+	}
+	cfg.Debug = true
+	WriteTrayFile(dir, cfg)
+	data, _ = os.ReadFile(filepath.Join(dir, TrayFileName))
+	if !strings.Contains(string(data), `"debug": true`) || !TrayDebug(dir) {
+		t.Errorf("debug on: tray.json = %s", data)
+	}
+	os.WriteFile(filepath.Join(dir, TrayFileName), []byte(`{"port": 5001}`), 0o644)
+	if TrayDebug(dir) {
+		t.Error("an older tray.json reads as debug on")
+	}
+}
+
+// An older config.json has no debug key: it loads as off, an explicit
+// value is kept, and a save writes the key (#133).
+func TestDebugKeyRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `{"port": 5001, "secret": "x"}`)
+	if cfg, migrated := LoadMigrated(dir); cfg.Debug || migrated {
+		t.Errorf("older config: debug=%v migrated=%v", cfg.Debug, migrated)
+	}
+	writeConfig(t, dir, `{"port": 5001, "debug": true}`)
+	cfg := Load(dir)
+	if !cfg.Debug {
+		t.Fatal("debug: true was lost on load")
+	}
+	if _, err := Save(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, FileName))
+	if !strings.Contains(string(data), `"debug": true`) || !Load(dir).Debug {
+		t.Errorf("saved config.json = %s", data)
+	}
+	// ForUpdate + a POST body without the key keeps it (an older app).
+	upd := cfg.ForUpdate()
+	if err := json.Unmarshal([]byte(`{"port": 5001}`), &upd); err != nil || !Normalize(upd, cfg).Debug {
+		t.Error("a POST without debug turned it off")
+	}
+}
+
 // TestLegacyDiscoveryKeyIsIgnoredAndDropped is the #95 migration: a
 // config.json still carrying smartthings.discovery loads without an error,
 // the value changes nothing, and the next save writes the key away.

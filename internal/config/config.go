@@ -71,6 +71,11 @@ type Config struct {
 	// number (#109, presets.go). Invalid entries are refused on save and
 	// dropped (with a log line) on load.
 	Presets []Preset `json:"presets"`
+	// Debug is the developer switch (#133): while on, the service, the
+	// desktop app and the user-action runs record a crash to a file
+	// (internal/crashdump). Off by default, and in an older config.json;
+	// applied on save without a restart.
+	Debug bool `json:"debug"`
 }
 
 // TelegramConfig is the "telegram" object in config.json (design doc §10).

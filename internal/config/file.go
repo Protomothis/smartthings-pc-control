@@ -194,6 +194,9 @@ type trayConfig struct {
 		Enabled    bool `json:"enabled"`
 		NowPlaying bool `json:"now_playing"`
 	} `json:"media"`
+	// Debug lets the app and the user-action runs record crashes from
+	// their first instant, before any session (#133).
+	Debug bool `json:"debug"`
 }
 
 // trayConfigFrom picks the tray's settings out of cfg.
@@ -203,7 +206,22 @@ func trayConfigFrom(cfg Config) trayConfig {
 	t.SmartThings.ExposeSession = cfg.SmartThings.ExposeSession
 	t.Media.Enabled = cfg.Media.Enabled
 	t.Media.NowPlaying = cfg.Media.NowPlaying
+	t.Debug = cfg.Debug
 	return t
+}
+
+// TrayDebug reports tray.json's debug switch in dir (#133); false when the
+// file is missing, unreadable or older than the switch. For the
+// user-action runs, which have no session to ask the service with.
+func TrayDebug(dir string) bool {
+	data, err := os.ReadFile(filepath.Join(dir, TrayFileName))
+	if err != nil {
+		return false
+	}
+	var t struct {
+		Debug bool `json:"debug"`
+	}
+	return json.Unmarshal(data, &t) == nil && t.Debug
 }
 
 // WriteTrayFile rewrites tray.json in dir for cfg. Unlike config.json it
