@@ -47,16 +47,57 @@ var (
 // older format, a blank line) is all message: only the error colour
 // applies to it. Concatenating the parts' text gives the line back.
 func logSegments(line string) []logPart {
-	m := logStampRe.FindStringSubmatchIndex(line)
-	if m == nil {
+	date, clock, rest, ok := logStamp(line)
+	if !ok {
 		return []logPart{{line, logMessageColor(line)}}
 	}
-	date, clock := line[m[2]:m[3]], line[m[4]:m[5]]
-	rest := line[m[5]:]
 	parts := []logPart{
 		{date, theme.ColorNamePlaceHolder},
 		{clock, theme.ColorNameForeground},
 	}
+	return append(parts, logMessageParts(rest)...)
+}
+
+// logCells splits a line into the logs view's two columns (#134). The
+// stamp is the timestamp as "MM/DD HH:MM:SS": the year (and microseconds,
+// if any) left out to give the message the width, while the filter still
+// matches the whole line. Its date is dim and its time in the text
+// colour, as in logSegments. msg is the rest of the line, coloured as in
+// logSegments but without the space that followed the timestamp. A line
+// without a timestamp has no stamp and is all message.
+func logCells(line string) (stamp, msg []logPart) {
+	date, clock, rest, ok := logStamp(line)
+	if !ok {
+		return nil, logSegments(line)
+	}
+	stamp = []logPart{
+		{date[len("2006/"):], theme.ColorNamePlaceHolder},
+		{clock[:len("15:04:05")], theme.ColorNameForeground},
+	}
+	if rest != "" && isLogSpace(rest[0]) {
+		rest = rest[1:]
+	}
+	return stamp, logMessageParts(rest)
+}
+
+// logStamp splits a line that starts with a timestamp into the date (with
+// the space after it), the time, and the rest of the line, which starts
+// with the separating whitespace unless the time ends the line. ok is
+// false for a line without a timestamp.
+func logStamp(line string) (date, clock, rest string, ok bool) {
+	m := logStampRe.FindStringSubmatchIndex(line)
+	if m == nil {
+		return "", "", line, false
+	}
+	return line[m[2]:m[3]], line[m[4]:m[5]], line[m[5]:], true
+}
+
+// logMessageParts colours what follows the timestamp: the leading tokens
+// in their colours, then the rest of the message in one colour, picked on
+// the whole of it.
+func logMessageParts(rest string) []logPart {
+	color := logMessageColor(rest)
+	var parts []logPart
 	// "[debug] …", "WARNING: …" and "WARNING: [debug] …" all occur.
 	var tagged, warned bool
 	for {
@@ -73,7 +114,7 @@ func logSegments(line string) []logPart {
 		break
 	}
 	if rest != "" {
-		parts = append(parts, logPart{rest, logMessageColor(line[m[5]:])})
+		parts = append(parts, logPart{rest, color})
 	}
 	return parts
 }
@@ -102,17 +143,18 @@ func logMessageColor(text string) fyne.ThemeColorName {
 	return theme.ColorNameForeground
 }
 
-// logRichSegments turns lines into RichText segments, one paragraph per
-// line: within a line the parts are inline segments, and the last one is
-// not, which is what ends the row (RichText wraps a long line inside its
-// paragraph). Monospace, like the label this replaced.
-func logRichSegments(lines []string) []widget.RichTextSegment {
-	segs := make([]widget.RichTextSegment, 0, len(lines)*4)
-	for _, line := range lines {
-		parts := logSegments(line)
-		for i, p := range parts {
-			segs = append(segs, logTextSegment(p.text, p.color, i < len(parts)-1))
-		}
+// logRichSegments turns the parts of one cell into RichText segments that
+// make one paragraph: every part is inline but the last, which ends it
+// (RichText wraps a long paragraph inside the cell). Monospace, like the
+// label the view started as. An empty cell is one empty segment, so it is
+// as tall as a line of monospace text, like the cell beside it.
+func logRichSegments(parts []logPart) []widget.RichTextSegment {
+	if len(parts) == 0 {
+		return []widget.RichTextSegment{logTextSegment("", theme.ColorNameForeground, false)}
+	}
+	segs := make([]widget.RichTextSegment, len(parts))
+	for i, p := range parts {
+		segs[i] = logTextSegment(p.text, p.color, i < len(parts)-1)
 	}
 	return segs
 }

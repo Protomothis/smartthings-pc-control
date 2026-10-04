@@ -98,26 +98,98 @@ func TestLogSegments(t *testing.T) {
 	}
 }
 
-// One paragraph per line: every part but a line's last is inline, all of
-// them monospace.
-func TestLogRichSegmentsOneParagraphPerLine(t *testing.T) {
-	segs := logRichSegments([]string{"2026/10/04 13:53:00 [debug] a", "", "plain"})
-	var breaks int
-	for _, s := range segs {
-		ts := s.(*widget.TextSegment)
-		if !ts.Style.TextStyle.Monospace {
-			t.Errorf("segment %q is not monospace", ts.Text)
+// The two columns of a row: the timestamp as MM/DD HH:MM:SS, or nothing
+// for a line without one, and the message without the space after the
+// timestamp, coloured as logSegments colours it.
+func TestLogCells(t *testing.T) {
+	const (
+		ph  = theme.ColorNamePlaceHolder
+		fg  = theme.ColorNameForeground
+		tag = theme.ColorNamePrimary
+		bad = theme.ColorNameError
+	)
+	cases := []struct {
+		name  string
+		line  string
+		stamp string // the left cell's text
+		msg   []logPart
+	}{
+		{"tag", "2026/10/04 13:53:00 [debug] debug mode on",
+			"10/04 13:53:00", []logPart{{"[debug]", tag}, {" debug mode on", fg}}},
+		{"error", "2026/10/04 13:52:38 SSDP: reply failed: i/o timeout",
+			"10/04 13:52:38", []logPart{{"SSDP: reply failed: i/o timeout", bad}}},
+		{"microseconds", "2026/10/04 13:52:38.123456 Listening on port 5001",
+			"10/04 13:52:38", []logPart{{"Listening on port 5001", fg}}},
+		{"two spaces", "2026/10/04 13:52:38  indented",
+			"10/04 13:52:38", []logPart{{" indented", fg}}},
+		{"only timestamp", "2026/10/04 13:53:00", "10/04 13:53:00", nil},
+		{"timestamp and a space", "2026/10/04 13:53:00 ", "10/04 13:53:00", nil},
+		{"no timestamp", "goroutine 12 [running]:", "", []logPart{{"goroutine 12 [running]:", fg}}},
+		{"stack frame", "\tC:/dev/pc/service/http.go:123 +0x45", "", []logPart{{"\tC:/dev/pc/service/http.go:123 +0x45", fg}}},
+		{"stack panic", "panic: runtime error: invalid memory address", "", []logPart{{"panic: runtime error: invalid memory address", bad}}},
+		{"blank", "", "", []logPart{{"", fg}}},
+		{"short time", "2026/10/04 13:53 not quite", "", []logPart{{"2026/10/04 13:53 not quite", fg}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stamp, msg := logCells(c.line)
+			var text strings.Builder
+			for _, p := range stamp {
+				text.WriteString(p.text)
+			}
+			if text.String() != c.stamp {
+				t.Errorf("stamp cell %q, want %q", text.String(), c.stamp)
+			}
+			if c.stamp != "" && (len(stamp) != 2 || stamp[0].color != ph || stamp[1].color != fg) {
+				t.Errorf("stamp parts %v, want the dim date and the time", stamp)
+			}
+			if !slices.Equal(msg, c.msg) {
+				t.Errorf("message cell\n got %v\nwant %v", msg, c.msg)
+			}
+		})
+	}
+}
+
+// A cell is one paragraph: every part inline but the last, all of them
+// monospace. An empty cell still has a line, so the row keeps its height.
+func TestLogRichSegmentsOneParagraph(t *testing.T) {
+	stamp, msg := logCells("2026/10/04 13:53:00 [debug] a")
+	for _, parts := range [][]logPart{stamp, msg, nil} {
+		segs := logRichSegments(parts)
+		if want := max(len(parts), 1); len(segs) != want {
+			t.Fatalf("%d segments for %v, want %d", len(segs), parts, want)
 		}
-		if !ts.Inline() {
-			breaks++
+		for i, s := range segs {
+			ts := s.(*widget.TextSegment)
+			if !ts.Style.TextStyle.Monospace {
+				t.Errorf("segment %q is not monospace", ts.Text)
+			}
+			if last := i == len(segs)-1; ts.Inline() == last {
+				t.Errorf("segment %d of %v: inline %v, want only the last to end the paragraph", i, parts, ts.Inline())
+			}
 		}
 	}
-	if len(segs) != 6 || breaks != 3 {
-		t.Errorf("%d segments with %d line ends, want 6 and 3", len(segs), breaks)
+}
+
+// logsShift finds how far the old lines moved up.
+func TestLogsShift(t *testing.T) {
+	l := logLinesN(6)
+	cases := []struct {
+		name       string
+		old, lines []string
+		want       int
+	}{
+		{"same", l[:4], l[:4], 0},
+		{"appended", l[:4], l, 0},
+		{"slid by one", l[:5], l[1:6], 1},
+		{"slid by two", l[:4], l[2:6], 2},
+		{"unrelated", l[:3], []string{"x", "y"}, 0},
+		{"from nothing", nil, l, 0},
+		{"to a subset", l, l[3:4], 0},
 	}
-	for _, i := range []int{3, 4, 5} {
-		if segs[i].Inline() {
-			t.Errorf("segment %d (%q) does not end its line", i, segs[i].Textual())
+	for _, c := range cases {
+		if got := logsShift(c.old, c.lines); got != c.want {
+			t.Errorf("%s: logsShift = %d, want %d", c.name, got, c.want)
 		}
 	}
 }
@@ -199,8 +271,12 @@ func TestLogsTabShowsTheTail(t *testing.T) {
 	if len(u.logsShown) != 60 || u.logsShownMsg != "" {
 		t.Fatalf("view shows %d lines (message %q), want 60", len(u.logsShown), u.logsShownMsg)
 	}
-	first := u.logsText.Segments[0].(*widget.TextSegment)
-	if first.Text != "2026/10/04 " || first.Style.ColorName != theme.ColorNamePlaceHolder {
+	if len(u.logsRowsLayout.rows) != 60 || len(u.logsRows.Objects) != 3*60-1 || !u.logsRows.Visible() || u.logsMsg.Visible() {
+		t.Fatalf("%d rows of %d objects, rows shown %v, message shown %v; want 60 rows",
+			len(u.logsRowsLayout.rows), len(u.logsRows.Objects), u.logsRows.Visible(), u.logsMsg.Visible())
+	}
+	first := u.logsRowsLayout.rows[0].stamp.Segments[0].(*widget.TextSegment)
+	if first.Text != "10/04 " || first.Style.ColorName != theme.ColorNamePlaceHolder {
 		t.Errorf("first segment %q in %q, want the dim date", first.Text, first.Style.ColorName)
 	}
 	assertLogsAtBottom(t, u, "after opening the tab")
@@ -235,21 +311,60 @@ func TestLogsTabFirstShowScrollsOnceLaidOut(t *testing.T) {
 	assertLogsAtBottom(t, u, "shown again")
 }
 
-// A poll that brings the same lines leaves the view alone; new lines
-// rebuild it and it follows them.
+// msgSegments is the first message segment of each row: a row that was
+// not redrawn keeps it.
+func msgSegments(rows []*logRow) []widget.RichTextSegment {
+	segs := make([]widget.RichTextSegment, len(rows))
+	for i, r := range rows {
+		segs[i] = r.msg.Segments[0]
+	}
+	return segs
+}
+
+// A poll that brings the same lines leaves the view alone. New lines keep
+// the rows: the ones whose line stays are not redrawn, also when the lines
+// slide up (the oldest dropping off the top of the service's 100), and
+// the view follows the new lines.
 func TestLogsUnchangedPollDoesNotRebuild(t *testing.T) {
 	u, svc := newLogsUI(t, logLinesN(60))
-	before := u.logsText.Segments[0]
+	rows := slices.Clone(u.logsRowsLayout.rows)
+	segs := msgSegments(rows)
 	u.loadLogs()
-	if u.logsText.Segments[0] != before {
+	if !slices.Equal(u.logsRowsLayout.rows, rows) || !slices.Equal(msgSegments(rows), segs) {
 		t.Error("identical lines rebuilt the view")
 	}
+
+	// One line more at the bottom: a row more, the others untouched.
 	svc.set(logLinesN(61))
 	u.loadLogs()
-	if u.logsText.Segments[0] == before || len(u.logsShown) != 61 {
-		t.Error("new lines did not reach the view")
+	got := u.logsRowsLayout.rows
+	if len(got) != 61 || len(u.logsShown) != 61 || got[60].line != logLinesN(61)[60] {
+		t.Fatalf("view shows %d rows, the last %q; want the new line in row 61", len(got), got[len(got)-1].line)
+	}
+	if !slices.Equal(got[:60], rows) || !slices.Equal(msgSegments(got[:60]), segs) {
+		t.Error("a new line at the bottom redrew the rows above it")
 	}
 	assertLogsAtBottom(t, u, "after new lines")
+
+	// The oldest line drops off the top as a new one comes in: the rows
+	// move up with their lines, and the top row comes back at the bottom
+	// with the new one.
+	added := got[60]
+	svc.set(logLinesN(62)[1:])
+	u.loadLogs()
+	got = u.logsRowsLayout.rows
+	if len(got) != 61 || got[60] != rows[0] || got[60].line != logLinesN(62)[61] {
+		t.Fatalf("the slid view ends in %q, want the new line in the row that left the top", got[len(got)-1].line)
+	}
+	if !slices.Equal(got[:59], rows[1:]) || got[59] != added || !slices.Equal(msgSegments(got[:59]), segs[1:]) {
+		t.Error("sliding the lines up redrew rows that kept their line")
+	}
+	for i, r := range got {
+		if r.line != u.logsShown[i] {
+			t.Fatalf("row %d shows %q, want %q", i, r.line, u.logsShown[i])
+		}
+	}
+	assertLogsAtBottom(t, u, "after the lines slid up")
 	if !u.logsAuto.Checked {
 		t.Error("our own scroll to the new lines turned auto refresh off")
 	}
@@ -263,21 +378,34 @@ func TestLogsFilter(t *testing.T) {
 	if len(u.logsShown) != 1 || !strings.Contains(u.logsShown[0], "10.0.0.7 ") {
 		t.Errorf("filter shows %q", u.logsShown)
 	}
+	// The filter sees the year the view leaves out.
+	u.logsFilter.SetText("2026/10/04 13:00:1")
+	if len(u.logsShown) != 10 { // 13:00:10–19
+		t.Errorf("filter on the full timestamp shows %d lines, want 10", len(u.logsShown))
+	}
 	u.logsFilter.SetText("10.0.0.1")
-	if len(u.logsShown) != 11 { // 1, 10–19
-		t.Errorf("filter shows %d lines, want 11", len(u.logsShown))
+	if len(u.logsShown) != 11 || len(u.logsRowsLayout.rows) != 11 { // 1, 10–19
+		t.Errorf("filter shows %d lines in %d rows, want 11", len(u.logsShown), len(u.logsRowsLayout.rows))
 	}
 	u.logsFilter.SetText("no such line")
-	if u.logsShownMsg != "logs.nomatch" || len(u.logsText.Segments) != 1 {
+	if u.logsShownMsg != "logs.nomatch" || len(u.logsMsg.Segments) != 1 {
 		t.Fatalf("no match shows %q", u.logsShownMsg)
 	}
-	msg := u.logsText.Segments[0].(*widget.TextSegment)
+	if !u.logsMsg.Visible() || u.logsRows.Visible() {
+		t.Error("the no-match message does not stand in for the rows")
+	}
+	msg := u.logsMsg.Segments[0].(*widget.TextSegment)
 	if msg.Text != u.t("logs.nomatch") || msg.Style.ColorName != theme.ColorNamePlaceHolder {
 		t.Errorf("no-match message %q in %q", msg.Text, msg.Style.ColorName)
 	}
 	u.logsFilter.SetText("")
-	if len(u.logsShown) != 60 {
-		t.Errorf("clearing the filter shows %d lines", len(u.logsShown))
+	if len(u.logsShown) != 60 || !u.logsRows.Visible() || u.logsMsg.Visible() {
+		t.Errorf("clearing the filter shows %d lines (rows shown %v)", len(u.logsShown), u.logsRows.Visible())
+	}
+	for i, r := range u.logsRowsLayout.rows {
+		if r.line != u.logsShown[i] {
+			t.Fatalf("row %d shows %q, want %q", i, r.line, u.logsShown[i])
+		}
 	}
 	assertLogsAtBottom(t, u, "after clearing the filter")
 	if !u.logsAuto.Checked {
@@ -291,9 +419,139 @@ func TestLogsEmpty(t *testing.T) {
 	if u.logsShownMsg != "logs.empty" {
 		t.Fatalf("empty log shows %q", u.logsShownMsg)
 	}
-	msg := u.logsText.Segments[0].(*widget.TextSegment)
+	if !u.logsMsg.Visible() || u.logsRows.Visible() {
+		t.Error("the empty message does not stand in for the rows")
+	}
+	msg := u.logsMsg.Segments[0].(*widget.TextSegment)
 	if msg.Text != u.t("logs.empty") || msg.Style.ColorName != theme.ColorNamePlaceHolder {
 		t.Errorf("empty message %q in %q", msg.Text, msg.Style.ColorName)
+	}
+}
+
+// Two columns: every message starts at the same x, past the timestamp
+// column, and a long line wraps inside the message column, the next row
+// starting under it. A line without a timestamp leaves the left cell
+// empty. Rows are a line spacing apart, the separator between them.
+func TestLogsColumns(t *testing.T) {
+	long := "2026/10/04 13:53:00 WARNING: " + strings.Repeat("a long message that wraps ", 20)
+	lines := []string{"2026/10/04 13:52:59 short", long, "goroutine 1 [running]:", "", "2026/10/04 13:53:01 after"}
+	u, _ := newLogsUI(t, lines)
+	m := newLogRowsMetrics()
+	rows := u.logsRowsLayout.rows
+	if len(rows) != len(lines) {
+		t.Fatalf("%d rows, want %d", len(rows), len(lines))
+	}
+	for i, want := range []string{"10/04 13:52:59", "10/04 13:53:00", "", "", "10/04 13:53:01"} {
+		if got := rows[i].stamp.String(); got != want {
+			t.Errorf("row %d's left cell %q, want %q", i, got, want)
+		}
+	}
+	if got := rows[1].msg.String(); got != strings.TrimPrefix(long, "2026/10/04 13:53:00 ") {
+		t.Errorf("long row's message %.40q…, want the line after the timestamp", got)
+	}
+	msgW := u.logsRows.Size().Width - m.stampX
+	if stampW := fyne.MeasureText(logStampSample, theme.Size(theme.SizeNameText), fyne.TextStyle{Monospace: true}).Width; m.stampX != m.pad+stampW || msgW <= 0 {
+		t.Fatalf("message column at %v (%v wide), want it past the stamp's %v", m.stampX, msgW, stampW)
+	}
+	lineH := rows[0].msg.MinSize().Height - 2*m.pad
+	for i, r := range rows {
+		if r.msg.Position().X != m.stampX || r.msg.Size().Width != msgW {
+			t.Errorf("row %d's message at x %v, %v wide; want %v, %v", i, r.msg.Position().X, r.msg.Size().Width, m.stampX, msgW)
+		}
+		if r.stamp.Position() != fyne.NewPos(0, r.msg.Position().Y) {
+			t.Errorf("row %d's stamp at %v, want at the left edge level with the message", i, r.stamp.Position())
+		}
+		if i == 0 {
+			continue
+		}
+		prev := rows[i-1]
+		prevEnd := prev.msg.Position().Y + prev.msg.Size().Height - m.pad
+		top := r.msg.Position().Y + m.pad
+		if top-prevEnd != m.gap {
+			t.Errorf("row %d starts %v below the text above, want the line spacing %v", i, top-prevEnd, m.gap)
+		}
+		if y := r.sep.Position().Y; y < prevEnd || y+r.sep.Size().Height > top || r.sep.Size().Width != u.logsRows.Size().Width {
+			t.Errorf("row %d's separator at %v (%v), want across the gap %v–%v", i, y, r.sep.Size(), prevEnd, top)
+		}
+	}
+	if h := rows[1].msg.Size().Height - 2*m.pad; h < 3*lineH {
+		t.Errorf("the long line is %v tall, want it wrapped over several lines of %v", h, lineH)
+	}
+	for _, i := range []int{0, 2, 3, 4} {
+		if h := rows[i].msg.Size().Height - 2*m.pad; h != lineH {
+			t.Errorf("row %d is %v tall, want one line, %v", i, h, lineH)
+		}
+	}
+	if slices.Contains(u.logsRows.Objects, fyne.CanvasObject(rows[0].sep)) {
+		t.Error("a separator above the first row")
+	}
+}
+
+// The rows take no more room than the paragraphs of the single RichText
+// the view used to be: a row is as tall as its text, and rows are the
+// theme's line spacing apart, as paragraphs were.
+func TestLogsRowsAsCompactAsBefore(t *testing.T) {
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("2026/10/04 13:00:%02d line %d", i, i)
+	}
+	u, _ := newLogsUI(t, lines)
+	var segs []widget.RichTextSegment
+	for _, line := range lines {
+		segs = append(segs, logRichSegments(logSegments(line))...)
+	}
+	before := widget.NewRichText(segs...)
+	before.Wrapping = fyne.TextWrapBreak
+	before.Resize(fyne.NewSize(u.logsRows.Size().Width, 10))
+	if got, want := u.logsRows.MinSize().Height, before.MinSize().Height; got != want {
+		t.Errorf("30 rows are %v tall, want %v as one RichText", got, want)
+	}
+}
+
+// Lines long enough to wrap still open at the bottom, also when they were
+// rendered before the tab was ever laid out, and the view stays on the
+// newest line when the window gets wider or narrower (which re-wraps every
+// row) and new lines come in.
+func TestLogsWrappedLinesFollowTheTail(t *testing.T) {
+	long := func(n int) []string {
+		lines := logLinesN(n)
+		for i := range lines {
+			lines[i] += strings.Repeat(" and some more", 5+i%20)
+		}
+		return lines
+	}
+	svc := &logsAPI{serviceAPI: NewClient(1), lines: long(80)}
+	u := newTestUI(t, LangEn, svc)
+	u.win.Resize(fyne.NewSize(640, 400))
+	u.connected.Store(true)
+	u.applyConnected(true)
+	u.loadLogs() // rendered on a hidden, never laid out tab
+	u.tabs.SelectIndex(tabLogs)
+	assertLogsAtBottom(t, u, "first show")
+	m := newLogRowsMetrics()
+	last := u.logsRowsLayout.rows[79]
+	if h := last.msg.Size().Height - 2*m.pad; h < 2*(u.logsRowsLayout.rows[0].msg.MinSize().Height-2*m.pad) {
+		t.Fatalf("the last row is %v tall: the test lines do not wrap", h)
+	}
+	for i, size := range []fyne.Size{fyne.NewSize(900, 400), fyne.NewSize(560, 450)} {
+		u.win.Resize(size)
+		svc.set(long(81 + i))
+		u.loadLogs()
+		assertLogsAtBottom(t, u, fmt.Sprintf("new lines after a resize to %v", size))
+		if want := u.logsRows.Size().Width - m.stampX; last.msg.Size().Width != want {
+			t.Errorf("a row is %v wide at window %v, want the message column's %v", last.msg.Size().Width, size, want)
+		}
+	}
+	// A few lines that fit the view unwrapped and overflow it wrapped.
+	few := long(6)
+	for i := range few {
+		few[i] += strings.Repeat(" wrapping on", 40)
+	}
+	svc.set(few)
+	u.loadLogs()
+	assertLogsAtBottom(t, u, "a few long lines")
+	if !u.logsAuto.Checked {
+		t.Error("following the wrapped lines turned auto refresh off")
 	}
 }
 
