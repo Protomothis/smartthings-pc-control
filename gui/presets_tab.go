@@ -343,8 +343,10 @@ func (u *ui) browsePresetPath(w *presetRowWidgets) {
 		exts = []string{".ps1", ".bat", ".cmd"}
 	}
 	d.SetFilter(storage.NewExtensionFileFilter(exts))
-	d.Resize(fyne.NewSize(640, 460))
+	// Show before Resize: Fyne 2.8.1's FileDialog.Resize reads the dialog
+	// it builds in Show and panics on nil before then (#132).
 	d.Show()
+	d.Resize(fyne.NewSize(640, 460))
 }
 
 // testPresetRow runs the row as typed via /api/presets/test.

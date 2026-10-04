@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -278,5 +279,20 @@ func TestScriptPlaceholderIsPerUser(t *testing.T) {
 	got := u.pathPlaceholder("script")
 	if got != documentsDir()+`\scripts\run.ps1 (.ps1 · .bat · .cmd)` || documentsDir() == "" {
 		t.Errorf("placeholder = %q", got)
+	}
+}
+
+// #132: the program row's browse button opens the file dialog; it used to
+// size the dialog before showing it, which panics in Fyne 2.8.1 and took
+// the whole app down.
+func TestPresetBrowseOpensTheFileDialog(t *testing.T) {
+	u, _ := newTrustUI(t, false)
+	w := u.presets.rows[0]
+	if w.browse.Disabled() {
+		t.Fatal("browse is disabled for a program row")
+	}
+	test.Tap(w.browse)
+	if len(u.win.Canvas().Overlays().List()) == 0 {
+		t.Error("no file dialog shown")
 	}
 }
