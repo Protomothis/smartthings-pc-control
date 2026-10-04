@@ -88,6 +88,9 @@ func saveConfig(cfg Config) error {
 	setConfig(stored)
 	// The tray's non-secret copy follows every save (#131).
 	config.WriteTrayFile(dir, stored)
+	// Debug mode (#133) follows without a restart (a no-op outside the
+	// running service, e.g. in the installer).
+	applyDebugMode(stored.Debug)
 	// Telegram control follows the saved settings without a restart
 	// (no-op unless the service has started it, see service/tgcontrol).
 	tgCtl.Reconcile()

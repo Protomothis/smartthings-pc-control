@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -111,6 +112,19 @@ func Printf(format string, args ...any) {
 		logger.Printf(format, args...)
 		rotate()
 	}
+}
+
+// ErrorLog is a logger for http.Server.ErrorLog that writes through
+// Printf (#133): a panic in a handler, which net/http recovers, then shows
+// up in service.log with its stack instead of on a stderr nobody reads.
+func ErrorLog() *log.Logger { return log.New(printfWriter{}, "", 0) }
+
+// printfWriter hands each write (one message) to Printf.
+type printfWriter struct{}
+
+func (printfWriter) Write(p []byte) (int, error) {
+	Printf("%s", strings.TrimRight(string(p), "\r\n"))
+	return len(p), nil
 }
 
 // Capture sends every line to w, without timestamps, until the returned
