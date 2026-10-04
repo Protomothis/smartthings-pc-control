@@ -67,28 +67,21 @@ func TestWriteTrayFileCarriesNoSecret(t *testing.T) {
 	}
 }
 
-// tray.json carries the debug switch (#133), and TrayDebug reads it back;
-// a missing file or an older one without the key reads as off.
+// tray.json carries the debug switch (#133) for the app and the
+// user-action runs.
 func TestTrayFileCarriesDebug(t *testing.T) {
 	dir := t.TempDir()
-	if TrayDebug(dir) {
-		t.Error("no tray.json reads as debug on")
-	}
 	cfg := Default()
 	WriteTrayFile(dir, cfg)
 	data, _ := os.ReadFile(filepath.Join(dir, TrayFileName))
-	if !strings.Contains(string(data), `"debug": false`) || TrayDebug(dir) {
+	if !strings.Contains(string(data), `"debug": false`) {
 		t.Errorf("debug off: tray.json = %s", data)
 	}
 	cfg.Debug = true
 	WriteTrayFile(dir, cfg)
 	data, _ = os.ReadFile(filepath.Join(dir, TrayFileName))
-	if !strings.Contains(string(data), `"debug": true`) || !TrayDebug(dir) {
+	if !strings.Contains(string(data), `"debug": true`) {
 		t.Errorf("debug on: tray.json = %s", data)
-	}
-	os.WriteFile(filepath.Join(dir, TrayFileName), []byte(`{"port": 5001}`), 0o644)
-	if TrayDebug(dir) {
-		t.Error("an older tray.json reads as debug on")
 	}
 }
 

@@ -3,6 +3,8 @@ package gui
 import (
 	"slices"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // recordDebugMode replaces setDebugMode for one test and returns what the
@@ -23,6 +25,11 @@ func TestCrashDirIn(t *testing.T) {
 	}
 	if got, want := crashDirIn("", `C:\T`), `C:\T\SmartThings PC Control\crash`; got != want {
 		t.Errorf("crashDirIn without a data folder = %q, want %q", got, want)
+	}
+	// The user-action runs write into the same folder.
+	lad := `C:\Users\u\AppData\Local`
+	if got, want := useraction.CrashDirIn(lad), crashDirIn(userDataDirIn(lad), `C:\T`); got != want {
+		t.Errorf("useraction.CrashDirIn = %q, the app's is %q", got, want)
 	}
 }
 

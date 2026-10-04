@@ -8,7 +8,8 @@ package gui
 // so a crash before the service answers is caught too, and then follows
 // every adopted config (onConfig). The user-action runs write their
 // useraction-* records into the same folder (useraction/crashdump.go); the
-// app announces those as well, since nothing else would.
+// app announces those as well, since nothing else would, and its Prune
+// keeps them in check.
 
 import (
 	"os"
@@ -20,13 +21,12 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/internal/crashdump"
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// Crash file prefixes in the per-user folder.
-const (
-	guiCrashPrefix        = "gui"
-	userActionCrashPrefix = "useraction"
-)
+// guiCrashPrefix starts the app's crash file names; the user-action runs
+// use useraction.CrashPrefix in the same folder.
+const guiCrashPrefix = "gui"
 
 // crashDirIn is the crash folder inside dataDir, or one in temp when
 // dataDir is unknown (like guiLogPathIn).
@@ -103,7 +103,7 @@ var setDebugMode = func(on bool) {
 	}
 	debugState.on = true
 	guiLog("debug", "debug mode on: crashes are recorded in %s (%s)", dir, filepath.Base(path))
-	for _, prefix := range []string{guiCrashPrefix, userActionCrashPrefix} {
+	for _, prefix := range []string{guiCrashPrefix, useraction.CrashPrefix} {
 		for _, p := range crashdump.Unreported(dir, prefix) {
 			guiLog("debug", "previous crash recorded: %s", p)
 		}

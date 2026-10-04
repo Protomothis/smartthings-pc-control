@@ -26,7 +26,8 @@ import (
 const FileName = "config.json"
 
 // TrayFileName is the user-readable subset of config.json for the tray
-// app (gui/toast.go readLocalConfig).
+// app (gui/toast.go readLocalConfig) and the user-action runs
+// (useraction/crashdump.go).
 const TrayFileName = "tray.json"
 
 // Load reads dir\config.json over Default, so every missing key keeps its
@@ -208,20 +209,6 @@ func trayConfigFrom(cfg Config) trayConfig {
 	t.Media.NowPlaying = cfg.Media.NowPlaying
 	t.Debug = cfg.Debug
 	return t
-}
-
-// TrayDebug reports tray.json's debug switch in dir (#133); false when the
-// file is missing, unreadable or older than the switch. For the
-// user-action runs, which have no session to ask the service with.
-func TrayDebug(dir string) bool {
-	data, err := os.ReadFile(filepath.Join(dir, TrayFileName))
-	if err != nil {
-		return false
-	}
-	var t struct {
-		Debug bool `json:"debug"`
-	}
-	return json.Unmarshal(data, &t) == nil && t.Debug
 }
 
 // WriteTrayFile rewrites tray.json in dir for cfg. Unlike config.json it
