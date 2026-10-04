@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsNewer(t *testing.T) {
@@ -131,6 +132,83 @@ func TestNewest(t *testing.T) {
 	}
 }
 
+func tags(list []Info) []string {
+	out := make([]string, len(list))
+	for i, r := range list {
+		out[i] = r.TagName
+	}
+	return out
+}
+
+// #135: the update dialog shows the notes of every app release between
+// the installed version and the newest, highest first.
+func TestNotesSince(t *testing.T) {
+	list := []Info{
+		{TagName: "edge-v1.2.0"},              // Edge driver release
+		{TagName: "v1.1.0", Body: "one-one"},  // older line published later
+		{TagName: "v1.3.0-rc1"},               // suffix, even unflagged
+		{TagName: "v1.2.2", Draft: true},      // draft
+		{TagName: "v1.2.3", Prerelease: true}, // flagged prerelease
+		{TagName: "v1.2.1", Body: "one-two-one"},
+		{TagName: "v1.0.9"},
+		{TagName: "v1.10.0"}, // numeric, not lexicographic
+		{TagName: "v1.2.0"},
+		{TagName: "garbage"},
+	}
+	cases := []struct {
+		current string
+		want    string
+	}{
+		{"v1.0.9", "v1.10.0 v1.2.1 v1.2.0 v1.1.0"},
+		{"v1.2.0", "v1.10.0 v1.2.1"},     // equal and older left out
+		{"v1.2.1-rc3", "v1.10.0 v1.2.1"}, // an rc sees its own release
+		{"v1.2.0-rc1", "v1.10.0 v1.2.1 v1.2.0"},
+		{"v1.10.0", ""},
+		{"v2.0.0", ""},
+		{"dev", ""}, // as IsNewer: dev builds are offered nothing
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := strings.Join(tags(NotesSince(list, c.current)), " "); got != c.want {
+			t.Errorf("NotesSince(%q) = %q, want %q", c.current, got, c.want)
+		}
+	}
+	got := NotesSince(list, "v1.0.9")
+	if got[1].Body != "one-two-one" || got[3].Body != "one-one" {
+		t.Errorf("bodies not carried over: %+v", got)
+	}
+	// The result is a copy: editing it leaves the fetched list alone.
+	got[1].Body = "changed"
+	if list[5].Body != "one-two-one" {
+		t.Error("NotesSince shares memory with its input")
+	}
+	if got := NotesSince(nil, "v1.0.0"); len(got) != 0 {
+		t.Errorf("NotesSince(nil) = %v", got)
+	}
+}
+
+// Release bodies are the tag's CHANGELOG.md section, which repeats the
+// version the dialog already shows as a heading.
+func TestInfoNotes(t *testing.T) {
+	cases := []struct{ body, want string }{
+		{"## [v1.2.0] - 2026-10-03\r\n\r\nv1.2.0입니다.\r\n\r\n### 추가\r\n\r\n- **잠들지 않기** (#111)\r\n", "v1.2.0입니다.\n\n### 추가\n\n- **잠들지 않기** (#111)"},
+		{string(rune(0xFEFF)) + "## [v1.2.0]\n### 수정\n- x", "### 수정\n- x"}, // byte-order mark
+		{"# v1.2.0\nbody", "body"},
+		{"\n\n## [v1.2.0] - 2026-10-03\n", ""},
+		{"### 추가\n\n- x", "### 추가\n\n- x"},               // not a version heading: kept
+		{"## [Unreleased]\n- x", "## [Unreleased]\n- x"}, // nor this
+		{"v1.2.0 fixes things", "v1.2.0 fixes things"},   // plain text, not a heading
+		{"", ""},
+		{"  \r\n ", ""},
+	}
+	for _, c := range cases {
+		r := Info{Body: c.body}
+		if got := r.Notes(); got != c.want {
+			t.Errorf("Notes(%q) = %q, want %q", c.body, got, c.want)
+		}
+	}
+}
+
 func TestExeAsset(t *testing.T) {
 	rel := &Info{TagName: "v0.3.3", Assets: []Asset{
 		{Name: "checksums.txt", DownloadURL: "https://x/checksums.txt"},
@@ -161,8 +239,9 @@ func TestFetch(t *testing.T) {
 			w.Write([]byte(`[
 				{"tag_name":"edge-v1.0.1","html_url":"https://x/edge","assets":[]},
 				{"tag_name":"v0.5.0-rc1","html_url":"https://x/rc","prerelease":true,"assets":[]},
-				{"tag_name":"v0.4.0","html_url":"https://x/rel","assets":[{"name":"smartthings-pc-control.exe","browser_download_url":"https://x/a.exe","size":7}]},
-				{"tag_name":"v0.3.9","html_url":"https://x/old","assets":[]}
+				{"tag_name":"v0.4.0","html_url":"https://x/rel","assets":[{"name":"smartthings-pc-control.exe","browser_download_url":"https://x/a.exe","size":7}],
+				 "body":"## [v0.4.0] - 2026-10-03\r\n\r\n### 추가\r\n\r\n- **새 기능**","published_at":"2026-10-03T09:15:00Z"},
+				{"tag_name":"v0.3.9","html_url":"https://x/old","assets":[],"body":null,"published_at":null}
 			]`))
 		case "/none":
 			w.Write([]byte(`[{"tag_name":"edge-v1.0.1","assets":[]}]`))
@@ -186,6 +265,29 @@ func TestFetch(t *testing.T) {
 	if rel.TagName != "v0.4.0" || rel.HTMLURL != "https://x/rel" || ExeAsset(rel) != "https://x/a.exe" || rel.Assets[0].Size != 7 {
 		t.Errorf("Fetch decoded %+v", rel)
 	}
+	if rel.Notes() != "### 추가\n\n- **새 기능**" || !rel.PublishedAt.Equal(time.Date(2026, 10, 3, 9, 15, 0, 0, time.UTC)) {
+		t.Errorf("body/published_at decoded as %q, %v", rel.Notes(), rel.PublishedAt)
+	}
+
+	// FetchWithList: the same newest release plus the whole list, from
+	// one request; null body and published_at decode to zero values.
+	rel, list, err := FetchWithList(context.Background(), nil, srv.URL+"/ok")
+	if err != nil || rel == nil || rel.TagName != "v0.4.0" {
+		t.Fatalf("FetchWithList = %+v, %v", rel, err)
+	}
+	if got := strings.Join(tags(list), " "); got != "edge-v1.0.1 v0.5.0-rc1 v0.4.0 v0.3.9" {
+		t.Errorf("list = %q", got)
+	}
+	if list[3].Body != "" || !list[3].PublishedAt.IsZero() {
+		t.Errorf("null body/published_at = %q, %v", list[3].Body, list[3].PublishedAt)
+	}
+	if got := strings.Join(tags(NotesSince(list, "v0.3.8")), " "); got != "v0.4.0 v0.3.9" {
+		t.Errorf("NotesSince(fetched) = %q", got)
+	}
+	if rel, list, err := FetchWithList(context.Background(), nil, srv.URL+"/none"); !errors.Is(err, ErrNoRelease) || rel != nil || list != nil {
+		t.Errorf("FetchWithList without an app release = %v, %v, %v", rel, list, err)
+	}
+
 	if _, err := Fetch(context.Background(), nil, srv.URL+"/none"); !errors.Is(err, ErrNoRelease) {
 		t.Errorf("list without an app release: err = %v, want ErrNoRelease", err)
 	}
