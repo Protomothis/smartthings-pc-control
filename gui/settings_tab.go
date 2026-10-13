@@ -103,13 +103,17 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		u.checkForUpdatesManual(manualUpdateBtn)
 	})
 
-	autostartCheck := newToggle(u.t("autostart.check"), func(b bool) {
+	// The state first, the callback after: SetChecked fires OnChanged, and
+	// a build must not write the Run entry - under go test it pointed login
+	// autostart at the test binary.
+	autostartCheck := newToggle(u.t("autostart.check"), nil)
+	autostartCheck.SetChecked(AutostartEnabled())
+	autostartCheck.OnChanged = func(b bool) {
 		u.app.Preferences().SetBool("autostart", b)
-		if err := SetAutostart(b); err != nil {
+		if err := setAutostart(b); err != nil {
 			dialog.ShowError(err, u.win)
 		}
-	})
-	autostartCheck.SetChecked(AutostartEnabled())
+	}
 
 	// Everything below service management is meaningless until the
 	// service is reachable — hidden via applyConnected.
