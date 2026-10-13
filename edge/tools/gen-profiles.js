@@ -16,10 +16,10 @@
  * and without the `battery` component (#116 - a desktop must not carry an
  * empty battery card). Names and files:
  *
- *   pc.v11            profiles/pc-v11.yml             monitor (default), no battery
- *   pc-tv.v11         profiles/pc-tv-v11.yml          tv, no battery
- *   pc-battery.v11    profiles/pc-battery-v11.yml     monitor (default), battery
- *   pc-tv-battery.v11 profiles/pc-tv-battery-v11.yml  tv, battery
+ *   pc.v12            profiles/pc-v12.yml             switch (default), no battery
+ *   pc-tv.v12         profiles/pc-tv-v12.yml          tv, no battery
+ *   pc-battery.v12    profiles/pc-battery-v12.yml     switch (default), battery
+ *   pc-tv-battery.v12 profiles/pc-tv-battery-v12.yml  tv, battery
  *
  * The rules are deliberately small; `--check` (CI: npm run check-profiles)
  * fails when a file on disk is not what they produce:
@@ -80,16 +80,20 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 // 11: #136 - the default style is monitor (SmartMonitor), not others: the
 //    Android app offers no "change icon" for an Others device. The bare name
 //    now stands for monitor and others gets `pc-others.v11`; up to v10 the
-//    bare name was others (profiles.OLD_DEFAULT_STYLE).
-const VERSION = 11;
+//    bare name was others (profiles.PAST_DEFAULTS).
+// 12: #136 again - SmartMonitor has no "change icon" option in the app
+//    either; the default is switch (Switch, a category with an icon set).
+//    `pc-monitor.v12` and `pc-others.v12` are the two named ones. v11 was
+//    never published.
+const VERSION = 12;
 
-const DEFAULT_STYLE = 'monitor';
+const DEFAULT_STYLE = 'switch';
 
 // [iconStyle, category], in the order the preference lists them.
 const STYLES = [
+  ['switch', 'Switch'],
   ['monitor', 'SmartMonitor'],
   ['others', 'Others'],
-  ['switch', 'Switch'],
   ['plug', 'SmartPlug'],
   ['tv', 'Television'],
   ['projector', 'Projector'],
