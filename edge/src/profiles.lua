@@ -24,27 +24,42 @@ local fields = require "device.fields"
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v11`, …).
-profiles.VERSION = 11
+-- The profile generation every current name carries (`pc.v12`, …).
+profiles.VERSION = 12
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
--- #136: SmartMonitor since v11. The Android app offers no icon change for a
--- device in the Others category (only some categories get the device's
--- "change icon" option), so a PC that started as Others was stuck there.
-profiles.DEFAULT_STYLE = "monitor"
+-- #136: Switch since v12. The app's own "change icon" option exists only for
+-- a few categories with an icon set (Switch, SmartPlug, Light, sensors, …);
+-- Others and SmartMonitor have none, and on Android a profile switch away
+-- from Others showed only for Switch and Television.
+profiles.DEFAULT_STYLE = "switch"
 
--- #136: the default before v11, which the bare names up to v10 (`pc.v10`,
--- `pc-battery.v10`) stand for - and why `pc-monitor.v10` exists but
--- `pc-others.v10` does not.
-profiles.OLD_DEFAULT_STYLE = "others"
-profiles.DEFAULT_CHANGED_IN = 11
+-- #136: the default of the older generations - the style their bare names
+-- (`pc.v10`, `pc-battery.v11`) stand for: others up to v10, monitor in
+-- v11 (Dev channel only). Why `pc-monitor.v10` exists but
+-- `pc-others.v10` does not. `{ before = generation, style = default }`,
+-- oldest first.
+profiles.PAST_DEFAULTS = {
+  { before = 11, style = "others" },
+  { before = 12, style = "monitor" },
+}
+
+--- #136: the style the bare name of generation `version` stands for.
+function profiles.default_style_at(version)
+  for _, past in ipairs(profiles.PAST_DEFAULTS) do
+    if version < past.before then
+      return past.style
+    end
+  end
+  return profiles.DEFAULT_STYLE
+end
 
 -- The styles in the order the preference lists them, and the category each
 -- profile file declares - what the app picks the icon from. Documentation as
 -- much as data: the tests check both against the template and the files, and
 -- tools/gen-profiles.js carries the same two lists.
 profiles.STYLES = {
-  "monitor", "others", "switch", "plug", "tv",
+  "switch", "monitor", "others", "plug", "tv",
   "projector", "network", "hub", "theater", "remote",
 }
 profiles.CATEGORIES = {
@@ -61,15 +76,12 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v11`, `pc-tv.v11`, `pc-battery.v11`, `pc-tv-battery.v11`. The
+--- `pc.v12`, `pc-tv.v12`, `pc-battery.v12`, `pc-tv-battery.v12`. The
 --- style the bare name stands for is the default of that generation (#136):
---- `pc.v10` is Others, `pc.v11` is SmartMonitor.
+--- `pc.v10` is Others, `pc.v11` SmartMonitor, `pc.v12` Switch.
 function profiles.name_for(style, battery, version)
   version = version or profiles.VERSION
-  local default = profiles.DEFAULT_STYLE
-  if version < profiles.DEFAULT_CHANGED_IN then
-    default = profiles.OLD_DEFAULT_STYLE
-  end
+  local default = profiles.default_style_at(version)
   local name = "pc"
   if style ~= nil and style ~= default then
     name = name .. "-" .. style
@@ -81,7 +93,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v11` once its status says so (#116).
+-- moves to `pc-battery.v12` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.
@@ -128,7 +140,11 @@ end
 -- Generations that only ever lived on the Dev channel. Their names stay in
 -- KNOWN so a development device still on one migrates, but their files are
 -- not packaged: the package limit is 655360 bytes.
-profiles.UNSHIPPED_VERSIONS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [9] = true }
+profiles.UNSHIPPED_VERSIONS = {
+  [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [9] = true,
+  -- #136: the SmartMonitor default, Dev channel only.
+  [11] = true,
+}
 
 --- True when the package carries a file for this profile name.
 function profiles.is_shipped(name)
