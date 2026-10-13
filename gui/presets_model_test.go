@@ -65,6 +65,8 @@ func TestRowProblem(t *testing.T) {
 		{Slot: 2, Name: "대시보드", Type: "url", Path: " https://example.com/d "},
 		{Slot: 3, Name: "스크립트", Type: "script", Path: `C:\s\go.ps1`},
 		{Slot: 4, Name: "bat", Type: "script", Path: `C:\s\go.CMD`, Args: "a b"},
+		{Slot: 5, Name: "도타", Type: "url", Path: "steam://rungameid/570"},
+		{Slot: 6, Name: "화면", Type: "url", Path: " ms-settings:display "},
 	}
 	for _, r := range ok {
 		if key := rowProblem(r); key != "" {
@@ -72,17 +74,18 @@ func TestRowProblem(t *testing.T) {
 		}
 	}
 	for want, r := range map[string]presetRow{
-		"presets.err.slot":     {Slot: 0, Name: "x", Type: "url", Path: "https://x"},
-		"presets.err.name":     {Slot: 1, Name: " ", Type: "url", Path: "https://x"},
-		"presets.err.namelong": {Slot: 1, Name: strings.Repeat("가", 31), Type: "url", Path: "https://x"},
-		"presets.err.type":     {Slot: 1, Name: "x", Type: "", Path: "https://x"},
-		"presets.err.path":     {Slot: 1, Name: "x", Type: "program", Path: " "},
-		"presets.err.quote":    {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: `"open`},
-		"presets.err.args":     {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: strings.Repeat("a ", 33)},
-		"presets.err.url":      {Slot: 1, Name: "x", Type: "url", Path: "file:///C:/x"},
-		"presets.err.abs":      {Slot: 1, Name: "x", Type: "program", Path: "notepad.exe"},
-		"presets.err.exe":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
-		"presets.err.script":   {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
+		"presets.err.slot":       {Slot: 0, Name: "x", Type: "url", Path: "https://x"},
+		"presets.err.name":       {Slot: 1, Name: " ", Type: "url", Path: "https://x"},
+		"presets.err.namelong":   {Slot: 1, Name: strings.Repeat("가", 31), Type: "url", Path: "https://x"},
+		"presets.err.type":       {Slot: 1, Name: "x", Type: "", Path: "https://x"},
+		"presets.err.path":       {Slot: 1, Name: "x", Type: "program", Path: " "},
+		"presets.err.quote":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: `"open`},
+		"presets.err.args":       {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: strings.Repeat("a ", 33)},
+		"presets.err.url":        {Slot: 1, Name: "x", Type: "url", Path: "example.com"},
+		"presets.err.urlblocked": {Slot: 1, Name: "x", Type: "url", Path: "file:///C:/x"},
+		"presets.err.abs":        {Slot: 1, Name: "x", Type: "program", Path: "notepad.exe"},
+		"presets.err.exe":        {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
+		"presets.err.script":     {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
 	} {
 		if got := rowProblem(r); got != want {
 			t.Errorf("%+v: %q, want %q", r, got, want)
@@ -237,5 +240,31 @@ func TestFreeSlot(t *testing.T) {
 	}
 	if s := freeSlot(full); s != 0 {
 		t.Errorf("full: %d", s)
+	}
+}
+
+func TestLinkNote(t *testing.T) {
+	apps := map[string]string{"steam": "Steam", "foo": ""}
+	lookup := func(scheme string) (string, bool) {
+		name, ok := apps[scheme]
+		return name, ok
+	}
+	for _, c := range []struct {
+		row      presetRow
+		key, app string
+	}{
+		{presetRow{Type: "url", Path: "steam://rungameid/570"}, "presets.link.app", "Steam"},
+		{presetRow{Type: "url", Path: " STEAM://run/1 "}, "presets.link.app", "Steam"},
+		{presetRow{Type: "url", Path: "foo:bar"}, "presets.link.registered", ""},
+		{presetRow{Type: "url", Path: "nothere://x"}, "presets.link.unknown", ""},
+		{presetRow{Type: "url", Path: "https://example.com"}, "", ""},
+		{presetRow{Type: "url", Path: "javascript:x"}, "", ""},
+		{presetRow{Type: "url", Path: ""}, "", ""},
+		{presetRow{Type: "program", Path: "steam://x"}, "", ""},
+	} {
+		key, app := linkNote(c.row, lookup)
+		if key != c.key || app != c.app {
+			t.Errorf("%+v: %q %q, want %q %q", c.row, key, app, c.key, c.app)
+		}
 	}
 }

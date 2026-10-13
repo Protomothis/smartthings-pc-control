@@ -4,11 +4,12 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // Pure form model of the presets tab (presets_tab.go, #109). Kept free of
@@ -123,9 +124,12 @@ func rowProblem(r presetRow) string {
 	}
 	if r.Type == "url" {
 		// A URL takes no arguments; whatever the (cleared, greyed) entry
-		// holds is dropped by preset(), so it is not checked either.
-		u, err := url.Parse(path)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		// holds is dropped by preset(), so it is not checked either. #137:
+		// the service's own rule - a web address or an app link.
+		if _, err := useraction.PresetURLScheme(path); err != nil {
+			if errors.Is(err, useraction.ErrPresetURLBlocked) {
+				return "presets.err.urlblocked"
+			}
 			return "presets.err.url"
 		}
 		return ""
@@ -371,4 +375,25 @@ func actionErrorKey(err error) string {
 		return "action.err." + ae.Code
 	}
 	return ""
+}
+
+// linkNote is the line under a URL row's path (#137): which app opens an
+// app link, or that no app on this PC does. Web addresses, other types and
+// paths the row check refuses get none. lookup is protocolApp.
+func linkNote(r presetRow, lookup func(scheme string) (string, bool)) (key, app string) {
+	if r.Type != "url" {
+		return "", ""
+	}
+	scheme, err := useraction.PresetURLScheme(strings.TrimSpace(r.Path))
+	if err != nil || scheme == "http" || scheme == "https" {
+		return "", ""
+	}
+	app, ok := lookup(scheme)
+	switch {
+	case !ok:
+		return "presets.link.unknown", ""
+	case app == "":
+		return "presets.link.registered", ""
+	}
+	return "presets.link.app", app
 }
