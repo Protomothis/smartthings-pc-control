@@ -36,7 +36,7 @@ var presetTexts = map[string][2]string{
 	"preset_not_found":     {"파일을 찾을 수 없음: <code>%s</code>", "File not found: <code>%s</code>"},
 	"preset_access_denied": {"접근이 거부됨: <code>%s</code>", "Access denied: <code>%s</code>"},
 	"preset_start_failed":  {"실행하지 못함: <code>%s</code>", "Could not start: <code>%s</code>"},
-	"preset_url_failed":    {"URL을 열지 못함", "Could not open the URL"},
+	"preset_url_failed":    {"URL이나 앱 링크를 열지 못함", "Could not open the URL or app link"},
 	"preset_bad":           {"저장된 설정으로는 실행할 수 없음: <code>%s</code>", "Cannot be run as saved: <code>%s</code>"},
 	"preset_failed_detail": {"❌ 프리셋 %d · %s 실패: %s", "❌ Preset %d · %s failed: %s"},
 }

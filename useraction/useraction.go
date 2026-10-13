@@ -36,7 +36,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -431,9 +430,9 @@ func parsePreset(args []string) (Request, error) {
 		if len(req.Args) > 0 {
 			return req, badArgs("preset: a url takes no --arg")
 		}
-		u, err := url.Parse(req.Path)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return req, badArgs("preset: url must be http:// or https://")
+		// #137: a web address or a Windows app link (steam://…).
+		if _, err := PresetURLScheme(req.Path); err != nil {
+			return req, badArgs("%s", err.Error())
 		}
 	default:
 		return req, badArgs("preset: unknown --type %q", req.PresetType)

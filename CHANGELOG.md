@@ -2,6 +2,14 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 추가
+
+- **프리셋에서 앱 링크 실행** — 프리셋 종류 `URL · 앱 링크`가 `http(s)://` 주소뿐 아니라 `steam://rungameid/570`(Steam 게임 실행), `ms-settings:display`(Windows 설정), `discord://` 같은 Windows 앱 링크도 받습니다. 링크는 그 링크를 등록한 앱이 엽니다 (#137)
+- 앱 링크를 입력하면 경로 아래에 `Steam 앱에서 열립니다`처럼 열릴 앱을 보여 주고, 이 PC에 그 링크를 여는 앱이 없으면 `실행하면 실패합니다`라고 미리 알려 줍니다 (#137)
+- `file:` · `javascript:` · `search-ms:` · `ms-msdt:` · Office 문서 열기 링크처럼 파일 · 스크립트를 열거나 악용 사례가 알려진 링크는 보안상 프리셋으로 저장할 수 없습니다 (#137)
+
 ## [v1.2.1] - 2026-10-04
 
 ### 추가

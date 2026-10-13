@@ -185,7 +185,9 @@ var startProcess = func(l presetLaunch) error {
 	return cmd.Process.Release()
 }
 
-// openURL hands a validated http/https URL to the default browser.
+// openURL hands a validated url preset to Windows: an http/https URL opens
+// in the default browser, an app link (steam://…, #137) in the app that
+// registered its protocol.
 // Replaced by the tests.
 var openURL = func(u string) error {
 	runtime.LockOSThread()
@@ -211,7 +213,7 @@ const (
 	PresetNotFound     = "not_found"     // the program or script file is missing
 	PresetAccessDenied = "access_denied" // Windows refused to open or start it
 	PresetStartFailed  = "start_failed"  // any other start failure
-	PresetURLFailed    = "url_failed"    // the browser could not be asked to open the URL
+	PresetURLFailed    = "url_failed"    // Windows could not open the URL or app link (no browser, no app for the protocol)
 )
 
 // PresetFileName is the base name of a preset path ("run.ps1" for

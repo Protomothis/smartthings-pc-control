@@ -54,7 +54,9 @@ type presetRowWidgets struct {
 	remove *widget.Button
 	// nameErr is the inline "another preset has this name" line.
 	nameErr *widget.Label
-	status  *widget.Label
+	// link says which app opens an app link (#137).
+	link   *widget.Label
+	status *widget.Label
 }
 
 // slotOptions are "1" … "10".
@@ -205,7 +207,10 @@ func (u *ui) addPresetRow(r presetRow) {
 	}
 	w.path = widget.NewEntry()
 	w.path.SetText(r.Path)
-	w.path.OnChanged = onEdit
+	w.path.OnChanged = func(string) {
+		u.showLinkNote(w)
+		u.refreshDirty()
+	}
 	w.args = widget.NewEntry()
 	w.args.SetPlaceHolder(u.t("presets.args.placeholder"))
 	w.args.SetText(r.Args)
@@ -216,6 +221,9 @@ func (u *ui) addPresetRow(r presetRow) {
 	w.nameErr = widget.NewLabel("")
 	w.nameErr.Wrapping = fyne.TextWrapWord
 	w.nameErr.Hide()
+	w.link = widget.NewLabel("")
+	w.link.Wrapping = fyne.TextWrapWord
+	w.link.Hide()
 
 	w.browse = widget.NewButtonWithIcon(u.t("presets.browse"), theme.FolderOpenIcon(), func() { u.browsePresetPath(w) })
 	w.test = widget.NewButtonWithIcon(u.t("presets.test"), theme.MediaPlayIcon(), func() { u.testPresetRow(w) })
@@ -235,10 +243,12 @@ func (u *ui) addPresetRow(r presetRow) {
 			w.args.SetText("")
 		}
 		w.setEditable(u.editorsLocked())
+		u.showLinkNote(w)
 		u.refreshDirty()
 	}
 	w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
 	w.setEditable(u.editorsLocked())
+	u.showLinkNote(w)
 
 	label := func(key string) fyne.CanvasObject {
 		l := widget.NewLabel(u.t(key))
@@ -253,6 +263,7 @@ func (u *ui) addPresetRow(r presetRow) {
 		top,
 		w.nameErr,
 		container.NewBorder(nil, nil, label("presets.path"), w.browse, w.path),
+		w.link,
 		container.NewBorder(nil, nil, label("presets.args"), nil, w.args),
 		w.status,
 		widget.NewSeparator(),
@@ -312,6 +323,25 @@ func (u *ui) checkPresetNames() {
 		showLabel(w.nameErr, text, widget.DangerImportance)
 	}
 	t.root.Refresh()
+}
+
+// showLinkNote writes the row's app-link line (#137): the app that opens
+// it, or a warning that none on this PC does. UI thread only.
+func (u *ui) showLinkNote(w *presetRowWidgets) {
+	key, app := linkNote(w.row(), protocolApp)
+	switch key {
+	case "":
+		showLabel(w.link, "", widget.LowImportance)
+	case "presets.link.unknown":
+		showLabel(w.link, u.t(key), widget.WarningImportance)
+	case "presets.link.app":
+		showLabel(w.link, fmt.Sprintf(u.t(key), app), widget.LowImportance)
+	default:
+		showLabel(w.link, u.t(key), widget.LowImportance)
+	}
+	if u.presets != nil && u.presets.root != nil {
+		u.presets.root.Refresh()
+	}
 }
 
 // showPresetWarnings puts the service's warnings (C6) under the rows they
