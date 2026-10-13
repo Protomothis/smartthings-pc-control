@@ -368,7 +368,7 @@ function T.test_every_frozen_v1_icon_variant_is_pc_yml_with_another_name_and_cat
   h.assert_contains(expected, "name: <name>")
   h.assert_contains(expected, "- name: <category>")
   for _, style in ipairs(profiles.STYLES) do
-    if style ~= profiles.DEFAULT_STYLE then
+    if style ~= profiles.OLD_DEFAULT_STYLE then
       local variant = "pc-" .. style .. ".v1"
       local file, text = profile_file_for(variant)
       h.assert_true(text ~= nil, "no profile file declares " .. variant .. " (iconStyle " .. style .. ")")

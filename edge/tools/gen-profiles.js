@@ -16,10 +16,10 @@
  * and without the `battery` component (#116 - a desktop must not carry an
  * empty battery card). Names and files:
  *
- *   pc.v8            profiles/pc-v8.yml             others, no battery
- *   pc-tv.v8         profiles/pc-tv-v8.yml          tv, no battery
- *   pc-battery.v8    profiles/pc-battery-v8.yml     others, battery
- *   pc-tv-battery.v8 profiles/pc-tv-battery-v8.yml  tv, battery
+ *   pc.v11            profiles/pc-v11.yml             monitor (default), no battery
+ *   pc-tv.v11         profiles/pc-tv-v11.yml          tv, no battery
+ *   pc-battery.v11    profiles/pc-battery-v11.yml     monitor (default), battery
+ *   pc-tv-battery.v11 profiles/pc-tv-battery-v11.yml  tv, battery
  *
  * The rules are deliberately small; `--check` (CI: npm run check-profiles)
  * fails when a file on disk is not what they produce:
@@ -77,14 +77,18 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 //    built from pcWatch's FIRST presentation, ten minutes after the update -
 //    a capability presentation is frozen at first use, like its definition.
 //    v9 was never published either.
-const VERSION = 10;
+// 11: #136 - the default style is monitor (SmartMonitor), not others: the
+//    Android app offers no "change icon" for an Others device. The bare name
+//    now stands for monitor and others gets `pc-others.v11`; up to v10 the
+//    bare name was others (profiles.OLD_DEFAULT_STYLE).
+const VERSION = 11;
 
-const DEFAULT_STYLE = 'others';
+const DEFAULT_STYLE = 'monitor';
 
 // [iconStyle, category], in the order the preference lists them.
 const STYLES = [
-  ['others', 'Others'],
   ['monitor', 'SmartMonitor'],
+  ['others', 'Others'],
   ['switch', 'Switch'],
   ['plug', 'SmartPlug'],
   ['tv', 'Television'],

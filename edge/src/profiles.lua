@@ -24,18 +24,27 @@ local fields = require "device.fields"
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v10`, …).
-profiles.VERSION = 10
+-- The profile generation every current name carries (`pc.v11`, …).
+profiles.VERSION = 11
 
 -- #100: the `iconStyle` preference, whose default is served by `PC` itself.
-profiles.DEFAULT_STYLE = "others"
+-- #136: SmartMonitor since v11. The Android app offers no icon change for a
+-- device in the Others category (only some categories get the device's
+-- "change icon" option), so a PC that started as Others was stuck there.
+profiles.DEFAULT_STYLE = "monitor"
+
+-- #136: the default before v11, which the bare names up to v10 (`pc.v10`,
+-- `pc-battery.v10`) stand for - and why `pc-monitor.v10` exists but
+-- `pc-others.v10` does not.
+profiles.OLD_DEFAULT_STYLE = "others"
+profiles.DEFAULT_CHANGED_IN = 11
 
 -- The styles in the order the preference lists them, and the category each
 -- profile file declares - what the app picks the icon from. Documentation as
 -- much as data: the tests check both against the template and the files, and
 -- tools/gen-profiles.js carries the same two lists.
 profiles.STYLES = {
-  "others", "monitor", "switch", "plug", "tv",
+  "monitor", "others", "switch", "plug", "tv",
   "projector", "network", "hub", "theater", "remote",
 }
 profiles.CATEGORIES = {
@@ -52,20 +61,27 @@ profiles.CATEGORIES = {
 }
 
 --- The profile name for one style and battery choice at `version`:
---- `pc.v10`, `pc-tv.v10`, `pc-battery.v10`, `pc-tv-battery.v10`.
+--- `pc.v11`, `pc-tv.v11`, `pc-battery.v11`, `pc-tv-battery.v11`. The
+--- style the bare name stands for is the default of that generation (#136):
+--- `pc.v10` is Others, `pc.v11` is SmartMonitor.
 function profiles.name_for(style, battery, version)
+  version = version or profiles.VERSION
+  local default = profiles.DEFAULT_STYLE
+  if version < profiles.DEFAULT_CHANGED_IN then
+    default = profiles.OLD_DEFAULT_STYLE
+  end
   local name = "pc"
-  if style ~= nil and style ~= profiles.DEFAULT_STYLE then
+  if style ~= nil and style ~= default then
     name = name .. "-" .. style
   end
   if battery == true then
     name = name .. "-battery"
   end
-  return string.format("%s.v%d", name, version or profiles.VERSION)
+  return string.format("%s.v%d", name, version)
 end
 
 -- What new devices are created with: the default style, no battery. A laptop
--- moves to `pc-battery.v10` once its status says so (#116).
+-- moves to `pc-battery.v11` once its status says so (#116).
 profiles.PC = profiles.name_for(profiles.DEFAULT_STYLE, false)
 
 -- #107: the battery twin of `PC`.

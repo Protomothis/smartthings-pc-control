@@ -10,7 +10,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v10, pc-tv.v10, pc-battery.v10, pc-tv-battery.v10
+#   __NAME__       the profile name - pc.v11, pc-tv.v11, pc-battery.v11, pc-tv-battery.v11
 #   __CATEGORY__   the main component's category (profiles.CATEGORIES)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -27,7 +27,8 @@
 # every YAML file in profiles/ as a profile, and a template there would be a
 # twenty-first one with a placeholder for a name. The published older
 # generation stays in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml). The v2 to v7 files this template made
+# v1 files (pc.yml and pc-<style>.yml) and the v10 ones (edge 1.1.0; their
+# bare name is the old default, others). The v2 to v9 files this template made
 # were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
 # app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #
@@ -238,8 +239,8 @@ preferences:
     preferenceType: enumeration
     definition:
       options:
-        others: 기타 (Others)
         monitor: 모니터 (Monitor)
+        others: 기타 (Others)
         switch: 스위치 (Switch)
         plug: 플러그 (Plug)
         tv: TV (Television)
@@ -248,7 +249,7 @@ preferences:
         hub: 허브 (Hub)
         theater: 홈시어터 (Home theater)
         remote: 리모컨 (Remote)
-      default: others
+      default: monitor
   - name: awakeMinutes
     title: 잠들지 않기 시간 (Keep-awake min)
     description: "잠들지 않기를 켰을 때 유휴 절전을 막는 시간(분, 최대 1440). 0이면 끌 때까지. / Keep-awake minutes; 0 = until off."

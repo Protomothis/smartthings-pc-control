@@ -820,7 +820,7 @@ function T.test_a_profile_change_forces_every_row_once()
 end
 
 --- The Dev channel device on pc-monitor.v9 after the driver update (#123:
---- v10, the watch card on its new capability id), through the real `init` and then
+--- v11, the watch card on its new capability id), through the real `init` and then
 --- `minutes` of driver life on the clock: the default 30 s polls, the
 --- batches, the follow-ups.
 --- `landing`: the profile change lands that many seconds in (`infoChanged`).
@@ -832,7 +832,7 @@ local function migrate(pc, minutes, landing)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-monitor.v10")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v11")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
@@ -1005,7 +1005,7 @@ function T.test_a_preference_change_that_moves_no_profile_does_not_repaint()
   -- change says whether its profile moved.
   with_pc(function()
     local device = new_device()
-    device.profile = { id = "profile-1", name = "pc.v10", components = h.components_for("pc.v10") }
+    device.profile = { id = "profile-1", name = "pc.v11", components = h.components_for("pc.v11") }
     local d = Driver("budget", {})
     poll.once(d, device)
     local mark = #device.emitted
