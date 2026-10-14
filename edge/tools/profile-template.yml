@@ -1,8 +1,9 @@
 # The ONE hand-written device profile (design doc §6.6, media-notify.md §14).
 #
-# tools/gen-profiles.js turns this file into the twenty current profiles in
-# profiles/: every `iconStyle` value (#100, the category the app draws the icon
-# from) with and without the battery component (#116). Edit this file, run
+# tools/gen-profiles.js turns this file into the two current profiles in
+# profiles/: without and with the battery component (#116), both in the
+# Switch category (#136 - the user picks the icon in the app; the `iconStyle`
+# preference of #100 and its variants are gone). Edit this file, run
 #
 #   bun tools/gen-profiles.js          (or: node tools/gen-profiles.js)
 #
@@ -10,8 +11,8 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v12, pc-tv.v12, pc-battery.v12, pc-tv-battery.v12
-#   __CATEGORY__   the main component's category (profiles.CATEGORIES)
+#   __NAME__       the profile name - pc.v13, pc-battery.v13
+#   __CATEGORY__   the main component's category (profiles.CATEGORY)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
 #   @media-begin … @media-end, @media-component
@@ -25,10 +26,10 @@
 #
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
-# twenty-first one with a placeholder for a name. The published older
+# third one with a placeholder for a name. The published older
 # generation stays in profiles/, frozen, for the devices not yet migrated: the
 # v1 files (pc.yml and pc-<style>.yml) and the v10 ones (edge 1.1.0; their
-# bare name is the old default, others). The v2 to v9 and v11 files this template made
+# bare name is the old default, others). The v2 to v9, v11 and v12 files this template made
 # were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
 # app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #
@@ -48,7 +49,7 @@
 # Preference titles and descriptions are Korean first with the English term in
 # parentheses: the SmartThings app shows profile preferences in whatever the
 # driver wrote, with no per-locale variant, and this project is Korean-first.
-# Keep descriptions to a sentence or two: each is copied into twenty profiles,
+# Keep descriptions to a sentence or two: each is copied into every profile,
 # and the package has a size limit. Comment lines like these are not copied.
 name: __NAME__
 components:
@@ -232,24 +233,6 @@ preferences:
         ko: 한국어 (Korean)
         en: English
       default: auto
-  - name: iconStyle
-    title: 아이콘 (Icon)
-    description: "앱의 장치 아이콘. 바꿔도 장치를 다시 추가할 필요가 없습니다. / Device icon; no re-add needed."
-    required: true
-    preferenceType: enumeration
-    definition:
-      options:
-        switch: 스위치 (Switch)
-        monitor: 모니터 (Monitor)
-        others: 기타 (Others)
-        plug: 플러그 (Plug)
-        tv: TV (Television)
-        projector: 프로젝터 (Projector)
-        network: 네트워크 (Network)
-        hub: 허브 (Hub)
-        theater: 홈시어터 (Home theater)
-        remote: 리모컨 (Remote)
-      default: switch
   - name: awakeMinutes
     title: 잠들지 않기 시간 (Keep-awake min)
     description: "잠들지 않기를 켰을 때 유휴 절전을 막는 시간(분, 최대 1440). 0이면 끌 때까지. / Keep-awake minutes; 0 = until off."

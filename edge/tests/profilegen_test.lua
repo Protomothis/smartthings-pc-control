@@ -69,7 +69,8 @@ end
 
 -- The package (`profiles/` is uploaded whole, and the upload limit is 655360
 -- bytes): every shipped name the driver knows - the ten frozen v1 files and
--- the twenty current ones, not the Dev-only v2 to v9 (UNSHIPPED_VERSIONS) -
+-- the twenty v10 ones (edge 1.1.0) and the two current ones, not the Dev-only
+-- v2 to v9, v11 and v12 (UNSHIPPED_VERSIONS) -
 -- each declaring its own name, and nothing else (a style dropped from the
 -- list but not from the disk, the template, or #123's removed pc-app.yml
 -- would otherwise ship as a profile).
@@ -95,17 +96,12 @@ function T.test_the_package_is_exactly_the_shipped_profiles()
   h.assert_true(read(edge_dir .. "/tools/profile-template.yml") ~= nil, "the template lives in tools/")
 end
 
-function T.test_the_generator_knows_the_same_styles_and_categories()
-  -- tools/gen-profiles.js carries its own copy of the list. Read it back out
+function T.test_the_generator_knows_the_same_version_and_category()
+  -- tools/gen-profiles.js carries its own copy of both. Read them back out
   -- of the source rather than trusting the two to agree.
   local source = lf(read(edge_dir .. "/tools/gen-profiles.js"))
-  local seen = {}
-  for style, category in source:gmatch("%[%s*'(%a+)',%s*'(%a+)'%s*%]") do
-    seen[#seen + 1] = style
-    h.assert_equal(category, profiles.CATEGORIES[style], "gen-profiles.js category of " .. style)
-  end
-  h.assert_deep_equal(seen, profiles.STYLES, "gen-profiles.js STYLES")
   h.assert_contains(source, "const VERSION = " .. profiles.VERSION .. ";")
+  h.assert_contains(source, "const CATEGORY = '" .. profiles.CATEGORY .. "';")
 end
 
 --- The capability ids of one component of a profile, in order.
@@ -120,7 +116,7 @@ local function component_capabilities(text, component)
 end
 
 -- What every current profile must keep, whatever the template says:
---   * its style's category (the icon the app shows);
+--   * the Switch category (#136: the one with the app's "change icon");
 --   * the battery component exactly on the battery half (#116);
 --   * the media group in main right after the edge-v1.0 cards, in the order
 --     of media-notify.md §15 "UI 구성", and pcToast closing main;
@@ -130,10 +126,10 @@ end
 function T.test_every_current_profile_keeps_the_layout_rules()
   local media_group = { "audioTrackData", "mediaPlayback", "mediaTrackControl", "audioVolume", "audioMute" }
   for _, battery in ipairs({ false, true }) do
-    for _, style in ipairs(profiles.STYLES) do
-      local name = profiles.for_style(style, battery)
+    do
+      local name = profiles.for_battery(battery)
       local text = profile_text(name)
-      h.assert_contains(text, "\n      - name: " .. profiles.CATEGORIES[style] .. "\n", name .. " category")
+      h.assert_contains(text, "\n      - name: " .. profiles.CATEGORY .. "\n", name .. " category")
       h.assert_equal(text:find("\n  - id: battery\n", 1, true) ~= nil, battery, name .. " battery component")
       h.assert_nil(text:find("__", 1, true), name .. " has a placeholder left")
 
