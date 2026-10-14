@@ -2,7 +2,7 @@
 
 허브 안에서 도는 Edge 드라이버(`edge/`)의 변경 이력입니다. 드라이버는 Windows 앱과 버전이 따로 돌고(`src/driver_version.lua`, 태그 `edge-vX.Y.Z`), 사용자는 GitHub 릴리스가 아니라 SmartThings 채널을 통해 자동으로 업데이트를 받습니다. Windows 서비스·트레이 앱의 이력은 [../CHANGELOG.md](../CHANGELOG.md)에 있습니다.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-14
 
 ### 변경
 
