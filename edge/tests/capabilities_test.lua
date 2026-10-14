@@ -380,30 +380,16 @@ function T.test_every_frozen_v1_icon_variant_is_pc_yml_with_another_name_and_cat
   end
 end
 
-function T.test_every_icon_style_has_a_profile_with_its_category()
+function T.test_the_current_profiles_are_switches_without_an_icon_preference()
+  -- #136: the user picks the icon in the app, which offers it for a Switch
+  -- and not for Others or SmartMonitor. No `iconStyle` preference, no
+  -- variants: `pc.vN` and its battery twin, both Switch.
   local profiles = require "profiles"
-  local _, base = profile_file_for(profiles.PC)
-  local options, default = enum_options(base, "iconStyle")
-  -- The preference lists exactly the styles profiles.lua knows, in its order.
-  h.assert_deep_equal(options, profiles.STYLES)
-  h.assert_equal(default, profiles.DEFAULT_STYLE)
-  h.assert_equal(profiles.for_style(profiles.DEFAULT_STYLE), profiles.PC)
-  for _, style in ipairs(options) do
-    local target = profiles.for_style(style)
-    h.assert_true(style == profiles.DEFAULT_STYLE or target ~= profiles.PC,
-      "iconStyle " .. style .. " has no variant in profiles.VARIANTS")
-    local file, text = profile_file_for(target)
-    h.assert_true(text ~= nil, "iconStyle " .. style .. " asks for " .. target .. ", which no file declares")
-    h.assert_equal(profile_category(text), profiles.CATEGORIES[style],
-      "the category of profiles/" .. tostring(file))
-  end
-  -- And the other way round: no variant nobody can pick.
-  local listed = {}
-  for _, style in ipairs(options) do
-    listed[style] = true
-  end
-  for style in pairs(profiles.VARIANTS) do
-    h.assert_true(listed[style] == true, "profiles.VARIANTS has " .. style .. ", which pc.yml does not offer")
+  for _, name in ipairs({ profiles.PC, profiles.BATTERY }) do
+    local file, text = profile_file_for(name)
+    h.assert_true(text ~= nil, name .. " has no file")
+    h.assert_equal(profile_category(text), "Switch", "the category of profiles/" .. tostring(file))
+    h.assert_nil(text:find("iconStyle", 1, true), "profiles/" .. tostring(file) .. " still offers iconStyle")
   end
 end
 
@@ -437,7 +423,7 @@ function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
       h.assert_nil(main:find("pcwatch", 1, true), "profiles/" .. file .. " main")
     end
   end
-  h.assert_equal(checked, 20)
+  h.assert_equal(checked, 2)
 end
 
 function T.test_the_watch_definition_is_summary_names_and_five_slots()
