@@ -341,19 +341,6 @@ local function profile_category(text)
   return ((text or ""):gsub("\r\n", "\n")):match("\n    categories:\n      %- name: ([%w]+)")
 end
 
---- The option keys of one enumeration preference in `text`, in file order,
---- and its default.
-local function enum_options(text, preference)
-  text = (text or ""):gsub("\r\n", "\n")
-  local block = (text or ""):match("\n  %- name: " .. preference .. "\n(.-)\n  %- name: ")
-    or (text or ""):match("\n  %- name: " .. preference .. "\n(.*)$")
-  local keys = {}
-  for key in (block or ""):match("\n      options:\n(.-)\n      default:"):gmatch("        \"?([%w]+)\"?: ") do
-    keys[#keys + 1] = key
-  end
-  return keys, (block or ""):match("\n      default: \"?([%w]+)\"?")
-end
-
 function T.test_every_frozen_v1_icon_variant_is_pc_yml_with_another_name_and_category()
   -- The variants exist only to carry a different category (the icon). Any
   -- other difference - a preference added to pc.yml and not copied over, a
