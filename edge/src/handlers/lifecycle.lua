@@ -39,13 +39,11 @@ function lifecycle.init(driver, device)
   -- silent polls that follow stay "PC 앱 응답 없음", not off.
   poll.restore_app_stop(device)
   -- A device keeps the screen it was created with (platform notes "프로필과
-  -- 화면 생성"): one on an older profile moves to the current one, once. An
-  -- `iconStyle` change the restart interrupted is applied now.
+  -- 화면 생성"): one on an older profile moves to the current one, once.
   local migrated = profiles.ensure(device)
-  local switched = profiles.apply_style(device)
   -- A new generation of rows (new capability ids start unset) is painted once.
   local fresh_rows = poll.ensure_rows(device, driver)
-  if fresh_rows or switched or migrated then
+  if fresh_rows or migrated then
     -- `ensure_rows` has just repainted when it says so - not a second time.
     poll.repaint_soon(driver, device, { painted = fresh_rows })
   end
@@ -117,14 +115,11 @@ function lifecycle.info_changed(driver, device, _event, args)
   if profiles.is_child(device) then
     return
   end
-  -- A new `iconStyle` moves the device onto the profile with that category.
-  -- The move fires infoChanged again; `apply_style` then does nothing.
-  local switched = profiles.apply_style(device)
   -- The restarted timer picks up a new interval, the poll a new address or
-  -- secret. Only a profile that changed (a migration or a switch landing) is
-  -- repainted: its cloud record is empty.
+  -- secret. Only a profile that changed (a migration or a battery move
+  -- landing) is repainted: its cloud record is empty.
   poll.start(driver, device)
-  if switched or lifecycle.profile_changed(device, args) then
+  if lifecycle.profile_changed(device, args) then
     poll.repaint_soon(driver, device)
   end
 end
