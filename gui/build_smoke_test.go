@@ -14,6 +14,16 @@ import (
 func TestRebuildDoesNotPanic(t *testing.T) {
 	syncBackground = true
 	defer func() { syncBackground = false }()
+	// Building the settings tab must not touch the login Run entry: it did,
+	// and pointed it at the test binary.
+	writes := 0
+	setAutostart = func(bool) error { writes++; return nil }
+	defer func() { setAutostart = SetAutostart }()
+	defer func() {
+		if writes != 0 {
+			t.Errorf("building the window wrote the autostart entry %d times", writes)
+		}
+	}()
 	for _, lang := range []Lang{LangKo, LangEn} {
 		t.Run(string(lang), func(t *testing.T) {
 			a := test.NewTempApp(t)

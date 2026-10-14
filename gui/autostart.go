@@ -38,6 +38,10 @@ func AutostartEnabled() bool {
 	return err == nil && strings.TrimSpace(v) != ""
 }
 
+// setAutostart is SetAutostart, replaced by the tests: the Run entry is the
+// real user's.
+var setAutostart = SetAutostart
+
 // SetAutostart writes or removes the Run entry. Writing always uses the
 // current exe path, so a moved exe is picked up on the next start.
 func SetAutostart(on bool) error {

@@ -78,7 +78,7 @@
 - `media <playpause|play|pause|stop|next|prev>`
 - `notify --title <t> --text <t>` — 값은 다음 인자를 그대로 받는다(`--`로 시작해도 문구).
   `--text` 1–200자, 제목 100자, 제어 문자는 거절(서비스가 먼저 지운다).
-- `preset --type <program|url|script> --path <p> [--arg <a>]...` — `url`은 http/https만·`--arg` 없음,
+- `preset --type <program|url|script> --path <p> [--arg <a>]...` — `url`은 http/https(호스트 필수) 또는 앱 링크(`steam://…`, 위험 스킴 차단, `useraction.PresetURLScheme`, #137)·`--arg` 없음,
   `script`는 `.ps1`/`.bat`/`.cmd`만, `--arg` 최대 32개.
 - `screen <off|on>` (#121) — `turnscreenoff`·`turnscreenon`. `SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND,
   SC_MONITORPOWER, 2|-1, SMTO_ABORTIFHUNG, 2000ms)`라 응답 없는 창 하나에 막히지 않는다(예전 PowerShell `SendMessage`는
