@@ -229,6 +229,7 @@ jobs:
             echo "_edge/CHANGELOG.md has no [$version] section._" > release-notes.md
           fi
           printf '\n---\n채널: **Protomothis** — 설치 방법은 [edge/README.md](https://github.com/%s/blob/%s/edge/README.md)\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> release-notes.md
+          printf '\n이 릴리스가 도움이 됐다면 ⭐ Star나 [GitHub Sponsors](https://github.com/sponsors/Protomothis)로 응원해 주세요.\n' >> release-notes.md
           cat release-notes.md
 
       - name: Attach the package to the release

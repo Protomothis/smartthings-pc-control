@@ -83,6 +83,7 @@ jobs:
           }
           $notes = $match.Value
           if (-not $match.Success) { $notes = "_CHANGELOG.md has no [$tag] section._" }
+          $notes = $notes.TrimEnd() + "`n`n---`n이 릴리스가 도움이 됐다면 ⭐ Star나 [GitHub Sponsors](https://github.com/sponsors/Protomothis)로 응원해 주세요.`n"
           $notes | Out-File -FilePath release_notes.txt -Encoding utf8
         shell: pwsh
 
