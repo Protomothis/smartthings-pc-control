@@ -9,6 +9,7 @@
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go)](https://go.dev)
 [![License](https://img.shields.io/github/license/Protomothis/smartthings-pc-control?style=flat-square)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square&logo=windows)](https://www.microsoft.com/windows)
+[![Sponsor](https://img.shields.io/github/sponsors/Protomothis?style=flat-square&logo=githubsponsors&label=Sponsor&color=EA4AAA)](https://github.com/sponsors/Protomothis)
 
 [한국어](#한국어) · [English](#english)
 
@@ -94,6 +95,10 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 
 지원 환경: Windows 10 · 11(데스크톱 앱은 OpenGL 2.0 필요).
 
+### 후원
+
+이 프로젝트는 무료이고, 모든 기능은 앞으로도 무료입니다. 쓰시다가 도움이 됐다면 ⭐ Star나 [GitHub Sponsors](https://github.com/sponsors/Protomothis)로 응원해 주세요. 후원금은 테스트용 안드로이드 기기와 SmartThings 허브처럼 실제 환경에서 검증하는 데 씁니다. 버그 제보와 위키 개선도 큰 도움이 됩니다.
+
 ---
 
 ## English
@@ -140,6 +145,10 @@ Updates install only after the Ed25519 manifest signature and the exe's SHA-256 
 
 The [Wiki](https://github.com/Protomothis/smartthings-pc-control/wiki) has the guides ([English overview](https://github.com/Protomothis/smartthings-pc-control/wiki/Home-EN); most pages are Korean).
 Developers: [CONTRIBUTING.md](CONTRIBUTING.md) and [`edge/README.md`](edge/README.md).
+
+### Sponsor
+
+This project is free, and every feature will stay free. If it helps you, a ⭐ star or [GitHub Sponsors](https://github.com/sponsors/Protomothis) keeps it going: sponsorship pays for real-device testing such as Android phones and SmartThings hubs. Bug reports and wiki fixes help just as much.
 
 ---
 
