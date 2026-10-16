@@ -9,6 +9,8 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/service/tgcontrol"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
+
+	"golang.org/x/sys/windows"
 )
 
 // tgCtl is the service's inbound Telegram control.
@@ -18,7 +20,7 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Emit:          func(cat, kind string, fields map[string]string) { emit(cat, kind, fields) },
 	BaseURL:       func() string { return telegramBaseURL },
 	Bus:           currentBus,
-	StartedAt:     serviceStartedAt,
+	Uptime:        windows.DurationSinceBoot,
 	ActionTimeout: func() time.Duration { return userActions.Timeout },
 	Status:        sources,
 	Commands:      tgCommands{},

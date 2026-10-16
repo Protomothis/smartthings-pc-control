@@ -32,6 +32,9 @@ func (fakeStatus) Activity(config.Config) status.Activity {
 	return status.Activity{Apps: []status.ActivityApp{}}
 }
 func (fakeStatus) Media(config.Config) status.Media { return status.Media{Status: "none"} }
+func (fakeStatus) Audio(config.Config) status.Audio { return status.Audio{} }
+func (fakeStatus) Session() (session.Info, error)   { return session.Info{}, errors.New("no session") }
+func (fakeStatus) IdleSeconds() (int64, bool)       { return 0, false }
 
 type fakeCommands struct{}
 
@@ -86,7 +89,7 @@ func newTestControl(t *testing.T, cfg config.Config) *testControl {
 		Emit:          func(string, string, map[string]string) {},
 		BaseURL:       func() string { return "http://127.0.0.1:1" },
 		Bus:           func() *notify.Bus { return nil },
-		StartedAt:     time.Now(),
+		Uptime:        func() time.Duration { return 3*time.Hour + 5*time.Minute },
 		ActionTimeout: func() time.Duration { return time.Second },
 		Status:        fakeStatus{},
 		Commands:      fakeCommands{},
