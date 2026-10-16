@@ -100,6 +100,13 @@ func New(d Deps) *Server {
 	s.limiter = ratelimit.New(RatePerSecond, time.Second, func() time.Time { return s.Now() })
 	s.ssdp.limiter = ratelimit.New(1, ssdpPerSourceInterval, func() time.Time { return s.Now() })
 	s.subs = newSubStore(func() time.Time { return s.PushNow() })
+	if d.Subscriptions != nil {
+		s.subs.persist = func(list []SavedSubscription) {
+			if err := d.Subscriptions.SaveSubscriptions(list); err != nil {
+				logx.Printf("WARNING: ST push: subscriptions not saved: %v", err)
+			}
+		}
+	}
 	s.push.init()
 	return s
 }

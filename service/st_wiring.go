@@ -21,6 +21,8 @@ var stSrv = stapi.New(stapi.Deps{
 	Media:    mediaControl{},
 	Presets:  presetControl{origin: "smartthings"},
 	Notify:   pcNotifier{},
+	// state.json, next to config.json (#142).
+	Subscriptions: pushSubscriptionState{},
 })
 
 // registerSTRoutes mounts the /st/v1 tree on the command server's mux. A

@@ -9,9 +9,13 @@ package stapi
 //	POST   /st/v1/subscribe       {callback, ttl_seconds, driver_version}
 //	DELETE /st/v1/subscribe/{id}
 //
-// Both go through auth like the rest of /st/v1. Subscriptions live in
-// memory only: after a service restart the driver's next poll fails and it
-// subscribes again.
+// Both go through auth like the rest of /st/v1. Subscriptions are kept in
+// memory and, when Deps.Subscriptions is set, written through to the
+// service's state file on every change and renewal (#142): a service that
+// restarts (an update, a reboot) takes up the live ones again, and its
+// power.started also reaches the hubs whose subscription ran out while the
+// PC was off, so the driver learns that the PC is back without waiting for
+// its next poll. See wakeTargets.
 //
 // Events arrive on a raw tap of the notification bus (notify.Bus.Tap), not
 // as an ordinary Sink, because §3.5 is explicit that the notification
@@ -29,6 +33,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,7 +77,25 @@ const (
 	pushQueueCap = 64
 	// maxCallbackLen is a sanity bound on the callback URL.
 	maxCallbackLen = 512
+	// subRecallWindow is how long a subscription that ran out (or failed
+	// out) is still told about power.started and power.resumed (#142).
+	// A PC switched off for the night or the weekend comes back to a hub
+	// whose subscription expired long ago; one that stayed off for longer
+	// than this is unlikely to find the same listener there.
+	subRecallWindow = 7 * 24 * time.Hour
 )
+
+// wakeRetryDelays are the extra attempts of a power.started or
+// power.resumed push that failed (#142), after the immediate one and its
+// retry: at boot and right after a resume the PC's network is often not up
+// yet when the event is emitted. A variable so the tests can shorten it.
+var wakeRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second}
+
+// isWakeEvent reports whether typ is a push that announces the PC coming
+// up, which also goes to the hubs whose subscription lapsed (#142).
+func isWakeEvent(typ string) bool {
+	return typ == "power.started" || typ == "power.resumed"
+}
 
 // ---- subscription store ----------------------------------------------------
 
@@ -87,36 +110,65 @@ type subscription struct {
 	failures int
 }
 
-// subStore holds the live subscriptions. It is the only mutable push
-// state.
+// subStore holds the live subscriptions and the recently lapsed ones. It is
+// the only mutable push state.
 type subStore struct {
 	mu     sync.Mutex
 	now    func() time.Time
 	byID   map[string]*subscription
 	byCall map[string]*subscription
+	// lapsed are the subscriptions that expired or failed out within
+	// subRecallWindow, keyed by callback: never pushed to, except for the
+	// wake events (wakeTargets, #142).
+	lapsed map[string]*subscription
 	nextID int
 	// sweeper is started on the first subscribe.
 	sweeper sync.Once
+
+	// persist writes the store through (#142); nil keeps it in memory.
+	persist func([]SavedSubscription)
+	// persistMu keeps the snapshots in the order they are written.
+	persistMu sync.Mutex
 }
 
 func newSubStore(now func() time.Time) *subStore {
-	return &subStore{now: now, byID: map[string]*subscription{}, byCall: map[string]*subscription{}}
+	return &subStore{
+		now:    now,
+		byID:   map[string]*subscription{},
+		byCall: map[string]*subscription{},
+		lapsed: map[string]*subscription{},
+	}
 }
 
-// sweepLocked drops everything that has expired. The caller holds mu.
+// sweepLocked moves everything that has expired to lapsed, and forgets
+// what lapsed subRecallWindow ago or longer. The caller holds mu.
 func (s *subStore) sweepLocked(now time.Time) {
 	for id, sub := range s.byID {
 		if !now.Before(sub.ExpiresAt) {
 			delete(s.byID, id)
 			delete(s.byCall, sub.Callback)
+			s.lapsed[sub.Callback] = sub
 			logx.Printf("ST push: subscription %s (%s) expired", id, sub.Callback)
+		}
+	}
+	for callback, sub := range s.lapsed {
+		if now.Sub(sub.ExpiresAt) >= subRecallWindow {
+			delete(s.lapsed, callback)
 		}
 	}
 }
 
 // subscribe registers or renews callback for ttl and reports whether this
-// renewed an existing subscription.
+// renewed an existing subscription. Either way the store is written
+// through: the renewed expiry is what decides, after a restart, whether
+// the subscription is taken up again or only recalled (#142).
 func (s *subStore) subscribe(callback, driverVersion string, ttl time.Duration) (subscription, bool) {
+	sub, renewed := s.subscribeLocked(callback, driverVersion, ttl)
+	s.save()
+	return sub, renewed
+}
+
+func (s *subStore) subscribeLocked(callback, driverVersion string, ttl time.Duration) (subscription, bool) {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -128,16 +180,25 @@ func (s *subStore) subscribe(callback, driverVersion string, ttl time.Duration) 
 		sub.failures = 0
 		return *sub, true
 	}
+	// A hub coming back for a callback that lapsed gets a new id: its
+	// driver dropped the old one when the renewal failed.
+	delete(s.lapsed, callback)
 	// A hub whose driver restarted comes back on a new ephemeral port; the
 	// listener behind its old callback is gone. Keeping that subscription
 	// only buys 2s timeouts and retries on every event until it fails out,
-	// so a new callback from the same host replaces the host's old ones.
+	// so a new callback from the same host replaces the host's old ones,
+	// the lapsed ones too.
 	if host := callbackHost(callback); host != "" {
 		for id, old := range s.byID {
 			if old.Callback != callback && callbackHost(old.Callback) == host {
 				delete(s.byID, id)
 				delete(s.byCall, old.Callback)
 				logx.Printf("ST push: %s (%s) replaced by a new subscription from %s", id, old.Callback, host)
+			}
+		}
+		for old := range s.lapsed {
+			if callbackHost(old) == host {
+				delete(s.lapsed, old)
 			}
 		}
 	}
@@ -155,18 +216,33 @@ func (s *subStore) subscribe(callback, driverVersion string, ttl time.Duration) 
 }
 
 // remove drops the subscription with id and reports whether it was there.
+// The hub said goodbye (its device was removed), so it is not recalled
+// either.
 func (s *subStore) remove(id string) bool {
+	removed := s.removeLocked(id)
+	if removed {
+		s.save()
+	}
+	return removed
+}
+
+func (s *subStore) removeLocked(id string) bool {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked(now)
-	sub, ok := s.byID[id]
-	if !ok {
-		return false
+	if sub, ok := s.byID[id]; ok {
+		delete(s.byID, id)
+		delete(s.byCall, sub.Callback)
+		return true
 	}
-	delete(s.byID, id)
-	delete(s.byCall, sub.Callback)
-	return true
+	for callback, sub := range s.lapsed {
+		if sub.ID == id {
+			delete(s.lapsed, callback)
+			return true
+		}
+	}
+	return false
 }
 
 // active returns the unexpired subscriptions.
@@ -180,6 +256,38 @@ func (s *subStore) active() []subscription {
 		out = append(out, *sub)
 	}
 	return out
+}
+
+// wakeTargets returns the subscriptions a power.started or power.resumed
+// goes to (#142): the unexpired ones and those that lapsed within
+// subRecallWindow. The lapsed ones are why: a PC that was off or asleep
+// for longer than the TTL could not be renewed against, and its hub would
+// otherwise only find out at its next poll, up to a poll interval later.
+// The driver routes a push by machine_id, not by subscription, so it takes
+// one for a lapsed subscription too, and then subscribes again.
+// lapsed is the number of lapsed ones, which come last.
+func (s *subStore) wakeTargets() (subs []subscription, lapsed int) {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked(now)
+	out := make([]subscription, 0, len(s.byID)+len(s.lapsed))
+	for _, sub := range s.byID {
+		out = append(out, *sub)
+	}
+	for _, sub := range s.lapsed {
+		out = append(out, *sub)
+	}
+	return out, len(s.lapsed)
+}
+
+// anyLapsed reports whether a wake event has a lapsed subscription to go to.
+func (s *subStore) anyLapsed() bool {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked(now)
+	return len(s.lapsed) > 0
 }
 
 // noteResult records one delivery outcome and removes the subscription
@@ -202,11 +310,19 @@ func (s *subStore) noteResult(id string, err error) {
 	if drop {
 		delete(s.byID, id)
 		delete(s.byCall, callback)
+		// Not forgotten: a hub that was out of reach for a while is still
+		// told when the PC comes back up (#142).
+		if now := s.now(); now.Before(sub.ExpiresAt) {
+			sub.ExpiresAt = now
+		}
+		sub.failures = 0
+		s.lapsed[callback] = sub
 	}
 	s.mu.Unlock()
 
 	// Bodies are never logged, only the destination and the error (§8).
 	if drop {
+		s.save()
 		logx.Printf("ST push: %s (%s) removed after %d consecutive failures: %v", id, callback, failures, err)
 		return
 	}
@@ -233,8 +349,142 @@ func (s *subStore) reset() {
 	s.mu.Lock()
 	s.byID = map[string]*subscription{}
 	s.byCall = map[string]*subscription{}
+	s.lapsed = map[string]*subscription{}
 	s.nextID = 0
 	s.mu.Unlock()
+}
+
+// ---- persistence (#142) ----------------------------------------------------
+
+// SavedSubscription is one subscription as the service keeps it across
+// restarts: what the hub registered and until when. The failure count is
+// not kept.
+type SavedSubscription struct {
+	ID            string    `json:"id"`
+	Callback      string    `json:"callback"`
+	DriverVersion string    `json:"driver_version,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
+}
+
+// save writes the store through persist: the live subscriptions and the
+// lapsed ones still within subRecallWindow, ordered by callback.
+func (s *subStore) save() {
+	if s.persist == nil {
+		return
+	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	now := s.now()
+	s.mu.Lock()
+	s.sweepLocked(now)
+	out := make([]SavedSubscription, 0, len(s.byCall)+len(s.lapsed))
+	for _, group := range []map[string]*subscription{s.byCall, s.lapsed} {
+		for _, sub := range group {
+			out = append(out, SavedSubscription{
+				ID:            sub.ID,
+				Callback:      sub.Callback,
+				DriverVersion: sub.DriverVersion,
+				ExpiresAt:     sub.ExpiresAt,
+			})
+		}
+	}
+	s.mu.Unlock()
+	slices.SortFunc(out, func(a, b SavedSubscription) int { return strings.Compare(a.Callback, b.Callback) })
+	s.persist(out)
+}
+
+// restore takes up saved subscriptions: an unexpired one is live again
+// under its old id (the driver holds that id, and renews by callback), one
+// that lapsed within subRecallWindow is recalled for the wake events, and
+// anything older, or with a callback subscribe would not accept, is
+// dropped. A callback already subscribed in this run wins. Reports how many
+// of each it took.
+func (s *subStore) restore(saved []SavedSubscription) (live, lapsed int) {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var renumber []*subscription
+	for _, rec := range saved {
+		if !savedCallbackOK(rec.Callback) {
+			continue
+		}
+		if _, ok := s.byCall[rec.Callback]; ok {
+			continue
+		}
+		if _, ok := s.lapsed[rec.Callback]; ok {
+			continue
+		}
+		if n, ok := subNumber(rec.ID); ok && n > s.nextID {
+			s.nextID = n
+		}
+		sub := &subscription{
+			ID:            rec.ID,
+			Callback:      rec.Callback,
+			DriverVersion: httpx.Truncate(rec.DriverVersion, 32),
+			ExpiresAt:     rec.ExpiresAt,
+		}
+		switch {
+		case now.Before(rec.ExpiresAt):
+			s.byCall[sub.Callback] = sub
+			if _, taken := s.byID[sub.ID]; taken || sub.ID == "" {
+				renumber = append(renumber, sub)
+				continue
+			}
+			s.byID[sub.ID] = sub
+			live++
+		case now.Sub(rec.ExpiresAt) < subRecallWindow:
+			s.lapsed[sub.Callback] = sub
+			lapsed++
+		}
+	}
+	// An id that was missing or already taken (a hand-edited file) gets a
+	// new one once the highest saved number is known.
+	for _, sub := range renumber {
+		s.nextID++
+		sub.ID = "sub-" + strconv.Itoa(s.nextID)
+		s.byID[sub.ID] = sub
+		live++
+	}
+	if live > 0 {
+		s.startSweeper()
+	}
+	return live, lapsed
+}
+
+// subNumber is n of "sub-n".
+func subNumber(id string) (int, bool) {
+	digits, ok := strings.CutPrefix(id, "sub-")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(digits)
+	return n, err == nil
+}
+
+// savedCallbackOK applies what validateCallback checks, except the source
+// IP, to a callback read back from disk.
+func savedCallbackOK(raw string) bool {
+	if raw == "" || len(raw) > maxCallbackLen {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip != nil && callbackAddrAllowed(ip)
+}
+
+// RestoreSubscriptions takes up what Deps.Subscriptions saved (#142). The
+// root calls it once at start, before the HTTP server and power.started.
+func (s *Server) RestoreSubscriptions() {
+	if s.d.Subscriptions == nil {
+		return
+	}
+	live, lapsed := s.subs.restore(s.d.Subscriptions.LoadSubscriptions())
+	if live+lapsed > 0 {
+		logx.Printf("ST push: %d subscription(s) restored, %d lapsed one(s) kept for power.started", live, lapsed)
+	}
 }
 
 // RestartSubscriptionIDs clears every subscription and counts the ids from
@@ -428,6 +678,9 @@ type pushJob struct {
 	Data map[string]string
 	// fromCache builds the status from memory only (StoppingStatus).
 	fromCache bool
+	// wake goes to the lapsed subscriptions too, and is tried again later
+	// when it fails (power.started, power.resumed; #142).
+	wake bool
 	// flushed marks a no-op job: the worker closes it once every job
 	// queued before it has been delivered (see FlushPush).
 	flushed chan struct{}
@@ -466,11 +719,12 @@ func (s *Server) PushTap(ev notify.Event) {
 	if !ok {
 		return
 	}
-	if s.Subscriptions() == 0 {
+	wake := isWakeEvent(typ)
+	if s.Subscriptions() == 0 && (!wake || !s.subs.anyLapsed()) {
 		// The tap costs one mutex on a service nobody subscribed to.
 		return
 	}
-	job := pushJob{Type: typ, At: ev.At, Data: ev.Fields}
+	job := pushJob{Type: typ, At: ev.At, Data: ev.Fields, wake: wake}
 	if typ == "power.stopping" {
 		// The body comes from memory only (StoppingStatus): a status
 		// build that had to rescan the adapters spent a second of the
@@ -531,17 +785,24 @@ func (s *Server) FlushPush(timeout time.Duration) bool {
 	}
 }
 
-// Deliver sends one push of type typ to every live subscriber now and
-// waits for all of them (tests; PushTap does this for power.stopping).
+// Deliver sends one push of type typ to every live subscriber now (and,
+// for power.started and power.resumed, to the lapsed ones) and waits for
+// the first attempt at all of them (tests; PushTap does this for
+// power.stopping).
 func (s *Server) Deliver(ctx context.Context, typ string, at time.Time, data map[string]string) {
-	s.dispatch(ctx, pushJob{Type: typ, At: at, Data: data})
+	s.dispatch(ctx, pushJob{Type: typ, At: at, Data: data, wake: isWakeEvent(typ)})
 }
 
 // dispatch renders the body once and posts it to every live subscriber in
 // parallel, waiting for all of them (ctx bounds the whole thing for
-// power.stopping).
+// power.stopping). A wake event goes to the lapsed subscriptions too, and
+// whoever it did not reach is tried again in the background
+// (wakeRetryDelays) without holding up the events behind it.
 func (s *Server) dispatch(ctx context.Context, job pushJob) {
-	subs := s.subs.active()
+	subs, lapsed := s.subs.active(), 0
+	if job.wake {
+		subs, lapsed = s.subs.wakeTargets()
+	}
 	if len(subs) == 0 {
 		return
 	}
@@ -551,14 +812,52 @@ func (s *Server) dispatch(ctx context.Context, job pushJob) {
 		return
 	}
 	var wg sync.WaitGroup
-	for _, sub := range subs {
+	for i, sub := range subs {
 		wg.Add(1)
-		go func(sub subscription) {
+		go func(sub subscription, recalled bool) {
 			defer wg.Done()
-			s.subs.noteResult(sub.ID, s.post(ctx, sub.Callback, body))
-		}(sub)
+			err := s.post(ctx, sub.Callback, body)
+			s.subs.noteResult(sub.ID, err)
+			if recalled {
+				// The only record that the hub was told: noteResult keeps
+				// no count for a lapsed subscription.
+				logx.Printf("ST push: %s to lapsed %s (%s): %s", job.Type, sub.ID, sub.Callback, outcome(err))
+			}
+			if err != nil && job.wake {
+				s.retryWake(job.Type, sub, body)
+			}
+		}(sub, i >= len(subs)-lapsed)
 	}
 	wg.Wait()
+}
+
+// retryWake tries a wake event that did not reach sub again after each of
+// wakeRetryDelays, in the background, until one attempt gets through. A
+// failed retry is not counted against the subscription (the first attempt
+// was); a success resets its count.
+func (s *Server) retryWake(typ string, sub subscription, body []byte) {
+	delays := wakeRetryDelays
+	go func() {
+		start := time.Now()
+		for _, d := range delays {
+			time.Sleep(d)
+			if err := s.post(context.Background(), sub.Callback, body); err == nil {
+				s.subs.noteResult(sub.ID, nil)
+				logx.Printf("ST push: %s to %s (%s) delivered %s late", typ, sub.ID, sub.Callback,
+					time.Since(start).Round(time.Second))
+				return
+			}
+		}
+		logx.Printf("ST push: %s to %s (%s) gave up after %d more attempt(s)", typ, sub.ID, sub.Callback, len(delays))
+	}()
+}
+
+// outcome is "ok" or the error, for the log.
+func outcome(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return err.Error()
 }
 
 // pushPayload is the §3.5 callback body. machine_id is repeated at the top
