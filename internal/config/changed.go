@@ -38,6 +38,7 @@ var auditedKeys = []string{
 	"media.enabled",
 	"media.now_playing",
 	"notify_pc.enabled",
+	"monitor.enabled",
 }
 
 // auditedField is one auditedKeys entry resolved to its struct field.

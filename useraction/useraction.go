@@ -16,6 +16,8 @@
 //	user-action notify --title <t> --text <t>
 //	user-action preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...
 //	user-action screen <off|on>
+//	user-action monitor get
+//	user-action monitor set --id <mN> (--brightness <0-100> | --input <name> | --power <on|off>)
 //
 // Output is exactly one line on stdout, and the exit code follows it:
 //
@@ -60,6 +62,8 @@ const (
 	ActionPreset = "preset"
 	// ActionScreen turns the monitors off or on (#121).
 	ActionScreen = "screen"
+	// ActionMonitor reads and sets the monitors over DDC/CI (#144).
+	ActionMonitor = "monitor"
 )
 
 // Validation limits. The service applies its own (stricter or equal)
@@ -118,6 +122,9 @@ type Request struct {
 	PresetType string // program, url, script, keys or focus
 	Path       string
 	Args       []string
+
+	// Monitor is a `monitor set` (#144, monitor.go); Verb is get or set.
+	Monitor MonitorRequest
 }
 
 // Handler performs one action in the user session. The returned fields are
@@ -158,7 +165,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen, ActionMonitor:
 		return true
 	}
 	return false
@@ -221,6 +228,8 @@ func Parse(args []string) (Request, error) {
 		return parsePreset(rest)
 	case ActionScreen:
 		return parseScreen(rest)
+	case ActionMonitor:
+		return parseMonitor(rest)
 	default:
 		return Request{}, badArgs("unknown action %q", action)
 	}

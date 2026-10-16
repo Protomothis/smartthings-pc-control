@@ -28,6 +28,7 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Media:         mediaControl{},
 	Presets:       presetControl{origin: "telegram"},
 	Notify:        pcNotifier{},
+	Monitor:       monitorControl{},
 })
 
 // tgCommands is the catalogue and the schedule slot on behalf of the bot:

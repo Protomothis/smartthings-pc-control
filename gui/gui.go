@@ -101,6 +101,8 @@ type ui struct {
 	lastMediaErr error
 	mediaLoaded  bool
 	hbSent       heartbeatSent
+	// Command tab: the monitor card (#144, monitor_card.go).
+	mon monitorView
 	// Command tab: the [실행] buttons of the saved presets (#109) and the
 	// line shown when there are none; the presets tab (presets_tab.go) and
 	// the settings tab's PC-notification switches (notify_section.go, #106).
@@ -124,6 +126,8 @@ type ui struct {
 	svcBox      *fyne.Container
 	remoteCheck *toggle
 	mediaCheck  *toggle
+	// monitorCheck is monitor.enabled (#144).
+	monitorCheck *toggle
 	// debugCheck is the developer section's debug mode switch (#133).
 	debugCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
@@ -679,6 +683,7 @@ func (u *ui) pollLoop() {
 		case <-awakeTick.C:
 			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
+				go u.loadMonitor() // #144
 			}
 		case <-batteryTick.C:
 			if u.connected.Load() && u.onScreen() {

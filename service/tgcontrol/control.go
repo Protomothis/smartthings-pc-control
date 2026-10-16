@@ -82,6 +82,7 @@ var texts = map[string][2]string{
 			"/mute · /unmute – PC 음소거 켜기·끄기\n" +
 			"/play /pause /stop /next /prev – 미디어 재생 제어\n" +
 			"/np – 지금 재생 중인 미디어\n" +
+			"/brightness [0-100] · /input [이름] · /monitor on|off – 모니터 밝기·입력·전원 (DDC/CI)\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/say 문구 – PC 화면에 알림 띄우기\n" +
 			"/presets – 프리셋 목록과 실행 버튼\n" +
@@ -101,6 +102,7 @@ var texts = map[string][2]string{
 			"/mute · /unmute – mute or unmute the PC\n" +
 			"/play /pause /stop /next /prev – media playback\n" +
 			"/np – what is playing now\n" +
+			"/brightness [0-100] · /input [name] · /monitor on|off – monitor brightness, input, power (DDC/CI)\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/say text – show a notification on the PC\n" +
 			"/presets – the presets, with run buttons\n" +
@@ -556,6 +558,12 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 		return c.mediaCommand(ctx, cmd, nil)
 	case "np":
 		return c.nowPlaying(ctx)
+	case "brightness":
+		return c.brightness(ctx, args)
+	case "input":
+		return c.input(ctx, args)
+	case "monitor":
+		return c.monitorPower(ctx, args)
 	case "quiet":
 		if len(args) > 0 && strings.EqualFold(args[0], "off") {
 			b := c.d.Bus()
@@ -924,6 +932,9 @@ func (c *Control) statusText() string {
 			b.WriteString("\n" + line)
 		}
 	}
+	if line := c.monitorLine(cfg); line != "" {
+		b.WriteString("\n" + line)
+	}
 	if cfg.SmartThings.ExposeSession {
 		b.WriteString("\n" + c.sessionLine())
 	}
@@ -1152,6 +1163,9 @@ func botCommands(lang string) []telegram.BotCommand {
 		{Command: "prev", Description: pick("이전 곡", "Previous track")},
 		{Command: "stop", Description: pick("정지", "Stop")},
 		{Command: "np", Description: pick("지금 재생 중", "Now playing")},
+		{Command: "brightness", Description: pick("모니터 밝기 [0-100]", "Monitor brightness [0-100]")},
+		{Command: "input", Description: pick("모니터 입력 [이름]", "Monitor input [name]")},
+		{Command: "monitor", Description: pick("모니터 켜기·끄기 (on, off)", "Monitor on or off")},
 		{Command: "quiet", Description: pick("알림 일시 중지 (30m, 2h, off)", "Pause notifications (30m, 2h, off)")},
 		{Command: "help", Description: pick("도움말", "Help")},
 	}

@@ -38,6 +38,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
+	u.monitorCheck = newToggle(u.t("settings.monitor"), onToggle)
 	u.debugCheck = newToggle(u.t("settings.debug"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
@@ -82,6 +83,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	// PC tells others, not what they may do to it.
 	mediaNotifyBody := u.buildMediaNotifySection(
 		u.mediaCheck, hint(u.t("settings.media.hint")),
+		u.monitorCheck, hint(u.t("settings.monitor.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -158,6 +160,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.secretEntry.SetText(s.Secret)
 	u.remoteCheck.SetChecked(s.Remote)
 	u.mediaCheck.SetChecked(s.Media)
+	u.monitorCheck.SetChecked(s.Monitor)
 	u.debugCheck.SetChecked(s.Debug)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
@@ -170,6 +173,7 @@ func (u *ui) settingsState() settingsFormState {
 		Secret:   u.secretEntry.Text,
 		Remote:   u.remoteCheck.Checked,
 		Media:    u.mediaCheck.Checked,
+		Monitor:  u.monitorCheck.Checked,
 		NotifyPC: u.notifySectionState(),
 		Debug:    u.debugCheck.Checked,
 	}

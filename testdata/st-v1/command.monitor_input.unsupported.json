@@ -1,0 +1,16 @@
+{
+  "_doc": "The same request when the primary monitor does not answer DDC/CI (ddc:false in status): 501 monitor_unsupported.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "monitor_input",
+    "value": "dp1"
+  },
+  "response": {
+    "body": {
+      "error": "monitor_unsupported",
+      "message": "the primary monitor does not answer DDC/CI"
+    },
+    "code": 501
+  }
+}

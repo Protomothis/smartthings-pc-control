@@ -21,6 +21,7 @@ var stSrv = stapi.New(stapi.Deps{
 	Media:    mediaControl{},
 	Presets:  presetControl{origin: "smartthings"},
 	Notify:   pcNotifier{},
+	Monitor:  monitorControl{},
 	// state.json, next to config.json (#142).
 	Subscriptions: pushSubscriptionState{},
 })

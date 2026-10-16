@@ -88,6 +88,8 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		u.buildMediaCard(),
 		widget.NewSeparator(),
+		u.buildMonitorCard(),
+		widget.NewSeparator(),
 		u.buildAwakeRow(),
 		widget.NewSeparator(),
 		u.buildPresetButtons(),
