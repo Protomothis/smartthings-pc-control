@@ -65,7 +65,7 @@ func TestDefaultConfigGolden(t *testing.T) {
 		`{"port": 0}`,
 		// Every block a release added, absent or empty in an older file.
 		`{"port": 5001, "secret": ""}`,
-		`{"telegram": {}, "notify": {}, "smartthings": {}, "awake": {}, "activity": {}, "media": {}, "notify_pc": {}}`,
+		`{"telegram": {}, "notify": {}, "smartthings": {}, "awake": {}, "activity": {}, "media": {}, "notify_pc": {}, "privacy": {}}`,
 	} {
 		dir := t.TempDir()
 		writeConfig(t, dir, body)

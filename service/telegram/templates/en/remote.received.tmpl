@@ -1,5 +1,5 @@
 {{define "title"}}Remote command executed{{end}}
-{{define "summary"}}Ran <b>{{.Fields.command}}</b> from {{.Fields.from}} immediately{{end}}
+{{define "summary"}}Ran <b>{{.Fields.command}}</b> from {{.Fields.from}} immediately{{if .Fields.in_use}} — ⚠️ {{devices .Fields.in_use}} in use{{end}}{{end}}
 {{define "fields"}}
 Command: <code>{{.Fields.command}}</code>
 From: <code>{{.Fields.from}}</code>

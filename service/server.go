@@ -82,6 +82,13 @@ func newCommandHandler() http.HandlerFunc {
 			return
 		}
 
+		// The camera/microphone guard (#143) answers before anything is
+		// sent: 409 and the reason, the one refusal this URL knows.
+		if v := remoteVerdict(name, from, originRemote); v.Block {
+			err := privacyRefusal(name, from, originRemote, v)
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		// The reply is the same whether the command runs now or waits out
 		// the grace period (the user can cancel from the tray app), and it
 		// goes out first, as it always has for the Edge driver.

@@ -45,6 +45,10 @@
       "started": true,
       "stopping": true
     },
+    "privacy": {
+      "blocked": true,
+      "extended": true
+    },
     "remote": {
       "executed": true,
       "force": true,
@@ -93,6 +97,10 @@
       "type": "program"
     }
   ],
+  "privacy": {
+    "enabled": true,
+    "guard": "warn"
+  },
   "secret": "golden-secret",
   "shutdown_grace": true,
   "smartthings": {

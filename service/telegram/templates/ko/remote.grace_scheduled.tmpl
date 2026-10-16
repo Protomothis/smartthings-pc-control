@@ -1,5 +1,6 @@
 {{define "title"}}원격 명령 유예 예약{{end}}
-{{define "summary"}}{{.Fields.delay}} 후 <b>{{.Fields.command}}</b> 실행 예정 — 아래 버튼으로 취소할 수 있습니다{{end}}
+{{define "summary"}}{{.Fields.delay}} 후 <b>{{.Fields.command}}</b> 실행 예정 — 아래 버튼으로 취소할 수 있습니다{{if .Fields.in_use}}
+⚠️ 지금 {{devices .Fields.in_use}} 사용 중입니다{{end}}{{end}}
 {{define "fields"}}
 명령: <code>{{.Fields.command}}</code>
 출처: <code>{{.Fields.from}}</code>

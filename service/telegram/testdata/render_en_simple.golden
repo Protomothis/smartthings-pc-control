@@ -103,6 +103,26 @@
 🛡 <b>Unknown Telegram chat</b>
 <blockquote>Ignored <b>4</b> commands from chat <b>987654321</b> (@stranger) that is not on the allow list (5 min)</blockquote>
 
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Not run: device in use</b>
+<blockquote><b>shutdown</b> was not run: camera in use</blockquote>
+
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Not run: device in use</b>
+<blockquote><b>restart</b> was not run: camera and microphone in use (schedule cancelled)</blockquote>
+
+=== privacy.extended ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Schedule held back: device in use</b>
+<blockquote>In use: microphone — <b>shutdown</b> pushed back 5 min, it runs then</blockquote>
+
+=== remote.received ===
+🖥 <b>DESKTOP-TEST</b>
+🔌 <b>Remote command executed</b>
+<blockquote>Ran <b>shutdown</b> from 192.168.1.20 immediately — ⚠️ camera and microphone in use</blockquote>
+
 === system.update_available ===
 🖥 <b>DESKTOP-TEST</b>
 🆕 <b>Update available</b>

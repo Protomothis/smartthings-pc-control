@@ -171,6 +171,7 @@ const i18n = {
         confirmExec: 'Run {cmd} now? It affects the PC immediately.', confirmSchedule: 'Schedule {cmd} in {min} minutes?',
         confirmCancel: 'Cancel the scheduled task?', confirmRestart: 'Restart the service? This page disconnects briefly.',
         sent: '{cmd} sent', failed: 'Request failed', badMinutes: 'Minutes must be between 1 and 4320',
+        deviceInUse: 'The camera or microphone is in use, so {cmd} was not run (PC app: block while in use).',
         badGrace: 'Grace period must be between 5 and 3600 seconds', badPort: 'Port must be between 1 and 65535',
         restarting: 'Service restarting…', d: 'd', h: 'h', m: 'm', s: 's',
     },
@@ -201,6 +202,7 @@ const i18n = {
         confirmExec: '{cmd}을(를) 지금 실행할까요? PC에 바로 적용됩니다.', confirmSchedule: '{min}분 후 {cmd}을(를) 예약할까요?',
         confirmCancel: '예약된 작업을 취소할까요?', confirmRestart: '서비스를 재시작할까요? 잠시 연결이 끊깁니다.',
         sent: '{cmd} 보냄', failed: '요청 실패', badMinutes: '분은 1~4320 사이여야 합니다',
+        deviceInUse: '카메라나 마이크가 사용 중이라 {cmd}을(를) 실행하지 않았습니다 (PC 앱 설정: 사용 중 종료 막기).',
         badGrace: '유예 시간은 5~3600초 사이여야 합니다', badPort: '포트는 1~65535 사이여야 합니다',
         restarting: '서비스를 재시작합니다…', d: '일 ', h: '시간 ', m: '분 ', s: '초',
     }
@@ -411,7 +413,7 @@ async function runPreset(p) {
 async function runCmd(cmd) {
     if (!['lock', 'turnscreenoff', 'turnscreenon'].includes(cmd) && !confirm(t('confirmExec').replace('{cmd}', cmdName(cmd)))) return;
     try { await api('POST', '/api/command', {command: cmd, by: 'webui'}); toast(t('sent').replace('{cmd}', cmdName(cmd)), 'success'); }
-    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+    catch (e) { toast(e.code === 'device_in_use' ? t('deviceInUse').replace('{cmd}', cmdName(cmd)) : t('failed') + ': ' + e.message, 'error'); }
 }
 async function scheduleCmd() {
     const command = $('schedCmd').value, minutes = parseInt($('schedMin').value, 10);

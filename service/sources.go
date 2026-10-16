@@ -32,18 +32,21 @@ var sources = &serviceSources{
 	wolScan:      wolscan.Scan,
 }
 
-func (*serviceSources) MachineID() string                { return machineID() }
-func (*serviceSources) Hostname() string                 { return hostname() }
-func (*serviceSources) LastShutdownClean() bool          { return lastShutdownClean.Load() }
-func (*serviceSources) Update() status.Update            { return stUpdateInfo() }
-func (*serviceSources) Schedule() map[string]any         { return getSchedule() }
-func (*serviceSources) Display() string                  { return getDisplayState() }
-func (s *serviceSources) Session() (sessionInfo, error)  { return s.sessionQuery() }
-func (*serviceSources) IdleSeconds() (int64, bool)       { return lastIdleSeconds() }
-func (*serviceSources) Battery() status.Battery          { return battery.Info() }
-func (*serviceSources) Activity(cfg Config) stActivity   { return stActivityStatus(cfg) }
-func (*serviceSources) Audio(cfg Config) stAudio         { return stAudioStatus(cfg) }
-func (*serviceSources) Media(cfg Config) stMedia         { return stMediaStatus(cfg) }
+func (*serviceSources) MachineID() string               { return machineID() }
+func (*serviceSources) Hostname() string                { return hostname() }
+func (*serviceSources) LastShutdownClean() bool         { return lastShutdownClean.Load() }
+func (*serviceSources) Update() status.Update           { return stUpdateInfo() }
+func (*serviceSources) Schedule() map[string]any        { return getSchedule() }
+func (*serviceSources) Display() string                 { return getDisplayState() }
+func (s *serviceSources) Session() (sessionInfo, error) { return s.sessionQuery() }
+func (*serviceSources) IdleSeconds() (int64, bool)      { return lastIdleSeconds() }
+func (*serviceSources) Battery() status.Battery         { return battery.Info() }
+func (*serviceSources) Activity(cfg Config) stActivity  { return stActivityStatus(cfg) }
+func (*serviceSources) Audio(cfg Config) stAudio        { return stAudioStatus(cfg) }
+func (*serviceSources) Media(cfg Config) stMedia        { return stMediaStatus(cfg) }
+func (*serviceSources) Privacy(cfg Config) *status.Privacy {
+	return stPrivacyStatus(cfg)
+}
 func (s *serviceSources) WoLScan() WoLStatus             { return s.wolScan() }
 func (*serviceSources) LastCommand() *status.LastCommand { return lastCommandBlock() }
 func (*serviceSources) Processes() ([]string, error)     { return runningProcessNames() }

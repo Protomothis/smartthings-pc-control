@@ -172,6 +172,43 @@ Text: <code>/shutdown</code>
 Count: <code>4</code> / 5 min
 <i>DESKTOP-TEST · 14:35:00</i>
 
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Not run: device in use</b>
+<blockquote><b>shutdown</b> was not run: camera in use</blockquote>
+Command: <code>shutdown</code>
+From: <code>192.168.1.20</code>
+In use: <code>camera</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Not run: device in use</b>
+<blockquote><b>restart</b> was not run: camera and microphone in use (schedule cancelled)</blockquote>
+Command: <code>restart</code>
+From: <code>schedule</code>
+Scheduled from: <code>telegram</code>
+In use: <code>camera and microphone</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== privacy.extended ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>Schedule held back: device in use</b>
+<blockquote>In use: microphone — <b>shutdown</b> pushed back 5 min, it runs then</blockquote>
+Command: <code>shutdown</code>
+Scheduled from: <code>remote</code>
+In use: <code>microphone</code>
+Executes at: <code>14:45:00</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
+=== remote.received ===
+🖥 <b>DESKTOP-TEST</b>
+🔌 <b>Remote command executed</b>
+<blockquote>Ran <b>shutdown</b> from 192.168.1.20 immediately — ⚠️ camera and microphone in use</blockquote>
+Command: <code>shutdown</code>
+From: <code>192.168.1.20</code>
+<i>DESKTOP-TEST · 14:35:00</i>
+
 === system.update_available ===
 🖥 <b>DESKTOP-TEST</b>
 🆕 <b>Update available</b>

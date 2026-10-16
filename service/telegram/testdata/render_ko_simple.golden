@@ -103,6 +103,26 @@
 🛡 <b>허용되지 않은 채팅</b>
 <blockquote>허용 목록에 없는 채팅 <b>987654321</b>(@stranger)에서 <b>4회</b> 명령을 받아 무시했습니다 (5분)</blockquote>
 
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>사용 중이라 실행 안 함</b>
+<blockquote>카메라 사용 중이라 <b>shutdown</b> 명령을 실행하지 않았습니다</blockquote>
+
+=== privacy.blocked ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>사용 중이라 실행 안 함</b>
+<blockquote>카메라·마이크 사용 중이라 <b>restart</b> 명령을 실행하지 않았습니다 (예약 취소)</blockquote>
+
+=== privacy.extended ===
+🖥 <b>DESKTOP-TEST</b>
+📷 <b>사용 중이라 예약 연장</b>
+<blockquote>마이크 사용 중이라 <b>shutdown</b> 예약을 5 min 미뤘습니다 — 그때는 실행합니다</blockquote>
+
+=== remote.received ===
+🖥 <b>DESKTOP-TEST</b>
+🔌 <b>원격 명령 실행</b>
+<blockquote>192.168.1.20에서 받은 <b>shutdown</b> 명령을 즉시 실행했습니다 — ⚠️ 카메라·마이크 사용 중</blockquote>
+
 === system.update_available ===
 🖥 <b>DESKTOP-TEST</b>
 🆕 <b>새 버전 사용 가능</b>

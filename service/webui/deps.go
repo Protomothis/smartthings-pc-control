@@ -47,6 +47,11 @@ type Deps struct {
 	Heartbeat Heartbeat
 	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
 	Monitor Monitor
+
+	// Privacy is the camera/microphone block (#143) GET /api/privacy
+	// reports, nil while privacy.enabled is off; a nil func reads the
+	// same.
+	Privacy func(cfg config.Config) *status.Privacy
 }
 
 // Status is what the pages and /api report about this PC.
@@ -86,8 +91,10 @@ type Hub interface {
 // the UIs on this PC (origin "ui").
 type Commands interface {
 	// RunNow runs a catalogue command at once for by (app, tray, toast,
-	// webui); false for a name the catalogue does not have.
-	RunNow(name, by string) bool
+	// webui). ErrUnknownCommand for a name the catalogue does not have; a
+	// *privacy.DeviceInUseError when the camera/microphone guard refused a
+	// power command from the WebUI (#143).
+	RunNow(name, by string) error
 	// Schedule arms command to run after delay.
 	Schedule(command string, delay time.Duration) error
 	// CancelSchedule ends the schedule on behalf of by; false when there

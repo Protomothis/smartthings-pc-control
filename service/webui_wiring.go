@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -56,6 +57,7 @@ var webSrv = webui.New(webui.Deps{
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
 	Monitor:   monitorControl{},
+	Privacy:   stPrivacyStatus,
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port
@@ -136,9 +138,12 @@ func (hubInfo) CommandFirewallRule() (int, bool, bool) {
 // on this PC: origin "ui", at once (the person asking is at the PC).
 type uiCommands struct{}
 
-func (uiCommands) RunNow(name, by string) bool {
-	_, ok := dispatchCommand(name, by, originUI, dispatchImmediate)
-	return ok
+func (uiCommands) RunNow(name, by string) error {
+	_, err := dispatchCommand(name, by, originUI, dispatchImmediate)
+	if errors.Is(err, errUnknownCommand) {
+		return webui.ErrUnknownCommand
+	}
+	return err
 }
 
 func (uiCommands) Schedule(command string, delay time.Duration) error {

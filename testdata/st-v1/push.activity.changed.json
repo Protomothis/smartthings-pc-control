@@ -97,6 +97,7 @@
       "awake",
       "battery",
       "activity",
+      "privacy",
       "audio",
       "media",
       "nowplaying",
@@ -168,6 +169,11 @@
         "slot": 3
       }
     ],
+    "privacy": {
+      "camera": "in_use",
+      "microphone": "idle",
+      "since": "2026-10-01T20:45:00+09:00"
+    },
     "protocol": 1,
     "schedule": {
       "active": false

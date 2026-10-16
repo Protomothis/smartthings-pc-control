@@ -103,6 +103,15 @@ func getSchedule() map[string]interface{} {
 	if t.Replaced != nil {
 		info["replaced"] = t.Replaced
 	}
+	// The camera/microphone guard (#143): what is in use while the
+	// schedule waits (the grace toast's warning), and whether it was
+	// pushed back already.
+	if in := schedulePrivacyWarning(t.Command); in != nil {
+		info["in_use"] = in
+	}
+	if t.Held > 0 {
+		info["held"] = true
+	}
 	return info
 }
 

@@ -46,6 +46,12 @@ var catalogue = []notify.Event{
 	{Category: "security", Kind: "unknown_chat", Fields: map[string]string{"chat_id": "987654321", "username": "stranger", "text": "/shutdown", "count": "1", "window": "5m", "window_sec": "300"}},
 	{Category: "security", Kind: "unknown_chat", Fields: map[string]string{"chat_id": "987654321", "username": "stranger", "text": "/shutdown", "count": "4", "window": "5m", "window_sec": "300"}},
 
+	// #143: the camera/microphone guard, and its warning on a remote command.
+	{Category: "privacy", Kind: "blocked", Fields: map[string]string{"command": "shutdown", "from": "192.168.1.20", "in_use": "camera"}},
+	{Category: "privacy", Kind: "blocked", Fields: map[string]string{"command": "restart", "from": "schedule", "origin": "telegram", "in_use": "camera,microphone"}},
+	{Category: "privacy", Kind: "extended", Fields: map[string]string{"command": "shutdown", "origin": "remote", "in_use": "microphone", "delay": "5 min", "execute_at": "14:45:00"}},
+	{Category: "remote", Kind: "received", Fields: map[string]string{"command": "shutdown", "from": "192.168.1.20", "in_use": "camera,microphone"}},
+
 	{Category: "system", Kind: "update_available", Fields: map[string]string{"version": "v1.1.0", "current": "v1.0.0", "url": "https://github.com/Protomothis/smartthings-pc-control/releases/tag/v1.1.0"}},
 	{Category: "system", Kind: "updated", Fields: map[string]string{"version": "v1.0.0", "previous": "v0.3.4"}},
 	{Category: "system", Kind: "exec_failed", Fields: map[string]string{"command": "hibernate", "error": "exit status 1"}},

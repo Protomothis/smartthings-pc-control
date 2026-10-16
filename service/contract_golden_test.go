@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -299,7 +300,25 @@ func goldenConfig() Config {
 			{Slot: 3, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`, Args: []string{"-bigpicture"}},
 			{Slot: 1, Name: "대시보드", Type: "url", Path: "https://example.com/dashboard"},
 		},
+		Privacy: config.PrivacyConfig{Enabled: true, Guard: config.PrivacyGuardWarn},
 	}
+}
+
+// ---- privacy (#143): the camera is in use since 20:45; the microphone
+// was last used 19:00–20:00. push.privacy.changed.json turns the
+// microphone on at 20:55; command.shutdown.device-in-use.json switches
+// the guard to block.
+
+func goldenPrivacy(t *testing.T, cfg Config) {
+	t.Helper()
+	s := stubPrivacy(t)
+	s.set(privacy.Camera, goldenNow.Add(-15*time.Minute), time.Time{})
+	s.set(privacy.Microphone, goldenNow.Add(-2*time.Hour), goldenNow.Add(-time.Hour))
+	// The reading without an event, like the activity scan above.
+	privacyMon.Scan()
+	privacyOn.mu.Lock()
+	privacyOn.on = cfg.Privacy.Enabled
+	privacyOn.mu.Unlock()
 }
 
 // ---- activity (#123: watch slots 1–5 on the PC device, slot = priority).
@@ -441,6 +460,7 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 
 	goldenActivity(t, cfg)
 	goldenMonitors(t) // #144, monitor_test.go
+	goldenPrivacy(t, cfg)
 
 	// audio and media: one reading each, fresh against the golden clock.
 	resetAudioSample()
@@ -685,6 +705,10 @@ func withConfig(t *testing.T, edit func(*Config)) {
 // here and every case a file.
 var commandCases = map[string]commandCase{
 	"command.shutdown.json": {setup: func(t *testing.T) { stubCommand(t, "shutdown") }},
+	"command.shutdown.device-in-use.json": {setup: func(t *testing.T) {
+		stubCommand(t, "shutdown")
+		withConfig(t, func(c *Config) { c.Privacy.Guard = config.PrivacyGuardBlock })
+	}},
 	"command.schedule.json": {
 		setup:    func(t *testing.T) { stubCommand(t, "restart") },
 		volatile: scheduleVolatile("schedule."),
@@ -902,6 +926,12 @@ var pushCases = map[string]pushCase{
 		}
 	}},
 	"push.display.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) { setDisplayState("off") }},
+	// privacy (#143): the microphone joins the camera; data =
+	// status.privacy, since stays the camera's 20:45.
+	"push.privacy.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
+		privacyFake.set(privacy.Microphone, goldenNow.Add(-5*time.Minute), time.Time{})
+		refreshPrivacy(getConfig())
+	}},
 	"push.session.locked.json": {
 		opts:    worldOpts{locked: true},
 		trigger: func(t *testing.T, _ *fakeAwake) { emitSessionLock(sessionInfo{Locked: true, User: "golden"}) },

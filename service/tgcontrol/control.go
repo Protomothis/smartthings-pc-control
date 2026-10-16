@@ -533,8 +533,12 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 		}
 		return c.text("no_schedule"), nil, nil
 	case "now":
+		refusal, warning := c.scheduledGuard()
+		if refusal != "" {
+			return refusal, nil, nil
+		}
 		if name, ok := c.runScheduledNow(); ok {
-			return c.text("run_now", c.commandLabel(name)), nil, nil
+			return withWarning(c.text("run_now", c.commandLabel(name)), warning), nil, nil
 		}
 		return c.text("no_schedule"), nil, nil
 	case "awake":
@@ -758,8 +762,13 @@ func (c *Control) handleCallback(ctx context.Context, chatID string, msgID int, 
 		if !ok {
 			return "", c.text("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
 		}
+		// The camera/microphone guard (#143) answers here, on the prompt.
+		pv := c.privacyVerdict(name)
+		if pv.Block {
+			return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), c.privacyRefusal(name, pv)), c.text("privacy_blocked_toast"), nil
+		}
 		c.runCommand(name)
-		return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
+		return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), withWarning(c.stamp("stamp_executed"), c.privacyWarning(pv))), c.text("toast_executed"), nil
 	case "cmd":
 		name, ok := c.commandName(arg)
 		if !ok {
@@ -805,15 +814,21 @@ func (c *Control) handleCallback(ctx context.Context, chatID string, msgID int, 
 		}
 		return appendStamp(keep(msgText), c.commandLabel(name), c.stamp("stamp_cancelled")), c.text("toast_cancelled"), nil
 	case "runnow":
+		// A refusal (#143) leaves the schedule, the message and its
+		// buttons as they are, and says why in the button toast.
+		refusal, warning := c.scheduledGuard()
+		if refusal != "" {
+			return "", refusal, nil
+		}
 		grace, mine := c.takeGraceMessage(chatID, msgID)
 		name, ok := c.runScheduledNow()
 		if !ok {
 			return c.stale(msgText), c.text("no_schedule"), nil
 		}
 		if mine {
-			return grace.html + "\n" + c.stamp("stamp_ran"), c.text("toast_executed"), nil
+			return withWarning(grace.html+"\n"+c.stamp("stamp_ran"), warning), c.text("toast_executed"), nil
 		}
-		return appendStamp(keep(msgText), c.commandLabel(name), c.stamp("stamp_ran")), c.text("toast_executed"), nil
+		return appendStamp(keep(msgText), c.commandLabel(name), withWarning(c.stamp("stamp_ran"), warning)), c.text("toast_executed"), nil
 	}
 	return "", c.text("unknown_button"), fmt.Errorf("unknown callback %q", data)
 }
@@ -948,6 +963,9 @@ func (c *Control) statusText() string {
 	}
 	if cfg.SmartThings.ExposeSession {
 		b.WriteString("\n" + c.sessionLine())
+	}
+	if line := c.privacyLine(); line != "" {
+		b.WriteString("\n" + line)
 	}
 
 	if bus := c.d.Bus(); bus != nil {

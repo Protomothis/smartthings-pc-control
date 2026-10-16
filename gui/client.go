@@ -44,6 +44,9 @@ type Config struct {
 	Presets  []Preset       `json:"presets"`
 	// Monitor is the "monitor" object (#144), the settings tab's opt-in.
 	Monitor MonitorConfig `json:"monitor"`
+	// Privacy is the camera/microphone detection and its guard (#143),
+	// edited in the sharing tab (privacy_section.go).
+	Privacy PrivacyConfig `json:"privacy"`
 	// Debug is the settings tab's developer switch (#133). Never
 	// omitempty: a POST without the key keeps the stored value, so "off"
 	// has to be sent.
@@ -534,6 +537,11 @@ type Schedule struct {
 	Origin string `json:"origin"`
 	// Replaced is the schedule this one displaced, when there was one.
 	Replaced *ReplacedSchedule `json:"replaced"`
+	// InUse names the devices in use while a guarded power command waits
+	// ("camera", "microphone"); Held is set once the guard pushed it back
+	// (#143). The grace toast warns with them.
+	InUse []string `json:"in_use"`
+	Held  bool     `json:"held"`
 }
 
 // ReplacedSchedule mirrors the "replaced" object of /api/schedule.

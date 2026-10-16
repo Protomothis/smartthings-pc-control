@@ -41,16 +41,17 @@ func (fakeSource) Battery() status.Battery    { return status.Battery{Percent: -
 func (fakeSource) Activity(config.Config) status.Activity {
 	return status.Activity{Apps: []status.ActivityApp{}}
 }
-func (fakeSource) Audio(config.Config) status.Audio { return status.Audio{} }
-func (fakeSource) Media(config.Config) status.Media { return status.Media{Status: "none"} }
-func (f fakeSource) WoLScan() status.WoLStatus      { return f.wol }
+func (fakeSource) Audio(config.Config) status.Audio      { return status.Audio{} }
+func (fakeSource) Media(config.Config) status.Media      { return status.Media{Status: "none"} }
+func (fakeSource) Privacy(config.Config) *status.Privacy { return nil }
+func (f fakeSource) WoLScan() status.WoLStatus           { return f.wol }
 
 // fakeCommands knows no command and schedules nothing.
 type fakeCommands struct{}
 
-func (fakeCommands) Known(string) bool                           { return false }
-func (fakeCommands) Dispatch(string, string, Mode) time.Duration { return 0 }
-func (fakeCommands) Record(string, string)                       {}
+func (fakeCommands) Known(string) bool                                    { return false }
+func (fakeCommands) Dispatch(string, string, Mode) (time.Duration, error) { return 0, nil }
+func (fakeCommands) Record(string, string)                                {}
 func (fakeCommands) Schedule(string, time.Duration) error {
 	return errors.New("no schedules in the tests")
 }

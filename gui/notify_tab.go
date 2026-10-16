@@ -52,6 +52,8 @@ var notifyCatalogue = []struct {
 	// service does not use.
 	{"power", []notifyKind{{"started", true}, {"resumed", true}, {"stopping", true}}},
 	{"security", []notifyKind{{"unauthorized", true}, {"login_limited", true}, {"unknown_command", true}, {"config_changed", true}, {"unknown_chat", true}}},
+	// #143: the camera/microphone guard.
+	{"privacy", []notifyKind{{"blocked", true}, {"extended", true}}},
 	{"system", []notifyKind{{"update_available", true}, {"updated", true}, {"exec_failed", true}, {"tray_wake_failed", true}}},
 }
 

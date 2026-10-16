@@ -16,6 +16,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -52,6 +53,13 @@ type Deps struct {
 	Notify   Notifier
 	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
 	Monitor Monitor
+
+	// Privacy is the camera/microphone block (#143) for /status, nil
+	// while privacy.enabled is off; a nil func reads the same.
+	Privacy func(cfg config.Config) *status.Privacy
+	// Guard judges a power command from the bot against the
+	// camera/microphone guard (#143) before it runs; nil means no guard.
+	Guard func(name string) privacy.Verdict
 }
 
 // Remote is the last remote command as /status shows it.

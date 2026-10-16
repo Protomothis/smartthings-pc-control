@@ -60,6 +60,9 @@ type Status struct {
 	// Monitors is the DDC/CI reading (#144, monitor.go), only while
 	// monitor.enabled is on.
 	Monitors *[]status.Monitor `json:"monitors,omitempty"`
+	// Privacy is the opt-in camera/microphone block (#143); left out
+	// while privacy.enabled is off.
+	Privacy *status.Privacy `json:"privacy,omitempty"`
 }
 
 // features lists what this service supports right now. Some entries depend
@@ -73,6 +76,10 @@ func features(b status.Battery, cfg config.Config) []string {
 	}
 	if cfg.Activity.Enabled {
 		out = append(out, "activity")
+	}
+	// "privacy" (#143) follows privacy.enabled, like the status block.
+	if cfg.Privacy.Enabled {
+		out = append(out, "privacy")
 	}
 	out = append(out, mediaFeatures(cfg)...)
 	out = append(out, audioDeviceFeatures(cfg)...) // #145
@@ -393,5 +400,6 @@ func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 		Media:             src.Media(cfg),
 		Presets:           presetList(cfg.Presets),
 		Monitors:          s.monitorsView(cfg, fromCache),
+		Privacy:           src.Privacy(cfg),
 	}
 }
