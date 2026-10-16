@@ -67,6 +67,9 @@ func TestRowProblem(t *testing.T) {
 		{Slot: 4, Name: "bat", Type: "script", Path: `C:\s\go.CMD`, Args: "a b"},
 		{Slot: 5, Name: "도타", Type: "url", Path: "steam://rungameid/570"},
 		{Slot: 6, Name: "화면", Type: "url", Path: " ms-settings:display "},
+		{Slot: 7, Name: "마이크", Type: "keys", Path: " Ctrl+Alt+M "},
+		{Slot: 8, Name: "OBS", Type: "focus", Path: "obs64.exe"},
+		{Slot: 9, Name: "메모장", Type: "focus", Path: "제목:메모장"},
 	}
 	for _, r := range ok {
 		if key := rowProblem(r); key != "" {
@@ -86,6 +89,9 @@ func TestRowProblem(t *testing.T) {
 		"presets.err.abs":        {Slot: 1, Name: "x", Type: "program", Path: "notepad.exe"},
 		"presets.err.exe":        {Slot: 1, Name: "x", Type: "program", Path: `C:\x.bat`},
 		"presets.err.script":     {Slot: 1, Name: "x", Type: "script", Path: `C:\x.vbs`},
+		"presets.err.keys":       {Slot: 1, Name: "x", Type: "keys", Path: "ctrl+a+b"},
+		"presets.err.keyname":    {Slot: 1, Name: "x", Type: "keys", Path: "ctrl+hyper"},
+		"presets.err.focus":      {Slot: 1, Name: "x", Type: "focus", Path: `C:\obs\obs64.exe`},
 	} {
 		if got := rowProblem(r); got != want {
 			t.Errorf("%+v: %q, want %q", r, got, want)
@@ -98,13 +104,20 @@ func TestRowProblem(t *testing.T) {
 
 	// A URL row's arguments are ignored, whatever is in them (review 3):
 	// the editor clears them, and preset() drops them.
-	for _, args := range []string{"a", `"open`, strings.Repeat("a ", 40)} {
-		r := presetRow{Slot: 1, Name: "x", Type: "url", Path: "https://x", Args: args}
-		if key := rowProblem(r); key != "" {
-			t.Errorf("url row with args %q: %s", args, key)
-		}
-		if p, err := r.preset(); err != nil || p.Args != nil {
-			t.Errorf("url row with args %q -> %+v, %v", args, p, err)
+	// So are a keys or focus row's (#146).
+	for _, r := range []presetRow{
+		{Slot: 1, Name: "x", Type: "url", Path: "https://x"},
+		{Slot: 1, Name: "x", Type: "keys", Path: "win+d"},
+		{Slot: 1, Name: "x", Type: "focus", Path: "obs64.exe"},
+	} {
+		for _, args := range []string{"a", `"open`, strings.Repeat("a ", 40)} {
+			r.Args = args
+			if key := rowProblem(r); key != "" {
+				t.Errorf("%s row with args %q: %s", r.Type, args, key)
+			}
+			if p, err := r.preset(); err != nil || p.Args != nil {
+				t.Errorf("%s row with args %q -> %+v, %v", r.Type, args, p, err)
+			}
 		}
 	}
 }
@@ -261,6 +274,8 @@ func TestLinkNote(t *testing.T) {
 		{presetRow{Type: "url", Path: "javascript:x"}, "", ""},
 		{presetRow{Type: "url", Path: ""}, "", ""},
 		{presetRow{Type: "program", Path: "steam://x"}, "", ""},
+		{presetRow{Type: "keys", Path: ""}, "presets.keys.help", ""},
+		{presetRow{Type: "focus", Path: "obs64.exe"}, "presets.focus.help", ""},
 	} {
 		key, app := linkNote(c.row, lookup)
 		if key != c.key || app != c.app {
