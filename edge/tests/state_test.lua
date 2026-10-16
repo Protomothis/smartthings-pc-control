@@ -159,11 +159,13 @@ local function golden(lang)
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
     { cap = caps.AUDIO_IN, attr = "input", value = "none", component = "audio" },
     { cap = caps.AUDIO_IN, attr = "supportedInputs", value = { "none" }, component = "audio" },
-    -- #153: nor a monitor; the toggle and the slider are left alone.
+    -- #153: nor a monitor; the toggle and the slider value are left alone.
     { cap = caps.MONITOR, attr = "summary", component = "monitor",
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
     { cap = caps.MONITOR, attr = "input", value = "unknown", component = "monitor" },
     { cap = caps.MONITOR, attr = "supportedInputs", value = { "unknown" }, component = "monitor" },
+    -- The slider's range goes out regardless (no null row in the cloud).
+    { cap = "switchLevel", attr = "levelRange", value = { minimum = 0, maximum = 100 }, component = "monitor" },
   }
 end
 
