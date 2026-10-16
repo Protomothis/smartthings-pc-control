@@ -7,6 +7,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"net/url"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -19,6 +20,25 @@ import (
 // driverInviteURL is the invite to the Protomothis driver channel (no
 // expiry). README.md carries the same link; links_test.go keeps them equal.
 const driverInviteURL = "https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A"
+
+const (
+	repoURL      = "https://github.com/Protomothis/smartthings-pc-control"
+	wikiURL      = repoURL + "/wiki"
+	changelogURL = repoURL + "/blob/main/CHANGELOG.md"
+	issuesURL    = repoURL + "/issues"
+	licenseURL   = repoURL + "/blob/main/LICENSE"
+	goModURL     = repoURL + "/blob/main/go.mod"
+	sponsorURL   = "https://github.com/sponsors/Protomothis"
+)
+
+// mustURL parses one of the constants above.
+func mustURL(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil {
+		panic("gui: bad link " + raw + ": " + err.Error())
+	}
+	return u
+}
 
 // openLink opens an http(s) link in the default browser, through cmd's
 // start like the rest of the app (systool: cmd.exe by absolute path). The

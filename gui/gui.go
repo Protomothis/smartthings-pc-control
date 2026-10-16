@@ -25,6 +25,13 @@ import (
 // port 5001 + 1). The live value comes from localWebUIPort().
 const defaultWebUIPort = 5002
 
+// windowWidth is the window's opening width. It was 640 until the ninth
+// tab (About, #156): the English tab titles alone took 619 of the 632 px
+// inside the window's padding, and "About" brought them to about 680, so
+// the last tabs would have folded into the overflow menu. 700 keeps every
+// title on the bar in both languages; about_tab_test.go measures it.
+const windowWidth = 700
+
 // webUIPort is the port u.client talks to: resolved at start from
 // tray.json next to the exe, and moved by setPort when the service comes
 // back on a new port (#121). Read it with currentWebUIPort.
@@ -229,8 +236,9 @@ func Run(version string, minimized bool) {
 	u.win = a.NewWindow(windowTitle)
 	u.win.SetIcon(appIcon)
 	// Tall enough for the Settings tab (the longest one) to show without a
-	// scrollbar in either language; see #53.
-	u.win.Resize(fyne.NewSize(640, 800))
+	// scrollbar in either language; see #53. Wide enough for the tab bar
+	// (windowWidth).
+	u.win.Resize(fyne.NewSize(windowWidth, 800))
 	// Closing the window hides to the system tray (after an unsaved-changes
 	// prompt when needed, installed by rebuild); Exit lives in the tray menu.
 	//
@@ -438,7 +446,8 @@ func (u *ui) rebuild() {
 		u.loginBtn.Hide()
 	}
 
-	versionLabel := widget.NewLabel(u.version)
+	// The version opens the About tab (#156), which says more about it.
+	versionLabel := widget.NewButton(u.version, func() { u.tabs.SelectIndex(tabAbout) })
 	versionLabel.Importance = widget.LowImportance
 	u.batteryLabel = widget.NewLabel("")
 	u.applyBattery(u.lastBattery)
@@ -451,7 +460,8 @@ func (u *ui) rebuild() {
 
 	// In the order of the tab* constants (savebar.go). Titles only, no
 	// icons: eight tabs with icons need about 640 px in Korean and more
-	// than the window's 640 in English; without them both fit (#128).
+	// than the window's 640 in English; without them both fit (#128). The
+	// ninth, About, needed a wider window (windowWidth).
 	u.tabTitles = make([]string, len(tabKeys))
 	items := make([]*container.TabItem, len(tabKeys))
 	builders := []func() fyne.CanvasObject{
@@ -463,6 +473,7 @@ func (u *ui) rebuild() {
 		tabTelegram:    u.buildNotifyTab,
 		tabSettings:    u.buildSettingsTab,
 		tabLogs:        u.buildLogsTab,
+		tabAbout:       u.buildAboutTab,
 	}
 	for i, key := range tabKeys {
 		u.tabTitles[i] = u.t(key)
@@ -489,8 +500,8 @@ func (u *ui) rebuild() {
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
-// the Settings tab (install/start lives there) and basic tray entries stay
-// usable. Must be called on the UI thread.
+// the Settings tab (install/start lives there), the About tab and basic
+// tray entries stay usable. Must be called on the UI thread.
 func (u *ui) applyConnected(on bool) {
 	for _, item := range u.trayNeedsConn {
 		item.Disabled = !on
@@ -504,13 +515,15 @@ func (u *ui) applyConnected(on bool) {
 	// Forced switches, so no unsaved-changes prompt: to the settings tab
 	// while the service is gone, and back to where the user was (the
 	// commands tab after a start) once it answers. The tab is noted before
-	// disabling: AppTabs moves off a tab that gets disabled.
-	if !on && u.curTab != tabSettings && u.returnTab == 0 {
+	// disabling: AppTabs moves off a tab that gets disabled. The About tab
+	// (#156) needs no service either, so whoever is reading it stays there.
+	onAbout := u.curTab == tabAbout
+	if !on && u.curTab != tabSettings && !onAbout && u.returnTab == 0 {
 		u.returnTab = u.curTab + 1
 	}
 	u.switching = true
 	for i := range u.tabs.Items {
-		if i == tabSettings {
+		if i == tabSettings || i == tabAbout {
 			continue
 		}
 		if on {
@@ -524,7 +537,9 @@ func (u *ui) applyConnected(on bool) {
 	case !on:
 		// The battery reading comes from the service; without it, say nothing.
 		u.applyBattery(Battery{})
-		u.selectTab(tabSettings)
+		if !onAbout {
+			u.selectTab(tabSettings)
+		}
 	case u.returnTab != 0:
 		back := u.returnTab - 1
 		u.returnTab = 0
