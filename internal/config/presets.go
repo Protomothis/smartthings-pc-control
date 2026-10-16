@@ -27,14 +27,16 @@ const (
 	presetTypeProg = "program"
 	presetTypeURL  = "url"
 	presetTypeScr  = "script"
+	presetTypeKeys = "keys"  // #146
+	presetTypeFoc  = "focus" // #146
 )
 
 // Preset is one entry of "presets" in config.json.
 type Preset struct {
 	Slot int      `json:"slot"`           // 1–10, unique
 	Name string   `json:"name"`           // shown in SmartThings and Telegram, ≤ 30 characters
-	Type string   `json:"type"`           // program | url | script
-	Path string   `json:"path"`           // absolute exe/script path, or the http(s) URL
+	Type string   `json:"type"`           // program | url | script | keys | focus
+	Path string   `json:"path"`           // absolute exe/script path, URL or app link, key combination, or program name / title:…
 	Args []string `json:"args,omitempty"` // program/script arguments, ≤ 32
 }
 
@@ -68,9 +70,9 @@ func ValidatePreset(p Preset) error {
 		return errors.New("name contains control characters")
 	}
 	switch p.Type {
-	case presetTypeProg, presetTypeURL, presetTypeScr:
+	case presetTypeProg, presetTypeURL, presetTypeScr, presetTypeKeys, presetTypeFoc:
 	default:
-		return fmt.Errorf("type must be program, url or script (got %q)", p.Type)
+		return fmt.Errorf("type must be program, url, script, keys or focus (got %q)", p.Type)
 	}
 	if len(p.Args) > presetMaxArgs {
 		return fmt.Errorf("at most %d arguments", presetMaxArgs)
