@@ -10,9 +10,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
 )
 
-// serviceStartedAt approximates process start for the /status uptime line.
-var serviceStartedAt = time.Now()
-
 // remoteRecord is the last SmartThings command, for /status.
 type remoteRecord struct {
 	Command string
