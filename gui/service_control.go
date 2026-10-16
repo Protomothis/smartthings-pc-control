@@ -37,6 +37,42 @@ func queryServiceState() svcState {
 	return svcStopped
 }
 
+// scmServiceState asks the service control manager directly, which any
+// user may do for this service. The "not connected" line uses it (#140):
+// it is asked every few seconds while the app cannot connect, and sc.exe
+// would start a process each time. A start or stop in progress, or an
+// SCM that does not answer, is svcUnknown.
+func scmServiceState() svcState {
+	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return svcUnknown
+	}
+	defer windows.CloseServiceHandle(m)
+	name, err := windows.UTF16PtrFromString(serviceName)
+	if err != nil {
+		return svcUnknown
+	}
+	s, err := windows.OpenService(m, name, windows.SERVICE_QUERY_STATUS)
+	if err == windows.ERROR_SERVICE_DOES_NOT_EXIST {
+		return svcNotInstalled
+	}
+	if err != nil {
+		return svcUnknown
+	}
+	defer windows.CloseServiceHandle(s)
+	var st windows.SERVICE_STATUS
+	if err := windows.QueryServiceStatus(s, &st); err != nil {
+		return svcUnknown
+	}
+	switch st.CurrentState {
+	case windows.SERVICE_RUNNING:
+		return svcRunning
+	case windows.SERVICE_STOPPED:
+		return svcStopped
+	}
+	return svcUnknown
+}
+
 // SHELLEXECUTEINFOW for ShellExecuteExW.
 type shellExecuteInfo struct {
 	cbSize         uint32

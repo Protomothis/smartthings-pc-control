@@ -349,6 +349,18 @@ type STHub struct {
 	// WoL is the adapter choice (#96) the section's dropdown shows and
 	// edits. An older service leaves it zero: no adapters, no selection.
 	WoL STWoLInfo `json:"wol"`
+	// CommandPort is the command port's inbound TCP rule (#139); nil from
+	// a service that predates it.
+	CommandPort *STCommandPort `json:"command_port"`
+}
+
+// STCommandPort is the command-port rule as the service last checked it
+// at start: the port, whether a rule for that port is in place, and
+// whether the check has finished.
+type STCommandPort struct {
+	Port         int  `json:"port"`
+	FirewallRule bool `json:"firewall_rule"`
+	Checked      bool `json:"checked"`
 }
 
 // STWoLInfo is the WoL adapter picture: the adapter in force, the one the

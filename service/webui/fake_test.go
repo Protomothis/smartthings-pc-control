@@ -54,6 +54,7 @@ func (fakeHub) WoLView(config.SmartThingsConfig) (status.WoL, *status.WoLSelecte
 func (fakeHub) SSDPRunning() bool                         { return false }
 func (fakeHub) LastSSDPSearch() (status.SSDPSearch, bool) { return status.SSDPSearch{}, false }
 func (fakeHub) SSDPFirewallRule() bool                    { return false }
+func (fakeHub) CommandFirewallRule() (int, bool, bool)    { return 0, false, false }
 
 type fakeCommands struct{}
 

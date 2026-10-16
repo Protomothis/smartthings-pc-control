@@ -209,6 +209,8 @@ func (u *ui) setCurTab(index int) {
 	u.shownTab.Store(int32(index))
 	if index == tabLogs {
 		u.logsShownAgain() // back on the newest line (#134)
+		// Disconnected too: service.log is then read from disk (#140).
+		background(u.loadLogs)
 	}
 	if !u.connected.Load() {
 		return
@@ -218,8 +220,6 @@ func (u *ui) setCurTab(index int) {
 		u.refreshNetwork()
 	case tabTelegram:
 		u.refreshTelegramState()
-	case tabLogs:
-		background(u.loadLogs)
 	}
 }
 
@@ -263,4 +263,19 @@ func (u *ui) onCloseRequest() {
 		return
 	}
 	u.promptUnsaved("unsaved.body.close", dirty, u.win.Hide)
+}
+
+// requestQuit is the tray's [종료]. Like closing the window it asks first
+// when a form tab has unsaved edits (#141), with the window brought up for
+// it — the tray may be all that is on screen — and quits once they are
+// saved or discarded; [계속 편집] keeps the app running. quit is
+// u.app.Quit; the tests pass their own.
+func (u *ui) requestQuit(quit func()) {
+	dirty := u.forms.dirtyTabs()
+	if len(dirty) == 0 {
+		quit()
+		return
+	}
+	u.showWindow()
+	u.promptUnsaved("unsaved.body.quit", dirty, quit)
 }

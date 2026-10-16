@@ -78,7 +78,8 @@ func TestDeferredContentMeasuresNothing(t *testing.T) {
 }
 
 // The logs are polled only while their tab is in front of a window on
-// screen, with auto refresh on.
+// screen, with auto refresh on — connected or not, since without the
+// service the poll re-reads service.log (#140).
 func TestLogsPollWanted(t *testing.T) {
 	u := &ui{}
 	u.connected.Store(true)
@@ -88,11 +89,14 @@ func TestLogsPollWanted(t *testing.T) {
 	if !u.logsPollWanted() {
 		t.Fatal("logs tab in front, shown, auto on: want polling")
 	}
+	u.connected.Store(false)
+	if !u.logsPollWanted() {
+		t.Fatal("disconnected: want polling (service.log from disk)")
+	}
 	for name, off := range map[string]func(){
-		"hidden":       func() { u.visible.Store(false) },
-		"other tab":    func() { u.shownTab.Store(tabSettings) },
-		"auto off":     func() { u.logsAutoOn.Store(false) },
-		"disconnected": func() { u.connected.Store(false) },
+		"hidden":    func() { u.visible.Store(false) },
+		"other tab": func() { u.shownTab.Store(tabSettings) },
+		"auto off":  func() { u.logsAutoOn.Store(false) },
 	} {
 		off()
 		if u.logsPollWanted() {

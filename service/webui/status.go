@@ -142,6 +142,19 @@ type hubView struct {
 	// rides on this poll rather than on a second endpoint so the whole
 	// section refreshes in one round trip.
 	WoL hubWoLView `json:"wol"`
+	// CommandPort is the command port's inbound TCP rule (#139), which
+	// the service re-checks at every start against the configured port.
+	CommandPort commandPortView `json:"command_port"`
+}
+
+// commandPortView is the command-port rule as last checked: the port it
+// was checked for (0 until then), whether a rule for exactly that port is
+// in place, and whether the start-time check has finished (it runs off the
+// startup path, so the first polls may come before it).
+type commandPortView struct {
+	Port         int  `json:"port"`
+	FirewallRule bool `json:"firewall_rule"`
+	Checked      bool `json:"checked"`
 }
 
 // hubWoLView is what the app needs to draw the WoL adapter dropdown:
@@ -182,11 +195,13 @@ func (s *Server) ssdpStatus() ssdpView {
 func (s *Server) serveSTHub(w http.ResponseWriter, r *http.Request) {
 	liveCfg := s.d.Config()
 	wol, auto := s.d.Hub.WoLView(liveCfg.SmartThings)
+	fwPort, fwOK, fwChecked := s.d.Hub.CommandFirewallRule()
 	view := hubView{
 		MachineID: s.d.Status.MachineID(),
 		SSDP:      s.ssdpStatus(),
 		WoL:       hubWoLView{Selected: wol.Selected, Auto: auto, Adapters: wol.Adapters},
 	}
+	view.CommandPort = commandPortView{Port: fwPort, FirewallRule: fwOK, Checked: fwChecked}
 	if seen, ok := s.d.Hub.HubLastSeen(); ok {
 		view.Connected = time.Since(seen.At) <= status.HubStale
 		view.IP = seen.IP
