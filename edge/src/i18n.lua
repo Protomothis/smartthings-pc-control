@@ -178,6 +178,31 @@ local STRINGS = {
     ko = "PC에서 실행 실패",
     en = "Failed on the PC",
   },
+  -- v1.3.0 (#152-#154): the same kind of note for the new commands and codes.
+  -- #152: a power command the PC app held back while the camera or the
+  -- microphone is in use (`409 device_in_use`, its guard on "block").
+  -- `%s` is `dev_*` below.
+  device_in_use = { ko = "%s 사용 중 · 실행 안 함", en = "%s in use · not run" },
+  dev_camera = { ko = "카메라", en = "Camera" },
+  dev_microphone = { ko = "마이크", en = "Mic" },
+  dev_both = { ko = "카메라·마이크", en = "Camera & mic" },
+  -- #153: the monitor (`403 monitor_disabled`, `501 monitor_unsupported`,
+  -- `502 monitor_failed`). A monitor in DPM off often stops listening, so a
+  -- failed "on" says what works instead.
+  monitor_disabled = { ko = "모니터 제어 꺼짐", en = "Monitor control is off" },
+  monitor_unsupported = { ko = "모니터가 DDC/CI 미지원", en = "Monitor has no DDC/CI" },
+  monitor_failed = { ko = "모니터가 명령을 거절함", en = "The monitor refused" },
+  monitor_wake_failed = { ko = "모니터 전원 버튼으로 켜세요", en = "Use the monitor's button" },
+  monitor_input_missing = { ko = "이 모니터에 없는 입력", en = "No such input here" },
+  -- #154: the device slots. `%s %s` is the kind (`audio_out`/`audio_in`)
+  -- and the slot number.
+  audio_out = { ko = "출력", en = "Output" },
+  audio_in = { ko = "입력", en = "Input" },
+  audio_out_none = { ko = "출력 칸 없음 · PC 앱에서 설정", en = "No output slots · set in PC app" },
+  audio_in_none = { ko = "입력 칸 없음 · PC 앱에서 설정", en = "No input slots · set in PC app" },
+  audio_slot_empty = { ko = "%s %s 비어 있음", en = "%s %s is empty" },
+  audio_device_missing = { ko = "%s %s 연결 안 됨", en = "%s %s not connected" },
+  audio_switch_failed = { ko = "Windows가 장치를 못 바꿈", en = "Windows did not switch" },
   -- #118: the `audioTrackData` title when there is no title to show: nothing
   -- plays, or the PC does not share what does (the opt-in is off).
   track_none = { ko = "재생 중인 미디어 없음", en = "Nothing playing" },

@@ -31,7 +31,8 @@ features.MIN_SERVICE_VERSION = "1.1.0"
 -- 필요", and the summary and message rows nudge the user to update the PC
 -- app (`needs_app_update`).
 -- 드라이버가 새 서비스 기능을 쓰기 시작하면 이 값을 그 서비스 버전으로 올린다.
-features.RECOMMENDED_SERVICE_VERSION = "1.2.0"
+-- 1.3.0: idle/presence, camera/microphone, monitor, audio devices (#151-#154).
+features.RECOMMENDED_SERVICE_VERSION = "1.3.0"
 
 --- "v1.2.0", "1.2.0", "v1.2.0-rc14" -> { 1, 2, 0 }: major.minor.patch only,
 --- so a prerelease counts as its release (our rc builds do not nag). A
@@ -119,6 +120,25 @@ features.CAP_TOAST = caps.TOAST
 -- it has the same limit.
 features.NOTIFY_MAX_CHARS = 200
 
+-- v1.3.0 (#151-#154, docs/design/v1.3-sensors.md). `monitor` and `privacy`
+-- are listed only while their opt-in is on, `audio_output` / `audio_input`
+-- only while the PC app has a device slot of that kind.
+features.MONITOR = "monitor"
+features.PRIVACY = "privacy"
+features.AUDIO_OUTPUT = "audio_output"
+features.AUDIO_INPUT = "audio_input"
+
+-- The service release that first listed a feature. A PC older than that
+-- lacks the feature because of its version ("PC 앱 v%s 필요"); a newer one
+-- because of a setting. Anything not listed came with `features` itself,
+-- in v1.2.0 - so a v1.2.0 PC with media control off still hears "미디어
+-- 제어 꺼짐" after RECOMMENDED_SERVICE_VERSION moved on.
+features.FIRST_FEATURES_VERSION = "1.2.0"
+features.SINCE = {
+  [features.MONITOR] = "1.3.0", [features.PRIVACY] = "1.3.0",
+  [features.AUDIO_OUTPUT] = "1.3.0", [features.AUDIO_INPUT] = "1.3.0",
+}
+
 -- #116: the laptop battery, on a component only the `-battery` profiles have.
 features.BATTERY = "battery"
 features.BATTERY_COMPONENT = "battery"
@@ -169,6 +189,9 @@ features.COMMAND_FEATURE = {
   stop = features.MEDIA, next = features.MEDIA, prev = features.MEDIA,
   preset = features.PRESETS,
   awake = features.AWAKE, awakeoff = features.AWAKE,
+  monitor_brightness = features.MONITOR, monitor_input = features.MONITOR,
+  monitor_power = features.MONITOR,
+  audio_output = features.AUDIO_OUTPUT, audio_input = features.AUDIO_INPUT,
 }
 
 -- #113: the slots a preset list can offer, and the value it rests on. Strings,
@@ -180,7 +203,10 @@ features.PRESET_SLOTS = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }
 
 -- Features that act in the logged-in user's session (§2). `audio.available`
 -- is the service's word on whether there is one.
-local NEEDS_USER = { [features.AUDIO] = true, [features.MEDIA] = true }
+local NEEDS_USER = {
+  [features.AUDIO] = true, [features.MEDIA] = true,
+  [features.AUDIO_OUTPUT] = true, [features.AUDIO_INPUT] = true,
+}
 
 local function ev(list, cap, attr, value, component)
   list[#list + 1] = { cap = cap, attr = attr, value = value, component = component }
@@ -284,7 +310,12 @@ end
 --   unreachable      no status has been read in this driver run at all
 --   needs_service    the service sends no `features` - older than v1.2.0 -
 --                    or does not list this feature while it is older than
---                    RECOMMENDED_SERVICE_VERSION (a feature of a newer release)
+--                    the release that brought it (`SINCE`)
+--   media_disabled   "audio"/"media" (and the v1.3.0 audio devices) missing
+--                    from a service new enough: media control is off
+--   monitor_disabled "monitor" missing: the PC app's monitor opt-in is off
+--   audio_out_none / audio_in_none
+--                    media control is on but no device slot of that kind
 --   feature_missing  a new enough service that does not list this feature
 --   no_user          `audio.available = false`: nobody is logged in, and
 --                    volume and media keys only mean something in a session
@@ -304,7 +335,7 @@ function features.refusal(extras, service_command, feature)
   end
   if not features.has(extras, feature) then
     if features.version_below((extras.last_status or {}).service_version,
-        features.RECOMMENDED_SERVICE_VERSION) == true then
+        features.SINCE[feature] or features.FIRST_FEATURES_VERSION) == true then
       return "needs_service"
     end
     -- A v1.2.0 service lists "audio" and "media" only while `media.enabled`
@@ -313,6 +344,16 @@ function features.refusal(extras, service_command, feature)
     if feature == features.AUDIO or feature == features.MEDIA then
       return "media_disabled"
     end
+    if feature == features.MONITOR then
+      return "monitor_disabled"
+    end
+    -- #154: the slots ride on media control; with it on, none is filled.
+    if feature == features.AUDIO_OUTPUT or feature == features.AUDIO_INPUT then
+      if not features.has(extras, features.AUDIO) then
+        return "media_disabled"
+      end
+      return feature == features.AUDIO_OUTPUT and "audio_out_none" or "audio_in_none"
+    end
     return "feature_missing"
   end
   if NEEDS_USER[feature] and ((extras.audio or {}).available == false) then
@@ -320,6 +361,18 @@ function features.refusal(extras, service_command, feature)
   end
   return nil
 end
+
+-- v1.3.0 error code -> note key. The audio ones take the slot's words as
+-- arguments (handlers/audio.lua), `device_in_use` the devices.
+features.CODE_NOTES = {
+  device_in_use = "device_in_use",
+  monitor_disabled = "monitor_disabled",
+  monitor_unsupported = "monitor_unsupported",
+  monitor_failed = "monitor_failed",
+  slot_empty = "audio_slot_empty",
+  device_missing = "audio_device_missing",
+  switch_failed = "audio_switch_failed",
+}
 
 --- The note for a v1.2.0 command the service refused, or nil when the failure
 --- is an ordinary one (unreachable, secret, …) that `report_error` handles.
@@ -330,6 +383,13 @@ end
 -- still the hub allow-list (§3.1) and stays with `report_error`.
 function features.error_note(kind, body)
   local code = type(body) == "table" and body.error or nil
+  -- v1.3.0 (#152-#154): codes with a word of their own, read before the bare
+  -- 409/404 below - `device_in_use` and `device_missing` are 409s that are
+  -- not "nobody is logged in", `slot_empty` a 404 that is not an old service.
+  local own = features.CODE_NOTES[code or ""]
+  if own then
+    return own
+  end
   if code == "no_user_session" or kind == "conflict" then
     return "no_user"
   end

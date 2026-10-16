@@ -11,7 +11,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v13, pc-battery.v13
+#   __NAME__       the profile name - pc.v14, pc-battery.v14
 #   __CATEGORY__   the main component's category (profiles.CATEGORY)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -27,9 +27,9 @@
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
 # third one with a placeholder for a name. The published older
-# generation stays in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml) and the v10 ones (edge 1.1.0; their
-# bare name is the old default, others). The v2 to v9, v11 and v12 files this template made
+# generations stay in profiles/, frozen, for the devices not yet migrated: the
+# v1 files (pc.yml and pc-<style>.yml), the v10 ones (edge 1.1.0; their
+# bare name is the old default, others) and the two v13 ones (edge 1.2.x). The v2 to v9, v11 and v12 files this template made
 # were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
 # app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #

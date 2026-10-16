@@ -333,7 +333,11 @@ end
 --- `minutes`: these commands run at once and are never scheduled.
 function client.action(device, cmd, value, deps)
   local body = { command = cmd }
-  if value ~= nil then
+  if type(value) == "string" and tonumber(value) == nil then
+    -- #153: `monitor_input` ("hdmi1", "vcp:0x1b") and `monitor_power`
+    -- ("on"/"off") carry a word; every other value is a whole number.
+    body.value = value
+  elseif value ~= nil then
     body.value = math.floor(tonumber(value) or 0)
   end
   return client.request(device, { method = "POST", path = "/command", body = body }, deps)

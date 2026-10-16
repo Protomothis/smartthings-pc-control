@@ -49,7 +49,7 @@ end
 --- activity, keep-awake, and a logged-in session.
 local function pc_status()
   return {
-    protocol = 1, service_version = "v1.2.0", power = "on", secret_set = true,
+    protocol = 1, service_version = "v1.3.0", power = "on", secret_set = true,
     uptime_seconds = 3600,
     features = { "audio", "media", "nowplaying", "notify", "presets", "activity", "awake" },
     audio = { available = true, volume = 30, muted = false, device = "스피커" },
@@ -833,7 +833,7 @@ local function migrate(pc, minutes, landing)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v13")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v14")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
@@ -1006,7 +1006,7 @@ function T.test_a_preference_change_that_moves_no_profile_does_not_repaint()
   -- change says whether its profile moved.
   with_pc(function()
     local device = new_device()
-    device.profile = { id = "profile-1", name = "pc.v13", components = h.components_for("pc.v13") }
+    device.profile = { id = "profile-1", name = "pc.v14", components = h.components_for("pc.v14") }
     local d = Driver("budget", {})
     poll.once(d, device)
     local mark = #device.emitted
