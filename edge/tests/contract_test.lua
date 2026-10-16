@@ -110,6 +110,25 @@ function T.test_full_status_session_rows()
   h.assert_equal(value(events, caps.PRESENCE, "idleMinutes", "presence"), 12)
 end
 
+function T.test_full_status_monitor_rows()
+  -- #153: `monitors = [ { id, name, primary, ddc, brightness, input, inputs,
+  -- power } ]`; the card is the primary one's. m2 (a TV, no DDC) is not.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  local M = "monitor"
+  h.assert_equal(value(events, caps.MONITOR, "summary", M), "HDMI 1 · 40% · DELL U2720Q",
+    "monitors[].input/brightness/name")
+  h.assert_equal(value(events, caps.MONITOR, "input", M), "hdmi1", "monitors[].input")
+  h.assert_deep_equal(value(events, caps.MONITOR, "supportedInputs", M), { "dp1", "hdmi1", "hdmi2" },
+    "monitors[].inputs")
+  h.assert_equal(value(events, "switch", "switch", M), "on", "monitors[].power")
+  h.assert_equal(value(events, "switchLevel", "level", M), 40, "monitors[].brightness")
+  local tv = status.monitors[2]
+  h.assert_false(tv.ddc, "monitors[].ddc")
+  h.assert_false(tv.primary, "monitors[].primary")
+  h.assert_equal(tv.brightness, nil, "brightness: null without DDC")
+end
+
 function T.test_full_status_privacy_rows()
   -- #152: `privacy = { camera, microphone, since }`, in_use/idle/unknown.
   local status = h.fixture("status.full.json")
@@ -283,6 +302,10 @@ function T.test_off_status_rows()
   h.assert_nil(status.privacy, "privacy: only while enabled")
   h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "unknown")
   h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "PC 앱 v1.3.0 필요")
+  -- #153: the same for the monitor; no `monitors` key while off.
+  h.assert_nil(status.monitors, "monitors: only while enabled")
+  h.assert_equal(value(events, caps.MONITOR, "summary", "monitor"), "PC 앱 v1.3.0 필요")
+  h.assert_nil(value(events, "switch", "switch", "monitor"), "no reading, no toggle")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -551,6 +574,16 @@ local SENDS = {
   ["command.notify.json"] = function(device)
     handlers_for(caps.TOAST).send(driver, device, { args = { text = "빨래가 끝났습니다" } })
   end,
+  -- #153: the monitor component. Brightness is a number, input and power words.
+  ["command.monitor_brightness.json"] = function(device)
+    handlers_for("switchLevel").setLevel(driver, device, { component = "monitor", args = { level = 70 } })
+  end,
+  ["command.monitor_input.json"] = function(device)
+    handlers_for(caps.MONITOR).setInput(driver, device, { component = "monitor", args = { input = "dp1" } })
+  end,
+  ["command.monitor_power.json"] = function(device)
+    handlers_for("switch").off(driver, device, { command = "off", component = "monitor", args = {} })
+  end,
   ["command.subscribe.json"] = function(device)
     client.subscribe(device, "http://192.168.1.20:39500/pc/evt", client.DEFAULT_TTL)
   end,
@@ -563,6 +596,16 @@ local REFUSALS = {
   ["command.next.media-disabled.json"] = { same_as = "command.next.json", kind = "forbidden", note = "media_disabled" },
   ["command.notify.disabled.json"] = {
     same_as = "command.notify.json", kind = "forbidden", note = "notify_disabled", notify = true,
+  },
+  ["command.monitor_brightness.disabled.json"] = {
+    same_as = "command.monitor_brightness.json", kind = "forbidden", note = "monitor_disabled",
+  },
+  ["command.monitor_brightness.no-user.json"] = {
+    same_as = "command.monitor_brightness.json", kind = "conflict", note = "no_user",
+  },
+  -- 501: the PC answered; not an unreachable PC.
+  ["command.monitor_input.unsupported.json"] = {
+    same_as = "command.monitor_input.json", kind = "unreachable", note = "monitor_unsupported",
   },
   -- #152: the PC app's guard on "block" while the camera is in use.
   ["command.shutdown.device-in-use.json"] = {

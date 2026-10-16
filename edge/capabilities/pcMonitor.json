@@ -1,0 +1,100 @@
+{
+  "id": "numbersystem53811.pcmonitor",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcMonitor",
+  "ephemeral": false,
+  "attributes": {
+    "summary": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "input": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "hdmi1",
+              "hdmi2",
+              "dp1",
+              "dp2",
+              "dvi1",
+              "dvi2",
+              "vga1",
+              "vga2",
+              "other1",
+              "other2",
+              "other3"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "supportedInputs": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "setInput": {
+      "name": "setInput",
+      "arguments": [
+        {
+          "name": "input",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "hdmi1",
+              "hdmi2",
+              "dp1",
+              "dp2",
+              "dvi1",
+              "dvi2",
+              "vga1",
+              "vga2",
+              "other1",
+              "other2",
+              "other3"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

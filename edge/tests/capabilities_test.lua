@@ -627,6 +627,8 @@ local EXPECTED_COMMANDS = {
   -- #151/#152: a row and routine conditions only.
   presence = {},
   privacy = {},
+  -- #153: the input list; power and brightness are standard.
+  monitor = { setInput = { "input" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -835,7 +837,7 @@ function T.test_the_dashboard_state_is_the_power_state()
   end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
-      "presence", "privacy" }) do
+      "presence", "privacy", "monitor" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -945,6 +947,28 @@ function T.test_the_privacy_conditions_are_the_camera_and_the_microphone()
   local detail = presentation("privacy").detailView
   h.assert_equal(#detail, 1, "one row: the summary")
   h.assert_equal(detail[1].state.label, "{{summary.value}}")
+end
+
+function T.test_the_monitor_input_list_rests_on_the_input_and_offers_what_the_monitor_has()
+  -- #153: the list shows the current input and closing it sends that back
+  -- (a no-op the driver answers); `unknown` is the rest before any read.
+  local definition_input = definition("monitor").attributes.input.schema.properties.value.enum
+  h.assert_deep_equal(definition("monitor").commands.setInput.arguments[1].schema.enum, definition_input,
+    "the argument takes every value the row can rest on")
+  local sensors = require "sensors"
+  local expected = { sensors.INPUT_UNKNOWN }
+  for _, list in ipairs({ sensors.NAMED_INPUTS, sensors.OTHER_INPUTS }) do
+    for _, key in ipairs(list) do
+      expected[#expected + 1] = key
+    end
+  end
+  h.assert_deep_equal(definition_input, expected, "sensors.lua and the definition agree")
+  local list = presentation("monitor").detailView[2].list
+  h.assert_equal(list.command.supportedValues, "supportedInputs.value")
+  local offered = alternative_keys(list.command.alternatives)
+  h.assert_deep_equal(offered, { table.unpack(expected, 2) }, "every input but unknown")
+  -- DisplayPort is why this is not the standard mediaInputSource.
+  h.assert_contains(table.concat(offered, " "), "dp1")
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()

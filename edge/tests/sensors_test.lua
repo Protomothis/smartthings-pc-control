@@ -12,6 +12,7 @@ local sensors = require "sensors"
 local state = require "state"
 local fields = require "device.fields"
 local features = require "features"
+local emit = require "device.emit"
 
 -- The handlers, as the hub calls them.
 local driver = require "init"
@@ -253,6 +254,193 @@ function T.test_a_command_list_restart_held_back_names_both_devices()
     "카메라·마이크 사용 중 · 실행 안 함")
   h.assert_equal(sensors.in_use_note("en", { "microphone" }), "Mic in use · not run")
   h.assert_equal(sensors.in_use_note("ko", {}), "카메라·마이크 사용 중 · 실행 안 함")
+end
+
+--------------------------------------------------------------------------------
+-- #153: the primary monitor
+--------------------------------------------------------------------------------
+
+local M = "monitor"
+
+local function dell(overrides)
+  local m = { id = "m1", name = "DELL U2720Q", primary = true, ddc = true, brightness = 40,
+    input = "hdmi1", inputs = { "dp1", "hdmi1", "hdmi2" }, power = "on" }
+  for k, v in pairs(overrides or {}) do
+    if v == NONE then
+      m[k] = nil
+    else
+      m[k] = v
+    end
+  end
+  return m
+end
+
+local function monitors(list, overrides)
+  local status = { protocol = 1, service_version = "v1.3.0", features = { "monitor", "audio" }, monitors = list }
+  for k, v in pairs(overrides or {}) do
+    status[k] = v
+  end
+  return status
+end
+
+function T.test_the_monitor_card_follows_the_primary_monitor()
+  local tv = { id = "m2", name = "LG TV", primary = false, ddc = false, inputs = {}, power = "unknown" }
+  local events = rows_of(monitors({ tv, dell() }))
+  h.assert_equal(value(events, M, caps.MONITOR, "summary"), "HDMI 1 · 40% · DELL U2720Q")
+  h.assert_equal(value(events, M, caps.MONITOR, "input"), "hdmi1")
+  h.assert_equal(value(events, M, "switch", "switch"), "on")
+  h.assert_equal(value(events, M, "switchLevel", "level"), 40)
+  -- No primary flag at all: the first one.
+  h.assert_equal(sensors.primary_monitor(monitors({ dell({ primary = false }), tv })).id, "m1")
+end
+
+function T.test_the_monitor_summary_says_why_there_is_nothing_to_control()
+  for _, c in ipairs({
+    { monitors({ dell({ power = "standby" }) }), "대기 · DELL U2720Q", "Standby · DELL U2720Q" },
+    { monitors({ dell({ ddc = false, brightness = NONE, input = NONE, power = "unknown" }) }),
+      "지원 안 함 (DDC/CI) · DELL U2720Q", "Not supported (DDC/CI) · DELL U2720Q" },
+    { monitors({ dell({ input = "vcp:0x1b", brightness = 72.4 }) }), "vcp:0x1b · 72% · DELL U2720Q",
+      "vcp:0x1b · 72% · DELL U2720Q" },
+    -- Before the first read: `monitors: []`.
+    { monitors({}), "모니터 정보 없음", "No monitor info" },
+    -- The opt-in off: no `monitors`, no feature.
+    { { service_version = "v1.3.0", features = { "audio" } }, "모니터 제어 꺼짐", "Monitor control is off" },
+    { { service_version = "v1.2.0", features = { "audio" } }, "PC 앱 v1.3.0 필요", "Needs PC app v1.3.0" },
+  }) do
+    h.assert_equal(sensors.monitor_summary(c[1], "ko"), c[2])
+    h.assert_equal(sensors.monitor_summary(c[1], "en"), c[3])
+  end
+  h.assert_equal(sensors.monitor_summary(nil, "ko"), "모니터 정보 없음")
+end
+
+function T.test_the_toggle_and_the_slider_move_only_on_a_reading()
+  -- An opt-in switched off, a monitor without DDC/CI or one whose power is
+  -- not known is not a monitor switched off: a routine on "꺼지면" must not
+  -- fire. A repaint paints "off" and 0 where nothing was read ("-" else).
+  for _, status in ipairs({
+    { service_version = "v1.3.0", features = { "audio" } },
+    monitors({}),
+    monitors({ dell({ ddc = false, brightness = NONE, power = "unknown" }) }),
+  }) do
+    local events = rows_of(status)
+    h.assert_nil(value(events, M, "switch", "switch"))
+    h.assert_nil(value(events, M, "switchLevel", "level"))
+    local filled = sensors.monitor_events(status, "ko", true)
+    h.assert_equal(value(filled, M, "switch", "switch"), "off")
+    h.assert_equal(value(filled, M, "switchLevel", "level"), 0)
+  end
+  local standby = rows_of(monitors({ dell({ power = "standby" }) }))
+  h.assert_equal(value(standby, M, "switch", "switch"), "off")
+  local unknown_power = rows_of(monitors({ dell({ power = "unknown" }) }))
+  h.assert_nil(value(unknown_power, M, "switch", "switch"))
+  h.assert_equal(value(unknown_power, M, "switchLevel", "level"), 40)
+end
+
+function T.test_inputs_without_a_name_take_the_other_places_in_order()
+  local m = dell({ input = "vcp:0x1b", inputs = { "vcp:0x1b", "DP1", "composite1", "hdmi1", "vcp:0xd0", "vcp:0xd1" } })
+  local map = sensors.input_map(m)
+  h.assert_deep_equal(map.keys, { "other1", "dp1", "other2", "hdmi1", "other3" }, "three places, the fourth left out")
+  h.assert_equal(map.raw.other1, "vcp:0x1b")
+  h.assert_equal(map.raw.other2, "composite1")
+  h.assert_equal(map.raw.other3, "vcp:0xd0")
+  local status = monitors({ m })
+  h.assert_equal(sensors.monitor_input(status), "other1")
+  h.assert_deep_equal(sensors.supported_inputs(status), map.keys)
+  -- The capability string could not be read: only the current input.
+  local only = monitors({ dell({ inputs = {} }) })
+  h.assert_deep_equal(sensors.supported_inputs(only), { "hdmi1" })
+  -- Nothing to offer: never an empty list.
+  h.assert_deep_equal(sensors.supported_inputs(monitors({})), { "unknown" })
+  h.assert_equal(sensors.monitor_input(monitors({})), "unknown")
+end
+
+--- A PC device whose last status was `status`, its monitor card painted from
+--- it, with `client.action` and `poll.once` recorded.
+local function on_monitor(status, fn, answer)
+  local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s" })
+  device.device_network_id = "pc-control-monitor"
+  local s = features.remember(state.new(state.ON), status)
+  fields.set_state(device, s)
+  emit.rows(device, sensors.monitor_events(status, "ko"))
+  local sent = {}
+  local original = { action = client.action, once = poll.once }
+  client.action = function(_, command, v)
+    sent[#sent + 1] = { command = command, value = v }
+    if answer then
+      return table.unpack(answer)
+    end
+    return true, {}, nil
+  end
+  poll.once = function() return true end
+  local ok, err = pcall(fn, device)
+  client.action, poll.once = original.action, original.once
+  if not ok then
+    error(err, 0)
+  end
+  return device, sent
+end
+
+function T.test_the_monitor_toggle_is_the_monitors_power_not_the_pcs()
+  local _, sent = on_monitor(monitors({ dell() }), function(device)
+    handlers_for("switch").off(driver, device, { command = "off", component = M, args = {} })
+    handlers_for("switch").on(driver, device, { command = "on", component = M, args = {} })
+  end)
+  h.assert_deep_equal(sent, { { command = "monitor_power", value = "off" }, { command = "monitor_power", value = "on" } })
+end
+
+function T.test_a_monitor_that_does_not_wake_says_to_use_its_button()
+  local device = on_monitor(monitors({ dell({ power = "standby" }) }), function(device)
+    handlers_for("switch").on(driver, device, { command = "on", component = M, args = {} })
+  end, { false, { error = "monitor_failed", message = "some monitors stop listening" }, "unreachable" })
+  local emitted = h.emitted(device)
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "summary"), "모니터 전원 버튼으로 켜세요")
+  h.assert_equal(h.last_value(emitted, M, "switch", "switch"), "off", "the toggle springs back")
+  h.assert_nil(h.event_value(emitted, caps.STATUS, "connection"), "the PC answered")
+  device = on_monitor(monitors({ dell() }), function(d)
+    handlers_for("switchLevel").setLevel(driver, d, { component = M, args = { level = 50 } })
+  end, { false, { error = "monitor_failed" }, "unreachable" })
+  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "summary"), "모니터가 명령을 거절함")
+end
+
+function T.test_the_brightness_is_clamped_and_rounded()
+  local _, sent = on_monitor(monitors({ dell() }), function(device)
+    handlers_for("switchLevel").setLevel(driver, device, { component = M, args = { level = 70.6, rate = 0 } })
+    handlers_for("switchLevel").setLevel(driver, device, { component = M, args = { level = 140 } })
+  end)
+  h.assert_deep_equal(sent, { { command = "monitor_brightness", value = 71 }, { command = "monitor_brightness", value = 100 } })
+end
+
+function T.test_a_dismissed_input_list_does_nothing_and_other_places_send_the_service_word()
+  local m = dell({ inputs = { "hdmi1", "vcp:0x1b" } })
+  local device, sent = on_monitor(monitors({ m }), function(device)
+    -- Closed without a pick: the row's own value comes back.
+    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "hdmi1" } })
+    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "unknown" } })
+    -- USB-C on this monitor is the first input MCCS has no name for.
+    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "other1" } })
+    -- A place the monitor does not fill is not sent.
+    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "other2" } })
+  end)
+  h.assert_deep_equal(sent, { { command = "monitor_input", value = "vcp:0x1b" } })
+  local emitted = h.emitted(device)
+  h.assert_true(h.component_forced(emitted, M, caps.MONITOR, "input"), "the row is answered")
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "summary"), "이 모니터에 없는 입력")
+end
+
+function T.test_a_monitor_command_with_the_opt_in_off_is_not_sent()
+  local device, sent = on_monitor({ service_version = "v1.3.0", features = { "audio" } }, function(device)
+    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "dp1" } })
+  end)
+  h.assert_equal(#sent, 0)
+  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "summary"), "모니터 제어 꺼짐")
+  h.assert_equal(h.last_value(h.emitted(device), M, caps.MONITOR, "input"), "unknown")
+end
+
+function T.test_a_pc_that_is_not_there_keeps_the_monitor_toggle()
+  local records = rows.offline_rows(h.fake_device({}), state.new(state.OFF))
+  h.assert_equal(value(records, M, caps.MONITOR, "summary"), "PC 꺼짐")
+  h.assert_nil(value(records, M, "switch", "switch"))
+  h.assert_nil(value(records, M, "switchLevel", "level"))
 end
 
 return T

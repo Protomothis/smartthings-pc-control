@@ -129,9 +129,10 @@ sensors.CAP_PRIVACY = caps.PRIVACY
 sensors.IN_USE = "inUse"
 local PRIVACY_VALUES = { in_use = sensors.IN_USE, idle = sensors.IDLE, unknown = sensors.UNKNOWN }
 
--- What `privacy_mode` answers, like `features.apps_mode`.
+-- What `privacy_mode` and `monitor_mode` answer, like `features.apps_mode`.
 sensors.OLD = "old"
 sensors.OFF = "off"
+sensors.NONE = "none"
 sensors.ON = "on"
 
 --- "old" for a service older than the release that brought `privacy`, "off"
@@ -218,6 +219,253 @@ function sensors.in_use_note(lang, devices)
 end
 
 --------------------------------------------------------------------------------
+-- #153: the primary monitor (DDC/CI)
+--------------------------------------------------------------------------------
+
+-- The PC's `monitor` component ("모니터"): `pcMonitor` (a summary row and the
+-- input list), the standard `switch` (the monitor's power, not the PC's) and
+-- `switchLevel` (brightness). The input is ours, not the standard
+-- `mediaInputSource`: its enum has HDMI but no DisplayPort, DVI or VGA, and
+-- the cloud checks a command's argument against the enum (platform notes
+-- "상세 화면(detailView) 위젯"), so `setInputSource("dp1")` would never reach
+-- the hub. The service's words are MCCS names (`hdmi1`, `dp1`, …) or
+-- `vcp:0xNN` for a code MCCS does not name (USB-C on many monitors).
+sensors.MONITOR_COMPONENT = "monitor"
+sensors.CAP_MONITOR = caps.MONITOR
+sensors.CAP_SWITCH = "switch"
+sensors.CAP_LEVEL = "switchLevel"
+
+-- `pcMonitor.input`: the PC monitor inputs by name, then three places for the
+-- rest (`vcp:0xNN`, composite, component, …) in the monitor's own order -
+-- "기타 입력 1" is the first of those the monitor lists. `unknown`: nothing
+-- read, or no monitor to read; as a list argument it does nothing.
+sensors.INPUT_UNKNOWN = "unknown"
+sensors.NAMED_INPUTS = { "hdmi1", "hdmi2", "dp1", "dp2", "dvi1", "dvi2", "vga1", "vga2" }
+sensors.OTHER_INPUTS = { "other1", "other2", "other3" }
+local NAMED = {}
+for _, name in ipairs(sensors.NAMED_INPUTS) do
+  NAMED[name] = true
+end
+
+-- How the summary row writes a named input.
+local INPUT_LABELS = {
+  hdmi1 = "HDMI 1", hdmi2 = "HDMI 2", dp1 = "DP 1", dp2 = "DP 2",
+  dvi1 = "DVI 1", dvi2 = "DVI 2", vga1 = "VGA 1", vga2 = "VGA 2",
+}
+
+-- The monitor name inside the summary, and the whole row (definition: 80).
+sensors.MONITOR_NAME_MAX_CHARS = 24
+sensors.MONITOR_SUMMARY_MAX_CHARS = 80
+
+local function clean(text)
+  if type(text) ~= "string" then
+    return ""
+  end
+  return (text:gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+--- The monitor commands go to: the one marked `primary`, else the first.
+function sensors.primary_monitor(status)
+  local list = (status or {}).monitors
+  if type(list) ~= "table" then
+    return nil
+  end
+  local first
+  for _, monitor in ipairs(list) do
+    if type(monitor) == "table" then
+      if monitor.primary == true then
+        return monitor
+      end
+      first = first or monitor
+    end
+  end
+  return first
+end
+
+--- "old" (no such feature yet), "off" (the opt-in), "none" (nothing read
+--- yet, or no monitor), "on".
+function sensors.monitor_mode(status)
+  local set = features.parse(status)
+  if set == false or features.version_below((status or {}).service_version,
+      features.SINCE[features.MONITOR]) == true and not set[features.MONITOR] then
+    return sensors.OLD
+  end
+  if not set[features.MONITOR] or type(status.monitors) ~= "table" then
+    return sensors.OFF
+  end
+  if not sensors.primary_monitor(status) then
+    return sensors.NONE
+  end
+  return sensors.ON
+end
+
+--- The primary monitor's inputs as list keys: `{ keys, raw = key -> service
+--- word, key = service word -> key }`. The current input is in it even when
+--- the capability string could not be read (`inputs` is then just it).
+function sensors.input_map(monitor)
+  local map = { keys = {}, raw = {}, key = {} }
+  if type(monitor) ~= "table" or monitor.ddc ~= true then
+    return map
+  end
+  local words = {}
+  for _, word in ipairs(type(monitor.inputs) == "table" and monitor.inputs or {}) do
+    words[#words + 1] = clean(word):lower()
+  end
+  local current = clean(monitor.input):lower()
+  if current ~= "" then
+    words[#words + 1] = current
+  end
+  local others = 0
+  for _, word in ipairs(words) do
+    if word ~= "" and not map.key[word] then
+      local key
+      if NAMED[word] then
+        key = word
+      elseif others < #sensors.OTHER_INPUTS then
+        others = others + 1
+        key = sensors.OTHER_INPUTS[others]
+      end
+      if key then
+        map.key[word] = key
+        map.raw[key] = word
+        map.keys[#map.keys + 1] = key
+      end
+    end
+  end
+  return map
+end
+
+--- `pcMonitor.input`: the current input's key, `unknown` when not read.
+function sensors.monitor_input(status)
+  if sensors.monitor_mode(status) ~= sensors.ON then
+    return sensors.INPUT_UNKNOWN
+  end
+  local monitor = sensors.primary_monitor(status)
+  local current = clean(monitor.input):lower()
+  return sensors.input_map(monitor).key[current] or sensors.INPUT_UNKNOWN
+end
+
+--- `pcMonitor.supportedInputs`: what the list may offer (#93's
+--- `supportedValues` experiment). Never empty.
+function sensors.supported_inputs(status)
+  local keys = {}
+  if sensors.monitor_mode(status) == sensors.ON then
+    keys = sensors.input_map(sensors.primary_monitor(status)).keys
+  end
+  if #keys == 0 then
+    keys = { sensors.INPUT_UNKNOWN }
+  end
+  return keys
+end
+
+--- How the summary writes an input: "HDMI 1", else the service's word.
+function sensors.input_label(word)
+  word = clean(word):lower()
+  return INPUT_LABELS[word] or word
+end
+
+--- `pcMonitor.summary`: "HDMI 1 · 40% · DELL U2720Q", "대기 · DELL U2720Q",
+--- "지원 안 함 (DDC/CI) · LG TV", "모니터 정보 없음", "모니터 제어 꺼짐", or
+--- "PC 앱 v1.3.0 필요". The input first: the row is the first cell of the
+--- card's preview. Never "".
+function sensors.monitor_summary(status, lang)
+  if status == nil then
+    return i18n.t(lang, "monitor_none")
+  end
+  local mode = sensors.monitor_mode(status)
+  if mode == sensors.OLD then
+    return features.note_text(lang, "needs_service")
+  end
+  if mode == sensors.OFF then
+    return i18n.t(lang, "monitor_disabled")
+  end
+  if mode == sensors.NONE then
+    return i18n.t(lang, "monitor_none")
+  end
+  local monitor = sensors.primary_monitor(status)
+  local parts = {}
+  if monitor.ddc ~= true then
+    parts[1] = i18n.t(lang, "monitor_no_ddc")
+  elseif monitor.power == "standby" then
+    parts[1] = i18n.t(lang, "monitor_standby")
+  else
+    if clean(monitor.input) ~= "" then
+      parts[#parts + 1] = sensors.input_label(monitor.input)
+    end
+    local brightness = tonumber(monitor.brightness)
+    if brightness then
+      parts[#parts + 1] = string.format("%d%%", math.floor(brightness + 0.5))
+    end
+  end
+  local name = clean(monitor.name)
+  if name ~= "" then
+    parts[#parts + 1] = features.truncate(name, sensors.MONITOR_NAME_MAX_CHARS)
+  end
+  if #parts == 0 then
+    return i18n.t(lang, "monitor_none")
+  end
+  return features.truncate(table.concat(parts, " · "), sensors.MONITOR_SUMMARY_MAX_CHARS)
+end
+
+--- The monitor's power as the `switch` value, nil when not read.
+function sensors.monitor_switch(status)
+  if sensors.monitor_mode(status) ~= sensors.ON then
+    return nil
+  end
+  local monitor = sensors.primary_monitor(status)
+  if monitor.ddc ~= true then
+    return nil
+  end
+  if monitor.power == "on" then
+    return "on"
+  end
+  if monitor.power == "standby" then
+    return "off"
+  end
+  return nil
+end
+
+--- The brightness, 0-100, nil when not read.
+function sensors.monitor_level(status)
+  if sensors.monitor_mode(status) ~= sensors.ON then
+    return nil
+  end
+  local monitor = sensors.primary_monitor(status)
+  local brightness = monitor.ddc == true and tonumber(monitor.brightness) or nil
+  if not brightness then
+    return nil
+  end
+  return math.max(0, math.min(100, math.floor(brightness + 0.5)))
+end
+
+--- #153: the monitor card. The switch and the slider move only on a reading
+--- - an opt-in switched off is not a monitor switched off (a routine on
+--- "꺼지면" would fire); a repaint (`fill`) paints "off" and 0 where there is
+--- none, since a row never sent reads "-".
+function sensors.monitor_events(status, lang, fill)
+  local events = {}
+  local c = sensors.MONITOR_COMPONENT
+  ev(events, sensors.CAP_MONITOR, "summary", sensors.monitor_summary(status, lang), c)
+  ev(events, sensors.CAP_MONITOR, "input", sensors.monitor_input(status), c)
+  ev(events, sensors.CAP_MONITOR, "supportedInputs", sensors.supported_inputs(status), c)
+  local switch = sensors.monitor_switch(status)
+  if switch == nil and fill then
+    switch = "off"
+  end
+  if switch then
+    ev(events, sensors.CAP_SWITCH, "switch", switch, c)
+  end
+  local level = sensors.monitor_level(status)
+  if level == nil and fill then
+    level = 0
+  end
+  if level then
+    ev(events, sensors.CAP_LEVEL, "level", level, c)
+  end
+  return events
+end
+
+--------------------------------------------------------------------------------
 -- every card
 --------------------------------------------------------------------------------
 
@@ -228,6 +476,7 @@ function sensors.apply_status(status, opts)
   local events = {}
   append(events, sensors.presence_events(status, opts))
   append(events, sensors.privacy_events(status, opts.lang))
+  append(events, sensors.monitor_events(status, opts.lang, opts.fill))
   return events
 end
 
@@ -246,6 +495,9 @@ function sensors.offline_rows(text)
   ev(records, sensors.CAP_PRIVACY, "summary", text, sensors.PRESENCE_COMPONENT)
   ev(records, sensors.CAP_PRIVACY, "camera", sensors.UNKNOWN, sensors.PRESENCE_COMPONENT)
   ev(records, sensors.CAP_PRIVACY, "microphone", sensors.UNKNOWN, sensors.PRESENCE_COMPONENT)
+  -- #153: the monitor's switch and slider keep their values (a routine may
+  -- read them); only the summary says why nothing moves.
+  ev(records, sensors.CAP_MONITOR, "summary", text, sensors.MONITOR_COMPONENT)
   return records
 end
 

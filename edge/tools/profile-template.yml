@@ -125,6 +125,20 @@ components:
     capabilities:
       - id: numbersystem53811.pcwatchlist
         version: 1
+  # #153: the primary monitor over DDC/CI - a summary row ("HDMI 1 · 40% ·
+  # DELL U2720Q", or why there is nothing to control) and the input list of
+  # our own (the standard mediaInputSource has no DisplayPort), then the
+  # standard power toggle and brightness slider, which are the monitor's,
+  # not the PC's.
+  - id: monitor
+    label: 모니터
+    capabilities:
+      - id: numbersystem53811.pcmonitor
+        version: 1
+      - id: switch
+        version: 1
+      - id: switchLevel
+        version: 1
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
   # an action and as a condition like any other switch; it cannot be the main
   # component's, which is the PC's power.

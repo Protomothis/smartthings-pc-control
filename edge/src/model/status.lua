@@ -61,6 +61,8 @@ local ATTRIBUTES = {
   -- PC app v1.3.0 (sensors.lua).
   [caps.PRESENCE] = { activity = true, idleMinutes = true },
   [caps.PRIVACY] = { summary = true, camera = true, microphone = true },
+  [caps.MONITOR] = { summary = true, input = true, supportedInputs = true },
+  ["switchLevel"] = { level = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.

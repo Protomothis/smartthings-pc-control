@@ -158,6 +158,11 @@ function T.test_every_current_profile_keeps_the_layout_rules()
       }, name .. " presence card")
       h.assert_contains(text, "\n  - id: presence\n    label: 사용 감지\n", name .. " presence card label")
       h.assert_contains(text, "\n  - name: idleThreshold\n", name .. " idle threshold preference")
+      -- #153: the monitor card - ours first, then the standard toggle and slider.
+      h.assert_deep_equal(component_capabilities(text, "monitor"), {
+        "numbersystem53811.pcmonitor", "switch", "switchLevel",
+      }, name .. " monitor card")
+      h.assert_contains(text, "\n  - id: monitor\n    label: 모니터\n", name .. " monitor card label")
 
       h.assert_nil(text:find("\n      - id: notification\n", 1, true), name .. " still lists notification")
       h.assert_nil(text:find("\n      - id: speechSynthesis\n", 1, true), name .. " still lists speechSynthesis")

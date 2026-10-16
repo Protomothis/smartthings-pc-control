@@ -1,0 +1,294 @@
+{
+  "id": "numbersystem53811.pcmonitor",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.input.label}}",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "setInput",
+          "alternatives": [
+            {
+              "key": "hdmi1",
+              "value": "HDMI 1",
+              "type": "active"
+            },
+            {
+              "key": "hdmi2",
+              "value": "HDMI 2",
+              "type": "active"
+            },
+            {
+              "key": "dp1",
+              "value": "DisplayPort 1",
+              "type": "active"
+            },
+            {
+              "key": "dp2",
+              "value": "DisplayPort 2",
+              "type": "active"
+            },
+            {
+              "key": "dvi1",
+              "value": "DVI 1",
+              "type": "active"
+            },
+            {
+              "key": "dvi2",
+              "value": "DVI 2",
+              "type": "active"
+            },
+            {
+              "key": "vga1",
+              "value": "VGA 1",
+              "type": "active"
+            },
+            {
+              "key": "vga2",
+              "value": "VGA 2",
+              "type": "active"
+            },
+            {
+              "key": "other1",
+              "value": "기타 입력 1 (Other 1)",
+              "type": "active"
+            },
+            {
+              "key": "other2",
+              "value": "기타 입력 2 (Other 2)",
+              "type": "active"
+            },
+            {
+              "key": "other3",
+              "value": "기타 입력 3 (Other 3)",
+              "type": "active"
+            }
+          ],
+          "supportedValues": "supportedInputs.value"
+        },
+        "state": {
+          "value": "input.value",
+          "alternatives": [
+            {
+              "key": "unknown",
+              "value": "알 수 없음 (Unknown)",
+              "type": "inactive"
+            },
+            {
+              "key": "hdmi1",
+              "value": "HDMI 1",
+              "type": "active"
+            },
+            {
+              "key": "hdmi2",
+              "value": "HDMI 2",
+              "type": "active"
+            },
+            {
+              "key": "dp1",
+              "value": "DisplayPort 1",
+              "type": "active"
+            },
+            {
+              "key": "dp2",
+              "value": "DisplayPort 2",
+              "type": "active"
+            },
+            {
+              "key": "dvi1",
+              "value": "DVI 1",
+              "type": "active"
+            },
+            {
+              "key": "dvi2",
+              "value": "DVI 2",
+              "type": "active"
+            },
+            {
+              "key": "vga1",
+              "value": "VGA 1",
+              "type": "active"
+            },
+            {
+              "key": "vga2",
+              "value": "VGA 2",
+              "type": "active"
+            },
+            {
+              "key": "other1",
+              "value": "기타 입력 1 (Other 1)",
+              "type": "active"
+            },
+            {
+              "key": "other2",
+              "value": "기타 입력 2 (Other 2)",
+              "type": "active"
+            },
+            {
+              "key": "other3",
+              "value": "기타 입력 3 (Other 3)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.input.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "input.value",
+          "alternatives": [
+            {
+              "key": "hdmi1",
+              "value": "HDMI 1",
+              "type": "active"
+            },
+            {
+              "key": "hdmi2",
+              "value": "HDMI 2",
+              "type": "active"
+            },
+            {
+              "key": "dp1",
+              "value": "DisplayPort 1",
+              "type": "active"
+            },
+            {
+              "key": "dp2",
+              "value": "DisplayPort 2",
+              "type": "active"
+            },
+            {
+              "key": "dvi1",
+              "value": "DVI 1",
+              "type": "active"
+            },
+            {
+              "key": "dvi2",
+              "value": "DVI 2",
+              "type": "active"
+            },
+            {
+              "key": "vga1",
+              "value": "VGA 1",
+              "type": "active"
+            },
+            {
+              "key": "vga2",
+              "value": "VGA 2",
+              "type": "active"
+            },
+            {
+              "key": "other1",
+              "value": "기타 입력 1 (Other 1)",
+              "type": "active"
+            },
+            {
+              "key": "other2",
+              "value": "기타 입력 2 (Other 2)",
+              "type": "active"
+            },
+            {
+              "key": "other3",
+              "value": "기타 입력 3 (Other 3)",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": [
+      {
+        "label": "{{i18n.commands.setInput.label}}",
+        "displayType": "multiArgCommand",
+        "multiArgCommand": {
+          "command": "setInput",
+          "submitLabel": "Switch",
+          "arguments": [
+            {
+              "name": "input",
+              "label": "{{i18n.commands.setInput.arguments.input.label}}",
+              "displayType": "list",
+              "list": {
+                "alternatives": [
+                  {
+                    "key": "hdmi1",
+                    "value": "HDMI 1",
+                    "type": "active"
+                  },
+                  {
+                    "key": "hdmi2",
+                    "value": "HDMI 2",
+                    "type": "active"
+                  },
+                  {
+                    "key": "dp1",
+                    "value": "DisplayPort 1",
+                    "type": "active"
+                  },
+                  {
+                    "key": "dp2",
+                    "value": "DisplayPort 2",
+                    "type": "active"
+                  },
+                  {
+                    "key": "dvi1",
+                    "value": "DVI 1",
+                    "type": "active"
+                  },
+                  {
+                    "key": "dvi2",
+                    "value": "DVI 2",
+                    "type": "active"
+                  },
+                  {
+                    "key": "vga1",
+                    "value": "VGA 1",
+                    "type": "active"
+                  },
+                  {
+                    "key": "vga2",
+                    "value": "VGA 2",
+                    "type": "active"
+                  },
+                  {
+                    "key": "other1",
+                    "value": "기타 입력 1 (Other 1)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "other2",
+                    "value": "기타 입력 2 (Other 2)",
+                    "type": "active"
+                  },
+                  {
+                    "key": "other3",
+                    "value": "기타 입력 3 (Other 3)",
+                    "type": "active"
+                  }
+                ],
+                "name": "input"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

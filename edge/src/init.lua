@@ -13,6 +13,7 @@ local caps = require "caps"
 local discovery = require "discovery"
 local lifecycle = require "handlers.lifecycle"
 local media = require "handlers.media"
+local monitor = require "handlers.monitor"
 local power = require "handlers.power"
 local preset = require "handlers.preset"
 local schedule = require "handlers.schedule"
@@ -27,10 +28,14 @@ if #missing > 0 then
   log.warn("custom capabilities not available yet: " .. table.concat(missing, ", "))
 end
 
--- `switch` is on two components: `main` is the PC's power, `awake` keep-awake.
+-- `switch` is on three components: `main` is the PC's power, `awake`
+-- keep-awake, `monitor` the primary monitor's power (#153).
 local function switch_on(driver, device, cmd)
   if awake.is_awake(cmd) then
     return awake.on(driver, device)
+  end
+  if monitor.is_monitor(cmd) then
+    return monitor.on(driver, device)
   end
   return power.switch_on(driver, device)
 end
@@ -38,6 +43,9 @@ end
 local function switch_off(driver, device, cmd)
   if awake.is_awake(cmd) then
     return awake.off(driver, device)
+  end
+  if monitor.is_monitor(cmd) then
+    return monitor.off(driver, device)
   end
   return power.switch_off(driver, device)
 end
@@ -70,6 +78,10 @@ local capability_handlers = {
     [capabilities.mediaTrackControl.commands.nextTrack.NAME] = media.next_track,
     [capabilities.mediaTrackControl.commands.previousTrack.NAME] = media.previous_track,
   },
+  -- #153: the `monitor` component's brightness slider.
+  [capabilities.switchLevel.ID] = {
+    [capabilities.switchLevel.commands.setLevel.NAME] = monitor.set_level,
+  },
 }
 
 -- Command names are literals: what `capabilities/*.json` declare. The
@@ -86,6 +98,9 @@ if custom.preset then
 end
 if custom.toast then
   capability_handlers[custom.toast.ID] = { send = toast.send }
+end
+if custom.monitor then
+  capability_handlers[custom.monitor.ID] = { setInput = monitor.set_input }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

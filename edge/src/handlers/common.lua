@@ -69,19 +69,25 @@ end
 -- the same way. A power transition holds none of them back.
 -- @param answer re-sends, forced, the row the command arrived on
 -- @param keys the row keys the answer poll after a success sends forced
-function common.run_feature(driver, device, service_command, value, answer, keys)
+-- @param words optional `function(lang, note, body)`: the sentence for a
+--   refusal or error note that needs arguments (#153/#154), nil for the
+--   plain `features.note_text`
+function common.run_feature(driver, device, service_command, value, answer, keys, words)
   local lang = fields.lang(device)
   if fields.extras(device) == nil then
     -- Nothing read in this run yet (the hub has just restarted): ask once,
     -- rather than calling a v1.2.0 PC too old.
     poll.once(driver, device)
   end
+  local function say(note, body)
+    return (words and words(lang, note, body)) or features.note_text(lang, note)
+  end
   local refusal = features.refusal(fields.extras(device), service_command)
   if refusal then
     if answer then
       answer(device)
     end
-    rows.emit_note(device, features.note_text(lang, refusal))
+    rows.emit_note(device, say(refusal))
     log.info(string.format("%s not sent on %s: %s", tostring(service_command),
       tostring(device.id), refusal))
     return false
@@ -93,7 +99,7 @@ function common.run_feature(driver, device, service_command, value, answer, keys
     end
     local note = features.error_note(kind, body)
     if note then
-      rows.emit_note(device, i18n.t(lang, note))
+      rows.emit_note(device, say(note, body))
       return false
     end
     common.report_error(device, kind, body)

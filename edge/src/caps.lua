@@ -50,6 +50,9 @@ caps.TOAST = NAMESPACE .. ".pctoast"
 caps.PRESENCE = NAMESPACE .. ".pcpresence"
 -- #152: the camera and the microphone in use, on the same card.
 caps.PRIVACY = NAMESPACE .. ".pcprivacy"
+-- #153: the primary monitor's summary and input list, beside the standard
+-- `switch` and `switchLevel` of the `monitor` component.
+caps.MONITOR = NAMESPACE .. ".pcmonitor"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -64,6 +67,7 @@ caps.ids = {
   toast = caps.TOAST,
   presence = caps.PRESENCE,
   privacy = caps.PRIVACY,
+  monitor = caps.MONITOR,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

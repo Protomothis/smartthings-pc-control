@@ -200,6 +200,10 @@ local STRINGS = {
   monitor_failed = { ko = "모니터가 명령을 거절함", en = "The monitor refused" },
   monitor_wake_failed = { ko = "모니터 전원 버튼으로 켜세요", en = "Use the monitor's button" },
   monitor_input_missing = { ko = "이 모니터에 없는 입력", en = "No such input here" },
+  -- The `pcMonitor.summary` row's words (sensors.monitor_summary).
+  monitor_none = { ko = "모니터 정보 없음", en = "No monitor info" },
+  monitor_no_ddc = { ko = "지원 안 함 (DDC/CI)", en = "Not supported (DDC/CI)" },
+  monitor_standby = { ko = "대기", en = "Standby" },
   -- #154: the device slots. `%s %s` is the kind (`audio_out`/`audio_in`)
   -- and the slot number.
   audio_out = { ko = "출력", en = "Output" },

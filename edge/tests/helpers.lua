@@ -217,6 +217,7 @@ function h.components_for(profile_name)
   -- PC app v1.3.0: the presence card, from v14 on.
   if not version or version >= 14 then
     components.presence = { id = "presence" }
+    components.monitor = { id = "monitor" }
   end
   return components
 end

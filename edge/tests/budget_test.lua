@@ -911,7 +911,10 @@ function T.test_a_migration_paints_every_row_within_seconds_under_the_guard()
     for _, key in ipairs(emit.PAINT_FIRST) do
       h.assert_equal(at[key], 0, key .. " goes in the first batch, at once")
     end
-    h.assert_true(last <= 25, "the last row " .. last .. " s in (all at 0 s before)")
+    -- v14 (#151-#154): one batch per PAINT_SECONDS, however many rows there
+    -- are (25 s for the 48 rows of v10).
+    local bound = (math.ceil(painted / emit.PAINT_BATCH) - 1) * emit.PAINT_SECONDS
+    h.assert_true(last <= bound, "the last row " .. last .. " s in, " .. bound .. " allowed (all at 0 s before)")
     local most = busiest(trace, emit.BUDGET_SECONDS)
     h.assert_true(most <= emit.BUDGET_EVENTS, "busiest 10 s: " .. most .. " (48 before)")
     -- The follow-up 30 s in: the rows that matter.
@@ -934,9 +937,13 @@ function T.test_a_migration_and_its_landing_stay_under_the_guard()
     local landing = 3
     local device, trace, start = migrate(pc, 2, landing)
     local at = painted_at(trace, start, start + landing)
-    for _, key in ipairs(sent_keys(device)) do
+    local keys = sent_keys(device)
+    -- The landing re-queues every row on the running cadence: one batch per
+    -- PAINT_SECONDS from the start (30 s for v10's 48 rows).
+    local bound = math.ceil(#keys / emit.PAINT_BATCH) * emit.PAINT_SECONDS
+    for _, key in ipairs(keys) do
       h.assert_true(at[key] ~= nil, key .. " was painted again after the landing")
-      h.assert_true(at[key] <= 30, key .. " " .. at[key] .. " s in")
+      h.assert_true(at[key] <= bound, key .. " " .. at[key] .. " s in, " .. bound .. " allowed")
     end
     local most = busiest(trace, emit.BUDGET_SECONDS)
     h.assert_true(most <= emit.BUDGET_EVENTS, "busiest 10 s: " .. most .. " (49 before)")

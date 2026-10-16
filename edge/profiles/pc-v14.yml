@@ -48,6 +48,15 @@ components:
     capabilities:
       - id: numbersystem53811.pcwatchlist
         version: 1
+  - id: monitor
+    label: 모니터
+    capabilities:
+      - id: numbersystem53811.pcmonitor
+        version: 1
+      - id: switch
+        version: 1
+      - id: switchLevel
+        version: 1
   - id: awake
     label: 잠들지 않기
     capabilities:
