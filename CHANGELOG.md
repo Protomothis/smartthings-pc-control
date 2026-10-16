@@ -2,6 +2,12 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 추가
+
+- **SmartThings 탭에서 드라이버 설치** — [드라이버 설치 (채널 초대)] · [링크 복사] 버튼으로 채널 **Protomothis** 초대를 바로 열고, 허브가 아직 없으면 설치 순서와 휴대폰으로 찍을 QR 코드를 함께 보여 줍니다 (#155)
+
 ## [v1.2.2] - 2026-10-14
 
 ### 추가

@@ -225,7 +225,7 @@ func (u *ui) stRelative(rfc3339 string, now time.Time) string {
 // stHubLine is the connection status line: the hub, the driver version and
 // how long ago it last polled, or the "install the driver" hint.
 func (u *ui) stHubLine(h STHub, now time.Time) string {
-	if !h.Connected || h.IP == "" {
+	if stHubMissing(h) {
 		return u.t("st.hub.none")
 	}
 	version := h.DriverVersion
@@ -288,6 +288,11 @@ type stSection struct {
 	wolHint    *widget.Label
 	hubBox     *fyne.Container
 	addBtn     *widget.Button
+	// The driver channel invite (#155, st_invite.go): the install steps
+	// and QR code shown while no hub is connected, and the QR button that
+	// stands in for them once one is.
+	inviteHelp *fyne.Container
+	qrBtn      *widget.Button
 
 	// hubs is the edited allow list and hub the last /api/st/hub result
 	// (the [Add current hub] button and the [복사] button need both).
@@ -351,8 +356,12 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.addBtn.Disable() // enabled by updateAddHubButton once a hub is known
 	u.renderHubs()
 
+	inviteRow := u.buildSTInvite(t)
+
 	return container.NewVBox(
 		t.status,
+		inviteRow,
+		t.inviteHelp,
 		t.secretHint,
 		// The id label keeps its natural width and the button sits next
 		// to it rather than stretching across the tab.
@@ -558,6 +567,7 @@ func (u *ui) loadSTHub() {
 		t.wolLoaded = true
 		u.renderWoLAdapters()
 		t.status.SetText(u.stHubLine(h, now))
+		u.showSTInviteHelp(stHubMissing(h))
 		t.machineID.SetText(u.stMachineIDLine(h.MachineID))
 		t.search.SetText(u.stSearchLine(h.SSDP, now))
 		if h.MachineID == "" {
