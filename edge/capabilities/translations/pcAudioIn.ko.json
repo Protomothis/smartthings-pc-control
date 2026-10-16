@@ -1,0 +1,47 @@
+{
+  "tag": "ko",
+  "label": "PC 오디오 입력",
+  "attributes": {
+    "input": {
+      "label": "입력 장치",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "입력 1"
+          },
+          "2": {
+            "label": "입력 2"
+          },
+          "3": {
+            "label": "입력 3"
+          },
+          "4": {
+            "label": "입력 4"
+          },
+          "5": {
+            "label": "입력 5"
+          },
+          "none": {
+            "label": "칸에 없는 장치"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "입력 칸"
+    },
+    "supportedInputs": {
+      "label": "고를 수 있는 입력"
+    }
+  },
+  "commands": {
+    "setInput": {
+      "label": "오디오 입력 전환",
+      "arguments": {
+        "slot": {
+          "label": "칸"
+        }
+      }
+    }
+  }
+}

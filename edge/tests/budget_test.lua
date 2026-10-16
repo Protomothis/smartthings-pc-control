@@ -809,7 +809,7 @@ function T.test_a_profile_change_forces_every_row_once()
       seen[key] = true
     end
     h.assert_true(forced_all(out))
-    -- v14 (#151-#154): ~66 rows with the PC app v1.3.0 cards.
+    -- v14 (#151-#154): ~64 rows with the PC app v1.3.0 cards.
     h.assert_true(#out > 30 and #out < 80, "every row once: " .. #out)
     h.assert_equal(batches, math.ceil(#out / emit.PAINT_BATCH))
     -- A follow-up waits out the budget window after the last batch
@@ -830,7 +830,7 @@ function T.test_a_profile_change_forces_every_row_once()
 end
 
 function T.test_a_follow_up_waits_for_the_paint_to_settle()
-  -- v14 (#151-#154): ~66 rows are eight batches, so the 30 s follow-up can
+  -- v14 (#151-#154): ~64 rows are eight batches, so the 30 s follow-up can
   -- meet the last ones. It waits out the paint and one budget window after
   -- it (`emit.settling`), then sends what it always sends.
   with_pc(function(pc)

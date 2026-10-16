@@ -8,6 +8,7 @@ local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
 local log = require "log"
 
+local audio = require "handlers.audio"
 local awake = require "handlers.awake"
 local caps = require "caps"
 local discovery = require "discovery"
@@ -101,6 +102,12 @@ if custom.toast then
 end
 if custom.monitor then
   capability_handlers[custom.monitor.ID] = { setInput = monitor.set_input }
+end
+if custom.audio_out then
+  capability_handlers[custom.audio_out.ID] = { setOutput = audio.set_output }
+end
+if custom.audio_in then
+  capability_handlers[custom.audio_in.ID] = { setInput = audio.set_input }
 end
 if custom.schedule then
   capability_handlers[custom.schedule.ID] = {

@@ -1,0 +1,47 @@
+{
+  "tag": "en",
+  "label": "PC audio input",
+  "attributes": {
+    "input": {
+      "label": "Input device",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "Input 1"
+          },
+          "2": {
+            "label": "Input 2"
+          },
+          "3": {
+            "label": "Input 3"
+          },
+          "4": {
+            "label": "Input 4"
+          },
+          "5": {
+            "label": "Input 5"
+          },
+          "none": {
+            "label": "Not in a slot"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "Input slots"
+    },
+    "supportedInputs": {
+      "label": "Available inputs"
+    }
+  },
+  "commands": {
+    "setInput": {
+      "label": "Switch audio input",
+      "arguments": {
+        "slot": {
+          "label": "Slot"
+        }
+      }
+    }
+  }
+}

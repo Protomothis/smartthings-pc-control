@@ -158,6 +158,18 @@ function T.test_every_current_profile_keeps_the_layout_rules()
       }, name .. " presence card")
       h.assert_contains(text, "\n  - id: presence\n    label: 사용 감지\n", name .. " presence card label")
       h.assert_contains(text, "\n  - name: idleThreshold\n", name .. " idle threshold preference")
+      -- #154: the audio device slots, outputs first.
+      h.assert_deep_equal(component_capabilities(text, "audio"), {
+        "numbersystem53811.pcaudioout", "numbersystem53811.pcaudioin",
+      }, name .. " audio card")
+      h.assert_contains(text, "\n  - id: audio\n    label: 오디오 장치\n", name .. " audio card label")
+      -- The components in reading order (main view).
+      local order = {}
+      for id in text:gmatch("\n  %- id: (%a+)\n") do
+        order[#order + 1] = id
+      end
+      h.assert_deep_equal(order, battery and { "main", "presence", "apps", "audio", "monitor", "awake", "battery" }
+        or { "main", "presence", "apps", "audio", "monitor", "awake" }, name .. " components")
       -- #153: the monitor card - ours first, then the standard toggle and slider.
       h.assert_deep_equal(component_capabilities(text, "monitor"), {
         "numbersystem53811.pcmonitor", "switch", "switchLevel",

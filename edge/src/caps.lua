@@ -53,6 +53,9 @@ caps.PRIVACY = NAMESPACE .. ".pcprivacy"
 -- #153: the primary monitor's summary and input list, beside the standard
 -- `switch` and `switchLevel` of the `monitor` component.
 caps.MONITOR = NAMESPACE .. ".pcmonitor"
+-- #154: the audio device slots, one capability per kind.
+caps.AUDIO_OUT = NAMESPACE .. ".pcaudioout"
+caps.AUDIO_IN = NAMESPACE .. ".pcaudioin"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -68,6 +71,8 @@ caps.ids = {
   presence = caps.PRESENCE,
   privacy = caps.PRIVACY,
   monitor = caps.MONITOR,
+  audio_out = caps.AUDIO_OUT,
+  audio_in = caps.AUDIO_IN,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

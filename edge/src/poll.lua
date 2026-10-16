@@ -100,7 +100,7 @@ end
 --- has just repainted (`ensure_rows` in `init`).
 ---
 --- A follow-up that comes while the paint still runs or has just ended (v14
---- has ~66 rows, eight batches; `emit.settling`) waits `emit.PAINT_SECONDS`
+--- has ~64 rows, eight batches; `emit.settling`) waits `emit.PAINT_SECONDS`
 --- and looks again: its forced rows and two batches would not fit one
 --- budget window.
 poll.LATE_REPAINT_SECONDS = { 30, 90 }

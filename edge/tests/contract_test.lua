@@ -27,6 +27,7 @@ local i18n = require "i18n"
 local json = require "st.json"
 local poll = require "poll"
 local push = require "push"
+local sensors = require "sensors"
 local state = require "state"
 local VERSION = require "driver_version"
 
@@ -127,6 +128,25 @@ function T.test_full_status_monitor_rows()
   h.assert_false(tv.ddc, "monitors[].ddc")
   h.assert_false(tv.primary, "monitors[].primary")
   h.assert_equal(tv.brightness, nil, "brightness: null without DDC")
+end
+
+function T.test_full_status_audio_slot_rows()
+  -- #154: `audio.outputs`/`inputs = [ { slot, name, present, default } ]`,
+  -- filled slots only. The names row drops the adapter in parentheses while
+  -- the device names stay apart.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  local A = "audio"
+  h.assert_equal(value(events, caps.AUDIO_OUT, "names", A), "1 스피커 · 3 헤드셋 · 4 LG TV",
+    "audio.outputs[].slot/name")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "output", A), "1", "audio.outputs[].default")
+  h.assert_deep_equal(value(events, caps.AUDIO_OUT, "supportedOutputs", A), { "1", "3", "4" })
+  h.assert_equal(value(events, caps.AUDIO_IN, "names", A), "1 마이크 · 2 헤드셋 마이크")
+  h.assert_equal(value(events, caps.AUDIO_IN, "input", A), "1", "audio.inputs[].default")
+  h.assert_deep_equal(value(events, caps.AUDIO_IN, "supportedInputs", A), { "1", "2" })
+  h.assert_false(status.audio.outputs[3].present, "audio.outputs[].present")
+  h.assert_deep_equal(sensors.audio_slots(status, "output")[3],
+    { slot = 4, name = "LG TV (NVIDIA High Definition Audio)", present = false, default = false })
 end
 
 function T.test_full_status_privacy_rows()
@@ -306,6 +326,11 @@ function T.test_off_status_rows()
   h.assert_nil(status.monitors, "monitors: only while enabled")
   h.assert_equal(value(events, caps.MONITOR, "summary", "monitor"), "PC 앱 v1.3.0 필요")
   h.assert_nil(value(events, "switch", "switch", "monitor"), "no reading, no toggle")
+  -- #154: media control off, so no slots - and the golden's v1.2.0 is older
+  -- than the release that brought them.
+  h.assert_deep_equal(status.audio.outputs, {}, "audio.outputs: []")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "output", "audio"), "none")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "names", "audio"), "PC 앱 v1.3.0 필요")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -584,6 +609,13 @@ local SENDS = {
   ["command.monitor_power.json"] = function(device)
     handlers_for("switch").off(driver, device, { command = "off", component = "monitor", args = {} })
   end,
+  -- #154: the slot number, from a list that sends strings.
+  ["command.audio_output.json"] = function(device)
+    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { component = "audio", args = { slot = "3" } })
+  end,
+  ["command.audio_input.json"] = function(device)
+    handlers_for(caps.AUDIO_IN).setInput(driver, device, { component = "audio", args = { slot = "2" } })
+  end,
   ["command.subscribe.json"] = function(device)
     client.subscribe(device, "http://192.168.1.20:39500/pc/evt", client.DEFAULT_TTL)
   end,
@@ -606,6 +638,19 @@ local REFUSALS = {
   -- 501: the PC answered; not an unreachable PC.
   ["command.monitor_input.unsupported.json"] = {
     same_as = "command.monitor_input.json", kind = "unreachable", note = "monitor_unsupported",
+  },
+  -- #154: read before the bare 409/404 - not "nobody", not an old service.
+  ["command.audio_output.device-missing.json"] = {
+    same_as = "command.audio_output.json", value = 4, kind = "conflict", note = "audio_device_missing",
+  },
+  ["command.audio_output.no-user.json"] = {
+    same_as = "command.audio_output.json", kind = "conflict", note = "no_user",
+  },
+  ["command.audio_output.slot-empty.json"] = {
+    same_as = "command.audio_output.json", value = 2, kind = "incompatible", note = "audio_slot_empty",
+  },
+  ["command.audio_output.switch-failed.json"] = {
+    same_as = "command.audio_output.json", kind = "unreachable", note = "audio_switch_failed",
   },
   -- #152: the PC app's guard on "block" while the camera is in use.
   ["command.shutdown.device-in-use.json"] = {
@@ -640,6 +685,10 @@ end
 function T.test_refused_requests_are_the_same_requests()
   for name, refusal in pairs(REFUSALS) do
     local fx, base = h.fixture(name), h.fixture(refusal.same_as)
+    if refusal.value ~= nil then
+      -- The same command for another slot.
+      base.request.value = refusal.value
+    end
     h.assert_deep_equal(fx.request, base.request, name)
     h.assert_equal(fx.path, base.path, name)
   end

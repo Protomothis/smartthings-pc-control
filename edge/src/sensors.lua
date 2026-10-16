@@ -466,6 +466,135 @@ function sensors.monitor_events(status, lang, fill)
 end
 
 --------------------------------------------------------------------------------
+-- #154: the audio device slots
+--------------------------------------------------------------------------------
+
+-- The PC's `audio` component ("오디오 장치"): `pcAudioOut` and `pcAudioIn`,
+-- each a names row ("1 스피커 · 3 헤드셋"), a list of slots 1-5 resting on
+-- the slot of the default device, and a routine condition and action on the
+-- slot. Device names differ on every PC and a presentation is static, so the
+-- list names slots, like the presets (`pcPreset`) and the watch list. Two
+-- capabilities, not one: one state row each is drawn full width, two of one
+-- capability half width and cut (platform notes "화면 배치").
+sensors.AUDIO_COMPONENT = "audio"
+sensors.SLOT_NONE = "none"
+sensors.AUDIO_SLOTS = 5
+
+-- `status.audio.outputs` / `inputs` -> the capability, its rows, the
+-- feature and the word for the notes ("출력 2 비어 있음").
+sensors.AUDIO_KINDS = {
+  output = {
+    cap = caps.AUDIO_OUT, attr = "output", supported = "supportedOutputs", list = "outputs",
+    feature = features.AUDIO_OUTPUT, command = "audio_output", word = "audio_out",
+  },
+  input = {
+    cap = caps.AUDIO_IN, attr = "input", supported = "supportedInputs", list = "inputs",
+    feature = features.AUDIO_INPUT, command = "audio_input", word = "audio_in",
+  },
+}
+
+-- The names row, like the watch list's (definition: 120).
+sensors.AUDIO_NAMES_MAX_CHARS = 120
+
+--- The filled slots of `kind` ("output"/"input"), by slot: `{ slot, name,
+--- present, default }`. Anything outside 1-5, repeated or nameless is left out.
+function sensors.audio_slots(status, kind)
+  local out, seen = {}, {}
+  local audio = (status or {}).audio
+  local list = type(audio) == "table" and audio[sensors.AUDIO_KINDS[kind].list] or nil
+  for _, entry in ipairs(type(list) == "table" and list or {}) do
+    local slot = type(entry) == "table" and tonumber(entry.slot) or nil
+    local name = type(entry) == "table" and clean(entry.name) or ""
+    if slot and slot == math.floor(slot) and slot >= 1 and slot <= sensors.AUDIO_SLOTS
+        and not seen[slot] and name ~= "" then
+      seen[slot] = true
+      out[#out + 1] = { slot = math.floor(slot), name = name,
+        present = entry.present ~= false, default = entry.default == true }
+    end
+  end
+  table.sort(out, function(a, b) return a.slot < b.slot end)
+  return out
+end
+
+--- True when the PC app is older than the release that brought the slots.
+local function audio_old(status, kind)
+  local set = features.parse(status)
+  return set == false or (features.version_below((status or {}).service_version,
+    features.SINCE[sensors.AUDIO_KINDS[kind].feature]) == true
+    and not set[sensors.AUDIO_KINDS[kind].feature])
+end
+
+--- The slot of the default device as a list key, `none` when it is in none.
+function sensors.audio_current(status, kind)
+  for _, entry in ipairs(sensors.audio_slots(status, kind)) do
+    if entry.default then
+      return tostring(entry.slot)
+    end
+  end
+  return sensors.SLOT_NONE
+end
+
+--- What the slot list may offer (#93's `supportedValues`). Never empty.
+function sensors.audio_supported(status, kind)
+  local out = {}
+  for _, entry in ipairs(sensors.audio_slots(status, kind)) do
+    out[#out + 1] = tostring(entry.slot)
+  end
+  if #out == 0 then
+    out[1] = sensors.SLOT_NONE
+  end
+  return out
+end
+
+--- A Windows endpoint name is "<device> (<adapter>)": the device alone when
+--- that tells the slots apart, else the whole name.
+local function short_names(slots)
+  local count = {}
+  local short = {}
+  for i, entry in ipairs(slots) do
+    short[i] = entry.name:gsub("%s*%b()$", "")
+    if short[i] == "" then
+      short[i] = entry.name
+    end
+    count[short[i]] = (count[short[i]] or 0) + 1
+  end
+  for i, entry in ipairs(slots) do
+    if count[short[i]] > 1 then
+      short[i] = entry.name
+    end
+  end
+  return short
+end
+
+--- The names row: "1 스피커 · 3 헤드셋 · 4 LG TV" (each name to
+--- `features.SLOT_NAME_MAX_CHARS`), "없음", or "PC 앱 v1.3.0 필요". Never "".
+function sensors.audio_names(status, kind, lang)
+  if status ~= nil and audio_old(status, kind) then
+    return features.note_text(lang, "needs_service")
+  end
+  local slots = sensors.audio_slots(status, kind)
+  if #slots == 0 then
+    return i18n.t(lang, "presets_none")
+  end
+  local parts = {}
+  for i, name in ipairs(short_names(slots)) do
+    parts[i] = tostring(slots[i].slot) .. " " .. features.truncate(name, features.SLOT_NAME_MAX_CHARS)
+  end
+  return features.truncate(table.concat(parts, " · "), sensors.AUDIO_NAMES_MAX_CHARS)
+end
+
+--- #154: one kind's rows. All three, always: `none` is not a routine
+--- condition.
+function sensors.audio_events(status, kind, lang)
+  local k = sensors.AUDIO_KINDS[kind]
+  local events = {}
+  ev(events, k.cap, "names", sensors.audio_names(status, kind, lang), sensors.AUDIO_COMPONENT)
+  ev(events, k.cap, k.attr, sensors.audio_current(status, kind), sensors.AUDIO_COMPONENT)
+  ev(events, k.cap, k.supported, sensors.audio_supported(status, kind), sensors.AUDIO_COMPONENT)
+  return events
+end
+
+--------------------------------------------------------------------------------
 -- every card
 --------------------------------------------------------------------------------
 
@@ -476,6 +605,8 @@ function sensors.apply_status(status, opts)
   local events = {}
   append(events, sensors.presence_events(status, opts))
   append(events, sensors.privacy_events(status, opts.lang))
+  append(events, sensors.audio_events(status, "output", opts.lang))
+  append(events, sensors.audio_events(status, "input", opts.lang))
   append(events, sensors.monitor_events(status, opts.lang, opts.fill))
   return events
 end

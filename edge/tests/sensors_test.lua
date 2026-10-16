@@ -443,4 +443,140 @@ function T.test_a_pc_that_is_not_there_keeps_the_monitor_toggle()
   h.assert_nil(value(records, M, "switchLevel", "level"))
 end
 
+--------------------------------------------------------------------------------
+-- #154: the audio device slots
+--------------------------------------------------------------------------------
+
+local A = "audio"
+
+local function slots(outputs, inputs, overrides)
+  local status = { protocol = 1, service_version = "v1.3.0",
+    features = { "audio", "media", "audio_output", "audio_input" },
+    audio = { available = true, volume = 30, muted = false, outputs = outputs or {}, inputs = inputs or {} } }
+  for k, v in pairs(overrides or {}) do
+    status[k] = v
+  end
+  return status
+end
+
+local SPEAKER = { slot = 1, name = "스피커 (Realtek(R) Audio)", present = true, default = true }
+local HEADSET = { slot = 3, name = "헤드셋 (WH-1000XM4)", present = true, default = false }
+local TV = { slot = 4, name = "LG TV (NVIDIA High Definition Audio)", present = false, default = false }
+
+function T.test_the_names_row_names_each_slot_shortly()
+  h.assert_equal(sensors.audio_names(slots({ SPEAKER, HEADSET, TV }), "output", "ko"), "1 스피커 · 3 헤드셋 · 4 LG TV")
+  -- Two devices of the same kind keep their adapters to stay apart.
+  local usb = { slot = 2, name = "스피커 (USB Audio)", present = true, default = false }
+  h.assert_equal(sensors.audio_names(slots({ SPEAKER, usb }), "output", "ko"),
+    "1 스피커 (Realtek… · 2 스피커 (USB Aud…")
+  -- Malformed entries are left out; the list is by slot.
+  local odd = { { slot = 9, name = "x" }, { slot = 2, name = "" }, HEADSET, { slot = 3, name = "again" }, SPEAKER }
+  h.assert_equal(sensors.audio_names(slots(odd), "output", "en"), "1 스피커 · 3 헤드셋")
+  h.assert_equal(sensors.audio_names(slots({}), "output", "ko"), "없음")
+  h.assert_equal(sensors.audio_names({ service_version = "v1.2.0", features = { "audio" } }, "input", "en"),
+    "Needs PC app v1.3.0")
+  h.assert_equal(sensors.audio_names(nil, "output", "ko"), "없음")
+end
+
+function T.test_the_list_rests_on_the_default_devices_slot()
+  local events = rows_of(slots({ SPEAKER, HEADSET }, { { slot = 2, name = "마이크", default = true } }))
+  h.assert_equal(value(events, A, caps.AUDIO_OUT, "output"), "1")
+  h.assert_deep_equal(value(events, A, caps.AUDIO_OUT, "supportedOutputs"), { "1", "3" })
+  h.assert_equal(value(events, A, caps.AUDIO_IN, "input"), "2")
+  -- The default device is in no slot (switched on the PC itself).
+  local other = { slot = 1, name = "스피커", present = true, default = false }
+  events = rows_of(slots({ other }))
+  h.assert_equal(value(events, A, caps.AUDIO_OUT, "output"), "none")
+  h.assert_deep_equal(value(events, A, caps.AUDIO_IN, "supportedInputs"), { "none" }, "never empty")
+end
+
+--- A PC device whose last status was `status`, its audio card painted from
+--- it, with `client.action` and `poll.once` recorded.
+local function on_audio(status, fn, answer)
+  local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s" })
+  device.device_network_id = "pc-control-audio"
+  fields.set_state(device, features.remember(state.new(state.ON), status))
+  emit.rows(device, sensors.audio_events(status, "output", "ko"))
+  emit.rows(device, sensors.audio_events(status, "input", "ko"))
+  local sent = {}
+  local original = { action = client.action, once = poll.once }
+  client.action = function(_, command, v)
+    sent[#sent + 1] = { command = command, value = v }
+    if answer then
+      return table.unpack(answer)
+    end
+    return true, {}, nil
+  end
+  poll.once = function() return true end
+  local ok, err = pcall(fn, device)
+  client.action, poll.once = original.action, original.once
+  if not ok then
+    error(err, 0)
+  end
+  return device, sent
+end
+
+local function summary_of(device)
+  return h.last_value(h.emitted(device), nil, caps.STATUS, "summary")
+end
+
+function T.test_switching_sends_the_slot_and_a_dismissed_list_does_nothing()
+  local device, sent = on_audio(slots({ SPEAKER, HEADSET }, { { slot = 2, name = "마이크", default = true } }),
+    function(device)
+      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "1" } })
+      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "none" } })
+      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "3" } })
+      handlers_for(caps.AUDIO_IN).setInput(driver, device, { args = { slot = "2" } })
+    end)
+  h.assert_deep_equal(sent, { { command = "audio_output", value = 3 } })
+  h.assert_true(h.component_forced(h.emitted(device), A, caps.AUDIO_OUT, "output"), "the row is answered")
+end
+
+function T.test_an_empty_slot_is_not_sent()
+  local device, sent = on_audio(slots({ SPEAKER, HEADSET }), function(device)
+    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "2" } })
+  end)
+  h.assert_equal(#sent, 0)
+  h.assert_equal(summary_of(device), "출력 2 비어 있음")
+  h.assert_equal(h.last_value(h.emitted(device), A, caps.AUDIO_OUT, "output"), "1", "the list goes back")
+  -- The PC app lists audio_input only while it has an input slot.
+  device, sent = on_audio(slots({ SPEAKER }, {}, { features = { "audio", "media", "audio_output" } }), function(d)
+    handlers_for(caps.AUDIO_IN).setInput(driver, d, { args = { slot = "5" } })
+  end)
+  h.assert_equal(#sent, 0)
+  h.assert_equal(summary_of(device), "입력 칸 없음 · PC 앱에서 설정", "media control on, no input slot")
+end
+
+function T.test_the_services_refusals_name_the_slot()
+  for _, c in ipairs({
+    { { error = "device_missing", message = "LG TV is not connected" }, "conflict", "출력 4 연결 안 됨" },
+    { { error = "switch_failed" }, "unreachable", "Windows가 장치를 못 바꿈" },
+    { { error = "no_user_session" }, "conflict", "사용자 없음" },
+    { { error = "slot_empty" }, "incompatible", "출력 4 비어 있음" },
+  }) do
+    local device, sent = on_audio(slots({ SPEAKER, HEADSET, TV }), function(device)
+      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "4" } })
+    end, { false, c[1], c[2] })
+    h.assert_deep_equal(sent, { { command = "audio_output", value = 4 } }, c[3])
+    h.assert_equal(summary_of(device), c[3])
+    h.assert_nil(h.event_value(h.emitted(device), caps.STATUS, "connection"), c[3] .. ": the PC answered")
+  end
+end
+
+function T.test_a_switch_the_pc_cannot_do_is_not_sent()
+  for _, c in ipairs({
+    { slots({ SPEAKER, HEADSET }, nil, { features = { "awake" } }), "미디어 제어 꺼짐" },
+    { slots({ SPEAKER, HEADSET }, nil, { service_version = "v1.2.0", features = { "audio", "media" } }),
+      "PC 앱 v1.3.0 필요" },
+    { slots({ SPEAKER, HEADSET }, nil, { audio = { available = false, outputs = { SPEAKER, HEADSET } } }),
+      "사용자 없음" },
+  }) do
+    local device, sent = on_audio(c[1], function(device)
+      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "3" } })
+    end)
+    h.assert_equal(#sent, 0, c[2])
+    h.assert_equal(summary_of(device), c[2])
+  end
+end
+
 return T

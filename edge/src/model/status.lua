@@ -63,6 +63,8 @@ local ATTRIBUTES = {
   [caps.PRIVACY] = { summary = true, camera = true, microphone = true },
   [caps.MONITOR] = { summary = true, input = true, supportedInputs = true },
   ["switchLevel"] = { level = true },
+  [caps.AUDIO_OUT] = { output = true, names = true, supportedOutputs = true },
+  [caps.AUDIO_IN] = { input = true, names = true, supportedInputs = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.

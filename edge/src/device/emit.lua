@@ -355,7 +355,7 @@ end
 
 --- True while a paint runs and for one budget window after its last batch:
 --- the rotation and a repaint's follow-ups wait that long, so they do not
---- land in the same window as the last two batches (v14: ~66 rows, eight
+--- land in the same window as the last two batches (v14: ~64 rows, eight
 --- batches, the last one past the 30 s poll).
 function emit.settling(device)
   if emit.painting(device) then

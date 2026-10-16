@@ -629,6 +629,9 @@ local EXPECTED_COMMANDS = {
   privacy = {},
   -- #153: the input list; power and brightness are standard.
   monitor = { setInput = { "input" } },
+  -- #154: one slot list each.
+  audio_out = { setOutput = { "slot" } },
+  audio_in = { setInput = { "slot" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -837,7 +840,7 @@ function T.test_the_dashboard_state_is_the_power_state()
   end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
-      "presence", "privacy", "monitor" }) do
+      "presence", "privacy", "monitor", "audio_out", "audio_in" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -969,6 +972,29 @@ function T.test_the_monitor_input_list_rests_on_the_input_and_offers_what_the_mo
   h.assert_deep_equal(offered, { table.unpack(expected, 2) }, "every input but unknown")
   -- DisplayPort is why this is not the standard mediaInputSource.
   h.assert_contains(table.concat(offered, " "), "dp1")
+end
+
+function T.test_the_audio_slot_lists_rest_on_the_default_device_and_name_slots()
+  -- #154: "출력 2로 전환", "현재 출력이 2". The list rests on the slot of the
+  -- default device (`none` when it is in no slot), which it sends back when
+  -- closed - a no-op the driver answers.
+  for _, c in ipairs({ { "audio_out", "output", "setOutput", "supportedOutputs" },
+      { "audio_in", "input", "setInput", "supportedInputs" } }) do
+    local key, attr, command, supported = table.unpack(c, 1, 4)
+    local enum = definition(key).attributes[attr].schema.properties.value.enum
+    h.assert_deep_equal(enum, { "none", "1", "2", "3", "4", "5" }, key)
+    h.assert_deep_equal(definition(key).commands[command].arguments[1].schema.enum, enum, key .. " argument")
+    local detail = presentation(key).detailView
+    h.assert_equal(#detail, 2, key .. ": the names row and the list")
+    h.assert_equal(detail[1].state.label, "{{names.value}}")
+    h.assert_equal(detail[2].list.command.supportedValues, supported .. ".value")
+    h.assert_deep_equal(alternative_keys(detail[2].list.command.alternatives), { "1", "2", "3", "4", "5" })
+    local condition = presentation(key).automation.conditions[1]
+    h.assert_equal(condition.list.value, attr .. ".value")
+    h.assert_deep_equal(alternative_keys(condition.list.alternatives), { "1", "2", "3", "4", "5" },
+      key .. ": `none` is not an event")
+    h.assert_equal(presentation(key).automation.actions[1].multiArgCommand.command, command)
+  end
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
@@ -1532,7 +1558,7 @@ end
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
 local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence",
-  "privacy" }
+  "privacy", "audio_out", "audio_in" }
 
 -- Except the watch card's own rows: its preview in the main view gives each
 -- of its first three rows a third of the width, and "실행 중 (Running)"

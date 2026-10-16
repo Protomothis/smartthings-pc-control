@@ -48,6 +48,13 @@ components:
     capabilities:
       - id: numbersystem53811.pcwatchlist
         version: 1
+  - id: audio
+    label: 오디오 장치
+    capabilities:
+      - id: numbersystem53811.pcaudioout
+        version: 1
+      - id: numbersystem53811.pcaudioin
+        version: 1
   - id: monitor
     label: 모니터
     capabilities:
