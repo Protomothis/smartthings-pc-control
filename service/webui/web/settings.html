@@ -34,6 +34,14 @@ select,input[type=number],input[type=password]{padding:9px 10px;border:1px solid
 #toast{display:none;padding:10px 12px;border-radius:8px;font-weight:500}
 #toast.success{display:block;background:var(--ok-bg);color:var(--ok)}#toast.error{display:block;background:var(--danger-bg);color:var(--danger)}
 footer{text-align:center;font-size:.85em;color:var(--muted)}
+.line{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.line small{color:var(--muted);font-size:.85em}
+.sub{border-top:1px solid var(--border);margin-top:10px;padding-top:10px}
+.vol{display:flex;align-items:center;gap:8px}.vol input{flex:1;min-width:0;accent-color:var(--accent)}
+#volVal{min-width:3.2em;text-align:right;color:var(--muted);font-size:.85em}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+#npText{margin:0 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#presetBtns .btn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:420px){body{padding:10px}.sched>*{flex:1 1 auto}}
 </style>
 </head>
@@ -49,6 +57,7 @@ footer{text-align:center;font-size:.85em;color:var(--muted)}
 <h2 data-i18n="status">Status</h2>
 <div class="row"><span data-i18n="pc">PC</span><span id="stPC">…</span></div>
 <div class="row" id="rowSession" hidden><span data-i18n="session">Session</span><span id="stSession"></span></div>
+<div class="row" id="rowBattery" hidden><span data-i18n="battery">Battery</span><span id="stBattery"></span></div>
 <div class="row"><span data-i18n="service">Service</span><span id="stService">…</span></div>
 <div class="row"><span>SmartThings</span><span id="stHub">…</span></div>
 <div class="row"><span data-i18n="grace">Grace</span><span id="stGrace">…</span></div>
@@ -67,6 +76,24 @@ footer{text-align:center;font-size:.85em;color:var(--muted)}
 <button class="btn danger" onclick="runCmd('forceshutdown')" data-i18n="forceshutdown">⚠️ Force shut down</button>
 </div>
 <div class="info" data-i18n="powerInfo">Buttons here run at once; the grace period applies to SmartThings commands.</div>
+</section>
+
+<section class="card" data-section="remote">
+<h2 data-i18n="remoteTitle">Keep awake · Media</h2>
+<div class="line"><span><span data-i18n="awake">☕ Keep awake</span> <small id="awakeState"></small></span><button class="btn small" id="btnAwake" onclick="toggleAwake()" disabled>…</button></div>
+<div class="sub">
+<div id="mediaOff" class="info" hidden></div>
+<div id="mediaBox" hidden>
+<div id="npText" class="info" hidden></div>
+<div class="vol"><button class="btn small" id="btnMute" onclick="toggleMute()">🔊</button><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><span id="volVal">…</span></div>
+<div class="keys"><button class="btn" onclick="mediaCmd('prev')" aria-label="Previous">⏮</button><button class="btn" onclick="mediaCmd('playpause')" aria-label="Play/pause">⏯</button><button class="btn" onclick="mediaCmd('next')" aria-label="Next">⏭</button></div>
+</div>
+</div>
+</section>
+
+<section class="card" data-section="presets" id="presetsCard" hidden>
+<h2 data-i18n="presetsTitle">Presets</h2>
+<div class="btns" id="presetBtns"></div>
 </section>
 
 <section class="card" data-section="schedule">
@@ -128,7 +155,14 @@ const i18n = {
         powerInfo: 'Buttons here run at once; the grace period applies to SmartThings commands.',
         scheduleTitle: 'Schedule', optShutdown: 'Shut down', optRestart: 'Restart', optSuspend: 'Sleep',
         optHibernate: 'Hibernate', optForce: 'Force shut down', minLater: 'min later', scheduleBtn: 'Schedule',
-        cancel: 'Cancel', schedIn: '{cmd} in {t}', originRemote: 'grace', originTelegram: 'Telegram', originSmartthings: 'SmartThings', originUi: 'app/WebUI',
+        cancel: 'Cancel', schedIn: '{cmd} in {t}', originRemote: 'remote · grace period', originTelegram: 'Telegram', originSmartthings: 'SmartThings', originUi: 'app/WebUI',
+        battery: 'Battery', batCharging: 'charging', batAC: 'plugged in', batUnknown: 'level unknown',
+        remoteTitle: 'Keep awake · Media', awake: '☕ Keep awake', awakeOff: 'off', awakeForever: 'on · until turned off', awakeLeft: 'on · {t} left',
+        awakeTurnOn: 'Turn on', awakeTurnOnFor: 'On for {m} min', awakeTurnOff: 'Turn off',
+        mediaOff: 'Media control is off. Turn it on in the PC app\'s Settings tab (Media & notifications).',
+        mediaNoUser: 'Nobody is signed in to the PC, so volume and media are unavailable.', mediaTimeout: 'The PC did not answer in time',
+        mute: 'Mute', unmute: 'Unmute', npPlaying: 'Playing', npPaused: 'Paused',
+        presetsTitle: 'Presets', presetStarted: 'Preset {name} started',
         settings: 'Settings', port: 'Port', portInfo: 'SmartThings port; this page is on port + 1. Applied after a service restart.',
         secret: 'Secret', secretInfo: 'Type a new secret to change it; leave empty to keep the current one.',
         webuiRemote: 'Allow browser access (LAN)', webuiRemoteInfo: 'Requires a secret. Applied after a service restart — turning it off closes this page.',
@@ -151,7 +185,14 @@ const i18n = {
         powerInfo: '여기 버튼은 바로 실행됩니다. 유예는 SmartThings 명령에 적용됩니다.',
         scheduleTitle: '예약', optShutdown: '종료', optRestart: '재시작', optSuspend: '절전',
         optHibernate: '최대 절전', optForce: '강제 종료', minLater: '분 후', scheduleBtn: '예약',
-        cancel: '취소', schedIn: '{t} 후 {cmd}', originRemote: '유예', originTelegram: '텔레그램', originSmartthings: 'SmartThings', originUi: '앱/WebUI',
+        cancel: '취소', schedIn: '{t} 후 {cmd}', originRemote: '원격 · 유예', originTelegram: '텔레그램', originSmartthings: 'SmartThings', originUi: '앱/WebUI',
+        battery: '배터리', batCharging: '충전 중', batAC: '전원 연결됨', batUnknown: '잔량 알 수 없음',
+        remoteTitle: '잠들지 않기 · 미디어', awake: '☕ 잠들지 않기', awakeOff: '꺼짐', awakeForever: '켜짐 · 끌 때까지', awakeLeft: '켜짐 · {t} 남음',
+        awakeTurnOn: '켜기', awakeTurnOnFor: '{m}분 켜기', awakeTurnOff: '끄기',
+        mediaOff: '미디어 제어가 꺼져 있습니다. PC 앱 설정 탭(미디어·알림)에서 켜세요.',
+        mediaNoUser: 'PC에 로그인한 사용자가 없어 볼륨·미디어를 쓸 수 없습니다.', mediaTimeout: 'PC가 제때 응답하지 않았습니다',
+        mute: '음소거', unmute: '음소거 해제', npPlaying: '재생 중', npPaused: '일시정지',
+        presetsTitle: '프리셋', presetStarted: '프리셋 {name} 실행함',
         settings: '설정', port: '포트', portInfo: 'SmartThings 포트이며 이 페이지는 포트 + 1입니다. 서비스를 재시작하면 적용됩니다.',
         secret: '시크릿', secretInfo: '바꿀 때만 새 시크릿을 입력하세요. 비워 두면 그대로 둡니다.',
         webuiRemote: '브라우저 접속 허용 (LAN)', webuiRemoteInfo: '시크릿이 있어야 합니다. 서비스를 재시작하면 적용되며, 끄면 이 페이지가 닫힙니다.',
@@ -173,6 +214,8 @@ function applyLang() {
     document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
     $('btnLang').textContent = lang === 'ko' ? 'EN' : '한국어';
     render();
+    renderMedia();
+    renderPresets(true);
 }
 function toggleLang() {
     lang = lang === 'ko' ? 'en' : 'ko';
@@ -205,16 +248,32 @@ async function api(method, path, body) {
     if (res.status === 401) { location.href = '/login'; throw new Error('unauthorized'); }
     let data = {};
     try { data = await res.json(); } catch (e) {}
-    if (!res.ok || data.status === 'error') throw new Error(data.message || ('HTTP ' + res.status));
+    if (!res.ok || data.status === 'error') {
+        const err = new Error(data.message || data.error || ('HTTP ' + res.status));
+        err.code = data.error;
+        throw err;
+    }
     return data;
 }
 
-// Status card: /api/status every 5 seconds, the countdown ticks locally.
-let status = null, fetchedAt = 0;
+// Status card, keep-awake, media and battery: polled every 5 seconds while
+// the page is visible; the countdowns tick locally.
+let status = null, fetchedAt = 0, awake = null, awakeAt = 0, media = null, battery = null, volBusy = false;
 async function loadStatus() {
-    try { status = await api('GET', '/api/status'); fetchedAt = Date.now(); render(); } catch (e) {}
+    if (document.hidden) return;
+    const [st, aw, md, bat] = await Promise.allSettled([
+        api('GET', '/api/status'), api('GET', '/api/awake'), api('GET', '/api/media'), api('GET', '/api/battery')]);
+    if (st.status === 'fulfilled') { status = st.value; fetchedAt = Date.now(); }
+    if (aw.status === 'fulfilled') { awake = aw.value; awakeAt = Date.now(); }
+    if (md.status === 'fulfilled') media = md.value;
+    if (bat.status === 'fulfilled') battery = bat.value;
+    render();
+    renderMedia();
+    renderPresets(false);
 }
 function render() {
+    renderAwake();
+    renderBattery();
     if (!status) return;
     const st = status, el = (Date.now() - fetchedAt) / 1000;
     let pc = (st.hostname ? st.hostname + ' · ' : '') + t('on') + ' · ' + t('up') + ' ' + fmtDur(st.uptime_seconds + el);
@@ -243,6 +302,110 @@ function render() {
         const o = 'origin' + (sc.origin || 'ui').replace(/^./, c => c.toUpperCase());
         $('schedText').textContent = '⏱️ ' + t('schedIn').replace('{cmd}', cmdName(sc.command)).replace('{t}', fmtDur(sc.remainingSec - el)) + ' (' + t(o) + ')';
     }
+}
+
+// Battery: one status row, laptops only.
+function renderBattery() {
+    const b = battery, show = !!(b && b.present);
+    $('rowBattery').hidden = !show;
+    if (!show) return;
+    let s = b.percent >= 0 ? b.percent + '%' : t('batUnknown');
+    if (b.charging) s += ' · ' + t('batCharging');
+    else if (b.ac) s += ' · ' + t('batAC');
+    $('stBattery').textContent = s;
+}
+
+// Keep-awake (#111): POST turns it on for the default period, DELETE off.
+function renderAwake() {
+    if (!awake) return;
+    const left = awake.remaining_seconds - (Date.now() - awakeAt) / 1000;
+    let s = t('awakeOff');
+    if (awake.on && !awake.until) s = t('awakeForever');
+    else if (awake.on && left > 0) s = t('awakeLeft').replace('{t}', fmtDur(left));
+    $('awakeState').textContent = s;
+    const btn = $('btnAwake');
+    btn.disabled = false;
+    btn.textContent = awake.on ? t('awakeTurnOff')
+        : awake.default_minutes ? t('awakeTurnOnFor').replace('{m}', awake.default_minutes) : t('awakeTurnOn');
+}
+async function toggleAwake() {
+    const on = !!(awake && awake.on);
+    try { awake = await api(on ? 'DELETE' : 'POST', '/api/awake', on ? undefined : {}); awakeAt = Date.now(); renderAwake(); }
+    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
+}
+
+// Volume, mute and media keys (#117): a short note instead while the
+// feature is off or nobody is signed in.
+function renderMedia() {
+    const off = $('mediaOff'), box = $('mediaBox');
+    if (!media) { off.hidden = box.hidden = true; return; }
+    const note = !media.enabled ? t('mediaOff') : !media.session ? t('mediaNoUser') : '';
+    off.textContent = note;
+    off.hidden = !note;
+    box.hidden = !!note;
+    if (note) return;
+    const a = media.audio || {}, ready = !!a.available && typeof a.volume === 'number';
+    $('vol').disabled = $('btnMute').disabled = !ready;
+    if (!volBusy) {
+        $('vol').value = ready ? a.volume : 0;
+        $('volVal').textContent = ready ? a.volume + '%' : '…';
+    }
+    $('btnMute').textContent = a.muted ? '🔇' : '🔊';
+    $('btnMute').title = t(a.muted ? 'unmute' : 'mute');
+    const m = media.media || {};
+    let np = '';
+    if (m.status === 'playing' || m.status === 'paused') {
+        const track = [m.title, m.artist].filter(Boolean).join(' — ') || t(m.status === 'playing' ? 'npPlaying' : 'npPaused');
+        np = (m.status === 'playing' ? '▶ ' : '⏸ ') + track + (m.app ? ' · ' + m.app : '');
+    }
+    $('npText').textContent = np;
+    $('npText').hidden = !np;
+}
+function mediaErr(e) {
+    switch (e.code) {
+    case 'media_disabled': return t('mediaOff');
+    case 'no_user_session': return t('mediaNoUser');
+    case 'timeout': return t('mediaTimeout');
+    }
+    return t('failed') + ': ' + e.message;
+}
+async function mediaCmd(command, value) {
+    try { media = await api('POST', '/api/media', value === undefined ? {command} : {command, value}); }
+    catch (e) { toast(mediaErr(e), 'error'); }
+    renderMedia();
+}
+function toggleMute() { mediaCmd(media && media.audio && media.audio.muted ? 'unmute' : 'mute'); }
+$('vol').addEventListener('input', () => { volBusy = true; $('volVal').textContent = $('vol').value + '%'; });
+$('vol').addEventListener('change', async () => {
+    volBusy = true;
+    await mediaCmd('volume', parseInt($('vol').value, 10));
+    volBusy = false;
+    renderMedia();
+});
+
+// Presets (#109): a button per saved slot, rebuilt only when the list
+// changes. Names are the user's own text, so they go in as text.
+let presetKey = '';
+function renderPresets(force) {
+    const list = (status && status.presets) || [];
+    const key = JSON.stringify(list);
+    if (!force && key === presetKey) return;
+    presetKey = key;
+    $('presetsCard').hidden = list.length === 0;
+    const box = $('presetBtns');
+    box.textContent = '';
+    list.forEach(p => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.textContent = '▶ ' + p.slot + ' · ' + p.name;
+        b.title = p.name;
+        b.onclick = () => runPreset(p);
+        box.appendChild(b);
+    });
+}
+async function runPreset(p) {
+    try { await api('POST', '/api/presets/run', {slot: p.slot}); toast(t('presetStarted').replace('{name}', p.slot + ' · ' + p.name), 'success'); }
+    catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }
 }
 
 async function runCmd(cmd) {
@@ -294,6 +457,14 @@ async function restartService() {
     toast(t('restarting'), 'success');
     setTimeout(() => location.reload(), 3000);
 }
+
+// Leaving with unsaved settings asks first.
+window.addEventListener('beforeunload', e => {
+    if ($('btnSave').disabled) return;
+    e.preventDefault();
+    e.returnValue = '';
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadStatus(); });
 
 snapshot();
 applyLang();

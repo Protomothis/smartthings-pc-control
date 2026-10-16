@@ -52,6 +52,11 @@ func TestSettingsPageIsTheCompactRemotePage(t *testing.T) {
 		`id="port"`, `id="secret"`, `id="webuiRemote"`, `id="shutdownGrace"`, `id="graceSeconds" min="5" max="3600" value="45"`,
 		"나머지 설정은 PC의 앱에서", "Other settings are in the PC app",
 		"toggleLang", "toggleTheme", `data-theme="dark"`,
+		// #148: keep-awake, volume/media keys, preset buttons and battery
+		// on the APIs the app already uses; a warning before leaving with
+		// unsaved settings.
+		`data-section="remote"`, `data-section="presets"`, "/api/awake", "/api/media", "/api/presets/run", "/api/battery",
+		"PC 앱 설정 탭(미디어·알림)에서 켜세요", "beforeunload",
 	} {
 		if !strings.Contains(body, kept) {
 			t.Errorf("page lost %q", kept)
@@ -62,8 +67,10 @@ func TestSettingsPageIsTheCompactRemotePage(t *testing.T) {
 		"logViewer", "/api/logs", "/api/wol-status", "/api/st/hub", "stWolMac",
 		// SmartThings exposure and hubs, Telegram, media, PC notifications, activity
 		"stSessionUser", "stHubs", "tgPCName", "mediaEnabled", "nowPlaying", "notifyPC", "activityEnabled",
-		// presets, keep-awake and the rest of the app-only features
-		"/api/presets", "/api/awake", "/api/telegram", "/api/media", "/api/processes",
+		// the preset editor's test run and the rest of the app-only features
+		"/api/presets/test", "/api/telegram", "/api/processes",
+		// the schedule origin label said only "grace" in English (#148)
+		"originRemote: 'grace'",
 	} {
 		if strings.Contains(body, removed) {
 			t.Errorf("page still contains %q", removed)
