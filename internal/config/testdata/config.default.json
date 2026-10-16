@@ -72,6 +72,10 @@
     "enabled": true,
     "now_playing": false
   },
+  "audio": {
+    "outputs": [],
+    "inputs": []
+  },
   "notify_pc": {
     "enabled": true
   },

@@ -72,9 +72,9 @@ func TestTelegramMonitorCommands(t *testing.T) {
 		{"brightness", nil, "🔆 밝기 40% · DELL &lt;U2720Q&gt;"},
 		{"brightness", []string{"40"}, "🔆 밝기 40% · DELL &lt;U2720Q&gt;"},
 		{"brightness", []string{"140"}, "사용법: <code>/brightness</code>"},
-		{"input", nil, "🖥 입력: <code>dp1</code> · <code>hdmi1</code> (현재) · <code>vcp:0x1b</code> · DELL &lt;U2720Q&gt;\n<code>/input 이름</code>으로 바꿉니다"},
-		{"input", []string{"HDMI", "1"}, "🖥 입력: HDMI1 · DELL"},
-		{"input", []string{"hdmi9"}, "사용법: <code>/input</code>"},
+		{"source", nil, "🖥 입력: <code>dp1</code> · <code>hdmi1</code> (현재) · <code>vcp:0x1b</code> · DELL &lt;U2720Q&gt;\n<code>/source 이름</code>으로 바꿉니다"},
+		{"source", []string{"HDMI", "1"}, "🖥 입력: HDMI1 · DELL"},
+		{"source", []string{"hdmi9"}, "사용법: <code>/source</code>"},
 		{"monitor", []string{"OFF"}, "🌑 모니터를 껐습니다"},
 		{"monitor", []string{"on"}, "💡 모니터를 켰습니다"},
 		{"monitor", nil, "사용법: <code>/monitor on</code>"},
@@ -94,7 +94,7 @@ func TestTelegramMonitorCommands(t *testing.T) {
 func TestTelegramMonitorErrors(t *testing.T) {
 	ctx := context.Background()
 	c := withMonitor(t, config.Config{}, &fakeMonitor{err: action.ErrMonitorDisabled})
-	for _, cmd := range []string{"brightness", "input"} {
+	for _, cmd := range []string{"brightness", "source"} {
 		if got, _, err := c.handleCommand(ctx, "1", cmd, nil); !strings.Contains(got, "모니터 제어가 꺼져") || err != nil {
 			t.Errorf("/%s while off = %q, %v", cmd, got, err)
 		}

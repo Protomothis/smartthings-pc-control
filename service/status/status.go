@@ -176,6 +176,10 @@ type Audio struct {
 	Muted     *bool   `json:"muted,omitempty"`
 	Device    *string `json:"device,omitempty"`
 	UpdatedAt string  `json:"updated_at,omitempty"`
+	// Outputs and Inputs are the device slots (#145, audio_slots.go):
+	// always arrays, empty while no slot is filled or media.enabled is off.
+	Outputs []AudioSlot `json:"outputs"`
+	Inputs  []AudioSlot `json:"inputs"`
 }
 
 // Media is the §15 block (#117). status is always there: "none" while no

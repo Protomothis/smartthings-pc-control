@@ -292,6 +292,7 @@ func goldenConfig() Config {
 		Awake:         AwakeConfig{DefaultMinutes: 60},
 		Activity:      goldenActivityConfig(),
 		Media:         MediaConfig{Enabled: true, NowPlaying: true},
+		Audio:         goldenAudioConfig(),
 		NotifyPC:      NotifyPCConfig{Enabled: true},
 		Monitor:       MonitorConfig{Enabled: true},
 		Presets: []Preset{
@@ -327,6 +328,41 @@ func goldenActivity(t *testing.T, cfg Config) {
 var goldenTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", Album: "New Jeans", App: "Spotify"}
 
 const goldenSpeaker = "스피커 (Realtek(R) Audio)"
+
+// ---- audio device slots (#145). Outputs: 1 the speaker (default), 2
+// empty, 3 the headset (connected), 4 a TV that is not connected. Inputs:
+// 1 the microphone (default), 2 the headset's (connected).
+
+const (
+	goldenHeadset    = "헤드셋 (WH-1000XM4)"
+	goldenTV         = "LG TV (NVIDIA High Definition Audio)"
+	goldenMic        = "마이크 (Realtek(R) Audio)"
+	goldenHeadsetMic = "헤드셋 마이크 (WH-1000XM4)"
+)
+
+func goldenAudioConfig() config.AudioConfig {
+	return config.AudioConfig{
+		Outputs: []string{goldenSpeaker, "", goldenHeadset, goldenTV},
+		Inputs:  []string{goldenMic, goldenHeadsetMic},
+	}
+}
+
+// goldenOutputs and goldenInputs are the active devices of the golden PC.
+func goldenOutputs() []useraction.AudioEndpoint {
+	return []useraction.AudioEndpoint{
+		{ID: "{0.0.0.00000000}.{a1b2c3d4-0001-4000-8000-000000000001}", Name: goldenSpeaker, Default: true},
+		{ID: "{0.0.0.00000000}.{a1b2c3d4-0003-4000-8000-000000000003}", Name: goldenHeadset},
+	}
+}
+
+func goldenInputs() []useraction.AudioEndpoint {
+	return []useraction.AudioEndpoint{
+		{ID: "{0.0.1.00000000}.{b1b2c3d4-0001-4000-8000-000000000001}", Name: goldenMic, Default: true},
+		{ID: "{0.0.1.00000000}.{b1b2c3d4-0002-4000-8000-000000000002}", Name: goldenHeadsetMic},
+	}
+}
+
+// ---- end of the audio device section.
 
 // goldenWorld puts every piece of state the status document reads into a
 // known value, through the seams the feature tests already use, and
@@ -419,6 +455,9 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		sys.sessionPresent = savedPresent
 	})
 	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
+	resetAudioDevices()
+	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, goldenNow.Add(-30*time.Second))
+	t.Cleanup(resetAudioDevices)
 	noteMediaSampleChange(goldenTrack, goldenNow.Add(-20*time.Second))
 
 	// last_command: a preset run from SmartThings five minutes ago.
@@ -521,6 +560,7 @@ func offWorld(t *testing.T) {
 	activityScan.Scan(cfg.Activity)
 
 	resetAudioSample()
+	resetAudioDevices()
 	resetMediaSample()
 	resetIdleHeartbeat()
 	savedPresent := sys.sessionPresent
@@ -668,6 +708,18 @@ var commandCases = map[string]commandCase{
 		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}}, nil)
 	}},
 	"command.next.json": {setup: func(t *testing.T) { stubMediaRun(t, UserActionResult{OK: true}, nil) }},
+	// #145: a fake user session with the golden devices; nothing switches
+	// a real device.
+	"command.audio_output.json":                {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.device-missing.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.slot-empty.json":     {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.switch-failed.json": {setup: func(t *testing.T) {
+		stubAudioSession(t, goldenOutputs(), goldenInputs()).refuse = true
+	}},
+	"command.audio_output.no-user.json": {setup: func(t *testing.T) {
+		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
+	}},
+	"command.audio_input.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
 	"command.next.media-disabled.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{OK: true}, nil)
 		withConfig(t, func(c *Config) { c.Media.Enabled = false })

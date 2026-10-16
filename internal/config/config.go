@@ -64,6 +64,8 @@ type Config struct {
 	// service/media.go) on every path: /st/v1/command, Telegram and the
 	// audio block of the status.
 	Media MediaConfig `json:"media"`
+	// Audio holds the output and input device slots (#145, audio.go).
+	Audio AudioConfig `json:"audio"`
 	// NotifyPC controls PC notifications from SmartThings and Telegram
 	// (#106, service/pc_notify.go).
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
@@ -168,6 +170,8 @@ func Default() Config {
 		Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 		// A missing "media" object keeps volume and media keys on (§4).
 		Media: MediaConfig{Enabled: true},
+		// No device slots until the user fills them (#145).
+		Audio: AudioConfig{Outputs: []string{}, Inputs: []string{}},
 		// A missing "notify_pc" object keeps notifications on (§4).
 		NotifyPC: NotifyPCConfig{Enabled: true},
 		// Presets stays nil here, like Notify: WithDefaults gives every copy
@@ -186,6 +190,7 @@ func (c Config) WithDefaults() Config {
 	c.Presets = NormalizePresets(c.Presets)
 	c.Notify = c.Notify.WithDefaults()
 	c.Activity = c.Activity.WithDefaults()
+	c.Audio = c.Audio.WithDefaults()
 	return c
 }
 
@@ -224,6 +229,7 @@ func (c Config) ForUpdate() Config {
 	c.SmartThings.AllowedHubs = nil
 	c.Activity.Watch = nil
 	c.Presets = nil
+	c.Audio = AudioConfig{}
 	return c
 }
 
@@ -292,6 +298,12 @@ func Normalize(cfg Config, current Config) Config {
 	}
 	if cfg.Presets == nil {
 		cfg.Presets = current.Presets
+	}
+	if cfg.Audio.Outputs == nil {
+		cfg.Audio.Outputs = current.Audio.Outputs
+	}
+	if cfg.Audio.Inputs == nil {
+		cfg.Audio.Inputs = current.Audio.Inputs
 	}
 	return cfg.WithDefaults()
 }

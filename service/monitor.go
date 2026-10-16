@@ -290,7 +290,7 @@ func (monitorControl) Run(ctx context.Context, name, value string) (status.Monit
 	return runMonitorCommand(ctx, name, value)
 }
 
-// Read reads the monitors now (Telegram's /input without an argument).
+// Read reads the monitors now (Telegram's /source without an argument).
 func (monitorControl) Read(ctx context.Context) ([]status.Monitor, error) {
 	if !getConfig().Monitor.Enabled {
 		return nil, action.ErrMonitorDisabled

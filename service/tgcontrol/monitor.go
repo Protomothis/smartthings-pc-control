@@ -4,8 +4,8 @@ package tgcontrol
 //
 //	/brightness        the primary monitor's brightness (the last reading)
 //	/brightness 40     set it (0–100)
-//	/input             the inputs, read now: "HDMI1 (현재) · DP1 · HDMI2"
-//	/input hdmi1       switch to it
+//	/source             the inputs, read now: "HDMI1 (현재) · DP1 · HDMI2"
+//	/source hdmi1       switch to it
 //	/monitor on|off    turn the monitor on or off (DPM)
 //
 // They follow monitor.enabled, act on the primary monitor and raise no
@@ -47,14 +47,14 @@ var monitorTexts = map[string][2]string{
 	"mon_input_set":    {"🖥 입력: %s", "🖥 Input: %s"},
 	"mon_inputs":       {"🖥 입력: %s", "🖥 Inputs: %s"},
 	"mon_current":      {"(현재)", "(current)"},
-	"mon_input_hint":   {"<code>/input 이름</code>으로 바꿉니다", "Switch with <code>/input name</code>"},
+	"mon_input_hint":   {"<code>/source 이름</code>으로 바꿉니다", "Switch with <code>/source name</code>"},
 	"mon_on":           {"💡 모니터를 켰습니다", "💡 Monitor turned on"},
 	"mon_off":          {"🌑 모니터를 껐습니다 — 기종에 따라 DDC로는 다시 켜지지 않을 수 있습니다", "🌑 Monitor turned off — some monitors cannot be turned back on over DDC"},
 	"mon_standby":      {"대기", "standby"},
 	"st_monitor":       {"모니터", "Monitor"},
 	"st_brightness":    {"밝기", "brightness"},
 	"brightness_usage": {"사용법: <code>/brightness</code> (현재 밝기), <code>/brightness 40</code> (0–100)", "Usage: <code>/brightness</code> (current brightness), <code>/brightness 40</code> (0–100)"},
-	"input_usage":      {"사용법: <code>/input</code> (입력 목록), <code>/input hdmi1</code> (hdmi1, dp1, vcp:0x1b …)", "Usage: <code>/input</code> (the inputs), <code>/input hdmi1</code> (hdmi1, dp1, vcp:0x1b …)"},
+	"input_usage":      {"사용법: <code>/source</code> (입력 목록), <code>/source hdmi1</code> (hdmi1, dp1, vcp:0x1b …)", "Usage: <code>/source</code> (the inputs), <code>/source hdmi1</code> (hdmi1, dp1, vcp:0x1b …)"},
 	"monitor_usage":    {"사용법: <code>/monitor on</code> 또는 <code>/monitor off</code>", "Usage: <code>/monitor on</code> or <code>/monitor off</code>"},
 }
 
@@ -122,7 +122,7 @@ func (c *Control) brightness(ctx context.Context, args []string) (string, *teleg
 	return c.text("mon_brightness", *m.Brightness) + monitorName(m), nil, nil
 }
 
-// input handles /input [name]: without one, the inputs read now.
+// input handles /source [name]: without one, the inputs read now.
 func (c *Control) input(ctx context.Context, args []string) (string, *telegram.InlineKeyboard, error) {
 	if len(args) == 0 {
 		if !c.d.Config().Monitor.Enabled || c.d.Monitor == nil {

@@ -6,7 +6,9 @@
     "top": ""
   },
   "audio": {
-    "available": false
+    "available": false,
+    "inputs": [],
+    "outputs": []
   },
   "awake": {
     "on": false,

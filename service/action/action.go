@@ -62,7 +62,10 @@ func Classify(err error) Failure {
 	var ne *NotifyError
 	var ue *session.ActionError
 	var ve *ValueError
+	var de *AudioDeviceError
 	switch {
+	case errors.As(err, &de):
+		return de.failure() // #145
 	case errors.As(err, &ne):
 		f := Failure{Status: http.StatusBadRequest, Code: ne.Code, Message: ne.Message, Detail: ne.Message}
 		switch ne.Code {

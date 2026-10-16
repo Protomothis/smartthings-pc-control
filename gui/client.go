@@ -35,6 +35,8 @@ type Config struct {
 	Activity ActivityConfig `json:"activity"`
 	// Media is the "media" object (#104): volume and media-key commands.
 	Media MediaConfig `json:"media"`
+	// Audio is the device slots (#145, audio_slots.go).
+	Audio AudioConfig `json:"audio"`
 	// NotifyPC is the "notify_pc" object (#106); Presets the "presets"
 	// list (#109): the settings tab's 미디어·알림 section (notify_section.go)
 	// and the presets tab (presets_tab.go) edit them.
@@ -469,6 +471,8 @@ type Heartbeat struct {
 	// stores the samples only from the session its commands act on and
 	// ignores the others. Never 0 for a tray app; 0 (unknown) is left out.
 	SessionID uint32 `json:"session_id,omitempty"`
+	// AudioDevices are the connected devices (#145), with the 30s post.
+	AudioDevices *HeartbeatAudioDevices `json:"audio_devices,omitempty"`
 }
 
 // HeartbeatMedia is the heartbeat's media block: the status always, the
@@ -829,6 +833,9 @@ type MediaAudio struct {
 	Volume    *int    `json:"volume"`
 	Muted     *bool   `json:"muted"`
 	Device    *string `json:"device"`
+	// Outputs and Inputs are the device slots (#145).
+	Outputs []AudioSlotInfo `json:"outputs"`
+	Inputs  []AudioSlotInfo `json:"inputs"`
 }
 
 // MediaInfo is the status media block. Status is playing, paused, stopped

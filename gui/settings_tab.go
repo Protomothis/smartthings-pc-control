@@ -118,6 +118,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		section(u.t("settings.medianotify"), mediaNotifyBody),
 		widget.NewSeparator(),
+		section(u.t("audio.slots.title"), u.buildAudioSlotsSection()),
+		widget.NewSeparator(),
 		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
 		widget.NewSeparator(),
 		section(u.t("settings.app"), container.NewVBox(
@@ -164,6 +166,7 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.debugCheck.SetChecked(s.Debug)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
+	u.fillAudioSlots(cfg)
 }
 
 // settingsState reads the settings-tab fields into the pure model.
@@ -176,6 +179,7 @@ func (u *ui) settingsState() settingsFormState {
 		Monitor:  u.monitorCheck.Checked,
 		NotifyPC: u.notifySectionState(),
 		Debug:    u.debugCheck.Checked,
+		Audio:    u.audioSlotsFormState(),
 	}
 	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
 		s.GraceOn, s.GraceSec = true, u.graceValues[i]

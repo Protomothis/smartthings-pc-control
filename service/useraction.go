@@ -47,6 +47,8 @@ var userActions = session.Runner{
 // storeUserActionReply folds an ok reply of an active-user run into the
 // stores.
 func storeUserActionReply(args []string, res UserActionResult) {
+	settle := noteReplyAudioDevices(res) // #145, audio_devices.go
+	defer settle()
 	if res.Audio != nil {
 		if err := res.Audio.Validate(); err != nil {
 			logMsg("user-action %s: ignoring audio in reply: %v", args[0], err)

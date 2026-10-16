@@ -60,6 +60,9 @@ type mediaCard struct {
 	device  *widget.Label
 	reason  *widget.Label
 	lineTxt string
+	// output picks the default output slot (#145, audio_slots.go).
+	output    *widget.Select
+	outputRow *fyne.Container
 
 	state MediaState
 	known bool
@@ -219,6 +222,9 @@ func (u *ui) mediaErrorText(err error) string {
 		}
 		return fmt.Sprintf(u.t("media.err.failed"), ce.Message)
 	}
+	if s := u.audioSwitchErrorText(ce); s != "" {
+		return s // #145
+	}
 	return fmt.Sprintf(u.t("media.err.failed"), ce.Code)
 }
 
@@ -308,6 +314,7 @@ func (u *ui) buildMediaCard() fyne.CanvasObject {
 		transport,
 		volume,
 		container.NewBorder(nil, nil, indent, nil, c.device),
+		u.buildOutputPicker(c),
 		c.reason,
 	))
 }
@@ -417,6 +424,7 @@ func (u *ui) applyMedia(m MediaState, err error) {
 	}
 	setEnabled(c.mute, usable && m.Audio.Available)
 	setEnabled(c.slider, usable && m.Audio.Available)
+	u.applyOutputPicker(c, m, usable)
 }
 
 // setEnabled enables or disables any disableable widget.

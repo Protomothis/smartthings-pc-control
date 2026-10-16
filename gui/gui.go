@@ -110,6 +110,7 @@ type ui struct {
 	presetEmpty   *widget.Label
 	presets       *presetsTab
 	pcNotify      *notifySection
+	audioSlots    *audioSlotsSection // #145, audio_slots.go
 	// Status bar battery label (#112, battery.go), hidden without a
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label

@@ -21,6 +21,10 @@ var notAuditedKeys = []string{
 	"awake.keep_display",
 	"presets",
 	"debug",
+	// #145: which devices the slots name; switching between them follows
+	// media.enabled, which is audited.
+	"audio.outputs",
+	"audio.inputs",
 }
 
 // leafKeys lists every config.json path, descending into the objects
