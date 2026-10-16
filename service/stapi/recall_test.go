@@ -5,6 +5,7 @@ package stapi
 // out while the PC was off.
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,29 +121,22 @@ func TestRestoreSkipsWhatSubscribeWouldRefuse(t *testing.T) {
 // reports every body it accepted.
 type wakeHub struct {
 	*httptest.Server
-	fail int32
+	fail atomic.Int32
 	hits atomic.Int32
 	got  chan string
 }
 
 func newWakeHub(t *testing.T, fail int32) *wakeHub {
 	t.Helper()
-	h := &wakeHub{fail: fail, got: make(chan string, 16)}
+	h := &wakeHub{got: make(chan string, 16)}
+	h.fail.Store(fail)
 	h.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.hits.Add(1) <= h.fail {
+		if h.hits.Add(1) <= h.fail.Load() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var b strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Body.Read(buf)
-			b.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-		h.got <- b.String()
+		body, _ := io.ReadAll(r.Body)
+		h.got <- string(body)
 	}))
 	t.Cleanup(h.Close)
 	return h
@@ -238,7 +232,7 @@ func TestWakePushIsRetriedWhileTheNetworkComesUp(t *testing.T) {
 	}
 	// The success after the retry clears the failure the first attempt
 	// counted: two more failures do not remove it.
-	hub.fail = 100
+	hub.fail.Store(100)
 	s.Deliver(t.Context(), "remote.received", time.Now(), nil)
 	s.Deliver(t.Context(), "remote.received", time.Now(), nil)
 	if n := s.Subscriptions(); n != 1 {
