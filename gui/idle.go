@@ -100,6 +100,9 @@ func buildHeartbeat() (Heartbeat, bool) {
 		}
 	}
 	hb.Audio, hb.Media = sampleMediaBlocks()
+	if hb.Audio != nil {
+		hb.AudioDevices = sampleAudioDevices(hb.Audio.SampledAt) // #145
+	}
 	return hb, hb.IdleSeconds != nil || hb.Audio != nil || hb.Media != nil
 }
 

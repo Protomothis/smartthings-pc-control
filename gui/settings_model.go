@@ -23,6 +23,8 @@ type settingsFormState struct {
 	NotifyPC notifyPCState
 	// Debug is the developer section's switch (#133).
 	Debug bool
+	// Audio is the device slots (#145).
+	Audio audioSlotsState
 }
 
 // settingsStateFromConfig is what the tab shows for cfg.
@@ -35,6 +37,7 @@ func settingsStateFromConfig(cfg Config) settingsFormState {
 		GraceOn:  cfg.ShutdownGrace,
 		NotifyPC: notifyPCStateFromConfig(cfg),
 		Debug:    cfg.Debug,
+		Audio:    audioSlotsFromConfig(cfg),
 	}
 	if s.GraceOn {
 		s.GraceSec = cfg.GraceSeconds
@@ -54,6 +57,7 @@ func (s settingsFormState) applyTo(cfg *Config, l Lang) error {
 	cfg.Media.Enabled = s.Media
 	cfg.Debug = s.Debug
 	s.NotifyPC.applyTo(cfg)
+	s.Audio.applyTo(cfg)
 	cfg.ShutdownGrace = s.GraceOn
 	switch {
 	case s.GraceOn:
@@ -81,5 +85,6 @@ func (s settingsFormState) dirty(base Config) bool {
 		s.GraceOn != base.ShutdownGrace ||
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
 		s.Debug != base.Debug ||
-		s.NotifyPC.dirty(base)
+		s.NotifyPC.dirty(base) ||
+		s.Audio.dirty(base)
 }
