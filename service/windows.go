@@ -63,6 +63,8 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// no such rule, so re-check here (#76). Off the startup path: netsh
 	// must never delay the service reaching Running.
 	go ensureSSDPFirewallRuleAtStart()
+	// The command-port rule follows the configured port (#139).
+	go ensureCommandFirewallRuleAtStart(cfg.Port)
 
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
@@ -194,6 +196,7 @@ func RunConsole() {
 	stSrv.StartSSDP()
 	defer stSrv.StopSSDP()
 	go ensureSSDPFirewallRuleAtStart()
+	go ensureCommandFirewallRuleAtStart(getConfig().Port)
 	stop := make(chan struct{})
 	go StartWebUI(stop)
 	startupHooks(stop)

@@ -74,6 +74,10 @@ type Hub interface {
 	LastSSDPSearch() (status.SSDPSearch, bool)
 	// SSDPFirewallRule reports whether the inbound UDP 1900 rule was found.
 	SSDPFirewallRule() bool
+	// CommandFirewallRule is the command port's inbound TCP rule (#139):
+	// the port it was checked for at service start, whether a rule for
+	// that port is in place, and whether the check has finished yet.
+	CommandFirewallRule() (port int, ok, checked bool)
 }
 
 // Commands is the command catalogue and the schedule slot on behalf of

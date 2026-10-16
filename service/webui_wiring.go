@@ -121,6 +121,10 @@ func (hubInfo) WoLView(cfg SmartThingsConfig) (status.WoL, *status.WoLSelected) 
 func (hubInfo) SSDPRunning() bool                         { return stSrv.SSDPRunning() }
 func (hubInfo) LastSSDPSearch() (status.SSDPSearch, bool) { return stSrv.LastSSDPSearch() }
 func (hubInfo) SSDPFirewallRule() bool                    { return ssdpFirewallRuleOK() }
+func (hubInfo) CommandFirewallRule() (int, bool, bool) {
+	st, checked := commandFirewallRuleState()
+	return st.Port, st.OK, checked
+}
 
 // uiCommands is the catalogue and the schedule slot on behalf of the UIs
 // on this PC: origin "ui", at once (the person asking is at the PC).

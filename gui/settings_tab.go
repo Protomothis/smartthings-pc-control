@@ -60,14 +60,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			if !ok {
 				return
 			}
-			runAsyncErr(busyControls(restartBtn), u.client.RestartService, func(err error) {
-				if err != nil {
-					dialog.ShowError(err, u.win)
-					return
-				}
-				u.setStatus(u.t("settings.restarting"))
-				u.setConn(connPending)
-			})
+			u.restartService(busyControls(restartBtn))
 		}, u.win)
 	})
 
