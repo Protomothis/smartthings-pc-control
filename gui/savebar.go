@@ -34,6 +34,9 @@ const (
 	tabSettings
 	// tabLogs is only polled while it is in front.
 	tabLogs
+	// tabAbout (#156) needs nothing from the service, so like settings it
+	// stays usable while the service is unreachable.
+	tabAbout
 )
 
 // tabKeys are the tab titles' i18n keys, by index.
@@ -46,6 +49,7 @@ var tabKeys = []string{
 	tabTelegram:    "tab.telegram",
 	tabSettings:    "tab.settings",
 	tabLogs:        "tab.logs",
+	tabAbout:       "tab.about",
 }
 
 // selectTab switches to index without the unsaved-changes prompt (a

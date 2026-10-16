@@ -13,9 +13,9 @@ import "fmt"
 var unreachableSvcState = scmServiceState
 
 // offlineTab reports whether tab i stays usable without the service: the
-// settings tab (install, start) and the logs tab, which then shows
-// service.log read from disk.
-func offlineTab(i int) bool { return i == tabSettings || i == tabLogs }
+// settings tab (install, start), the logs tab, which then shows
+// service.log read from disk, and the about tab (#156).
+func offlineTab(i int) bool { return i == tabSettings || i == tabLogs || i == tabAbout }
 
 // unreachableText is the status line while the service does not answer,
 // by the service's state. A running service the app cannot reach is the
