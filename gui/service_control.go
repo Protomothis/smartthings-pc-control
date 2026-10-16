@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"syscall"
@@ -47,19 +48,19 @@ func scmServiceState() svcState {
 	if err != nil {
 		return svcUnknown
 	}
-	defer windows.CloseServiceHandle(m)
+	defer func() { _ = windows.CloseServiceHandle(m) }()
 	name, err := windows.UTF16PtrFromString(serviceName)
 	if err != nil {
 		return svcUnknown
 	}
 	s, err := windows.OpenService(m, name, windows.SERVICE_QUERY_STATUS)
-	if err == windows.ERROR_SERVICE_DOES_NOT_EXIST {
+	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		return svcNotInstalled
 	}
 	if err != nil {
 		return svcUnknown
 	}
-	defer windows.CloseServiceHandle(s)
+	defer func() { _ = windows.CloseServiceHandle(s) }()
 	var st windows.SERVICE_STATUS
 	if err := windows.QueryServiceStatus(s, &st); err != nil {
 		return svcUnknown

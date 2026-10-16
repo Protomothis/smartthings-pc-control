@@ -94,7 +94,11 @@ func newCommandHandler() http.HandlerFunc {
 		// goes out first, as it always has for the Edge driver.
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, cmd.Response)
-		dispatchCommand(name, from, originRemote, dispatchDefault)
+		if _, err := dispatchCommand(name, from, originRemote, dispatchDefault); err != nil {
+			// The reply has gone out; a refusal decided after it (the guard
+			// read again at run time, #143) is only logged.
+			logMsg("Request /%s not run: %v", name, err)
+		}
 	}
 }
 
