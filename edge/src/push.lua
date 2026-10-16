@@ -17,6 +17,7 @@ local features = require "features"
 local fields = require "device.fields"
 local i18n = require "i18n"
 local rows = require "device.rows"
+local sensors = require "sensors"
 local state = require "state"
 local wol = require "wol"
 
@@ -526,6 +527,7 @@ function push.apply_to_device(driver, device, payload, deps)
     now = clock.now(),
     epoch = clock.epoch(deps),
     lang = lang,
+    idle_threshold = sensors.idle_threshold(device.preferences),
     -- Only read when no status has been: the hub's state cache, per slot.
     watch = fields.extras(device) == nil and rows.kept_watch(device) or nil,
   })

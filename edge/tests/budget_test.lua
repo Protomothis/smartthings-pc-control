@@ -359,7 +359,7 @@ function T.test_a_repaint_forgets_what_was_sent()
 end
 
 function T.test_repaint_soon_clears_the_cache_as_well()
-  with_pc(function()
+  with_pc(function(pc)
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
@@ -369,6 +369,7 @@ function T.test_repaint_soon_clears_the_cache_as_well()
     h.assert_equal(count_forced(out, "switch.switch"), 1, "the switch is in the first batch, forced as the first of the generation")
     h.fire_all(d, "repaint-batch")
     -- The follow-up, 30 s later, re-sends it with the other rows that matter (resync).
+    pc.now = pc.now + 30
     mark = #device.emitted
     h.assert_true(h.fire_last(d, "repaint-late-30"))
     h.assert_equal(count_forced(since(device, mark), "switch.switch"), 1)
@@ -774,7 +775,7 @@ function T.test_a_profile_change_forces_every_row_once()
   -- 83, 69 and 69 events on a migration. Now every row once - in batches of
   -- PAINT_BATCH, the rows the user sees first in the first one - then the
   -- rows that matter.
-  with_pc(function()
+  with_pc(function(pc)
     local device = new_device()
     local d = Driver("budget", {})
     poll.once(d, device)
@@ -808,15 +809,49 @@ function T.test_a_profile_change_forces_every_row_once()
       seen[key] = true
     end
     h.assert_true(forced_all(out))
-    h.assert_true(#out > 30 and #out < 50, "every row once: " .. #out)
+    -- v14 (#151-#154): ~66 rows with the PC app v1.3.0 cards.
+    h.assert_true(#out > 30 and #out < 80, "every row once: " .. #out)
     h.assert_equal(batches, math.ceil(#out / emit.PAINT_BATCH))
+    -- A follow-up waits out the budget window after the last batch
+    -- (`emit.settling`); on this clock the batches all went at once.
+    h.assert_true(emit.settling(device), "the paint has only just ended")
+    local start = pc.now
     for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
+      pc.now = start + delay
+      -- The regular poll has just taken its rotation step.
+      device:set_field(fields.ROTATE_AT, pc.now)
       mark = #device.emitted
       h.assert_true(h.fire_last(d, "repaint-late-" .. delay))
       local late = since(device, mark)
       h.assert_deep_equal(keys_of(late), resync_keys(), delay .. " s: only the rows that matter")
       h.assert_true(forced_all(late))
     end
+  end)
+end
+
+function T.test_a_follow_up_waits_for_the_paint_to_settle()
+  -- v14 (#151-#154): ~66 rows are eight batches, so the 30 s follow-up can
+  -- meet the last ones. It waits out the paint and one budget window after
+  -- it (`emit.settling`), then sends what it always sends.
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    poll.repaint_soon(d, device)
+    pc.now = pc.now + 30
+    local mark = #device.emitted
+    h.assert_true(h.fire_last(d, "repaint-late-30"))
+    h.assert_equal(#since(device, mark), 0, "nothing while the paint runs")
+    h.fire_all(d, "repaint-batch")
+    pc.now = pc.now + emit.PAINT_SECONDS
+    mark = #device.emitted
+    h.assert_true(h.fire_last(d, "repaint-late-30"), "it looked again later")
+    h.assert_equal(#since(device, mark), 0, "nor right after it")
+    pc.now = pc.now + emit.BUDGET_SECONDS
+    device:set_field(fields.ROTATE_AT, pc.now)
+    mark = #device.emitted
+    h.assert_true(h.fire_last(d, "repaint-late-30"))
+    h.assert_deep_equal(keys_of(since(device, mark)), resync_keys())
   end)
 end
 

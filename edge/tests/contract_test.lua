@@ -105,6 +105,9 @@ function T.test_full_status_session_rows()
   h.assert_false(value(events, caps.SESSION, "locked"), "session.locked")
   h.assert_equal(value(events, caps.SESSION, "idleMinutes"), 12, "session.idle_seconds (754)")
   h.assert_equal(value(events, caps.SESSION, "user"), "golden", "session.user")
+  -- #151: 12 minutes without input, the default threshold is 10.
+  h.assert_equal(value(events, caps.PRESENCE, "activity", "presence"), "idle", "session.idle_seconds")
+  h.assert_equal(value(events, caps.PRESENCE, "idleMinutes", "presence"), 12)
 end
 
 function T.test_full_status_media_rows()
@@ -263,6 +266,8 @@ function T.test_off_status_rows()
   h.assert_equal(value(events, caps.COMMAND, "lastCommand"), "없음 (None)", "last_command: null")
   h.assert_false(value(events, caps.SESSION, "exposed"), "session.exposed")
   h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
+  h.assert_equal(value(events, caps.PRESENCE, "activity", "presence"), "unknown", "session.exposed: false")
+  h.assert_nil(value(events, caps.PRESENCE, "idleMinutes", "presence"))
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")

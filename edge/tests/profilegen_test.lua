@@ -152,6 +152,12 @@ function T.test_every_current_profile_keeps_the_layout_rules()
       h.assert_deep_equal(component_capabilities(text, "apps"), { "numbersystem53811.pcwatchlist" },
         name .. " watch card")
       h.assert_contains(text, "\n  - id: apps\n    label: 감시 목록\n", name .. " watch card label")
+      -- #151: the presence card, right below main.
+      h.assert_deep_equal(component_capabilities(text, "presence"), {
+        "numbersystem53811.pcpresence",
+      }, name .. " presence card")
+      h.assert_contains(text, "\n  - id: presence\n    label: 사용 감지\n", name .. " presence card label")
+      h.assert_contains(text, "\n  - name: idleThreshold\n", name .. " idle threshold preference")
 
       h.assert_nil(text:find("\n      - id: notification\n", 1, true), name .. " still lists notification")
       h.assert_nil(text:find("\n      - id: speechSynthesis\n", 1, true), name .. " still lists speechSynthesis")

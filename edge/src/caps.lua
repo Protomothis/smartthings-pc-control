@@ -44,6 +44,10 @@ caps.WATCH = NAMESPACE .. ".pcwatchlist"
 -- one with Samsung's words (platform notes "표준 capability"), bound to
 -- `lastMessage` because a row bound to no attribute never gets its event.
 caps.TOAST = NAMESPACE .. ".pctoast"
+-- PC app v1.3.0 (docs/design/v1.3-sensors.md), on components of their own
+-- (edge-driver.md §4.3). #151: in use / idle / locked as a routine
+-- condition - `pcUser`'s frozen presentation has only `locked`.
+caps.PRESENCE = NAMESPACE .. ".pcpresence"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -56,6 +60,7 @@ caps.ids = {
   preset = caps.PRESET,
   watch = caps.WATCH,
   toast = caps.TOAST,
+  presence = caps.PRESENCE,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

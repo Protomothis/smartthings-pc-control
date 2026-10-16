@@ -624,6 +624,8 @@ local EXPECTED_COMMANDS = {
   watch = {},
   -- #108/pcToast: one command, one text argument.
   toast = { send = { "text" } },
+  -- #151: a row and routine conditions only.
+  presence = {},
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -831,7 +833,8 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
+      "presence" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -881,6 +884,52 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   -- since #85.
   h.assert_true(condition_attributes("schedule").planCommand == true)
   h.assert_true(action_commands("schedule").setPlanCommand == true)
+end
+
+-- A number condition (`numberField`, #151) reads an integer attribute and
+-- offers a range inside its schema.
+function T.test_every_number_condition_reads_a_number_attribute_in_range()
+  local checked = 0
+  for key, id in pairs(caps.ids) do
+    for i, condition in ipairs((presentation(key).automation or {}).conditions or {}) do
+      if condition.displayType == "numberField" then
+        local where = string.format("%s automation.conditions[%d]", id, i)
+        local field = condition.numberField or {}
+        local attr = (field.value or ""):match("^([%a][%w_]*)%.value$")
+        local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
+          .properties or {}).value or {}
+        h.assert_equal(spec.type, field.valueType, where .. " valueType")
+        h.assert_true(type(field.range) == "table" and #field.range == 2, where .. " range")
+        h.assert_true(field.range[1] >= (spec.minimum or field.range[1]), where .. " range below the schema")
+        h.assert_true(field.range[2] <= (spec.maximum or field.range[2]), where .. " range above the schema")
+        checked = checked + 1
+      end
+    end
+  end
+  h.assert_true(checked >= 1, "the idle minutes are a number condition")
+end
+
+local function alternative_keys(alternatives)
+  local keys = {}
+  for _, alternative in ipairs(alternatives or {}) do
+    keys[#keys + 1] = alternative.key
+  end
+  return keys
+end
+
+function T.test_the_presence_conditions_are_the_activity_and_the_idle_minutes()
+  -- #151: "PC 사용 중이면", "30분 동안 입력이 없으면". `unknown` is a resting
+  -- value (session not shared, no heartbeat, PC off), not an event.
+  local conditions = presentation("presence").automation.conditions
+  h.assert_equal(#conditions, 2)
+  h.assert_equal(conditions[1].list.value, "activity.value")
+  h.assert_deep_equal(alternative_keys(conditions[1].list.alternatives), { "active", "idle", "locked" })
+  h.assert_equal(conditions[2].displayType, "numberField")
+  h.assert_equal(conditions[2].numberField.value, "idleMinutes.value")
+  -- One row on the card: the activity, short for the preview.
+  local detail = presentation("presence").detailView
+  h.assert_equal(#detail, 1)
+  h.assert_equal(detail[1].state.label, "{{activity.value}}")
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
@@ -1443,13 +1492,14 @@ end
 -- The only text the user reads is the one in the presentation, so every value
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
-local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch" }
+local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence" }
 
 -- Except the watch card's own rows: its preview in the main view gives each
 -- of its first three rows a third of the width, and "실행 중 (Running)"
 -- wrapped and was cut (platform notes "화면 배치", 2026-10-02). They are one
 -- short Korean word; its routine conditions keep both languages.
-local SHORT_DETAIL_VALUES = { watch = true }
+-- The v1.3.0 cards on components of their own (#151-#154) likewise.
+local SHORT_DETAIL_VALUES = { watch = true, presence = true }
 
 local function assert_bilingual(alternatives, where)
   h.assert_true(#(alternatives or {}) > 0, where .. " has no alternatives")
@@ -1481,8 +1531,11 @@ function T.test_every_state_value_label_is_bilingual()
       end
     end
     for i, condition in ipairs((doc.automation or {}).conditions or {}) do
-      assert_bilingual((condition.list or {}).alternatives,
-        string.format("%s automation.conditions[%d]", id, i))
+      -- A number condition (#151) has no values to word.
+      if condition.displayType == "list" then
+        assert_bilingual((condition.list or {}).alternatives,
+          string.format("%s automation.conditions[%d]", id, i))
+      end
     end
   end
 end

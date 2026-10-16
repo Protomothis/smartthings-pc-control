@@ -101,6 +101,16 @@ components:
     categories:
       - name: __CATEGORY__
 # @media-component
+  # PC app v1.3.0 (edge-driver.md §4.3): components, so main does not grow and
+  # each card's preview on the main view is its own (platform notes "화면
+  # 배치": the first three state rows, a third of the width each).
+  # #151: in use / idle / locked as a routine condition ("사용 상태", "입력
+  # 없는 시간"); `pcUser` on main keeps its rows.
+  - id: presence
+    label: 사용 감지
+    capabilities:
+      - id: numbersystem53811.pcpresence
+        version: 1
   # #123: the watch card - what runs on the PC (the opt-in watch list): a
   # summary row ("Steam 실행 중 · 외 1개"), the names row ("1 Steam · 3 OBS")
   # and one state per slot, which a routine reads as "감시 1".."감시 5". A
@@ -242,3 +252,12 @@ preferences:
       minimum: 0
       maximum: 1440
       default: 60
+  - name: idleThreshold
+    title: 자리 비움 기준 (Idle minutes)
+    description: "입력이 이만큼(분) 없으면 '자리 비움'. PC의 세션 정보 공유가 켜져 있어야 합니다. / Idle after this many minutes; needs session sharing."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 1440
+      default: 10

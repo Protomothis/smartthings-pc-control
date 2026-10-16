@@ -142,6 +142,9 @@ local function golden(lang)
     -- #115: the keep-awake switch, on its own component. A v1.1.0 service
     -- cannot keep the PC awake.
     { cap = state.CAP_SWITCH, attr = "switch", value = "off", component = "awake" },
+    -- #151: the presence card - locked, whatever the idle time says.
+    { cap = caps.PRESENCE, attr = "activity", value = "locked", component = "presence" },
+    { cap = caps.PRESENCE, attr = "idleMinutes", value = 20, component = "presence" },
   }
 end
 

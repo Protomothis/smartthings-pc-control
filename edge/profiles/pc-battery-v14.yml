@@ -36,6 +36,11 @@ components:
         version: 1
     categories:
       - name: Switch
+  - id: presence
+    label: 사용 감지
+    capabilities:
+      - id: numbersystem53811.pcpresence
+        version: 1
   - id: apps
     label: 감시 목록
     capabilities:
@@ -167,3 +172,12 @@ preferences:
       minimum: 0
       maximum: 1440
       default: 60
+  - name: idleThreshold
+    title: 자리 비움 기준 (Idle minutes)
+    description: "입력이 이만큼(분) 없으면 '자리 비움'. PC의 세션 정보 공유가 켜져 있어야 합니다. / Idle after this many minutes; needs session sharing."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 1440
+      default: 10

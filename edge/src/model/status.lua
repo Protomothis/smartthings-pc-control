@@ -6,6 +6,7 @@ local commands = require "model.commands"
 local features = require "features"
 local i18n = require "i18n"
 local power = require "model.power"
+local sensors = require "sensors"
 local text = require "model.text"
 local wolinfo = require "model.wol"
 
@@ -57,6 +58,8 @@ local ATTRIBUTES = {
   [caps.TOAST] = { lastMessage = true },
   [features.CAP_BATTERY] = { battery = true },
   [features.CAP_POWER_SOURCE] = { powerSource = true },
+  -- PC app v1.3.0 (sensors.lua).
+  [caps.PRESENCE] = { activity = true, idleMinutes = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.
@@ -74,7 +77,8 @@ end
 --   the v1.2.0 rows come from it rather than from their defaults
 -- @param watch #123: the watch card's slot values to keep (`extras.watch`, or
 --   what the hub last had), or nil; a slot with none reads `empty`
-function status.initial_rows(lang, service_version, last_status, watch)
+-- @param idle_threshold #151: the `idleThreshold` preference, in minutes
+function status.initial_rows(lang, service_version, last_status, watch, idle_threshold)
   local events = {}
   ev(events, caps.COMMAND, "lastCommand", text.format_last_command(nil, lang))
   -- Not transitioning, so the whole menu (an unsent `supportedValues` could
@@ -96,8 +100,15 @@ function status.initial_rows(lang, service_version, last_status, watch)
   local extra_rows
   if type(last_status) == "table" then
     extra_rows = features.apply_status(last_status, { lang = lang, watch = watch, fill = true })
+    for _, e in ipairs(sensors.apply_status(last_status,
+        { lang = lang, fill = true, idle_threshold = idle_threshold })) do
+      extra_rows[#extra_rows + 1] = e
+    end
   else
     extra_rows = features.initial_rows(lang, watch)
+    for _, e in ipairs(sensors.initial_rows(lang)) do
+      extra_rows[#extra_rows + 1] = e
+    end
   end
   for _, e in ipairs(extra_rows) do
     events[#events + 1] = e
@@ -110,7 +121,8 @@ end
 -- `device_state` supplies powerState (already advanced with `transition`), so
 -- this never decides power on its own. `opts.now` is the formatted clock time
 -- for `lastSeen`, `opts.lang` the language, `opts.error` / `opts.note` feed the
--- `message` ladder - all passed in to keep this pure.
+-- `message` ladder, `opts.idle_threshold` (#151) the `idleThreshold`
+-- preference - all passed in to keep this pure.
 function status.apply_status(device_state, body, opts)
   device_state = device_state or power.new()
   body = body or {}
@@ -179,6 +191,11 @@ function status.apply_status(device_state, body, opts)
   -- "running"); without them, the body's own.
   for _, e in ipairs(features.apply_status(body,
       { lang = lang, watch = (device_state.extras or {}).watch })) do
+    events[#events + 1] = e
+  end
+  -- PC app v1.3.0: the presence, privacy, audio device and monitor cards.
+  for _, e in ipairs(sensors.apply_status(body,
+      { lang = lang, idle_threshold = opts.idle_threshold })) do
     events[#events + 1] = e
   end
 

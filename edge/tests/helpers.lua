@@ -214,6 +214,10 @@ function h.components_for(profile_name)
   if not version or version >= 7 then
     components.apps = { id = "apps" }
   end
+  -- PC app v1.3.0: the presence card, from v14 on.
+  if not version or version >= 14 then
+    components.presence = { id = "presence" }
+  end
   return components
 end
 
