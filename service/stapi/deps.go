@@ -30,6 +30,19 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
+	// Monitor is the DDC/CI monitor control (#144); nil: none.
+	Monitor MonitorControl
+
+	// Subscriptions keeps the hub push subscriptions across restarts
+	// (#142); nil keeps them in memory only.
+	Subscriptions SubscriptionStore
+}
+
+// SubscriptionStore is where the push subscriptions are written through
+// (push.go). Save gets the whole list every time.
+type SubscriptionStore interface {
+	LoadSubscriptions() []SavedSubscription
+	SaveSubscriptions([]SavedSubscription) error
 }
 
 // StatusSource is what the status document (§3.2) reads that /st/v1 does
@@ -59,6 +72,9 @@ type StatusSource interface {
 	Activity(cfg config.Config) status.Activity
 	Audio(cfg config.Config) status.Audio
 	Media(cfg config.Config) status.Media
+	// Privacy is the camera/microphone block (#143), nil while
+	// privacy.enabled is off.
+	Privacy(cfg config.Config) *status.Privacy
 	// WoLScan is the adapter scan (PowerShell); the Server caches it.
 	WoLScan() status.WoLStatus
 }
@@ -81,8 +97,10 @@ type Commands interface {
 	// Known reports whether name is a catalogue command.
 	Known(name string) bool
 	// Dispatch runs name for from, or defers it by the grace period;
-	// deferred is that period, 0 when it runs now.
-	Dispatch(name, from string, mode Mode) (deferred time.Duration)
+	// deferred is that period, 0 when it runs now. A
+	// *privacy.DeviceInUseError is the camera/microphone guard's refusal
+	// (#143).
+	Dispatch(name, from string, mode Mode) (deferred time.Duration, err error)
 	// Record makes name the last command.
 	Record(name, from string)
 	// Schedule arms name to run after delay.

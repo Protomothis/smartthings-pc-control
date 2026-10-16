@@ -87,15 +87,15 @@ func (w *presetRowWidgets) row() presetRow {
 }
 
 // setEditable enables the row's controls — all off while the editor is
-// locked (C5), and what a URL does not use (browse, arguments) off for a
-// URL row.
+// locked (C5), and browse and arguments off for the types without a file
+// or arguments (URL, keys, focus).
 func (w *presetRowWidgets) setEditable(locked bool) {
-	url := w.row().Type == "url"
+	file := presetTakesArgs(w.row().Type)
 	for _, c := range []fyne.Disableable{w.slot, w.name, w.typ, w.path, w.test, w.remove} {
 		setEnabled(c, !locked)
 	}
-	setEnabled(w.browse, !locked && !url)
-	setEnabled(w.args, !locked && !url)
+	setEnabled(w.browse, !locked && file)
+	setEnabled(w.args, !locked && file)
 }
 
 // showLabel writes text into l and shows it, or hides it when empty.
@@ -237,9 +237,9 @@ func (u *ui) addPresetRow(r presetRow) {
 	}
 	w.typ.OnChanged = func(string) {
 		w.path.SetPlaceHolder(u.pathPlaceholder(w.row().Type))
-		if w.row().Type == "url" {
-			// A URL takes no arguments: clear them rather than keep a
-			// greyed value that would still be saved or checked.
+		if !presetTakesArgs(w.row().Type) {
+			// A URL, keys or focus takes no arguments: clear them rather
+			// than keep a greyed value that would still be saved or checked.
 			w.args.SetText("")
 		}
 		w.setEditable(u.editorsLocked())

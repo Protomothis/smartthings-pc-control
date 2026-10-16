@@ -21,6 +21,7 @@ type (
 	ActivityWatch     = config.ActivityWatch
 	MediaConfig       = config.MediaConfig
 	NotifyPCConfig    = config.NotifyPCConfig
+	MonitorConfig     = config.MonitorConfig
 	Preset            = config.Preset
 )
 
@@ -97,5 +98,6 @@ func saveConfig(cfg Config) error {
 	// The activity scanner looks again right away instead of on its next
 	// tick (a no-op while it is not running).
 	kickActivityScan()
+	kickPrivacyScan()
 	return nil
 }

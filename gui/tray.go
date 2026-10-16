@@ -52,8 +52,9 @@ func (u *ui) setupTray() {
 			func(error) { go u.loadSchedule() })
 	})
 
+	// Unsaved edits are asked about first, as on closing the window (#141).
 	quitItem := fyne.NewMenuItem(u.t("tray.exit"), func() {
-		u.app.Quit()
+		u.requestQuit(u.app.Quit)
 	})
 	// Mark it as the quit entry — otherwise Fyne appends its own "Quit"
 	// and the menu ends up with two exit items.

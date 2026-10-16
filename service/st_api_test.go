@@ -101,33 +101,33 @@ func TestSTStatusGatesUserData(t *testing.T) {
 	}{
 		{
 			name: "everything on", cfg: optIn(), loggedIn: true,
-			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `"}`,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","outputs":[],"inputs":[]}`,
 			media:    `{"status":"playing","title":"Hype Boy","artist":"NewJeans","album":"New Jeans","app":"Spotify","updated_at":"` + stamp + `"}`,
 			features: "[awake audio media nowplaying notify presets]",
 		},
 		{
 			// The readings are still stored, but nobody is there to own them.
 			name: "nobody logged in", cfg: optIn(), loggedIn: false,
-			audio: `{"available":false}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake audio media nowplaying notify presets]",
 		},
 		{
 			// A title stored a moment ago is not shown once the opt-in is off.
 			name: "now playing not opted in", cfg: mediaOn(), loggedIn: true,
-			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `"}`,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","outputs":[],"inputs":[]}`,
 			media:    `{"status":"playing","updated_at":"` + stamp + `"}`,
 			features: "[awake audio media notify presets]",
 		},
 		{
 			name: "media off", cfg: Config{Port: 5001, Media: MediaConfig{NowPlaying: true}, NotifyPC: NotifyPCConfig{Enabled: true}}, loggedIn: true,
-			audio: `{"available":false}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake notify presets]",
 		},
 		{
 			// Still listed while off: the driver sends, gets 403
 			// notify_disabled and says "PC 알림 꺼짐" rather than "not supported".
 			name: "PC notifications off", cfg: Config{Port: 5001}, loggedIn: true,
-			audio: `{"available":false}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake notify presets]",
 		},
 	} {
@@ -471,6 +471,21 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 	at, _ := last["at"].(string)
 	if _, err := time.Parse(time.RFC3339, at); err != nil {
 		t.Errorf("last_search.at = %q: %v", at, err)
+	}
+
+	// The command-port rule as last checked (#139): unchecked first, then
+	// the port and the answer of the start-time check.
+	prevFW := commandFirewall.Load()
+	t.Cleanup(func() { commandFirewall.Store(prevFW) })
+	commandFirewall.Store(nil)
+	cp, ok := hub()["command_port"].(map[string]any)
+	if !ok || cp["checked"] != false || cp["firewall_rule"] != false {
+		t.Errorf("command_port before the check = %v", hub()["command_port"])
+	}
+	commandFirewall.Store(&commandFirewallState{Port: 5005, OK: true})
+	cp, _ = hub()["command_port"].(map[string]any)
+	if cp["checked"] != true || cp["firewall_rule"] != true || cp["port"] != float64(5005) {
+		t.Errorf("command_port after the check = %v", cp)
 	}
 
 	// The existing fields are untouched by the additions.

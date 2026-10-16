@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/service/wolscan"
 
 	"golang.org/x/sys/windows"
@@ -39,6 +40,30 @@ type serviceState struct {
 	// cleared again on the next start (edge-driver doc §3.2): finding it
 	// false at startup means the PC lost power instead of shutting down.
 	CleanShutdown bool `json:"clean_shutdown"`
+	// PushSubscriptions are the SmartThings hub push subscriptions,
+	// written through on every subscribe and renewal (#142), so a restart
+	// takes them up again and power.started reaches the hubs whose
+	// subscription ran out while the PC was off.
+	PushSubscriptions []stapi.SavedSubscription `json:"push_subscriptions,omitempty"`
+}
+
+// pushSubscriptionState keeps the hub push subscriptions in state.json
+// (stapi.SubscriptionStore).
+type pushSubscriptionState struct{}
+
+func (pushSubscriptionState) LoadSubscriptions() []stapi.SavedSubscription {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return loadState(statePath()).PushSubscriptions
+}
+
+func (pushSubscriptionState) SaveSubscriptions(list []stapi.SavedSubscription) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	path := statePath()
+	st := loadState(path)
+	st.PushSubscriptions = list
+	return saveState(path, st)
 }
 
 // lastShutdownClean is what CleanShutdown said at startup, reported by
@@ -288,6 +313,9 @@ func startupHooks(stop <-chan struct{}) {
 	// Running-app detection (#110): reads activity.enabled on every tick
 	// and does not look at processes while it is off.
 	go watchActivity(stop)
+	// Camera/microphone detection (#143): likewise opt-in, reads nothing
+	// while privacy.enabled is off.
+	go watchPrivacy(stop)
 	// Audio and media state when no tray app reports for the target
 	// session: read it there shortly after the start (session_fill.go).
 	startSessionFill(stop)

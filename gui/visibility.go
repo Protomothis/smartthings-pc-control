@@ -79,7 +79,8 @@ func (u *ui) loadShown() {
 func (u *ui) onScreen() bool { return u.visible.Load() }
 
 // logsPollWanted reports whether the 3 s logs refresh should run: the logs
-// tab is in front of a window on screen, with auto refresh on.
+// tab is in front of a window on screen, with auto refresh on. Connected
+// or not: without the service it re-reads service.log (#140).
 func (u *ui) logsPollWanted() bool {
-	return u.connected.Load() && u.onScreen() && int(u.shownTab.Load()) == tabLogs && u.logsAutoOn.Load()
+	return u.onScreen() && int(u.shownTab.Load()) == tabLogs && u.logsAutoOn.Load()
 }

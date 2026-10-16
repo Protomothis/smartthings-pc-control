@@ -1,0 +1,15 @@
+{
+  "_doc": "The same request while nobody is logged in at the PC's screen (the console session the monitors hang off): 409 no_user_session.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "monitor_brightness",
+    "value": 70
+  },
+  "response": {
+    "body": {
+      "error": "no_user_session"
+    },
+    "code": 409
+  }
+}

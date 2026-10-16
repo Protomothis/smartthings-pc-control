@@ -207,6 +207,8 @@ func TestDefaultConfigCatalogue(t *testing.T) {
 		"security.unknown_chat":   true,
 		"system.update_available": true,
 		"system.tray_wake_failed": true,
+		"privacy.blocked":         true,
+		"privacy.extended":        true,
 	}
 	for key, want := range on {
 		cat, kind, _ := strings.Cut(key, ".")
@@ -214,8 +216,9 @@ func TestDefaultConfigCatalogue(t *testing.T) {
 			t.Errorf("DefaultConfig()[%s][%s] = %v,%v want %v", cat, kind, got, ok, want)
 		}
 	}
-	if len(def) != 5 {
-		t.Errorf("expected 5 categories, got %d", len(def))
+	// remote, schedule, power, security, privacy (#143), system.
+	if len(def) != 6 {
+		t.Errorf("expected 6 categories, got %d", len(def))
 	}
 	// Each call returns a fresh map.
 	def["remote"]["received"] = false

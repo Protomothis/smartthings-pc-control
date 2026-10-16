@@ -21,6 +21,10 @@ var notAuditedKeys = []string{
 	"awake.keep_display",
 	"presets",
 	"debug",
+	// #145: which devices the slots name; switching between them follows
+	// media.enabled, which is audited.
+	"audio.outputs",
+	"audio.inputs",
 }
 
 // leafKeys lists every config.json path, descending into the objects
@@ -80,6 +84,9 @@ func TestChangedKeysEachKey(t *testing.T) {
 		"media.enabled":                   func(c *Config) { c.Media.Enabled = false },
 		"media.now_playing":               func(c *Config) { c.Media.NowPlaying = true },
 		"notify_pc.enabled":               func(c *Config) { c.NotifyPC.Enabled = false },
+		"monitor.enabled":                 func(c *Config) { c.Monitor.Enabled = true },
+		"privacy.enabled":                 func(c *Config) { c.Privacy.Enabled = true },
+		"privacy.guard":                   func(c *Config) { c.Privacy.Guard = PrivacyGuardBlock },
 	}
 	if len(changes) != len(auditedKeys) {
 		t.Fatalf("%d cases for %d audited keys", len(changes), len(auditedKeys))

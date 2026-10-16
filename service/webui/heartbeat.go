@@ -28,8 +28,9 @@ import (
 const (
 	// heartbeatMaxBody caps the body: one integer, since #103 an audio
 	// block whose device name is at most 128 characters, and since #117 a
-	// media block of four short texts (at most ~2.6 KB of UTF-8).
-	heartbeatMaxBody = 8 << 10
+	// media block of four short texts (at most ~2.6 KB of UTF-8), and since
+	// #145 the device names (heartbeat_devices.go).
+	heartbeatMaxBody = 64 << 10
 	// idleMax is a sanity bound (a year) on the reported value.
 	idleMax = int64(365 * 24 * 60 * 60)
 	// heartbeatClockSkew is how far in the future a sampled_at may lie.
@@ -54,6 +55,8 @@ type heartbeatRequest struct {
 	// serveHeartbeat); an older tray app leaves it out and is believed as
 	// before.
 	SessionID *uint32 `json:"session_id"`
+	// AudioDevices are the active playback and recording devices (#145).
+	AudioDevices *heartbeatAudioDevices `json:"audio_devices"`
 }
 
 // heartbeatMedia is the heartbeat's media block, with the same sampled_at
@@ -141,6 +144,11 @@ func (s *Server) serveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		mediaAt = at
 	}
+	devicesAt, msg := body.AudioDevices.check(hb.Now())
+	if msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
 	if body.SessionID != nil {
 		if target, err := hb.Target(); err == nil && target != *body.SessionID {
 			// The commands run in target (the unlocked session, else the
@@ -158,6 +166,11 @@ func (s *Server) serveHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// every sample as it was.
 	if body.IdleSeconds != nil {
 		hb.Idle(*body.IdleSeconds)
+	}
+	if body.AudioDevices != nil {
+		// Before the audio block: a push the audio sample causes then
+		// carries the new device slots too.
+		hb.AudioDevices(body.AudioDevices.Outputs, body.AudioDevices.Inputs, devicesAt)
 	}
 	if body.Audio != nil {
 		hb.Audio(body.Audio.Audio, audioAt)

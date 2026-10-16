@@ -151,7 +151,39 @@ func funcMap(lang string) template.FuncMap {
 		"join":   strings.Join,
 		"secs":   func(s string) string { return secondsText(lang, s) },
 		"reason": func(s string) string { return stopReasonText(lang, s) },
+		// devices localises the guard's in_use field (#143):
+		// "camera,microphone" → "카메라·마이크".
+		"devices": func(s string) string { return devicesText(lang, s) },
 	}
+}
+
+// deviceNames are the in_use device names (#143) in the two languages.
+var deviceNames = map[string][2]string{
+	"camera":     {"카메라", "camera"},
+	"microphone": {"마이크", "microphone"},
+}
+
+// devicesText localises a comma-separated in_use field; an unknown name is
+// shown as it came.
+func devicesText(lang, s string) string {
+	var out []string
+	for _, d := range strings.Split(s, ",") {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		if names, ok := deviceNames[d]; ok {
+			d = names[0]
+			if lang == LangEn {
+				d = names[1]
+			}
+		}
+		out = append(out, d)
+	}
+	if lang == LangEn {
+		return strings.Join(out, " and ")
+	}
+	return strings.Join(out, "·")
 }
 
 // stopReasonNames is the power.stopping reason wire value (edge-driver doc
@@ -323,6 +355,8 @@ func IconFor(category, kind string) string {
 		return "⚡"
 	case "security":
 		return "🛡"
+	case "privacy":
+		return "📷"
 	case "system":
 		switch kind {
 		case "update_available", "updated":

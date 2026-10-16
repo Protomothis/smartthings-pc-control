@@ -1,0 +1,8 @@
+{{define "title"}}Not run: device in use{{end}}
+{{define "summary"}}<b>{{.Fields.command}}</b> was not run: {{devices .Fields.in_use}} in use{{if eq .Fields.from "schedule"}} (schedule cancelled){{end}}{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+From: <code>{{.Fields.from}}</code>
+{{if .Fields.origin}}Scheduled from: <code>{{.Fields.origin}}</code>{{end}}
+In use: <code>{{devices .Fields.in_use}}</code>
+{{end}}

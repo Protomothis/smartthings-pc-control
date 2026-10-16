@@ -8,6 +8,8 @@ package useraction
 //	url      ShellExecute("open", url) — http/https only (the parser checks)
 //	script   .ps1 → powershell.exe -NoProfile -ExecutionPolicy Bypass -File <path> args…
 //	         .bat/.cmd → cmd.exe /d /v:off /s /c ""<path>" "arg"…"
+//	keys     SendInput of one key combination (presetkeys.go, #146)
+//	focus    bring a program's or a titled window to the front (presetfocus.go, #146)
 //
 // Interpreters are started by absolute path under the Windows directory
 // (internal/systool). Every argument is quoted with syscall.EscapeArg (the
@@ -214,6 +216,10 @@ const (
 	PresetAccessDenied = "access_denied" // Windows refused to open or start it
 	PresetStartFailed  = "start_failed"  // any other start failure
 	PresetURLFailed    = "url_failed"    // Windows could not open the URL or app link (no browser, no app for the protocol)
+	// #146
+	PresetKeysFailed     = "keys_failed"      // SendInput refused the keys (input blocked, the secure desktop)
+	PresetWindowNotFound = "window_not_found" // no open window matches a focus preset
+	PresetFocusFailed    = "focus_failed"     // the window was found but Windows kept it from the front
 )
 
 // PresetFileName is the base name of a preset path ("run.ps1" for
@@ -245,10 +251,21 @@ func presetStartError(path string, err error) *Error {
 // without waiting for it. A failure never puts the path or the URL into
 // the message (it reaches Telegram and SmartThings); see presetStartError.
 func handlePreset(req Request) (map[string]any, error) {
-	if req.PresetType == "url" {
+	switch req.PresetType {
+	case "url":
 		if err := openURL(req.Path); err != nil {
 			// The URL may carry a token of its own: not even its host.
 			return nil, &Error{Code: CodeFailed, Reason: PresetURLFailed, Message: "could not open the URL", Detail: err.Error()}
+		}
+		return map[string]any{"started": true}, nil
+	case "keys":
+		if err := pressPresetKeys(req.Path); err != nil {
+			return nil, err
+		}
+		return map[string]any{"started": true}, nil
+	case "focus":
+		if err := focusPresetWindow(req.Path); err != nil {
+			return nil, err
 		}
 		return map[string]any{"started": true}, nil
 	}

@@ -7,6 +7,7 @@ package service
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,10 +21,34 @@ type fakeNetsh struct {
 	calls    [][]string
 	// addErr, when set, fails every "add rule".
 	addErr error
+	// ports is each rule's localport, from its "add rule" or set by the
+	// test; "show rule" lists it the way netsh does (#139).
+	ports map[string]string
+	// showOut, when set for a name, is "show rule"'s whole answer for it.
+	showOut map[string]string
+}
+
+// netshShowRule is "show rule" output for one TCP rule, as an English
+// Windows prints it.
+func netshShowRule(name, port string) string {
+	return "\r\nRule Name:                            " + name + "\r\n" +
+		"----------------------------------------------------------------------\r\n" +
+		"Enabled:                              Yes\r\n" +
+		"Direction:                            In\r\n" +
+		"Profiles:                             Domain,Private,Public\r\n" +
+		"Grouping:                             \r\n" +
+		"LocalIP:                              Any\r\n" +
+		"RemoteIP:                             Any\r\n" +
+		"Protocol:                             TCP\r\n" +
+		"LocalPort:                            " + port + "\r\n" +
+		"RemotePort:                           Any\r\n" +
+		"Edge traversal:                       No\r\n" +
+		"Action:                               Allow\r\n" +
+		"Ok.\r\n"
 }
 
 func newFakeNetsh(existing ...string) *fakeNetsh {
-	f := &fakeNetsh{existing: map[string]bool{}}
+	f := &fakeNetsh{existing: map[string]bool{}, ports: map[string]string{}, showOut: map[string]string{}}
 	for _, name := range existing {
 		f.existing[name] = true
 	}
@@ -40,17 +65,30 @@ func (f *fakeNetsh) run(args ...string) ([]byte, error) {
 			// netsh exits non-zero when nothing matches.
 			return []byte("No rules match the specified criteria."), errors.New("exit status 1")
 		}
+		if out, ok := f.showOut[name]; ok {
+			return []byte(out), nil
+		}
+		if port, ok := f.ports[name]; ok {
+			return []byte(netshShowRule(name, port)), nil
+		}
 		return []byte("Rule Name: " + name), nil
 	case "add":
 		if f.addErr != nil {
 			return []byte("The requested operation requires elevation."), f.addErr
 		}
 		f.existing[name] = true
+		for _, a := range args {
+			if v, ok := strings.CutPrefix(a, "localport="); ok {
+				f.ports[name] = v
+			}
+		}
 	case "delete":
 		if !f.existing[name] {
 			return []byte("No rules match the specified criteria."), errors.New("exit status 1")
 		}
 		delete(f.existing, name)
+		delete(f.ports, name)
+		delete(f.showOut, name)
 	}
 	return []byte("Ok."), nil
 }
@@ -236,4 +274,113 @@ func TestEnsureSSDPFirewallRuleAtStartIsUnconditional(t *testing.T) {
 			t.Error("a failed add still reports the rule as present")
 		}
 	})
+}
+
+// ---- the command-port rule follows the port (#139) -------------------------
+
+// TestEnsureCommandFirewallRuleFollowsThePort: at every start the TCP rule
+// is checked against the configured port. A rule already for that port is
+// left alone; one for another port (the port was changed in the settings),
+// one whose port could not be read, or none at all is replaced. The
+// outcome is cached for /api/st/hub.
+func TestEnsureCommandFirewallRuleFollowsThePort(t *testing.T) {
+	prev := commandFirewall.Load()
+	t.Cleanup(func() { commandFirewall.Store(prev) })
+
+	// What a Korean Windows prints: the labels are translated, the values
+	// are not. The IPv6 LocalIP must not pass for a port.
+	korean := "\r\n규칙 이름:                             " + firewallRuleName + "\r\n" +
+		"----------------------------------------------------------------------\r\n" +
+		"사용:                                  예\r\n" +
+		"방향:                                  들어오는 방향\r\n" +
+		"로컬 IP:                               fe80::1\r\n" +
+		"프로토콜:                              TCP\r\n" +
+		"로컬 포트:                             5001\r\n" +
+		"원격 포트:                             모두\r\n" +
+		"작업:                                  허용\r\n" +
+		"확인되었습니다.\r\n"
+
+	for _, tc := range []struct {
+		name    string
+		port    string // the rule's port in the fake firewall, "" = no rule
+		showOut string // a literal "show rule" answer instead
+		want    int    // the configured port
+		verbs   string // the netsh calls
+		changed bool
+	}{
+		{"no rule yet", "", "", 5001, "show show add", true},
+		{"same port, left alone", "5001", "", 5001, "show", false},
+		{"port changed, replaced", "5001", "", 5005, "show delete show add", true},
+		{"translated labels, same port", "", korean, 5001, "show", false},
+		{"translated labels, port changed", "", korean, 5005, "show delete show add", true},
+		{"unreadable output, replaced", "", "Rule Name: " + firewallRuleName, 5001, "show delete show add", true},
+		{"two rules, one stale", "", netshShowRule(firewallRuleName, "5001") + netshShowRule(firewallRuleName, "5003"), 5001, "show delete show add", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeNetsh()
+			if tc.port != "" {
+				f.existing[firewallRuleName] = true
+				f.ports[firewallRuleName] = tc.port
+			}
+			if tc.showOut != "" {
+				f.existing[firewallRuleName] = true
+				f.showOut[firewallRuleName] = tc.showOut
+			}
+			withFakeNetsh(t, f)
+			commandFirewall.Store(nil)
+
+			changed, err := ensureCommandFirewallRule(tc.want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(f.verbs(), " "); got != tc.verbs {
+				t.Fatalf("netsh calls = %q, want %q (%v)", got, tc.verbs, f.calls)
+			}
+			if changed != tc.changed {
+				t.Errorf("changed = %v, want %v", changed, tc.changed)
+			}
+			if add := slices.Index(f.verbs(), "add"); add >= 0 {
+				want := strconv.Itoa(tc.want)
+				if !hasArgs(f.calls[add], "name="+firewallRuleName, "dir=in", "action=allow", "protocol=tcp", "localport="+want) {
+					t.Errorf("add rule args = %v", f.calls[add])
+				}
+			}
+			st, checked := commandFirewallRuleState()
+			if !checked || st.Port != tc.want || !st.OK {
+				t.Errorf("cached state = %+v (checked %v), want port %d ok", st, checked, tc.want)
+			}
+		})
+	}
+}
+
+// A failed add is reported, logged by the start path and cached as
+// missing, so the app does not claim a rule that is not there.
+func TestEnsureCommandFirewallRuleReportsFailure(t *testing.T) {
+	prev := commandFirewall.Load()
+	t.Cleanup(func() { commandFirewall.Store(prev) })
+
+	f := newFakeNetsh(firewallRuleName)
+	f.ports[firewallRuleName] = "5001"
+	f.addErr = errors.New("exit status 1")
+	withFakeNetsh(t, f)
+
+	if _, err := ensureCommandFirewallRule(5005); err == nil {
+		t.Fatal("want an error when netsh add fails")
+	}
+	if st, checked := commandFirewallRuleState(); !checked || st.OK || st.Port != 5005 {
+		t.Errorf("cached state = %+v (checked %v), want port 5005 missing", st, checked)
+	}
+
+	commandFirewall.Store(nil)
+	ensureCommandFirewallRuleAtStart(5005) // best effort: logs, never panics
+	if st, _ := commandFirewallRuleState(); st.OK {
+		t.Error("a failed add at start still reports the rule as present")
+	}
+
+	// Port 0 (no config yet) touches nothing.
+	f.calls = nil
+	ensureCommandFirewallRuleAtStart(0)
+	if len(f.calls) != 0 {
+		t.Errorf("port 0 ran netsh: %v", f.calls)
+	}
 }

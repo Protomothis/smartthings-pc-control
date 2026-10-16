@@ -30,6 +30,9 @@ func runMediaCommand(ctx context.Context, name string, value *int) (UserActionRe
 	if !getConfig().Media.Enabled {
 		return UserActionResult{}, action.ErrMediaDisabled
 	}
+	if action.IsAudioDevice(name) {
+		return runAudioDeviceCommand(ctx, name, value) // #145, audio_devices.go
+	}
 	args, err := action.MediaArgs(name, value)
 	if err != nil {
 		return UserActionResult{}, err
@@ -71,8 +74,9 @@ func userSessionPresent() bool {
 	return err == nil
 }
 
-// stAudioStatus builds the audio block for cfg.
-func stAudioStatus(cfg Config) stAudio {
+// stAudioReading builds the reading part of the audio block for cfg
+// (stAudioStatus adds the device slots, audio_devices.go).
+func stAudioReading(cfg Config) stAudio {
 	if !cfg.Media.Enabled {
 		return stAudio{}
 	}

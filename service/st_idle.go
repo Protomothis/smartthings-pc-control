@@ -65,6 +65,7 @@ func observeTargetSession(id uint32) {
 	if prev, changed := dev.target.Observe(id); changed {
 		resetIdleHeartbeat()
 		resetAudioSample()
+		resetAudioDevices()
 		resetMediaSample()
 		dev.tray.Reset()
 		logMsg("user session changed from %d to %d: idle, audio and media samples cleared", prev, id)

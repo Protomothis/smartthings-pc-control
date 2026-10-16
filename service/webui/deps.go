@@ -45,6 +45,13 @@ type Deps struct {
 	Notify    Notifier
 	Telegram  Telegram
 	Heartbeat Heartbeat
+	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
+	Monitor Monitor
+
+	// Privacy is the camera/microphone block (#143) GET /api/privacy
+	// reports, nil while privacy.enabled is off; a nil func reads the
+	// same.
+	Privacy func(cfg config.Config) *status.Privacy
 }
 
 // Status is what the pages and /api report about this PC.
@@ -74,14 +81,20 @@ type Hub interface {
 	LastSSDPSearch() (status.SSDPSearch, bool)
 	// SSDPFirewallRule reports whether the inbound UDP 1900 rule was found.
 	SSDPFirewallRule() bool
+	// CommandFirewallRule is the command port's inbound TCP rule (#139):
+	// the port it was checked for at service start, whether a rule for
+	// that port is in place, and whether the check has finished yet.
+	CommandFirewallRule() (port int, ok, checked bool)
 }
 
 // Commands is the command catalogue and the schedule slot on behalf of
 // the UIs on this PC (origin "ui").
 type Commands interface {
 	// RunNow runs a catalogue command at once for by (app, tray, toast,
-	// webui); false for a name the catalogue does not have.
-	RunNow(name, by string) bool
+	// webui). ErrUnknownCommand for a name the catalogue does not have; a
+	// *privacy.DeviceInUseError when the camera/microphone guard refused a
+	// power command from the WebUI (#143).
+	RunNow(name, by string) error
 	// Schedule arms command to run after delay.
 	Schedule(command string, delay time.Duration) error
 	// CancelSchedule ends the schedule on behalf of by; false when there
@@ -145,4 +158,6 @@ type Heartbeat interface {
 	Idle(seconds int64)
 	Audio(a useraction.Audio, at time.Time)
 	Media(np useraction.NowPlaying, at time.Time)
+	// AudioDevices stores the active devices (#145).
+	AudioDevices(outputs, inputs []useraction.AudioEndpoint, at time.Time)
 }

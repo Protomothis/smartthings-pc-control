@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -55,6 +56,8 @@ var webSrv = webui.New(webui.Deps{
 	Notify:    pcNotifier{},
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
+	Monitor:   monitorControl{},
+	Privacy:   stPrivacyStatus,
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port
@@ -107,7 +110,12 @@ func StartWebUI(stop chan struct{}) {
 	} else {
 		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
 	}
-	server.ListenAndServe()
+	// A bind failure (another program on port+1) leaves the service
+	// running but the app unable to reach it; without this line nothing
+	// said why (#140).
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		logMsg("ERROR: WebUI server on port %d failed (the app cannot connect; is another program using the port?): %v", webPort, err)
+	}
 }
 
 // hubInfo is the SmartThings side the app's SmartThings section shows:
@@ -121,14 +129,21 @@ func (hubInfo) WoLView(cfg SmartThingsConfig) (status.WoL, *status.WoLSelected) 
 func (hubInfo) SSDPRunning() bool                         { return stSrv.SSDPRunning() }
 func (hubInfo) LastSSDPSearch() (status.SSDPSearch, bool) { return stSrv.LastSSDPSearch() }
 func (hubInfo) SSDPFirewallRule() bool                    { return ssdpFirewallRuleOK() }
+func (hubInfo) CommandFirewallRule() (int, bool, bool) {
+	st, checked := commandFirewallRuleState()
+	return st.Port, st.OK, checked
+}
 
 // uiCommands is the catalogue and the schedule slot on behalf of the UIs
 // on this PC: origin "ui", at once (the person asking is at the PC).
 type uiCommands struct{}
 
-func (uiCommands) RunNow(name, by string) bool {
-	_, ok := dispatchCommand(name, by, originUI, dispatchImmediate)
-	return ok
+func (uiCommands) RunNow(name, by string) error {
+	_, err := dispatchCommand(name, by, originUI, dispatchImmediate)
+	if errors.Is(err, errUnknownCommand) {
+		return webui.ErrUnknownCommand
+	}
+	return err
 }
 
 func (uiCommands) Schedule(command string, delay time.Duration) error {

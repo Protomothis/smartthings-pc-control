@@ -1,0 +1,15 @@
+{
+  "_doc": "The same request while monitor.enabled is off (opt-in): 403 monitor_disabled.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "monitor_brightness",
+    "value": 70
+  },
+  "response": {
+    "body": {
+      "error": "monitor_disabled"
+    },
+    "code": 403
+  }
+}

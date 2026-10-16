@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
@@ -292,12 +293,32 @@ func goldenConfig() Config {
 		Awake:         AwakeConfig{DefaultMinutes: 60},
 		Activity:      goldenActivityConfig(),
 		Media:         MediaConfig{Enabled: true, NowPlaying: true},
+		Audio:         goldenAudioConfig(),
 		NotifyPC:      NotifyPCConfig{Enabled: true},
+		Monitor:       MonitorConfig{Enabled: true},
 		Presets: []Preset{
 			{Slot: 3, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`, Args: []string{"-bigpicture"}},
 			{Slot: 1, Name: "대시보드", Type: "url", Path: "https://example.com/dashboard"},
 		},
+		Privacy: config.PrivacyConfig{Enabled: true, Guard: config.PrivacyGuardWarn},
 	}
+}
+
+// ---- privacy (#143): the camera is in use since 20:45; the microphone
+// was last used 19:00–20:00. push.privacy.changed.json turns the
+// microphone on at 20:55; command.shutdown.device-in-use.json switches
+// the guard to block.
+
+func goldenPrivacy(t *testing.T, cfg Config) {
+	t.Helper()
+	s := stubPrivacy(t)
+	s.set(privacy.Camera, goldenNow.Add(-15*time.Minute), time.Time{})
+	s.set(privacy.Microphone, goldenNow.Add(-2*time.Hour), goldenNow.Add(-time.Hour))
+	// The reading without an event, like the activity scan above.
+	privacyMon.Scan()
+	privacyOn.mu.Lock()
+	privacyOn.on = cfg.Privacy.Enabled
+	privacyOn.mu.Unlock()
 }
 
 // ---- activity (#123: watch slots 1–5 on the PC device, slot = priority).
@@ -326,6 +347,41 @@ func goldenActivity(t *testing.T, cfg Config) {
 var goldenTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Artist: "NewJeans", Album: "New Jeans", App: "Spotify"}
 
 const goldenSpeaker = "스피커 (Realtek(R) Audio)"
+
+// ---- audio device slots (#145). Outputs: 1 the speaker (default), 2
+// empty, 3 the headset (connected), 4 a TV that is not connected. Inputs:
+// 1 the microphone (default), 2 the headset's (connected).
+
+const (
+	goldenHeadset    = "헤드셋 (WH-1000XM4)"
+	goldenTV         = "LG TV (NVIDIA High Definition Audio)"
+	goldenMic        = "마이크 (Realtek(R) Audio)"
+	goldenHeadsetMic = "헤드셋 마이크 (WH-1000XM4)"
+)
+
+func goldenAudioConfig() config.AudioConfig {
+	return config.AudioConfig{
+		Outputs: []string{goldenSpeaker, "", goldenHeadset, goldenTV},
+		Inputs:  []string{goldenMic, goldenHeadsetMic},
+	}
+}
+
+// goldenOutputs and goldenInputs are the active devices of the golden PC.
+func goldenOutputs() []useraction.AudioEndpoint {
+	return []useraction.AudioEndpoint{
+		{ID: "{0.0.0.00000000}.{a1b2c3d4-0001-4000-8000-000000000001}", Name: goldenSpeaker, Default: true},
+		{ID: "{0.0.0.00000000}.{a1b2c3d4-0003-4000-8000-000000000003}", Name: goldenHeadset},
+	}
+}
+
+func goldenInputs() []useraction.AudioEndpoint {
+	return []useraction.AudioEndpoint{
+		{ID: "{0.0.1.00000000}.{b1b2c3d4-0001-4000-8000-000000000001}", Name: goldenMic, Default: true},
+		{ID: "{0.0.1.00000000}.{b1b2c3d4-0002-4000-8000-000000000002}", Name: goldenHeadsetMic},
+	}
+}
+
+// ---- end of the audio device section.
 
 // goldenWorld puts every piece of state the status document reads into a
 // known value, through the seams the feature tests already use, and
@@ -403,6 +459,8 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	})
 
 	goldenActivity(t, cfg)
+	goldenMonitors(t) // #144, monitor_test.go
+	goldenPrivacy(t, cfg)
 
 	// audio and media: one reading each, fresh against the golden clock.
 	resetAudioSample()
@@ -417,6 +475,9 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		sys.sessionPresent = savedPresent
 	})
 	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
+	resetAudioDevices()
+	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, goldenNow.Add(-30*time.Second))
+	t.Cleanup(resetAudioDevices)
 	noteMediaSampleChange(goldenTrack, goldenNow.Add(-20*time.Second))
 
 	// last_command: a preset run from SmartThings five minutes ago.
@@ -519,6 +580,7 @@ func offWorld(t *testing.T) {
 	activityScan.Scan(cfg.Activity)
 
 	resetAudioSample()
+	resetAudioDevices()
 	resetMediaSample()
 	resetIdleHeartbeat()
 	savedPresent := sys.sessionPresent
@@ -643,6 +705,10 @@ func withConfig(t *testing.T, edit func(*Config)) {
 // here and every case a file.
 var commandCases = map[string]commandCase{
 	"command.shutdown.json": {setup: func(t *testing.T) { stubCommand(t, "shutdown") }},
+	"command.shutdown.device-in-use.json": {setup: func(t *testing.T) {
+		stubCommand(t, "shutdown")
+		withConfig(t, func(c *Config) { c.Privacy.Guard = config.PrivacyGuardBlock })
+	}},
 	"command.schedule.json": {
 		setup:    func(t *testing.T) { stubCommand(t, "restart") },
 		volatile: scheduleVolatile("schedule."),
@@ -666,6 +732,18 @@ var commandCases = map[string]commandCase{
 		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}}, nil)
 	}},
 	"command.next.json": {setup: func(t *testing.T) { stubMediaRun(t, UserActionResult{OK: true}, nil) }},
+	// #145: a fake user session with the golden devices; nothing switches
+	// a real device.
+	"command.audio_output.json":                {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.device-missing.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.slot-empty.json":     {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
+	"command.audio_output.switch-failed.json": {setup: func(t *testing.T) {
+		stubAudioSession(t, goldenOutputs(), goldenInputs()).refuse = true
+	}},
+	"command.audio_output.no-user.json": {setup: func(t *testing.T) {
+		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
+	}},
+	"command.audio_input.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
 	"command.next.media-disabled.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{OK: true}, nil)
 		withConfig(t, func(c *Config) { c.Media.Enabled = false })
@@ -678,6 +756,15 @@ var commandCases = map[string]commandCase{
 		fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 		withConfig(t, func(c *Config) { c.NotifyPC.Enabled = false })
 	}},
+	// #144: the monitor commands (monitor_test.go has the stubs).
+	"command.monitor_brightness.json":          {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":70,"input":"hdmi1","inputs":["hdmi1"],"power":"on"}}`, nil)},
+	"command.monitor_brightness.disabled.json": {setup: func(t *testing.T) { withConfig(t, func(c *Config) { c.Monitor.Enabled = false }) }},
+	"command.monitor_brightness.no-user.json":  {setup: monitorReply("", errNoConsoleSession)},
+	"command.monitor_input.json":               {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"dp1","inputs":["dp1"],"power":"on"}}`, nil)},
+	"command.monitor_input.unsupported.json": {setup: func(t *testing.T) {
+		seedMonitors(t, []useraction.Monitor{{ID: "m1", Name: "LG TV", Primary: true, Inputs: []string{}, Power: "unknown"}})
+	}},
+	"command.monitor_power.json": {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"hdmi1","inputs":["hdmi1"],"power":"standby"}}`, nil)},
 	"command.subscribe.json": {
 		setup: func(t *testing.T) {
 			// Ids count up for the life of the process; start this one at 1.
@@ -695,7 +782,7 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	var target any
 	switch {
 	case method == "POST" && path == "/st/v1/command":
-		target = &stapi.CommandRequest{}
+		target = commandRequestType(raw)
 	case method == "POST" && path == "/st/v1/notify":
 		target = &stapi.NotifyRequest{}
 	case method == "POST" && path == "/st/v1/subscribe":
@@ -839,6 +926,12 @@ var pushCases = map[string]pushCase{
 		}
 	}},
 	"push.display.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) { setDisplayState("off") }},
+	// privacy (#143): the microphone joins the camera; data =
+	// status.privacy, since stays the camera's 20:45.
+	"push.privacy.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
+		privacyFake.set(privacy.Microphone, goldenNow.Add(-5*time.Minute), time.Time{})
+		refreshPrivacy(getConfig())
+	}},
 	"push.session.locked.json": {
 		opts:    worldOpts{locked: true},
 		trigger: func(t *testing.T, _ *fakeAwake) { emitSessionLock(sessionInfo{Locked: true, User: "golden"}) },

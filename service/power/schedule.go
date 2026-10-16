@@ -84,6 +84,9 @@ type Task struct {
 	// Telegram grace message remembered for it (#62) is never edited on
 	// behalf of a later schedule.
 	Seq uint64
+	// Held counts how often Scheduler.Hold pushed this schedule back
+	// (#143); it keeps its Seq meanwhile.
+	Held int
 }
 
 // Hooks are what a schedule's life sets off (notifications, the Telegram
@@ -111,6 +114,13 @@ type Scheduler struct {
 	// catalogue does not have.
 	Lookup func(command string) (run func(), ok bool)
 	Hooks  Hooks
+	// Hold, when set, is asked right before a schedule runs (#143, the
+	// camera/microphone guard). A positive delay pushes the schedule back
+	// by that much instead (same Seq, Held+1); drop ends it without running
+	// it, reported through Hooks.Ended with by "device_in_use". It runs
+	// without the lock and may emit, but must not call back into the
+	// scheduler.
+	Hold func(t Task) (delay time.Duration, drop bool)
 	// Log receives one line per change.
 	Log func(format string, args ...any)
 
@@ -179,6 +189,12 @@ func (s *Scheduler) Schedule(command string, delay time.Duration, origin Origin)
 // fire runs t when its timer ran out, then clears the slot unless a newer
 // schedule took it meanwhile.
 func (s *Scheduler) fire(t Task, run func()) {
+	if s.Hold != nil {
+		if delay, drop := s.Hold(t); drop || delay > 0 {
+			s.hold(t, run, delay, drop)
+			return
+		}
+	}
 	s.logf("Scheduled command executing: %s", t.Command)
 	if s.Hooks.Fired != nil {
 		s.Hooks.Fired(t)
@@ -191,6 +207,33 @@ func (s *Scheduler) fire(t Task, run func()) {
 		s.task, s.timer = nil, nil
 	}
 	s.mu.Unlock()
+}
+
+// HeldBy is the Ended hook's by for a schedule Hold dropped.
+const HeldBy = "device_in_use"
+
+// hold carries out a Hold answer for t, unless t was cancelled or
+// replaced while Hold was deciding.
+func (s *Scheduler) hold(t Task, run func(), delay time.Duration, drop bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.task == nil || s.task.Seq != t.Seq {
+		return
+	}
+	if drop {
+		s.logf("Scheduled command held back: %s dropped", t.Command)
+		if s.Hooks.Ended != nil {
+			s.Hooks.Ended(t, HeldBy, false)
+		}
+		s.task, s.timer = nil, nil
+		return
+	}
+	next := t
+	next.Held++
+	next.ExecuteAt = time.Now().Add(delay)
+	s.task = &next
+	s.timer = time.AfterFunc(delay, func() { s.fire(next, run) })
+	s.logf("Scheduled command held back: %s in %s (at %s)", t.Command, FormatDelay(delay), next.ExecuteAt.Format("15:04:05"))
 }
 
 // Current returns the active schedule; ok is false when the slot is empty.

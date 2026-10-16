@@ -57,6 +57,12 @@ type Status struct {
 	// Presets are the registered preset slots and their names (#109, §10),
 	// in slot order; never null. What a slot runs never leaves this PC.
 	Presets []status.PresetRef `json:"presets"`
+	// Monitors is the DDC/CI reading (#144, monitor.go), only while
+	// monitor.enabled is on.
+	Monitors *[]status.Monitor `json:"monitors,omitempty"`
+	// Privacy is the opt-in camera/microphone block (#143); left out
+	// while privacy.enabled is off.
+	Privacy *status.Privacy `json:"privacy,omitempty"`
 }
 
 // features lists what this service supports right now. Some entries depend
@@ -71,7 +77,12 @@ func features(b status.Battery, cfg config.Config) []string {
 	if cfg.Activity.Enabled {
 		out = append(out, "activity")
 	}
+	// "privacy" (#143) follows privacy.enabled, like the status block.
+	if cfg.Privacy.Enabled {
+		out = append(out, "privacy")
+	}
 	out = append(out, mediaFeatures(cfg)...)
+	out = append(out, audioDeviceFeatures(cfg)...) // #145
 	// Unlike media, "notify" (#106) is listed whatever notify_pc.enabled
 	// says: the driver sends and shows the 403 notify_disabled as "PC 알림
 	// 꺼짐", where a missing feature would read as "not supported".
@@ -80,6 +91,7 @@ func features(b status.Battery, cfg config.Config) []string {
 	// then says "slot empty" instead of "not supported", and hides the empty
 	// slots through status presets.
 	out = append(out, "presets")
+	out = append(out, monitorFeature(cfg)...)
 	return out
 }
 
@@ -387,5 +399,7 @@ func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 		Audio:             src.Audio(cfg),
 		Media:             src.Media(cfg),
 		Presets:           presetList(cfg.Presets),
+		Monitors:          s.monitorsView(cfg, fromCache),
+		Privacy:           src.Privacy(cfg),
 	}
 }

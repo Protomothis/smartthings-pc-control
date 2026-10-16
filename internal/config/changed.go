@@ -15,7 +15,9 @@ import (
 // What the hub learns about running programs (activity.*) is
 // privacy-relevant too, and PC notifications and presets let the network
 // act in the user's session (#106, #109). presets is reported separately,
-// by slot (PresetChangeKey), never with what a slot runs.
+// by slot (PresetChangeKey), never with what a slot runs. privacy.* decides
+// whether the hub learns that the camera is on and whether a remote
+// shutdown may cut a call short (#143).
 var auditedKeys = []string{
 	"secret",
 	"port",
@@ -38,6 +40,9 @@ var auditedKeys = []string{
 	"media.enabled",
 	"media.now_playing",
 	"notify_pc.enabled",
+	"monitor.enabled",
+	"privacy.enabled",
+	"privacy.guard",
 }
 
 // auditedField is one auditedKeys entry resolved to its struct field.

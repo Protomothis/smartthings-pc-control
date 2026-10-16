@@ -225,7 +225,7 @@ func (u *ui) stRelative(rfc3339 string, now time.Time) string {
 // stHubLine is the connection status line: the hub, the driver version and
 // how long ago it last polled, or the "install the driver" hint.
 func (u *ui) stHubLine(h STHub, now time.Time) string {
-	if !h.Connected || h.IP == "" {
+	if stHubMissing(h) {
 		return u.t("st.hub.none")
 	}
 	version := h.DriverVersion
@@ -274,6 +274,29 @@ func (u *ui) stSearchLine(s STSSDPState, now time.Time) string {
 	return strings.Join([]string{u.t("st.search.on"), u.t(firewall), last}, " · ")
 }
 
+// stCommandPortLine is the command port's firewall rule (#139): the port
+// the service checked at its last start and whether the rule allows it.
+// savedPort is the port in the saved settings (0 = unknown); when it
+// differs, the service has not restarted since the change, and the line
+// says so. "" hides the line (a service that does not report the rule).
+func (u *ui) stCommandPortLine(c *STCommandPort, savedPort int) string {
+	if c == nil {
+		return ""
+	}
+	if !c.Checked {
+		return u.t("st.cmdport.checking")
+	}
+	key := "st.cmdport.missing"
+	if c.FirewallRule {
+		key = "st.cmdport.ok"
+	}
+	line := fmt.Sprintf(u.t(key), c.Port)
+	if savedPort > 0 && savedPort != c.Port {
+		line += " · " + fmt.Sprintf(u.t("st.cmdport.pending"), savedPort)
+	}
+	return line
+}
+
 // --- Widgets -----------------------------------------------------------------
 
 // stSection holds the section's widgets; rebuilt with the window on a
@@ -284,10 +307,16 @@ type stSection struct {
 	machineID  *widget.Label
 	copyBtn    *widget.Button
 	search     *widget.Label
+	cmdPort    *widget.Label // the command port's firewall rule (#139)
 	wolSelect  *widget.Select
 	wolHint    *widget.Label
 	hubBox     *fyne.Container
 	addBtn     *widget.Button
+	// The driver channel invite (#155, st_invite.go): the install steps
+	// and QR code shown while no hub is connected, and the QR button that
+	// stands in for them once one is.
+	inviteHelp *fyne.Container
+	qrBtn      *widget.Button
 
 	// hubs is the edited allow list and hub the last /api/st/hub result
 	// (the [Add current hub] button and the [복사] button need both).
@@ -336,6 +365,10 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.copyBtn.Disable() // enabled once the service has told us the id
 	t.search = widget.NewLabel(u.t("st.search.loading"))
 	t.search.Wrapping = fyne.TextWrapWord
+	// Hidden until a service that reports the rule answers.
+	t.cmdPort = widget.NewLabel("")
+	t.cmdPort.Wrapping = fyne.TextWrapWord
+	t.cmdPort.Hide()
 
 	// The adapter dropdown (#96). Its options only exist once /api/st/hub
 	// has answered, so it starts as a placeholder; OnChanged is attached
@@ -351,13 +384,18 @@ func (u *ui) buildSTSection() fyne.CanvasObject {
 	t.addBtn.Disable() // enabled by updateAddHubButton once a hub is known
 	u.renderHubs()
 
+	inviteRow := u.buildSTInvite(t)
+
 	return container.NewVBox(
 		t.status,
+		inviteRow,
+		t.inviteHelp,
 		t.secretHint,
 		// The id label keeps its natural width and the button sits next
 		// to it rather than stretching across the tab.
 		container.NewHBox(t.machineID, t.copyBtn, layout.NewSpacer()),
 		t.search,
+		t.cmdPort,
 		hint(u.t("st.search.hint")),
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(u.t("st.wol"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -558,8 +596,19 @@ func (u *ui) loadSTHub() {
 		t.wolLoaded = true
 		u.renderWoLAdapters()
 		t.status.SetText(u.stHubLine(h, now))
+		u.showSTInviteHelp(stHubMissing(h))
 		t.machineID.SetText(u.stMachineIDLine(h.MachineID))
 		t.search.SetText(u.stSearchLine(h.SSDP, now))
+		savedPort := 0
+		if u.forms != nil && u.forms.base != nil {
+			savedPort = u.forms.base.Port
+		}
+		if line := u.stCommandPortLine(h.CommandPort, savedPort); line != "" {
+			t.cmdPort.SetText(line)
+			t.cmdPort.Show()
+		} else {
+			t.cmdPort.Hide()
+		}
 		if h.MachineID == "" {
 			t.copyBtn.Disable()
 		} else {

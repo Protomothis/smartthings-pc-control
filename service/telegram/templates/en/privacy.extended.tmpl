@@ -1,0 +1,8 @@
+{{define "title"}}Schedule held back: device in use{{end}}
+{{define "summary"}}In use: {{devices .Fields.in_use}} — <b>{{.Fields.command}}</b> pushed back {{.Fields.delay}}, it runs then{{end}}
+{{define "fields"}}
+Command: <code>{{.Fields.command}}</code>
+Scheduled from: <code>{{.Fields.origin}}</code>
+In use: <code>{{devices .Fields.in_use}}</code>
+Executes at: <code>{{.Fields.execute_at}}</code>
+{{end}}

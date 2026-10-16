@@ -7,7 +7,10 @@ package service
 // between them.
 
 import (
+	"errors"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 )
 
 // dispatchMode says whether a command may wait out the grace period.
@@ -59,12 +62,20 @@ func notifiesCommand(name, from string, origin scheduleOrigin) bool {
 // announces it and starts it in the background.
 //
 // deferred is the grace period when the command was scheduled, 0 when it
-// runs now; ok is false for a name the catalogue does not have.
-// forceshutdown is never deferred.
-func dispatchCommand(name, from string, origin scheduleOrigin, mode dispatchMode) (deferred time.Duration, ok bool) {
+// runs now. err is errUnknownCommand for a name the catalogue does not
+// have, and a *privacy.DeviceInUseError when the camera/microphone guard
+// (#143, privacy_guard.go) refused it; a refused command is neither
+// recorded nor run. Under guard "warn" the command goes ahead and its
+// notification names what is in use. forceshutdown is never deferred, and
+// never guarded either: it is the escape hatch.
+func dispatchCommand(name, from string, origin scheduleOrigin, mode dispatchMode) (deferred time.Duration, err error) {
 	cmd, ok := Commands[name]
 	if !ok {
-		return 0, false
+		return 0, errUnknownCommand
+	}
+	pv := remoteVerdict(name, from, origin)
+	if pv.Block {
+		return 0, privacyRefusal(name, from, origin, pv)
 	}
 	recordCommand(name, from, origin)
 
@@ -76,13 +87,13 @@ func dispatchCommand(name, from string, origin scheduleOrigin, mode dispatchMode
 		// toast appears, and the app words it as SmartThings.
 		if err := setSchedule(name, grace, originRemote); err == nil {
 			logMsg("Command: %s from %s deferred %s (grace period — cancel from the app or tray)", name, from, formatDelay(grace))
-			emit("remote", "grace_scheduled", map[string]string{
+			emit("remote", "grace_scheduled", withInUse(map[string]string{
 				"command":    name,
 				"from":       from,
 				"delay":      formatDelay(grace),
 				"execute_at": time.Now().Add(grace).Format("15:04:05"),
-			}, graceActions()...)
-			return grace, true
+			}, pv), graceActions()...)
+			return grace, nil
 		}
 		logMsg("WARNING: grace scheduling failed for %s, executing immediately", name)
 	}
@@ -92,11 +103,24 @@ func dispatchCommand(name, from string, origin scheduleOrigin, mode dispatchMode
 		if name == "forceshutdown" {
 			emit("remote", "force", map[string]string{"from": from})
 		} else {
-			emit("remote", "received", map[string]string{"command": name, "from": from})
+			emit("remote", "received", withInUse(map[string]string{"command": name, "from": from}, pv))
 		}
 	}
 	if cmd.Execute != nil {
 		go cmd.Execute()
 	}
-	return 0, true
+	return 0, nil
+}
+
+// errUnknownCommand is dispatchCommand's answer for a name the catalogue
+// does not have.
+var errUnknownCommand = errors.New("unknown command")
+
+// withInUse adds the guard's "in_use" warning (#143) to a notification's
+// fields when there is one.
+func withInUse(fields map[string]string, v privacy.Verdict) map[string]string {
+	if v.Warn() {
+		fields["in_use"] = v.Devices()
+	}
+	return fields
 }

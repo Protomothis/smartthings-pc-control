@@ -36,7 +36,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **실행 중 앱 감지(옵트인)** — 감시 목록(최대 5개)의 프로그램이 실행 중인지 PC 장치의 '감시 목록' 카드에 보여 주고, 감시 1~5 칸의 실행 중/꺼짐을 루틴 조건으로 씁니다. 실행 파일 이름으로만 구분하므로 이름이 같은 다른 프로그램 · 스토어 앱의 호스트 프로세스 · 다른 사용자의 프로그램도 세고, 10초보다 짧은 실행은 놓칠 수 있습니다.
 - **노트북 배터리** — 잔량과 충전 상태를 SmartThings · 텔레그램 · 앱에 보여 줍니다.
 - **텔레그램(선택)** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다.
-- **데스크톱 앱** — 명령 · 예약 · 프리셋 · 공유 · SmartThings · 텔레그램 · 설정 · 로그 탭, 한국어/English.
+- **데스크톱 앱** — 명령 · 예약 · 프리셋 · 공유 · SmartThings · 텔레그램 · 설정 · 로그 · 정보 탭, 한국어/English.
 - **서명된 자동 업데이트** — 서명을 확인한 릴리스만 설치하고, 실패하면 되돌립니다.
 
 볼륨 · 미디어 · PC 알림 · 프리셋은 PC에 로그인한 사용자가 있어야 동작합니다.
@@ -129,7 +129,7 @@ Volume, media, notifications and presets need a signed-in user on the PC.
 The install folder is restricted to administrators; editing `config.json` by hand needs an elevated editor.
 The driver needs service v1.1.0+, and v1.2.0 for the driver 1.1 features.
 Hub and PC must share a subnet on a **Private** network profile.
-The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, Settings and Logs.
+The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, Settings, Logs and About.
 
 ### Troubleshooting and security
 

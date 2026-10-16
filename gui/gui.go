@@ -25,6 +25,13 @@ import (
 // port 5001 + 1). The live value comes from localWebUIPort().
 const defaultWebUIPort = 5002
 
+// windowWidth is the window's opening width. It was 640 until the ninth
+// tab (About, #156): the English tab titles alone took 619 of the 632 px
+// inside the window's padding, and "About" brought them to about 680, so
+// the last tabs would have folded into the overflow menu. 700 keeps every
+// title on the bar in both languages; about_tab_test.go measures it.
+const windowWidth = 700
+
 // webUIPort is the port u.client talks to: resolved at start from
 // tray.json next to the exe, and moved by setPort when the service comes
 // back on a new port (#121). Read it with currentWebUIPort.
@@ -94,6 +101,8 @@ type ui struct {
 	lastMediaErr error
 	mediaLoaded  bool
 	hbSent       heartbeatSent
+	// Command tab: the monitor card (#144, monitor_card.go).
+	mon monitorView
 	// Command tab: the [실행] buttons of the saved presets (#109) and the
 	// line shown when there are none; the presets tab (presets_tab.go) and
 	// the settings tab's PC-notification switches (notify_section.go, #106).
@@ -101,6 +110,7 @@ type ui struct {
 	presetEmpty   *widget.Label
 	presets       *presetsTab
 	pcNotify      *notifySection
+	audioSlots    *audioSlotsSection // #145, audio_slots.go
 	// Status bar battery label (#112, battery.go), hidden without a
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
@@ -117,6 +127,8 @@ type ui struct {
 	svcBox      *fyne.Container
 	remoteCheck *toggle
 	mediaCheck  *toggle
+	// monitorCheck is monitor.enabled (#144).
+	monitorCheck *toggle
 	// debugCheck is the developer section's debug mode switch (#133).
 	debugCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
@@ -130,6 +142,9 @@ type ui struct {
 	// and the sections hidden until the service is reachable.
 	settingsRoot  *fyne.Container
 	settingsExtra *fyne.Container
+	// svcDiag is the service state seen while unreachable (conn_diag.go,
+	// #140); svcUnknown while connected. UI thread only.
+	svcDiag svcState
 	// Tray menu items that only make sense while the service is reachable.
 	trayNeedsConn []*fyne.MenuItem
 	trayStatus    *fyne.MenuItem
@@ -172,6 +187,10 @@ type ui struct {
 	logsShownMsg   string
 	logsOffsetY    float32
 	logsScrolling  bool
+
+	// logsSource says the view shows service.log read from disk, or why
+	// it could not be read, while the service is unreachable (#140).
+	logsSource *widget.Label
 }
 
 // Run opens the native GUI window. Blocks until the app quits. With
@@ -229,8 +248,9 @@ func Run(version string, minimized bool) {
 	u.win = a.NewWindow(windowTitle)
 	u.win.SetIcon(appIcon)
 	// Tall enough for the Settings tab (the longest one) to show without a
-	// scrollbar in either language; see #53.
-	u.win.Resize(fyne.NewSize(640, 800))
+	// scrollbar in either language; see #53. Wide enough for the tab bar
+	// (windowWidth).
+	u.win.Resize(fyne.NewSize(windowWidth, 800))
 	// Closing the window hides to the system tray (after an unsaved-changes
 	// prompt when needed, installed by rebuild); Exit lives in the tray menu.
 	//
@@ -389,7 +409,7 @@ func (u *ui) rebuild() {
 	}
 	u.statusText = u.t(statusKey)
 	if statusKey == "status.unreachable" {
-		u.statusText = fmt.Sprintf(u.statusText, currentWebUIPort())
+		u.statusText = u.unreachableText(u.svcDiag)
 	}
 	u.status = widget.NewLabel(u.statusText)
 	// Never let a long status line (e.g. "command sent: …") widen the window.
@@ -438,7 +458,8 @@ func (u *ui) rebuild() {
 		u.loginBtn.Hide()
 	}
 
-	versionLabel := widget.NewLabel(u.version)
+	// The version opens the About tab (#156), which says more about it.
+	versionLabel := widget.NewButton(u.version, func() { u.tabs.SelectIndex(tabAbout) })
 	versionLabel.Importance = widget.LowImportance
 	u.batteryLabel = widget.NewLabel("")
 	u.applyBattery(u.lastBattery)
@@ -451,7 +472,8 @@ func (u *ui) rebuild() {
 
 	// In the order of the tab* constants (savebar.go). Titles only, no
 	// icons: eight tabs with icons need about 640 px in Korean and more
-	// than the window's 640 in English; without them both fit (#128).
+	// than the window's 640 in English; without them both fit (#128). The
+	// ninth, About, needed a wider window (windowWidth).
 	u.tabTitles = make([]string, len(tabKeys))
 	items := make([]*container.TabItem, len(tabKeys))
 	builders := []func() fyne.CanvasObject{
@@ -463,6 +485,7 @@ func (u *ui) rebuild() {
 		tabTelegram:    u.buildNotifyTab,
 		tabSettings:    u.buildSettingsTab,
 		tabLogs:        u.buildLogsTab,
+		tabAbout:       u.buildAboutTab,
 	}
 	for i, key := range tabKeys {
 		u.tabTitles[i] = u.t(key)
@@ -489,8 +512,9 @@ func (u *ui) rebuild() {
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
-// the Settings tab (install/start lives there) and basic tray entries stay
-// usable. Must be called on the UI thread.
+// the Settings tab (install/start lives there), the Logs tab (service.log
+// from disk, #140), the About tab (#156) and basic tray entries stay usable. Must be called on
+// the UI thread.
 func (u *ui) applyConnected(on bool) {
 	for _, item := range u.trayNeedsConn {
 		item.Disabled = !on
@@ -505,12 +529,12 @@ func (u *ui) applyConnected(on bool) {
 	// while the service is gone, and back to where the user was (the
 	// commands tab after a start) once it answers. The tab is noted before
 	// disabling: AppTabs moves off a tab that gets disabled.
-	if !on && u.curTab != tabSettings && u.returnTab == 0 {
+	if !on && !offlineTab(u.curTab) && u.returnTab == 0 {
 		u.returnTab = u.curTab + 1
 	}
 	u.switching = true
 	for i := range u.tabs.Items {
-		if i == tabSettings {
+		if offlineTab(i) { // settings, logs read from disk (#140), about (#156)
 			continue
 		}
 		if on {
@@ -524,7 +548,9 @@ func (u *ui) applyConnected(on bool) {
 	case !on:
 		// The battery reading comes from the service; without it, say nothing.
 		u.applyBattery(Battery{})
-		u.selectTab(tabSettings)
+		if !offlineTab(u.curTab) {
+			u.selectTab(tabSettings)
+		}
 	case u.returnTab != 0:
 		back := u.returnTab - 1
 		u.returnTab = 0
@@ -561,6 +587,10 @@ func (u *ui) initialLoad() {
 		// below is only for when it does not.
 		cfg, err = u.client.GetConfig()
 	}
+	svc := svcUnknown
+	if err != nil && !errors.Is(err, errUnauthorized) {
+		svc = unreachableSvcState() // why not (#140)
+	}
 	fyne.Do(func() {
 		if errors.Is(err, errUnauthorized) {
 			u.connected.Store(false)
@@ -575,12 +605,13 @@ func (u *ui) initialLoad() {
 		if err != nil {
 			u.connected.Store(false)
 			u.forgetLocalSession()
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
+			u.showUnreachable(svc)
 			return
 		}
 		u.connected.Store(true)
+		u.svcDiagReset()
 		u.setStatus(u.t("status.connected"))
 		u.setConn(connOK)
 		u.applyConnected(true)
@@ -653,6 +684,8 @@ func (u *ui) pollLoop() {
 		case <-awakeTick.C:
 			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
+				go u.loadMonitor() // #144
+				go u.loadPrivacy() // the sharing tab's state line (#143)
 			}
 		case <-batteryTick.C:
 			if u.connected.Load() && u.onScreen() {
@@ -690,10 +723,11 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 	}
 	if u.connected.Swap(false) {
 		u.forgetLocalSession()
+		svc := unreachableSvcState()
 		fyne.Do(func() {
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
+			u.showUnreachable(svc)
 		})
 	}
 }

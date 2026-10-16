@@ -1,6 +1,7 @@
 package stapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -100,8 +101,13 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	// Read whole first: a monitor command's value may be a string (#144).
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, MaxBody))
+	if s.routeMonitor(w, r, raw, httpx.RemoteHost(r.RemoteAddr)) {
+		return
+	}
 	var body CommandRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, MaxBody)).Decode(&body); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -161,7 +167,12 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	case "grace":
 		dm = ModeGrace
 	}
-	if deferred := s.d.Commands.Dispatch(name, from, dm); deferred > 0 {
+	deferred, err := s.d.Commands.Dispatch(name, from, dm)
+	if err != nil {
+		writeDispatchError(w, name, from, err)
+		return
+	}
+	if deferred > 0 {
 		httpx.WriteJSON(w, http.StatusOK, CommandResponse{Accepted: true, Schedule: s.scheduleView()})
 		return
 	}

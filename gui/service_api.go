@@ -25,6 +25,8 @@ type serviceAPI interface {
 	GetBattery() (Battery, error)
 	GetMedia() (MediaState, error)
 	MediaCommand(command string, value *int) (MediaState, error)
+	GetMonitors() (MonitorState, error)
+	MonitorCommand(command string, value any) (MonitorState, error)
 	SessionHeartbeat(body Heartbeat) (ignored bool, err error)
 
 	GetWoLStatus() (WoLStatus, error)

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -46,8 +47,8 @@ func TestDispatchCommandRecordsAndRuns(t *testing.T) {
 		{"10.0.0.20", originSmartThings, "smartthings"},
 		{"app", originUI, "ui"},
 	} {
-		if deferred, ok := dispatchCommand("lock", c.from, c.origin, dispatchDefault); !ok || deferred != 0 {
-			t.Fatalf("%s: deferred %v ok %v", c.origin, deferred, ok)
+		if deferred, err := dispatchCommand("lock", c.from, c.origin, dispatchDefault); err != nil || deferred != 0 {
+			t.Fatalf("%s: deferred %v err %v", c.origin, deferred, err)
 		}
 		expectExecuted(t, executed, "lock")
 		if lr := getLastRemote(); lr.Command != "lock" || lr.From != c.from || lr.Origin != c.want {
@@ -62,7 +63,7 @@ func TestDispatchCommandRecordsAndRuns(t *testing.T) {
 	if lr := getLastRemote(); lr.Command != "restart" {
 		t.Errorf("telegram or ping was recorded: %+v", lr)
 	}
-	if _, ok := dispatchCommand("nope", "x", originUI, dispatchImmediate); ok {
+	if _, err := dispatchCommand("nope", "x", originUI, dispatchImmediate); !errors.Is(err, errUnknownCommand) {
 		t.Error("an unknown command was dispatched")
 	}
 }

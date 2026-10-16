@@ -38,6 +38,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
 	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
+	u.monitorCheck = newToggle(u.t("settings.monitor"), onToggle)
 	u.debugCheck = newToggle(u.t("settings.debug"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
@@ -60,14 +61,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 			if !ok {
 				return
 			}
-			runAsyncErr(busyControls(restartBtn), u.client.RestartService, func(err error) {
-				if err != nil {
-					dialog.ShowError(err, u.win)
-					return
-				}
-				u.setStatus(u.t("settings.restarting"))
-				u.setConn(connPending)
-			})
+			u.restartService(busyControls(restartBtn))
 		}, u.win)
 	})
 
@@ -89,6 +83,7 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	// PC tells others, not what they may do to it.
 	mediaNotifyBody := u.buildMediaNotifySection(
 		u.mediaCheck, hint(u.t("settings.media.hint")),
+		u.monitorCheck, hint(u.t("settings.monitor.hint")),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -122,6 +117,8 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		section(u.t("settings.service"), settingsBody),
 		widget.NewSeparator(),
 		section(u.t("settings.medianotify"), mediaNotifyBody),
+		widget.NewSeparator(),
+		section(u.t("audio.slots.title"), u.buildAudioSlotsSection()),
 		widget.NewSeparator(),
 		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
 		widget.NewSeparator(),
@@ -165,9 +162,11 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.secretEntry.SetText(s.Secret)
 	u.remoteCheck.SetChecked(s.Remote)
 	u.mediaCheck.SetChecked(s.Media)
+	u.monitorCheck.SetChecked(s.Monitor)
 	u.debugCheck.SetChecked(s.Debug)
 	u.setGraceSelection(cfg)
 	u.fillNotifySection(cfg)
+	u.fillAudioSlots(cfg)
 }
 
 // settingsState reads the settings-tab fields into the pure model.
@@ -177,8 +176,10 @@ func (u *ui) settingsState() settingsFormState {
 		Secret:   u.secretEntry.Text,
 		Remote:   u.remoteCheck.Checked,
 		Media:    u.mediaCheck.Checked,
+		Monitor:  u.monitorCheck.Checked,
 		NotifyPC: u.notifySectionState(),
 		Debug:    u.debugCheck.Checked,
+		Audio:    u.audioSlotsFormState(),
 	}
 	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
 		s.GraceOn, s.GraceSec = true, u.graceValues[i]
@@ -328,6 +329,13 @@ func (u *ui) fillSvcBox(state svcState) {
 
 	u.svcBox.RemoveAll()
 	u.svcBox.Add(widget.NewLabelWithStyle(stateText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	if state == svcRunning && !u.connected.Load() && u.svcDiag == svcRunning {
+		// Running, yet the app cannot connect (#140): most likely another
+		// program holds the WebUI port, which service.log names.
+		warn := hint(fmt.Sprintf(u.t("svc.state.running.unreachable"), currentWebUIPort()))
+		warn.Importance = widget.WarningImportance
+		u.svcBox.Add(warn)
+	}
 	u.svcBox.Add(container.NewHBox(append(buttons, layout.NewSpacer())...))
 	u.svcBox.Refresh()
 	// The box grew after the tab was laid out (the state query is async);

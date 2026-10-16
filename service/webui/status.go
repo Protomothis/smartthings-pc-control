@@ -2,9 +2,10 @@ package webui
 
 // The browser page (#122, refactor-plan §4): the desktop app is the
 // settings UI, so the page served on / is cut down to what someone needs
-// from another device — status, power commands, a schedule and the core
-// settings (port, secret, remote access, grace). Everything else is edited
-// in the app.
+// from another device — status, power commands, keep-awake, volume and
+// media keys, the saved presets (#148), a schedule and the core settings
+// (port, secret, remote access, grace). Everything else is edited in the
+// app.
 
 import (
 	"net/http"
@@ -49,6 +50,10 @@ type StatusCard struct {
 	SmartThings   HubState       `json:"smartthings"`
 	Grace         status.Grace   `json:"grace"`
 	Schedule      map[string]any `json:"schedule"`
+	// Presets are the saved slots and names (#148) — what /st/v1/status
+	// already tells the hub — for the page's preset buttons. What a preset
+	// runs stays on the PC.
+	Presets []status.PresetRef `json:"presets"`
 }
 
 // HubState is the Edge driver's last contact, as /api/st/hub reports it
@@ -91,6 +96,7 @@ func (s *Server) statusCard(cfg config.Config) StatusCard {
 		Session:       s.sessionBlock(cfg.SmartThings),
 		Grace:         status.Grace{Enabled: cfg.ShutdownGrace, Seconds: int(cfg.GraceDuration() / time.Second)},
 		Schedule:      src.Schedule(),
+		Presets:       presetRefs(cfg.Presets),
 	}
 	if seen, ok := s.d.Hub.HubLastSeen(); ok {
 		out.SmartThings = HubState{
@@ -98,6 +104,15 @@ func (s *Server) statusCard(cfg config.Config) StatusCard {
 			LastSeen:      seen.At.Format(time.RFC3339),
 			DriverVersion: seen.DriverVersion,
 		}
+	}
+	return out
+}
+
+// presetRefs is the {slot, name} list in slot order, never null.
+func presetRefs(ps []config.Preset) []status.PresetRef {
+	out := make([]status.PresetRef, 0, len(ps))
+	for _, p := range config.NormalizePresets(ps) {
+		out = append(out, status.PresetRef{Slot: p.Slot, Name: p.Name})
 	}
 	return out
 }
@@ -127,6 +142,19 @@ type hubView struct {
 	// rides on this poll rather than on a second endpoint so the whole
 	// section refreshes in one round trip.
 	WoL hubWoLView `json:"wol"`
+	// CommandPort is the command port's inbound TCP rule (#139), which
+	// the service re-checks at every start against the configured port.
+	CommandPort commandPortView `json:"command_port"`
+}
+
+// commandPortView is the command-port rule as last checked: the port it
+// was checked for (0 until then), whether a rule for exactly that port is
+// in place, and whether the start-time check has finished (it runs off the
+// startup path, so the first polls may come before it).
+type commandPortView struct {
+	Port         int  `json:"port"`
+	FirewallRule bool `json:"firewall_rule"`
+	Checked      bool `json:"checked"`
 }
 
 // hubWoLView is what the app needs to draw the WoL adapter dropdown:
@@ -167,11 +195,13 @@ func (s *Server) ssdpStatus() ssdpView {
 func (s *Server) serveSTHub(w http.ResponseWriter, r *http.Request) {
 	liveCfg := s.d.Config()
 	wol, auto := s.d.Hub.WoLView(liveCfg.SmartThings)
+	fwPort, fwOK, fwChecked := s.d.Hub.CommandFirewallRule()
 	view := hubView{
 		MachineID: s.d.Status.MachineID(),
 		SSDP:      s.ssdpStatus(),
 		WoL:       hubWoLView{Selected: wol.Selected, Auto: auto, Adapters: wol.Adapters},
 	}
+	view.CommandPort = commandPortView{Port: fwPort, FirewallRule: fwOK, Checked: fwChecked}
 	if seen, ok := s.d.Hub.HubLastSeen(); ok {
 		view.Connected = time.Since(seen.At) <= status.HubStale
 		view.IP = seen.IP

@@ -34,6 +34,11 @@ var catalogue = []struct {
 	{"security", "config_changed", true},
 	{"security", "unknown_chat", true},
 
+	// The camera/microphone guard (#143): a power command refused, or a
+	// schedule pushed back, while a device is in use.
+	{"privacy", "blocked", true},
+	{"privacy", "extended", true},
+
 	{"system", "update_available", true},
 	{"system", "updated", true},
 	{"system", "exec_failed", true},

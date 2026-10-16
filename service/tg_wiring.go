@@ -7,8 +7,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 	"github.com/Protomothis/smartthings-pc-control/service/tgcontrol"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
+
+	"golang.org/x/sys/windows"
 )
 
 // tgCtl is the service's inbound Telegram control.
@@ -18,7 +21,7 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Emit:          func(cat, kind string, fields map[string]string) { emit(cat, kind, fields) },
 	BaseURL:       func() string { return telegramBaseURL },
 	Bus:           currentBus,
-	StartedAt:     serviceStartedAt,
+	Uptime:        windows.DurationSinceBoot,
 	ActionTimeout: func() time.Duration { return userActions.Timeout },
 	Status:        sources,
 	Commands:      tgCommands{},
@@ -26,6 +29,9 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Media:         mediaControl{},
 	Presets:       presetControl{origin: "telegram"},
 	Notify:        pcNotifier{},
+	Monitor:       monitorControl{},
+	Privacy:       stPrivacyStatus,
+	Guard:         func(name string) privacy.Verdict { return remoteVerdict(name, "telegram", originTelegram) },
 })
 
 // tgCommands is the catalogue and the schedule slot on behalf of the bot:
@@ -48,8 +54,8 @@ func (tgCommands) GraceCommands() []string {
 }
 
 func (tgCommands) RunNow(name string) bool {
-	_, ok := dispatchCommand(name, "telegram", originTelegram, dispatchImmediate)
-	return ok
+	_, err := dispatchCommand(name, "telegram", originTelegram, dispatchImmediate)
+	return err == nil
 }
 
 func (tgCommands) Schedule(name string, delay time.Duration) error {

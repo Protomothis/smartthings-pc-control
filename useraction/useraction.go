@@ -11,11 +11,15 @@
 //	user-action audio set <0-100>
 //	user-action audio step <-100..100>
 //	user-action audio mute <on|off|toggle>
+//	user-action audio <outputs|inputs>
+//	user-action audio <set-output|set-input> --id <endpoint id>
 //	user-action media <playpause|play|pause|stop|next|prev>
 //	user-action media info
 //	user-action notify --title <t> --text <t>
-//	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
+//	user-action preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...
 //	user-action screen <off|on>
+//	user-action monitor get
+//	user-action monitor set --id <mN> (--brightness <0-100> | --input <name> | --power <on|off>)
 //
 // Output is exactly one line on stdout, and the exit code follows it:
 //
@@ -60,6 +64,8 @@ const (
 	ActionPreset = "preset"
 	// ActionScreen turns the monitors off or on (#121).
 	ActionScreen = "screen"
+	// ActionMonitor reads and sets the monitors over DDC/CI (#144).
+	ActionMonitor = "monitor"
 )
 
 // Validation limits. The service applies its own (stricter or equal)
@@ -109,15 +115,20 @@ type Request struct {
 	Value int
 	// Mode is the audio mute mode: on, off or toggle.
 	Mode string
+	// DeviceID is the endpoint of audio set-output/set-input (#145).
+	DeviceID string
 
 	// notify
 	Title string
 	Text  string
 
 	// preset
-	PresetType string // program, url or script
+	PresetType string // program, url, script, keys or focus
 	Path       string
 	Args       []string
+
+	// Monitor is a `monitor set` (#144, monitor.go); Verb is get or set.
+	Monitor MonitorRequest
 }
 
 // Handler performs one action in the user session. The returned fields are
@@ -158,7 +169,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen, ActionMonitor:
 		return true
 	}
 	return false
@@ -221,6 +232,8 @@ func Parse(args []string) (Request, error) {
 		return parsePreset(rest)
 	case ActionScreen:
 		return parseScreen(rest)
+	case ActionMonitor:
+		return parseMonitor(rest)
 	default:
 		return Request{}, badArgs("unknown action %q", action)
 	}
@@ -232,6 +245,9 @@ func parseAudio(args []string) (Request, error) {
 		return req, badArgs("audio: missing verb (get, set, step, mute)")
 	}
 	req.Verb = args[0]
+	if isDeviceVerb(req.Verb) {
+		return parseAudioDevice(req, args) // #145, audiodevices.go
+	}
 	switch req.Verb {
 	case "get":
 		if len(args) != 1 {
@@ -403,7 +419,7 @@ func parsePreset(args []string) (Request, error) {
 	typ, hasType := flags["--type"]
 	path, hasPath := flags["--path"]
 	if !hasType || !hasPath {
-		return req, badArgs("usage: preset --type <program|url|script> --path <p> [--arg <a>]...")
+		return req, badArgs("usage: preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...")
 	}
 	req.PresetType, req.Path, req.Args = typ[0], path[0], flags["--arg"]
 	if strings.TrimSpace(req.Path) == "" {
@@ -432,6 +448,18 @@ func parsePreset(args []string) (Request, error) {
 		}
 		// #137: a web address or a Windows app link (steam://…).
 		if _, err := PresetURLScheme(req.Path); err != nil {
+			return req, badArgs("%s", err.Error())
+		}
+	case "keys", "focus":
+		// #146: a key combination, or the window to bring to the front.
+		if len(req.Args) > 0 {
+			return req, badArgs("preset: %s takes no --arg", req.PresetType)
+		}
+		check := ValidatePresetKeys
+		if req.PresetType == "focus" {
+			check = ValidatePresetFocus
+		}
+		if err := check(req.Path); err != nil {
 			return req, badArgs("%s", err.Error())
 		}
 	default:

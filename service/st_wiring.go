@@ -21,6 +21,9 @@ var stSrv = stapi.New(stapi.Deps{
 	Media:    mediaControl{},
 	Presets:  presetControl{origin: "smartthings"},
 	Notify:   pcNotifier{},
+	Monitor:  monitorControl{},
+	// state.json, next to config.json (#142).
+	Subscriptions: pushSubscriptionState{},
 })
 
 // registerSTRoutes mounts the /st/v1 tree on the command server's mux. A
@@ -40,7 +43,7 @@ func (stCommands) Known(name string) bool {
 	return ok
 }
 
-func (stCommands) Dispatch(name, from string, mode stapi.Mode) time.Duration {
+func (stCommands) Dispatch(name, from string, mode stapi.Mode) (time.Duration, error) {
 	dm := dispatchDefault
 	switch mode {
 	case stapi.ModeImmediate:
@@ -48,8 +51,7 @@ func (stCommands) Dispatch(name, from string, mode stapi.Mode) time.Duration {
 	case stapi.ModeGrace:
 		dm = dispatchGrace
 	}
-	deferred, _ := dispatchCommand(name, from, originSmartThings, dm)
-	return deferred
+	return dispatchCommand(name, from, originSmartThings, dm)
 }
 
 func (stCommands) Record(name, from string) { recordCommand(name, from, originSmartThings) }

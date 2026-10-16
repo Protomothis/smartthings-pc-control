@@ -35,11 +35,18 @@ type Config struct {
 	Activity ActivityConfig `json:"activity"`
 	// Media is the "media" object (#104): volume and media-key commands.
 	Media MediaConfig `json:"media"`
+	// Audio is the device slots (#145, audio_slots.go).
+	Audio AudioConfig `json:"audio"`
 	// NotifyPC is the "notify_pc" object (#106); Presets the "presets"
 	// list (#109): the settings tab's 미디어·알림 section (notify_section.go)
 	// and the presets tab (presets_tab.go) edit them.
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
 	Presets  []Preset       `json:"presets"`
+	// Monitor is the "monitor" object (#144), the settings tab's opt-in.
+	Monitor MonitorConfig `json:"monitor"`
+	// Privacy is the camera/microphone detection and its guard (#143),
+	// edited in the sharing tab (privacy_section.go).
+	Privacy PrivacyConfig `json:"privacy"`
 	// Debug is the settings tab's developer switch (#133). Never
 	// omitempty: a POST without the key keeps the stored value, so "off"
 	// has to be sent.
@@ -349,6 +356,18 @@ type STHub struct {
 	// WoL is the adapter choice (#96) the section's dropdown shows and
 	// edits. An older service leaves it zero: no adapters, no selection.
 	WoL STWoLInfo `json:"wol"`
+	// CommandPort is the command port's inbound TCP rule (#139); nil from
+	// a service that predates it.
+	CommandPort *STCommandPort `json:"command_port"`
+}
+
+// STCommandPort is the command-port rule as the service last checked it
+// at start: the port, whether a rule for that port is in place, and
+// whether the check has finished.
+type STCommandPort struct {
+	Port         int  `json:"port"`
+	FirewallRule bool `json:"firewall_rule"`
+	Checked      bool `json:"checked"`
 }
 
 // STWoLInfo is the WoL adapter picture: the adapter in force, the one the
@@ -455,6 +474,8 @@ type Heartbeat struct {
 	// stores the samples only from the session its commands act on and
 	// ignores the others. Never 0 for a tray app; 0 (unknown) is left out.
 	SessionID uint32 `json:"session_id,omitempty"`
+	// AudioDevices are the connected devices (#145), with the 30s post.
+	AudioDevices *HeartbeatAudioDevices `json:"audio_devices,omitempty"`
 }
 
 // HeartbeatMedia is the heartbeat's media block: the status always, the
@@ -516,6 +537,11 @@ type Schedule struct {
 	Origin string `json:"origin"`
 	// Replaced is the schedule this one displaced, when there was one.
 	Replaced *ReplacedSchedule `json:"replaced"`
+	// InUse names the devices in use while a guarded power command waits
+	// ("camera", "microphone"); Held is set once the guard pushed it back
+	// (#143). The grace toast warns with them.
+	InUse []string `json:"in_use"`
+	Held  bool     `json:"held"`
 }
 
 // ReplacedSchedule mirrors the "replaced" object of /api/schedule.
@@ -815,6 +841,9 @@ type MediaAudio struct {
 	Volume    *int    `json:"volume"`
 	Muted     *bool   `json:"muted"`
 	Device    *string `json:"device"`
+	// Outputs and Inputs are the device slots (#145).
+	Outputs []AudioSlotInfo `json:"outputs"`
+	Inputs  []AudioSlotInfo `json:"inputs"`
 }
 
 // MediaInfo is the status media block. Status is playing, paused, stopped

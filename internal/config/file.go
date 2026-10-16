@@ -90,6 +90,7 @@ func LoadMigrated(dir string) (Config, bool) {
 	// dropped with a log line each rather than failing the whole load.
 	activity, reslotted := sanitizeActivity(cfg.Activity)
 	cfg.Activity = activity
+	cfg.Privacy = SanitizePrivacy(cfg.Privacy)
 	migrated := parsed && (reslotted || legacyDiscoveryKey(data))
 	return cfg.WithDefaults(), migrated
 }

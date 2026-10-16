@@ -31,7 +31,41 @@
     "audio": {
       "available": true,
       "device": "스피커 (Realtek(R) Audio)",
+      "inputs": [
+        {
+          "default": true,
+          "name": "마이크 (Realtek(R) Audio)",
+          "present": true,
+          "slot": 1
+        },
+        {
+          "default": false,
+          "name": "헤드셋 마이크 (WH-1000XM4)",
+          "present": true,
+          "slot": 2
+        }
+      ],
       "muted": false,
+      "outputs": [
+        {
+          "default": true,
+          "name": "스피커 (Realtek(R) Audio)",
+          "present": true,
+          "slot": 1
+        },
+        {
+          "default": false,
+          "name": "헤드셋 (WH-1000XM4)",
+          "present": true,
+          "slot": 3
+        },
+        {
+          "default": false,
+          "name": "LG TV (NVIDIA High Definition Audio)",
+          "present": false,
+          "slot": 4
+        }
+      ],
       "updated_at": "2026-10-01T20:59:30+09:00",
       "volume": 35
     },
@@ -50,11 +84,15 @@
       "awake",
       "battery",
       "activity",
+      "privacy",
       "audio",
       "media",
       "nowplaying",
+      "audio_output",
+      "audio_input",
       "notify",
-      "presets"
+      "presets",
+      "monitor"
     ],
     "grace": {
       "enabled": true,
@@ -81,6 +119,32 @@
       "title": "Hype Boy",
       "updated_at": "2026-10-01T20:59:40+09:00"
     },
+    "monitors": [
+      {
+        "brightness": 40,
+        "ddc": true,
+        "id": "m1",
+        "input": "hdmi1",
+        "inputs": [
+          "dp1",
+          "hdmi1",
+          "hdmi2"
+        ],
+        "name": "DELL U2720Q",
+        "power": "on",
+        "primary": true
+      },
+      {
+        "brightness": null,
+        "ddc": false,
+        "id": "m2",
+        "input": null,
+        "inputs": [],
+        "name": "LG TV",
+        "power": "unknown",
+        "primary": false
+      }
+    ],
     "power": "on",
     "presets": [
       {
@@ -92,6 +156,11 @@
         "slot": 3
       }
     ],
+    "privacy": {
+      "camera": "in_use",
+      "microphone": "idle",
+      "since": "2026-10-01T20:45:00+09:00"
+    },
     "protocol": 1,
     "schedule": {
       "active": true,

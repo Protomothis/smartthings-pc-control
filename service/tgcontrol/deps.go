@@ -16,6 +16,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/action"
 	"github.com/Protomothis/smartthings-pc-control/service/notify"
+	"github.com/Protomothis/smartthings-pc-control/service/privacy"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
@@ -35,9 +36,11 @@ type Deps struct {
 	// the tests use a fake server).
 	BaseURL func() string
 	// Bus is the notification bus, nil while it is not running (/quiet).
+	// That is only while the service starts or stops.
 	Bus func() *notify.Bus
-	// StartedAt is when the service started (/status uptime).
-	StartedAt time.Time
+	// Uptime is how long the PC has been up (/status), the same reading
+	// the SmartThings status and the WebUI status card show (#147).
+	Uptime func() time.Duration
 	// ActionTimeout is how long a user-session action may take (/run, /say
 	// wait a second more).
 	ActionTimeout func() time.Duration
@@ -48,6 +51,15 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
+	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
+	Monitor Monitor
+
+	// Privacy is the camera/microphone block (#143) for /status, nil
+	// while privacy.enabled is off; a nil func reads the same.
+	Privacy func(cfg config.Config) *status.Privacy
+	// Guard judges a power command from the bot against the
+	// camera/microphone guard (#143) before it runs; nil means no guard.
+	Guard func(name string) privacy.Verdict
 }
 
 // Remote is the last remote command as /status shows it.
@@ -67,6 +79,13 @@ type Status interface {
 	Battery() status.Battery
 	Activity(cfg config.Config) status.Activity
 	Media(cfg config.Config) status.Media
+	// Audio is the stored volume/mute sample (unavailable while
+	// media.enabled is off or nobody is logged in).
+	Audio(cfg config.Config) status.Audio
+	// Session describes the target user session (WTS); IdleSeconds is the
+	// tray app's idle reading, ok only while its heartbeat is fresh.
+	Session() (session.Info, error)
+	IdleSeconds() (int64, bool)
 }
 
 // Commands is the command catalogue and the schedule slot on behalf of

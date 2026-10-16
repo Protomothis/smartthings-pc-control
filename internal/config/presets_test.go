@@ -20,6 +20,9 @@ func TestValidatePreset(t *testing.T) {
 		{Slot: 4, Name: "PS", Type: "script", Path: `C:\Scripts\game.ps1`, Args: []string{"-Mode", `"on"`, "%x%"}},
 		{Slot: 5, Name: "Batch", Type: "script", Path: `C:\Scripts\go.CMD`, Args: []string{"a&b", "two words"}},
 		{Slot: 6, Name: "Bat", Type: "script", Path: `C:\Scripts\go.bat`},
+		{Slot: 7, Name: "마이크", Type: "keys", Path: "ctrl+alt+m"},
+		{Slot: 8, Name: "OBS", Type: "focus", Path: "obs64.exe"},
+		{Slot: 9, Name: "메모장", Type: "focus", Path: "제목:메모장"},
 	}
 	for _, p := range ok {
 		if err := ValidatePreset(p); err != nil {
@@ -50,6 +53,12 @@ func TestValidatePreset(t *testing.T) {
 		"search-ms":        {Slot: 1, Name: "x", Type: "url", Path: "search-ms:query=x"},
 		"bare host":        {Slot: 1, Name: "x", Type: "url", Path: "example.com"},
 		"url args":         {Slot: 1, Name: "x", Type: "url", Path: "https://x.com", Args: []string{"a"}},
+		"keys args":        {Slot: 1, Name: "x", Type: "keys", Path: "win+d", Args: []string{"a"}},
+		"two keys":         {Slot: 1, Name: "x", Type: "keys", Path: "a+b"},
+		"unknown key":      {Slot: 1, Name: "x", Type: "keys", Path: "ctrl+hyper"},
+		"focus path":       {Slot: 1, Name: "x", Type: "focus", Path: `C:\obs\obs64.exe`},
+		"focus no title":   {Slot: 1, Name: "x", Type: "focus", Path: "title:"},
+		"focus args":       {Slot: 1, Name: "x", Type: "focus", Path: "obs64.exe", Args: []string{"a"}},
 		"33 args":          {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: tooMany},
 		"arg control":      {Slot: 1, Name: "x", Type: "program", Path: `C:\x.exe`, Args: []string{"a\x00"}},
 	}

@@ -46,11 +46,18 @@ func init() {
 
 // audioHandler serves `user-action audio …`.
 func audioHandler(req Request) (map[string]any, error) {
+	if isDeviceVerb(req.Verb) {
+		return audioDeviceHandler(req) // #145, audiodevices.go
+	}
 	a, err := withAudio(func(ep audioEndpoint) (Audio, error) { return applyAudio(ep, req) })
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"audio": a}, nil
+	out := map[string]any{"audio": a}
+	if req.Verb == "get" {
+		addAudioDeviceLists(out) // #145
+	}
+	return out, nil
 }
 
 // ReadAudio returns the default playback device's current state. The error

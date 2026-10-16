@@ -1,13 +1,16 @@
 package webui
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
+	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
 
 func TestCheckCSRF(t *testing.T) {
@@ -95,6 +98,37 @@ func TestWebUIHostAllowed(t *testing.T) {
 		// call, so any name the user reaches the PC by is fine.
 		if !hostAllowed(c.host, 5002, true) {
 			t.Errorf("%s (%q), remote on: refused", c.description, c.host)
+		}
+	}
+}
+
+// The status card lists the saved presets for the page's buttons (#148):
+// slot order, names only — never what a preset runs.
+func TestStatusCardListsPresets(t *testing.T) {
+	ts := newTestServer(t, config.Config{})
+	req := httptest.NewRequest("GET", "/api/status", nil)
+	w := httptest.NewRecorder()
+	ts.serveStatus(w, req)
+	if !strings.Contains(w.Body.String(), `"presets":[]`) {
+		t.Errorf("no presets = %s, want an empty list", w.Body.String())
+	}
+
+	ts.cfg.Presets = []config.Preset{
+		{Slot: 3, Name: "<방송>", Type: "script", Path: `C:\s\live.ps1`, Args: []string{"-secret-flag"}},
+		{Slot: 1, Name: "게임 모드", Type: "program", Path: `C:\Games\steam.exe`},
+	}
+	w = httptest.NewRecorder()
+	ts.serveStatus(w, req)
+	var card StatusCard
+	if err := json.Unmarshal(w.Body.Bytes(), &card); err != nil {
+		t.Fatal(err)
+	}
+	if len(card.Presets) != 2 || card.Presets[0] != (status.PresetRef{Slot: 1, Name: "게임 모드"}) || card.Presets[1].Slot != 3 {
+		t.Errorf("presets = %+v", card.Presets)
+	}
+	for _, leak := range []string{"steam.exe", "live.ps1", "secret-flag"} {
+		if strings.Contains(w.Body.String(), leak) {
+			t.Errorf("/api/status shows what a preset runs: %q", leak)
 		}
 	}
 }

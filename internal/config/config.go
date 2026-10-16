@@ -64,13 +64,20 @@ type Config struct {
 	// service/media.go) on every path: /st/v1/command, Telegram and the
 	// audio block of the status.
 	Media MediaConfig `json:"media"`
+	// Audio holds the output and input device slots (#145, audio.go).
+	Audio AudioConfig `json:"audio"`
 	// NotifyPC controls PC notifications from SmartThings and Telegram
 	// (#106, service/pc_notify.go).
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
+	// Monitor is the opt-in DDC/CI monitor control (#144, monitor.go).
+	Monitor MonitorConfig `json:"monitor"`
 	// Presets are the actions SmartThings and Telegram may run by slot
 	// number (#109, presets.go). Invalid entries are refused on save and
 	// dropped (with a log line) on load.
 	Presets []Preset `json:"presets"`
+	// Privacy is the opt-in camera/microphone detection and the shutdown
+	// guard (#143, privacy.go).
+	Privacy PrivacyConfig `json:"privacy"`
 	// Debug is the developer switch (#133): while on, the service, the
 	// desktop app and the user-action runs record a crash to a file
 	// (internal/crashdump). Off by default, and in an older config.json;
@@ -166,8 +173,12 @@ func Default() Config {
 		Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 		// A missing "media" object keeps volume and media keys on (§4).
 		Media: MediaConfig{Enabled: true},
+		// No device slots until the user fills them (#145).
+		Audio: AudioConfig{Outputs: []string{}, Inputs: []string{}},
 		// A missing "notify_pc" object keeps notifications on (§4).
 		NotifyPC: NotifyPCConfig{Enabled: true},
+		// Camera/microphone detection is opt-in (#143); the guard warns.
+		Privacy: PrivacyConfig{Enabled: false, Guard: PrivacyGuardWarn},
 		// Presets stays nil here, like Notify: WithDefaults gives every copy
 		// its own empty list.
 		// Notify stays nil here (a nil map means "all defaults"); WithDefaults
@@ -184,6 +195,8 @@ func (c Config) WithDefaults() Config {
 	c.Presets = NormalizePresets(c.Presets)
 	c.Notify = c.Notify.WithDefaults()
 	c.Activity = c.Activity.WithDefaults()
+	c.Audio = c.Audio.WithDefaults()
+	c.Privacy = c.Privacy.WithDefaults()
 	return c
 }
 
@@ -222,6 +235,7 @@ func (c Config) ForUpdate() Config {
 	c.SmartThings.AllowedHubs = nil
 	c.Activity.Watch = nil
 	c.Presets = nil
+	c.Audio = AudioConfig{}
 	return c
 }
 
@@ -290,6 +304,12 @@ func Normalize(cfg Config, current Config) Config {
 	}
 	if cfg.Presets == nil {
 		cfg.Presets = current.Presets
+	}
+	if cfg.Audio.Outputs == nil {
+		cfg.Audio.Outputs = current.Audio.Outputs
+	}
+	if cfg.Audio.Inputs == nil {
+		cfg.Audio.Inputs = current.Audio.Inputs
 	}
 	return cfg.WithDefaults()
 }
