@@ -70,7 +70,7 @@ var texts = map[string][2]string{
 	"help": {
 		"<b>명령</b>\n" +
 			"/status – 상태\n" +
-			"/menu – 버튼 메뉴\n" +
+			"/menu – 버튼 메뉴 (전원·잠들지 않기·미디어·프리셋)\n" +
 			"/lock – 잠금\n" +
 			"/screenoff – 화면 끄기\n" +
 			"/screenon – 화면 켜기\n" +
@@ -84,12 +84,12 @@ var texts = map[string][2]string{
 			"/np – 지금 재생 중인 미디어\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/say 문구 – PC 화면에 알림 띄우기\n" +
-			"/presets – 프리셋 목록\n" +
+			"/presets – 프리셋 목록과 실행 버튼\n" +
 			"/run 이름|번호 – 프리셋 실행\n" +
 			"/help – 이 목록",
 		"<b>Commands</b>\n" +
 			"/status – status\n" +
-			"/menu – button menu\n" +
+			"/menu – button menu (power, keep awake, media, presets)\n" +
 			"/lock – lock\n" +
 			"/screenoff – screen off\n" +
 			"/screenon – screen on\n" +
@@ -103,7 +103,7 @@ var texts = map[string][2]string{
 			"/np – what is playing now\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/say text – show a notification on the PC\n" +
-			"/presets – list the presets\n" +
+			"/presets – the presets, with run buttons\n" +
 			"/run name|number – run a preset\n" +
 			"/help – this list",
 	},
@@ -122,7 +122,9 @@ var texts = map[string][2]string{
 	"mute_usage":      {"사용법: <code>/quiet 30m</code>, <code>/quiet 2h</code> 또는 <code>/quiet off</code>", "Usage: <code>/quiet 30m</code>, <code>/quiet 2h</code> or <code>/quiet off</code>"},
 	"muted":           {"🔕 %s까지 알림 일시 중지", "🔕 Notifications paused until %s"},
 	"unmuted":         {"🔔 알림 재개", "🔔 Notifications resumed"},
-	"notify_off":      {"알림 파이프라인이 꺼져 있습니다", "The notification pipeline is not running"},
+	// The bus is nil only while the service starts or stops: there is no
+	// switch to point at, so the user is asked to try again.
+	"notify_off":      {"알림 기능이 아직 준비되지 않았습니다. 잠시 후 다시 보내 주세요", "Notifications are not ready yet. Send it again in a moment"},
 	"unknown_button":  {"알 수 없는 버튼", "Unknown button"},
 	"stale":           {"⏹ <code>%s</code> — PC가 꺼져 있거나 절전 중일 때 보낸 오래된 명령이라 실행하지 않았습니다. 필요하면 다시 보내 주세요.", "⏹ <code>%s</code> — sent while this PC was off or asleep, so it was not run. Send it again if you still want it."},
 	"confirm_needed":  {"확인이 필요한 명령입니다", "This command needs confirmation"},
@@ -147,18 +149,35 @@ var texts = map[string][2]string{
 	"btn_cancel":     {"취소", "Cancel"},
 	"btn_lock":       {"🔒 잠금", "🔒 Lock"},
 	"btn_screenoff":  {"🖥 화면 끄기", "🖥 Screen off"},
+	"btn_screenon":   {"💡 화면 켜기", "💡 Screen on"},
 	"btn_sleep":      {"🌙 절전", "🌙 Sleep"},
+	"btn_hibernate":  {"💤 최대 절전", "💤 Hibernate"},
 	"btn_restart":    {"🔄 재시작", "🔄 Restart"},
 	"btn_shutdown":   {"⏻ 종료", "⏻ Shut down"},
 	"btn_cancel_sch": {"⏱ 예약 취소", "⏱ Cancel schedule"},
+	"btn_awake":      {"☕ 잠들지 않기", "☕ Keep awake"},
+	"btn_mute":       {"🔇 음소거", "🔇 Mute"},
+	"btn_prev":       {"⏮", "⏮"},
+	"btn_playpause":  {"⏯", "⏯"},
+	"btn_next":       {"⏭", "⏭"},
+	"btn_presets":    {"🎛 프리셋 ▸", "🎛 Presets ▸"},
+	"btn_back":       {"◀ 메뉴", "◀ Menu"},
 	// /status
-	"st_uptime":    {"가동", "Uptime"},
+	"st_uptime":    {"PC 가동", "PC uptime"},
 	"st_schedule":  {"예약", "Schedule"},
 	"st_none":      {"없음", "none"},
 	"st_remaining": {"%s · %s · %s 남음 (%s)", "%s · %s · %s left (%s)"},
 	"st_remote":    {"마지막 원격 명령", "Last remote command"},
 	"st_muted":     {"알림 일시 중지", "Notifications paused"},
 	"st_until":     {"%s까지", "until %s"},
+	// volume and session lines (#147)
+	"st_volume":   {"볼륨", "Volume"},
+	"st_mute":     {"음소거", "mute"},
+	"st_session":  {"세션", "Session"},
+	"st_locked":   {"잠김", "locked"},
+	"st_unlocked": {"사용 중", "in use"},
+	"st_no_user":  {"로그인한 사용자 없음", "nobody signed in"},
+	"st_idle":     {"유휴 %s", "idle %s"},
 	// keep-awake (#111)
 	"st_awake":          {"잠들지 않기", "Keep awake"},
 	"st_on":             {"켜짐", "on"},
@@ -178,7 +197,7 @@ var texts = map[string][2]string{
 	"media_stop":        {"⏹ 정지", "⏹ stop"},
 	"media_next":        {"⏭ 다음 곡", "⏭ next track"},
 	"media_prev":        {"⏮ 이전 곡", "⏮ previous track"},
-	"media_disabled":    {"미디어 제어가 꺼져 있습니다 (설정 <code>media.enabled</code>)", "Media control is turned off (setting <code>media.enabled</code>)"},
+	"media_disabled":    {"미디어 제어가 꺼져 있습니다. PC 앱 설정 탭(미디어·알림)에서 켜세요", "Media control is off. Turn it on in the PC app's Settings tab (Media &amp; notifications)"},
 	"media_no_user":     {"로그인한 사용자가 없어 실행할 수 없습니다", "Nobody is logged in to this PC"},
 	"media_unsupported": {"이 PC에서는 할 수 없습니다: %s", "Not possible on this PC: %s"},
 	"media_timeout":     {"PC가 3초 안에 답하지 않았습니다", "The PC did not answer within 3 seconds"},
@@ -361,16 +380,75 @@ func (c *Control) confirmKeyboard(name string) *telegram.InlineKeyboard {
 	}}}
 }
 
-// menuKeyboard is the /menu layout: safe commands run at once (cmd:),
-// power commands go through confirm:, and the last row cancels a schedule.
-// cancel:menu (rather than the grace message's bare cancel:) tells
-// HandleCallback the press came from the menu, which stays usable.
+// menuKeyboard is the /menu layout (#147): safe commands run at once
+// (cmd:), power commands go through confirm:, then keep-awake and mute,
+// the media keys, the preset submenu and a schedule cancel. The media row
+// and the mute button follow media.enabled and the [프리셋 ▸] button the
+// preset list, read when the keyboard is built. cancel:menu (rather than
+// the grace message's bare cancel:) tells HandleCallback the press came
+// from the menu, which stays usable — as do the cmd:, awake:, media: and
+// menu: presses (EditKeyboard).
 func (c *Control) menuKeyboard() *telegram.InlineKeyboard {
-	return &telegram.InlineKeyboard{InlineKeyboard: [][]telegram.InlineButton{
-		{c.button("btn_lock", "cmd:lock"), c.button("btn_screenoff", "cmd:turnscreenoff")},
-		{c.button("btn_sleep", "confirm:suspend"), c.button("btn_restart", "confirm:restart")},
-		{c.button("btn_shutdown", "confirm:shutdown"), c.button("btn_cancel_sch", "cancel:menu")},
-	}}
+	cfg := c.d.Config()
+	rows := [][]telegram.InlineButton{
+		{c.button("btn_lock", "cmd:lock"), c.button("btn_screenoff", "cmd:turnscreenoff"), c.button("btn_screenon", "cmd:turnscreenon")},
+		{c.button("btn_sleep", "confirm:suspend"), c.button("btn_hibernate", "confirm:hibernate")},
+		{c.button("btn_restart", "confirm:restart"), c.button("btn_shutdown", "confirm:shutdown")},
+	}
+	awakeRow := []telegram.InlineButton{c.button("btn_awake", "awake:toggle")}
+	if cfg.Media.Enabled {
+		awakeRow = append(awakeRow, c.button("btn_mute", "media:mute"))
+	}
+	rows = append(rows, awakeRow)
+	if cfg.Media.Enabled {
+		rows = append(rows, []telegram.InlineButton{
+			c.button("btn_prev", "media:prev"), c.button("btn_playpause", "media:playpause"), c.button("btn_next", "media:next"),
+		})
+	}
+	last := []telegram.InlineButton{c.button("btn_cancel_sch", "cancel:menu")}
+	if len(cfg.Presets) > 0 {
+		last = append([]telegram.InlineButton{c.button("btn_presets", "menu:presets")}, last...)
+	}
+	return &telegram.InlineKeyboard{InlineKeyboard: append(rows, last)}
+}
+
+// presetsKeyboard is one [▶ 1 · 게임 모드] button per saved preset, two to a
+// row (#147). The callback data is the slot — run:<slot> under /presets,
+// run:<slot>:menu in the /menu submenu, which also gets [◀ 메뉴] — so it
+// stays far below Telegram's 64-byte limit whatever the name. nil without
+// presets.
+func (c *Control) presetsKeyboard(inMenu bool) *telegram.InlineKeyboard {
+	ps := config.NormalizePresets(c.d.Config().Presets)
+	if len(ps) == 0 && !inMenu {
+		return nil
+	}
+	var rows [][]telegram.InlineButton
+	for i, p := range ps {
+		data := "run:" + strconv.Itoa(p.Slot)
+		if inMenu {
+			data += ":menu"
+		}
+		b := telegram.InlineButton{Text: presetButtonText(p), CallbackData: data}
+		if i%2 == 0 {
+			rows = append(rows, []telegram.InlineButton{b})
+		} else {
+			rows[len(rows)-1] = append(rows[len(rows)-1], b)
+		}
+	}
+	if inMenu {
+		rows = append(rows, []telegram.InlineButton{c.button("btn_back", "menu:main")})
+	}
+	return &telegram.InlineKeyboard{InlineKeyboard: rows}
+}
+
+// presetButtonText is "▶ 1 · 게임 모드"; a long name is cut so the button
+// still reads on a phone. Button texts are plain text, not HTML.
+func presetButtonText(p config.Preset) string {
+	name := []rune(strings.TrimSpace(p.Name))
+	if len(name) > 20 {
+		name = append(name[:19], '…')
+	}
+	return fmt.Sprintf("▶ %d · %s", p.Slot, string(name))
 }
 
 // ---- actions ------------------------------------------------------------------
@@ -462,7 +540,7 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 	case "say":
 		return c.say(chatID, args)
 	case "presets":
-		return c.presetList(), nil, nil
+		return c.presetList(), c.presetsKeyboard(false), nil
 	case "run":
 		return c.runPreset(args)
 	case "mute":
@@ -640,12 +718,16 @@ func (c *Control) mute(args []string) (string, *telegram.InlineKeyboard, error) 
 // HandleCallback acts on an inline button. Verbs:
 //
 //	exec:<cmd>     run now (after a confirmation prompt)
-//	cmd:<cmd>      run a safe command from /menu
+//	cmd:<cmd>      run a safe command from /menu; the menu stays
 //	confirm:<cmd>  append a confirmation prompt to the menu (EditKeyboard adds the buttons)
 //	dismiss:       close a confirmation prompt
 //	cancel:        cancel the grace period (remote.grace_scheduled)
 //	cancel:menu    cancel the active schedule from /menu; the menu stays
 //	runnow:        end the grace period and run the command now (remote.grace_scheduled)
+//	awake:toggle   turn keep-awake on (default period) or off; the menu stays
+//	media:<key>    mute (a toggle), playpause, prev, next; the menu stays
+//	menu:presets   switch the menu to the preset submenu, menu:main back
+//	run:<slot>     run a preset from /presets (run:<slot>:menu from the submenu)
 //
 // Edits keep the message's text (msgText, or the HTML we sent when it is
 // known) and append a result line. A cancel:/runnow: press on a message
@@ -656,7 +738,7 @@ func (c *Control) HandleCallback(ctx context.Context, chatID string, msgID int, 
 	return c.WithHeader(h), toast, err
 }
 
-func (c *Control) handleCallback(_ context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
+func (c *Control) handleCallback(ctx context.Context, chatID string, msgID int, msgText string, data string) (string, string, error) {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
 	case "exec":
@@ -675,7 +757,10 @@ func (c *Control) handleCallback(_ context.Context, chatID string, msgID int, ms
 			return "", c.text("confirm_needed"), nil
 		}
 		c.runCommand(name)
-		return appendStamp(keep(msgText, c.menuTitle()), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
+		// The menu stays (#147): the result replaces the last one under it.
+		return c.menuResult(c.text("executed", c.commandLabel(name)) + " · " + time.Now().Format("15:04")), c.text("toast_executed"), nil
+	case "awake", "media", "menu", "run":
+		return c.menuCallback(ctx, verb, arg, data)
 	case "confirm":
 		name, ok := c.commandName(arg)
 		if !ok || !c.isGrace(name) {
@@ -749,8 +834,10 @@ func (c *Control) stale(msgText string) string {
 }
 
 // EditKeyboard implements telegram.EditKeyboarder: a confirm:<cmd> edit
-// keeps [확인][취소] buttons, cancel:menu keeps the menu, every other edit
-// drops the keyboard.
+// keeps [확인][취소] buttons; the menu's own presses (cmd:, cancel:menu,
+// awake:, media:, menu:main) keep the menu and the preset buttons
+// (menu:presets, run:) keep the preset buttons; every other edit drops the
+// keyboard.
 func (c *Control) EditKeyboard(data string) *telegram.InlineKeyboard {
 	verb, arg, _ := strings.Cut(data, ":")
 	switch verb {
@@ -762,6 +849,16 @@ func (c *Control) EditKeyboard(data string) *telegram.InlineKeyboard {
 		if arg == "menu" {
 			return c.menuKeyboard()
 		}
+	case "cmd", "awake", "media":
+		return c.menuKeyboard()
+	case "menu":
+		if arg == "presets" {
+			return c.presetsKeyboard(true)
+		}
+		return c.menuKeyboard()
+	case "run":
+		_, where, _ := strings.Cut(arg, ":")
+		return c.presetsKeyboard(where == "menu")
 	}
 	return nil
 }
@@ -781,7 +878,9 @@ func (c *Control) statusText() string {
 	var b strings.Builder
 	// The header line doubles as the /status title, with the version on it.
 	fmt.Fprintf(&b, "%s · %s\n", c.Header(), html.EscapeString(c.d.Version()))
-	fmt.Fprintf(&b, "%s: %s\n", c.text("st_uptime"), formatUptime(time.Since(c.d.StartedAt)))
+	// PC uptime, like the SmartThings status and the WebUI (#147) — not the
+	// service's.
+	fmt.Fprintf(&b, "%s: %s\n", c.text("st_uptime"), formatUptime(c.d.Uptime()))
 
 	s := c.d.Status.Schedule()
 	if s["active"] == true {
@@ -816,10 +915,17 @@ func (c *Control) statusText() string {
 	if line := c.activityLine(c.d.Status.Activity(c.d.Config())); line != "" {
 		b.WriteString("\n" + line)
 	}
-	if cfg := c.d.Config(); cfg.Media.Enabled {
+	cfg := c.d.Config()
+	if cfg.Media.Enabled {
+		if line := c.volumeLine(c.d.Status.Audio(cfg)); line != "" {
+			b.WriteString("\n" + line)
+		}
 		if line := c.mediaLine(c.d.Status.Media(cfg), cfg.Media.NowPlaying); line != "" {
 			b.WriteString("\n" + line)
 		}
+	}
+	if cfg.SmartThings.ExposeSession {
+		b.WriteString("\n" + c.sessionLine())
 	}
 
 	if bus := c.d.Bus(); bus != nil {
@@ -846,6 +952,39 @@ func (c *Control) activityLine(a status.Activity) string {
 		line += " · " + c.text("activity_more", others)
 	}
 	return line
+}
+
+// volumeLine is the /status "볼륨: 30% · 음소거 꺼짐" line from the stored
+// sample (/status runs nothing in the user session), "" while there is no
+// reading — nobody logged in, or none taken yet.
+func (c *Control) volumeLine(a status.Audio) string {
+	if !a.Available || a.Volume == nil {
+		return ""
+	}
+	muted := c.text("st_off")
+	if a.Muted != nil && *a.Muted {
+		muted = c.text("st_on")
+	}
+	return fmt.Sprintf("%s: %d%% · %s %s", c.text("st_volume"), *a.Volume, c.text("st_mute"), muted)
+}
+
+// sessionLine is the /status "세션: 잠김 · 유휴 5m 03s" line, shown only
+// while the session is shared with SmartThings
+// (smartthings.expose_session): the bot tells no more than the hub is
+// told. The idle part needs a fresh tray-app heartbeat.
+func (c *Control) sessionLine() string {
+	info, err := c.d.Status.Session()
+	if err != nil {
+		return c.text("st_session") + ": " + c.text("st_no_user")
+	}
+	state := c.text("st_unlocked")
+	if info.Locked {
+		state = c.text("st_locked")
+	}
+	if idle, ok := c.d.Status.IdleSeconds(); ok {
+		state += " · " + c.text("st_idle", formatUptime(time.Duration(idle)*time.Second))
+	}
+	return c.text("st_session") + ": " + state
 }
 
 // formatUptime renders a duration as "3d 04h", "1h 05m" or "4m 09s".
@@ -990,7 +1129,7 @@ func botCommands(lang string) []telegram.BotCommand {
 	}
 	return []telegram.BotCommand{
 		{Command: "status", Description: pick("상태", "Status")},
-		{Command: "menu", Description: pick("버튼 메뉴", "Button menu")},
+		{Command: "menu", Description: pick("버튼 메뉴 (전원·미디어·프리셋)", "Button menu (power, media, presets)")},
 		{Command: "lock", Description: pick("잠금", "Lock")},
 		{Command: "screenoff", Description: pick("화면 끄기", "Screen off")},
 		{Command: "screenon", Description: pick("화면 켜기", "Screen on")},
@@ -1001,7 +1140,7 @@ func botCommands(lang string) []telegram.BotCommand {
 		{Command: "cancel", Description: pick("예약·유예 취소", "Cancel schedule")},
 		{Command: "now", Description: pick("예약·유예 즉시 실행", "Run schedule now")},
 		{Command: "say", Description: pick("PC에 알림 띄우기", "Show a notification on the PC")},
-		{Command: "presets", Description: pick("프리셋 목록", "List presets")},
+		{Command: "presets", Description: pick("프리셋 목록·실행 버튼", "Presets with run buttons")},
 		{Command: "run", Description: pick("프리셋 실행 (이름 또는 번호)", "Run a preset (name or number)")},
 		{Command: "awake", Description: pick("잠들지 않기 [분|off]", "Keep awake [minutes|off]")},
 		{Command: "vol", Description: pick("PC 볼륨 [0-100|+n|-n]", "PC volume [0-100|+n|-n]")},

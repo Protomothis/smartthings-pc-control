@@ -212,7 +212,7 @@ func TestTelegramHelpMenuAndUnknown(t *testing.T) {
 		t.Errorf("unknown = %q", unknown)
 	}
 	_, kb, _ := h.HandleCommand(context.Background(), "42", "menu", nil)
-	want := []string{"cmd:lock", "cmd:turnscreenoff", "confirm:suspend", "confirm:restart", "confirm:shutdown", "cancel:menu"}
+	want := []string{"cmd:lock", "cmd:turnscreenoff", "cmd:turnscreenon", "confirm:suspend", "confirm:hibernate", "confirm:restart", "confirm:shutdown", "awake:toggle", "cancel:menu"}
 	if got := keyboardData(kb); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("menu buttons = %v, want %v", got, want)
 	}
@@ -350,7 +350,7 @@ func TestTelegramMuteUnmute(t *testing.T) {
 	h := tgCtl
 
 	stopNotifier()
-	if html, _, _ := h.HandleCommand(context.Background(), "42", "mute", []string{"30m"}); !strings.Contains(html, "꺼져") {
+	if html, _, _ := h.HandleCommand(context.Background(), "42", "mute", []string{"30m"}); !strings.Contains(html, "잠시 후 다시") {
 		t.Errorf("mute without bus = %q", html)
 	}
 	captureNotifications(t)
@@ -425,7 +425,7 @@ func TestTelegramCallbackMenuButtons(t *testing.T) {
 	h := tgCtl
 
 	// cmd: runs safe commands only.
-	if edit, _, err := h.HandleCallback(context.Background(), "42", 7, "", "cmd:lock"); err != nil || !strings.Contains(edit, "실행됨") {
+	if edit, _, err := h.HandleCallback(context.Background(), "42", 7, "", "cmd:lock"); err != nil || !strings.Contains(edit, "✅ 잠금 실행 · ") {
 		t.Errorf("cmd:lock edit=%q err=%v", edit, err)
 	}
 	expectExecuted(t, lock, "lock")

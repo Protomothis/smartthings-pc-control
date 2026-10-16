@@ -23,7 +23,8 @@ import (
 var presetTexts = map[string][2]string{
 	"presets_title":     {"<b>프리셋</b>", "<b>Presets</b>"},
 	"presets_none":      {"등록된 프리셋이 없습니다. PC 앱의 프리셋 탭에서 추가하세요.", "No presets yet. Add them on the PC app's Presets tab."},
-	"presets_hint":      {"실행: <code>/run 번호</code> 또는 <code>/run 이름</code>", "Run one: <code>/run number</code> or <code>/run name</code>"},
+	"presets_hint":      {"버튼을 누르거나 <code>/run 번호</code> · <code>/run 이름</code>으로 실행합니다", "Tap a button, or send <code>/run number</code> or <code>/run name</code>"},
+	"presets_menu":      {"<b>프리셋</b> — 누르면 바로 실행합니다", "<b>Presets</b> — a tap runs one at once"},
 	"run_usage":         {"사용법: <code>/run 이름</code> 또는 <code>/run 번호</code> — 목록은 /presets", "Usage: <code>/run name</code> or <code>/run number</code> — see /presets"},
 	"run_no_such":       {"그런 프리셋이 없습니다: <code>%s</code> — 목록은 /presets", "No such preset: <code>%s</code> — see /presets"},
 	"run_started":       {"▶️ 프리셋 실행: <b>%d · %s</b>", "▶️ Preset started: <b>%d · %s</b>"},

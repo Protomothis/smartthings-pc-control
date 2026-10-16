@@ -402,9 +402,13 @@ func TestTelegramConfirmKeepsMenuText(t *testing.T) {
 		t.Errorf("dismiss edit of foreign text = %q", edit)
 	}
 
-	// cmd: from the menu keeps the menu text; the buttons go.
-	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, plainMenu, "cmd:lock"); !strings.HasPrefix(edit, menu+"\n✅ 실행됨 · ") {
+	// cmd: from the menu keeps the menu, text and buttons, with the result
+	// under it (#147).
+	if edit, _, _ = h.HandleCallback(context.Background(), "42", 7, plainMenu, "cmd:lock"); !strings.HasPrefix(edit, menu+"\n✅ 잠금 실행 · ") {
 		t.Errorf("cmd edit = %q", edit)
+	}
+	if got := keyboardData(h.EditKeyboard("cmd:lock")); len(got) == 0 || got[0] != "cmd:lock" {
+		t.Errorf("cmd keyboard = %v, want the menu", got)
 	}
 
 	// cancel:menu leaves the menu usable: no edit without a schedule, menu

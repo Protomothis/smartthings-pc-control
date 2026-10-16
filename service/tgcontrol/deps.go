@@ -35,9 +35,11 @@ type Deps struct {
 	// the tests use a fake server).
 	BaseURL func() string
 	// Bus is the notification bus, nil while it is not running (/quiet).
+	// That is only while the service starts or stops.
 	Bus func() *notify.Bus
-	// StartedAt is when the service started (/status uptime).
-	StartedAt time.Time
+	// Uptime is how long the PC has been up (/status), the same reading
+	// the SmartThings status and the WebUI status card show (#147).
+	Uptime func() time.Duration
 	// ActionTimeout is how long a user-session action may take (/run, /say
 	// wait a second more).
 	ActionTimeout func() time.Duration
@@ -67,6 +69,13 @@ type Status interface {
 	Battery() status.Battery
 	Activity(cfg config.Config) status.Activity
 	Media(cfg config.Config) status.Media
+	// Audio is the stored volume/mute sample (unavailable while
+	// media.enabled is off or nobody is logged in).
+	Audio(cfg config.Config) status.Audio
+	// Session describes the target user session (WTS); IdleSeconds is the
+	// tray app's idle reading, ok only while its heartbeat is fresh.
+	Session() (session.Info, error)
+	IdleSeconds() (int64, bool)
 }
 
 // Commands is the command catalogue and the schedule slot on behalf of
