@@ -62,7 +62,7 @@ local ATTRIBUTES = {
   [caps.PRESENCE] = { activity = true, idleMinutes = true },
   [caps.PRIVACY] = { summary = true, camera = true, microphone = true },
   [caps.MONITOR] = { summary = true, input = true, supportedInputs = true },
-  ["switchLevel"] = { level = true },
+  ["switchLevel"] = { level = true, levelRange = true },
   [caps.AUDIO_OUT] = { output = true, names = true, supportedOutputs = true },
   [caps.AUDIO_IN] = { input = true, names = true, supportedInputs = true },
 }
