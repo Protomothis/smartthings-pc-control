@@ -80,6 +80,9 @@ function common.run_feature(driver, device, service_command, value, answer, keys
     poll.once(driver, device)
   end
   local function say(note, body)
+    if note == "device_in_use" then
+      return sensors.in_use_note(lang, (body or {}).devices)
+    end
     return (words and words(lang, note, body)) or features.note_text(lang, note)
   end
   local refusal = features.refusal(fields.extras(device), service_command)
