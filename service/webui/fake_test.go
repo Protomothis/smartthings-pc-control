@@ -98,12 +98,13 @@ func (fakeTelegram) Conflict() (bool, time.Time)          { return false, time.T
 
 type fakeHeartbeat struct{}
 
-func (fakeHeartbeat) Now() time.Time                         { return time.Now() }
-func (fakeHeartbeat) Target() (uint32, error)                { return 0, errors.New("no session") }
-func (fakeHeartbeat) Ignored(uint32, uint32)                 {}
-func (fakeHeartbeat) Idle(int64)                             {}
-func (fakeHeartbeat) Audio(useraction.Audio, time.Time)      {}
-func (fakeHeartbeat) Media(useraction.NowPlaying, time.Time) {}
+func (fakeHeartbeat) Now() time.Time                                            { return time.Now() }
+func (fakeHeartbeat) Target() (uint32, error)                                   { return 0, errors.New("no session") }
+func (fakeHeartbeat) Ignored(uint32, uint32)                                    {}
+func (fakeHeartbeat) Idle(int64)                                                {}
+func (fakeHeartbeat) Audio(useraction.Audio, time.Time)                         {}
+func (fakeHeartbeat) Media(useraction.NowPlaying, time.Time)                    {}
+func (fakeHeartbeat) AudioDevices(_, _ []useraction.AudioEndpoint, _ time.Time) {}
 
 // newTestServer is a Server over cfg and the fakes above; set ts.cfg to
 // change the live config.

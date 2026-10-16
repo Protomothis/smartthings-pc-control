@@ -30,7 +30,41 @@
     "audio": {
       "available": true,
       "device": "스피커 (Realtek(R) Audio)",
+      "inputs": [
+        {
+          "default": true,
+          "name": "마이크 (Realtek(R) Audio)",
+          "present": true,
+          "slot": 1
+        },
+        {
+          "default": false,
+          "name": "헤드셋 마이크 (WH-1000XM4)",
+          "present": true,
+          "slot": 2
+        }
+      ],
       "muted": false,
+      "outputs": [
+        {
+          "default": true,
+          "name": "스피커 (Realtek(R) Audio)",
+          "present": true,
+          "slot": 1
+        },
+        {
+          "default": false,
+          "name": "헤드셋 (WH-1000XM4)",
+          "present": true,
+          "slot": 3
+        },
+        {
+          "default": false,
+          "name": "LG TV (NVIDIA High Definition Audio)",
+          "present": false,
+          "slot": 4
+        }
+      ],
       "updated_at": "2026-10-01T20:59:30+09:00",
       "volume": 35
     },
@@ -52,6 +86,8 @@
       "audio",
       "media",
       "nowplaying",
+      "audio_output",
+      "audio_input",
       "notify",
       "presets"
     ],

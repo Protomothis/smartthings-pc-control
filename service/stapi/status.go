@@ -72,6 +72,7 @@ func features(b status.Battery, cfg config.Config) []string {
 		out = append(out, "activity")
 	}
 	out = append(out, mediaFeatures(cfg)...)
+	out = append(out, audioDeviceFeatures(cfg)...) // #145
 	// Unlike media, "notify" (#106) is listed whatever notify_pc.enabled
 	// says: the driver sends and shows the 403 notify_disabled as "PC 알림
 	// 꺼짐", where a missing feature would read as "not supported".

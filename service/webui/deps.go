@@ -149,4 +149,6 @@ type Heartbeat interface {
 	Idle(seconds int64)
 	Audio(a useraction.Audio, at time.Time)
 	Media(np useraction.NowPlaying, at time.Time)
+	// AudioDevices stores the active devices (#145).
+	AudioDevices(outputs, inputs []useraction.AudioEndpoint, at time.Time)
 }
