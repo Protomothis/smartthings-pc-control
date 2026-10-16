@@ -371,6 +371,7 @@
   "tray.exit": "Exit",
   "tray.open": "Open",
   "unsaved.body.close": "There are unsaved changes. Save before closing the window?",
+  "unsaved.body.quit": "There are unsaved changes. Save before quitting?",
   "unsaved.body.tab": "This tab has unsaved changes. Save them?",
   "unsaved.discard": "Don't save",
   "unsaved.indicator": "Unsaved changes",

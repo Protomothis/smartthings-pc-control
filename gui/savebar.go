@@ -264,3 +264,18 @@ func (u *ui) onCloseRequest() {
 	}
 	u.promptUnsaved("unsaved.body.close", dirty, u.win.Hide)
 }
+
+// requestQuit is the tray's [종료]. Like closing the window it asks first
+// when a form tab has unsaved edits (#141), with the window brought up for
+// it — the tray may be all that is on screen — and quits once they are
+// saved or discarded; [계속 편집] keeps the app running. quit is
+// u.app.Quit; the tests pass their own.
+func (u *ui) requestQuit(quit func()) {
+	dirty := u.forms.dirtyTabs()
+	if len(dirty) == 0 {
+		quit()
+		return
+	}
+	u.showWindow()
+	u.promptUnsaved("unsaved.body.quit", dirty, quit)
+}

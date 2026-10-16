@@ -371,6 +371,7 @@
   "tray.exit": "종료",
   "tray.open": "열기",
   "unsaved.body.close": "저장하지 않은 변경 사항이 있습니다. 창을 닫기 전에 저장할까요?",
+  "unsaved.body.quit": "저장하지 않은 변경 사항이 있습니다. 종료하기 전에 저장할까요?",
   "unsaved.body.tab": "이 탭에 저장하지 않은 변경 사항이 있습니다. 저장할까요?",
   "unsaved.discard": "저장 안 함",
   "unsaved.indicator": "저장되지 않은 변경 사항",
