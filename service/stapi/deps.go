@@ -30,6 +30,17 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
+
+	// Subscriptions keeps the hub push subscriptions across restarts
+	// (#142); nil keeps them in memory only.
+	Subscriptions SubscriptionStore
+}
+
+// SubscriptionStore is where the push subscriptions are written through
+// (push.go). Save gets the whole list every time.
+type SubscriptionStore interface {
+	LoadSubscriptions() []SavedSubscription
+	SaveSubscriptions([]SavedSubscription) error
 }
 
 // StatusSource is what the status document (§3.2) reads that /st/v1 does

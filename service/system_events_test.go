@@ -6,10 +6,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/service/stapi"
 )
 
 // --- system.updated (state.json version comparison) ----------------------
@@ -87,16 +90,51 @@ func TestRecordVersionKeepsOtherStateKeys(t *testing.T) {
 	}
 }
 
+// #142: the hub push subscriptions share state.json with the other keys,
+// and each writer keeps what the others put there.
+func TestPushSubscriptionsShareStateJSON(t *testing.T) {
+	path := statePath()
+	orig, had := os.ReadFile(path)
+	t.Cleanup(func() {
+		if had == nil {
+			os.WriteFile(path, orig, 0o600)
+		} else {
+			os.Remove(path)
+		}
+	})
+	if err := saveState(path, serviceState{LastVersion: "v1.2.2"}); err != nil {
+		t.Fatal(err)
+	}
+	subs := []stapi.SavedSubscription{{
+		ID: "sub-4", Callback: "http://192.168.1.20:41234/pc/evt", DriverVersion: "1.3.0",
+		ExpiresAt: time.Date(2026, 10, 16, 9, 10, 0, 0, time.UTC),
+	}}
+	var store pushSubscriptionState
+	if err := store.SaveSubscriptions(subs); err != nil {
+		t.Fatal(err)
+	}
+	markCleanShutdown(path)
+	if !takeCleanShutdown(path) {
+		t.Error("the clean-shutdown flag did not survive the subscription write")
+	}
+	if got := store.LoadSubscriptions(); !reflect.DeepEqual(got, subs) {
+		t.Errorf("subscriptions read back as %+v, want %+v", got, subs)
+	}
+	if st := loadState(path); st.LastVersion != "v1.2.2" {
+		t.Errorf("last_version = %q after the subscription write", st.LastVersion)
+	}
+}
+
 func TestLoadStateTolerantOfGarbage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	os.WriteFile(path, []byte("{not json"), 0644)
-	if st := loadState(path); st != (serviceState{}) {
+	if st := loadState(path); !reflect.DeepEqual(st, serviceState{}) {
 		t.Errorf("garbage state parsed as %+v", st)
 	}
-	if st := loadState(filepath.Join(t.TempDir(), "missing.json")); st != (serviceState{}) {
+	if st := loadState(filepath.Join(t.TempDir(), "missing.json")); !reflect.DeepEqual(st, serviceState{}) {
 		t.Errorf("missing state parsed as %+v", st)
 	}
-	if st := loadState(""); st != (serviceState{}) {
+	if st := loadState(""); !reflect.DeepEqual(st, serviceState{}) {
 		t.Errorf("empty path parsed as %+v", st)
 	}
 	if err := saveState("", serviceState{LastVersion: "x"}); err != nil {

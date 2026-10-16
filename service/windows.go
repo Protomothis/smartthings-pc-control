@@ -64,6 +64,11 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 	// must never delay the service reaching Running.
 	go ensureSSDPFirewallRuleAtStart()
 
+	// The hub push subscriptions of the last run (#142): before the HTTP
+	// server, so a hub renewing now finds its own, and before
+	// startupHooks, whose power.started goes to them.
+	stSrv.RestoreSubscriptions()
+
 	s.stop = make(chan struct{})
 	go StartHTTPServer(s.stop)
 	go StartWebUI(s.stop)
