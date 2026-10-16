@@ -223,7 +223,7 @@ var bringToFront = func(hwnd windows.HWND) error {
 	if setForeground(hwnd) {
 		return nil
 	}
-	_ = sendMouseInput([]pointerInput{{typ: inputMouse}}) // only to qualify as the last input; the retry says whether it helped
+	_, _ = sendMouseInput([]pointerInput{{typ: inputMouse}}) // only to qualify as the last input; the retry says whether it helped
 	if setForeground(hwnd) {
 		return nil
 	}
