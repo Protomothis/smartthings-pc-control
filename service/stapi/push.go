@@ -655,7 +655,7 @@ func pushEventType(ev notify.Event, cfg config.SmartThingsConfig) (string, bool)
 	// activity.changed (#110, #123) is not gated on activity.enabled:
 	// switching it off is itself a change the hub has to hear about, and
 	// the block names watched programs only, never anything else running.
-	case "display", "awake", "battery", "activity", "audio", "media":
+	case "display", "awake", "battery", "activity", "audio", "media", "privacy":
 		if ev.Kind == "changed" {
 			return ev.Key(), true
 		}
@@ -869,7 +869,7 @@ type pushPayload struct {
 	Type      string `json:"type"`
 	At        string `json:"at"`
 	// Data is the event's fields (map[string]string), except for
-	// activity.changed: see pushBody.
+	// activity.changed and privacy.changed: see pushBody.
 	Data   any    `json:"data"`
 	Status Status `json:"status"`
 }
@@ -879,9 +879,10 @@ type pushPayload struct {
 // only reports whether one is set, and any event field that happens to
 // carry it is dropped.
 //
-// activity.changed is the one event whose data is not its fields: it is
-// the status activity block itself (§11, #123), taken from the same status
-// document so the two can never disagree.
+// activity.changed is an event whose data is not its fields: it is the
+// status activity block itself (§11, #123), taken from the same status
+// document so the two can never disagree. privacy.changed (#143) carries
+// the status privacy block the same way.
 func (s *Server) pushBody(job pushJob) ([]byte, error) {
 	cfg := s.d.Config()
 	at := job.At
@@ -890,8 +891,13 @@ func (s *Server) pushBody(job pushJob) ([]byte, error) {
 	}
 	st := s.buildStatus(cfg, job.fromCache)
 	var data any = pushData(job.Data, cfg.Secret)
-	if job.Type == "activity.changed" {
+	switch job.Type {
+	case "activity.changed":
 		data = st.Activity
+	case "privacy.changed":
+		// Likewise the status privacy block (#143); null once the
+		// option is turned off.
+		data = st.Privacy
 	}
 	return json.Marshal(pushPayload{
 		Protocol:  Protocol,

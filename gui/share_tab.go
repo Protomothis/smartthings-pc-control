@@ -24,6 +24,8 @@ type shareFormState struct {
 	NowPlaying        bool
 	// Activity is the running-app detection toggle and watch list.
 	Activity ActivityConfig
+	// Privacy is the camera/microphone detection and its guard (#143).
+	Privacy PrivacyConfig
 }
 
 // shareStateFromConfig is what the tab shows for cfg. The watch list is
@@ -34,6 +36,7 @@ func shareStateFromConfig(cfg Config) shareFormState {
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		NowPlaying:        cfg.Media.NowPlaying,
 		Activity:          cloneActivity(cfg.Activity),
+		Privacy:           normalizePrivacy(cfg.Privacy),
 	}
 }
 
@@ -53,6 +56,7 @@ func (s shareFormState) applyTo(base Config) Config {
 	cfg.SmartThings.ExposeSessionUser = s.effectiveUser()
 	cfg.Media.NowPlaying = s.NowPlaying
 	cfg.Activity = normalizeActivity(s.Activity)
+	cfg.Privacy = normalizePrivacy(s.Privacy)
 	return cfg
 }
 
@@ -61,7 +65,8 @@ func (s shareFormState) dirty(base Config) bool {
 	return s.ExposeSession != base.SmartThings.ExposeSession ||
 		s.effectiveUser() != base.SmartThings.ExposeSessionUser ||
 		s.NowPlaying != base.Media.NowPlaying ||
-		!activityEqual(s.Activity, base.Activity)
+		!activityEqual(s.Activity, base.Activity) ||
+		!privacyEqual(s.Privacy, base.Privacy)
 }
 
 // --- Widgets -----------------------------------------------------------------
@@ -75,6 +80,8 @@ type shareTab struct {
 	nowPlaying  *toggle
 	// activity is the running-app detection editor (#110).
 	activity activityBox
+	// privacy is the camera/microphone section (#143).
+	privacy *privacyBox
 }
 
 // state reads the widgets into the pure form model.
@@ -84,6 +91,7 @@ func (t *shareTab) state() shareFormState {
 		ExposeSessionUser: t.sessionUser.Checked,
 		NowPlaying:        t.nowPlaying.Checked,
 		Activity:          t.activity.form(),
+		Privacy:           t.privacy.form(),
 	}
 }
 
@@ -105,6 +113,8 @@ func (u *ui) buildShareTab() fyne.CanvasObject {
 	t.sessionUser.Disable()
 	t.nowPlaying = newToggle(u.t("settings.nowplaying"), onToggle)
 	activity := u.buildActivityBox()
+	var privacy fyne.CanvasObject
+	t.privacy, privacy = u.buildPrivacyBox(u.refreshDirty)
 
 	// The watch list is checked here first so the reason comes in the
 	// app's language; the service checks it again.
@@ -138,6 +148,8 @@ func (u *ui) buildShareTab() fyne.CanvasObject {
 		)),
 		widget.NewSeparator(),
 		section(u.t("share.activity"), activity),
+		widget.NewSeparator(),
+		section(u.t("share.privacy"), privacy),
 		// Trailing padding so the last row never sits flush against the
 		// footer (same as the other form tabs).
 		widget.NewLabel(""),
@@ -158,4 +170,6 @@ func (u *ui) fillShareTab(cfg Config) {
 	t.setUserEnabled(s.ExposeSession)
 	t.nowPlaying.SetChecked(s.NowPlaying)
 	u.fillActivityBox(s.Activity)
+	t.privacy.fill(s.Privacy)
+	go u.loadPrivacy()
 }

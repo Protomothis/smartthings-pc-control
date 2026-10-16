@@ -169,6 +169,9 @@ func (u *ui) loadSchedule() {
 			originKey = "schedule.origin.smartthings"
 		}
 		countdown := fmt.Sprintf(u.t(countdownKey), cmdLabel, remain)
+		// The camera/microphone guard (#143): the toast (not the one-line
+		// tray text) says what is in use.
+		note := u.scheduleInUseNote(s)
 		u.setCountdown(remain)
 		detail := u.t(originKey) + "\n" + fmt.Sprintf(u.t("schedule.for"), cmdLabel)
 		if s.Replaced != nil {
@@ -182,16 +185,20 @@ func (u *ui) loadSchedule() {
 		// replacing a local timer, or vice versa) — notify with Run now /
 		// Cancel buttons so it can be handled straight from the toast.
 		key := s.Origin + ":" + s.Command
+		if s.Held {
+			// Pushed back by the guard: toast again with the new time.
+			key += ":held"
+		}
 		if key != u.lastSchedCmd {
 			u.lastSchedCmd = key
 			lang := u.lang
 			title := u.t(titleKey)
 			go func() {
-				if err := showGraceToast(lang, title, countdown); err != nil {
+				if err := showGraceToast(lang, title, countdown+note); err != nil {
 					// Toast failed (e.g. PowerShell unavailable) — plain
 					// notification, sent from the UI goroutine like every
 					// other Fyne call.
-					body := fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)
+					body := fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain) + note
 					fyne.Do(func() { u.app.SendNotification(fyne.NewNotification(title, body)) })
 				}
 			}()

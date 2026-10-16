@@ -679,6 +679,7 @@ func (u *ui) pollLoop() {
 		case <-awakeTick.C:
 			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
+				go u.loadPrivacy() // the sharing tab's state line (#143)
 			}
 		case <-batteryTick.C:
 			if u.connected.Load() && u.onScreen() {

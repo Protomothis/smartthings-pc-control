@@ -156,3 +156,66 @@ func TestOrigin(t *testing.T) {
 		}
 	}
 }
+
+// Hold (#143): a schedule pushed back keeps its Seq and runs later; one
+// dropped ends through Ended with by device_in_use and never runs.
+func TestSchedulerHold(t *testing.T) {
+	s, r := newRecorder()
+	var mu sync.Mutex
+	var asked []int
+	s.Hold = func(t Task) (time.Duration, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, t.Held)
+		if t.Held == 0 {
+			return 20 * time.Millisecond, false
+		}
+		return 0, false
+	}
+	if err := s.Schedule("shutdown", 10*time.Millisecond, OriginRemote); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case cmd := <-r.ran:
+		if cmd != "shutdown" {
+			t.Errorf("ran %q", cmd)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the held schedule never ran")
+	}
+	mu.Lock()
+	if !reflect.DeepEqual(asked, []int{0, 1}) {
+		t.Errorf("Hold asked with Held %v, want [0 1]", asked)
+	}
+	mu.Unlock()
+	if got := r.got(); len(got) != 2 || got[1] != "fired shutdown #1" {
+		t.Errorf("hooks %q", got)
+	}
+
+	s, r = newRecorder()
+	dropped := make(chan struct{})
+	s.Hold = func(Task) (time.Duration, bool) { defer close(dropped); return 0, true }
+	if err := s.Schedule("restart", 10*time.Millisecond, OriginUI); err != nil {
+		t.Fatal(err)
+	}
+	<-dropped
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, ok := s.Current(); !ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the dropped schedule stayed in the slot")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case cmd := <-r.ran:
+		t.Fatalf("a dropped schedule ran %q", cmd)
+	case <-time.After(50 * time.Millisecond):
+	}
+	want := []string{"created restart/ui 10ms #1", "ended restart by device_in_use now=false"}
+	if got := r.got(); !reflect.DeepEqual(got, want) {
+		t.Errorf("hooks %q, want %q", got, want)
+	}
+}

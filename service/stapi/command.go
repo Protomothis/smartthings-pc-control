@@ -161,7 +161,12 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	case "grace":
 		dm = ModeGrace
 	}
-	if deferred := s.d.Commands.Dispatch(name, from, dm); deferred > 0 {
+	deferred, err := s.d.Commands.Dispatch(name, from, dm)
+	if err != nil {
+		writeDispatchError(w, name, from, err)
+		return
+	}
+	if deferred > 0 {
 		httpx.WriteJSON(w, http.StatusOK, CommandResponse{Accepted: true, Schedule: s.scheduleView()})
 		return
 	}

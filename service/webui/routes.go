@@ -98,6 +98,9 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// API: the command tab's media card (#117)
 	mux.HandleFunc("/api/media", s.apiAuth(s.serveMedia, http.MethodGet, http.MethodPost))
 
+	// API: camera/microphone state for the app's sharing tab (#143)
+	mux.HandleFunc("/api/privacy", s.apiAuth(s.servePrivacy, http.MethodGet))
+
 	// API: running program names for the app's watch-list picker (#110);
 	// the desktop app's local trusted session only.
 	mux.HandleFunc("/api/processes", s.apiAuth(s.localOnly(s.serveProcesses), http.MethodGet))
@@ -316,8 +319,8 @@ func (s *Server) serveCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	// Recorded as last_command (origin "ui"); notified only from the
 	// WebUI.
-	if !s.d.Commands.RunNow(name, by) {
-		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"status": "error", "command": httpx.Truncate(name, 64), "message": "Unknown command"})
+	if err := s.d.Commands.RunNow(name, by); err != nil {
+		writeCommandError(w, name, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "command": name, "message": "Command sent"})
@@ -404,6 +407,10 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if msg := config.ValidateActivity(newCfg.Activity); msg != "" {
+		writeAPIError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if msg := config.ValidatePrivacy(newCfg.Privacy); msg != "" {
 		writeAPIError(w, http.StatusBadRequest, msg)
 		return
 	}

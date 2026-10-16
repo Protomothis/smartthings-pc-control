@@ -17,7 +17,7 @@
 | `status.off.json` | `GET /st/v1/status` — 모든 설정이 기본값인 데스크톱(배터리 없음, activity 꺼짐, 재생 정보 동의 없음, 세션 비공개, awake 꺼짐, 예약·최근 명령 없음, WoL 꺼진 어댑터 1개, 화면 꺼짐). 각 블록의 "꺼진" 모양 | Go가 생성 |
 | `status.minimal-1.0.json` | v1.2.0 이전 서비스(v1.1.x, 드라이버 1.0.x 시절)가 보내던 모양. `features`와 v1.2 블록이 없다 | **손으로 작성**, 갱신하지 않음 |
 | `command.<이름>.json` | 드라이버가 보내는 요청(`request`)과 서비스의 응답(`response.code`, `response.body`) | `request`는 손으로, `response`는 Go가 생성 |
-| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`) | 위와 같음 |
+| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`, 409 `device_in_use`) | 위와 같음 |
 | `push.<type>.json` | 서비스가 허브 콜백으로 보내는 푸시 본문 전체(`type`, `data`, 그리고 §3.2 status 전체) | Go가 생성 |
 | `api-config.get.json` | `GET /api/config` — 데스크톱 앱이 받는 설정. 텔레그램 봇 토큰은 `****` + 끝 4자리로 가리고 `bot_token_set`을 붙인다 | Go가 생성 |
 
@@ -61,6 +61,13 @@ seam이 없는 값만 **명시적으로** 자리표시자로 바꾼다. 키가 �
 | push `at` | `2026-10-01T21:00:05+09:00` | `emit`이 `time.Now()`를 찍는다 |
 | push `data.execute_at`(schedule.created) | `21:30:00` | 위와 같음 |
 | subscribe `expires_at` | `2026-10-01T21:10:00+09:00` | 구독 시계 |
+
+## privacy 블록 (#143)
+
+카메라·마이크 사용 감지(`privacy.enabled`, 기본 꺼짐)를 켠 상태다. status에서는 카메라가 20:45부터 사용 중이고 마이크는 19:00–20:00에 쓰고 쉬는 중이라 `{"camera":"in_use","microphone":"idle","since":"2026-10-01T20:45:00+09:00"}`, `features`에 `privacy`가 있다. 꺼져 있으면(`status.off.json`) 키 자체가 없다.
+`push.privacy.changed.json`은 마이크가 켜진 순간이다. `data`는 status의 `privacy` 블록과 **똑같은** JSON이고(옵션을 끄면 `null`), `since`는 사용 중인 것 중 가장 이른 시작이라 그대로 20:45다.
+`command.shutdown.device-in-use.json`은 보호 방식이 `block`일 때 같은 `shutdown`이 409 `device_in_use`(+`devices`)로 거절되는 모양이다. 기본 `warn`에서는 `command.shutdown.json`처럼 실행된다.
+바꿀 곳은 Go의 `goldenPrivacy`와 두 케이스(`pushCases`, `commandCases`)다. Lua 쪽 `PUSHES`/`REFUSALS` 항목은 드라이버 작업(#152)에서 추가한다.
 
 ## activity 블록
 

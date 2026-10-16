@@ -33,6 +33,10 @@
       "started": true,
       "stopping": true
     },
+    "privacy": {
+      "blocked": true,
+      "extended": true
+    },
     "remote": {
       "executed": true,
       "force": true,
@@ -76,5 +80,9 @@
     "enabled": true
   },
   "presets": [],
+  "privacy": {
+    "enabled": false,
+    "guard": "warn"
+  },
   "debug": false
 }

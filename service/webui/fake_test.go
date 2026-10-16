@@ -58,7 +58,7 @@ func (fakeHub) CommandFirewallRule() (int, bool, bool)    { return 0, false, fal
 
 type fakeCommands struct{}
 
-func (fakeCommands) RunNow(string, string) bool           { return false }
+func (fakeCommands) RunNow(string, string) error          { return ErrUnknownCommand }
 func (fakeCommands) Schedule(string, time.Duration) error { return errors.New("no schedules") }
 func (fakeCommands) CancelSchedule(string) bool           { return false }
 

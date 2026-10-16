@@ -1,0 +1,19 @@
+{
+  "_doc": "The same switch.off while the camera is in use and the PC app's guard is block (#143): 409 device_in_use with the devices in use (never an app). Under warn (the default) the command runs as in command.shutdown.json.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "shutdown",
+    "minutes": 0,
+    "mode": "default"
+  },
+  "response": {
+    "body": {
+      "devices": [
+        "camera"
+      ],
+      "error": "device_in_use"
+    },
+    "code": 409
+  }
+}

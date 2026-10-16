@@ -80,6 +80,8 @@ func TestChangedKeysEachKey(t *testing.T) {
 		"media.enabled":                   func(c *Config) { c.Media.Enabled = false },
 		"media.now_playing":               func(c *Config) { c.Media.NowPlaying = true },
 		"notify_pc.enabled":               func(c *Config) { c.NotifyPC.Enabled = false },
+		"privacy.enabled":                 func(c *Config) { c.Privacy.Enabled = true },
+		"privacy.guard":                   func(c *Config) { c.Privacy.Guard = PrivacyGuardBlock },
 	}
 	if len(changes) != len(auditedKeys) {
 		t.Fatalf("%d cases for %d audited keys", len(changes), len(auditedKeys))

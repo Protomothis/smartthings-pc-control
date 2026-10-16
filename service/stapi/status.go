@@ -57,6 +57,9 @@ type Status struct {
 	// Presets are the registered preset slots and their names (#109, §10),
 	// in slot order; never null. What a slot runs never leaves this PC.
 	Presets []status.PresetRef `json:"presets"`
+	// Privacy is the opt-in camera/microphone block (#143); left out
+	// while privacy.enabled is off.
+	Privacy *status.Privacy `json:"privacy,omitempty"`
 }
 
 // features lists what this service supports right now. Some entries depend
@@ -70,6 +73,10 @@ func features(b status.Battery, cfg config.Config) []string {
 	}
 	if cfg.Activity.Enabled {
 		out = append(out, "activity")
+	}
+	// "privacy" (#143) follows privacy.enabled, like the status block.
+	if cfg.Privacy.Enabled {
+		out = append(out, "privacy")
 	}
 	out = append(out, mediaFeatures(cfg)...)
 	// Unlike media, "notify" (#106) is listed whatever notify_pc.enabled
@@ -387,5 +394,6 @@ func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 		Audio:             src.Audio(cfg),
 		Media:             src.Media(cfg),
 		Presets:           presetList(cfg.Presets),
+		Privacy:           src.Privacy(cfg),
 	}
 }
