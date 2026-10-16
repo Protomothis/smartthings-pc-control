@@ -321,6 +321,13 @@ func (u *ui) fillSvcBox(state svcState) {
 
 	u.svcBox.RemoveAll()
 	u.svcBox.Add(widget.NewLabelWithStyle(stateText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	if state == svcRunning && !u.connected.Load() && u.svcDiag == svcRunning {
+		// Running, yet the app cannot connect (#140): most likely another
+		// program holds the WebUI port, which service.log names.
+		warn := hint(fmt.Sprintf(u.t("svc.state.running.unreachable"), currentWebUIPort()))
+		warn.Importance = widget.WarningImportance
+		u.svcBox.Add(warn)
+	}
 	u.svcBox.Add(container.NewHBox(append(buttons, layout.NewSpacer())...))
 	u.svcBox.Refresh()
 	// The box grew after the tab was laid out (the state query is async);

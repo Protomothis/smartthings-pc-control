@@ -107,7 +107,12 @@ func StartWebUI(stop chan struct{}) {
 	} else {
 		logMsg("WebUI listening on http://127.0.0.1:%d", webPort)
 	}
-	server.ListenAndServe()
+	// A bind failure (another program on port+1) leaves the service
+	// running but the app unable to reach it; without this line nothing
+	// said why (#140).
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		logMsg("ERROR: WebUI server on port %d failed (the app cannot connect; is another program using the port?): %v", webPort, err)
+	}
 }
 
 // hubInfo is the SmartThings side the app's SmartThings section shows:

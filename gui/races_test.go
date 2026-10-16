@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -19,6 +20,12 @@ func newTestUI(t *testing.T, lang Lang, client serviceAPI) *ui {
 	savedOnScreen := windowOnScreen
 	windowOnScreen = func() bool { return false }
 	t.Cleanup(func() { syncBackground = false; windowOnScreen = savedOnScreen })
+	// Nor is the real service or its log (#140): unknown state, no file.
+	savedSvc, savedLog := unreachableSvcState, serviceLogFile
+	unreachableSvcState = func() svcState { return svcUnknown }
+	logPath := filepath.Join(t.TempDir(), "service.log")
+	serviceLogFile = func() (string, error) { return logPath, nil }
+	t.Cleanup(func() { unreachableSvcState, serviceLogFile = savedSvc, savedLog })
 	a := test.NewTempApp(t)
 	if client == nil {
 		client = NewClient(1)

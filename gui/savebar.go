@@ -209,6 +209,8 @@ func (u *ui) setCurTab(index int) {
 	u.shownTab.Store(int32(index))
 	if index == tabLogs {
 		u.logsShownAgain() // back on the newest line (#134)
+		// Disconnected too: service.log is then read from disk (#140).
+		background(u.loadLogs)
 	}
 	if !u.connected.Load() {
 		return
@@ -218,8 +220,6 @@ func (u *ui) setCurTab(index int) {
 		u.refreshNetwork()
 	case tabTelegram:
 		u.refreshTelegramState()
-	case tabLogs:
-		background(u.loadLogs)
 	}
 }
 
