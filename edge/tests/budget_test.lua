@@ -219,7 +219,8 @@ local function stamped(device, pc)
     if component and component.id ~= "main" then
       key = component.id .. "/" .. key
     end
-    trace[#trace + 1] = { at = pc.now, key = key, forced = (event.options or {}).state_change == true }
+    trace[#trace + 1] = { at = pc.now, key = key, value = event.value,
+      forced = (event.options or {}).state_change == true }
   end
   function device:emit_event(event)
     note(event)
@@ -1301,6 +1302,142 @@ function T.test_a_steady_poll_stays_under_the_guard()
     end
     h.assert_equal(budget_warnings(), 0, "four commands no longer trip it")
   end)
+end
+
+--------------------------------------------------------------------------------
+-- #149: waking a PC polled every 5 minutes
+--------------------------------------------------------------------------------
+
+local power_handlers = require "handlers.power"
+local wol = require "wol"
+
+local MESSAGE = caps.STATUS .. ".message"
+
+--- Switch on a PC that is off, on a 5-minute poll interval, and run the
+--- driver's clock to `horizon` seconds after the press. The PC answers from
+--- `boot_after` seconds after it. Returns what happened, times relative to
+--- the press.
+local function wake_run(boot_after, horizon)
+  local out
+  with_pc(function(pc)
+    local device = new_device()
+    device.preferences.pollInterval = 300
+    device.preferences.macAddress = "AA:BB:CC:DD:EE:FF"
+    fields.set_state(device, state.new(state.OFF))
+    local d = clocked(Driver("budget", {}), pc)
+    local up_at
+    local polls = {}
+    client.get_status = function()
+      polls[#polls + 1] = pc.now
+      if up_at and pc.now >= up_at then
+        return true, copy(pc.status), nil
+      end
+      return false, nil, "unreachable"
+    end
+    poll.start(d, device)
+    -- Settled: off, every row said, the 5-minute schedule running.
+    run_until(d, pc, pc.now + 700)
+    local t0 = pc.now
+    local trace = stamped(device, pc)
+    local first_poll = #polls + 1
+    up_at = t0 + boot_after
+    power_handlers.switch_on(d, device)
+    run_until(d, pc, t0 + horizon)
+
+    out = { events = {}, polls = {}, on_at = nil, failed_at = nil, live_fast_polls = 0 }
+    for _, e in ipairs(trace) do
+      local rel = { at = e.at - t0, key = e.key, value = e.value, forced = e.forced }
+      out.events[#out.events + 1] = rel
+      if e.key == POWER and e.value == state.ON and not out.on_at then
+        out.on_at = rel.at
+      end
+      if e.key == MESSAGE and tostring(e.value):find("깨우기 실패", 1, true) then
+        out.failed_at = rel.at
+      end
+    end
+    for i = first_poll, #polls do
+      out.polls[#out.polls + 1] = polls[i] - t0
+    end
+    for _, timer in ipairs(d.timers) do
+      if timer.name == "wol-poll" and not timer.cancelled then
+        out.live_fast_polls = out.live_fast_polls + 1
+      end
+    end
+  end)
+  return out
+end
+
+local function between(list, from, to, field)
+  local n = 0
+  for _, item in ipairs(list) do
+    local at = field and item[field] or item
+    if at > from and at < to then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+function T.test_a_wake_on_a_five_minute_interval_shows_on_within_seconds()
+  for _, boot_after in ipairs({ 40, 170 }) do
+    local run = wake_run(boot_after, 600)
+    local context = "PC up " .. boot_after .. "s after the press"
+    h.assert_true(run.on_at ~= nil, context .. ": shown on")
+    h.assert_true(run.on_at >= boot_after and run.on_at <= boot_after + wol.WAKE_POLL_SECONDS,
+      context .. ": on at " .. tostring(run.on_at) .. "s, not at the next 5-minute poll")
+    h.assert_nil(run.failed_at, context .. ": not a failed wake")
+    -- The fast polls stop with the wake: after it only the 5-minute schedule.
+    local after = {}
+    for _, at in ipairs(run.polls) do
+      if at > run.on_at then
+        after[#after + 1] = at
+      end
+    end
+    for i = 2, #after do
+      h.assert_equal(after[i] - after[i - 1], 300,
+        context .. ": back to the interval (polls at " .. table.concat(run.polls, ", ") .. ")")
+    end
+    h.assert_equal(run.live_fast_polls, 0, context)
+    -- The event budget: a poll that finds the PC still off sends only what
+    -- changed, so the fast polls do not multiply events. What goes out while
+    -- waking is the first miss's answer (the connection message, the command
+    -- list's owed repeat) and at most one rotation step, which keeps its own
+    -- pace (`poll.rotate_due`: once per interval, not once per poll).
+    local unforced, moments, seen = {}, {}, {}
+    for _, e in ipairs(run.events) do
+      if e.at > 0 and e.at < run.on_at then
+        if not e.forced then
+          unforced[e.key] = (unforced[e.key] or 0) + 1
+          h.assert_equal(unforced[e.key], 1, context .. ": " .. e.key .. " sent again unchanged")
+        end
+        if not seen[e.at] then
+          seen[e.at] = true
+          moments[#moments + 1] = e.at
+        end
+      end
+    end
+    h.assert_true(#moments <= 2, context .. ": events at " .. table.concat(moments, ", ")
+      .. "s over " .. between(run.polls, 0, run.on_at) .. " polls")
+    h.assert_true(between(run.polls, 0, run.on_at + 1) >= boot_after / (2 * wol.WAKE_POLL_SECONDS),
+      context .. ": it did poll while waking")
+  end
+end
+
+function T.test_a_pc_that_stays_off_past_the_timeout_fails_once_and_polls_on_its_interval()
+  local run = wake_run(wol.WAKE_TIMEOUT + 20, 800)
+  h.assert_equal(run.failed_at, wol.WAKE_TIMEOUT, "wake failed at the timeout, after one last look")
+  local fails = 0
+  for _, e in ipairs(run.events) do
+    if e.key == MESSAGE and tostring(e.value):find("깨우기 실패", 1, true) then
+      fails = fails + 1
+    end
+  end
+  h.assert_equal(fails, 1)
+  -- No fast poll after the timeout: the next look is the 5-minute schedule's,
+  -- which then finds the PC up.
+  h.assert_true(run.on_at ~= nil and run.on_at > wol.WAKE_TIMEOUT, "on later, at a scheduled poll")
+  h.assert_equal(between(run.polls, wol.WAKE_TIMEOUT, run.on_at), 0, "no polls between the timeout and the schedule")
+  h.assert_equal(run.live_fast_polls, 0)
 end
 
 return T
