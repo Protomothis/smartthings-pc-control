@@ -50,6 +50,8 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
+	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
+	Monitor Monitor
 }
 
 // Remote is the last remote command as /status shows it.

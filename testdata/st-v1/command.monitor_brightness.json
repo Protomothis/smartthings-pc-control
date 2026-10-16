@@ -1,0 +1,33 @@
+{
+  "_doc": "Monitor brightness 70 on the primary monitor over DDC/CI (#144). value 0-100; the reply carries the monitor read back.",
+  "method": "POST",
+  "path": "/st/v1/command",
+  "request": {
+    "command": "monitor_brightness",
+    "value": 70
+  },
+  "response": {
+    "body": {
+      "accepted": true,
+      "executed": true,
+      "monitor": {
+        "brightness": 70,
+        "ddc": true,
+        "id": "m1",
+        "input": "hdmi1",
+        "inputs": [
+          "dp1",
+          "hdmi1",
+          "hdmi2"
+        ],
+        "name": "DELL U2720Q",
+        "power": "on",
+        "primary": true
+      },
+      "schedule": {
+        "active": false
+      }
+    },
+    "code": 200
+  }
+}

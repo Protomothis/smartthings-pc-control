@@ -98,6 +98,9 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// API: the command tab's media card (#117)
 	mux.HandleFunc("/api/media", s.apiAuth(s.serveMedia, http.MethodGet, http.MethodPost))
 
+	// API: the command tab's monitor card (#144, monitor.go)
+	mux.HandleFunc("/api/monitor", s.apiAuth(s.serveMonitor, http.MethodGet, http.MethodPost))
+
 	// API: running program names for the app's watch-list picker (#110);
 	// the desktop app's local trusted session only.
 	mux.HandleFunc("/api/processes", s.apiAuth(s.localOnly(s.serveProcesses), http.MethodGet))

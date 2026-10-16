@@ -17,6 +17,8 @@ type settingsFormState struct {
 	Secret string
 	Remote bool
 	Media  bool
+	// Monitor is monitor.enabled (#144).
+	Monitor bool
 	// GraceOn and GraceSec are the grace select: off, or a period.
 	GraceOn  bool
 	GraceSec int
@@ -32,6 +34,7 @@ func settingsStateFromConfig(cfg Config) settingsFormState {
 		Secret:   cfg.Secret,
 		Remote:   cfg.WebUIRemote,
 		Media:    cfg.Media.Enabled,
+		Monitor:  cfg.Monitor.Enabled,
 		GraceOn:  cfg.ShutdownGrace,
 		NotifyPC: notifyPCStateFromConfig(cfg),
 		Debug:    cfg.Debug,
@@ -52,6 +55,7 @@ func (s settingsFormState) applyTo(cfg *Config, l Lang) error {
 	cfg.Secret = s.Secret
 	cfg.WebUIRemote = s.Remote
 	cfg.Media.Enabled = s.Media
+	cfg.Monitor.Enabled = s.Monitor
 	cfg.Debug = s.Debug
 	s.NotifyPC.applyTo(cfg)
 	cfg.ShutdownGrace = s.GraceOn
@@ -78,6 +82,7 @@ func (s settingsFormState) dirty(base Config) bool {
 		s.Secret != base.Secret ||
 		s.Remote != base.WebUIRemote ||
 		s.Media != base.Media.Enabled ||
+		s.Monitor != base.Monitor.Enabled ||
 		s.GraceOn != base.ShutdownGrace ||
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
 		s.Debug != base.Debug ||

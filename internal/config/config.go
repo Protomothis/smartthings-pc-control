@@ -67,6 +67,8 @@ type Config struct {
 	// NotifyPC controls PC notifications from SmartThings and Telegram
 	// (#106, service/pc_notify.go).
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
+	// Monitor is the opt-in DDC/CI monitor control (#144, monitor.go).
+	Monitor MonitorConfig `json:"monitor"`
 	// Presets are the actions SmartThings and Telegram may run by slot
 	// number (#109, presets.go). Invalid entries are refused on save and
 	// dropped (with a log line) on load.

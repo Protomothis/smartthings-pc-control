@@ -45,6 +45,8 @@ type Deps struct {
 	Notify    Notifier
 	Telegram  Telegram
 	Heartbeat Heartbeat
+	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
+	Monitor Monitor
 }
 
 // Status is what the pages and /api report about this PC.
