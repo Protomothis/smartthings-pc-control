@@ -1,0 +1,65 @@
+{
+  "tag": "en",
+  "label": "PC monitor",
+  "attributes": {
+    "summary": {
+      "label": "Monitor"
+    },
+    "input": {
+      "label": "Input",
+      "i18n": {
+        "value": {
+          "unknown": {
+            "label": "Unknown"
+          },
+          "hdmi1": {
+            "label": "HDMI 1"
+          },
+          "hdmi2": {
+            "label": "HDMI 2"
+          },
+          "dp1": {
+            "label": "DisplayPort 1"
+          },
+          "dp2": {
+            "label": "DisplayPort 2"
+          },
+          "dvi1": {
+            "label": "DVI 1"
+          },
+          "dvi2": {
+            "label": "DVI 2"
+          },
+          "vga1": {
+            "label": "VGA 1"
+          },
+          "vga2": {
+            "label": "VGA 2"
+          },
+          "other1": {
+            "label": "Other 1"
+          },
+          "other2": {
+            "label": "Other 2"
+          },
+          "other3": {
+            "label": "Other 3"
+          }
+        }
+      }
+    },
+    "supportedInputs": {
+      "label": "Available inputs"
+    }
+  },
+  "commands": {
+    "setInput": {
+      "label": "Switch monitor input",
+      "arguments": {
+        "input": {
+          "label": "Input"
+        }
+      }
+    }
+  }
+}

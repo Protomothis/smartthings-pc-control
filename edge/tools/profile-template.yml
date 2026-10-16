@@ -11,7 +11,7 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v13, pc-battery.v13
+#   __NAME__       the profile name - pc.v14, pc-battery.v14
 #   __CATEGORY__   the main component's category (profiles.CATEGORY)
 #   @battery-begin … @battery-end
 #                  kept only in the -battery profiles; the marker lines go
@@ -27,9 +27,9 @@
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
 # third one with a placeholder for a name. The published older
-# generation stays in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml) and the v10 ones (edge 1.1.0; their
-# bare name is the old default, others). The v2 to v9, v11 and v12 files this template made
+# generations stay in profiles/, frozen, for the devices not yet migrated: the
+# v1 files (pc.yml and pc-<style>.yml), the v10 ones (edge 1.1.0; their
+# bare name is the old default, others) and the two v13 ones (edge 1.2.x). The v2 to v9, v11 and v12 files this template made
 # were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
 # app child's hand-written pc-app.yml (#123): the watch card replaced it.
 #
@@ -101,6 +101,20 @@ components:
     categories:
       - name: __CATEGORY__
 # @media-component
+  # PC app v1.3.0 (edge-driver.md §4.3): components, so main does not grow and
+  # each card's preview on the main view is its own (platform notes "화면
+  # 배치": the first three state rows, a third of the width each).
+  # #151: in use / idle / locked as a routine condition ("사용 상태", "입력
+  # 없는 시간"); `pcUser` on main keeps its rows. #152: the camera and the
+  # microphone in use ("카메라", "마이크"). One state row each, so the preview
+  # reads "자리 비움 · 카메라 사용 중".
+  - id: presence
+    label: 사용 감지
+    capabilities:
+      - id: numbersystem53811.pcpresence
+        version: 1
+      - id: numbersystem53811.pcprivacy
+        version: 1
   # #123: the watch card - what runs on the PC (the opt-in watch list): a
   # summary row ("Steam 실행 중 · 외 1개"), the names row ("1 Steam · 3 OBS")
   # and one state per slot, which a routine reads as "감시 1".."감시 5". A
@@ -110,6 +124,30 @@ components:
     label: 감시 목록
     capabilities:
       - id: numbersystem53811.pcwatchlist
+        version: 1
+  # #154: the audio device slots - outputs, then inputs. One capability per
+  # kind (a names row and a slot list each), so each names row is drawn full
+  # width and the routine reads "출력 장치" / "입력 장치".
+  - id: audio
+    label: 오디오 장치
+    capabilities:
+      - id: numbersystem53811.pcaudioout
+        version: 1
+      - id: numbersystem53811.pcaudioin
+        version: 1
+  # #153: the primary monitor over DDC/CI - a summary row ("HDMI 1 · 40% ·
+  # DELL U2720Q", or why there is nothing to control) and the input list of
+  # our own (the standard mediaInputSource has no DisplayPort), then the
+  # standard power toggle and brightness slider, which are the monitor's,
+  # not the PC's.
+  - id: monitor
+    label: 모니터
+    capabilities:
+      - id: numbersystem53811.pcmonitor
+        version: 1
+      - id: switch
+        version: 1
+      - id: switchLevel
         version: 1
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
   # an action and as a condition like any other switch; it cannot be the main
@@ -242,3 +280,12 @@ preferences:
       minimum: 0
       maximum: 1440
       default: 60
+  - name: idleThreshold
+    title: 자리 비움 기준 (Idle minutes)
+    description: "입력이 이만큼(분) 없으면 '자리 비움'. PC의 세션 정보 공유가 켜져 있어야 합니다. / Idle after this many minutes; needs session sharing."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 1440
+      default: 10

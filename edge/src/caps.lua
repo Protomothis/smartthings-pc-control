@@ -44,6 +44,18 @@ caps.WATCH = NAMESPACE .. ".pcwatchlist"
 -- one with Samsung's words (platform notes "표준 capability"), bound to
 -- `lastMessage` because a row bound to no attribute never gets its event.
 caps.TOAST = NAMESPACE .. ".pctoast"
+-- PC app v1.3.0 (docs/design/v1.3-sensors.md), on components of their own
+-- (edge-driver.md §4.3). #151: in use / idle / locked as a routine
+-- condition - `pcUser`'s frozen presentation has only `locked`.
+caps.PRESENCE = NAMESPACE .. ".pcpresence"
+-- #152: the camera and the microphone in use, on the same card.
+caps.PRIVACY = NAMESPACE .. ".pcprivacy"
+-- #153: the primary monitor's summary and input list, beside the standard
+-- `switch` and `switchLevel` of the `monitor` component.
+caps.MONITOR = NAMESPACE .. ".pcmonitor"
+-- #154: the audio device slots, one capability per kind.
+caps.AUDIO_OUT = NAMESPACE .. ".pcaudioout"
+caps.AUDIO_IN = NAMESPACE .. ".pcaudioin"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -56,6 +68,11 @@ caps.ids = {
   preset = caps.PRESET,
   watch = caps.WATCH,
   toast = caps.TOAST,
+  presence = caps.PRESENCE,
+  privacy = caps.PRIVACY,
+  monitor = caps.MONITOR,
+  audio_out = caps.AUDIO_OUT,
+  audio_in = caps.AUDIO_IN,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

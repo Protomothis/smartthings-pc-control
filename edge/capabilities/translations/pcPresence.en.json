@@ -1,0 +1,29 @@
+{
+  "tag": "en",
+  "label": "PC presence",
+  "attributes": {
+    "activity": {
+      "label": "Activity",
+      "i18n": {
+        "value": {
+          "active": {
+            "label": "Active"
+          },
+          "idle": {
+            "label": "Idle"
+          },
+          "locked": {
+            "label": "Locked"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
+        }
+      }
+    },
+    "idleMinutes": {
+      "label": "Idle minutes"
+    }
+  },
+  "commands": {}
+}

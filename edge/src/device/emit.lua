@@ -353,6 +353,19 @@ function emit.painting(device)
   return nil
 end
 
+--- True while a paint runs and for one budget window after its last batch:
+--- the rotation and a repaint's follow-ups wait that long, so they do not
+--- land in the same window as the last two batches (v14: ~64 rows, eight
+--- batches, the last one past the 30 s poll).
+function emit.settling(device)
+  if emit.painting(device) then
+    return true
+  end
+  local done = tonumber(fields.get(device, fields.PAINT_DONE_AT))
+  local now = clock.epoch()
+  return done ~= nil and now >= done and now - done < emit.BUDGET_SECONDS
+end
+
 local function enqueue(queue, key, e)
   if not queue.rows[key] then
     queue.order[#queue.order + 1] = key
@@ -426,6 +439,7 @@ paint_next = function(driver, device)
   local batch = take(queue, emit.PAINT_BATCH)
   if next(queue.rows) == nil then
     fields.set(device, fields.PAINT_QUEUE, nil)
+    fields.set(device, fields.PAINT_DONE_AT, clock.epoch())
   elseif not paint_timer(driver, device, queue, emit.PAINT_SECONDS) then
     paint_all(device, queue, batch)
   end

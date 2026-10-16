@@ -59,7 +59,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcWatchList pcToast)
+CAPABILITIES=(pcPower pcRemote pcDefer pcUser pcInfo pcVersion pcPreset pcWatchList pcToast pcPresence pcPrivacy pcMonitor pcAudioOut pcAudioIn)
 VERSION=1
 TAGS=(ko en)
 

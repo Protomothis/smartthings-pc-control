@@ -12,19 +12,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - CLI 2.x에는 `login` 명령이 없다. 인증이 필요한 첫 명령에서 브라우저가 열린다.
 - `capabilities:update`는 존재하지 않는 id를 거부한다. 새 capability는 `capabilities:create`로만 만든다.
 - **새 capability는 만든 뒤 몇 분 동안 드라이버 패키징이 거절한다**: `edge:drivers:package`가 `Invalid device profile specification`(400)으로 실패하고, 그동안 `capabilities <id>` 조회도 403이다. 2026-10-02 `pcwatch`는 약 6분 뒤에 통과했다. 만든 직후에는 기다렸다가 다시 패키징한다(`pcwatchlist`도 같다).
-- **속성·명령 이름은 영문자만**(camelCase, 1–36자, 패턴 `^[[a-z]*([A-Z][a-z]*)*]{1,36}# SmartThings 플랫폼 실측 노트
-
-허브와 휴대폰에서 직접 확인한 플랫폼 동작만 모은 참조 목록이다. 드라이버 설계는
-`edge-driver.md`에 있고, 이 문서는 "왜 그렇게밖에 못 만들었는가"의 근거다.
-capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
-
-## capability id와 네임스페이스
-
-- 계정에 발급된 네임스페이스는 `numbersystem53811`이다. capability id는 `<네임스페이스>.<이름>`.
-- SmartThings는 id의 이름 부분을 **소문자**로 바꾼다(`pcPower` → `numbersystem53811.pcpower`). 정의 JSON의 `name`은 camelCase 그대로다.
-- 프레젠테이션 본문의 `id`는 경로의 capability id와 같아야 한다.
-- CLI 2.x에는 `login` 명령이 없다. 인증이 필요한 첫 명령에서 브라우저가 열린다.
-). 숫자가 들어가면 `capabilities:create`가 `PatternError`로 거절한다(2026-10-02, `slot1`…`slot5` → `slotOne`…`slotFive`).
+- **속성·명령 이름은 영문자만**(camelCase, 1–36자, 패턴 `^[[a-z]*([A-Z][a-z]*)*]{1,36}$`). 숫자가 들어가면 `capabilities:create`가 `PatternError`로 거절한다(2026-10-02, `slot1`…`slot5` → `slotOne`…`slotFive`).
 
 ## 허브의 정의 캐시
 
@@ -112,6 +100,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"는 커스텀 `pcToast`(`send(text)` + 속성 `lastMessage`)로 옮겼다(media-notify.md §5). 소리내어 읽기(`speak`)까지 있던 `pcMessage`와 속성 없는 `pcNotify`는 Dev 채널에서만 쓰였고, 정의가 바뀔 때마다 새 id가 됐다. 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. detailView 쪽에만 `"value": "lastMessage.value"`를 더한다.
 - **속성 없는 커스텀 capability를 detailView 줄로 쓰면 앱이 기다릴 이벤트가 없어 회전 표시 뒤 네트워크 오류로 끝난다**(2026-10-01 실측, `pcNotify`). 정의는 받아들여지고 명령도 허브에 닿아 PC에 토스트가 떴지만, 입력 줄은 돌다가 "네트워크 오류"를 띄웠다. **입력 줄은 반드시 속성에 묶는다.** `pcToast`는 문자열 속성 `lastMessage`에 묶고, 드라이버가 `send`마다 — 보냈든 거절했든 — 그 속성을 `state_change = true`로 내보낸다(보냈으면 보낸 문구, 아니면 지금 값). 쉬는 값은 "없음"/"None"이고 빈 문자열은 쓰지 않는다. 루틴 동작(`automation.actions`)은 보여 줄 값이 없으므로 명령만으로 된다. 같은 날 Dev 허브에서 `pcToast` 줄이 회전 표시 없이 끝나고 보낸 문구를 보여 주는 것을 확인했다.
 - 표준은 문구가 앱의 것이어도 괜찮은 곳(스위치, 볼륨, 미디어 버튼, 배터리)에만 쓴다.
+- **`mediaInputSource`의 입력 enum에는 DisplayPort·DVI·VGA가 없다**(HDMI·HDMI1–6, USB, 광·동축 등 AV 기기 값, 표준 정의 기준 — 계정 조회로 다시 확인할 것). 클라우드가 인자를 enum으로 검증하므로 `setInputSource("dp1")`은 허브에 닿지 못한다. 그래서 모니터 입력은 커스텀 `pcMonitor`(#153)이고, 모니터 전원·밝기만 표준 `switch`·`switchLevel`이다.
 - `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고 등록을 pcall로 감싸야 한다. (v2 장치용으로 남겼던 `notification`·`speechSynthesis` 핸들러는 v2가 공개되지 않아 지웠다.)
 
 ## 번역
@@ -203,3 +192,4 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - `pc*.v10`(`pcWatchList`)의 감시 목록 카드 미리보기 세 칸("실행 중인 앱 · 감시 1 · 감시 2")이 각각 한 줄에 드는지, 영어 로케일에서 슬롯 값이 번역의 `Running`/`Stopped`/`Empty`로 바뀌는지(#123, "화면 배치"·"번역").
 - 연결 거부와 시간 초과의 실제 오류 문구(위 "연결 거부와 시간 초과", 설계 §3.1).
 - 프로필 이전의 착지 `infoChanged`에서 `args.old_st_store.profile.id`가 달라지는지(#129).
+- v14(#151–#154): `automation.conditions`의 `numberField`(`pcPresence.idleMinutes`)가 받아들여지고 루틴에서 숫자 비교로 나오는지, 표준 `switch`·`switchLevel`이 든 컴포넌트(`monitor`)의 메인 화면 미리보기.

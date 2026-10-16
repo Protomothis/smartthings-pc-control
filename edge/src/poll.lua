@@ -18,6 +18,7 @@ local i18n = require "i18n"
 local profiles = require "profiles"
 local push = require "push"
 local rows = require "device.rows"
+local sensors = require "sensors"
 local state = require "state"
 local wol = require "wol"
 
@@ -82,7 +83,7 @@ function poll.repaint(device, driver)
     rows.answer_toast(device)
     -- The v1.2.0 rows from the last status this run read, when there was one.
     emit.rows(device, state.initial_rows(fields.lang(device), fields.service_version(device),
-      (fields.extras(device) or {}).last_status, watch))
+      (fields.extras(device) or {}).last_status, watch, sensors.idle_threshold(device.preferences)))
     -- A PC that is off is not painted back to the last status's "Steam":
     -- these come later in the queue, so they are the values that go.
     rows.emit_offline(device, fields.state(device))
@@ -97,6 +98,11 @@ end
 --- new profile. A second repaint_soon replaces the first one's follow-ups, and
 --- one during a running paint rejoins its queue. `opts.painted`: the caller
 --- has just repainted (`ensure_rows` in `init`).
+---
+--- A follow-up that comes while the paint still runs or has just ended (v14
+--- has ~64 rows, eight batches; `emit.settling`) waits `emit.PAINT_SECONDS`
+--- and looks again: its forced rows and two batches would not fit one
+--- budget window.
 poll.LATE_REPAINT_SECONDS = { 30, 90 }
 function poll.repaint_soon(driver, device, opts)
   opts = opts or {}
@@ -107,22 +113,30 @@ function poll.repaint_soon(driver, device, opts)
   -- (`once` starts the paint itself; this is for a poll that raised.)
   emit.paint_start(driver, device)
   local previous = fields.get(device, fields.REPAINT_LATE_TIMERS)
-  for _, timer in ipairs(type(previous) == "table" and previous or {}) do
+  for _, timer in pairs(type(previous) == "table" and previous or {}) do
     pcall(function() driver:cancel_timer(timer) end)
   end
   local timers = {}
-  for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
+  fields.set(device, fields.REPAINT_LATE_TIMERS, timers)
+  local function arm(delay, wait)
     local ok, timer = pcall(function()
-      return driver:call_with_delay(delay, function()
+      return driver:call_with_delay(wait, function()
+        if fields.get(device, fields.REPAINT_LATE_TIMERS) ~= timers then
+          return
+        end
+        if emit.settling(device) then
+          return arm(delay, emit.PAINT_SECONDS)
+        end
+        timers[delay] = nil
         pcall(poll.once, driver, device)
         emit.resync(device)
       end, "repaint-late-" .. delay)
     end)
-    if ok and timer then
-      timers[#timers + 1] = timer
-    end
+    timers[delay] = ok and timer or nil
   end
-  fields.set(device, fields.REPAINT_LATE_TIMERS, timers)
+  for _, delay in ipairs(poll.LATE_REPAINT_SECONDS) do
+    arm(delay, delay)
+  end
 end
 
 --- Follow `status.battery.present` onto the plain or the `-battery` profile
@@ -252,10 +266,11 @@ end
 --- A rotation step when one is due (`emit.rotate`): at most once per poll
 --- interval (less a fifth, for timer jitter), so a command burst's answer
 --- polls add none. The first step of a run only starts the clock, and there
---- is none while a paint is sending every row anyway. Called at the end of
---- every poll, successful or not. Returns how many rows went out.
+--- is none while a paint is sending every row anyway, nor in the budget
+--- window after it (`emit.settling`). Called at the end of every poll,
+--- successful or not. Returns how many rows went out.
 function poll.rotate_due(_driver, device, deps)
-  if emit.painting(device) then
+  if emit.settling(device) then
     return 0
   end
   local now = clock.epoch(deps)
@@ -440,6 +455,7 @@ local function once(driver, device, opts)
       now = clock.now(),
       lang = lang,
       note = opts.note,
+      idle_threshold = sensors.idle_threshold(prefs),
     })
     if opts.force == true then
       emit.rows(device, records, { reason = "paint" })

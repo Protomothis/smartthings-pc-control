@@ -12,13 +12,22 @@ local i18n = require "i18n"
 local log = require "log"
 local poll = require "poll"
 local rows = require "device.rows"
+local sensors = require "sensors"
 local state = require "state"
 
 local common = {}
 
 --- Report a failed request on the pcInfo rows (§1). A rate-limited one (§3.1)
---- says nothing about the connection: logged, the rows stay.
+--- says nothing about the connection: logged, the rows stay. #152: a power
+--- command the PC app held back because the camera or the microphone is in
+--- use (`409 device_in_use`) says so, like a refusal of the driver's own.
+--- Returns true for that one.
 function common.report_error(device, kind, body)
+  if type(body) == "table" and body.error == "device_in_use" then
+    rows.emit_note(device, sensors.in_use_note(fields.lang(device), body.devices))
+    log.info(string.format("command held back on %s: device_in_use", tostring(device.id)))
+    return true
+  end
   local connection = poll.connection_for(kind)
   if not connection then
     log.warn(string.format("command refused (%s) on %s", tostring(kind), device.id))
@@ -60,19 +69,28 @@ end
 -- the same way. A power transition holds none of them back.
 -- @param answer re-sends, forced, the row the command arrived on
 -- @param keys the row keys the answer poll after a success sends forced
-function common.run_feature(driver, device, service_command, value, answer, keys)
+-- @param words optional `function(lang, note, body)`: the sentence for a
+--   refusal or error note that needs arguments (#153/#154), nil for the
+--   plain `features.note_text`
+function common.run_feature(driver, device, service_command, value, answer, keys, words)
   local lang = fields.lang(device)
   if fields.extras(device) == nil then
     -- Nothing read in this run yet (the hub has just restarted): ask once,
     -- rather than calling a v1.2.0 PC too old.
     poll.once(driver, device)
   end
+  local function say(note, body)
+    if note == "device_in_use" then
+      return sensors.in_use_note(lang, (body or {}).devices)
+    end
+    return (words and words(lang, note, body)) or features.note_text(lang, note)
+  end
   local refusal = features.refusal(fields.extras(device), service_command)
   if refusal then
     if answer then
       answer(device)
     end
-    rows.emit_note(device, features.note_text(lang, refusal))
+    rows.emit_note(device, say(refusal))
     log.info(string.format("%s not sent on %s: %s", tostring(service_command),
       tostring(device.id), refusal))
     return false
@@ -84,7 +102,7 @@ function common.run_feature(driver, device, service_command, value, answer, keys
     end
     local note = features.error_note(kind, body)
     if note then
-      rows.emit_note(device, i18n.t(lang, note))
+      rows.emit_note(device, say(note, body))
       return false
     end
     common.report_error(device, kind, body)

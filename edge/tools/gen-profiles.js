@@ -87,7 +87,11 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 // 13: #136 - the switch default gave the app's own "change icon" option, so
 //    the `iconStyle` preference and its eighteen variants are gone: two
 //    profiles, Switch. v12 was never published either.
-const VERSION = 13;
+// 14: the PC app v1.3.0 cards - components `presence` (pcPresence,
+//    pcPrivacy: #151/#152), `audio` (pcAudioOut, pcAudioIn: #154) and
+//    `monitor` (pcMonitor, switch, switchLevel: #153). v13 was published
+//    (edge 1.2.x), so its two files stay.
+const VERSION = 14;
 
 const CATEGORY = 'Switch';
 

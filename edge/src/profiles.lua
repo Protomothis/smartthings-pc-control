@@ -26,8 +26,10 @@ local fields = require "device.fields"
 
 local profiles = {}
 
--- The profile generation every current name carries (`pc.v13`, …).
-profiles.VERSION = 13
+-- The profile generation every current name carries (`pc.v14`, …).
+-- 14: the PC app v1.3.0 cards (#151-#154) - components `presence`,
+-- `audio` and `monitor`.
+profiles.VERSION = 14
 
 -- #136: the category of every current profile. The app's own "change icon"
 -- option exists only for a few categories with an icon set (Switch,
@@ -96,7 +98,7 @@ function profiles.name_for(style, battery, version)
 end
 
 -- What new devices are created with: no battery. A laptop moves to
--- `pc-battery.v13` once its status says so (#116).
+-- `pc-battery.v14` once its status says so (#116).
 profiles.PC = profiles.name_for(nil, false)
 
 -- #107: the battery twin of `PC`.
@@ -106,19 +108,28 @@ profiles.BATTERY = profiles.name_for(nil, true)
 -- `CURRENT[name] == true`.
 profiles.CURRENT = { [profiles.PC] = true, [profiles.BATTERY] = true }
 
+-- The last generation that had the ten icon styles (#100); from the next one
+-- on, a generation has two names (#136).
+profiles.LAST_STYLED_VERSION = 12
+
 -- Every profile name this driver has ever shipped, oldest first. A name that
 -- is not in here belongs to another driver, or to a version newer than this
 -- one, and is left alone. #107: the ten v1 names (the default and the nine
 -- icon variants of #100), then twenty names per generation up to v12 (every
--- style with and without the battery, #116), then the two current ones (#136).
+-- style with and without the battery, #116), then two per generation from
+-- v13 (#136), the current two last.
 profiles.KNOWN = {}
 for _, style in ipairs(profiles.STYLES) do
   profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, false, 1)
 end
 for version = 2, profiles.VERSION - 1 do
   for _, battery in ipairs({ false, true }) do
-    for _, style in ipairs(profiles.STYLES) do
-      profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, battery, version)
+    if version <= profiles.LAST_STYLED_VERSION then
+      for _, style in ipairs(profiles.STYLES) do
+        profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(style, battery, version)
+      end
+    else
+      profiles.KNOWN[#profiles.KNOWN + 1] = profiles.name_for(nil, battery, version)
     end
   end
 end

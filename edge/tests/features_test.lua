@@ -30,7 +30,7 @@ local T = {}
 local function status_v12(overrides)
   local status = {
     protocol = 1,
-    service_version = "v1.2.0",
+    service_version = "v1.3.0",
     features = { "audio", "media", "notify", "presets", "activity", "awake" },
     audio = { available = true, volume = 30, muted = false, device = "스피커",
       updated_at = "2026-09-30T10:00:00+09:00" },
@@ -219,6 +219,30 @@ function T.test_the_action_body_carries_a_value_only_when_given()
   h.assert_equal(sent.urls[1], "http://192.168.1.20:5001/st/v1/command")
   h.assert_deep_equal(sent.bodies[1], { command = "volume", value = 42 })
   h.assert_deep_equal(sent.bodies[2], { command = "volumeup" }, "no value: the service steps by its default")
+  -- #153: the monitor's input and power are words; a number in a string is
+  -- still a number (a list argument is a string enum).
+  client.action(device, "monitor_input", "vcp:0x1b", deps)
+  client.action(device, "monitor_power", "off", deps)
+  client.action(device, "audio_output", "3", deps)
+  h.assert_deep_equal(sent.bodies[3], { command = "monitor_input", value = "vcp:0x1b" })
+  h.assert_deep_equal(sent.bodies[4], { command = "monitor_power", value = "off" })
+  h.assert_deep_equal(sent.bodies[5], { command = "audio_output", value = 3 })
+end
+
+function T.test_error_note_reads_the_v1_3_codes()
+  -- Read before the bare 409/404: these are not "nobody is logged in" and
+  -- not an old service.
+  h.assert_equal(features.error_note("conflict", { error = "device_in_use", devices = { "camera" } }),
+    "device_in_use")
+  h.assert_equal(features.error_note("conflict", { error = "device_missing" }), "audio_device_missing")
+  h.assert_equal(features.error_note("incompatible", { error = "slot_empty" }), "audio_slot_empty")
+  h.assert_equal(features.error_note("unreachable", { error = "switch_failed" }), "audio_switch_failed")
+  h.assert_equal(features.error_note("forbidden", { error = "monitor_disabled" }), "monitor_disabled")
+  h.assert_equal(features.error_note("unreachable", { error = "monitor_unsupported" }), "monitor_unsupported")
+  h.assert_equal(features.error_note("unreachable", { error = "monitor_failed" }), "monitor_failed")
+  for _, note in pairs(features.CODE_NOTES) do
+    h.assert_true(i18n.has(note), note)
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -332,9 +356,9 @@ function T.test_a_refused_media_command_says_why()
   for _, c in ipairs({
     -- name, status the driver knows, language, the service's answer, handler, actions sent, summary
     { "a v1.1.0 service does not know volumeup", { service_version = "v1.1.0" }, "ko", nil,
-      { "audioVolume", "volumeUp" }, 0, "PC 앱 v1.2.0 필요" },
+      { "audioVolume", "volumeUp" }, 0, "PC 앱 v1.3.0 필요" },
     { "the same in English", { service_version = "v1.1.0" }, "en", nil,
-      { "audioMute", "mute" }, 0, "Needs PC app v1.2.0" },
+      { "audioMute", "mute" }, 0, "Needs PC app v1.3.0" },
     { "a PC that never answered", nil, "ko", nil,
       { "mediaPlayback", "pause" }, 0, i18n.t("ko", "unreachable") },
     { "409 no_user_session", status_v12(), "ko", refused("conflict", "no_user_session"),
@@ -424,7 +448,7 @@ function T.test_the_names_row_lists_the_presets_by_slot()
   h.assert_equal(features.preset_names(with_presets(PRESETS), "ko"), "1 게임 모드 · 2 방송 시작 · 5 이름 없음")
   h.assert_equal(features.preset_names(with_presets({}), "ko"), "없음")
   h.assert_equal(features.preset_names(with_presets({}), "en"), "None")
-  h.assert_equal(features.preset_names({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.2.0 필요")
+  h.assert_equal(features.preset_names({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.3.0 필요")
 end
 
 function T.test_a_long_names_row_is_cut_on_a_character()
@@ -534,7 +558,7 @@ function T.test_a_preset_on_an_old_service_or_without_a_user()
     handlers_for(caps.PRESET).run(driver, old, { args = { slot = "1" } })
   end)
   h.assert_equal(#calls.actions, 0)
-  h.assert_equal(info_summary(old), "PC 앱 v1.2.0 필요")
+  h.assert_equal(info_summary(old), "PC 앱 v1.3.0 필요")
 
   local nobody = device_with(with_presets(PRESETS))
   with_service({ ok = false, kind = "conflict", body = { error = "no_user_session" } }, function()
@@ -756,7 +780,7 @@ local WATCH_CASES = {
   { "the opt-in off: the slots keep their values", with_apps({}, { enabled = false, features = { "audio" } }),
     { summary = "감지 꺼짐", names = "꺼짐" } },
   { "a service older than v1.2.0: the same", { service_version = "v1.1.0" },
-    { summary = "PC 앱 v1.2.0 필요", names = "없음" } },
+    { summary = "PC 앱 v1.3.0 필요", names = "없음" } },
 }
 
 function T.test_the_watch_card_rows()
@@ -807,7 +831,7 @@ function T.test_the_summary_is_one_short_cell()
   -- C4: "감지 꺼짐", not the bare "꺼짐" a stopped slot reads.
   h.assert_equal(features.apps_summary(off, "ko"), "감지 꺼짐")
   h.assert_equal(features.apps_summary(off, "en"), "Detection off")
-  h.assert_equal(features.apps_summary({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.2.0 필요")
+  h.assert_equal(features.apps_summary({ service_version = "v1.1.0" }, "ko"), "PC 앱 v1.3.0 필요")
   -- C4: the names row cuts each label the same way, so every slot number
   -- stays on the row.
   h.assert_equal(features.watch_names(with_apps({
@@ -988,7 +1012,7 @@ function T.test_an_unreachable_pc_or_an_off_list_keeps_the_slots()
     h.assert_nil(h.last_value(later, WATCH, caps.WATCH, features.slot_attr(slot)), features.slot_attr(slot) .. " is not touched")
   end
   h.assert_deep_equal({ h.last_value(later, WATCH, caps.WATCH, "summary"),
-    h.last_value(later, WATCH, caps.WATCH, "names") }, { "PC 앱 v1.2.0 필요", "없음" })
+    h.last_value(later, WATCH, caps.WATCH, "names") }, { "PC 앱 v1.3.0 필요", "없음" })
   h.assert_equal(h.last_value(h.emitted(device), WATCH, caps.WATCH, "slotOne"), "running")
 end
 
@@ -1091,7 +1115,7 @@ function T.test_an_old_service_springs_the_awake_toggle_back()
   local emitted = h.emitted(device)
   h.assert_equal(h.last_value(emitted, "awake", "switch", "switch"), "off")
   h.assert_true(h.component_forced(emitted, "awake", "switch", "switch"))
-  h.assert_equal(info_summary(device), "PC 앱 v1.2.0 필요")
+  h.assert_equal(info_summary(device), "PC 앱 v1.3.0 필요")
 end
 
 function T.test_a_repaint_paints_the_new_rows_from_the_last_status()
@@ -1200,10 +1224,10 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc.v13")
+  local device = device_on_profile("pc.v14")
   h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-battery.v13")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v13" } })
+  h.assert_equal(profiles.apply_battery(device, true), "pc-battery.v14")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v14" } })
   h.assert_true(profiles.has_battery(device), "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
   h.assert_nil(profiles.apply_battery(device, true))
@@ -1212,15 +1236,15 @@ end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v13")
+  local device = device_on_profile("pc-battery.v14")
   h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v13")
+  h.assert_equal(profiles.apply_battery(device, false), "pc.v14")
   h.assert_false(profiles.has_battery(device))
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v13")
+  local device = device_on_profile("pc.v14")
   for _, present in ipairs({ true, false, true, false, true }) do
     h.assert_nil(profiles.apply_battery(device, present))
   end
@@ -1237,7 +1261,7 @@ end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v13")
+  local device = device_on_profile("pc.v14")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
@@ -1257,35 +1281,35 @@ function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(device), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(device), "pc-battery.v14")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(plain), "pc-battery.v14")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(named), "pc-battery.v14")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(named_v3), "pc-battery.v14")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-battery.v14")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
-  h.assert_equal(profiles.ensure(named_v4), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(named_v4), "pc-battery.v14")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
   plain_v4:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v4), "pc-battery.v13")
+  h.assert_equal(profiles.ensure(plain_v4), "pc-battery.v14")
 end
 
 function T.test_a_poll_follows_the_battery_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v13", "polled-laptop")
+  local device = device_on_profile("pc.v14", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
   h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v13")
+  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v14")
   h.assert_equal(#fake.timers, 1)
   h.assert_equal(fake.timers[1].name, "battery-profile")
 end
@@ -1295,11 +1319,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v13", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v14", "pushed-laptop")
   emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v13", "pushed-desktop")
+  local desktop = device_on_profile("pc.v14", "pushed-desktop")
   emit.rows(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
@@ -1440,7 +1464,7 @@ end
 
 function T.test_a_notification_is_gated_and_explained_on_the_message_row_only()
   local cases = {
-    { status = { service_version = "v1.1.0" }, message = "PC 앱 v1.2.0 필요", sends = 0 },
+    { status = { service_version = "v1.1.0" }, message = "PC 앱 v1.3.0 필요", sends = 0 },
     { status = status_v12({ features = { "audio" } }), message = "이 PC에서 지원 안 함", sends = 0 },
     { status = status_v12(), service = { ok = false, kind = "forbidden", body = { error = "notify_disabled" } },
       message = "PC 알림 꺼짐", sends = 1 },
@@ -1699,10 +1723,11 @@ function T.test_needs_app_update_flags_only_a_known_older_pc_app()
   for _, c in ipairs({
     { "an old service", { service_version = "v1.1.2" }, true },
     { "an old service that somehow lists features", { service_version = "v1.1.2", features = with }, true },
-    { "the recommended one", { service_version = "v1.2.0", features = with }, false },
-    { "an rc of it", { service_version = "v1.2.0-rc14", features = with }, false },
-    { "without the v", { service_version = "1.2.0", features = with }, false },
-    { "a newer one", { service_version = "v1.3.0", features = with }, false },
+    { "the recommended one", { service_version = "v1.3.0", features = with }, false },
+    { "an rc of it", { service_version = "v1.3.0-rc14", features = with }, false },
+    { "without the v", { service_version = "1.3.0", features = with }, false },
+    { "the one before it", { service_version = "v1.2.0", features = with }, true },
+    { "a newer one", { service_version = "v1.4.0", features = with }, false },
     { "a dev build with features", { service_version = "dev", features = with }, false },
     { "no version, with features", { features = with }, false },
     -- No `features` at all is a service older than v1.2.0, whatever it says.
@@ -1717,12 +1742,12 @@ end
 -- The refusals and the watch card ask for RECOMMENDED_SERVICE_VERSION, by
 -- name; no string has a version of its own.
 function T.test_the_notes_name_the_recommended_version()
-  h.assert_equal(features.note_text("ko", "needs_service"), "PC 앱 v1.2.0 필요")
-  h.assert_equal(features.note_text("en", "needs_service"), "Needs PC app v1.2.0")
+  h.assert_equal(features.note_text("ko", "needs_service"), "PC 앱 v1.3.0 필요")
+  h.assert_equal(features.note_text("en", "needs_service"), "Needs PC app v1.3.0")
   -- Any other key is formatted with its own arguments.
   h.assert_equal(features.note_text("ko", "preset_empty", 3), i18n.t("ko", "preset_empty", 3))
-  h.assert_equal(features.preset_names({ service_version = "v1.1.2" }, "en"), "Needs PC app v1.2.0")
-  h.assert_equal(features.apps_summary({ service_version = "v1.1.2" }, "ko"), "PC 앱 v1.2.0 필요")
+  h.assert_equal(features.preset_names({ service_version = "v1.1.2" }, "en"), "Needs PC app v1.3.0")
+  h.assert_equal(features.apps_summary({ service_version = "v1.1.2" }, "ko"), "PC 앱 v1.3.0 필요")
 end
 
 -- Bumping the constant is the whole job (edge-driver.md "버전 짝 맞춤"): every
@@ -1741,11 +1766,20 @@ function T.test_changing_the_recommended_version_changes_every_text()
     events = state.apply_status(state.new(state.ON), current, { lang = "en", now = "21:00" })
     h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Update the PC app to v9.9.9 or newer")
 
-    -- A feature the v1.2.0 PC does not list is a newer release's, not one
-    -- this PC lacks.
-    local extras = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
-    h.assert_equal(features.refusal(extras, "preset"), "needs_service")
-    h.assert_equal(features.refusal(extras, "volume"), "needs_service")
+    -- A feature the PC does not list is a newer release's only when the PC
+    -- is older than the release that brought it (`features.SINCE`): a
+    -- v1.2.0 feature missing from a v1.2.0 PC is its setting, whatever is
+    -- recommended now; a v1.3.0 one is the version.
+    local old_pc = status_v12({ service_version = "v1.2.0", features = { "awake" } })
+    local extras = features.remember(state.new(), old_pc).extras
+    h.assert_equal(features.refusal(extras, "preset"), "feature_missing")
+    h.assert_equal(features.refusal(extras, "volume"), "media_disabled")
+    h.assert_equal(features.refusal(extras, "monitor_power"), "needs_service")
+    h.assert_equal(features.refusal(extras, "audio_output"), "needs_service")
+    local v13 = features.remember(state.new(), status_v12({ features = { "awake", "audio" } })).extras
+    h.assert_equal(features.refusal(v13, "monitor_brightness"), "monitor_disabled")
+    h.assert_equal(features.refusal(v13, "audio_output"), "audio_out_none")
+    h.assert_equal(features.refusal(v13, "audio_input"), "audio_in_none")
     h.assert_equal(features.note_text("ko", "needs_service"), "PC 앱 v9.9.9 필요")
     h.assert_equal(features.note_text("en", "needs_service"), "Needs PC app v9.9.9")
     h.assert_equal(features.apps_summary({ service_version = "v1.1.2" }, "ko"), "PC 앱 v9.9.9 필요")
@@ -1763,7 +1797,7 @@ function T.test_changing_the_recommended_version_changes_every_text()
   if not ok then
     error(err, 0)
   end
-  -- Back at 1.2.0, the same PC is new enough again.
+  -- Back at 1.3.0, the same PC is new enough again.
   h.assert_false(features.needs_app_update(status_v12()))
   local extras = features.remember(state.new(), status_v12({ features = { "awake" } })).extras
   h.assert_equal(features.refusal(extras, "preset"), "feature_missing")

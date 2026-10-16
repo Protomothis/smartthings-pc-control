@@ -1,0 +1,80 @@
+{
+  "id": "numbersystem53811.pcpresence",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.activity.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{activity.value}}",
+        "alternatives": [
+          {
+            "key": "active",
+            "value": "사용 중",
+            "type": "active"
+          },
+          {
+            "key": "idle",
+            "value": "자리 비움",
+            "type": "inactive"
+          },
+          {
+            "key": "locked",
+            "value": "잠김",
+            "type": "inactive"
+          },
+          {
+            "key": "unknown",
+            "value": "알 수 없음",
+            "type": "inactive"
+          }
+        ]
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.activity.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "activity.value",
+          "alternatives": [
+            {
+              "key": "active",
+              "value": "사용 중 (Active)",
+              "type": "active"
+            },
+            {
+              "key": "idle",
+              "value": "자리 비움 (Idle)",
+              "type": "inactive"
+            },
+            {
+              "key": "locked",
+              "value": "잠김 (Locked)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.idleMinutes.label}}",
+        "displayType": "numberField",
+        "numberField": {
+          "value": "idleMinutes.value",
+          "valueType": "integer",
+          "range": [
+            0,
+            1440
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

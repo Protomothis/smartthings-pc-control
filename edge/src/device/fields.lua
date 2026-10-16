@@ -64,6 +64,8 @@ fields.ROWS_FORCED = "rows_forced_this_run"
 fields.ROWS_SEED_OFF = "rows_seed_off"
 fields.EMIT_BUDGET = "emit_budget"
 fields.PAINT_QUEUE = "paint_queue"
+-- When a paint's last batch went out (epoch seconds; `emit.settling`).
+fields.PAINT_DONE_AT = "paint_done_at"
 fields.ROTATE_AT = "rotate_at"
 fields.ROTATE_CURSOR = "rotate_cursor"
 

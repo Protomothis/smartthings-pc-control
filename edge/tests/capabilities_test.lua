@@ -624,6 +624,14 @@ local EXPECTED_COMMANDS = {
   watch = {},
   -- #108/pcToast: one command, one text argument.
   toast = { send = { "text" } },
+  -- #151/#152: a row and routine conditions only.
+  presence = {},
+  privacy = {},
+  -- #153: the input list; power and brightness are standard.
+  monitor = { setInput = { "input" } },
+  -- #154: one slot list each.
+  audio_out = { setOutput = { "slot" } },
+  audio_in = { setInput = { "slot" } },
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -831,7 +839,8 @@ function T.test_the_dashboard_state_is_the_power_state()
     h.assert_equal(keys[value], detail[value], value .. " reads differently on the tile")
   end
 
-  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast" }) do
+  for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
+      "presence", "privacy", "monitor", "audio_out", "audio_in" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -881,6 +890,111 @@ function T.test_the_documented_automation_conditions_and_actions_exist()
   -- since #85.
   h.assert_true(condition_attributes("schedule").planCommand == true)
   h.assert_true(action_commands("schedule").setPlanCommand == true)
+end
+
+-- A number condition (`numberField`, #151) reads an integer attribute and
+-- offers a range inside its schema.
+function T.test_every_number_condition_reads_a_number_attribute_in_range()
+  local checked = 0
+  for key, id in pairs(caps.ids) do
+    for i, condition in ipairs((presentation(key).automation or {}).conditions or {}) do
+      if condition.displayType == "numberField" then
+        local where = string.format("%s automation.conditions[%d]", id, i)
+        local field = condition.numberField or {}
+        local attr = (field.value or ""):match("^([%a][%w_]*)%.value$")
+        local spec = ((((definition(key).attributes or {})[attr] or {}).schema or {})
+          .properties or {}).value or {}
+        h.assert_equal(spec.type, field.valueType, where .. " valueType")
+        h.assert_true(type(field.range) == "table" and #field.range == 2, where .. " range")
+        h.assert_true(field.range[1] >= (spec.minimum or field.range[1]), where .. " range below the schema")
+        h.assert_true(field.range[2] <= (spec.maximum or field.range[2]), where .. " range above the schema")
+        checked = checked + 1
+      end
+    end
+  end
+  h.assert_true(checked >= 1, "the idle minutes are a number condition")
+end
+
+local function alternative_keys(alternatives)
+  local keys = {}
+  for _, alternative in ipairs(alternatives or {}) do
+    keys[#keys + 1] = alternative.key
+  end
+  return keys
+end
+
+function T.test_the_presence_conditions_are_the_activity_and_the_idle_minutes()
+  -- #151: "PC 사용 중이면", "30분 동안 입력이 없으면". `unknown` is a resting
+  -- value (session not shared, no heartbeat, PC off), not an event.
+  local conditions = presentation("presence").automation.conditions
+  h.assert_equal(#conditions, 2)
+  h.assert_equal(conditions[1].list.value, "activity.value")
+  h.assert_deep_equal(alternative_keys(conditions[1].list.alternatives), { "active", "idle", "locked" })
+  h.assert_equal(conditions[2].displayType, "numberField")
+  h.assert_equal(conditions[2].numberField.value, "idleMinutes.value")
+  -- One row on the card: the activity, short for the preview.
+  local detail = presentation("presence").detailView
+  h.assert_equal(#detail, 1)
+  h.assert_equal(detail[1].state.label, "{{activity.value}}")
+end
+
+function T.test_the_privacy_conditions_are_the_camera_and_the_microphone()
+  -- #152: "회의 중이면 조명 켜기". `unknown` (opt-in off, nobody logged in)
+  -- is a resting value, not an event.
+  local conditions = presentation("privacy").automation.conditions
+  h.assert_equal(#conditions, 2)
+  for i, attr in ipairs({ "camera", "microphone" }) do
+    h.assert_equal(conditions[i].list.value, attr .. ".value")
+    h.assert_deep_equal(alternative_keys(conditions[i].list.alternatives), { "inUse", "idle" }, attr)
+  end
+  local detail = presentation("privacy").detailView
+  h.assert_equal(#detail, 1, "one row: the summary")
+  h.assert_equal(detail[1].state.label, "{{summary.value}}")
+end
+
+function T.test_the_monitor_input_list_rests_on_the_input_and_offers_what_the_monitor_has()
+  -- #153: the list shows the current input and closing it sends that back
+  -- (a no-op the driver answers); `unknown` is the rest before any read.
+  local definition_input = definition("monitor").attributes.input.schema.properties.value.enum
+  h.assert_deep_equal(definition("monitor").commands.setInput.arguments[1].schema.enum, definition_input,
+    "the argument takes every value the row can rest on")
+  local sensors = require "sensors"
+  local expected = { sensors.INPUT_UNKNOWN }
+  for _, list in ipairs({ sensors.NAMED_INPUTS, sensors.OTHER_INPUTS }) do
+    for _, key in ipairs(list) do
+      expected[#expected + 1] = key
+    end
+  end
+  h.assert_deep_equal(definition_input, expected, "sensors.lua and the definition agree")
+  local list = presentation("monitor").detailView[2].list
+  h.assert_equal(list.command.supportedValues, "supportedInputs.value")
+  local offered = alternative_keys(list.command.alternatives)
+  h.assert_deep_equal(offered, { table.unpack(expected, 2) }, "every input but unknown")
+  -- DisplayPort is why this is not the standard mediaInputSource.
+  h.assert_contains(table.concat(offered, " "), "dp1")
+end
+
+function T.test_the_audio_slot_lists_rest_on_the_default_device_and_name_slots()
+  -- #154: "출력 2로 전환", "현재 출력이 2". The list rests on the slot of the
+  -- default device (`none` when it is in no slot), which it sends back when
+  -- closed - a no-op the driver answers.
+  for _, c in ipairs({ { "audio_out", "output", "setOutput", "supportedOutputs" },
+      { "audio_in", "input", "setInput", "supportedInputs" } }) do
+    local key, attr, command, supported = table.unpack(c, 1, 4)
+    local enum = definition(key).attributes[attr].schema.properties.value.enum
+    h.assert_deep_equal(enum, { "none", "1", "2", "3", "4", "5" }, key)
+    h.assert_deep_equal(definition(key).commands[command].arguments[1].schema.enum, enum, key .. " argument")
+    local detail = presentation(key).detailView
+    h.assert_equal(#detail, 2, key .. ": the names row and the list")
+    h.assert_equal(detail[1].state.label, "{{names.value}}")
+    h.assert_equal(detail[2].list.command.supportedValues, supported .. ".value")
+    h.assert_deep_equal(alternative_keys(detail[2].list.command.alternatives), { "1", "2", "3", "4", "5" })
+    local condition = presentation(key).automation.conditions[1]
+    h.assert_equal(condition.list.value, attr .. ".value")
+    h.assert_deep_equal(alternative_keys(condition.list.alternatives), { "1", "2", "3", "4", "5" },
+      key .. ": `none` is not an event")
+    h.assert_equal(presentation(key).automation.actions[1].multiArgCommand.command, command)
+  end
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
@@ -1443,13 +1557,15 @@ end
 -- The only text the user reads is the one in the presentation, so every value
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
-local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch" }
+local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence",
+  "privacy", "audio_out", "audio_in" }
 
 -- Except the watch card's own rows: its preview in the main view gives each
 -- of its first three rows a third of the width, and "실행 중 (Running)"
 -- wrapped and was cut (platform notes "화면 배치", 2026-10-02). They are one
 -- short Korean word; its routine conditions keep both languages.
-local SHORT_DETAIL_VALUES = { watch = true }
+-- The v1.3.0 cards on components of their own (#151-#154) likewise.
+local SHORT_DETAIL_VALUES = { watch = true, presence = true }
 
 local function assert_bilingual(alternatives, where)
   h.assert_true(#(alternatives or {}) > 0, where .. " has no alternatives")
@@ -1481,8 +1597,11 @@ function T.test_every_state_value_label_is_bilingual()
       end
     end
     for i, condition in ipairs((doc.automation or {}).conditions or {}) do
-      assert_bilingual((condition.list or {}).alternatives,
-        string.format("%s automation.conditions[%d]", id, i))
+      -- A number condition (#151) has no values to word.
+      if condition.displayType == "list" then
+        assert_bilingual((condition.list or {}).alternatives,
+          string.format("%s automation.conditions[%d]", id, i))
+      end
     end
   end
 end

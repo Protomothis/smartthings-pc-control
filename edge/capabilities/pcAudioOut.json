@@ -1,0 +1,88 @@
+{
+  "id": "numbersystem53811.pcaudioout",
+  "version": 1,
+  "status": "proposed",
+  "name": "pcAudioOut",
+  "ephemeral": false,
+  "attributes": {
+    "output": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "none",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "names": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 120
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "supportedOutputs": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    }
+  },
+  "commands": {
+    "setOutput": {
+      "name": "setOutput",
+      "arguments": [
+        {
+          "name": "slot",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "none",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

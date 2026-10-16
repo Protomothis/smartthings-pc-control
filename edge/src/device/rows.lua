@@ -20,6 +20,7 @@ local emit = require "device.emit"
 local features = require "features"
 local fields = require "device.fields"
 local i18n = require "i18n"
+local sensors = require "sensors"
 local state = require "state"
 
 local rows = {}
@@ -116,6 +117,8 @@ end
 --- `playbackStatus` (a routine may trigger on "stopped"), `audioVolume`,
 --- `audioMute`, the keep-awake switch, `pcUser.locked`/`user`/`idleMinutes`,
 --- the watch card's `names` (which app sits in which slot does not change).
+--- The v1.3.0 cards' `unknown` (sensors.offline_rows) is the exception that
+--- proves it: no routine condition offers that value.
 ---
 --- The track row only when it has been painted: from the last status this
 --- run read (a `media` block), else from the hub's state cache - a service
@@ -141,6 +144,10 @@ function rows.offline_rows(device, s)
   if painted then
     track.value = { title = text }
     records[#records + 1] = track
+  end
+  -- PC app v1.3.0: nobody is at a PC that is not there (sensors.offline_rows).
+  for _, e in ipairs(sensors.offline_rows(text)) do
+    records[#records + 1] = e
   end
   return records
 end

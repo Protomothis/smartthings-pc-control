@@ -27,6 +27,7 @@ local i18n = require "i18n"
 local json = require "st.json"
 local poll = require "poll"
 local push = require "push"
+local sensors = require "sensors"
 local state = require "state"
 local VERSION = require "driver_version"
 
@@ -61,7 +62,10 @@ function T.test_full_status_core_rows()
   h.assert_equal(value(events, caps.STATUS, "connection"), "ok")
   h.assert_equal(value(events, caps.STATUS, "serviceVersion"), "v1.2.0", "service_version")
   h.assert_true(value(events, caps.STATUS, "updateAvailable"), "update.available")
-  h.assert_equal(value(events, caps.STATUS, "message"), "PC 앱 업데이트 v1.2.1 있음", "update.latest")
+  -- The golden PC says v1.2.0, below features.RECOMMENDED_SERVICE_VERSION:
+  -- the message asks for the update, the version row names `update.latest`.
+  h.assert_equal(value(events, caps.STATUS, "message"), "PC 앱을 v1.3.0 이상으로 업데이트하세요")
+  h.assert_contains(value(events, caps.VERSION, "versions"), "업데이트 v1.2.1", "update.latest")
   h.assert_true(value(events, caps.STATUS, "wolReady"), "wol.selected.wol_enabled")
   h.assert_contains(value(events, caps.STATUS, "summary"), "1일", "uptime_seconds (93784s)")
   h.assert_contains(value(events, caps.COMMAND, "lastCommand"), "20:55", "last_command.at")
@@ -102,6 +106,57 @@ function T.test_full_status_session_rows()
   h.assert_false(value(events, caps.SESSION, "locked"), "session.locked")
   h.assert_equal(value(events, caps.SESSION, "idleMinutes"), 12, "session.idle_seconds (754)")
   h.assert_equal(value(events, caps.SESSION, "user"), "golden", "session.user")
+  -- #151: 12 minutes without input, the default threshold is 10.
+  h.assert_equal(value(events, caps.PRESENCE, "activity", "presence"), "idle", "session.idle_seconds")
+  h.assert_equal(value(events, caps.PRESENCE, "idleMinutes", "presence"), 12)
+end
+
+function T.test_full_status_monitor_rows()
+  -- #153: `monitors = [ { id, name, primary, ddc, brightness, input, inputs,
+  -- power } ]`; the card is the primary one's. m2 (a TV, no DDC) is not.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  local M = "monitor"
+  h.assert_equal(value(events, caps.MONITOR, "summary", M), "HDMI 1 · 40% · DELL U2720Q",
+    "monitors[].input/brightness/name")
+  h.assert_equal(value(events, caps.MONITOR, "input", M), "hdmi1", "monitors[].input")
+  h.assert_deep_equal(value(events, caps.MONITOR, "supportedInputs", M), { "dp1", "hdmi1", "hdmi2" },
+    "monitors[].inputs")
+  h.assert_equal(value(events, "switch", "switch", M), "on", "monitors[].power")
+  h.assert_equal(value(events, "switchLevel", "level", M), 40, "monitors[].brightness")
+  local tv = status.monitors[2]
+  h.assert_false(tv.ddc, "monitors[].ddc")
+  h.assert_false(tv.primary, "monitors[].primary")
+  h.assert_equal(tv.brightness, nil, "brightness: null without DDC")
+end
+
+function T.test_full_status_audio_slot_rows()
+  -- #154: `audio.outputs`/`inputs = [ { slot, name, present, default } ]`,
+  -- filled slots only. The names row drops the adapter in parentheses while
+  -- the device names stay apart.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  local A = "audio"
+  h.assert_equal(value(events, caps.AUDIO_OUT, "names", A), "1 스피커 · 3 헤드셋 · 4 LG TV",
+    "audio.outputs[].slot/name")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "output", A), "1", "audio.outputs[].default")
+  h.assert_deep_equal(value(events, caps.AUDIO_OUT, "supportedOutputs", A), { "1", "3", "4" })
+  h.assert_equal(value(events, caps.AUDIO_IN, "names", A), "1 마이크 · 2 헤드셋 마이크")
+  h.assert_equal(value(events, caps.AUDIO_IN, "input", A), "1", "audio.inputs[].default")
+  h.assert_deep_equal(value(events, caps.AUDIO_IN, "supportedInputs", A), { "1", "2" })
+  h.assert_false(status.audio.outputs[3].present, "audio.outputs[].present")
+  h.assert_deep_equal(sensors.audio_slots(status, "output")[3],
+    { slot = 4, name = "LG TV (NVIDIA High Definition Audio)", present = false, default = false })
+end
+
+function T.test_full_status_privacy_rows()
+  -- #152: `privacy = { camera, microphone, since }`, in_use/idle/unknown.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "inUse", "privacy.camera")
+  h.assert_equal(value(events, caps.PRIVACY, "microphone", "presence"), "idle", "privacy.microphone")
+  h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "카메라 사용 중")
+  h.assert_equal(status.privacy.since, "2026-10-01T20:45:00+09:00", "privacy.since (not shown)")
 end
 
 function T.test_full_status_media_rows()
@@ -213,7 +268,7 @@ function T.test_minimal_status_still_paints_the_v1_rows()
   -- Older than features.RECOMMENDED_SERVICE_VERSION: both rows ask for the PC
   -- app update, and the stale `update.latest` (v1.1.2) is not offered.
   h.assert_equal(value(events, caps.STATUS, "summary"), "연결됨 · 1일 2시간 · 앱 업데이트 필요")
-  h.assert_equal(value(events, caps.STATUS, "message"), "PC 앱을 v1.2.0 이상으로 업데이트하세요")
+  h.assert_equal(value(events, caps.STATUS, "message"), "PC 앱을 v1.3.0 이상으로 업데이트하세요")
   h.assert_true(value(events, caps.STATUS, "wolReady"))
   h.assert_equal(state.wol_mac(status), "B4-2E-99-45-B4-F5")
   h.assert_false(value(events, caps.SCHEDULE, "active"))
@@ -230,9 +285,9 @@ function T.test_minimal_status_has_no_v1_2_features()
   h.assert_equal(features.refusal(s.extras, "volume"), "needs_service")
   h.assert_equal(features.refusal(s.extras, "preset"), "needs_service")
   h.assert_equal(features.refusal(s.extras, nil, features.NOTIFY), "needs_service")
-  h.assert_equal(value(events, caps.PRESET, "names"), "PC 앱 v1.2.0 필요")
+  h.assert_equal(value(events, caps.PRESET, "names"), "PC 앱 v1.3.0 필요")
   -- #123: no watch list on a v1.1 service - the slots keep what they had.
-  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "PC 앱 v1.2.0 필요")
+  h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "PC 앱 v1.3.0 필요")
   h.assert_equal(value(events, caps.WATCH, "names", WATCH), "없음")
   h.assert_nil(value(events, caps.WATCH, "slotOne", WATCH), "no slot is moved")
   h.assert_equal(features.apps_mode(status), features.APPS_OLD)
@@ -253,11 +308,29 @@ function T.test_off_status_rows()
   h.assert_equal(value(events, caps.STATUS, "connection"), "ok")
   h.assert_false(value(events, caps.STATUS, "updateAvailable"), "update.available")
   h.assert_false(value(events, caps.STATUS, "wolReady"), "wol.selected.wol_enabled")
-  h.assert_equal(value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 (이더넷)", "wol.selected.name")
+  -- The update ending outranks the adapter's name in the 24 characters.
+  h.assert_equal(value(events, caps.STATUS, "summary"), "연결됨 · WoL 꺼짐 · 앱 업데이트 필요")
+  h.assert_equal(state.wol_adapter(status), "이더넷", "wol.selected.name")
   h.assert_false(value(events, caps.SCHEDULE, "active"), "schedule.active")
   h.assert_equal(value(events, caps.COMMAND, "lastCommand"), "없음 (None)", "last_command: null")
   h.assert_false(value(events, caps.SESSION, "exposed"), "session.exposed")
   h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
+  h.assert_equal(value(events, caps.PRESENCE, "activity", "presence"), "unknown", "session.exposed: false")
+  h.assert_nil(value(events, caps.PRESENCE, "idleMinutes", "presence"))
+  -- #152: no block, no feature. The golden says v1.2.0, older than the
+  -- release that brought the feature, so the row asks for it.
+  h.assert_nil(status.privacy, "privacy: only while enabled")
+  h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "unknown")
+  h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "PC 앱 v1.3.0 필요")
+  -- #153: the same for the monitor; no `monitors` key while off.
+  h.assert_nil(status.monitors, "monitors: only while enabled")
+  h.assert_equal(value(events, caps.MONITOR, "summary", "monitor"), "PC 앱 v1.3.0 필요")
+  h.assert_nil(value(events, "switch", "switch", "monitor"), "no reading, no toggle")
+  -- #154: media control off, so no slots - and the golden's v1.2.0 is older
+  -- than the release that brought them.
+  h.assert_deep_equal(status.audio.outputs, {}, "audio.outputs: []")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "output", "audio"), "none")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "names", "audio"), "PC 앱 v1.3.0 필요")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -318,6 +391,16 @@ local PUSHES = {
     h.assert_equal(data.apps[1].id, "steam.exe", "data.apps[].id")
     h.assert_equal(data.apps[2].label, "OBS", "data.apps[].label")
     h.assert_true(data.apps[2].running, "data.apps[].running")
+  end,
+  -- #152: the microphone came on; `data` is the status block itself.
+  ["push.privacy.changed.json"] = function(events, _nxt, event, payload)
+    h.assert_equal(event, "status_ok")
+    h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "inUse")
+    h.assert_equal(value(events, caps.PRIVACY, "microphone", "presence"), "inUse")
+    h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "카메라·마이크 사용 중")
+    h.assert_equal(payload.data.camera, "in_use", "data.camera")
+    h.assert_equal(payload.data.microphone, "in_use", "data.microphone")
+    h.assert_equal(payload.data.since, "2026-10-01T20:45:00+09:00", "data.since")
   end,
   ["push.awake.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_SWITCH, "switch", features.AWAKE_COMPONENT), "off")
@@ -516,6 +599,23 @@ local SENDS = {
   ["command.notify.json"] = function(device)
     handlers_for(caps.TOAST).send(driver, device, { args = { text = "빨래가 끝났습니다" } })
   end,
+  -- #153: the monitor component. Brightness is a number, input and power words.
+  ["command.monitor_brightness.json"] = function(device)
+    handlers_for("switchLevel").setLevel(driver, device, { component = "monitor", args = { level = 70 } })
+  end,
+  ["command.monitor_input.json"] = function(device)
+    handlers_for(caps.MONITOR).setInput(driver, device, { component = "monitor", args = { input = "dp1" } })
+  end,
+  ["command.monitor_power.json"] = function(device)
+    handlers_for("switch").off(driver, device, { command = "off", component = "monitor", args = {} })
+  end,
+  -- #154: the slot number, from a list that sends strings.
+  ["command.audio_output.json"] = function(device)
+    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { component = "audio", args = { slot = "3" } })
+  end,
+  ["command.audio_input.json"] = function(device)
+    handlers_for(caps.AUDIO_IN).setInput(driver, device, { component = "audio", args = { slot = "2" } })
+  end,
   ["command.subscribe.json"] = function(device)
     client.subscribe(device, "http://192.168.1.20:39500/pc/evt", client.DEFAULT_TTL)
   end,
@@ -528,6 +628,33 @@ local REFUSALS = {
   ["command.next.media-disabled.json"] = { same_as = "command.next.json", kind = "forbidden", note = "media_disabled" },
   ["command.notify.disabled.json"] = {
     same_as = "command.notify.json", kind = "forbidden", note = "notify_disabled", notify = true,
+  },
+  ["command.monitor_brightness.disabled.json"] = {
+    same_as = "command.monitor_brightness.json", kind = "forbidden", note = "monitor_disabled",
+  },
+  ["command.monitor_brightness.no-user.json"] = {
+    same_as = "command.monitor_brightness.json", kind = "conflict", note = "no_user",
+  },
+  -- 501: the PC answered; not an unreachable PC.
+  ["command.monitor_input.unsupported.json"] = {
+    same_as = "command.monitor_input.json", kind = "unreachable", note = "monitor_unsupported",
+  },
+  -- #154: read before the bare 409/404 - not "nobody", not an old service.
+  ["command.audio_output.device-missing.json"] = {
+    same_as = "command.audio_output.json", value = 4, kind = "conflict", note = "audio_device_missing",
+  },
+  ["command.audio_output.no-user.json"] = {
+    same_as = "command.audio_output.json", kind = "conflict", note = "no_user",
+  },
+  ["command.audio_output.slot-empty.json"] = {
+    same_as = "command.audio_output.json", value = 2, kind = "incompatible", note = "audio_slot_empty",
+  },
+  ["command.audio_output.switch-failed.json"] = {
+    same_as = "command.audio_output.json", kind = "unreachable", note = "audio_switch_failed",
+  },
+  -- #152: the PC app's guard on "block" while the camera is in use.
+  ["command.shutdown.device-in-use.json"] = {
+    same_as = "command.shutdown.json", kind = "conflict", note = "device_in_use",
   },
 }
 
@@ -558,6 +685,10 @@ end
 function T.test_refused_requests_are_the_same_requests()
   for name, refusal in pairs(REFUSALS) do
     local fx, base = h.fixture(name), h.fixture(refusal.same_as)
+    if refusal.value ~= nil then
+      -- The same command for another slot.
+      base.request.value = refusal.value
+    end
     h.assert_deep_equal(fx.request, base.request, name)
     h.assert_equal(fx.path, base.path, name)
   end

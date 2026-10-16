@@ -112,7 +112,7 @@ local function golden(lang)
     -- A v1.1.0 PC is older than features.RECOMMENDED_SERVICE_VERSION: the
     -- message asks for the PC app update before anything else.
     { cap = caps.STATUS, attr = "message",
-      value = en and "Update the PC app to v1.2.0 or newer" or "PC 앱을 v1.2.0 이상으로 업데이트하세요" },
+      value = en and "Update the PC app to v1.3.0 or newer" or "PC 앱을 v1.3.0 이상으로 업데이트하세요" },
     -- #87: the connection alone. The version moved to the row below, and the
     -- advice notices are `message`'s job. #102: plus the uptime (12345 s) -
     -- dropped here, since " · 3h 25m" and the update ending do not both fit.
@@ -132,16 +132,38 @@ local function golden(lang)
       value = { "nextTrack", "previousTrack" } },
     -- #113: a v1.1.0 service has no presets to name, and says why.
     { cap = caps.PRESET, attr = "names",
-      value = en and "Needs PC app v1.2.0" or "PC 앱 v1.2.0 필요" },
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
     { cap = caps.PRESET, attr = "supportedSlots", value = { "none" } },
     -- #123: no watch list on a v1.1.0 service: the summary says why, the
     -- names row has none, and the slots are left where they are.
     { cap = caps.WATCH, attr = "summary", component = "apps",
-      value = en and "Needs PC app v1.2.0" or "PC 앱 v1.2.0 필요" },
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
     { cap = caps.WATCH, attr = "names", component = "apps", value = en and "None" or "없음" },
     -- #115: the keep-awake switch, on its own component. A v1.1.0 service
     -- cannot keep the PC awake.
     { cap = state.CAP_SWITCH, attr = "switch", value = "off", component = "awake" },
+    -- #151: the presence card - locked, whatever the idle time says.
+    { cap = caps.PRESENCE, attr = "activity", value = "locked", component = "presence" },
+    { cap = caps.PRESENCE, attr = "idleMinutes", value = 20, component = "presence" },
+    -- #152: a v1.1.0 service has no camera or microphone to report.
+    { cap = caps.PRIVACY, attr = "summary", component = "presence",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.PRIVACY, attr = "camera", value = "unknown", component = "presence" },
+    { cap = caps.PRIVACY, attr = "microphone", value = "unknown", component = "presence" },
+    -- #154: nor device slots; the lists rest on `none`.
+    { cap = caps.AUDIO_OUT, attr = "names", component = "audio",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.AUDIO_OUT, attr = "output", value = "none", component = "audio" },
+    { cap = caps.AUDIO_OUT, attr = "supportedOutputs", value = { "none" }, component = "audio" },
+    { cap = caps.AUDIO_IN, attr = "names", component = "audio",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.AUDIO_IN, attr = "input", value = "none", component = "audio" },
+    { cap = caps.AUDIO_IN, attr = "supportedInputs", value = { "none" }, component = "audio" },
+    -- #153: nor a monitor; the toggle and the slider are left alone.
+    { cap = caps.MONITOR, attr = "summary", component = "monitor",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.MONITOR, attr = "input", value = "unknown", component = "monitor" },
+    { cap = caps.MONITOR, attr = "supportedInputs", value = { "unknown" }, component = "monitor" },
   }
 end
 
@@ -1420,9 +1442,9 @@ function T.test_the_summary_asks_for_the_app_update_only_below_the_recommended_v
   for _, c in ipairs({
     { "v1.1.2", "ko", "연결됨 · 5분 · 앱 업데이트 필요" },
     { "v1.1.2", "en", "Connected · Update app" }, -- the uptime is dropped first
-    { "v1.2.0", "ko", "연결됨 · 5분" },
-    { "v1.2.0-rc14", "ko", "연결됨 · 5분" }, -- our rc builds do not nag
-    { "v1.3.0", "en", "Connected · 5m" },
+    { "v1.3.0", "ko", "연결됨 · 5분" },
+    { "v1.3.0-rc14", "ko", "연결됨 · 5분" }, -- our rc builds do not nag
+    { "v1.4.0", "en", "Connected · 5m" },
     { "dev", "ko", "연결됨 · 5분" },
   }) do
     h.assert_equal((rows_for(c[1], short, c[2])), c[3], c[1] .. " " .. c[2])
@@ -1465,19 +1487,19 @@ function T.test_the_message_asks_for_the_app_update_right_after_an_error()
   -- Before WoL off, a newer release and a missing secret.
   local everything = function(s)
     s.wol = { ready = false }
-    s.update = { available = true, latest = "v1.2.1" }
+    s.update = { available = true, latest = "v1.3.1" }
     s.secret_set = false
   end
   local _, ko = rows_for("v1.1.2", everything, "ko")
-  h.assert_equal(ko, "PC 앱을 v1.2.0 이상으로 업데이트하세요 (최신 v1.2.1)")
+  h.assert_equal(ko, "PC 앱을 v1.3.0 이상으로 업데이트하세요 (최신 v1.3.1)")
   local _, en = rows_for("v1.1.2", everything, "en")
-  h.assert_equal(en, "Update the PC app to v1.2.0 or newer (latest v1.2.1)")
+  h.assert_equal(en, "Update the PC app to v1.3.0 or newer (latest v1.3.1)")
   -- `update.latest` only when it is newer than what is asked for: the
   -- service's own stale answer (a v1.1.2 PC that still sees v1.1.2 as the
   -- latest) or the same version adds nothing.
-  for _, latest in ipairs({ "v1.1.2", "v1.2.0", "v1.2.0-rc3", "", false }) do
+  for _, latest in ipairs({ "v1.1.2", "v1.3.0", "v1.3.0-rc3", "", false }) do
     local _, message = rows_for("v1.1.2", function(s) s.update = { available = false, latest = latest or nil } end, "ko")
-    h.assert_equal(message, "PC 앱을 v1.2.0 이상으로 업데이트하세요", tostring(latest))
+    h.assert_equal(message, "PC 앱을 v1.3.0 이상으로 업데이트하세요", tostring(latest))
   end
   -- An error still outranks it.
   local status = sample_status()
@@ -1486,14 +1508,14 @@ function T.test_the_message_asks_for_the_app_update_right_after_an_error()
   h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Cannot reach the PC")
   -- A note waits too.
   events = state.apply_status(state.new(state.ON), status, { now = NOW, lang = "en", note = "Schedule cancelled" })
-  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Update the PC app to v1.2.0 or newer")
+  h.assert_equal(h.event_value(events, caps.STATUS, "message"), "Update the PC app to v1.3.0 or newer")
 
   -- A new enough PC app: a newer release is the lower `update_available`.
-  local _, current = rows_for("v1.2.0", function(s) s.update = { available = true, latest = "v1.2.1" } end, "ko")
-  h.assert_equal(current, "PC 앱 업데이트 v1.2.1 있음")
-  local _, rc = rows_for("v1.2.0-rc14", function(s) s.update = { available = true, latest = "v1.2.0" } end, "en")
-  h.assert_equal(rc, "PC app update v1.2.0 available")
-  local _, quiet = rows_for("v1.2.0", nil, "ko")
+  local _, current = rows_for("v1.3.0", function(s) s.update = { available = true, latest = "v1.3.1" } end, "ko")
+  h.assert_equal(current, "PC 앱 업데이트 v1.3.1 있음")
+  local _, rc = rows_for("v1.3.0-rc14", function(s) s.update = { available = true, latest = "v1.3.0" } end, "en")
+  h.assert_equal(rc, "PC app update v1.3.0 available")
+  local _, quiet = rows_for("v1.3.0", nil, "ko")
   h.assert_equal(quiet, "")
 end
 
