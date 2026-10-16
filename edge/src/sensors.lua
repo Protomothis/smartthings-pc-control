@@ -234,6 +234,9 @@ sensors.MONITOR_COMPONENT = "monitor"
 sensors.CAP_MONITOR = caps.MONITOR
 sensors.CAP_SWITCH = "switch"
 sensors.CAP_LEVEL = "switchLevel"
+-- `switchLevel.levelRange`: brightness is always 0-100 (the service scales
+-- the monitor's VCP maximum).
+sensors.LEVEL_RANGE = { minimum = 0, maximum = 100 }
 
 -- `pcMonitor.input`: the PC monitor inputs by name, then three places for the
 -- rest (`vcp:0xNN`, composite, component, …) in the monitor's own order -
@@ -461,6 +464,9 @@ function sensors.monitor_events(status, lang, fill)
   end
   if level then
     ev(events, sensors.CAP_LEVEL, "level", level, c)
+    -- The slider's range: optional in the definition, but a row the device
+    -- never sends stays null in the cloud record (platform notes "null 속성").
+    ev(events, sensors.CAP_LEVEL, "levelRange", sensors.LEVEL_RANGE, c)
   end
   return events
 end
