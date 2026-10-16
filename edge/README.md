@@ -7,7 +7,7 @@ PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
 - **유예와 예약이 보인다** — 남은 시간, 실행 시각, 출처(SmartThings · 앱 · 텔레그램), 취소.
 - **IP를 손으로 넣지 않는다** — SSDP 검색으로 주소 · 포트 · 호스트 이름이 채워진 채 장치가 생기고, DHCP로 주소가 바뀌어도 따라간다.
 - **Wake-on-LAN** — 스위치를 켜면 PC가 고른 랜카드로 매직 패킷을 보내고 결과를 말해 준다.
-- **미디어 · 프리셋 · 메시지 · 잠들지 않기 · 배터리 · 감시 목록**(드라이버 1.1, 서비스 v1.2.0).
+- **미디어 · 프리셋 · 메시지 · 잠들지 않기 · 배터리 · 감시 목록**(드라이버 1.1, 서비스 v1.2.0), **자리 비움 · 카메라·마이크 · 모니터 · 오디오 장치 전환**(PC 앱 v1.3.0).
 - **조용한 실패가 없다** — 시크릿 불일치, 연결 불가, 버전 비호환, WoL 미준비를 한 줄로 알려 준다.
 - **여러 PC** — Windows MachineGuid로 구분하므로 허브 하나가 여러 PC를 다뤄도 섞이지 않는다.
 
@@ -16,7 +16,7 @@ PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
 | | |
 |---|---|
 | 허브 | Edge 드라이버를 실행할 수 있는 SmartThings 허브 |
-| 서비스 | PC Control **v1.1.0 이상**(낮으면 `버전 불일치`). 드라이버 1.1의 새 기능은 **v1.2.0**(그 전에는 상태 줄에 `앱 업데이트 필요`, 새 기능 줄에 `PC 앱 v1.2.0 필요`) |
+| 서비스 | PC Control **v1.1.0 이상**(낮으면 `버전 불일치`). 미디어 · 프리셋 등은 **v1.2.0**, 사용 감지 · 모니터 · 오디오 장치는 **v1.3.0**(그 전에는 상태 줄에 `앱 업데이트 필요`, 해당 줄에 `PC 앱 v1.3.0 필요`) |
 | 네트워크 | 허브와 PC가 같은 서브넷/VLAN, PC의 네트워크 프로필은 **개인(Private)** |
 | 방화벽 | 인바운드 TCP 5001, UDP 1900. 둘 다 `install`이 만든다 |
 | 시크릿 | 권장. 비어 있으면 LAN의 누구나 PC를 제어할 수 있고 드라이버가 경고한다 |
@@ -33,8 +33,7 @@ PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
 4. **PC와 PC Control이 켜진 상태에서** SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**. 응답한 PC마다 장치가 생긴다.
 5. 장치 설정에 **시크릿만** 넣는다.
 
-장치의 **모델**은 `PC Control · 58bff996`처럼 PC 식별자의 앞 8자를 담는다.
-데스크톱 앱 SmartThings 탭의 **이 PC의 ID**와 같은 값이다.
+장치의 **모델**은 `PC Control · 58bff996`처럼 PC 식별자의 앞 8자로, 데스크톱 앱 SmartThings 탭의 **이 PC의 ID**와 같다.
 
 ### 검색이 안 될 때
 
@@ -59,24 +58,25 @@ PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
 | 프리셋 | 슬롯 목록(`프리셋 1`…`프리셋 10`)과 `프리셋 목록` 줄(`1 게임 모드 · 2 방송 시작`) |
 | 감시 목록 | 별도 카드. 실행 중인 앱 가운데 번호가 가장 작은 것(`Steam`, `Steam 외 1`, `없음`, `꺼짐`), `감시 1`…`감시 5`(`실행 중` / `꺼짐` / `비어 있음`), 이름 줄(`1 Steam · 3 OBS`). 메인 화면의 카드에는 앞의 셋이 보인다 |
 | PC에 메시지 보내기 | 문구를 넣으면 PC 화면에 알림이 뜬다. 줄에는 마지막으로 보낸 문구가 남는다 |
+| 사용 감지 | 별도 카드. `사용 상태`(`사용 중` / `자리 비움` / `잠김` / `알 수 없음`)와 카메라·마이크(`카메라 사용 중` …) |
+| 오디오 장치 | 별도 카드. `출력 칸`·`입력 칸` 이름 줄(`1 스피커 · 3 헤드셋`)과 `출력 장치`·`입력 장치` 목록(`출력 1`…`출력 5`) |
+| 모니터 | 별도 카드. 요약(`HDMI 1 · 40% · DELL U2720Q`, `지원 안 함 (DDC/CI)`, `모니터 제어 꺼짐`), 입력 목록, 모니터 전원 토글, 밝기 |
 | 잠들지 않기 | 별도 카드의 스위치 |
 | 배터리 | **노트북에만.** 잔량(%)과 전원 공급원 |
 
 장치의 화면은 **추가한 시점의 프로필로 굳는다.**
-드라이버는 첫 `init`에서 장치를 현재 프로필(`pc.v13`, 배터리가 있으면 `pc-battery.v13`)로 옮기고, 비는 줄은 30초 안에 다시 채운다.
+드라이버는 첫 `init`에서 장치를 현재 프로필(`pc.v14`, 배터리가 있으면 `pc-battery.v14`)로 옮기고, 비는 줄은 1분 안에 다시 채운다.
 
 ## 사용
 
 **스위치** — 켜면 매직 패킷을 세 번(즉시 · 2초 · 5초) 보내고 상태가 `깨우는 중`이 된다. 그동안은 확인 주기와 상관없이 5초마다 확인해 켜지는 대로 표시하고, 180초 뒤 마지막으로 한 번 더 확인해도 응답이 없으면 "깨우기 실패"를 표시한다.
-끄면 환경설정 `스위치 끄기 동작`(기본 종료)을 보내고, PC의 유예를 따른다.
-PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
+끄면 환경설정 `스위치 끄기 동작`(기본 종료)을 보내고 PC의 유예를 따른다. PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
 
 **어느 랜카드로 깨우는가** — PC가 정한다(데스크톱 앱 **SmartThings 탭 → WoL 어댑터**).
 `MAC 주소` 환경설정을 채우면 그 값이 이긴다.
 고른 어댑터의 WoL이 꺼져 있으면 상태 줄이 `연결됨 · WoL 꺼짐 (이더넷)`처럼 어댑터 이름을 댄다.
 
-**명령** — 목록에서 고르면 바로 나간다. 유예를 따를지는 `버튼 실행 방식`이 정한다.
-목록은 늘 `명령 선택…`에 머문다. 화면 켜기·끄기는 로그인된 세션이 있어야 한다.
+**명령** — 목록에서 고르면 바로 나간다. 유예를 따를지는 `버튼 실행 방식`이 정한다. 목록은 늘 `명령 선택…`에 머문다. 화면 켜기·끄기는 로그인된 세션이 있어야 한다.
 
 **PC가 꺼지거나 켜지는 중** — 명령 목록이 `종료 진행 중…`·`켜는 중…`이 되고 그동안의 명령은 보내지 않는다.
 새로고침, 예약 취소, 스위치 켜기(= 유예 취소)는 통과한다.
@@ -97,6 +97,8 @@ PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
 
 **잠들지 않기** — 켜면 `잠들지 않기 시간`(분, 0 = 끌 때까지) 동안 PC가 자동 절전하지 않는다.
 절전·종료 명령은 막지 않는다. 표준 스위치라 루틴의 동작·조건으로 쓴다.
+
+**사용 감지 · 모니터 · 오디오 장치(PC 앱 v1.3.0)** — 루틴 조건 `사용 상태`(`자리 비움`은 환경설정 `자리 비움 기준`분, PC의 세션 정보 공유 필요) · `입력 없는 시간` · `카메라` · `마이크` · `출력 장치`/`입력 장치`(칸 번호) · 모니터 `입력`, 동작은 칸·입력 전환과 표준 스위치·밝기. PC가 꺼지면 사용 상태와 카메라·마이크는 `알 수 없음`이고(루틴은 돌지 않는다), 카메라가 쓰이는 동안 PC 앱이 종료를 막으면 상태 줄이 `카메라 사용 중 · 실행 안 함`이라고 말한다. 빈 칸은 보내지 않고(`출력 2 비어 있음`), DDC/CI가 없는 모니터는 `지원 안 함`이다.
 
 **노트북 배터리** — PC가 배터리가 있다고 연속 두 번 알리면 배터리 카드가 있는 프로필로 옮긴다. 데스크톱에는 빈 카드가 없다.
 
@@ -140,6 +142,7 @@ PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
 | 버튼 실행 방식 | 명령 목록이 PC의 유예를 따를지, 즉시 실행할지 | 유예 따름 |
 | 문구 언어 | 상태 문구의 언어. 허브 로케일을 읽을 수 없어 자동은 한국어 | 자동 |
 | 잠들지 않기 시간 | 분, 최대 1440. 0이면 끌 때까지 | 60 |
+| 자리 비움 기준 | 입력이 이만큼(분) 없으면 `자리 비움` | 10 |
 
 ## 문제 해결
 
@@ -171,7 +174,7 @@ node tools/build.js && smartthings edge:drivers:package build/edge
 smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 ```
 
-- **프로필은 손으로 쓰지 않는다.** 현재 프로필 두 개(`pc.v13`, `pc-battery.v13`)는 `tools/profile-template.yml`에서 `tools/gen-profiles.js`가 만든다. 화면을 바꾸면 프로필 버전을 올린다(설계 §6.6).
+- **프로필은 손으로 쓰지 않는다.** 현재 프로필 두 개(`pc.v14`, `pc-battery.v14`)는 `tools/profile-template.yml`에서 `tools/gen-profiles.js`가 만든다. 화면을 바꾸면 프로필 버전을 올린다(설계 §6.6).
 - **정의를 바꾸면 새 capability id가 필요하다.** 허브가 정의를 id 단위로 캐시한다. 계정 작업은 `tools/create-capabilities.sh`(최초 생성)와 `tools/sync-capabilities.sh`(갱신), 다른 계정으로 옮길 때는 `tools/apply-namespace.js`.
 - 패키지는 `tools/build.js`가 주석을 빈 줄로 바꿔 만든 `build/edge/`다(커밋하지 않음). 허브 로그의 줄 번호는 `src/`와 같다.
 - CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야 한다.
@@ -185,7 +188,7 @@ It runs locally on the hub and talks to the PC's `/st/v1` API (service **v1.1.0+
 
 - Real power state, visible grace periods and schedules, Wake-on-LAN through the adapter the PC picks.
 - SSDP discovery fills in address, port and hostname; only the secret has to be typed.
-- Driver 1.1: media controls, presets, "send a message to the PC", keep awake, laptop battery, and a "Watch list" card with "Watch 1"–"Watch 5" (running/stopped) for routines.
+- Driver 1.1: media controls, presets, "send a message to the PC", keep awake, laptop battery, and a "Watch list" card with "Watch 1"–"Watch 5" (running/stopped) for routines. With PC app v1.3.0: idle/away and camera/mic in use as routine conditions, the primary monitor (brightness, input, power) and audio device slots.
 - Failures are named: secret mismatch, unreachable, incompatible version, WoL not ready.
 
 **Install** — enroll in the channel (link above), install the driver, then *Add device → Scan nearby* with the PC and PC Control running; the scan is the only way to add a device.
