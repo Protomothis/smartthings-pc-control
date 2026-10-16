@@ -464,10 +464,12 @@ function sensors.monitor_events(status, lang, fill)
   end
   if level then
     ev(events, sensors.CAP_LEVEL, "level", level, c)
-    -- The slider's range: optional in the definition, but a row the device
-    -- never sends stays null in the cloud record (platform notes "null 속성").
-    ev(events, sensors.CAP_LEVEL, "levelRange", sensors.LEVEL_RANGE, c)
   end
+  -- The slider's range, always: optional in the definition, but a row the
+  -- device never sends stays null in the cloud record (platform notes "null
+  -- 속성") - and with the opt-in off no level ever goes out. A constant, so
+  -- the dedupe sends it once per driver run.
+  ev(events, sensors.CAP_LEVEL, "levelRange", sensors.LEVEL_RANGE, c)
   return events
 end
 

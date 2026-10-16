@@ -331,7 +331,8 @@ function T.test_the_toggle_and_the_slider_move_only_on_a_reading()
     -- The range goes with every level: never a null row in the cloud.
     h.assert_deep_equal(value(filled, M, "switchLevel", "levelRange"), { minimum = 0, maximum = 100 })
   end
-  h.assert_nil(value(rows_of(monitors({})), M, "switchLevel", "levelRange"), "no level, no range")
+  h.assert_deep_equal(value(rows_of(monitors({})), M, "switchLevel", "levelRange"), { minimum = 0, maximum = 100 },
+    "no level read, the range still goes out")
   local standby = rows_of(monitors({ dell({ power = "standby" }) }))
   h.assert_equal(value(standby, M, "switch", "switch"), "off")
   local unknown_power = rows_of(monitors({ dell({ power = "unknown" }) }))
