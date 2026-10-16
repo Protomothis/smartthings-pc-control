@@ -364,8 +364,9 @@ func (f flagSet) parse(args []string) (map[string][]string, error) {
 		if i+1 >= len(args) {
 			return nil, badArgs("%s needs a value", name)
 		}
+		value := args[i+1]
 		i++
-		out[name] = append(out[name], args[i])
+		out[name] = append(out[name], value)
 	}
 	return out, nil
 }
