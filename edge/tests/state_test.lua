@@ -145,6 +145,11 @@ local function golden(lang)
     -- #151: the presence card - locked, whatever the idle time says.
     { cap = caps.PRESENCE, attr = "activity", value = "locked", component = "presence" },
     { cap = caps.PRESENCE, attr = "idleMinutes", value = 20, component = "presence" },
+    -- #152: a v1.1.0 service has no camera or microphone to report.
+    { cap = caps.PRIVACY, attr = "summary", component = "presence",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.PRIVACY, attr = "camera", value = "unknown", component = "presence" },
+    { cap = caps.PRIVACY, attr = "microphone", value = "unknown", component = "presence" },
   }
 end
 

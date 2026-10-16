@@ -7,8 +7,22 @@ local caps = require "caps"
 local client = require "client"
 local poll = require "poll"
 local rows = require "device.rows"
+local push = require "push"
 local sensors = require "sensors"
 local state = require "state"
+local fields = require "device.fields"
+local features = require "features"
+
+-- The handlers, as the hub calls them.
+local driver = require "init"
+
+local function handlers_for(id)
+  local handlers = (driver.capability_handlers or {})[id]
+  if not handlers then
+    error("no capability handlers registered for " .. tostring(id), 0)
+  end
+  return handlers
+end
 
 local T = {}
 
@@ -127,6 +141,118 @@ function T.test_a_poll_judges_idle_by_the_devices_preference()
   client.get_status = original
   h.assert_true(ok, tostring(err))
   h.assert_equal(h.last_value(h.emitted(device), PRESENCE, caps.PRESENCE, "activity"), "idle")
+end
+
+--------------------------------------------------------------------------------
+-- #152: the camera and the microphone
+--------------------------------------------------------------------------------
+
+local function privacy(camera, microphone, overrides)
+  local status = { protocol = 1, service_version = "v1.3.0", features = { "privacy" },
+    privacy = { camera = camera, microphone = microphone, since = "" } }
+  for k, v in pairs(overrides or {}) do
+    status[k] = v
+  end
+  return status
+end
+
+function T.test_the_privacy_rows_say_what_is_in_use()
+  for _, c in ipairs({
+    { privacy("in_use", "idle"), "inUse", "idle", "카메라 사용 중", "Camera in use" },
+    { privacy("idle", "in_use"), "idle", "inUse", "마이크 사용 중", "Mic in use" },
+    { privacy("in_use", "in_use"), "inUse", "inUse", "카메라·마이크 사용 중", "Camera & mic in use" },
+    { privacy("idle", "idle"), "idle", "idle", "사용 안 함", "Not in use" },
+    -- Nobody logged in: the store cannot be read.
+    { privacy("unknown", "unknown"), "unknown", "unknown", "알 수 없음", "Unknown" },
+    { privacy("unknown", "in_use"), "unknown", "inUse", "마이크 사용 중", "Mic in use" },
+    { privacy("what", "idle"), "unknown", "idle", "알 수 없음", "Unknown" },
+    -- The opt-in off: no block, no feature (and `privacy.changed` data null).
+    { { service_version = "v1.3.0", features = { "audio" } }, "unknown", "unknown", "감지 꺼짐", "Detection off" },
+    { privacy("in_use", "idle", { features = { "audio" } }), "unknown", "unknown", "감지 꺼짐", "Detection off" },
+    -- An older PC app has no such thing.
+    { { service_version = "v1.2.0", features = { "audio" } }, "unknown", "unknown",
+      "PC 앱 v1.3.0 필요", "Needs PC app v1.3.0" },
+    { { service_version = "v1.1.2" }, "unknown", "unknown", "PC 앱 v1.3.0 필요", "Needs PC app v1.3.0" },
+  }) do
+    local status, camera, microphone, ko, en = table.unpack(c, 1, 5)
+    local events = rows_of(status)
+    h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "camera"), camera, ko)
+    h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "microphone"), microphone, ko)
+    h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "summary"), ko)
+    h.assert_equal(sensors.privacy_summary(status, "en"), en)
+  end
+  -- Before any status: unknown, never "".
+  local initial = sensors.initial_rows("ko")
+  h.assert_equal(value(initial, PRESENCE, caps.PRIVACY, "summary"), "알 수 없음")
+  h.assert_equal(value(initial, PRESENCE, caps.PRIVACY, "camera"), "unknown")
+end
+
+function T.test_a_privacy_push_with_no_data_turns_both_unknown()
+  -- The opt-in switched off: `data: null`, and the status lost its block.
+  local payload = { protocol = 1, type = "privacy.changed", data = nil,
+    status = { protocol = 1, service_version = "v1.3.0", features = { "audio" } } }
+  local _, events, event = push.apply(state.new(state.ON), payload, { lang = "ko", now = "21:00" })
+  h.assert_equal(event, "status_ok")
+  h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "camera"), "unknown")
+  h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "microphone"), "unknown")
+  h.assert_equal(value(events, PRESENCE, caps.PRIVACY, "summary"), "감지 꺼짐")
+end
+
+function T.test_a_pc_that_is_not_there_has_no_camera_in_use()
+  local device = h.fake_device({ language = "en" })
+  local records = rows.offline_rows(device, state.new(state.OFF))
+  h.assert_equal(value(records, PRESENCE, caps.PRIVACY, "camera"), "unknown")
+  h.assert_equal(value(records, PRESENCE, caps.PRIVACY, "microphone"), "unknown")
+  h.assert_equal(value(records, PRESENCE, caps.PRIVACY, "summary"), "PC off")
+end
+
+--- A PC device whose last status was `status`, with `client.command` answering
+--- `409 device_in_use`.
+local function refused_power(fn)
+  local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s" })
+  device.device_network_id = "pc-control-in-use"
+  fields.set_state(device, features.remember(state.new(state.ON), privacy("in_use", "idle")))
+  local original = { command = client.command, once = poll.once }
+  local sent = {}
+  client.command = function(_, command)
+    sent[#sent + 1] = command
+    return false, { error = "device_in_use", devices = { "camera" } }, "conflict"
+  end
+  poll.once = function() return true end
+  local ok, err = pcall(fn, device)
+  client.command, poll.once = original.command, original.once
+  if not ok then
+    error(err, 0)
+  end
+  return device, sent
+end
+
+function T.test_a_shutdown_held_back_for_the_camera_says_so()
+  -- #152: the PC app's guard on "block". The switch springs back on and both
+  -- pcInfo rows say why until the next poll.
+  local device, sent = refused_power(function(device)
+    handlers_for("switch").off(driver, device, { command = "off", args = {} })
+  end)
+  h.assert_deep_equal(sent, { "shutdown" })
+  local emitted = h.emitted(device)
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "summary"), "카메라 사용 중 · 실행 안 함")
+  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "message"), "카메라 사용 중 · 실행 안 함")
+  h.assert_equal(h.last_value(emitted, nil, "switch", "switch"), "on")
+  h.assert_true(h.event_forced(emitted, "switch", "switch"), "the toggle's answer is forced")
+  h.assert_nil(h.event_value(emitted, caps.STATUS, "connection"), "the PC is fine")
+end
+
+function T.test_a_command_list_restart_held_back_names_both_devices()
+  local device = refused_power(function(device)
+    client.command = function()
+      return false, { error = "device_in_use", devices = { "camera", "microphone" } }, "conflict"
+    end
+    handlers_for(caps.COMMAND).execute(driver, device, { args = { command = "restart" } })
+  end)
+  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "summary"),
+    "카메라·마이크 사용 중 · 실행 안 함")
+  h.assert_equal(sensors.in_use_note("en", { "microphone" }), "Mic in use · not run")
+  h.assert_equal(sensors.in_use_note("ko", {}), "카메라·마이크 사용 중 · 실행 안 함")
 end
 
 return T

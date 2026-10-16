@@ -105,11 +105,15 @@ components:
   # each card's preview on the main view is its own (platform notes "화면
   # 배치": the first three state rows, a third of the width each).
   # #151: in use / idle / locked as a routine condition ("사용 상태", "입력
-  # 없는 시간"); `pcUser` on main keeps its rows.
+  # 없는 시간"); `pcUser` on main keeps its rows. #152: the camera and the
+  # microphone in use ("카메라", "마이크"). One state row each, so the preview
+  # reads "자리 비움 · 카메라 사용 중".
   - id: presence
     label: 사용 감지
     capabilities:
       - id: numbersystem53811.pcpresence
+        version: 1
+      - id: numbersystem53811.pcprivacy
         version: 1
   # #123: the watch card - what runs on the PC (the opt-in watch list): a
   # summary row ("Steam 실행 중 · 외 1개"), the names row ("1 Steam · 3 OBS")

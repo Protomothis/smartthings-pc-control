@@ -110,6 +110,16 @@ function T.test_full_status_session_rows()
   h.assert_equal(value(events, caps.PRESENCE, "idleMinutes", "presence"), 12)
 end
 
+function T.test_full_status_privacy_rows()
+  -- #152: `privacy = { camera, microphone, since }`, in_use/idle/unknown.
+  local status = h.fixture("status.full.json")
+  local events = rows_of(status)
+  h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "inUse", "privacy.camera")
+  h.assert_equal(value(events, caps.PRIVACY, "microphone", "presence"), "idle", "privacy.microphone")
+  h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "카메라 사용 중")
+  h.assert_equal(status.privacy.since, "2026-10-01T20:45:00+09:00", "privacy.since (not shown)")
+end
+
 function T.test_full_status_media_rows()
   local events = rows_of(h.fixture("status.full.json"))
   h.assert_equal(value(events, features.CAP_VOLUME, "volume"), 35, "audio.volume")
@@ -268,6 +278,11 @@ function T.test_off_status_rows()
   h.assert_nil(value(events, caps.SESSION, "locked"), "nothing about the session while not exposed")
   h.assert_equal(value(events, caps.PRESENCE, "activity", "presence"), "unknown", "session.exposed: false")
   h.assert_nil(value(events, caps.PRESENCE, "idleMinutes", "presence"))
+  -- #152: no block, no feature. The golden says v1.2.0, older than the
+  -- release that brought the feature, so the row asks for it.
+  h.assert_nil(status.privacy, "privacy: only while enabled")
+  h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "unknown")
+  h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "PC 앱 v1.3.0 필요")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -328,6 +343,16 @@ local PUSHES = {
     h.assert_equal(data.apps[1].id, "steam.exe", "data.apps[].id")
     h.assert_equal(data.apps[2].label, "OBS", "data.apps[].label")
     h.assert_true(data.apps[2].running, "data.apps[].running")
+  end,
+  -- #152: the microphone came on; `data` is the status block itself.
+  ["push.privacy.changed.json"] = function(events, _nxt, event, payload)
+    h.assert_equal(event, "status_ok")
+    h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "inUse")
+    h.assert_equal(value(events, caps.PRIVACY, "microphone", "presence"), "inUse")
+    h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "카메라·마이크 사용 중")
+    h.assert_equal(payload.data.camera, "in_use", "data.camera")
+    h.assert_equal(payload.data.microphone, "in_use", "data.microphone")
+    h.assert_equal(payload.data.since, "2026-10-01T20:45:00+09:00", "data.since")
   end,
   ["push.awake.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_SWITCH, "switch", features.AWAKE_COMPONENT), "off")
@@ -538,6 +563,10 @@ local REFUSALS = {
   ["command.next.media-disabled.json"] = { same_as = "command.next.json", kind = "forbidden", note = "media_disabled" },
   ["command.notify.disabled.json"] = {
     same_as = "command.notify.json", kind = "forbidden", note = "notify_disabled", notify = true,
+  },
+  -- #152: the PC app's guard on "block" while the camera is in use.
+  ["command.shutdown.device-in-use.json"] = {
+    same_as = "command.shutdown.json", kind = "conflict", note = "device_in_use",
   },
 }
 

@@ -186,6 +186,12 @@ local STRINGS = {
   dev_camera = { ko = "카메라", en = "Camera" },
   dev_microphone = { ko = "마이크", en = "Mic" },
   dev_both = { ko = "카메라·마이크", en = "Camera & mic" },
+  -- #152: the `pcPrivacy.summary` row, the second cell of the presence
+  -- card's preview. `%s` is `dev_*`.
+  privacy_in_use = { ko = "%s 사용 중", en = "%s in use" },
+  privacy_idle = { ko = "사용 안 함", en = "Not in use" },
+  privacy_unknown = { ko = "알 수 없음", en = "Unknown" },
+  privacy_off = { ko = "감지 꺼짐", en = "Detection off" },
   -- #153: the monitor (`403 monitor_disabled`, `501 monitor_unsupported`,
   -- `502 monitor_failed`). A monitor in DPM off often stops listening, so a
   -- failed "on" says what works instead.

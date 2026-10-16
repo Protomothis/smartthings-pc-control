@@ -1,0 +1,42 @@
+{
+  "tag": "en",
+  "label": "Camera & mic",
+  "attributes": {
+    "summary": {
+      "label": "Camera & mic"
+    },
+    "camera": {
+      "label": "Camera",
+      "i18n": {
+        "value": {
+          "inUse": {
+            "label": "In use"
+          },
+          "idle": {
+            "label": "Not in use"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
+        }
+      }
+    },
+    "microphone": {
+      "label": "Microphone",
+      "i18n": {
+        "value": {
+          "inUse": {
+            "label": "In use"
+          },
+          "idle": {
+            "label": "Not in use"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

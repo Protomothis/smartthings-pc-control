@@ -46,7 +46,10 @@ function power.switch_off(driver, device)
   local command = prefs.offAction or "shutdown"
   local ok, body, kind = client.command(device, command, "default", 0)
   if not ok then
-    common.report_error(device, kind, body)
+    if common.report_error(device, kind, body) then
+      -- #152: the PC stays on; the toggle springs back.
+      rows.emit_power(device, fields.state(device), true)
+    end
     return
   end
   -- With a grace period the PC is still "on"; the toggle waits for an event.

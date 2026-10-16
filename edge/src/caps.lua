@@ -48,6 +48,8 @@ caps.TOAST = NAMESPACE .. ".pctoast"
 -- (edge-driver.md §4.3). #151: in use / idle / locked as a routine
 -- condition - `pcUser`'s frozen presentation has only `locked`.
 caps.PRESENCE = NAMESPACE .. ".pcpresence"
+-- #152: the camera and the microphone in use, on the same card.
+caps.PRIVACY = NAMESPACE .. ".pcprivacy"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -61,6 +63,7 @@ caps.ids = {
   watch = caps.WATCH,
   toast = caps.TOAST,
   presence = caps.PRESENCE,
+  privacy = caps.PRIVACY,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

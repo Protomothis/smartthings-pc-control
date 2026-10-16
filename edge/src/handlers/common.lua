@@ -12,13 +12,22 @@ local i18n = require "i18n"
 local log = require "log"
 local poll = require "poll"
 local rows = require "device.rows"
+local sensors = require "sensors"
 local state = require "state"
 
 local common = {}
 
 --- Report a failed request on the pcInfo rows (§1). A rate-limited one (§3.1)
---- says nothing about the connection: logged, the rows stay.
+--- says nothing about the connection: logged, the rows stay. #152: a power
+--- command the PC app held back because the camera or the microphone is in
+--- use (`409 device_in_use`) says so, like a refusal of the driver's own.
+--- Returns true for that one.
 function common.report_error(device, kind, body)
+  if type(body) == "table" and body.error == "device_in_use" then
+    rows.emit_note(device, sensors.in_use_note(fields.lang(device), body.devices))
+    log.info(string.format("command held back on %s: device_in_use", tostring(device.id)))
+    return true
+  end
   local connection = poll.connection_for(kind)
   if not connection then
     log.warn(string.format("command refused (%s) on %s", tostring(kind), device.id))

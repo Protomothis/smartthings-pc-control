@@ -7,6 +7,8 @@
 -- side is handlers/monitor.lua and handlers/audio.lua.
 
 local caps = require "caps"
+local features = require "features"
+local i18n = require "i18n"
 
 local sensors = {}
 
@@ -114,6 +116,108 @@ function sensors.presence_events(status, opts)
 end
 
 --------------------------------------------------------------------------------
+-- #152: the camera and the microphone
+--------------------------------------------------------------------------------
+
+-- `pcPrivacy`, on the same `presence` card: one summary row, two routine
+-- conditions ("카메라", "마이크": 사용 중 / 사용 안 함).
+sensors.CAP_PRIVACY = caps.PRIVACY
+
+-- The service's words (`status.privacy.camera`) -> the enum. `unknown`:
+-- nobody logged in, the store unreadable, the opt-in off, or a service
+-- without the block.
+sensors.IN_USE = "inUse"
+local PRIVACY_VALUES = { in_use = sensors.IN_USE, idle = sensors.IDLE, unknown = sensors.UNKNOWN }
+
+-- What `privacy_mode` answers, like `features.apps_mode`.
+sensors.OLD = "old"
+sensors.OFF = "off"
+sensors.ON = "on"
+
+--- "old" for a service older than the release that brought `privacy`, "off"
+--- for one with the opt-in off (no block, no feature; `privacy.changed` with
+--- `data: null`), else "on".
+function sensors.privacy_mode(status)
+  local set = features.parse(status)
+  if set == false or features.version_below((status or {}).service_version,
+      features.SINCE[features.PRIVACY]) == true and not set[features.PRIVACY] then
+    return sensors.OLD
+  end
+  if not set[features.PRIVACY] or type(status.privacy) ~= "table" then
+    return sensors.OFF
+  end
+  return sensors.ON
+end
+
+--- `camera`, `microphone`: the enum values of a status, `unknown` unless on.
+function sensors.privacy_values(status)
+  if sensors.privacy_mode(status) ~= sensors.ON then
+    return sensors.UNKNOWN, sensors.UNKNOWN
+  end
+  local block = status.privacy
+  return PRIVACY_VALUES[tostring(block.camera)] or sensors.UNKNOWN,
+    PRIVACY_VALUES[tostring(block.microphone)] or sensors.UNKNOWN
+end
+
+--- "카메라", "마이크" or "카메라·마이크" for what is in use (`dev_*`).
+function sensors.devices_text(lang, camera, microphone)
+  if camera and microphone then
+    return i18n.t(lang, "dev_both")
+  end
+  return i18n.t(lang, camera and "dev_camera" or "dev_microphone")
+end
+
+--- `pcPrivacy.summary`: "카메라 사용 중", "카메라·마이크 사용 중", "사용 안 함",
+--- "알 수 없음", "감지 꺼짐", or "PC 앱 v1.3.0 필요". Short: it is the second
+--- cell of the card's preview. Never "".
+function sensors.privacy_summary(status, lang)
+  if status == nil then
+    return i18n.t(lang, "privacy_unknown")
+  end
+  local mode = sensors.privacy_mode(status)
+  if mode == sensors.OLD then
+    return features.note_text(lang, "needs_service")
+  end
+  if mode == sensors.OFF then
+    return i18n.t(lang, "privacy_off")
+  end
+  local camera, microphone = sensors.privacy_values(status)
+  local cam, mic = camera == sensors.IN_USE, microphone == sensors.IN_USE
+  if cam or mic then
+    return i18n.t(lang, "privacy_in_use", sensors.devices_text(lang, cam, mic))
+  end
+  if camera == sensors.IDLE and microphone == sensors.IDLE then
+    return i18n.t(lang, "privacy_idle")
+  end
+  return i18n.t(lang, "privacy_unknown")
+end
+
+--- #152: the privacy rows. Always all three: `unknown` is not a routine
+--- condition, so an opt-in switched off fires nothing.
+function sensors.privacy_events(status, lang)
+  local events = {}
+  local camera, microphone = sensors.privacy_values(status)
+  ev(events, sensors.CAP_PRIVACY, "summary", sensors.privacy_summary(status, lang), sensors.PRESENCE_COMPONENT)
+  ev(events, sensors.CAP_PRIVACY, "camera", camera, sensors.PRESENCE_COMPONENT)
+  ev(events, sensors.CAP_PRIVACY, "microphone", microphone, sensors.PRESENCE_COMPONENT)
+  return events
+end
+
+--- #152: the note for a power command the PC app held back (`409
+--- device_in_use`, guard "block"): "카메라 사용 중 · 실행 안 함".
+function sensors.in_use_note(lang, devices)
+  local cam, mic = false, false
+  for _, name in ipairs(type(devices) == "table" and devices or {}) do
+    cam = cam or name == "camera"
+    mic = mic or name == "microphone"
+  end
+  if not cam and not mic then
+    cam, mic = true, true
+  end
+  return i18n.t(lang, "device_in_use", sensors.devices_text(lang, cam, mic))
+end
+
+--------------------------------------------------------------------------------
 -- every card
 --------------------------------------------------------------------------------
 
@@ -123,6 +227,7 @@ function sensors.apply_status(status, opts)
   opts = opts or {}
   local events = {}
   append(events, sensors.presence_events(status, opts))
+  append(events, sensors.privacy_events(status, opts.lang))
   return events
 end
 
@@ -132,11 +237,15 @@ function sensors.initial_rows(lang)
 end
 
 --- While the PC is not there (`state.offline_mode`): nobody is at it, so the
---- activity is `unknown` - not a condition, so no routine fires on it, and
---- "사용 중" does not outlive the PC. `text` is the offline wording.
-function sensors.offline_rows(_text)
+--- activity, the camera and the microphone are `unknown` - not a condition,
+--- so no routine fires on it, and "사용 중" does not outlive the PC - and
+--- the summary rows say `text` ("PC 꺼짐").
+function sensors.offline_rows(text)
   local records = {}
   ev(records, sensors.CAP_PRESENCE, "activity", sensors.UNKNOWN, sensors.PRESENCE_COMPONENT)
+  ev(records, sensors.CAP_PRIVACY, "summary", text, sensors.PRESENCE_COMPONENT)
+  ev(records, sensors.CAP_PRIVACY, "camera", sensors.UNKNOWN, sensors.PRESENCE_COMPONENT)
+  ev(records, sensors.CAP_PRIVACY, "microphone", sensors.UNKNOWN, sensors.PRESENCE_COMPONENT)
   return records
 end
 

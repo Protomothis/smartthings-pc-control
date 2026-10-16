@@ -60,6 +60,7 @@ local ATTRIBUTES = {
   [features.CAP_POWER_SOURCE] = { powerSource = true },
   -- PC app v1.3.0 (sensors.lua).
   [caps.PRESENCE] = { activity = true, idleMinutes = true },
+  [caps.PRIVACY] = { summary = true, camera = true, microphone = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.

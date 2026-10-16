@@ -624,8 +624,9 @@ local EXPECTED_COMMANDS = {
   watch = {},
   -- #108/pcToast: one command, one text argument.
   toast = { send = { "text" } },
-  -- #151: a row and routine conditions only.
+  -- #151/#152: a row and routine conditions only.
   presence = {},
+  privacy = {},
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -834,7 +835,7 @@ function T.test_the_dashboard_state_is_the_power_state()
   end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
-      "presence" }) do
+      "presence", "privacy" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -930,6 +931,20 @@ function T.test_the_presence_conditions_are_the_activity_and_the_idle_minutes()
   local detail = presentation("presence").detailView
   h.assert_equal(#detail, 1)
   h.assert_equal(detail[1].state.label, "{{activity.value}}")
+end
+
+function T.test_the_privacy_conditions_are_the_camera_and_the_microphone()
+  -- #152: "회의 중이면 조명 켜기". `unknown` (opt-in off, nobody logged in)
+  -- is a resting value, not an event.
+  local conditions = presentation("privacy").automation.conditions
+  h.assert_equal(#conditions, 2)
+  for i, attr in ipairs({ "camera", "microphone" }) do
+    h.assert_equal(conditions[i].list.value, attr .. ".value")
+    h.assert_deep_equal(alternative_keys(conditions[i].list.alternatives), { "inUse", "idle" }, attr)
+  end
+  local detail = presentation("privacy").detailView
+  h.assert_equal(#detail, 1, "one row: the summary")
+  h.assert_equal(detail[1].state.label, "{{summary.value}}")
 end
 
 function T.test_an_automation_can_cancel_a_schedule_with_zero_minutes()
@@ -1492,7 +1507,8 @@ end
 -- The only text the user reads is the one in the presentation, so every value
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
-local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence" }
+local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence",
+  "privacy" }
 
 -- Except the watch card's own rows: its preview in the main view gives each
 -- of its first three rows a third of the width, and "실행 중 (Running)"
