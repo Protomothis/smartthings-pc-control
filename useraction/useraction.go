@@ -14,7 +14,7 @@
 //	user-action media <playpause|play|pause|stop|next|prev>
 //	user-action media info
 //	user-action notify --title <t> --text <t>
-//	user-action preset --type <program|url|script> --path <p> [--arg <a>]...
+//	user-action preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...
 //	user-action screen <off|on>
 //
 // Output is exactly one line on stdout, and the exit code follows it:
@@ -115,7 +115,7 @@ type Request struct {
 	Text  string
 
 	// preset
-	PresetType string // program, url or script
+	PresetType string // program, url, script, keys or focus
 	Path       string
 	Args       []string
 }
@@ -403,7 +403,7 @@ func parsePreset(args []string) (Request, error) {
 	typ, hasType := flags["--type"]
 	path, hasPath := flags["--path"]
 	if !hasType || !hasPath {
-		return req, badArgs("usage: preset --type <program|url|script> --path <p> [--arg <a>]...")
+		return req, badArgs("usage: preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...")
 	}
 	req.PresetType, req.Path, req.Args = typ[0], path[0], flags["--arg"]
 	if strings.TrimSpace(req.Path) == "" {
@@ -432,6 +432,18 @@ func parsePreset(args []string) (Request, error) {
 		}
 		// #137: a web address or a Windows app link (steam://…).
 		if _, err := PresetURLScheme(req.Path); err != nil {
+			return req, badArgs("%s", err.Error())
+		}
+	case "keys", "focus":
+		// #146: a key combination, or the window to bring to the front.
+		if len(req.Args) > 0 {
+			return req, badArgs("preset: %s takes no --arg", req.PresetType)
+		}
+		check := ValidatePresetKeys
+		if req.PresetType == "focus" {
+			check = ValidatePresetFocus
+		}
+		if err := check(req.Path); err != nil {
 			return req, badArgs("%s", err.Error())
 		}
 	default:

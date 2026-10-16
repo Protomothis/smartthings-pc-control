@@ -71,3 +71,43 @@ func TestTelegramRun(t *testing.T) {
 		t.Errorf("last remote after failure = %+v", lr)
 	}
 }
+
+// TestTelegramKeysFocusPresets (#146): /presets names the new types, /run
+// sends the combination as is, and a focus failure is a fixed text that
+// never quotes the program or the title.
+func TestTelegramKeysFocusPresets(t *testing.T) {
+	initLogger()
+	withLiveConfig(t, tgPresetCfg([]Preset{
+		{Slot: 1, Name: "마이크", Type: "keys", Path: "ctrl+alt+m"},
+		{Slot: 2, Name: "일기", Type: "focus", Path: "제목:secret-diary"},
+	}))
+	h := tgCtl
+	reply, _, _ := h.HandleCommand(context.Background(), "42", "presets", nil)
+	if !strings.Contains(reply, "1 · 마이크 <i>(키 입력)</i>") || !strings.Contains(reply, "2 · 일기 <i>(창 앞으로)</i>") ||
+		strings.Contains(reply, "ctrl+alt+m") || strings.Contains(reply, "secret") {
+		t.Errorf("list = %q", reply)
+	}
+
+	calls := fakePresetRun(t, `{"ok":true,"started":true}`, nil)
+	if reply, _, err := h.HandleCommand(context.Background(), "42", "run", []string{"1"}); err != nil || !strings.Contains(reply, "1 · 마이크") {
+		t.Errorf("/run 1: %q, %v", reply, err)
+	}
+	if len(*calls) != 1 || strings.Join((*calls)[0], " ") != "preset --type keys --path ctrl+alt+m" {
+		t.Errorf("calls = %q", *calls)
+	}
+
+	for reason, want := range map[string]string{
+		"window_not_found": "열려 있는 창을 찾을 수 없음",
+		"focus_failed":     "창을 앞으로 가져오지 못함",
+	} {
+		fakePresetRun(t, "", &userActionError{Code: "failed", Reason: reason, Message: "x: secret-diary", Detail: "secret-diary"})
+		reply, _, err := h.HandleCommand(context.Background(), "42", "run", []string{"2"})
+		if err == nil || !strings.Contains(reply, want) || strings.Contains(reply, "secret") {
+			t.Errorf("%s: %q (%v), want %q", reason, reply, err, want)
+		}
+	}
+	fakePresetRun(t, "", &userActionError{Code: "failed", Reason: "keys_failed", Message: "could not send the keys"})
+	if reply, _, _ := h.HandleCommand(context.Background(), "42", "run", []string{"1"}); !strings.Contains(reply, "키 입력을 보내지 못함") {
+		t.Errorf("keys_failed: %q", reply)
+	}
+}

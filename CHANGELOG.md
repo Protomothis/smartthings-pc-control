@@ -2,6 +2,12 @@
 
 Windows 서비스·트레이 앱의 변경 이력입니다. SmartThings Edge 드라이버는 버전이 따로 돌므로 [edge/CHANGELOG.md](edge/CHANGELOG.md)에 기록합니다.
 
+## [Unreleased]
+
+### 추가
+
+- **프리셋 종류 `키 입력` · `창 앞으로`** — `키 입력`은 `ctrl+alt+m` · `win+d` · `media_play_pause` 같은 키 조합 하나를 누르고, `창 앞으로`는 `obs64.exe` 같은 프로그램 이름이나 `제목:메모장`처럼 창 제목 일부로 찾은 창을 (최소화돼 있으면 복원해) 앞으로 가져옵니다. SmartThings · 텔레그램에서 슬롯 번호로 그대로 실행됩니다 (#146)
+
 ## [v1.2.2] - 2026-10-14
 
 ### 추가

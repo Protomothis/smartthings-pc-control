@@ -30,6 +30,8 @@ var presetTexts = map[string][2]string{
 	"type_program":      {"프로그램", "program"},
 	"type_url":          {"URL", "URL"},
 	"type_script":       {"스크립트", "script"},
+	"type_keys":         {"키 입력", "keys"},
+	"type_focus":        {"창 앞으로", "focus window"},
 	"preset_list_entry": {"%d · %s <i>(%s)</i>", "%d · %s <i>(%s)</i>"},
 	// A failed /run names the file by its base name only (C6); the full
 	// error is in service.log.
@@ -38,7 +40,12 @@ var presetTexts = map[string][2]string{
 	"preset_start_failed":  {"실행하지 못함: <code>%s</code>", "Could not start: <code>%s</code>"},
 	"preset_url_failed":    {"URL이나 앱 링크를 열지 못함", "Could not open the URL or app link"},
 	"preset_bad":           {"저장된 설정으로는 실행할 수 없음: <code>%s</code>", "Cannot be run as saved: <code>%s</code>"},
-	"preset_failed_detail": {"❌ 프리셋 %d · %s 실패: %s", "❌ Preset %d · %s failed: %s"},
+	// #146: keys and focus presets have no file to name.
+	"preset_bad_plain":        {"저장된 설정으로는 실행할 수 없음", "Cannot be run as saved"},
+	"preset_keys_failed":      {"키 입력을 보내지 못함 (입력이 막혀 있음)", "Could not send the keys (input is blocked)"},
+	"preset_window_not_found": {"열려 있는 창을 찾을 수 없음", "No matching window is open"},
+	"preset_focus_failed":     {"창을 앞으로 가져오지 못함", "Could not bring the window to the front"},
+	"preset_failed_detail":    {"❌ 프리셋 %d · %s 실패: %s", "❌ Preset %d · %s failed: %s"},
 }
 
 func init() {
@@ -102,6 +109,14 @@ func (c *Control) presetError(err error, p config.Preset) string {
 		why = c.text("preset_url_failed")
 	case reason == useraction.PresetStartFailed:
 		why = c.text("preset_start_failed", name)
+	case reason == useraction.PresetKeysFailed:
+		why = c.text("preset_keys_failed")
+	case reason == useraction.PresetWindowNotFound:
+		why = c.text("preset_window_not_found")
+	case reason == useraction.PresetFocusFailed:
+		why = c.text("preset_focus_failed")
+	case f.Code == useraction.CodeBadArgs && (p.Type == "keys" || p.Type == "focus"):
+		why = c.text("preset_bad_plain")
 	case f.Code == useraction.CodeBadArgs:
 		why = c.text("preset_bad", name)
 	default:

@@ -225,8 +225,12 @@
 
 PC 앱에 미리 등록한 동작만 원격에서 고를 수 있다. 원격은 **슬롯 번호만** 보내고, 무엇을 실행할지는 PC에만 있다.
 
-- **설정:** `presets: [{ "slot": 1–10, "name": "게임 모드", "type": "program"|"url"|"script", "path": "…", "args": ["…"] }]`.
+- **설정:** `presets: [{ "slot": 1–10, "name": "게임 모드", "type": "program"|"url"|"script"|"keys"|"focus", "path": "…", "args": ["…"] }]`.
   - `program`: exe를 인자 배열 그대로 실행(셸 없음). `url`: 기본 브라우저로 연다(http/https만). `script`: `.ps1`/`.bat`/`.cmd` 파일 경로를 고정 인터프리터로 실행.
+  - `keys`(#146): `ctrl+alt+m`·`win+d`·`media_play_pause` 같은 조합 하나(수정자 ctrl/alt/shift/win 각 한 번 + 마지막에 키 하나,
+    대소문자 무시)를 `SendInput`으로 누르고 역순으로 뗀다. 키 이름 목록은 `useraction/presetkeys.go`. `focus`(#146): `obs64.exe`(프로그램
+    파일 이름) 또는 `title:`/`제목:` + 창 제목 일부로 보이는 최상위 창을 찾아 복원하고 앞으로(SetForegroundWindow → 빈 마우스 입력 후 재시도 →
+    AttachThreadInput). 둘 다 인자 없음, 실패 사유 `keys_failed`·`window_not_found`·`focus_failed`(고정 문구, 경로·제목 없음).
   - 모두 **사용자 세션에서** 실행한다(SYSTEM 권한으로 실행하지 않는다). 사용자가 없으면 `no_user_session`.
   - 구현(#109): `program`은 절대 경로의 `.exe`/`.com`만(`.bat`을 CreateProcess에 주면 cmd.exe가 제 규칙으로 읽으므로
     배치 파일은 `script`로). `.ps1`은 `%SystemRoot%\…\powershell.exe -NoProfile -ExecutionPolicy Bypass -File`,

@@ -24,7 +24,14 @@ const (
 )
 
 // presetTypes are the wire values of the type select, in display order.
-var presetTypes = []string{"program", "url", "script"}
+var presetTypes = []string{"program", "url", "script", "keys", "focus"}
+
+// presetTakesArgs: only programs and scripts have arguments (and a file
+// to browse for); a URL, a key combination (#146) and a window to focus
+// do not.
+func presetTakesArgs(typ string) bool {
+	return typ == "program" || typ == "script"
+}
 
 // presetRow is one editor row as typed: Args is the single-line entry.
 type presetRow struct {
@@ -122,15 +129,32 @@ func rowProblem(r presetRow) string {
 	case path == "":
 		return "presets.err.path"
 	}
-	if r.Type == "url" {
-		// A URL takes no arguments; whatever the (cleared, greyed) entry
-		// holds is dropped by preset(), so it is not checked either. #137:
-		// the service's own rule - a web address or an app link.
+	// A URL, keys or focus row takes no arguments; whatever the (cleared,
+	// greyed) entry holds is dropped by preset(), so it is not checked
+	// either. The path rules are the service's own (useraction).
+	switch r.Type {
+	case "url":
+		// #137: a web address or an app link.
 		if _, err := useraction.PresetURLScheme(path); err != nil {
 			if errors.Is(err, useraction.ErrPresetURLBlocked) {
 				return "presets.err.urlblocked"
 			}
 			return "presets.err.url"
+		}
+		return ""
+	case "keys":
+		// #146: modifiers and one key.
+		if err := useraction.ValidatePresetKeys(path); err != nil {
+			if errors.Is(err, useraction.ErrPresetKeyUnknown) {
+				return "presets.err.keyname"
+			}
+			return "presets.err.keys"
+		}
+		return ""
+	case "focus":
+		// #146: obs64.exe or 제목:….
+		if useraction.ValidatePresetFocus(path) != nil {
+			return "presets.err.focus"
 		}
 		return ""
 	}
@@ -171,10 +195,10 @@ func isAbsPath(p string) bool {
 }
 
 // preset turns a row into the wire form (trimmed name and path, split
-// arguments; a URL never carries any).
+// arguments; a URL, keys or focus row never carries any).
 func (r presetRow) preset() (Preset, error) {
 	var args []string
-	if r.Type != "url" {
+	if presetTakesArgs(r.Type) {
 		var err error
 		if args, err = splitArgs(r.Args); err != nil {
 			return Preset{}, err
@@ -377,11 +401,18 @@ func actionErrorKey(err error) string {
 	return ""
 }
 
-// linkNote is the line under a URL row's path (#137): which app opens an
-// app link, or that no app on this PC does. Web addresses, other types and
-// paths the row check refuses get none. lookup is protocolApp.
+// linkNote is the line under a row's path. A URL row (#137): which app
+// opens an app link, or that no app on this PC does; web addresses and
+// paths the row check refuses get none. A keys or focus row (#146): how
+// to write the path. Programs and scripts get none. lookup is protocolApp.
 func linkNote(r presetRow, lookup func(scheme string) (string, bool)) (key, app string) {
-	if r.Type != "url" {
+	switch r.Type {
+	case "keys":
+		return "presets.keys.help", ""
+	case "focus":
+		return "presets.focus.help", ""
+	case "url":
+	default:
 		return "", ""
 	}
 	scheme, err := useraction.PresetURLScheme(strings.TrimSpace(r.Path))

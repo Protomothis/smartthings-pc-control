@@ -36,6 +36,10 @@ func PresetFailure(err error, p config.Preset) (f Failure, reason string) {
 	case p.Type == "url":
 		reason = useraction.PresetURLFailed
 		f.Message = "could not open the URL"
+	case p.Type == "keys" || p.Type == "focus":
+		// #146: no file to name, and a window title is the user's own
+		// business — fixed texts only.
+		reason, f.Message = inputPresetFailure(p.Type, ue)
 	case reason == useraction.PresetNotFound:
 		f.Message = "file not found: " + name
 	case reason == useraction.PresetAccessDenied:
@@ -52,6 +56,22 @@ func PresetFailure(err error, p config.Preset) (f Failure, reason string) {
 	}
 	f.Detail = f.Message
 	return f, reason
+}
+
+// inputPresetFailure is the reason and message of a failed keys or focus
+// preset (#146).
+func inputPresetFailure(typ string, ue *session.ActionError) (reason, msg string) {
+	switch {
+	case ue.Code == useraction.CodeBadArgs:
+		return "", "the preset cannot be run as saved"
+	case ue.Code == useraction.CodeUnsupported:
+		return "", "presets are not available on this PC"
+	case typ == "keys":
+		return useraction.PresetKeysFailed, "could not send the keys"
+	case ue.Reason == useraction.PresetWindowNotFound:
+		return useraction.PresetWindowNotFound, "no matching window is open"
+	}
+	return useraction.PresetFocusFailed, "could not bring the window to the front"
 }
 
 // WritePresetError is WriteError for a preset run, with PresetFailure's
