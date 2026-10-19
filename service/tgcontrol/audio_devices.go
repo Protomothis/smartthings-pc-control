@@ -30,8 +30,8 @@ import (
 var audioDeviceTexts = map[string][2]string{
 	"dev_title_out":    {"<b>출력 장치</b>", "<b>Output devices</b>"},
 	"dev_title_in":     {"<b>입력 장치</b>", "<b>Input devices</b>"},
-	"dev_none_out":     {"출력 장치 칸이 비어 있습니다. PC 앱 설정 탭(미디어·알림)에서 지정하세요.", "No output device slots yet. Fill them on the PC app's Settings tab (Media &amp; notifications)."},
-	"dev_none_in":      {"입력 장치 칸이 비어 있습니다. PC 앱 설정 탭(미디어·알림)에서 지정하세요.", "No input device slots yet. Fill them on the PC app's Settings tab (Media &amp; notifications)."},
+	"dev_none_out":     {"출력 장치 칸이 비어 있습니다. PC 앱 기능 탭에서 지정하세요.", "No output device slots yet. Fill them on the PC app's Features tab."},
+	"dev_none_in":      {"입력 장치 칸이 비어 있습니다. PC 앱 기능 탭에서 지정하세요.", "No input device slots yet. Fill them on the PC app's Features tab."},
 	"dev_entry":        {"%d · %s", "%d · %s"},
 	"dev_missing":      {"(연결 안 됨)", "(not connected)"},
 	"dev_hint_out":     {"버튼을 누르거나 <code>/output 번호</code>로 전환합니다", "Tap a button, or send <code>/output number</code>"},
