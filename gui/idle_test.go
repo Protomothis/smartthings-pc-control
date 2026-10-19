@@ -46,7 +46,9 @@ func fakeHeartbeat(t *testing.T, expose, media bool, audio useraction.Audio, aud
 	t.Helper()
 	savedExpose, savedMedia, savedIdle, savedAudio, savedNow := heartbeatExposeSession, heartbeatMediaEnabled, heartbeatIdle, heartbeatAudio, heartbeatNow
 	savedNP, savedShare := heartbeatNowPlaying, heartbeatShareNowPlaying
-	savedDevices := heartbeatDevices
+	savedDevices, savedPlaying := heartbeatDevices, heartbeatPlaying
+	// Playing unknown unless a test sets it (#159).
+	heartbeatPlaying = func() *bool { return nil }
 	// No device block unless a test asks for one (#145).
 	heartbeatDevices = func() (_, _ []useraction.AudioEndpoint, _ error) { return nil, nil, errors.New("unsupported") }
 	heartbeatExposeSession = func() bool { return expose }
@@ -59,7 +61,7 @@ func fakeHeartbeat(t *testing.T, expose, media bool, audio useraction.Audio, aud
 	t.Cleanup(func() {
 		heartbeatExposeSession, heartbeatMediaEnabled, heartbeatIdle, heartbeatAudio, heartbeatNow = savedExpose, savedMedia, savedIdle, savedAudio, savedNow
 		heartbeatNowPlaying, heartbeatShareNowPlaying = savedNP, savedShare
-		heartbeatDevices = savedDevices
+		heartbeatDevices, heartbeatPlaying = savedDevices, savedPlaying
 	})
 }
 

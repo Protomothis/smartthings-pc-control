@@ -31,6 +31,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **Wake-on-LAN과 예약** — 스위치를 켜면 PC를 깨웁니다. 5분부터 3일까지 예약하고 어디서든 취소합니다.
 - **잠들지 않기** — 정한 시간 동안 자동 절전을 막습니다. 직접 보낸 종료·절전은 그대로 실행됩니다.
 - **볼륨 · 음소거 · 미디어** — 볼륨과 음소거를 바꾸고 재생 · 일시정지 · 이전/다음 곡을 보냅니다. 재생 정보 공유는 옵트인입니다.
+- **스피커 · 마이크 상태** — 지금 소리가 나는지, 스피커 · 마이크 음소거, 쓰고 있는 출력 · 입력 장치(장치는 1–5번 칸을 스스로 차지)를 루틴 조건으로 씁니다. 재생 여부는 트레이 앱이 실행 중이어야 나옵니다.
 - **PC 알림** — SmartThings 루틴이나 텔레그램 `/say`로 PC 화면에 문구를 띄웁니다.
 - **프리셋** — 앱에 등록한 프로그램 · URL · 스크립트(최대 10개)를 원격에서 슬롯 번호로 실행합니다.
 - **실행 중 앱 감지(옵트인)** — 감시 목록(최대 5개)의 프로그램이 실행 중인지 PC 장치의 '감시 목록' 카드에 보여 주고, 감시 1~5 칸의 실행 중/꺼짐을 루틴 조건으로 씁니다. 실행 파일 이름으로만 구분하므로 이름이 같은 다른 프로그램 · 스토어 앱의 호스트 프로세스 · 다른 사용자의 프로그램도 세고, 10초보다 짧은 실행은 놓칠 수 있습니다.
@@ -112,6 +113,7 @@ A dedicated SmartThings Edge driver talks to it locally from the hub.
 - **Real power state** in the SmartThings app, **Wake-on-LAN**, and **schedules** from 5 minutes to 3 days.
 - **Keep awake** — hold off idle sleep for a while; shutdown and sleep you ask for still happen.
 - **Volume, mute and media** — set volume and mute, send play/pause, stop, next and previous. Sharing what is playing is opt-in.
+- **Speaker and microphone state** — whether sound is playing, speaker and microphone mute, and which output and input device is in use (devices get slots 1–5 by themselves), for routine conditions. "Playing" needs the tray app running.
 - **PC notifications** — a SmartThings routine or Telegram `/say` puts a line of text on the PC's screen.
 - **Presets** — up to ten programs, URLs or scripts registered in the app, run remotely by slot number.
 - **Running-app detection (opt-in)** — up to five watched apps appear on the PC device's "Watch list" card; routines use "Watch 1"–"Watch 5" (running/stopped). Apps are told apart by executable name only: another program with the same name, a Store app's host process or another user's program counts too, and a run shorter than ~10 s can be missed.

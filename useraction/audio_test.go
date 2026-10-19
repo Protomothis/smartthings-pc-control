@@ -41,15 +41,88 @@ func (f *fakeEndpoint) Close()         { f.closed = true }
 // withFakeAudio routes the handler to ep (or to openErr) without COM.
 func withFakeAudio(t *testing.T, ep *fakeEndpoint, openErr error) {
 	t.Helper()
-	savedOpen, savedRun := openAudio, runCOM
+	savedOpen, savedInput, savedRun := openAudio, openInput, runCOM
 	openAudio = func() (audioEndpoint, error) {
 		if openErr != nil {
 			return nil, openErr
 		}
 		return ep, nil
 	}
+	// No recording device unless a test adds one (withFakeInput).
+	openInput = func() (audioEndpoint, error) { return nil, errNoRecordingDevice }
 	runCOM = func(f func() error) error { return f() }
-	t.Cleanup(func() { openAudio, runCOM = savedOpen, savedRun })
+	t.Cleanup(func() { openAudio, openInput, runCOM = savedOpen, savedInput, savedRun })
+}
+
+// withFakeInput gives the fake PC a default recording device (#159); call
+// it after withFakeAudio.
+func withFakeInput(t *testing.T, ep *fakeEndpoint) {
+	t.Helper()
+	openInput = func() (audioEndpoint, error) { return ep, nil }
+}
+
+// Every audio reply carries the recording device's name and mute next to
+// the playback state; without one, or when its mute cannot be read, the
+// input block is left out and the reply stands (#159).
+func TestAudioCarriesInput(t *testing.T) {
+	speaker := &fakeEndpoint{level: 0.3, device: "스피커"}
+	mic := &fakeEndpoint{muted: true, device: " 마이크\r\n"}
+	withFakeAudio(t, speaker, nil)
+	withFakeInput(t, mic)
+	for _, args := range [][]string{{"audio", "get"}, {"audio", "set", "40"}, {"audio", "mute", "toggle"}} {
+		m, _, code := runMain(t, args...)
+		in, _ := m["audio"].(map[string]any)["input"].(map[string]any)
+		if code != 0 || in["present"] != true || in["device"] != "마이크" || in["muted"] != true {
+			t.Errorf("%q: exit %d, input %v", args, code, in)
+		}
+	}
+	if !mic.closed {
+		t.Error("recording endpoint not closed")
+	}
+	a, err := ReadAudio()
+	if err != nil || a.Input != (AudioInput{Present: true, Device: "마이크", Muted: true}) {
+		t.Errorf("ReadAudio = %+v, %v", a, err)
+	}
+
+	mic.failGet = errors.New("E_FAIL")
+	if a, err := ReadAudio(); err != nil || a.Input != (AudioInput{}) || a.Device != "스피커" {
+		t.Errorf("ReadAudio with an unreadable microphone = %+v, %v", a, err)
+	}
+	withFakeAudio(t, speaker, nil) // no recording device
+	m, _, _ := runMain(t, "audio", "get")
+	if _, ok := m["audio"].(map[string]any)["input"]; ok {
+		t.Errorf("input without a recording device: %v", m["audio"])
+	}
+	if err := (Audio{Input: AudioInput{Present: true, Device: "a\x07"}}).Validate(); err == nil {
+		t.Error("a control character in the input name validates")
+	}
+}
+
+// ReadPeak clamps the meter and maps a missing playback device to
+// unsupported (#159).
+func TestReadPeak(t *testing.T) {
+	saved, savedRun := readPeak, runCOM
+	t.Cleanup(func() { readPeak, runCOM = saved, savedRun })
+	runCOM = func(f func() error) error { return f() }
+	for _, c := range []struct {
+		peak float32
+		err  error
+		want float32
+		code string
+	}{
+		{0.25, nil, 0.25, ""},
+		{1.5, nil, 1, ""},
+		{-0.1, nil, 0, ""},
+		{0, errNoPlaybackDevice, 0, CodeUnsupported},
+		{0, &hresultError{op: "Activate", hr: 0x80004002}, 0, CodeFailed},
+	} {
+		readPeak = func() (float32, error) { return c.peak, c.err }
+		got, err := ReadPeak()
+		var ue *Error
+		if got != c.want || (c.code == "" && err != nil) || (c.code != "" && (!errors.As(err, &ue) || ue.Code != c.code)) {
+			t.Errorf("peak %v / %v: %v, %v", c.peak, c.err, got, err)
+		}
+	}
 }
 
 func TestAudioVerbs(t *testing.T) {

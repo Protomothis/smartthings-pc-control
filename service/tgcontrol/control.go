@@ -932,11 +932,11 @@ func (c *Control) statusText() string {
 	}
 	cfg := c.d.Config()
 	if cfg.Media.Enabled {
-		if line := c.volumeLine(c.d.Status.Audio(cfg)); line != "" {
-			b.WriteString("\n" + line)
-		}
-		if line := c.outputLine(c.d.Status.Audio(cfg)); line != "" {
-			b.WriteString("\n" + line) // #145
+		audio := c.d.Status.Audio(cfg)
+		for _, line := range []string{c.volumeLine(audio), c.outputLine(audio), c.inputLine(audio)} { // #145, #159
+			if line != "" {
+				b.WriteString("\n" + line)
+			}
 		}
 		if line := c.mediaLine(c.d.Status.Media(cfg), cfg.Media.NowPlaying); line != "" {
 			b.WriteString("\n" + line)

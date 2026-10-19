@@ -10,6 +10,8 @@ import (
 	"net/http/cookiejar"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // Config mirrors the service config exposed by /api/config.
@@ -490,11 +492,17 @@ type HeartbeatMedia struct {
 // HeartbeatAudio is the heartbeat's audio block. SampledAt (RFC3339) is
 // when it was read: the service keeps whichever of this and a command
 // result is newer by that time, not by arrival.
+//
+// Input is the default recording device and Playing whether sound is
+// coming out of the speakers (#159, playing.go); Playing is left out while
+// unknown.
 type HeartbeatAudio struct {
-	Volume    int    `json:"volume"`
-	Muted     bool   `json:"muted"`
-	Device    string `json:"device"`
-	SampledAt string `json:"sampled_at"`
+	Volume    int                   `json:"volume"`
+	Muted     bool                  `json:"muted"`
+	Device    string                `json:"device"`
+	Input     useraction.AudioInput `json:"input,omitzero"`
+	Playing   *bool                 `json:"playing,omitempty"`
+	SampledAt string                `json:"sampled_at"`
 }
 
 // SessionHeartbeat reports what only this app can measure (#77, #104): the

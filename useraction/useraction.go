@@ -80,6 +80,18 @@ type Audio struct {
 	Volume int    `json:"volume"`
 	Muted  bool   `json:"muted"`
 	Device string `json:"device"`
+	// Input is the default recording device (#159), read with every
+	// sample; left out when there is none, it could not be read, or the
+	// sample came from a tray app or user-action older than v1.3.0.
+	Input AudioInput `json:"input,omitzero"`
+}
+
+// AudioInput is the default recording device's name and mute (#159). The
+// zero value (Present false) means nothing is known about it.
+type AudioInput struct {
+	Present bool   `json:"present"`
+	Device  string `json:"device"`
+	Muted   bool   `json:"muted"`
 }
 
 // Validate checks the ranges a sample must be in to be stored.
@@ -87,11 +99,13 @@ func (a Audio) Validate() error {
 	if a.Volume < 0 || a.Volume > 100 {
 		return fmt.Errorf("volume %d out of range 0-100", a.Volume)
 	}
-	if utf8.RuneCountInString(a.Device) > MaxDeviceRunes {
-		return fmt.Errorf("device name longer than %d characters", MaxDeviceRunes)
-	}
-	if hasControl(a.Device) {
-		return errors.New("device name contains control characters")
+	for _, name := range []string{a.Device, a.Input.Device} {
+		if utf8.RuneCountInString(name) > MaxDeviceRunes {
+			return fmt.Errorf("device name longer than %d characters", MaxDeviceRunes)
+		}
+		if hasControl(name) {
+			return errors.New("device name contains control characters")
+		}
 	}
 	return nil
 }

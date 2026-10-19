@@ -9,7 +9,9 @@ package gui
 // session and posts them to the service, which publishes them in GET
 // /st/v1/status. Between those posts it looks at the audio and the media
 // session every 3s and posts just the part that changed, so a new track or
-// a volume key reaches the hub and the media card within seconds.
+// a volume key reaches the hub and the media card within seconds. Since
+// #159 the audio block also names the default recording device with its
+// mute, and carries the speakers' playing flag (playing.go).
 
 import (
 	"errors"
@@ -81,6 +83,8 @@ var (
 	heartbeatNowPlaying      = useraction.ReadNowPlaying
 	heartbeatShareNowPlaying = localNowPlaying
 	heartbeatNow             = time.Now
+	// heartbeatPlaying is the peak meter's flag (#159, playing.go).
+	heartbeatPlaying = currentPlaying
 )
 
 // buildHeartbeat samples what the switches allow; ok is false when there
@@ -117,7 +121,7 @@ func sampleMediaBlocks() (*HeartbeatAudio, *HeartbeatMedia) {
 	at := heartbeatNow().Format(time.RFC3339Nano)
 	var audio *HeartbeatAudio
 	if a, err := heartbeatAudio(); err == nil {
-		audio = &HeartbeatAudio{Volume: a.Volume, Muted: a.Muted, Device: a.Device, SampledAt: at}
+		audio = &HeartbeatAudio{Volume: a.Volume, Muted: a.Muted, Device: a.Device, Input: a.Input, Playing: heartbeatPlaying(), SampledAt: at}
 	}
 	var media *HeartbeatMedia
 	if np, err := heartbeatNowPlaying(); err == nil {
@@ -173,7 +177,13 @@ func (s *heartbeatSent) delivered(hb Heartbeat) {
 }
 
 func sameAudioBlock(a, b *HeartbeatAudio) bool {
-	return b != nil && a.Volume == b.Volume && a.Muted == b.Muted && a.Device == b.Device
+	return b != nil && a.Volume == b.Volume && a.Muted == b.Muted && a.Device == b.Device &&
+		a.Input == b.Input && samePlaying(a.Playing, b.Playing)
+}
+
+// samePlaying compares two playing flags, nil (unknown) included.
+func samePlaying(a, b *bool) bool {
+	return (a == nil) == (b == nil) && (a == nil || *a == *b)
 }
 
 func sameMediaBlock(a, b *HeartbeatMedia) bool {

@@ -81,3 +81,10 @@ seam이 없는 값만 **명시적으로** 자리표시자로 바꾼다. 키가 �
 golden PC의 출력 칸은 1 스피커(기본), 2 비어 있음, 3 헤드셋(연결됨), 4 LG TV(연결 안 됨 → `present:false`), 입력 칸은 1 마이크(기본), 2 헤드셋 마이크다.
 장치를 바꾸는 명령은 없다 — #145의 `audio_output`/`audio_input`과 그 `command.audio_*.json`은 v1.3.0에서 뺐다.
 바꿀 곳은 Go의 `goldenAudioConfig`/`goldenOutputs`/`goldenInputs`다.
+
+## 스피커·마이크 상태 (#159)
+
+`audio.playing`(스피커에서 소리가 나는지, 트레이 앱이 피크 미터로 잼), `audio.input_device` · `audio.input_muted`(기본 입력 장치)는 **늘 있는 키**이고 모르면 `null`이다. `status.off.json`처럼 `available:false`이면 셋 다 `null`이다.
+status에서는 스피커로 재생 중(`playing: true`), 입력은 마이크(slot 1)이고 음소거 아님. `command.volume|mute|unmute.json` 응답도 같은 마이크를 담는다(실제 user-action 응답은 입력 장치를 늘 함께 읽는다).
+`push.audio.changed.json`은 스피커와 마이크를 함께 음소거한 순간이다. `data`에 `input_device` · `input_muted` · `playing`이 문자열로 더해진다(모르는 것은 키가 빠진다).
+바꿀 곳은 Go의 `goldenInput`, `goldenWorld`의 `notePlaying`, `pushCases`의 `push.audio.changed.json`이다.

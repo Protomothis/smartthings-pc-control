@@ -39,7 +39,7 @@ func audioSlotsSetup(t *testing.T) {
 	mediaSetup(t, cfg)
 	resetAudioDevices()
 	t.Cleanup(resetAudioDevices)
-	noteAudioSample(useraction.Audio{Volume: 35, Device: goldenSpeaker}, time.Now())
+	noteAudioSample(useraction.Audio{Volume: 35, Device: goldenSpeaker, Input: goldenInput(false)}, time.Now())
 	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, time.Now())
 }
 
@@ -298,7 +298,7 @@ func TestTelegramAudioDevicesGone(t *testing.T) {
 			t.Errorf("/%s = %q, %v", cmd, reply, kb)
 		}
 	}
-	if st, _, _ := tgCtl.HandleCommand(ctx, "42", "status", nil); !strings.Contains(st, "출력: "+goldenSpeaker) {
+	if st, _, _ := tgCtl.HandleCommand(ctx, "42", "status", nil); !strings.Contains(st, "출력: "+goldenSpeaker) || !strings.Contains(st, "입력: "+goldenMic) {
 		t.Errorf("/status lacks the output line:\n%s", st)
 	}
 }

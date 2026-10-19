@@ -6,6 +6,9 @@ package useraction
 // friendly name. The vtables are called directly with syscall.SyscallN; no
 // COM library is involved, and neither is PowerShell — its Add-Type start
 // alone costs about a second, far too slow for a volume slider (§2).
+// Since #159 the same opening reads the default recording device's mute
+// and name, and peak.go activates IAudioMeterInformation on the playback
+// device the same way.
 //
 // Every call here must happen on one OS thread that has COM initialised;
 // withCOM arranges that. Interface pointers never leave that thread.
@@ -140,6 +143,9 @@ func check(op string, hr uint32) error {
 // endpoint (no speakers, all disabled, audio service stopped).
 var errNoPlaybackDevice = errors.New("no default playback device")
 
+// errNoRecordingDevice is the same for the default capture endpoint (#159).
+var errNoRecordingDevice = errors.New("no default recording device")
+
 // withCOM runs f on a locked OS thread with COM initialised (MTA). A thread
 // Go reuses may already be in an apartment; RPC_E_CHANGED_MODE means COM is
 // usable there all the same, but that init is not ours to undo.
@@ -173,25 +179,21 @@ type coreAudioEndpoint struct {
 // eRender/eConsole endpoint. The friendly name is best effort: a device
 // whose property store cannot be read still has a volume.
 func openDefaultEndpoint() (audioEndpoint, error) {
-	var enum *comObject
-	hr, _, _ := procCoCreateInstance.Call(
-		uintptr(unsafe.Pointer(&clsidMMDeviceEnumerator)),
-		0,
-		clsctxAll,
-		uintptr(unsafe.Pointer(&iidIMMDeviceEnumerator)),
-		uintptr(unsafe.Pointer(&enum)),
-	)
-	if err := check("CoCreateInstance(MMDeviceEnumerator)", uint32(hr)); err != nil {
-		return nil, err
-	}
-	defer enum.release()
+	return openEndpoint(flowRender)
+}
 
-	var dev *comObject
-	if hr := enum.call(slotGetDefaultAudioEndpoint, eRender, eConsole, uintptr(unsafe.Pointer(&dev))); hr != sOK {
-		if hr == eNotFound {
-			return nil, errNoPlaybackDevice
-		}
-		return nil, check("GetDefaultAudioEndpoint", hr)
+// openDefaultInput is openDefaultEndpoint for the default recording
+// device (eCapture/eConsole, #159): its mute and name.
+func openDefaultInput() (audioEndpoint, error) {
+	return openEndpoint(flowCapture)
+}
+
+// openEndpoint activates IAudioEndpointVolume on flow's default console
+// endpoint.
+func openEndpoint(flow audioFlow) (audioEndpoint, error) {
+	dev, err := defaultDevice(flow)
+	if err != nil {
+		return nil, err
 	}
 	defer dev.release()
 
@@ -201,6 +203,29 @@ func openDefaultEndpoint() (audioEndpoint, error) {
 		return nil, err
 	}
 	return &coreAudioEndpoint{volume: vol, device: friendlyName(dev)}, nil
+}
+
+// defaultDevice is flow's default console endpoint (IMMDevice); the
+// caller releases it. No such endpoint is errNoPlaybackDevice or
+// errNoRecordingDevice.
+func defaultDevice(flow audioFlow) (*comObject, error) {
+	enum, err := newDeviceEnumerator()
+	if err != nil {
+		return nil, err
+	}
+	defer enum.release()
+
+	var dev *comObject
+	if hr := enum.call(slotGetDefaultAudioEndpoint, uintptr(flow), eConsole, uintptr(unsafe.Pointer(&dev))); hr != sOK {
+		if hr == eNotFound {
+			if flow == flowCapture {
+				return nil, errNoRecordingDevice
+			}
+			return nil, errNoPlaybackDevice
+		}
+		return nil, check("GetDefaultAudioEndpoint", hr)
+	}
+	return dev, nil
 }
 
 // friendlyName reads PKEY_Device_FriendlyName, or "" when it cannot.

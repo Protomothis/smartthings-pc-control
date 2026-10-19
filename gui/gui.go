@@ -262,6 +262,7 @@ func Run(version string, minimized bool) {
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
+	go u.playingLoop() // #159, playing.go
 	if a.Preferences().BoolWithFallback("check_updates", true) {
 		// No dialog against a hidden window — tray notification only.
 		go u.checkForUpdates(!minimized)

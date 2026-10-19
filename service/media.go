@@ -92,13 +92,21 @@ func stAudioReading(cfg Config) stAudio {
 	return stAudioView(s)
 }
 
+// stAudioView is the block for a reading, with the playing flag the tray
+// app reports (#159).
 func stAudioView(s audioSample) stAudio {
 	volume, muted, device := s.Volume, s.Muted, s.Device
-	return stAudio{
+	a := stAudio{
 		Available: true,
 		Volume:    &volume,
 		Muted:     &muted,
 		Device:    &device,
 		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
+		Playing:   currentPlaying(),
 	}
+	if s.Input.Present {
+		inDevice, inMuted := s.Input.Device, s.Input.Muted
+		a.InputDevice, a.InputMuted = &inDevice, &inMuted
+	}
+	return a
 }

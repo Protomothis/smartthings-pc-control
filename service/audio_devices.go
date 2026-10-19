@@ -192,13 +192,7 @@ func resetAudioSlots() (config.AudioConfig, error) {
 // emitAudioDevicesChanged pushes audio.changed for a change of the lists
 // or the slots: the status it carries has the new slots. The data is the
 // audio sample's, as for a volume change.
-func emitAudioDevicesChanged() {
-	if s, ok := currentAudio(); ok {
-		emitAudioChanged(s.Audio)
-		return
-	}
-	emitDevice("audio", "changed", map[string]string{})
-}
+func emitAudioDevicesChanged() { emitCurrentAudio() }
 
 // endpointsFromReply reads the "outputs" or "inputs" list of a reply.
 // ok is false when the reply has none or one that fails validation.

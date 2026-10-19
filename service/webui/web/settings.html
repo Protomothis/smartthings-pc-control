@@ -86,6 +86,7 @@ footer{text-align:center;font-size:.85em;color:var(--muted)}
 <div id="mediaBox" hidden>
 <div id="npText" class="info" hidden></div>
 <div class="vol"><button class="btn small" id="btnMute" onclick="toggleMute()">🔊</button><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><span id="volVal">…</span></div>
+<div id="sndText" class="info" hidden></div>
 <div class="keys"><button class="btn" onclick="mediaCmd('prev')" aria-label="Previous">⏮</button><button class="btn" onclick="mediaCmd('playpause')" aria-label="Play/pause">⏯</button><button class="btn" onclick="mediaCmd('next')" aria-label="Next">⏭</button></div>
 </div>
 </div>
@@ -162,6 +163,7 @@ const i18n = {
         mediaOff: 'Media control is off. Turn it on in the PC app\'s Features tab.',
         mediaNoUser: 'Nobody is signed in to the PC, so volume and media are unavailable.', mediaTimeout: 'The PC did not answer in time',
         mute: 'Mute', unmute: 'Unmute', npPlaying: 'Playing', npPaused: 'Paused',
+        sndSpeaker: 'Speaker', sndPlaying: 'playing', sndSilent: 'silent', sndMic: 'Microphone', sndMicMuted: 'muted', sndMicOn: 'on',
         presetsTitle: 'Presets', presetStarted: 'Preset {name} started',
         settings: 'Settings', port: 'Port', portInfo: 'SmartThings port; this page is on port + 1. Applied after a service restart.',
         secret: 'Secret', secretInfo: 'Type a new secret to change it; leave empty to keep the current one.',
@@ -193,6 +195,7 @@ const i18n = {
         mediaOff: '미디어 제어가 꺼져 있습니다. PC 앱 기능 탭에서 켜세요.',
         mediaNoUser: 'PC에 로그인한 사용자가 없어 볼륨·미디어를 쓸 수 없습니다.', mediaTimeout: 'PC가 제때 응답하지 않았습니다',
         mute: '음소거', unmute: '음소거 해제', npPlaying: '재생 중', npPaused: '일시정지',
+        sndSpeaker: '스피커', sndPlaying: '재생 중', sndSilent: '소리 없음', sndMic: '마이크', sndMicMuted: '음소거', sndMicOn: '켜짐',
         presetsTitle: '프리셋', presetStarted: '프리셋 {name} 실행함',
         settings: '설정', port: '포트', portInfo: 'SmartThings 포트이며 이 페이지는 포트 + 1입니다. 서비스를 재시작하면 적용됩니다.',
         secret: '시크릿', secretInfo: '바꿀 때만 새 시크릿을 입력하세요. 비워 두면 그대로 둡니다.',
@@ -354,6 +357,12 @@ function renderMedia() {
     }
     $('btnMute').textContent = a.muted ? '🔇' : '🔊';
     $('btnMute').title = t(a.muted ? 'unmute' : 'mute');
+    // Speaker and microphone state (#159), read-only; null parts are unknown.
+    const snd = [];
+    if (typeof a.playing === 'boolean') snd.push(t('sndSpeaker') + ': ' + t(a.playing ? 'sndPlaying' : 'sndSilent'));
+    if (typeof a.input_muted === 'boolean') snd.push(t('sndMic') + ': ' + t(a.input_muted ? 'sndMicMuted' : 'sndMicOn'));
+    $('sndText').textContent = snd.join(' · ');
+    $('sndText').hidden = !snd.length;
     const m = media.media || {};
     let np = '';
     if (m.status === 'playing' || m.status === 'paused') {

@@ -347,6 +347,12 @@ var goldenTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Ar
 
 const goldenSpeaker = "스피커 (Realtek(R) Audio)"
 
+// goldenInput is the golden PC's default recording device (#159): the
+// microphone of input slot 1.
+func goldenInput(muted bool) useraction.AudioInput {
+	return useraction.AudioInput{Present: true, Device: goldenMic, Muted: muted}
+}
+
 // ---- audio device slots (#145). Outputs: 1 the speaker (default), 2
 // empty, 3 the headset (connected), 4 a TV that is not connected. Inputs:
 // 1 the microphone (default), 2 the headset's (connected).
@@ -472,7 +478,12 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		clock.audio = time.Now
 		sys.sessionPresent = savedPresent
 	})
-	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
+	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}, goldenNow.Add(-30*time.Second))
+	// #159: the tray app hears sound coming out of the speakers.
+	resetPlaying()
+	playing := true
+	notePlaying(&playing, goldenNow.Add(-10*time.Second))
+	t.Cleanup(resetPlaying)
 	resetAudioDevices()
 	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, goldenNow.Add(-30*time.Second))
 	t.Cleanup(resetAudioDevices)
@@ -579,6 +590,7 @@ func offWorld(t *testing.T) {
 
 	resetAudioSample()
 	resetAudioDevices()
+	resetPlaying()
 	resetMediaSample()
 	resetIdleHeartbeat()
 	savedPresent := sys.sessionPresent
@@ -718,16 +730,16 @@ var commandCases = map[string]commandCase{
 		}
 	}},
 	"command.volume.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Muted: false, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.volume.no-user.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
 	}},
 	"command.mute.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: true, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: true, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.unmute.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.next.json": {setup: func(t *testing.T) { stubMediaRun(t, UserActionResult{OK: true}, nil) }},
 	"command.next.media-disabled.json": {setup: func(t *testing.T) {
@@ -873,7 +885,8 @@ type pushCase struct {
 // the real emitter the service uses for that event.
 var pushCases = map[string]pushCase{
 	"push.audio.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
-		recordAudioSample(useraction.Audio{Volume: 50, Muted: true, Device: goldenSpeaker}, goldenNow)
+		// Speakers muted and the microphone muted with them (#159).
+		recordAudioSample(useraction.Audio{Volume: 50, Muted: true, Device: goldenSpeaker, Input: goldenInput(true)}, goldenNow)
 	}},
 	"push.media.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
 		paused := goldenTrack
