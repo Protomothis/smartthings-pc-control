@@ -164,7 +164,7 @@ func TestRefusedLocalSessionLocksTheEditors(t *testing.T) {
 		t.Error("presets Save is usable while refused")
 	}
 	p.bar.setDirty(false)
-	a := &u.share.activity
+	a := &u.features.activity
 	if !a.lockNote.Visible() || !a.addBtn.Disabled() || !a.pickBtn.Disabled() {
 		t.Error("the watch list is not locked")
 	}
@@ -172,8 +172,8 @@ func TestRefusedLocalSessionLocksTheEditors(t *testing.T) {
 		t.Error("the detection toggle is locked too")
 	}
 
-	u.share.nowPlaying.SetChecked(!u.share.nowPlaying.Checked)
-	u.saveForms([]*formTab{u.forms.tabAt(tabShare)}, true, nil)
+	u.features.nowPlaying.SetChecked(!u.features.nowPlaying.Checked)
+	u.saveForms([]*formTab{u.forms.tabAt(tabFeatures)}, true, nil)
 	sent := svc.lastPost(t)
 	if sent.Presets != nil || sent.Activity.Watch != nil {
 		t.Errorf("posted presets %v watch %v, want both null", sent.Presets, sent.Activity.Watch)

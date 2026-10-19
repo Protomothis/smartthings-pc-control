@@ -20,13 +20,13 @@ import (
 
 // Tab indices, in the order rebuild adds them (#128): the everyday tabs
 // first, then what the PC shares and how it connects, settings and logs
-// last. Presets, sharing, SmartThings, Telegram and settings own a save
+// last. Presets, features, SmartThings, Telegram and settings own a save
 // bar.
 const (
 	tabCommands = iota
 	tabSchedule
 	tabPresets
-	tabShare
+	tabFeatures
 	tabSmartThings
 	tabTelegram
 	// tabSettings is the only tab usable while the service is unreachable
@@ -44,7 +44,7 @@ var tabKeys = []string{
 	tabCommands:    "tab.commands",
 	tabSchedule:    "tab.schedule",
 	tabPresets:     "tab.presets",
-	tabShare:       "tab.share",
+	tabFeatures:    "tab.features",
 	tabSmartThings: "tab.smartthings",
 	tabTelegram:    "tab.telegram",
 	tabSettings:    "tab.settings",

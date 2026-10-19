@@ -166,7 +166,7 @@ func TestTabsAndTheForcedSettingsSwitch(t *testing.T) {
 			t.Errorf("tab %d = %q (icon %v), want %q without an icon", i, it.Text, it.Icon != nil, T(LangEn, tabKeys[i]))
 		}
 	}
-	for _, i := range []int{tabPresets, tabShare, tabSmartThings, tabTelegram, tabSettings} {
+	for _, i := range []int{tabPresets, tabFeatures, tabSmartThings, tabTelegram, tabSettings} {
 		if u.forms.tabAt(i) == nil {
 			t.Errorf("tab %d (%s) has no form", i, tabKeys[i])
 		}
@@ -185,7 +185,7 @@ func TestTabsAndTheForcedSettingsSwitch(t *testing.T) {
 	}
 
 	// The user moves on, the service restarts, and comes back.
-	u.selectTab(tabShare)
+	u.selectTab(tabFeatures)
 	u.connected.Store(false)
 	u.applyConnected(false)
 	if u.tabs.SelectedIndex() != tabSettings {
@@ -193,7 +193,7 @@ func TestTabsAndTheForcedSettingsSwitch(t *testing.T) {
 	}
 	u.connected.Store(true)
 	u.applyConnected(true)
-	if u.tabs.SelectedIndex() != tabShare {
+	if u.tabs.SelectedIndex() != tabFeatures {
 		t.Errorf("service back: tab %d, want sharing again", u.tabs.SelectedIndex())
 	}
 }

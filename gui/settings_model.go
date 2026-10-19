@@ -8,7 +8,9 @@ import (
 
 // Pure form model of the settings tab, like notifyFormState and
 // stFormState: the widgets are read into it, and the config round trip,
-// the checks and the dirty test are unit-tested on it.
+// the checks and the dirty test are unit-tested on it. Since #157 it holds
+// the service's own settings only; the feature opt-ins are the features
+// tab's (featuresFormState).
 
 // settingsFormState is the settings tab's contents as plain values.
 type settingsFormState struct {
@@ -16,31 +18,21 @@ type settingsFormState struct {
 	Port   string
 	Secret string
 	Remote bool
-	Media  bool
-	// Monitor is monitor.enabled (#144).
-	Monitor bool
 	// GraceOn and GraceSec are the grace select: off, or a period.
 	GraceOn  bool
 	GraceSec int
-	NotifyPC notifyPCState
 	// Debug is the developer section's switch (#133).
 	Debug bool
-	// Audio is the device slots (#145).
-	Audio audioSlotsState
 }
 
 // settingsStateFromConfig is what the tab shows for cfg.
 func settingsStateFromConfig(cfg Config) settingsFormState {
 	s := settingsFormState{
-		Port:     strconv.Itoa(cfg.Port),
-		Secret:   cfg.Secret,
-		Remote:   cfg.WebUIRemote,
-		Media:    cfg.Media.Enabled,
-		Monitor:  cfg.Monitor.Enabled,
-		GraceOn:  cfg.ShutdownGrace,
-		NotifyPC: notifyPCStateFromConfig(cfg),
-		Debug:    cfg.Debug,
-		Audio:    audioSlotsFromConfig(cfg),
+		Port:    strconv.Itoa(cfg.Port),
+		Secret:  cfg.Secret,
+		Remote:  cfg.WebUIRemote,
+		GraceOn: cfg.ShutdownGrace,
+		Debug:   cfg.Debug,
 	}
 	if s.GraceOn {
 		s.GraceSec = cfg.GraceSeconds
@@ -57,11 +49,7 @@ func settingsStateFromConfig(cfg Config) settingsFormState {
 func (s settingsFormState) applyTo(cfg *Config, l Lang) error {
 	cfg.Secret = s.Secret
 	cfg.WebUIRemote = s.Remote
-	cfg.Media.Enabled = s.Media
-	cfg.Monitor.Enabled = s.Monitor
 	cfg.Debug = s.Debug
-	s.NotifyPC.applyTo(cfg)
-	s.Audio.applyTo(cfg)
 	cfg.ShutdownGrace = s.GraceOn
 	switch {
 	case s.GraceOn:
@@ -85,11 +73,7 @@ func (s settingsFormState) dirty(base Config) bool {
 	return strings.TrimSpace(s.Port) != strconv.Itoa(base.Port) ||
 		s.Secret != base.Secret ||
 		s.Remote != base.WebUIRemote ||
-		s.Media != base.Media.Enabled ||
-		s.Monitor != base.Monitor.Enabled ||
 		s.GraceOn != base.ShutdownGrace ||
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
-		s.Debug != base.Debug ||
-		s.NotifyPC.dirty(base) ||
-		s.Audio.dirty(base)
+		s.Debug != base.Debug
 }

@@ -8,7 +8,7 @@ package gui
 //	              [⏮]  [⏸]  [⏭]                    one row, centred
 //	[🔊] ─────────●───────────────  42%
 //	     스피커 (Realtek(R) Audio)
-//	     설정 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 …   (only when disabled)
+//	     기능 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 …   (only when disabled)
 //
 // Everything goes through the service (/api/media), like SmartThings and
 // Telegram: the same media.enabled switch, the same opt-in, the same

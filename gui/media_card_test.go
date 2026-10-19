@@ -101,7 +101,7 @@ func TestMediaReason(t *testing.T) {
 		want string
 	}{
 		{on, nil, ""},
-		{MediaState{Session: true}, nil, "설정 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 쓸 수 있습니다"},
+		{MediaState{Session: true}, nil, "기능 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 쓸 수 있습니다"},
 		{MediaState{Enabled: true}, nil, "로그인한 사용자가 없어 쓸 수 없습니다"},
 		{MediaState{}, errMediaUnsupported, "미디어 카드는 서비스 v1.2.0 이상이 필요합니다"},
 	}
