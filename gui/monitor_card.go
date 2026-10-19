@@ -7,7 +7,7 @@ package gui
 //	입력  [HDMI1 ▼]
 //	전원  [켜기] [끄기]
 //	      DELL U2720Q
-//	      설정 탭에서 '원격 모니터 제어 허용'을 켜면 …   (only when unusable)
+//	      기능 탭에서 '원격 모니터 제어 허용'을 켜면 …   (only when unusable)
 //
 // Everything goes through the service (/api/monitor), like SmartThings and
 // Telegram: the same monitor.enabled switch, the same primary monitor, the

@@ -21,7 +21,7 @@ import (
 var sayTexts = map[string][2]string{
 	"say_usage":        {"사용법: <code>/say 문구</code> (200자까지)", "Usage: <code>/say text</code> (up to 200 characters)"},
 	"say_ok":           {"🔔 PC에 알림을 띄웠습니다", "🔔 Notification shown on the PC"},
-	"say_disabled":     {"PC 알림이 꺼져 있습니다. PC 앱 설정 탭(미디어·알림)에서 켜세요", "PC notifications are off. Turn them on in the PC app's Settings tab (Media &amp; notifications)"},
+	"say_disabled":     {"PC 알림이 꺼져 있습니다. PC 앱 기능 탭에서 켜세요", "PC notifications are off. Turn them on in the PC app's Features tab"},
 	"say_bad_text":     {"문구는 1~200자여야 합니다", "The text must be 1–200 characters"},
 	"say_rate_limited": {"알림이 너무 잦습니다. %d초 뒤에 다시 보내 주세요 (분당 10개)", "Too many notifications; send again in %d s (10 a minute)"},
 	"no_user_session":  {"PC에 로그인한 사용자가 없어 할 수 없습니다", "Nobody is logged in on the PC"},

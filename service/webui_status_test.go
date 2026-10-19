@@ -56,7 +56,7 @@ func TestSettingsPageIsTheCompactRemotePage(t *testing.T) {
 		// on the APIs the app already uses; a warning before leaving with
 		// unsaved settings.
 		`data-section="remote"`, `data-section="presets"`, "/api/awake", "/api/media", "/api/presets/run", "/api/battery",
-		"PC 앱 설정 탭(미디어·알림)에서 켜세요", "beforeunload",
+		"PC 앱 기능 탭에서 켜세요", "beforeunload",
 	} {
 		if !strings.Contains(body, kept) {
 			t.Errorf("page lost %q", kept)

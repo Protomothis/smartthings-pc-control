@@ -299,7 +299,7 @@ func TestTelegramMediaCommandResults(t *testing.T) {
 		t.Errorf("/np ran %q", calls)
 	}
 	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
-	if got := do("np"); !strings.Contains(got, "PC 앱 설정 탭(미디어·알림)에서 켜세요") {
+	if got := do("np"); !strings.Contains(got, "PC 앱 기능 탭에서 켜세요") {
 		t.Errorf("/np while disabled = %q", got)
 	}
 }

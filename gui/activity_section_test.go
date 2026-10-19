@@ -170,7 +170,7 @@ func TestPickerCandidates(t *testing.T) {
 func TestShareFormCarriesActivity(t *testing.T) {
 	base := stBaseConfig()
 	base.Activity = ActivityConfig{Watch: []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(3, "obs64.exe", "OBS")}}
-	s := shareStateFromConfig(base)
+	s := featuresStateFromConfig(base)
 	if s.dirty(base) {
 		t.Fatal("a freshly filled section is dirty")
 	}
@@ -178,16 +178,16 @@ func TestShareFormCarriesActivity(t *testing.T) {
 	if base.Activity.Watch[0].Label != "Steam" {
 		t.Error("editing the form wrote into the baseline")
 	}
-	for _, mutate := range []func(*shareFormState){
-		func(s *shareFormState) { s.Activity.Enabled = true },
-		func(s *shareFormState) { s.Activity.Watch[0].Label = "Valve" },
-		func(s *shareFormState) { s.Activity.Watch, _ = setActivitySlot(s.Activity.Watch, 1, 2) },
-		func(s *shareFormState) { s.Activity.Watch = nil },
-		func(s *shareFormState) {
+	for _, mutate := range []func(*featuresFormState){
+		func(s *featuresFormState) { s.Activity.Enabled = true },
+		func(s *featuresFormState) { s.Activity.Watch[0].Label = "Valve" },
+		func(s *featuresFormState) { s.Activity.Watch, _ = setActivitySlot(s.Activity.Watch, 1, 2) },
+		func(s *featuresFormState) { s.Activity.Watch = nil },
+		func(s *featuresFormState) {
 			s.Activity.Watch, _ = addActivityProcess(s.Activity.Watch, "code.exe")
 		},
 	} {
-		changed := shareStateFromConfig(base)
+		changed := featuresStateFromConfig(base)
 		mutate(&changed)
 		if !changed.dirty(base) {
 			t.Errorf("an edit went unnoticed: %+v", changed.Activity)
@@ -201,13 +201,13 @@ func TestShareFormCarriesActivity(t *testing.T) {
 		}
 	}
 	// The saved list carries the slots, in slot order.
-	moved := shareStateFromConfig(base)
+	moved := featuresStateFromConfig(base)
 	moved.Activity.Watch, _ = setActivitySlot(moved.Activity.Watch, 0, 5)
 	if got := moved.applyTo(base).Activity.Watch; !slices.Equal(got, []ActivityWatch{aw(3, "obs64.exe", "OBS"), aw(5, "steam.exe", "Steam")}) {
 		t.Errorf("saved = %+v", got)
 	}
 	// A blank row the user added and left empty is not a change.
-	s = shareStateFromConfig(base)
+	s = featuresStateFromConfig(base)
 	s.Activity.Watch, _ = addActivityRow(s.Activity.Watch)
 	if s.dirty(base) {
 		t.Error("an empty row counts as a change")
@@ -278,8 +278,8 @@ func activityRowSelect(t *testing.T, a *activityBox, i int) *widget.Select {
 // the rows, adding takes the lowest free slot and stops at five.
 func TestActivityEditorSlots(t *testing.T) {
 	u := newTestUI(t, LangKo, nil)
-	a := &u.share.activity
-	u.fillShareTab(Config{Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{
+	a := &u.features.activity
+	u.fillFeaturesTab(Config{Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{
 		aw(4, "obs64.exe", "OBS"), aw(1, "steam.exe", "Steam"),
 	}}})
 	if !slices.Equal(a.watch, []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(4, "obs64.exe", "OBS")}) {

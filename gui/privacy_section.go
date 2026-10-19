@@ -4,7 +4,7 @@ package gui
 // sharing tab (share_tab.go): the opt-in switch, what a remote or
 // scheduled shutdown does while either is in use, and one line with the
 // state the service sees right now. It is part of the tab's form
-// (shareFormState) and saves with it.
+// (featuresFormState) and saves with it.
 
 import (
 	"encoding/json"
@@ -210,8 +210,8 @@ func (u *ui) loadPrivacy() {
 		return
 	}
 	fyne.Do(func() {
-		if u.share != nil && u.share.privacy != nil {
-			u.share.privacy.state.SetText(privacyStateText(u.lang, s))
+		if u.features != nil && u.features.privacy != nil {
+			u.features.privacy.state.SetText(privacyStateText(u.lang, s))
 		}
 	})
 }

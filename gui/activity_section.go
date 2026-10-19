@@ -19,10 +19,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Running-app detection (#110, #123, media-notify doc §11) on the sharing
-// tab (share_tab.go), under the session-info and now-playing opt-ins: the
+// Running-app detection (#110, #123, media-notify doc §11), a row of the
+// features tab (features_tab.go, #157): the
 // on/off toggle and the watch-list editor. It is part of the tab's form
-// (shareFormState) and saves with it.
+// (featuresFormState) and saves with it.
 //
 // Each entry sits in a numbered slot, 1–5, like a preset: the slot is the
 // priority (the lowest running slot is the one the PC device's watch-list
@@ -263,7 +263,7 @@ func (u *ui) slotLabel(slot int) string {
 
 // buildActivityBox builds the toggle and the watch-list editor. UI thread.
 func (u *ui) buildActivityBox() fyne.CanvasObject {
-	t := u.share
+	t := u.features
 	a := &t.activity
 	a.toggle = newToggle(u.t("activity.toggle"), func(bool) { u.refreshDirty() })
 	a.rows = container.NewVBox()
@@ -314,7 +314,7 @@ func (u *ui) buildActivityBox() fyne.CanvasObject {
 
 // activitySlotCell fixes o to the slot column's width.
 func (u *ui) activitySlotCell(o fyne.CanvasObject) fyne.CanvasObject {
-	return container.New(layout.NewGridWrapLayout(u.share.activity.slotSize), o)
+	return container.New(layout.NewGridWrapLayout(u.features.activity.slotSize), o)
 }
 
 // renderActivityRows redraws the editor rows from a.watch: per row a slot
@@ -323,7 +323,7 @@ func (u *ui) activitySlotCell(o fyne.CanvasObject) fyne.CanvasObject {
 // rebuilds the list (and never steals the focus); adding, removing and
 // changing a slot do. UI thread only.
 func (u *ui) renderActivityRows() {
-	t := u.share
+	t := u.features
 	if t == nil || t.activity.rows == nil {
 		return
 	}
@@ -398,15 +398,15 @@ func (u *ui) renderActivityRows() {
 	setEnabled(a.addBtn, len(a.watch) < activityMaxWatch && !locked)
 	setEnabled(a.pickBtn, len(a.watch) < activityMaxWatch && !locked)
 	// The rows changed height after the tab was laid out (see renderHubs).
-	if u.share != nil && u.share.root != nil {
-		u.share.root.Refresh()
+	if u.features != nil && u.features.root != nil {
+		u.features.root.Refresh()
 	}
 }
 
-// fillActivityBox writes a into the editor. Called by fillShareTab, which
+// fillActivityBox writes a into the editor. Called by fillFeaturesTab, which
 // runs with the change callbacks muted. UI thread only.
 func (u *ui) fillActivityBox(a ActivityConfig) {
-	t := u.share
+	t := u.features
 	if t == nil || t.activity.toggle == nil {
 		return
 	}
@@ -418,7 +418,7 @@ func (u *ui) fillActivityBox(a ActivityConfig) {
 // pickRunningProgram fetches the running program names off the UI thread
 // and opens the picker with them. The names stay in this dialog.
 func (u *ui) pickRunningProgram() {
-	a := &u.share.activity
+	a := &u.features.activity
 	busy := func(on bool) {
 		// Back on afterwards only while a slot is free and the list is
 		// not locked, the rule renderActivityRows applies.
@@ -443,7 +443,7 @@ func (u *ui) pickRunningProgram() {
 // the list; picking one adds a row in the lowest free slot and closes it.
 // UI thread only.
 func (u *ui) showProcessPicker(running []string) {
-	t := u.share
+	t := u.features
 	if t == nil {
 		return
 	}

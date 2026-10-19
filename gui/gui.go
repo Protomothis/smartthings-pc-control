@@ -1,11 +1,12 @@
 package gui
 
 // The desktop app: the window, its status bar and tabs, and the loops that
-// keep them current. Each tab lives in a file of its own (settings_tab.go,
-// commands_tab.go, schedule_tab.go, notify_tab.go, network_tab.go,
-// presets_tab.go, logs_tab.go); the forms they share are coordinated in
-// forms.go, and every click that calls the service goes through runAsync
-// (async.go) against serviceAPI (service_api.go).
+// keep them current. Each tab lives in a file of its own (commands_tab.go,
+// schedule_tab.go, presets_tab.go, features_tab.go, smartthings_tab.go,
+// notify_tab.go, settings_tab.go, logs_tab.go, about_tab.go); the forms
+// they share are coordinated in forms.go, and every click that calls the
+// service goes through runAsync (async.go) against serviceAPI
+// (service_api.go).
 
 import (
 	"errors"
@@ -103,32 +104,30 @@ type ui struct {
 	hbSent       heartbeatSent
 	// Command tab: the monitor card (#144, monitor_card.go).
 	mon monitorView
-	// Command tab: the [실행] buttons of the saved presets (#109) and the
-	// line shown when there are none; the presets tab (presets_tab.go) and
-	// the settings tab's PC-notification switches (notify_section.go, #106).
+	// Command tab: the [실행] buttons of the saved presets (#109); the
+	// presets tab (presets_tab.go); the features tab's PC-notification row
+	// (notify_section.go, #106) and audio slots.
 	presetButtons *fyne.Container
-	presetEmpty   *widget.Label
 	presets       *presetsTab
 	pcNotify      *notifySection
 	audioSlots    *audioSlotsSection // #145, audio_slots.go
+	// Command tab cards shown only while their feature is on (#157): each
+	// with its separator, and the "more on the features tab" line.
+	cmdCards cmdCards
 	// Status bar battery label (#112, battery.go), hidden without a
 	// battery; lastBattery survives a rebuild so the label comes back at once.
 	batteryLabel *widget.Label
 	lastBattery  Battery
 	// SmartThings tab: the WoL/adapter list, the tab root (re-laid out when
-	// the hub list changes) and the SmartThings section (#70); the sharing
-	// tab (share_tab.go).
+	// the hub list changes) and the SmartThings section (#70); the features
+	// tab (features_tab.go, #157).
 	networkBox *fyne.Container
 	stRoot     *fyne.Container
 	st         *stSection
-	share      *shareTab
-	// Settings tab: the service box, browser access and media.enabled
-	// (#104: volume and media-key commands).
+	features   *featuresTab
+	// Settings tab: the service box and browser access.
 	svcBox      *fyne.Container
 	remoteCheck *toggle
-	mediaCheck  *toggle
-	// monitorCheck is monitor.enabled (#144).
-	monitorCheck *toggle
 	// debugCheck is the developer section's debug mode switch (#133).
 	debugCheck *toggle
 	// Grace select: graceValues[i] is the period (seconds) behind option i;
@@ -139,9 +138,11 @@ type ui struct {
 	lastSchedCmd string
 	tabs         *container.AppTabs
 	// Settings tab root (re-laid out when the async service state arrives)
-	// and the sections hidden until the service is reachable.
+	// and the sections hidden until the service is reachable: the service
+	// settings and the developer section.
 	settingsRoot  *fyne.Container
 	settingsExtra *fyne.Container
+	settingsDev   *fyne.Container
 	// svcDiag is the service state seen while unreachable (conn_diag.go,
 	// #140); svcUnknown while connected. UI thread only.
 	svcDiag svcState
@@ -419,35 +420,6 @@ func (u *ui) rebuild() {
 	// The countdown is re-fetched (in the new language) by initialLoad.
 	u.schedText = ""
 
-	langSelect := widget.NewSelect([]string{"한국어", "English"}, func(sel string) {
-		newLang := LangEn
-		if sel == "한국어" {
-			newLang = LangKo
-		}
-		if newLang == u.lang {
-			return
-		}
-		u.lang = newLang
-		u.app.Preferences().SetString("lang", string(newLang))
-		// rebuild() replaces every widget (the forms keep their edits);
-		// keep the current tab and reload status/logs/schedule so the
-		// window doesn't fall back to "Connecting...". The switch back is
-		// not the user leaving a tab, so it asks nothing.
-		selected := u.tabs.SelectedIndex()
-		u.rebuild()
-		if u.connected.Load() && selected >= 0 && selected < len(u.tabs.Items) {
-			u.switching = true
-			u.tabs.SelectIndex(selected)
-			u.switching = false
-		}
-		go u.initialLoad()
-	})
-	if u.lang == LangKo {
-		langSelect.SetSelected("한국어")
-	} else {
-		langSelect.SetSelected("English")
-	}
-
 	// Shown after the user cancels the login dialog (or a lockout): the
 	// only way back into the dialog, so no timer re-opens it (#98).
 	u.loginBtn = widget.NewButtonWithIcon(u.t("login.ok"), theme.LoginIcon(), func() {
@@ -468,7 +440,7 @@ func (u *ui) rebuild() {
 	dot := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), u.statusDot))
 	// The status label is the Border's centre object so it takes whatever
 	// width is left (and truncates) instead of dictating the window width.
-	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel, langSelect), u.status)
+	topBar := container.NewBorder(nil, nil, container.NewPadded(dot), container.NewHBox(u.loginBtn, u.batteryLabel, versionLabel), u.status)
 
 	// In the order of the tab* constants (savebar.go). Titles only, no
 	// icons: eight tabs with icons need about 640 px in Korean and more
@@ -480,7 +452,7 @@ func (u *ui) rebuild() {
 		tabCommands:    u.buildCommandsTab,
 		tabSchedule:    u.buildScheduleTab,
 		tabPresets:     u.buildPresetsTab,
-		tabShare:       u.buildShareTab,
+		tabFeatures:    u.buildFeaturesTab,
 		tabSmartThings: u.buildSmartThingsTab,
 		tabTelegram:    u.buildNotifyTab,
 		tabSettings:    u.buildSettingsTab,
@@ -559,10 +531,12 @@ func (u *ui) applyConnected(on bool) {
 		}
 	}
 	if u.settingsExtra != nil {
-		if on {
-			u.settingsExtra.Show()
-		} else {
-			u.settingsExtra.Hide()
+		for _, c := range []*fyne.Container{u.settingsExtra, u.settingsDev} {
+			if on {
+				c.Show()
+			} else {
+				c.Hide()
+			}
 		}
 		if u.settingsRoot != nil {
 			u.settingsRoot.Refresh()
@@ -685,7 +659,7 @@ func (u *ui) pollLoop() {
 			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
 				go u.loadMonitor() // #144
-				go u.loadPrivacy() // the sharing tab's state line (#143)
+				go u.loadPrivacy() // the features tab's camera/mic state line (#143)
 			}
 		case <-batteryTick.C:
 			if u.connected.Load() && u.onScreen() {

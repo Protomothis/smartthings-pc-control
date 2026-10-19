@@ -285,7 +285,7 @@ func TestMenuMediaButtons(t *testing.T) {
 
 	f.media.disabled = true
 	edit, toast, err := f.HandleCallback(ctx, "42", 7, "", "media:mute")
-	if err != nil || !strings.Contains(edit, "PC 앱 설정 탭(미디어·알림)에서 켜세요") || toast == "" {
+	if err != nil || !strings.Contains(edit, "PC 앱 기능 탭에서 켜세요") || toast == "" {
 		t.Errorf("disabled: edit=%q toast=%q err=%v", edit, toast, err)
 	}
 }
@@ -335,10 +335,10 @@ func TestStatusUptimeVolumeSession(t *testing.T) {
 func TestOffTextsPointAtTheApp(t *testing.T) {
 	for _, key := range []string{"media_disabled", "say_disabled"} {
 		pair := texts[key]
-		if !strings.Contains(pair[0], "PC 앱 설정 탭(미디어·알림)에서 켜세요") {
+		if !strings.Contains(pair[0], "PC 앱 기능 탭에서 켜세요") {
 			t.Errorf("%s ko = %q", key, pair[0])
 		}
-		if !strings.Contains(pair[1], "PC app's Settings tab (Media &amp; notifications)") {
+		if !strings.Contains(pair[1], "PC app's Features tab") {
 			t.Errorf("%s en = %q", key, pair[1])
 		}
 		if strings.Contains(pair[0]+pair[1], "media.enabled") {

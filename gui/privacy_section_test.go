@@ -23,7 +23,7 @@ func TestPrivacyFormModel(t *testing.T) {
 	}
 
 	base := Config{Privacy: PrivacyConfig{Enabled: false, Guard: "warn"}}
-	s := shareStateFromConfig(base)
+	s := featuresStateFromConfig(base)
 	if s.dirty(base) {
 		t.Fatal("fresh state is dirty")
 	}
