@@ -295,7 +295,6 @@ func goldenConfig() Config {
 		Media:         MediaConfig{Enabled: true, NowPlaying: true},
 		Audio:         goldenAudioConfig(),
 		NotifyPC:      NotifyPCConfig{Enabled: true},
-		Monitor:       MonitorConfig{Enabled: true},
 		Presets: []Preset{
 			{Slot: 3, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`, Args: []string{"-bigpicture"}},
 			{Slot: 1, Name: "대시보드", Type: "url", Path: "https://example.com/dashboard"},
@@ -348,6 +347,12 @@ var goldenTrack = useraction.NowPlaying{Status: "playing", Title: "Hype Boy", Ar
 
 const goldenSpeaker = "스피커 (Realtek(R) Audio)"
 
+// goldenInput is the golden PC's default recording device (#159): the
+// microphone of input slot 1.
+func goldenInput(muted bool) useraction.AudioInput {
+	return useraction.AudioInput{Present: true, Device: goldenMic, Muted: muted}
+}
+
 // ---- audio device slots (#145). Outputs: 1 the speaker (default), 2
 // empty, 3 the headset (connected), 4 a TV that is not connected. Inputs:
 // 1 the microphone (default), 2 the headset's (connected).
@@ -369,15 +374,15 @@ func goldenAudioConfig() config.AudioConfig {
 // goldenOutputs and goldenInputs are the active devices of the golden PC.
 func goldenOutputs() []useraction.AudioEndpoint {
 	return []useraction.AudioEndpoint{
-		{ID: "{0.0.0.00000000}.{a1b2c3d4-0001-4000-8000-000000000001}", Name: goldenSpeaker, Default: true},
-		{ID: "{0.0.0.00000000}.{a1b2c3d4-0003-4000-8000-000000000003}", Name: goldenHeadset},
+		{Name: goldenSpeaker, Default: true},
+		{Name: goldenHeadset},
 	}
 }
 
 func goldenInputs() []useraction.AudioEndpoint {
 	return []useraction.AudioEndpoint{
-		{ID: "{0.0.1.00000000}.{b1b2c3d4-0001-4000-8000-000000000001}", Name: goldenMic, Default: true},
-		{ID: "{0.0.1.00000000}.{b1b2c3d4-0002-4000-8000-000000000002}", Name: goldenHeadsetMic},
+		{Name: goldenMic, Default: true},
+		{Name: goldenHeadsetMic},
 	}
 }
 
@@ -459,7 +464,6 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	})
 
 	goldenActivity(t, cfg)
-	goldenMonitors(t) // #144, monitor_test.go
 	goldenPrivacy(t, cfg)
 
 	// audio and media: one reading each, fresh against the golden clock.
@@ -474,7 +478,12 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 		clock.audio = time.Now
 		sys.sessionPresent = savedPresent
 	})
-	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}, goldenNow.Add(-30*time.Second))
+	noteAudioSample(useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}, goldenNow.Add(-30*time.Second))
+	// #159: the tray app hears sound coming out of the speakers.
+	resetPlaying()
+	playing := true
+	notePlaying(&playing, goldenNow.Add(-10*time.Second))
+	t.Cleanup(resetPlaying)
 	resetAudioDevices()
 	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, goldenNow.Add(-30*time.Second))
 	t.Cleanup(resetAudioDevices)
@@ -581,6 +590,7 @@ func offWorld(t *testing.T) {
 
 	resetAudioSample()
 	resetAudioDevices()
+	resetPlaying()
 	resetMediaSample()
 	resetIdleHeartbeat()
 	savedPresent := sys.sessionPresent
@@ -720,30 +730,18 @@ var commandCases = map[string]commandCase{
 		}
 	}},
 	"command.volume.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Muted: false, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 30, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.volume.no-user.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
 	}},
 	"command.mute.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: true, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: true, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.unmute.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}}, nil)
+		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker, Input: goldenInput(false)}}, nil)
 	}},
 	"command.next.json": {setup: func(t *testing.T) { stubMediaRun(t, UserActionResult{OK: true}, nil) }},
-	// #145: a fake user session with the golden devices; nothing switches
-	// a real device.
-	"command.audio_output.json":                {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.device-missing.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.slot-empty.json":     {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.switch-failed.json": {setup: func(t *testing.T) {
-		stubAudioSession(t, goldenOutputs(), goldenInputs()).refuse = true
-	}},
-	"command.audio_output.no-user.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
-	}},
-	"command.audio_input.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
 	"command.next.media-disabled.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{OK: true}, nil)
 		withConfig(t, func(c *Config) { c.Media.Enabled = false })
@@ -756,15 +754,6 @@ var commandCases = map[string]commandCase{
 		fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 		withConfig(t, func(c *Config) { c.NotifyPC.Enabled = false })
 	}},
-	// #144: the monitor commands (monitor_test.go has the stubs).
-	"command.monitor_brightness.json":          {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":70,"input":"hdmi1","inputs":["hdmi1"],"power":"on"}}`, nil)},
-	"command.monitor_brightness.disabled.json": {setup: func(t *testing.T) { withConfig(t, func(c *Config) { c.Monitor.Enabled = false }) }},
-	"command.monitor_brightness.no-user.json":  {setup: monitorReply("", errNoConsoleSession)},
-	"command.monitor_input.json":               {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"dp1","inputs":["dp1"],"power":"on"}}`, nil)},
-	"command.monitor_input.unsupported.json": {setup: func(t *testing.T) {
-		seedMonitors(t, []useraction.Monitor{{ID: "m1", Name: "LG TV", Primary: true, Inputs: []string{}, Power: "unknown"}})
-	}},
-	"command.monitor_power.json": {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"hdmi1","inputs":["hdmi1"],"power":"standby"}}`, nil)},
 	"command.subscribe.json": {
 		setup: func(t *testing.T) {
 			// Ids count up for the life of the process; start this one at 1.
@@ -782,7 +771,7 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	var target any
 	switch {
 	case method == "POST" && path == "/st/v1/command":
-		target = commandRequestType(raw)
+		target = &stapi.CommandRequest{}
 	case method == "POST" && path == "/st/v1/notify":
 		target = &stapi.NotifyRequest{}
 	case method == "POST" && path == "/st/v1/subscribe":
@@ -896,7 +885,8 @@ type pushCase struct {
 // the real emitter the service uses for that event.
 var pushCases = map[string]pushCase{
 	"push.audio.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
-		recordAudioSample(useraction.Audio{Volume: 50, Muted: true, Device: goldenSpeaker}, goldenNow)
+		// Speakers muted and the microphone muted with them (#159).
+		recordAudioSample(useraction.Audio{Volume: 50, Muted: true, Device: goldenSpeaker, Input: goldenInput(true)}, goldenNow)
 	}},
 	"push.media.changed.json": {trigger: func(t *testing.T, _ *fakeAwake) {
 		paused := goldenTrack

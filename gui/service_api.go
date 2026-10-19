@@ -25,8 +25,8 @@ type serviceAPI interface {
 	GetBattery() (Battery, error)
 	GetMedia() (MediaState, error)
 	MediaCommand(command string, value *int) (MediaState, error)
-	GetMonitors() (MonitorState, error)
-	MonitorCommand(command string, value any) (MonitorState, error)
+	// ResetAudioSlots is the features tab's 초기화 of the device slots (#159).
+	ResetAudioSlots() (AudioConfig, error)
 	SessionHeartbeat(body Heartbeat) (ignored bool, err error)
 
 	GetWoLStatus() (WoLStatus, error)

@@ -57,9 +57,6 @@ type Status struct {
 	// Presets are the registered preset slots and their names (#109, §10),
 	// in slot order; never null. What a slot runs never leaves this PC.
 	Presets []status.PresetRef `json:"presets"`
-	// Monitors is the DDC/CI reading (#144, monitor.go), only while
-	// monitor.enabled is on.
-	Monitors *[]status.Monitor `json:"monitors,omitempty"`
 	// Privacy is the opt-in camera/microphone block (#143); left out
 	// while privacy.enabled is off.
 	Privacy *status.Privacy `json:"privacy,omitempty"`
@@ -91,7 +88,6 @@ func features(b status.Battery, cfg config.Config) []string {
 	// then says "slot empty" instead of "not supported", and hides the empty
 	// slots through status presets.
 	out = append(out, "presets")
-	out = append(out, monitorFeature(cfg)...)
 	return out
 }
 
@@ -399,7 +395,6 @@ func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 		Audio:             src.Audio(cfg),
 		Media:             src.Media(cfg),
 		Presets:           presetList(cfg.Presets),
-		Monitors:          s.monitorsView(cfg, fromCache),
 		Privacy:           src.Privacy(cfg),
 	}
 }

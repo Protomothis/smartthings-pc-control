@@ -19,6 +19,13 @@ func TestMain(m *testing.M) {
 	// No background session readings (session_fill.go) unless a test asks
 	// for them: they would run user-action for real, next to the fakes.
 	sys.startFill = func(func()) {}
+	// Device slots filled by a test's device lists (#159) stay in memory:
+	// a config.json written behind a test's back would reach the next one
+	// that loads it. audio_devices_test.go checks the real save.
+	saveSlots = func(cfg Config) error {
+		setConfig(cfg.WithDefaults())
+		return nil
+	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

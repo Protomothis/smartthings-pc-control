@@ -82,8 +82,6 @@ var texts = map[string][2]string{
 			"/mute · /unmute – PC 음소거 켜기·끄기\n" +
 			"/play /pause /stop /next /prev – 미디어 재생 제어\n" +
 			"/np – 지금 재생 중인 미디어\n" +
-			"/brightness [0-100] · /source [이름] · /monitor on|off – 모니터 밝기·입력·전원 (DDC/CI)\n" +
-			"/output · /input [번호] – 출력·입력 장치 전환 (번호를 빼면 목록과 버튼)\n" +
 			"/quiet 30m|2h|off – 알림 일시 중지·재개\n" +
 			"/say 문구 – PC 화면에 알림 띄우기\n" +
 			"/presets – 프리셋 목록과 실행 버튼\n" +
@@ -103,8 +101,6 @@ var texts = map[string][2]string{
 			"/mute · /unmute – mute or unmute the PC\n" +
 			"/play /pause /stop /next /prev – media playback\n" +
 			"/np – what is playing now\n" +
-			"/brightness [0-100] · /source [name] · /monitor on|off – monitor brightness, input, power (DDC/CI)\n" +
-			"/output · /input [number] – switch the output or input device (no number: the list with buttons)\n" +
 			"/quiet 30m|2h|off – pause or resume notifications\n" +
 			"/say text – show a notification on the PC\n" +
 			"/presets – the presets, with run buttons\n" +
@@ -564,14 +560,6 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 		return c.mediaCommand(ctx, cmd, nil)
 	case "np":
 		return c.nowPlaying(ctx)
-	case "brightness":
-		return c.brightness(ctx, args)
-	case "source":
-		return c.input(ctx, args)
-	case "monitor":
-		return c.monitorPower(ctx, args)
-	case "output", "input": // #145, audio_devices.go
-		return c.audioDevices(ctx, strings.TrimSuffix(cmd, "put"), args)
 	case "quiet":
 		if len(args) > 0 && strings.EqualFold(args[0], "off") {
 			b := c.d.Bus()
@@ -782,8 +770,6 @@ func (c *Control) handleCallback(ctx context.Context, chatID string, msgID int, 
 		return c.menuResult(c.text("executed", c.commandLabel(name)) + " · " + time.Now().Format("15:04")), c.text("toast_executed"), nil
 	case "awake", "media", "menu", "run":
 		return c.menuCallback(ctx, verb, arg, data)
-	case "out", "in": // #145
-		return c.devCallback(ctx, verb, arg, data)
 	case "confirm":
 		name, ok := c.commandName(arg)
 		if !ok || !c.isGrace(name) {
@@ -888,8 +874,6 @@ func (c *Control) EditKeyboard(data string) *telegram.InlineKeyboard {
 	case "run":
 		_, where, _ := strings.Cut(arg, ":")
 		return c.presetsKeyboard(where == "menu")
-	case "out", "in":
-		return c.devKeyboard(verb)
 	}
 	return nil
 }
@@ -948,18 +932,15 @@ func (c *Control) statusText() string {
 	}
 	cfg := c.d.Config()
 	if cfg.Media.Enabled {
-		if line := c.volumeLine(c.d.Status.Audio(cfg)); line != "" {
-			b.WriteString("\n" + line)
-		}
-		if line := c.outputLine(c.d.Status.Audio(cfg)); line != "" {
-			b.WriteString("\n" + line) // #145
+		audio := c.d.Status.Audio(cfg)
+		for _, line := range []string{c.volumeLine(audio), c.outputLine(audio), c.inputLine(audio)} { // #145, #159
+			if line != "" {
+				b.WriteString("\n" + line)
+			}
 		}
 		if line := c.mediaLine(c.d.Status.Media(cfg), cfg.Media.NowPlaying); line != "" {
 			b.WriteString("\n" + line)
 		}
-	}
-	if line := c.monitorLine(cfg); line != "" {
-		b.WriteString("\n" + line)
 	}
 	if cfg.SmartThings.ExposeSession {
 		b.WriteString("\n" + c.sessionLine())
@@ -1192,11 +1173,6 @@ func botCommands(lang string) []telegram.BotCommand {
 		{Command: "prev", Description: pick("이전 곡", "Previous track")},
 		{Command: "stop", Description: pick("정지", "Stop")},
 		{Command: "np", Description: pick("지금 재생 중", "Now playing")},
-		{Command: "brightness", Description: pick("모니터 밝기 [0-100]", "Monitor brightness [0-100]")},
-		{Command: "source", Description: pick("모니터 입력 [이름]", "Monitor input [name]")},
-		{Command: "monitor", Description: pick("모니터 켜기·끄기 (on, off)", "Monitor on or off")},
-		{Command: "output", Description: pick("출력 장치 전환 [번호]", "Switch the output device [number]")},
-		{Command: "input", Description: pick("입력 장치 전환 [번호]", "Switch the input device [number]")},
 		{Command: "quiet", Description: pick("알림 일시 중지 (30m, 2h, off)", "Pause notifications (30m, 2h, off)")},
 		{Command: "help", Description: pick("도움말", "Help")},
 	}

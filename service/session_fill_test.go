@@ -241,7 +241,7 @@ func TestFillNotWhileTrayReports(t *testing.T) {
 		t.Fatalf("%d readings while the tray app reports", n)
 	}
 
-	heartbeat.Audio(useraction.Audio{Volume: 50, Device: "헤드셋"}, *now)
+	heartbeat.Audio(useraction.Audio{Volume: 50, Device: "헤드셋"}, nil, *now)
 	*now = now.Add(fillStaleAfter - time.Second)
 	stAudioStatus(getConfig())
 	if n := f.pendingCount(); n != 0 {

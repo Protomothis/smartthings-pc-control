@@ -51,8 +51,6 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
-	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
-	Monitor Monitor
 
 	// Privacy is the camera/microphone block (#143) for /status, nil
 	// while privacy.enabled is off; a nil func reads the same.

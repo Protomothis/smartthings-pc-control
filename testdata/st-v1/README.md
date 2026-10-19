@@ -17,9 +17,7 @@
 | `status.off.json` | `GET /st/v1/status` — 모든 설정이 기본값인 데스크톱(배터리 없음, activity 꺼짐, 재생 정보 동의 없음, 세션 비공개, awake 꺼짐, 예약·최근 명령 없음, WoL 꺼진 어댑터 1개, 화면 꺼짐). 각 블록의 "꺼진" 모양 | Go가 생성 |
 | `status.minimal-1.0.json` | v1.2.0 이전 서비스(v1.1.x, 드라이버 1.0.x 시절)가 보내던 모양. `features`와 v1.2 블록이 없다 | **손으로 작성**, 갱신하지 않음 |
 | `command.<이름>.json` | 드라이버가 보내는 요청(`request`)과 서비스의 응답(`response.code`, `response.body`) | `request`는 손으로, `response`는 Go가 생성 |
-| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`, 403 `monitor_disabled`, 501 `monitor_unsupported`, 409 `device_in_use`) | 위와 같음 |
-
-`status.full.json`의 `monitors`(#144)는 DDC/CI 주 모니터(m1, DELL)와 DDC가 없는 TV(m2) 두 대다. `command.monitor_*.json`의 `value`는 밝기만 숫자, 입력·전원은 문자열이다.
+| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`, 409 `device_in_use`) | 위와 같음 |
 | `push.<type>.json` | 서비스가 허브 콜백으로 보내는 푸시 본문 전체(`type`, `data`, 그리고 §3.2 status 전체) | Go가 생성 |
 | `api-config.get.json` | `GET /api/config` — 데스크톱 앱이 받는 설정. 텔레그램 봇 토큰은 `****` + 끝 4자리로 가리고 `bot_token_set`을 붙인다 | Go가 생성 |
 
@@ -76,9 +74,17 @@ seam이 없는 값만 **명시적으로** 자리표시자로 바꾼다. 키가 �
 #123의 감시 칸 모양이다. 감시 목록은 1번 칸 `steam.exe`(Steam), 3번 칸 `obs64.exe`(OBS)이고 2·4·5번 칸은 비어 있다(번호가 작을수록 우선, `apps`는 채워진 칸만 칸 순서로). status에서는 Steam만 실행 중(`top` = `steam.exe`), `push.activity.changed.json`에서는 OBS가 켜져 둘 다 실행 중이다(`top`은 그대로 `steam.exe`). 이 푸시의 `data`는 status의 `activity` 블록과 **똑같은** JSON이다.
 바꿀 곳은 Go의 `goldenActivityConfig`/`goldenActivity`와 `push.activity.changed.json` 케이스, Lua의 "activity (#123)" 구역뿐이다.
 
-## 오디오 장치 칸 (#145)
+## 오디오 장치 칸 (#145, #159)
 
-`audio.outputs`/`audio.inputs`는 설정의 칸(1–5, 장치 이름)마다 `{slot, name, present, default}`이고 빈 칸은 빠진다. 설정 칸이 없거나 미디어 제어가 꺼져 있으면 빈 배열이다.
+`audio.outputs`/`audio.inputs`는 설정의 칸(1–5, 장치 이름)마다 `{slot, name, present, default}`이고 빈 칸은 빠진다. 칸이 없거나 미디어 제어가 꺼져 있으면 빈 배열이다.
+칸은 서비스가 처음 보는 장치에 가장 낮은 빈 칸을 주어 스스로 채운다(#159). 사라진 장치는 칸을 지키고 `present:false`다.
 golden PC의 출력 칸은 1 스피커(기본), 2 비어 있음, 3 헤드셋(연결됨), 4 LG TV(연결 안 됨 → `present:false`), 입력 칸은 1 마이크(기본), 2 헤드셋 마이크다.
-명령은 `audio_output`/`audio_input` + `value`(칸 번호)이고, 거절은 `command.audio_output.<오류>.json`(404 `slot_empty`, 409 `device_missing`, 502 `switch_failed`, 409 `no_user_session`)에 있다.
-바꿀 곳은 Go의 `goldenAudioConfig`/`goldenOutputs`/`goldenInputs`와 `stubAudioSession`(service/audio_devices_test.go)이다.
+장치를 바꾸는 명령은 없다 — #145의 `audio_output`/`audio_input`과 그 `command.audio_*.json`은 v1.3.0에서 뺐다.
+바꿀 곳은 Go의 `goldenAudioConfig`/`goldenOutputs`/`goldenInputs`다.
+
+## 스피커·마이크 상태 (#159)
+
+`audio.playing`(스피커에서 소리가 나는지, 트레이 앱이 피크 미터로 잼), `audio.input_device` · `audio.input_muted`(기본 입력 장치)는 **늘 있는 키**이고 모르면 `null`이다. `status.off.json`처럼 `available:false`이면 셋 다 `null`이다.
+status에서는 스피커로 재생 중(`playing: true`), 입력은 마이크(slot 1)이고 음소거 아님. `command.volume|mute|unmute.json` 응답도 같은 마이크를 담는다(실제 user-action 응답은 입력 장치를 늘 함께 읽는다).
+`push.audio.changed.json`은 스피커와 마이크를 함께 음소거한 순간이다. `data`에 `input_device` · `input_muted` · `playing`이 문자열로 더해진다(모르는 것은 키가 빠진다).
+바꿀 곳은 Go의 `goldenInput`, `goldenWorld`의 `notePlaying`, `pushCases`의 `push.audio.changed.json`이다.

@@ -101,33 +101,33 @@ func TestSTStatusGatesUserData(t *testing.T) {
 	}{
 		{
 			name: "everything on", cfg: optIn(), loggedIn: true,
-			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","outputs":[],"inputs":[]}`,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","playing":null,"input_device":null,"input_muted":null,"outputs":[],"inputs":[]}`,
 			media:    `{"status":"playing","title":"Hype Boy","artist":"NewJeans","album":"New Jeans","app":"Spotify","updated_at":"` + stamp + `"}`,
 			features: "[awake audio media nowplaying notify presets]",
 		},
 		{
 			// The readings are still stored, but nobody is there to own them.
 			name: "nobody logged in", cfg: optIn(), loggedIn: false,
-			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"playing":null,"input_device":null,"input_muted":null,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake audio media nowplaying notify presets]",
 		},
 		{
 			// A title stored a moment ago is not shown once the opt-in is off.
 			name: "now playing not opted in", cfg: mediaOn(), loggedIn: true,
-			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","outputs":[],"inputs":[]}`,
+			audio:    `{"available":true,"volume":42,"muted":true,"device":"","updated_at":"` + stamp + `","playing":null,"input_device":null,"input_muted":null,"outputs":[],"inputs":[]}`,
 			media:    `{"status":"playing","updated_at":"` + stamp + `"}`,
 			features: "[awake audio media notify presets]",
 		},
 		{
 			name: "media off", cfg: Config{Port: 5001, Media: MediaConfig{NowPlaying: true}, NotifyPC: NotifyPCConfig{Enabled: true}}, loggedIn: true,
-			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"playing":null,"input_device":null,"input_muted":null,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake notify presets]",
 		},
 		{
 			// Still listed while off: the driver sends, gets 403
 			// notify_disabled and says "PC 알림 꺼짐" rather than "not supported".
 			name: "PC notifications off", cfg: Config{Port: 5001}, loggedIn: true,
-			audio: `{"available":false,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
+			audio: `{"available":false,"playing":null,"input_device":null,"input_muted":null,"outputs":[],"inputs":[]}`, media: `{"status":"none"}`,
 			features: "[awake notify presets]",
 		},
 	} {

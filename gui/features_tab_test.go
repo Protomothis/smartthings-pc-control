@@ -56,7 +56,6 @@ func TestFeatureHeads(t *testing.T) {
 		ExposeSession: true,
 		Activity:      ActivityConfig{Enabled: true, Watch: []ActivityWatch{{Slot: 1, Process: "steam.exe"}, {Slot: 2, Process: "obs64.exe"}}},
 		Privacy:       PrivacyConfig{Enabled: true, Guard: "warn"},
-		Monitor:       true,
 		Audio:         audioSlotsState{Outputs: [audioSlotCount]string{"스피커", "", "헤드셋"}, Inputs: [audioSlotCount]string{"마이크"}},
 	}
 	for _, l := range languages {
@@ -84,7 +83,6 @@ func TestFeatureHeads(t *testing.T) {
 		{on, featActivity, "켜짐 · 2개"},
 		{featuresFormState{Activity: ActivityConfig{Watch: on.Activity.Watch}}, featActivity, "꺼짐"},
 		{on, featPrivacy, "켜짐"},
-		{on, featMonitor, "켜짐"},
 		{off, featAudio, "비어 있음"},
 		{on, featAudio, "출력 2 · 입력 1"},
 	}
@@ -100,19 +98,18 @@ func TestFeatureHeads(t *testing.T) {
 // something is still off.
 func TestCommandCardsShown(t *testing.T) {
 	cases := []struct {
-		cfg                           *Config
-		media, monitor, presets, more bool
+		cfg                  *Config
+		media, presets, more bool
 	}{
-		{nil, false, false, false, false},
-		{&Config{}, false, false, false, true},
-		{&Config{Media: MediaConfig{Enabled: true}}, true, false, false, true},
-		{&Config{Media: MediaConfig{Enabled: true}, Monitor: MonitorConfig{Enabled: true}}, true, true, false, false},
-		{&Config{Presets: []Preset{{Slot: 1, Name: "Steam"}}}, false, false, true, true},
+		{nil, false, false, false},
+		{&Config{}, false, false, true},
+		{&Config{Media: MediaConfig{Enabled: true}}, true, false, false},
+		{&Config{Presets: []Preset{{Slot: 1, Name: "Steam"}}}, false, true, true},
 	}
 	for _, c := range cases {
-		media, monitor, presets, more := commandCardsShown(c.cfg)
-		if media != c.media || monitor != c.monitor || presets != c.presets || more != c.more {
-			t.Errorf("%+v: media %v monitor %v presets %v more %v", c.cfg, media, monitor, presets, more)
+		media, presets, more := commandCardsShown(c.cfg)
+		if media != c.media || presets != c.presets || more != c.more {
+			t.Errorf("%+v: media %v presets %v more %v", c.cfg, media, presets, more)
 		}
 	}
 }
@@ -134,15 +131,14 @@ func TestFeaturesTabInTheWindow(t *testing.T) {
 			t.Errorf("row %d head %q, want %q", i, it.Title, want)
 		}
 	}
-	// storedConfig: media and monitor off, one preset.
+	// storedConfig: media off, one preset.
 	c := u.cmdCards
-	if c.media.Visible() || c.monitor.Visible() || !c.presets.Visible() || !c.more.Visible() {
-		t.Errorf("cards with media and monitor off: media %v monitor %v presets %v more %v",
-			c.media.Visible(), c.monitor.Visible(), c.presets.Visible(), c.more.Visible())
+	if c.media.Visible() || !c.presets.Visible() || !c.more.Visible() {
+		t.Errorf("cards with media off: media %v presets %v more %v",
+			c.media.Visible(), c.presets.Visible(), c.more.Visible())
 	}
 
 	f.media.SetChecked(true)
-	f.monitor.SetChecked(true)
 	if !strings.HasSuffix(f.acc.Items[featMedia].Title, T(LangEn, "feature.on")) {
 		t.Errorf("media head after switching on: %q", f.acc.Items[featMedia].Title)
 	}
@@ -155,11 +151,11 @@ func TestFeaturesTabInTheWindow(t *testing.T) {
 	}
 	u.saveForms([]*formTab{u.forms.tabAt(tabFeatures)}, true, nil)
 	sent := svc.lastPost(t)
-	if !sent.Media.Enabled || !sent.Monitor.Enabled || sent.Secret != "s3cret" || sent.Port != 5001 {
-		t.Errorf("posted media %v monitor %v secret %q port %d", sent.Media.Enabled, sent.Monitor.Enabled, sent.Secret, sent.Port)
+	if !sent.Media.Enabled || sent.Secret != "s3cret" || sent.Port != 5001 {
+		t.Errorf("posted media %v secret %q port %d", sent.Media.Enabled, sent.Secret, sent.Port)
 	}
-	if !c.media.Visible() || !c.monitor.Visible() || c.more.Visible() {
-		t.Errorf("cards after saving: media %v monitor %v more %v", c.media.Visible(), c.monitor.Visible(), c.more.Visible())
+	if !c.media.Visible() || c.more.Visible() {
+		t.Errorf("cards after saving: media %v more %v", c.media.Visible(), c.more.Visible())
 	}
 
 	// An open row stays open across a language switch.
