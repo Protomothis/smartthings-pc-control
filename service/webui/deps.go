@@ -50,6 +50,11 @@ type Deps struct {
 	// reports, nil while privacy.enabled is off; a nil func reads the
 	// same.
 	Privacy func(cfg config.Config) *status.Privacy
+
+	// ResetAudioSlots empties the output and input device slots, lets the
+	// devices connected now fill them again and returns the saved slots
+	// (#159, POST /api/audio/slots/reset); nil answers 404.
+	ResetAudioSlots func() (config.AudioConfig, error)
 }
 
 // Status is what the pages and /api report about this PC.

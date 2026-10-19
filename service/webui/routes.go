@@ -98,6 +98,9 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// API: the command tab's media card (#117)
 	mux.HandleFunc("/api/media", s.apiAuth(s.serveMedia, http.MethodGet, http.MethodPost))
 
+	// API: the features tab's 초기화 of the device slots (#159)
+	mux.HandleFunc("/api/audio/slots/reset", s.apiAuth(s.serveAudioSlotsReset, http.MethodPost))
+
 	// API: camera/microphone state for the app's sharing tab (#143)
 	mux.HandleFunc("/api/privacy", s.apiAuth(s.servePrivacy, http.MethodGet))
 

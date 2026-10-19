@@ -1,88 +1,26 @@
 package service
 
-// Output and input device switching (#145): the command flow against a
-// fake user session, the status slots and the device-list pushes.
+// Output and input device slots (#145, #159): the status slots, the
+// device-list pushes, the automatic slot assignment and its reset. The
+// switching commands of #145 are gone.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/Protomothis/smartthings-pc-control/internal/config"
 	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
-
-// fakeAudioSession answers the audio verbs of userRun.media like a user
-// session with these devices would. A set moves the default flag; no test
-// ever touches a real device.
-type fakeAudioSession struct {
-	mu      sync.Mutex
-	outputs []useraction.AudioEndpoint
-	inputs  []useraction.AudioEndpoint
-	// refuse makes the sets fail the way the policy interface does.
-	refuse bool
-	calls  []string
-}
-
-func stubAudioSession(t *testing.T, outputs, inputs []useraction.AudioEndpoint) *fakeAudioSession {
-	t.Helper()
-	f := &fakeAudioSession{outputs: slices.Clone(outputs), inputs: slices.Clone(inputs)}
-	saved := userRun.media
-	userRun.media = f.run
-	t.Cleanup(func() { userRun.media = saved })
-	return f
-}
-
-func (f *fakeAudioSession) run(_ context.Context, args ...string) (UserActionResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, strings.Join(args, " "))
-	reply := map[string]any{"ok": true}
-	switch args[1] {
-	case "outputs":
-		reply["outputs"] = f.outputs
-	case "inputs":
-		reply["inputs"] = f.inputs
-	case "set-output", "set-input":
-		list := &f.outputs
-		key := "outputs"
-		if args[1] == "set-input" {
-			list, key = &f.inputs, "inputs"
-		}
-		if f.refuse {
-			msg := "Windows did not switch the default playback device"
-			return UserActionResult{}, &userActionError{Code: useraction.CodeFailed, Message: msg, Reason: useraction.AudioSwitchFailed}
-		}
-		for i := range *list {
-			(*list)[i].Default = (*list)[i].ID == args[3]
-		}
-		reply[key] = *list
-		// The new output plays at its own level; an input switch leaves
-		// the playback state as it was.
-		volume := 35
-		if key == "outputs" {
-			volume = 20
-		}
-		reply["audio"] = useraction.Audio{Volume: volume, Device: defaultEndpoint(f.outputs)}
-	default:
-		return UserActionResult{}, fmt.Errorf("fake session: unexpected %q", args)
-	}
-	raw, _ := json.Marshal(reply)
-	return session.ParseOutput(raw)
-}
-
-func (f *fakeAudioSession) Calls() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.calls)
-}
 
 func defaultEndpoint(list []useraction.AudioEndpoint) string {
 	for _, e := range list {
@@ -94,7 +32,7 @@ func defaultEndpoint(list []useraction.AudioEndpoint) string {
 }
 
 // audioSlotsSetup is mediaSetup with the golden slots and devices.
-func audioSlotsSetup(t *testing.T) *fakeAudioSession {
+func audioSlotsSetup(t *testing.T) {
 	t.Helper()
 	cfg := mediaOn()
 	cfg.Audio = goldenAudioConfig()
@@ -103,74 +41,21 @@ func audioSlotsSetup(t *testing.T) *fakeAudioSession {
 	t.Cleanup(resetAudioDevices)
 	noteAudioSample(useraction.Audio{Volume: 35, Device: goldenSpeaker}, time.Now())
 	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, time.Now())
-	return stubAudioSession(t, goldenOutputs(), goldenInputs())
 }
 
-func TestAudioDeviceCommands(t *testing.T) {
-	headset, headsetMic := goldenOutputs()[1].ID, goldenInputs()[1].ID
-	cases := []struct {
-		name   string
-		body   string
-		refuse bool
-		media  bool // media.enabled off when false
-		code   int
-		error  string
-		calls  []string
-	}{
-		{"output", `{"command":"audio_output","value":3}`, false, true, 200, "",
-			[]string{"audio outputs", "audio set-output --id " + headset}},
-		{"input", `{"command":"audio_input","value":2}`, false, true, 200, "",
-			[]string{"audio inputs", "audio set-input --id " + headsetMic}},
-		{"slot empty", `{"command":"audio_output","value":2}`, false, true, 404, "slot_empty", nil},
-		{"input slot empty", `{"command":"audio_input","value":3}`, false, true, 404, "slot_empty", nil},
-		// The TV is in slot 4 but not connected: no switch is attempted.
-		{"device missing", `{"command":"audio_output","value":4}`, false, true, 409, "device_missing", []string{"audio outputs"}},
-		{"refused", `{"command":"audio_output","value":3}`, true, true, 502, "switch_failed",
-			[]string{"audio outputs", "audio set-output --id " + headset}},
-		{"no value", `{"command":"audio_output"}`, false, true, 400, "value must be a slot 1-5", nil},
-		{"slot 6", `{"command":"audio_output","value":6}`, false, true, 400, "value must be a slot 1-5", nil},
-		{"media off", `{"command":"audio_output","value":3}`, false, false, 403, "media_disabled", nil},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			f := audioSlotsSetup(t)
-			f.refuse = c.refuse
-			if !c.media {
-				withConfig(t, func(cfg *Config) { cfg.Media.Enabled = false })
-			}
-			w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", c.body)
-			if w.Code != c.code {
-				t.Fatalf("code %d, want %d: %s", w.Code, c.code, w.Body.String())
-			}
-			body := stJSON(t, w)
-			if c.error != "" && body["error"] != c.error {
-				t.Errorf("error = %v, want %s", body["error"], c.error)
-			}
-			if got := f.Calls(); !slices.Equal(got, c.calls) {
-				t.Errorf("runs = %q, want %q", got, c.calls)
-			}
-		})
-	}
-}
-
-// After a switch the status shows the new default at once — the reply's
-// audio block for outputs, the reply's list for inputs.
-func TestAudioDeviceSwitchShowsInStatus(t *testing.T) {
+// The switches of #145 are no commands any more: /st/v1/command does not
+// know them, so nothing runs in the user session.
+func TestAudioDeviceCommandsGone(t *testing.T) {
 	audioSlotsSetup(t)
+	run := stubMediaRun(t, UserActionResult{OK: true}, nil).Calls
 	for _, body := range []string{`{"command":"audio_output","value":3}`, `{"command":"audio_input","value":2}`} {
-		if w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", body); w.Code != http.StatusOK {
-			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
+		w := stDo(t, "POST", "/st/v1/command", "192.168.1.20", "", body)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "unknown command") {
+			t.Errorf("%s: %d %s", body, w.Code, w.Body.String())
 		}
 	}
-	a := stAudioStatus(getConfig())
-	if d := status.DefaultSlot(a.Outputs); d == nil || d.Slot != 3 {
-		t.Errorf("outputs = %+v, want slot 3 default", a.Outputs)
-	}
-	if d := status.DefaultSlot(a.Inputs); d == nil || d.Slot != 2 {
-		t.Errorf("inputs = %+v, want slot 2 default", a.Inputs)
-	}
-	if a.Device == nil || *a.Device != goldenHeadset {
-		t.Errorf("device = %v, want the headset", a.Device)
+	if got := run(); len(got) != 0 {
+		t.Errorf("runs = %q", got)
 	}
 }
 
@@ -247,6 +132,103 @@ func TestAudioSlotsStatus(t *testing.T) {
 	}
 }
 
+// A device seen for the first time takes the lowest free slot, the default
+// one first; a device that goes away keeps its slot (present:false). Each
+// assignment is saved and pushes audio.changed (#159).
+func TestAudioSlotsAssigned(t *testing.T) {
+	mediaSetup(t, mediaOn())
+	resetAudioDevices()
+	t.Cleanup(resetAudioDevices)
+	t.Cleanup(dev.tray.Reset)
+	events := tapDeviceEvents(t)
+
+	// The headset is listed first but the speaker is the default.
+	outputs := []useraction.AudioEndpoint{{Name: goldenHeadset}, {Name: goldenSpeaker, Default: true}}
+	heartbeat.AudioDevices(outputs, goldenInputs(), time.Now())
+	a := getConfig().Audio
+	if !slices.Equal(a.Outputs, []string{goldenSpeaker, goldenHeadset}) || !slices.Equal(a.Inputs, []string{goldenMic, goldenHeadsetMic}) {
+		t.Fatalf("first lists: slots %+v", a)
+	}
+	if got := events(); len(got) != 1 || got[0] != "audio.changed" {
+		t.Errorf("first assignment: events = %q, want one audio.changed", got)
+	}
+
+	// The headset goes, a TV comes: the TV takes slot 3, the headset keeps 2.
+	later := []useraction.AudioEndpoint{{Name: goldenSpeaker, Default: true}, {Name: goldenTV}}
+	heartbeat.AudioDevices(later, goldenInputs(), time.Now())
+	noteAudioSample(useraction.Audio{Volume: 35, Device: goldenSpeaker}, time.Now())
+	if got := getConfig().Audio.Outputs; !slices.Equal(got, []string{goldenSpeaker, goldenHeadset, goldenTV}) {
+		t.Errorf("after the TV: outputs %q", got)
+	}
+	st := stAudioStatus(getConfig())
+	if len(st.Outputs) != 3 || st.Outputs[1].Present || !st.Outputs[2].Present || !st.Outputs[0].Default {
+		t.Errorf("status outputs = %+v", st.Outputs)
+	}
+
+	// Media control off: nothing is assigned (no audio block to report in).
+	withConfig(t, func(c *Config) { c.Media.Enabled = false })
+	heartbeat.AudioDevices([]useraction.AudioEndpoint{{Name: "USB 스피커", Default: true}}, goldenInputs(), time.Now())
+	if got := getConfig().Audio.Outputs; len(got) != 3 {
+		t.Errorf("assigned with media off: %q", got)
+	}
+}
+
+// The real save: assigned slots land in config.json.
+func TestAudioSlotsSaved(t *testing.T) {
+	mediaSetup(t, mediaOn())
+	resetAudioDevices()
+	t.Cleanup(resetAudioDevices)
+	saved := saveSlots
+	saveSlots = saveConfig
+	t.Cleanup(func() { saveSlots = saved })
+	path := filepath.Join(configDir(), "config.json")
+	orig, origErr := os.ReadFile(path)
+	t.Cleanup(func() {
+		if origErr == nil {
+			os.WriteFile(path, orig, 0o644)
+		} else {
+			os.Remove(path)
+		}
+	})
+
+	noteAudioDevices(goldenOutputs(), goldenInputs(), true, true, time.Now())
+	if got := loadConfig().Audio; !slices.Equal(got.Outputs, []string{goldenSpeaker, goldenHeadset}) || !slices.Equal(got.Inputs, []string{goldenMic, goldenHeadsetMic}) {
+		t.Errorf("config.json slots = %+v", got)
+	}
+}
+
+// The app's reset empties both lists and lets the devices connected now
+// fill them again; a device that is gone loses its slot.
+func TestAudioSlotsReset(t *testing.T) {
+	audioSlotsSetup(t)
+	events := tapDeviceEvents(t)
+	got, err := resetAudioSlots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The TV of slot 4 is not connected; the gap of slot 2 closes.
+	want := config.AudioConfig{Outputs: []string{goldenSpeaker, goldenHeadset}, Inputs: []string{goldenMic, goldenHeadsetMic}}
+	if !slices.Equal(got.Outputs, want.Outputs) || !slices.Equal(got.Inputs, want.Inputs) {
+		t.Errorf("reset = %+v, want %+v", got, want)
+	}
+	if a := getConfig().Audio; !slices.Equal(a.Outputs, want.Outputs) {
+		t.Errorf("live config after reset = %+v", a)
+	}
+	if ev := events(); len(ev) != 1 || ev[0] != "audio.changed" {
+		t.Errorf("reset: events = %q, want one audio.changed", ev)
+	}
+
+	// Without a device list the slots stay empty until one arrives.
+	resetAudioDevices()
+	if got, _ := resetAudioSlots(); len(got.Outputs)+len(got.Inputs) != 0 {
+		t.Errorf("reset without lists = %+v", got)
+	}
+	noteAudioDevices(goldenOutputs(), nil, true, false, time.Now())
+	if a := getConfig().Audio; !slices.Equal(a.Outputs, want.Outputs) || len(a.Inputs) != 0 {
+		t.Errorf("after the next list = %+v", a)
+	}
+}
+
 // A device list that differs from the last one pushes audio.changed; the
 // first one is a baseline, an equal one is no news, and a reply whose
 // audio block already pushed does not push twice.
@@ -273,7 +255,8 @@ func TestAudioDeviceListPushes(t *testing.T) {
 		t.Errorf("older heartbeat overwrote the list: %+v", in)
 	}
 
-	// set-output: the audio block and the list change together, one push.
+	// `audio get` after a switch in Windows: the audio block and the list
+	// change together, one push.
 	outputs := goldenOutputs()
 	outputs[0].Default, outputs[1].Default = false, true
 	raw, _ := json.Marshal(map[string]any{"ok": true, "outputs": outputs, "audio": useraction.Audio{Volume: 20, Device: goldenHeadset}})
@@ -281,21 +264,21 @@ func TestAudioDeviceListPushes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storeUserActionReply([]string{"audio", "set-output", "--id", outputs[1].ID}, res)
+	storeUserActionReply([]string{"audio", "get"}, res)
 	if got := events(); len(got) != 2 {
-		t.Errorf("set-output reply: events = %q, want one more audio.changed", got)
+		t.Errorf("audio get reply: events = %q, want one more audio.changed", got)
 	}
 }
 
 // A reply with a list that fails validation is ignored, not stored.
 func TestAudioDeviceReplyValidated(t *testing.T) {
 	audioSlotsSetup(t)
-	res, err := session.ParseOutput([]byte(`{"ok":true,"outputs":[{"id":"x","name":"bad\u0007name","default":true}]}`))
+	res, err := session.ParseOutput([]byte(`{"ok":true,"outputs":[{"name":"bad\u0007name","default":true}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	logs := captureLog(t)
-	storeUserActionReply([]string{"audio", "outputs"}, res)
+	storeUserActionReply([]string{"audio", "get"}, res)
 	if out, _, _, _ := currentAudioDevices(); defaultEndpoint(out) != goldenSpeaker {
 		t.Errorf("invalid list stored: %+v", out)
 	}
@@ -304,56 +287,18 @@ func TestAudioDeviceReplyValidated(t *testing.T) {
 	}
 }
 
-// Telegram /output and /input (#145): the list with ✓ and "(연결 안 됨)",
-// one button per slot, a press that switches and keeps the buttons, and
-// the refusals in words.
-func TestTelegramAudioDevices(t *testing.T) {
-	f := audioSlotsSetup(t)
+// Telegram has no /output or /input any more (#159); /status still names
+// the default output.
+func TestTelegramAudioDevicesGone(t *testing.T) {
+	audioSlotsSetup(t)
 	withConfig(t, func(cfg *Config) { cfg.Telegram.Lang = "ko" })
 	ctx := context.Background()
-
-	list, kb, err := tgCtl.HandleCommand(ctx, "42", "output", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"✓ 1 · 스피커", "3 · 헤드셋 (WH-1000XM4)", "4 · LG TV (NVIDIA High Definition Audio) (연결 안 됨)"} {
-		if !strings.Contains(list, want) {
-			t.Errorf("/output lacks %q:\n%s", want, list)
+	for _, cmd := range []string{"output", "input"} {
+		if reply, kb, _ := tgCtl.HandleCommand(ctx, "42", cmd, nil); strings.Contains(reply, "출력 장치") || kb != nil {
+			t.Errorf("/%s = %q, %v", cmd, reply, kb)
 		}
 	}
-	if got := keyboardData(kb); !slices.Equal(got, []string{"out:1", "out:3", "out:4"}) {
-		t.Errorf("/output buttons = %q", got)
-	}
-
-	edit, toast, err := tgCtl.HandleCallback(ctx, "42", 7, tgBody(list), "out:3")
-	if err != nil || !strings.Contains(edit, "✓ 3 · 헤드셋") || !strings.Contains(toast, "헤드셋") {
-		t.Errorf("out:3 = %q / %q / %v", edit, toast, err)
-	}
-	if got := keyboardData(tgCtl.EditKeyboard("out:3")); len(got) != 3 {
-		t.Errorf("buttons after a press = %q", got)
-	}
-	if got := f.Calls(); len(got) != 2 {
-		t.Errorf("runs = %q", got)
-	}
-
-	for _, c := range []struct{ cmd, arg, want string }{
-		{"output", "4", "지금 연결되어 있지 않습니다"},
-		{"output", "2", "2번 칸이 비어 있습니다"},
-		{"output", "9", "사용법"},
-		{"input", "2", "입력 전환: <b>헤드셋 마이크"},
-	} {
-		reply, _, _ := tgCtl.HandleCommand(ctx, "42", c.cmd, []string{c.arg})
-		if !strings.Contains(reply, c.want) {
-			t.Errorf("/%s %s = %q, want %q", c.cmd, c.arg, reply, c.want)
-		}
-	}
-
-	if st, _, _ := tgCtl.HandleCommand(ctx, "42", "status", nil); !strings.Contains(st, "출력: 헤드셋 (WH-1000XM4)") {
+	if st, _, _ := tgCtl.HandleCommand(ctx, "42", "status", nil); !strings.Contains(st, "출력: "+goldenSpeaker) {
 		t.Errorf("/status lacks the output line:\n%s", st)
-	}
-
-	withConfig(t, func(cfg *Config) { cfg.Media.Enabled = false })
-	if reply, kb, _ := tgCtl.HandleCommand(ctx, "42", "output", nil); !strings.Contains(reply, "미디어 제어가 꺼져") || kb != nil {
-		t.Errorf("/output with media off = %q, %v", reply, kb)
 	}
 }

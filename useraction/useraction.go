@@ -11,8 +11,6 @@
 //	user-action audio set <0-100>
 //	user-action audio step <-100..100>
 //	user-action audio mute <on|off|toggle>
-//	user-action audio <outputs|inputs>
-//	user-action audio <set-output|set-input> --id <endpoint id>
 //	user-action media <playpause|play|pause|stop|next|prev>
 //	user-action media info
 //	user-action notify --title <t> --text <t>
@@ -111,8 +109,6 @@ type Request struct {
 	Value int
 	// Mode is the audio mute mode: on, off or toggle.
 	Mode string
-	// DeviceID is the endpoint of audio set-output/set-input (#145).
-	DeviceID string
 
 	// notify
 	Title string
@@ -236,9 +232,6 @@ func parseAudio(args []string) (Request, error) {
 		return req, badArgs("audio: missing verb (get, set, step, mute)")
 	}
 	req.Verb = args[0]
-	if isDeviceVerb(req.Verb) {
-		return parseAudioDevice(req, args) // #145, audiodevices.go
-	}
 	switch req.Verb {
 	case "get":
 		if len(args) != 1 {

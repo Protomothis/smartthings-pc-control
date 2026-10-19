@@ -29,17 +29,15 @@ var mediaKinds = map[string]bool{
 	"prev":       false,
 }
 
-// IsMedia reports whether name is a volume, mute or media-key command, or
-// a device switch (#145, audio_devices.go).
+// IsMedia reports whether name is a volume, mute or media-key command.
 func IsMedia(name string) bool {
 	_, ok := mediaKinds[name]
-	return ok || IsAudioDevice(name)
+	return ok
 }
 
 // IsAudio reports whether name is one of the audio commands, whose reply
-// carries the audio state after the change (volume…unmute, the device
-// switches).
-func IsAudio(name string) bool { return mediaKinds[name] || IsAudioDevice(name) }
+// carries the audio state after the change (volume…unmute).
+func IsAudio(name string) bool { return mediaKinds[name] }
 
 // MediaArgs builds the user-action argument vector for a command:
 //

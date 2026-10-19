@@ -1,33 +1,34 @@
 package gui
 
-// Output and input device slots (#145).
+// Output and input device slots (#145, #159).
 //
-// The features tab's 오디오 장치 칸 row (#157) holds two lists of five slots:
+// The features tab's 오디오 장치 칸 row shows what the service assigned —
+// read-only, nothing here picks or switches a device:
 //
 //	출력 장치 칸
-//	칸 1  [스피커 (Realtek(R) Audio)        ▾]  [↑] [↓]
-//	칸 2  [(비어 있음)                        ▾]  [↑] [↓]
+//	칸 1  스피커 (Realtek(R) Audio)
+//	칸 2  헤드셋 (WH-1000XM4) (연결 안 됨)
+//	칸 3  (비어 있음)
 //	…
-//	[장치 목록 새로 고침]
+//	[새로 고침] [초기화]
 //
-// Each select offers the devices connected now — read in-process, this
-// app already runs in the user's session — plus the saved name when that
-// device is not connected ("… (연결 안 됨)"), so opening the tab never
-// drops a slot. The arrows swap a slot with its neighbour: the slot
-// number is what SmartThings and Telegram switch by. The slots are saved
-// with the rest of the tab (featuresFormState.Audio).
-//
-// The command tab's media card gets a picker of the filled output slots,
-// the default one selected; choosing one sends audio_output.
+// The service fills the slots itself: a device it sees for the first time
+// takes the lowest free slot and keeps it, connected or not. SmartThings
+// routines compare against the slot number ("current output is slot 1").
+// 초기화 (POST /api/audio/slots/reset, after a confirmation) empties both
+// lists, and the devices connected at that moment fill them again. "(연결
+// 안 됨)" comes from reading the devices in-process — this app already
+// runs in the user's session.
 
 import (
+	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -58,58 +59,21 @@ func slotArray(names []string) [audioSlotCount]string {
 	return out
 }
 
-// slotList is the config form: trailing empty slots dropped, never nil
-// (the service reads a missing list as "keep the stored one").
-func slotList(a [audioSlotCount]string) []string {
-	out := []string{}
-	for _, n := range a {
-		out = append(out, strings.TrimSpace(n))
-	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	return out
-}
-
 func audioSlotsFromConfig(cfg Config) audioSlotsState {
 	return audioSlotsState{Outputs: slotArray(cfg.Audio.Outputs), Inputs: slotArray(cfg.Audio.Inputs)}
 }
 
-// applyTo writes the slots into cfg.
-func (s audioSlotsState) applyTo(cfg *Config) {
-	cfg.Audio.Outputs = slotList(s.Outputs)
-	cfg.Audio.Inputs = slotList(s.Inputs)
-}
-
-// dirty reports whether saving would change base.
-func (s audioSlotsState) dirty(base Config) bool {
-	return s != audioSlotsFromConfig(base)
-}
-
-// moveSlot swaps slot i with its neighbour in direction dir (-1 up, +1
-// down); out of range it changes nothing.
-func moveSlot(a [audioSlotCount]string, i, dir int) [audioSlotCount]string {
-	j := i + dir
-	if i < 0 || i >= audioSlotCount || j < 0 || j >= audioSlotCount {
-		return a
+// slotLine is one row of a list: the device name, "(비어 있음)" for an
+// empty slot, and "(연결 안 됨)" after a device that is not connected now.
+// known is false before the devices were read: then nothing is marked.
+func slotLine(l Lang, name string, connected []string, known bool) string {
+	switch {
+	case name == "":
+		return T(l, "audio.slots.empty")
+	case known && !slices.ContainsFunc(connected, func(d string) bool { return strings.EqualFold(strings.TrimSpace(d), name) }):
+		return name + " " + T(l, "audio.slots.missing")
 	}
-	a[i], a[j] = a[j], a[i]
-	return a
-}
-
-// slotChoices is what one slot's select offers: "" (empty) first, the
-// connected devices, and the saved name when it is not among them.
-func slotChoices(devices []string, saved string) []string {
-	out := []string{""}
-	for _, d := range devices {
-		if d != "" && !slices.Contains(out, d) {
-			out = append(out, d)
-		}
-	}
-	if saved != "" && !slices.ContainsFunc(out, func(d string) bool { return strings.EqualFold(d, saved) }) {
-		out = append(out, saved)
-	}
-	return out
+	return name
 }
 
 // endpointNames is the names of a device list.
@@ -123,120 +87,93 @@ func endpointNames(list []useraction.AudioEndpoint) []string {
 
 // --- Features tab widgets ----------------------------------------------------------
 
-// readAudioDevices reads the devices for the pickers; replaced by the
-// tests (no sound card needed, nothing switched either way).
+// readAudioDevices reads the devices for "(연결 안 됨)"; replaced by the
+// tests (no sound card needed).
 var readAudioDevices = useraction.ReadAudioDevices
 
-// audioSlotEditor is one direction's five rows.
-type audioSlotEditor struct {
+// audioSlotList is one direction's five read-only rows.
+type audioSlotList struct {
 	vals    [audioSlotCount]string
 	devices []string
-	selects [audioSlotCount]*widget.Select
-	choices [audioSlotCount][]string
-	syncing bool
+	known   bool
+	labels  [audioSlotCount]*widget.Label
 }
 
-// audioSlotsSection is the features tab's two editors.
+// audioSlotsSection is the features tab's two lists.
 type audioSlotsSection struct {
-	out, in *audioSlotEditor
+	out, in *audioSlotList
 	status  *widget.Label
 	refresh *widget.Button
+	reset   *widget.Button
 }
 
-// buildAudioSlotsSection creates both editors; the devices are read in
-// the background.
+// buildAudioSlotsSection creates both lists; the devices are read in the
+// background.
 func (u *ui) buildAudioSlotsSection() fyne.CanvasObject {
-	s := &audioSlotsSection{out: &audioSlotEditor{}, in: &audioSlotEditor{}}
+	s := &audioSlotsSection{out: &audioSlotList{}, in: &audioSlotList{}}
+	if old := u.audioSlots; old != nil {
+		// A rebuild (language change) keeps what was shown.
+		*s.out, *s.in = *old.out, *old.in
+	}
 	u.audioSlots = s
 	s.status = hint("")
-	s.refresh = widget.NewButtonWithIcon(u.t("audio.slots.refresh"), theme.ViewRefreshIcon(), func() { u.loadAudioDevices() })
+	s.refresh = widget.NewButtonWithIcon(u.t("audio.slots.refresh"), theme.ViewRefreshIcon(), func() { u.loadAudioSlots() })
+	s.reset = widget.NewButtonWithIcon(u.t("audio.slots.reset"), theme.ContentClearIcon(), func() { u.confirmAudioSlotsReset() })
 	body := container.NewVBox(
 		widget.NewLabelWithStyle(u.t("audio.slots.outputs"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		u.slotRows(s.out),
 		widget.NewLabelWithStyle(u.t("audio.slots.inputs"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		u.slotRows(s.in),
 		hint(u.t("audio.slots.hint")),
-		container.NewHBox(s.refresh, layout.NewSpacer()),
+		container.NewHBox(s.refresh, s.reset, layout.NewSpacer()),
 		s.status,
 	)
 	u.loadAudioDevices()
 	return body
 }
 
-// slotRows lays out an editor: "칸 N", the select, ↑ and ↓.
-func (u *ui) slotRows(e *audioSlotEditor) fyne.CanvasObject {
+// slotRows lays out a list: "칸 N" and the name.
+func (u *ui) slotRows(l *audioSlotList) fyne.CanvasObject {
 	rows := container.NewVBox()
 	for i := range audioSlotCount {
-		sel := widget.NewSelect(nil, nil)
-		sel.OnChanged = func(string) {
-			if e.syncing {
-				return
-			}
-			if k := sel.SelectedIndex(); k >= 0 && k < len(e.choices[i]) {
-				e.vals[i] = e.choices[i][k]
-			}
-			u.refreshDirty()
-		}
-		e.selects[i] = sel
-		up := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() { e.move(u, i, -1) })
-		down := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() { e.move(u, i, +1) })
-		if i == 0 {
-			up.Disable()
-		}
-		if i == audioSlotCount-1 {
-			down.Disable()
-		}
+		l.labels[i] = widget.NewLabel("")
+		l.labels[i].Truncation = fyne.TextTruncateEllipsis
 		label := widget.NewLabel(fmt.Sprintf(u.t("audio.slots.slot"), i+1))
-		rows.Add(container.NewBorder(nil, nil, label, container.NewHBox(up, down), sel))
+		rows.Add(container.NewBorder(nil, nil, label, nil, l.labels[i]))
 	}
-	e.render(u)
+	l.render(u.lang)
 	return rows
 }
 
-func (e *audioSlotEditor) move(u *ui, i, dir int) {
-	e.vals = moveSlot(e.vals, i, dir)
-	e.render(u)
-	u.refreshDirty()
-}
-
-// render puts vals into the selects. UI thread only.
-func (e *audioSlotEditor) render(u *ui) {
-	e.syncing = true
-	defer func() { e.syncing = false }()
-	for i, sel := range e.selects {
-		if sel == nil {
-			continue
+// render writes vals into the rows. UI thread only.
+func (l *audioSlotList) render(lang Lang) {
+	for i, w := range l.labels {
+		if w != nil {
+			w.SetText(slotLine(lang, l.vals[i], l.devices, l.known))
 		}
-		e.choices[i] = slotChoices(e.devices, e.vals[i])
-		labels := make([]string, len(e.choices[i]))
-		for k, c := range e.choices[i] {
-			switch {
-			case c == "":
-				labels[k] = u.t("audio.slots.empty")
-			case !slices.Contains(e.devices, c):
-				labels[k] = c + " " + u.t("audio.slots.missing")
-			default:
-				labels[k] = c
-			}
-		}
-		sel.Options = labels
-		k := slices.IndexFunc(e.choices[i], func(c string) bool { return strings.EqualFold(c, e.vals[i]) })
-		if k < 0 {
-			k = 0
-		}
-		sel.SetSelectedIndex(k)
-		sel.Refresh()
 	}
 }
 
-// loadAudioDevices reads the connected devices and refreshes the choices.
+// showAudioSlots puts slots into both lists. UI thread only.
+func (u *ui) showAudioSlots(st audioSlotsState) {
+	s := u.audioSlots
+	if s == nil {
+		return
+	}
+	s.out.vals, s.in.vals = st.Outputs, st.Inputs
+	s.out.render(u.lang)
+	s.in.render(u.lang)
+	u.refreshFeatureHeads()
+}
+
+// loadAudioDevices reads the connected devices for "(연결 안 됨)".
 func (u *ui) loadAudioDevices() {
 	s := u.audioSlots
 	if s == nil {
 		return
 	}
 	type lists struct{ out, in []string }
-	runAsync(busyControls(s.refresh), func() (lists, error) {
+	runAsync(nil, func() (lists, error) {
 		outputs, inputs, err := readAudioDevices()
 		return lists{endpointNames(outputs), endpointNames(inputs)}, err
 	}, func(l lists, err error) {
@@ -246,24 +183,76 @@ func (u *ui) loadAudioDevices() {
 		}
 		s.status.SetText("")
 		s.out.devices, s.in.devices = l.out, l.in
-		s.out.render(u)
-		s.in.render(u)
+		s.out.known, s.in.known = true, true
+		s.out.render(u.lang)
+		s.in.render(u.lang)
 	})
 }
 
-// fillAudioSlots writes cfg into the editors. UI thread only.
-func (u *ui) fillAudioSlots(cfg Config) {
+// loadAudioSlots is the 새로 고침 button: the slots as the service has
+// them now (it may have assigned some since the config was loaded) and
+// the connected devices.
+func (u *ui) loadAudioSlots() {
 	s := u.audioSlots
 	if s == nil {
 		return
 	}
-	st := audioSlotsFromConfig(cfg)
-	s.out.vals, s.in.vals = st.Outputs, st.Inputs
-	s.out.render(u)
-	s.in.render(u)
+	runAsync(busyControls(s.refresh, s.reset), func() (Config, error) { return u.client.GetConfig() },
+		func(cfg Config, err error) {
+			if err != nil {
+				s.status.SetText(fmt.Sprintf(u.t("audio.slots.readfailed"), err))
+				return
+			}
+			u.adoptAudioSlots(cfg.Audio)
+			u.loadAudioDevices()
+		})
 }
 
-// audioSlotsFormState reads the editors; the zero state before they exist.
+// confirmAudioSlotsReset asks, then empties the slots.
+func (u *ui) confirmAudioSlotsReset() {
+	dialog.ShowConfirm(u.t("audio.slots.reset"), u.t("audio.slots.reset.confirm"), func(ok bool) {
+		if ok {
+			u.resetAudioSlots()
+		}
+	}, u.win)
+}
+
+// resetAudioSlots runs the reset and shows the slots the service filled
+// again.
+func (u *ui) resetAudioSlots() {
+	s := u.audioSlots
+	if s == nil {
+		return
+	}
+	runAsync(busyControls(s.refresh, s.reset), func() (AudioConfig, error) { return u.client.ResetAudioSlots() },
+		func(slots AudioConfig, err error) {
+			if err != nil {
+				s.status.SetText(fmt.Sprintf(u.t("audio.slots.resetfailed"), err))
+				return
+			}
+			s.status.SetText("")
+			u.adoptAudioSlots(slots)
+			u.loadAudioDevices()
+		})
+}
+
+// adoptAudioSlots makes slots the saved ones: the baseline (the slots are
+// no form field, so no tab turns dirty) and the lists. UI thread only.
+func (u *ui) adoptAudioSlots(slots AudioConfig) {
+	if u.forms != nil && u.forms.base != nil {
+		u.forms.base.Audio = slots
+	}
+	u.showAudioSlots(audioSlotsFromConfig(Config{Audio: slots}))
+}
+
+// fillAudioSlots writes cfg into the lists. UI thread only.
+func (u *ui) fillAudioSlots(cfg Config) {
+	u.showAudioSlots(audioSlotsFromConfig(cfg))
+}
+
+// audioSlotsFormState is what the lists show; the zero state before they
+// exist. Only the features tab's head reads it: the slots are not saved
+// with the tab.
 func (u *ui) audioSlotsFormState() audioSlotsState {
 	s := u.audioSlots
 	if s == nil {
@@ -272,95 +261,19 @@ func (u *ui) audioSlotsFormState() audioSlotsState {
 	return audioSlotsState{Outputs: s.out.vals, Inputs: s.in.vals}
 }
 
-// --- Media card picker -----------------------------------------------------------
+// errAudioSlotsUnsupported is a service without the reset (before #159).
+var errAudioSlotsUnsupported = errors.New("the service is older than v1.3.0")
 
-// outputPickerOptions is the media card picker: "1 · 스피커" per filled
-// output slot, "(연결 안 됨)" on an absent one, and the index of the default
-// slot (-1 when none is).
-func (u *ui) outputPickerOptions(slots []AudioSlotInfo) (labels []string, selected int) {
-	selected = -1
-	for i, s := range slots {
-		label := strconv.Itoa(s.Slot) + " · " + s.Name
-		if !s.Present {
-			label += " " + u.t("audio.slots.missing")
-		}
-		if s.Default {
-			selected = i
-		}
-		labels = append(labels, label)
-	}
-	return labels, selected
-}
-
-// buildOutputPicker creates the media card's output select.
-func (u *ui) buildOutputPicker(c *mediaCard) fyne.CanvasObject {
-	c.output = widget.NewSelect(nil, func(string) {
-		if c.syncing {
-			return
-		}
-		k := c.output.SelectedIndex()
-		if k < 0 || k >= len(c.state.Audio.Outputs) {
-			return
-		}
-		slot := c.state.Audio.Outputs[k].Slot
-		u.sendMediaCommand("audio_output", &slot)
-	})
-	c.output.PlaceHolder = u.t("audio.output.pick")
-	c.outputRow = container.NewBorder(nil, nil, widget.NewLabel(u.t("audio.output.label")), nil, c.output)
-	c.outputRow.Hide()
-	return c.outputRow
-}
-
-// applyOutputPicker mirrors the output slots; hidden while there are none.
-// Called from applyMedia with c.syncing set.
-func (u *ui) applyOutputPicker(c *mediaCard, m MediaState, usable bool) {
-	if c.output == nil {
-		return
-	}
-	if len(m.Audio.Outputs) == 0 {
-		c.outputRow.Hide()
-		return
-	}
-	labels, sel := u.outputPickerOptions(m.Audio.Outputs)
-	c.output.Options = labels
-	if sel >= 0 {
-		c.output.SetSelectedIndex(sel)
-	} else {
-		c.output.ClearSelected()
-	}
-	c.output.Refresh()
-	setEnabled(c.output, usable && m.Audio.Available)
-	c.outputRow.Show()
-}
-
-// audioSwitchErrorText words a refused audio_output, "" for other codes.
-func (u *ui) audioSwitchErrorText(ce *mediaCommandError) string {
-	switch ce.Code {
-	case "slot_empty":
-		return u.t("audio.err.slot_empty")
-	case "device_missing":
-		return fmt.Sprintf(u.t("audio.err.device_missing"), ce.Message)
-	case "switch_failed":
-		return fmt.Sprintf(u.t("audio.err.switch_failed"), ce.Message)
-	}
-	return ""
-}
+// --- Heartbeat -----------------------------------------------------------------
 
 // sampleAudioDevices is the heartbeat's device block: names and the
-// default only, nil when the devices cannot be read.
+// default, nil when the devices cannot be read.
 func sampleAudioDevices(sampledAt string) *HeartbeatAudioDevices {
 	outputs, inputs, err := heartbeatDevices()
 	if err != nil {
 		return nil
 	}
-	strip := func(l []useraction.AudioEndpoint) []useraction.AudioEndpoint {
-		out := make([]useraction.AudioEndpoint, 0, len(l))
-		for _, e := range l {
-			out = append(out, useraction.AudioEndpoint{Name: e.Name, Default: e.Default})
-		}
-		return out
-	}
-	return &HeartbeatAudioDevices{Outputs: strip(outputs), Inputs: strip(inputs), SampledAt: sampledAt}
+	return &HeartbeatAudioDevices{Outputs: outputs, Inputs: inputs, SampledAt: sampledAt}
 }
 
 // heartbeatDevices reads the device lists for the heartbeat; the tests
@@ -368,7 +281,7 @@ func sampleAudioDevices(sampledAt string) *HeartbeatAudioDevices {
 var heartbeatDevices = useraction.ReadAudioDevices
 
 // AudioConfig mirrors service.AudioConfig (#145): device names by slot.
-// The lists travel as [] when emptied — a missing list keeps the stored one.
+// The service fills them and ignores them in a POST (#159).
 type AudioConfig struct {
 	Outputs []string `json:"outputs"`
 	Inputs  []string `json:"inputs"`

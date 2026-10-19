@@ -677,6 +677,27 @@ func (c *Client) GetBattery() (Battery, error) {
 	return b, fmt.Errorf("HTTP %d", resp.StatusCode)
 }
 
+// ResetAudioSlots empties the device slots; the service fills them again
+// from the devices connected now and answers the saved slots (#159). A
+// service without the route reads as errAudioSlotsUnsupported.
+func (c *Client) ResetAudioSlots() (AudioConfig, error) {
+	var slots AudioConfig
+	resp, err := c.do("POST", "/api/audio/slots/reset", nil)
+	if err != nil {
+		return slots, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return slots, json.NewDecoder(resp.Body).Decode(&slots)
+	case http.StatusUnauthorized:
+		return slots, errUnauthorized
+	case http.StatusNotFound:
+		return slots, errAudioSlotsUnsupported
+	}
+	return slots, fmt.Errorf("HTTP %d", resp.StatusCode)
+}
+
 // RestartService asks the service to restart itself.
 func (c *Client) RestartService() error {
 	resp, err := c.do("POST", "/api/restart-service", nil)

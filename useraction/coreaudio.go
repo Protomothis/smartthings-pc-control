@@ -41,6 +41,7 @@ var (
 const (
 	clsctxAll   = 0x17 // CLSCTX_INPROC_SERVER|INPROC_HANDLER|LOCAL_SERVER|REMOTE_SERVER
 	eRender     = 0
+	eCapture    = 1
 	eConsole    = 0
 	stgmRead    = 0
 	vtLPWSTR    = 31

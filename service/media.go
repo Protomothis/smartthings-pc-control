@@ -30,9 +30,6 @@ func runMediaCommand(ctx context.Context, name string, value *int) (UserActionRe
 	if !getConfig().Media.Enabled {
 		return UserActionResult{}, action.ErrMediaDisabled
 	}
-	if action.IsAudioDevice(name) {
-		return runAudioDeviceCommand(ctx, name, value) // #145, audio_devices.go
-	}
 	args, err := action.MediaArgs(name, value)
 	if err != nil {
 		return UserActionResult{}, err

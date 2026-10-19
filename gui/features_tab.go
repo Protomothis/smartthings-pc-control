@@ -34,7 +34,8 @@ type featuresFormState struct {
 	Activity ActivityConfig
 	// Privacy is the camera/microphone detection and its guard (#143).
 	Privacy PrivacyConfig
-	// Audio is the device slots (#145).
+	// Audio is the device slots (#145) as the list shows them: read-only
+	// since #159, for the row's head only — neither saved nor dirty.
 	Audio audioSlotsState
 }
 
@@ -71,7 +72,6 @@ func (s featuresFormState) applyTo(base Config) Config {
 	cfg.SmartThings.ExposeSessionUser = s.effectiveUser()
 	cfg.Activity = normalizeActivity(s.Activity)
 	cfg.Privacy = normalizePrivacy(s.Privacy)
-	s.Audio.applyTo(&cfg)
 	return cfg
 }
 
@@ -83,8 +83,7 @@ func (s featuresFormState) dirty(base Config) bool {
 		s.ExposeSession != base.SmartThings.ExposeSession ||
 		s.effectiveUser() != base.SmartThings.ExposeSessionUser ||
 		!activityEqual(s.Activity, base.Activity) ||
-		!privacyEqual(s.Privacy, base.Privacy) ||
-		s.Audio.dirty(base)
+		!privacyEqual(s.Privacy, base.Privacy)
 }
 
 // The accordion's rows, in order.

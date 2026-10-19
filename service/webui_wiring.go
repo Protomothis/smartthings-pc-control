@@ -57,6 +57,8 @@ var webSrv = webui.New(webui.Deps{
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
 	Privacy:   stPrivacyStatus,
+	// #159, audio_devices.go
+	ResetAudioSlots: resetAudioSlots,
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port

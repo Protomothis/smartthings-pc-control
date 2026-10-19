@@ -21,8 +21,9 @@ var notAuditedKeys = []string{
 	"awake.keep_display",
 	"presets",
 	"debug",
-	// #145: which devices the slots name; switching between them follows
-	// media.enabled, which is audited.
+	// #145/#159: which devices the slots name, assigned by the service
+	// itself as devices show up; reporting them follows media.enabled,
+	// which is audited.
 	"audio.outputs",
 	"audio.inputs",
 }

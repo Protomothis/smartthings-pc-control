@@ -2,64 +2,105 @@ package gui
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
 
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-func TestAudioSlotsRoundTrip(t *testing.T) {
-	base := Config{Audio: AudioConfig{Outputs: []string{"스피커", "", "헤드셋"}, Inputs: []string{}}}
-	s := audioSlotsFromConfig(base)
-	if s.dirty(base) {
-		t.Error("unchanged slots read as dirty")
-	}
-	// Moving slot 3 up swaps it with the empty slot 2.
-	s.Outputs = moveSlot(s.Outputs, 2, -1)
-	if !s.dirty(base) {
-		t.Error("moved slot not dirty")
-	}
-	cfg := base
-	s.applyTo(&cfg)
-	if !slices.Equal(cfg.Audio.Outputs, []string{"스피커", "헤드셋"}) {
-		t.Errorf("outputs = %q", cfg.Audio.Outputs)
-	}
-	// Emptied lists travel as [], never null (null keeps the stored list).
-	var empty audioSlotsState
-	empty.applyTo(&cfg)
-	b, _ := json.Marshal(cfg.Audio)
-	if string(b) != `{"outputs":[],"inputs":[]}` {
-		t.Errorf("emptied = %s", b)
-	}
-	if moveSlot(s.Outputs, 0, -1) != s.Outputs || moveSlot(s.Outputs, 4, +1) != s.Outputs {
-		t.Error("moving past an end changed the slots")
-	}
-}
-
-func TestSlotChoices(t *testing.T) {
-	devices := []string{"스피커", "헤드셋"}
+func TestSlotLine(t *testing.T) {
+	connected := []string{"스피커", "헤드셋 "}
 	cases := []struct {
-		saved string
-		want  []string
+		name  string
+		known bool
+		want  string
 	}{
-		{"", []string{"", "스피커", "헤드셋"}},
-		{"헤드셋", []string{"", "스피커", "헤드셋"}},
-		// A saved device that is not connected stays selectable.
-		{"LG TV", []string{"", "스피커", "헤드셋", "LG TV"}},
+		{"", true, "(비어 있음)"},
+		{"스피커", true, "스피커"},
+		{"헤드셋", true, "헤드셋"},
+		{"LG TV", true, "LG TV (연결 안 됨)"},
+		// Before the devices were read nothing is marked.
+		{"LG TV", false, "LG TV"},
 	}
 	for _, c := range cases {
-		if got := slotChoices(devices, c.saved); !slices.Equal(got, c.want) {
-			t.Errorf("slotChoices(%q) = %q, want %q", c.saved, got, c.want)
+		if got := slotLine(LangKo, c.name, connected, c.known); got != c.want {
+			t.Errorf("slotLine(%q, known %v) = %q, want %q", c.name, c.known, got, c.want)
 		}
+	}
+	s := audioSlotsFromConfig(Config{Audio: AudioConfig{Outputs: []string{" 스피커", "", "헤드셋", "4", "5", "6"}}})
+	if s.Outputs != [audioSlotCount]string{"스피커", "", "헤드셋", "4", "5"} || s.Inputs != [audioSlotCount]string{} {
+		t.Errorf("audioSlotsFromConfig = %+v", s)
 	}
 }
 
-// The heartbeat carries the device names and defaults, never the ids.
+// resetFake answers the reset with the slots the service filled again.
+type resetFake struct {
+	*fakeAPI
+	slots AudioConfig
+	err   error
+	calls int
+}
+
+func (f *resetFake) ResetAudioSlots() (AudioConfig, error) {
+	f.calls++
+	if f.err == nil {
+		f.mu.Lock()
+		f.cfg.Audio = f.slots
+		f.mu.Unlock()
+	}
+	return f.slots, f.err
+}
+
+// The features tab lists the slots read-only; a save does not send them as
+// an edit, and the reset shows the new slots without making the tab dirty.
+func TestAudioSlotsInTheWindow(t *testing.T) {
+	saved := readAudioDevices
+	readAudioDevices = func() (_, _ []useraction.AudioEndpoint, _ error) {
+		return []useraction.AudioEndpoint{{Name: "스피커", Default: true}}, []useraction.AudioEndpoint{{Name: "마이크", Default: true}}, nil
+	}
+	t.Cleanup(func() { readAudioDevices = saved })
+
+	base := &fakeAPI{cfg: storedConfig()}
+	base.cfg.Audio = AudioConfig{Outputs: []string{"스피커", "헤드셋"}, Inputs: []string{"마이크"}}
+	svc := &resetFake{fakeAPI: base, slots: AudioConfig{Outputs: []string{"스피커"}, Inputs: []string{"마이크"}}}
+	u := newTestUI(t, LangKo, svc)
+	u.initialLoad()
+	if u.forms.base == nil {
+		t.Fatal("initialLoad did not load the config")
+	}
+	s := u.audioSlots
+	if got := []string{s.out.labels[0].Text, s.out.labels[1].Text, s.out.labels[2].Text}; !slices.Equal(got, []string{"스피커", "헤드셋 (연결 안 됨)", "(비어 있음)"}) {
+		t.Errorf("output rows = %q", got)
+	}
+	if h := u.features.acc.Items[featAudio].Title; h != "오디오 장치 칸 · 출력 2 · 입력 1" {
+		t.Errorf("head = %q", h)
+	}
+
+	u.resetAudioSlots()
+	if svc.calls != 1 || s.out.labels[1].Text != "(비어 있음)" || u.forms.base.Audio.Outputs[0] != "스피커" || len(u.forms.base.Audio.Outputs) != 1 {
+		t.Errorf("after reset: calls %d, row 2 %q, base %+v", svc.calls, s.out.labels[1].Text, u.forms.base.Audio)
+	}
+	if h := u.features.acc.Items[featAudio].Title; h != "오디오 장치 칸 · 출력 1 · 입력 1" {
+		t.Errorf("head after reset = %q", h)
+	}
+	if d := dirtyIndices(u.forms); d != nil {
+		t.Errorf("dirty after reset: %v", d)
+	}
+
+	svc.err = errors.New("HTTP 500")
+	u.resetAudioSlots()
+	if s.status.Text == "" {
+		t.Error("a failed reset says nothing")
+	}
+}
+
+// The heartbeat carries the device names and defaults.
 func TestHeartbeatAudioDevices(t *testing.T) {
 	saved := heartbeatDevices
 	t.Cleanup(func() { heartbeatDevices = saved })
 	heartbeatDevices = func() (_, _ []useraction.AudioEndpoint, _ error) {
-		return []useraction.AudioEndpoint{{ID: "{0.0.0.00000000}.{a}", Name: "스피커", Default: true}},
+		return []useraction.AudioEndpoint{{Name: "스피커", Default: true}},
 			[]useraction.AudioEndpoint{}, nil
 	}
 	b, _ := json.Marshal(sampleAudioDevices("2026-10-17T10:00:00+09:00"))

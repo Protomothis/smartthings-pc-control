@@ -74,9 +74,10 @@ seam이 없는 값만 **명시적으로** 자리표시자로 바꾼다. 키가 �
 #123의 감시 칸 모양이다. 감시 목록은 1번 칸 `steam.exe`(Steam), 3번 칸 `obs64.exe`(OBS)이고 2·4·5번 칸은 비어 있다(번호가 작을수록 우선, `apps`는 채워진 칸만 칸 순서로). status에서는 Steam만 실행 중(`top` = `steam.exe`), `push.activity.changed.json`에서는 OBS가 켜져 둘 다 실행 중이다(`top`은 그대로 `steam.exe`). 이 푸시의 `data`는 status의 `activity` 블록과 **똑같은** JSON이다.
 바꿀 곳은 Go의 `goldenActivityConfig`/`goldenActivity`와 `push.activity.changed.json` 케이스, Lua의 "activity (#123)" 구역뿐이다.
 
-## 오디오 장치 칸 (#145)
+## 오디오 장치 칸 (#145, #159)
 
-`audio.outputs`/`audio.inputs`는 설정의 칸(1–5, 장치 이름)마다 `{slot, name, present, default}`이고 빈 칸은 빠진다. 설정 칸이 없거나 미디어 제어가 꺼져 있으면 빈 배열이다.
+`audio.outputs`/`audio.inputs`는 설정의 칸(1–5, 장치 이름)마다 `{slot, name, present, default}`이고 빈 칸은 빠진다. 칸이 없거나 미디어 제어가 꺼져 있으면 빈 배열이다.
+칸은 서비스가 처음 보는 장치에 가장 낮은 빈 칸을 주어 스스로 채운다(#159). 사라진 장치는 칸을 지키고 `present:false`다.
 golden PC의 출력 칸은 1 스피커(기본), 2 비어 있음, 3 헤드셋(연결됨), 4 LG TV(연결 안 됨 → `present:false`), 입력 칸은 1 마이크(기본), 2 헤드셋 마이크다.
-명령은 `audio_output`/`audio_input` + `value`(칸 번호)이고, 거절은 `command.audio_output.<오류>.json`(404 `slot_empty`, 409 `device_missing`, 502 `switch_failed`, 409 `no_user_session`)에 있다.
-바꿀 곳은 Go의 `goldenAudioConfig`/`goldenOutputs`/`goldenInputs`와 `stubAudioSession`(service/audio_devices_test.go)이다.
+장치를 바꾸는 명령은 없다 — #145의 `audio_output`/`audio_input`과 그 `command.audio_*.json`은 v1.3.0에서 뺐다.
+바꿀 곳은 Go의 `goldenAudioConfig`/`goldenOutputs`/`goldenInputs`다.

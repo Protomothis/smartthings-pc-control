@@ -368,15 +368,15 @@ func goldenAudioConfig() config.AudioConfig {
 // goldenOutputs and goldenInputs are the active devices of the golden PC.
 func goldenOutputs() []useraction.AudioEndpoint {
 	return []useraction.AudioEndpoint{
-		{ID: "{0.0.0.00000000}.{a1b2c3d4-0001-4000-8000-000000000001}", Name: goldenSpeaker, Default: true},
-		{ID: "{0.0.0.00000000}.{a1b2c3d4-0003-4000-8000-000000000003}", Name: goldenHeadset},
+		{Name: goldenSpeaker, Default: true},
+		{Name: goldenHeadset},
 	}
 }
 
 func goldenInputs() []useraction.AudioEndpoint {
 	return []useraction.AudioEndpoint{
-		{ID: "{0.0.1.00000000}.{b1b2c3d4-0001-4000-8000-000000000001}", Name: goldenMic, Default: true},
-		{ID: "{0.0.1.00000000}.{b1b2c3d4-0002-4000-8000-000000000002}", Name: goldenHeadsetMic},
+		{Name: goldenMic, Default: true},
+		{Name: goldenHeadsetMic},
 	}
 }
 
@@ -730,18 +730,6 @@ var commandCases = map[string]commandCase{
 		stubMediaRun(t, UserActionResult{OK: true, Audio: &useraction.Audio{Volume: 35, Muted: false, Device: goldenSpeaker}}, nil)
 	}},
 	"command.next.json": {setup: func(t *testing.T) { stubMediaRun(t, UserActionResult{OK: true}, nil) }},
-	// #145: a fake user session with the golden devices; nothing switches
-	// a real device.
-	"command.audio_output.json":                {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.device-missing.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.slot-empty.json":     {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
-	"command.audio_output.switch-failed.json": {setup: func(t *testing.T) {
-		stubAudioSession(t, goldenOutputs(), goldenInputs()).refuse = true
-	}},
-	"command.audio_output.no-user.json": {setup: func(t *testing.T) {
-		stubMediaRun(t, UserActionResult{}, fmt.Errorf("get session: %w", errNoUserSession))
-	}},
-	"command.audio_input.json": {setup: func(t *testing.T) { stubAudioSession(t, goldenOutputs(), goldenInputs()) }},
 	"command.next.media-disabled.json": {setup: func(t *testing.T) {
 		stubMediaRun(t, UserActionResult{OK: true}, nil)
 		withConfig(t, func(c *Config) { c.Media.Enabled = false })

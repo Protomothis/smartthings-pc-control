@@ -167,6 +167,26 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, view)
 }
 
+// ---- /api/audio/slots/reset (#159) -----------------------------------------
+
+// serveAudioSlotsReset serves POST /api/audio/slots/reset for the features
+// tab's 초기화: both slot lists are emptied and the devices connected now
+// fill them again. The reply is the saved slots, {"outputs":[…],"inputs":[…]}.
+func (s *Server) serveAudioSlotsReset(w http.ResponseWriter, r *http.Request) {
+	if s.d.ResetAudioSlots == nil {
+		http.NotFound(w, r)
+		return
+	}
+	slots, err := s.d.ResetAudioSlots()
+	if err != nil {
+		logx.Printf("App: audio slot reset failed: %v", err)
+		writeAPIError(w, http.StatusInternalServerError, "Failed to save: "+err.Error())
+		return
+	}
+	logx.Printf("App: audio device slots reset")
+	httpx.WriteJSON(w, http.StatusOK, slots)
+}
+
 // ---- /api/processes (#110) -------------------------------------------------
 
 // serveProcesses serves GET /api/processes for the desktop app's "pick
