@@ -56,7 +56,6 @@ var webSrv = webui.New(webui.Deps{
 	Notify:    pcNotifier{},
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
-	Monitor:   monitorControl{},
 	Privacy:   stPrivacyStatus,
 })
 

@@ -290,7 +290,6 @@ func TestFeaturesApplyToTouchesOnlyItsFields(t *testing.T) {
 		func(s *featuresFormState) { s.NowPlaying = true },
 		func(s *featuresFormState) { s.Activity.Enabled = true },
 		func(s *featuresFormState) { s.Media = false },
-		func(s *featuresFormState) { s.Monitor = true },
 		func(s *featuresFormState) { s.NotifyPC.Enabled = true },
 		func(s *featuresFormState) { s.Audio.Outputs[1] = "헤드셋" },
 	} {

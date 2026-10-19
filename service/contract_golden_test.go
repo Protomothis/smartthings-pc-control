@@ -295,7 +295,6 @@ func goldenConfig() Config {
 		Media:         MediaConfig{Enabled: true, NowPlaying: true},
 		Audio:         goldenAudioConfig(),
 		NotifyPC:      NotifyPCConfig{Enabled: true},
-		Monitor:       MonitorConfig{Enabled: true},
 		Presets: []Preset{
 			{Slot: 3, Name: "게임 모드", Type: "program", Path: `C:\Games\Steam\steam.exe`, Args: []string{"-bigpicture"}},
 			{Slot: 1, Name: "대시보드", Type: "url", Path: "https://example.com/dashboard"},
@@ -459,7 +458,6 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	})
 
 	goldenActivity(t, cfg)
-	goldenMonitors(t) // #144, monitor_test.go
 	goldenPrivacy(t, cfg)
 
 	// audio and media: one reading each, fresh against the golden clock.
@@ -756,15 +754,6 @@ var commandCases = map[string]commandCase{
 		fakeNotifyRun(t, `{"ok":true,"toast":"shown"}`, nil)
 		withConfig(t, func(c *Config) { c.NotifyPC.Enabled = false })
 	}},
-	// #144: the monitor commands (monitor_test.go has the stubs).
-	"command.monitor_brightness.json":          {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":70,"input":"hdmi1","inputs":["hdmi1"],"power":"on"}}`, nil)},
-	"command.monitor_brightness.disabled.json": {setup: func(t *testing.T) { withConfig(t, func(c *Config) { c.Monitor.Enabled = false }) }},
-	"command.monitor_brightness.no-user.json":  {setup: monitorReply("", errNoConsoleSession)},
-	"command.monitor_input.json":               {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"dp1","inputs":["dp1"],"power":"on"}}`, nil)},
-	"command.monitor_input.unsupported.json": {setup: func(t *testing.T) {
-		seedMonitors(t, []useraction.Monitor{{ID: "m1", Name: "LG TV", Primary: true, Inputs: []string{}, Power: "unknown"}})
-	}},
-	"command.monitor_power.json": {setup: monitorReply(`{"ok":true,"monitor":{"id":"m1","name":"DELL U2720Q","primary":true,"ddc":true,"brightness":40,"input":"hdmi1","inputs":["hdmi1"],"power":"standby"}}`, nil)},
 	"command.subscribe.json": {
 		setup: func(t *testing.T) {
 			// Ids count up for the life of the process; start this one at 1.
@@ -782,7 +771,7 @@ func decodeRequestStrictly(t *testing.T, method, path string, raw json.RawMessag
 	var target any
 	switch {
 	case method == "POST" && path == "/st/v1/command":
-		target = commandRequestType(raw)
+		target = &stapi.CommandRequest{}
 	case method == "POST" && path == "/st/v1/notify":
 		target = &stapi.NotifyRequest{}
 	case method == "POST" && path == "/st/v1/subscribe":

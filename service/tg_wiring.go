@@ -29,7 +29,6 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Media:         mediaControl{},
 	Presets:       presetControl{origin: "telegram"},
 	Notify:        pcNotifier{},
-	Monitor:       monitorControl{},
 	Privacy:       stPrivacyStatus,
 	Guard:         func(name string) privacy.Verdict { return remoteVerdict(name, "telegram", originTelegram) },
 })

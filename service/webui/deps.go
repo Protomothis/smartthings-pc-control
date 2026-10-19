@@ -45,8 +45,6 @@ type Deps struct {
 	Notify    Notifier
 	Telegram  Telegram
 	Heartbeat Heartbeat
-	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
-	Monitor Monitor
 
 	// Privacy is the camera/microphone block (#143) GET /api/privacy
 	// reports, nil while privacy.enabled is off; a nil func reads the

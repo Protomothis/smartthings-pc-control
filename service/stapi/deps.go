@@ -30,8 +30,6 @@ type Deps struct {
 	Media    Media
 	Presets  Presets
 	Notify   Notifier
-	// Monitor is the DDC/CI monitor control (#144); nil: none.
-	Monitor MonitorControl
 
 	// Subscriptions keeps the hub push subscriptions across restarts
 	// (#142); nil keeps them in memory only.

@@ -98,8 +98,6 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// API: the command tab's media card (#117)
 	mux.HandleFunc("/api/media", s.apiAuth(s.serveMedia, http.MethodGet, http.MethodPost))
 
-	// API: the command tab's monitor card (#144, monitor.go)
-	mux.HandleFunc("/api/monitor", s.apiAuth(s.serveMonitor, http.MethodGet, http.MethodPost))
 	// API: camera/microphone state for the app's sharing tab (#143)
 	mux.HandleFunc("/api/privacy", s.apiAuth(s.servePrivacy, http.MethodGet))
 

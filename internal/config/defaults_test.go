@@ -84,7 +84,6 @@ func TestLoadKeepsExplicitValues(t *testing.T) {
 		`{"shutdown_grace": false, "grace_seconds": 30}`:                  func(c Config) bool { return !c.ShutdownGrace && c.GraceSeconds == 30 },
 		`{"media": {"enabled": false}}`:                                   func(c Config) bool { return !c.Media.Enabled },
 		`{"notify_pc": {"enabled": false}}`:                               func(c Config) bool { return !c.NotifyPC.Enabled },
-		`{"monitor": {"enabled": true}}`:                                  func(c Config) bool { return c.Monitor.Enabled },
 		`{"awake": {"default_minutes": 0, "keep_display": true}}`:         func(c Config) bool { return c.Awake.DefaultMinutes == 0 && c.Awake.KeepDisplay },
 		`{"smartthings": {"allowed_hubs": ["192.168.1.20"]}}`:             func(c Config) bool { return slices.Equal(c.SmartThings.AllowedHubs, []string{"192.168.1.20"}) },
 		`{"smartthings": {"expose_session": true}, "webui_remote": true}`: func(c Config) bool { return c.SmartThings.ExposeSession && c.WebUIRemote },

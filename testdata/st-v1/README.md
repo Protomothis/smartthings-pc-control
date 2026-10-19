@@ -17,9 +17,7 @@
 | `status.off.json` | `GET /st/v1/status` — 모든 설정이 기본값인 데스크톱(배터리 없음, activity 꺼짐, 재생 정보 동의 없음, 세션 비공개, awake 꺼짐, 예약·최근 명령 없음, WoL 꺼진 어댑터 1개, 화면 꺼짐). 각 블록의 "꺼진" 모양 | Go가 생성 |
 | `status.minimal-1.0.json` | v1.2.0 이전 서비스(v1.1.x, 드라이버 1.0.x 시절)가 보내던 모양. `features`와 v1.2 블록이 없다 | **손으로 작성**, 갱신하지 않음 |
 | `command.<이름>.json` | 드라이버가 보내는 요청(`request`)과 서비스의 응답(`response.code`, `response.body`) | `request`는 손으로, `response`는 Go가 생성 |
-| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`, 403 `monitor_disabled`, 501 `monitor_unsupported`, 409 `device_in_use`) | 위와 같음 |
-
-`status.full.json`의 `monitors`(#144)는 DDC/CI 주 모니터(m1, DELL)와 DDC가 없는 TV(m2) 두 대다. `command.monitor_*.json`의 `value`는 밝기만 숫자, 입력·전원은 문자열이다.
+| `command.<이름>.<오류>.json` | 같은 요청이 거절되는 경우(409 `no_user_session`, 403 `media_disabled`, 403 `notify_disabled`, 409 `device_in_use`) | 위와 같음 |
 | `push.<type>.json` | 서비스가 허브 콜백으로 보내는 푸시 본문 전체(`type`, `data`, 그리고 §3.2 status 전체) | Go가 생성 |
 | `api-config.get.json` | `GET /api/config` — 데스크톱 앱이 받는 설정. 텔레그램 봇 토큰은 `****` + 끝 4자리로 가리고 `bot_token_set`을 붙인다 | Go가 생성 |
 

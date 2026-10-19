@@ -4,7 +4,7 @@ package gui
 // opt-in of this PC in one place, one accordion row per feature — its name
 // and a short state in the head ("미디어 · 켜짐"), the switches under it.
 // All of them start off and all start folded. The switches used to be
-// spread over the settings tab (media, PC notifications, monitor, audio
+// spread over the settings tab (media, PC notifications, audio
 // slots) and the sharing tab (session, now playing, running apps, camera
 // and microphone); their config keys did not move, only the tab that saves
 // them. One form (featuresFormState), one save bar.
@@ -34,8 +34,6 @@ type featuresFormState struct {
 	Activity ActivityConfig
 	// Privacy is the camera/microphone detection and its guard (#143).
 	Privacy PrivacyConfig
-	// Monitor is monitor.enabled (#144).
-	Monitor bool
 	// Audio is the device slots (#145).
 	Audio audioSlotsState
 }
@@ -51,7 +49,6 @@ func featuresStateFromConfig(cfg Config) featuresFormState {
 		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
 		Activity:          cloneActivity(cfg.Activity),
 		Privacy:           normalizePrivacy(cfg.Privacy),
-		Monitor:           cfg.Monitor.Enabled,
 		Audio:             audioSlotsFromConfig(cfg),
 	}
 }
@@ -74,7 +71,6 @@ func (s featuresFormState) applyTo(base Config) Config {
 	cfg.SmartThings.ExposeSessionUser = s.effectiveUser()
 	cfg.Activity = normalizeActivity(s.Activity)
 	cfg.Privacy = normalizePrivacy(s.Privacy)
-	cfg.Monitor.Enabled = s.Monitor
 	s.Audio.applyTo(&cfg)
 	return cfg
 }
@@ -88,7 +84,6 @@ func (s featuresFormState) dirty(base Config) bool {
 		s.effectiveUser() != base.SmartThings.ExposeSessionUser ||
 		!activityEqual(s.Activity, base.Activity) ||
 		!privacyEqual(s.Privacy, base.Privacy) ||
-		s.Monitor != base.Monitor.Enabled ||
 		s.Audio.dirty(base)
 }
 
@@ -99,7 +94,6 @@ const (
 	featSession
 	featActivity
 	featPrivacy
-	featMonitor
 	featAudio
 	featCount
 )
@@ -111,7 +105,6 @@ var featureTitleKeys = [featCount]string{
 	featSession:  "feature.session",
 	featActivity: "feature.activity",
 	featPrivacy:  "feature.privacy",
-	featMonitor:  "feature.monitor",
 	featAudio:    "feature.audio",
 }
 
@@ -145,8 +138,6 @@ func featureStatus(l Lang, s featuresFormState, i int) string {
 		return fmt.Sprintf(T(l, "feature.on.count"), len(s.Activity.Watch))
 	case featPrivacy:
 		return onOff(s.Privacy.Enabled)
-	case featMonitor:
-		return onOff(s.Monitor)
 	case featAudio:
 		filled := func(a [audioSlotCount]string) int {
 			n := 0
@@ -185,7 +176,6 @@ type featuresTab struct {
 	nowPlaying  *toggle
 	session     *toggle
 	sessionUser *toggle
-	monitor     *toggle
 	// activity is the running-app detection editor (#110).
 	activity activityBox
 	// privacy is the camera/microphone section (#143).
@@ -203,7 +193,6 @@ func (u *ui) featuresState() featuresFormState {
 		ExposeSessionUser: t.sessionUser.Checked,
 		Activity:          t.activity.form(),
 		Privacy:           t.privacy.form(),
-		Monitor:           t.monitor.Checked,
 		Audio:             u.audioSlotsFormState(),
 	}
 }
@@ -233,7 +222,6 @@ func (u *ui) buildFeaturesTab() fyne.CanvasObject {
 	})
 	t.sessionUser = newToggle(u.t("st.session.user"), onToggle)
 	t.sessionUser.Disable()
-	t.monitor = newToggle(u.t("settings.monitor"), onToggle)
 	notify := u.buildNotifyPCBox()
 	activity := u.buildActivityBox()
 	var privacy fyne.CanvasObject
@@ -256,11 +244,7 @@ func (u *ui) buildFeaturesTab() fyne.CanvasObject {
 		),
 		featActivity: activity,
 		featPrivacy:  privacy,
-		featMonitor: container.NewVBox(
-			t.monitor,
-			hint(u.t("settings.monitor.hint")),
-		),
-		featAudio: audio,
+		featAudio:    audio,
 	}
 
 	// The watch list is checked here first so the reason comes in the
@@ -337,7 +321,6 @@ func (u *ui) fillFeaturesTab(cfg Config) {
 	t.setUserEnabled(s.ExposeSession)
 	u.fillActivityBox(s.Activity)
 	t.privacy.fill(s.Privacy)
-	t.monitor.SetChecked(s.Monitor)
 	u.fillAudioSlots(cfg)
 	go u.loadPrivacy()
 }

@@ -40,7 +40,6 @@ var auditedKeys = []string{
 	"media.enabled",
 	"media.now_playing",
 	"notify_pc.enabled",
-	"monitor.enabled",
 	"privacy.enabled",
 	"privacy.guard",
 }
