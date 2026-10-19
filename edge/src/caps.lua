@@ -50,12 +50,12 @@ caps.TOAST = NAMESPACE .. ".pctoast"
 caps.PRESENCE = NAMESPACE .. ".pcpresence"
 -- #152: the camera and the microphone in use, on the same card.
 caps.PRIVACY = NAMESPACE .. ".pcprivacy"
--- #153: the primary monitor's summary and input list, beside the standard
--- `switch` and `switchLevel` of the `monitor` component.
-caps.MONITOR = NAMESPACE .. ".pcmonitor"
--- #154: the audio device slots, one capability per kind.
-caps.AUDIO_OUT = NAMESPACE .. ".pcaudioout"
-caps.AUDIO_IN = NAMESPACE .. ".pcaudioin"
+-- #160: the speaker and the microphone, state only (routine conditions), on
+-- the `sound` card. They replaced `pcaudioout`/`pcaudioin` (#154, the slot
+-- lists that switched the device) and the monitor card's `pcmonitor` (#153),
+-- both Dev channel only.
+caps.SPEAKER = NAMESPACE .. ".pcspeaker"
+caps.MIC = NAMESPACE .. ".pcmic"
 
 -- Stable short keys -> capability id. `caps.load` returns the same keys.
 caps.ids = {
@@ -70,9 +70,8 @@ caps.ids = {
   toast = caps.TOAST,
   presence = caps.PRESENCE,
   privacy = caps.PRIVACY,
-  monitor = caps.MONITOR,
-  audio_out = caps.AUDIO_OUT,
-  audio_in = caps.AUDIO_IN,
+  speaker = caps.SPEAKER,
+  mic = caps.MIC,
 }
 
 --- Resolve the custom capability objects from `st.capabilities`.

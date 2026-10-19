@@ -1,11 +1,27 @@
 {
-  "id": "numbersystem53811.pcaudioout",
+  "id": "numbersystem53811.pcmic",
   "version": 1,
   "status": "proposed",
-  "name": "pcAudioOut",
+  "name": "pcMic",
   "ephemeral": false,
   "attributes": {
-    "output": {
+    "summary": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "input": {
       "schema": {
         "type": "object",
         "properties": {
@@ -44,15 +60,17 @@
       },
       "enumCommands": []
     },
-    "supportedOutputs": {
+    "muted": {
       "schema": {
         "type": "object",
         "properties": {
           "value": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "enum": [
+              "muted",
+              "unmuted",
+              "unknown"
+            ]
           }
         },
         "additionalProperties": false,
@@ -63,26 +81,5 @@
       "enumCommands": []
     }
   },
-  "commands": {
-    "setOutput": {
-      "name": "setOutput",
-      "arguments": [
-        {
-          "name": "slot",
-          "optional": false,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "none",
-              "1",
-              "2",
-              "3",
-              "4",
-              "5"
-            ]
-          }
-        }
-      ]
-    }
-  }
+  "commands": {}
 }

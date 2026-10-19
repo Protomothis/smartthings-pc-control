@@ -1,0 +1,82 @@
+{
+  "id": "numbersystem53811.pcmic",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.names.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{names.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.input.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "input.value",
+          "alternatives": [
+            {
+              "key": "1",
+              "value": "입력 1 (Input 1)",
+              "type": "active"
+            },
+            {
+              "key": "2",
+              "value": "입력 2 (Input 2)",
+              "type": "active"
+            },
+            {
+              "key": "3",
+              "value": "입력 3 (Input 3)",
+              "type": "active"
+            },
+            {
+              "key": "4",
+              "value": "입력 4 (Input 4)",
+              "type": "active"
+            },
+            {
+              "key": "5",
+              "value": "입력 5 (Input 5)",
+              "type": "active"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.muted.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "muted.value",
+          "alternatives": [
+            {
+              "key": "muted",
+              "value": "음소거 (Muted)",
+              "type": "active"
+            },
+            {
+              "key": "unmuted",
+              "value": "음소거 안 함 (Not muted)",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

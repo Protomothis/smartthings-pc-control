@@ -1,11 +1,27 @@
 {
-  "id": "numbersystem53811.pcaudioin",
+  "id": "numbersystem53811.pcspeaker",
   "version": 1,
   "status": "proposed",
-  "name": "pcAudioIn",
+  "name": "pcSpeaker",
   "ephemeral": false,
   "attributes": {
-    "input": {
+    "summary": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "output": {
       "schema": {
         "type": "object",
         "properties": {
@@ -44,15 +60,37 @@
       },
       "enumCommands": []
     },
-    "supportedInputs": {
+    "playing": {
       "schema": {
         "type": "object",
         "properties": {
           "value": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "enum": [
+              "playing",
+              "idle",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "enumCommands": []
+    },
+    "muted": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "muted",
+              "unmuted",
+              "unknown"
+            ]
           }
         },
         "additionalProperties": false,
@@ -63,26 +101,5 @@
       "enumCommands": []
     }
   },
-  "commands": {
-    "setInput": {
-      "name": "setInput",
-      "arguments": [
-        {
-          "name": "slot",
-          "optional": false,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "none",
-              "1",
-              "2",
-              "3",
-              "4",
-              "5"
-            ]
-          }
-        }
-      ]
-    }
-  }
+  "commands": {}
 }

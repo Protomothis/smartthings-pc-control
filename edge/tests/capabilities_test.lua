@@ -210,15 +210,15 @@ function T.test_the_current_profile_lists_every_capability()
   -- that has to carry the whole set. #86 added `pcversion`; the older files are
   -- left exactly as they shipped - a device still on one of them keeps the
   -- screen it was created with until the migration moves it (platform notes "프로필과 화면 생성").
-  -- #158: all eight do, but for the monitor and watch cards of the variants
-  -- without them.
+  -- #158: all four do (#160), but for the watch card of the variants
+  -- without it.
   local profiles = require "profiles"
   for _, current in ipairs(profiles.CURRENT_NAMES) do
     local name, text = profile_file_for(current)
     h.assert_true(text ~= nil, "no profile file declares " .. current)
     local cards = profiles.cards_of(current)
     for _, id in pairs(caps.ids) do
-      local wanted = (id ~= caps.WATCH or cards.watch) and (id ~= caps.MONITOR or cards.monitor)
+      local wanted = id ~= caps.WATCH or cards.watch
       h.assert_equal(text:find(id, 1, true) ~= nil, wanted, "profiles/" .. tostring(name) .. " " .. id)
     end
   end
@@ -419,7 +419,7 @@ function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
       h.assert_nil(main:find("pcwatch", 1, true), "profiles/" .. file .. " main")
     end
   end
-  h.assert_equal(checked, 4)
+  h.assert_equal(checked, 2)
 end
 
 function T.test_the_watch_definition_is_summary_names_and_five_slots()
@@ -636,11 +636,10 @@ local EXPECTED_COMMANDS = {
   -- #151/#152: a row and routine conditions only.
   presence = {},
   privacy = {},
-  -- #153: the input list; power and brightness are standard.
-  monitor = { setInput = { "input" } },
-  -- #154: one slot list each.
-  audio_out = { setOutput = { "slot" } },
-  audio_in = { setInput = { "slot" } },
+  -- #160: rows and routine conditions only - the device switching (#154)
+  -- went with the PC app's side of it.
+  speaker = {},
+  mic = {},
 }
 
 for _, name in ipairs(REMOTE_BUTTONS) do
@@ -849,7 +848,7 @@ function T.test_the_dashboard_state_is_the_power_state()
   end
 
   for _, key in ipairs({ "command", "schedule", "status", "session", "version", "preset", "watch", "toast",
-      "presence", "privacy", "monitor", "audio_out", "audio_in" }) do
+      "presence", "privacy", "speaker", "mic" }) do
     h.assert_equal(#presentation(key).dashboard.states, 0,
       caps.ids[key] .. " must not compete for the dashboard tile")
   end
@@ -961,48 +960,44 @@ function T.test_the_privacy_conditions_are_the_camera_and_the_microphone()
   h.assert_equal(detail[1].state.label, "{{summary.value}}")
 end
 
-function T.test_the_monitor_input_list_rests_on_the_input_and_offers_what_the_monitor_has()
-  -- #153: the list shows the current input and closing it sends that back
-  -- (a no-op the driver answers); `unknown` is the rest before any read.
-  local definition_input = definition("monitor").attributes.input.schema.properties.value.enum
-  h.assert_deep_equal(definition("monitor").commands.setInput.arguments[1].schema.enum, definition_input,
-    "the argument takes every value the row can rest on")
+function T.test_the_sound_card_is_state_and_routine_conditions_only()
+  -- #160: what a routine reads - the default device's slot ("출력 장치 =
+  -- 출력 3"), sound playing, the mutes. `none` and `unknown` are rests,
+  -- not events, so no condition offers them. The detail view is the summary
+  -- (the card's preview) and the names that tell which slot is which.
   local sensors = require "sensors"
-  local expected = { sensors.INPUT_UNKNOWN }
-  for _, list in ipairs({ sensors.NAMED_INPUTS, sensors.OTHER_INPUTS }) do
-    for _, key in ipairs(list) do
-      expected[#expected + 1] = key
+  for _, c in ipairs({
+    { "speaker", "output", { summary = 60, names = 120 },
+      { output = { "1", "2", "3", "4", "5" }, playing = { "playing", "idle" }, muted = { "muted", "unmuted" } },
+      { "output", "playing", "muted" } },
+    { "mic", "input", { summary = 60, names = 120 },
+      { input = { "1", "2", "3", "4", "5" }, muted = { "muted", "unmuted" } },
+      { "input", "muted" } },
+  }) do
+    local key, slot, strings, conditions, order = table.unpack(c, 1, 5)
+    local attributes = definition(key).attributes
+    h.assert_nil(next(definition(key).commands or {}), key .. " takes no command")
+    for attr, max in pairs(strings) do
+      h.assert_equal(attributes[attr].schema.properties.value.maxLength, max, key .. "." .. attr)
     end
-  end
-  h.assert_deep_equal(definition_input, expected, "sensors.lua and the definition agree")
-  local list = presentation("monitor").detailView[2].list
-  h.assert_equal(list.command.supportedValues, "supportedInputs.value")
-  local offered = alternative_keys(list.command.alternatives)
-  h.assert_deep_equal(offered, { table.unpack(expected, 2) }, "every input but unknown")
-  -- DisplayPort is why this is not the standard mediaInputSource.
-  h.assert_contains(table.concat(offered, " "), "dp1")
-end
-
-function T.test_the_audio_slot_lists_rest_on_the_default_device_and_name_slots()
-  -- #154: "출력 2로 전환", "현재 출력이 2". The list rests on the slot of the
-  -- default device (`none` when it is in no slot), which it sends back when
-  -- closed - a no-op the driver answers.
-  for _, c in ipairs({ { "audio_out", "output", "setOutput", "supportedOutputs" },
-      { "audio_in", "input", "setInput", "supportedInputs" } }) do
-    local key, attr, command, supported = table.unpack(c, 1, 4)
-    local enum = definition(key).attributes[attr].schema.properties.value.enum
-    h.assert_deep_equal(enum, { "none", "1", "2", "3", "4", "5" }, key)
-    h.assert_deep_equal(definition(key).commands[command].arguments[1].schema.enum, enum, key .. " argument")
+    h.assert_deep_equal(attributes[slot].schema.properties.value.enum,
+      { sensors.SLOT_NONE, "1", "2", "3", "4", "5" }, key .. "." .. slot)
+    h.assert_deep_equal(attributes.muted.schema.properties.value.enum, { "muted", "unmuted", "unknown" })
+    if key == "speaker" then
+      h.assert_deep_equal(attributes.playing.schema.properties.value.enum, { "playing", "idle", "unknown" })
+    end
     local detail = presentation(key).detailView
-    h.assert_equal(#detail, 2, key .. ": the names row and the list")
-    h.assert_equal(detail[1].state.label, "{{names.value}}")
-    h.assert_equal(detail[2].list.command.supportedValues, supported .. ".value")
-    h.assert_deep_equal(alternative_keys(detail[2].list.command.alternatives), { "1", "2", "3", "4", "5" })
-    local condition = presentation(key).automation.conditions[1]
-    h.assert_equal(condition.list.value, attr .. ".value")
-    h.assert_deep_equal(alternative_keys(condition.list.alternatives), { "1", "2", "3", "4", "5" },
-      key .. ": `none` is not an event")
-    h.assert_equal(presentation(key).automation.actions[1].multiArgCommand.command, command)
+    h.assert_equal(#detail, 2, key .. ": the summary and the names")
+    h.assert_equal(detail[1].state.label, "{{summary.value}}")
+    h.assert_equal(detail[2].state.label, "{{names.value}}")
+    local listed = presentation(key).automation.conditions
+    h.assert_equal(#listed, #order, key .. " conditions")
+    for i, attr in ipairs(order) do
+      h.assert_equal(listed[i].label, "{{i18n.attributes." .. attr .. ".label}}")
+      h.assert_equal(listed[i].list.value, attr .. ".value")
+      h.assert_deep_equal(alternative_keys(listed[i].list.alternatives), conditions[attr], key .. "." .. attr)
+    end
+    h.assert_equal(#presentation(key).automation.actions, 0, key .. " has no routine action")
   end
 end
 
@@ -1567,13 +1562,13 @@ end
 -- label of the three enum-valued capabilities is written "한국어 (English)",
 -- the convention the command menus already used.
 local BILINGUAL_VALUE_CAPABILITIES = { "power_state", "command", "schedule", "watch", "presence",
-  "privacy", "audio_out", "audio_in" }
+  "privacy", "speaker", "mic" }
 
 -- Except the watch card's own rows: its preview in the main view gives each
 -- of its first three rows a third of the width, and "실행 중 (Running)"
 -- wrapped and was cut (platform notes "화면 배치", 2026-10-02). They are one
 -- short Korean word; its routine conditions keep both languages.
--- The v1.3.0 cards on components of their own (#151-#154) likewise.
+-- The v1.3.0 cards on components of their own (#151, #152) likewise.
 local SHORT_DETAIL_VALUES = { watch = true, presence = true }
 
 local function assert_bilingual(alternatives, where)

@@ -1,0 +1,101 @@
+{
+  "id": "numbersystem53811.pcspeaker",
+  "version": 1,
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "{{i18n.attributes.summary.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{summary.value}}"
+      }
+    },
+    {
+      "label": "{{i18n.attributes.names.label}}",
+      "displayType": "state",
+      "state": {
+        "label": "{{names.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "{{i18n.attributes.output.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "output.value",
+          "alternatives": [
+            {
+              "key": "1",
+              "value": "출력 1 (Output 1)",
+              "type": "active"
+            },
+            {
+              "key": "2",
+              "value": "출력 2 (Output 2)",
+              "type": "active"
+            },
+            {
+              "key": "3",
+              "value": "출력 3 (Output 3)",
+              "type": "active"
+            },
+            {
+              "key": "4",
+              "value": "출력 4 (Output 4)",
+              "type": "active"
+            },
+            {
+              "key": "5",
+              "value": "출력 5 (Output 5)",
+              "type": "active"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.playing.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "playing.value",
+          "alternatives": [
+            {
+              "key": "playing",
+              "value": "재생 중 (Playing)",
+              "type": "active"
+            },
+            {
+              "key": "idle",
+              "value": "조용함 (Silent)",
+              "type": "inactive"
+            }
+          ]
+        }
+      },
+      {
+        "label": "{{i18n.attributes.muted.label}}",
+        "displayType": "list",
+        "list": {
+          "value": "muted.value",
+          "alternatives": [
+            {
+              "key": "muted",
+              "value": "음소거 (Muted)",
+              "type": "active"
+            },
+            {
+              "key": "unmuted",
+              "value": "음소거 안 함 (Not muted)",
+              "type": "inactive"
+            }
+          ]
+        }
+      }
+    ],
+    "actions": []
+  }
+}

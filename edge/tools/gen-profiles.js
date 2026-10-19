@@ -5,16 +5,16 @@
  *   cd edge && bun tools/gen-profiles.js           # (re)write profiles/*
  *   cd edge && bun tools/gen-profiles.js --check   # exit 1 if any file is stale
  *
- * `node` works the same. One template, eight files (#158): with and without
- * each of three cards a PC may not need - the monitor card (#153), the watch
- * list (#123) and the battery (#116, a desktop must not carry an empty
- * battery card) - all in the Switch category (#136). Up to v12 there were
- * twenty, one per `iconStyle` value (#100); v13 and v14 had two.
+ * `node` works the same. One template, four files (#160): with and without
+ * each of two cards a PC may not need - the watch list (#123) and the
+ * battery (#116, a desktop must not carry an empty battery card) - all in the
+ * Switch category (#136). Up to v12 there were twenty, one per `iconStyle`
+ * value (#100); v13 and v14 had two, v15 eight (a third card, the monitor).
  *
- *   pc.v15                         profiles/pc-v15.yml                        none
- *   pc-watch.v15                   profiles/pc-watch-v15.yml                  watch list
- *   pc-monitor-watch-battery.v15   profiles/pc-monitor-watch-battery-v15.yml  all three
- *   …
+ *   pc.v16                 profiles/pc-v16.yml                 neither
+ *   pc-battery.v16         profiles/pc-battery-v16.yml         battery
+ *   pc-watch.v16           profiles/pc-watch-v16.yml           watch list
+ *   pc-watch-battery.v16   profiles/pc-watch-battery-v16.yml   both
  *
  * The rules are deliberately small; `--check` (CI: npm run check-profiles)
  * fails when a file on disk is not what they produce:
@@ -24,7 +24,7 @@
  *   2. Replace `__NAME__` and `__CATEGORY__` (each exactly once; the
  *      category is `CATEGORY`).
  *   3. Keep the lines between `# @<card>-begin` and `# @<card>-end` (card:
- *      monitor, watch, battery) only for a profile with that card; drop the
+ *      watch, battery) only for a profile with that card; drop the
  *      marker lines always.
  *   3c. (#129) Drop every other comment line (`#` after optional spaces): the
  *      template explains itself, the copies do not need to.
@@ -89,15 +89,18 @@ const OUT_DIR = path.join(EDGE, 'profiles');
 //    group and the audio device slots), `presence` (+ pcUser), `actions`
 //    (pcPreset, pcToast); the monitor and watch cards only on the variants
 //    that have them: eight files. v14 was never published.
-const VERSION = 15;
+// 16: #160 - the monitor card and the audio device slots are gone; the
+//    `sound` card (pcSpeaker, pcMic: state only) after `media`. Without the
+//    monitor axis: four files. v15 was never published.
+const VERSION = 16;
 
 const CATEGORY = 'Switch';
 
 // #158: the optional cards, in name order. Each has its `# @<card>-begin`
-// and `# @<card>-end` markers in the template.
-const CARDS = ['monitor', 'watch', 'battery'];
+// and `# @<card>-end` markers in the template. #160 dropped `monitor`.
+const CARDS = ['watch', 'battery'];
 
-// The eight card sets, `pc.v15` first.
+// The four card sets, `pc.v16` first.
 function variants() {
   const out = [];
   for (let bits = 0; bits < 1 << CARDS.length; bits++) {

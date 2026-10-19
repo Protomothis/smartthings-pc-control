@@ -1,9 +1,9 @@
 # The ONE hand-written device profile (design doc §6.6, media-notify.md §14).
 #
-# tools/gen-profiles.js turns this file into the eight current profiles in
-# profiles/: with and without each of the monitor card, the watch list and
-# the battery (#158, #116), all in the Switch category (#136 - the user picks
-# the icon in the app). Edit this file, run
+# tools/gen-profiles.js turns this file into the four current profiles in
+# profiles/: with and without each of the watch list and the battery (#158,
+# #116), all in the Switch category (#136 - the user picks the icon in the
+# app). Edit this file, run
 #
 #   bun tools/gen-profiles.js          (or: node tools/gen-profiles.js)
 #
@@ -11,10 +11,9 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v15, pc-monitor-watch-battery.v15, …
+#   __NAME__       the profile name - pc.v16, pc-watch-battery.v16, …
 #   __CATEGORY__   the main component's category (profiles.CATEGORY)
-#   @monitor-begin … @monitor-end, @watch-begin … @watch-end,
-#   @battery-begin … @battery-end
+#   @watch-begin … @watch-end, @battery-begin … @battery-end
 #                  kept only in the profiles with that card; the marker
 #                  lines go. The driver picks the card set from the PC's
 #                  status (profiles.apply_cards).
@@ -25,8 +24,8 @@
 # stay in profiles/, frozen, for the devices not yet migrated: the v1 files
 # (pc.yml and pc-<style>.yml), the v10 ones (edge 1.1.0; their bare name is
 # the old default, others) and the two v13 ones (edge 1.2.x). The v2 to v9,
-# v11, v12 and v14 files this template made were never published and are
-# gone (profiles.UNSHIPPED_VERSIONS).
+# v11, v12, v14 and v15 files this template made were never published and
+# are gone (profiles.UNSHIPPED_VERSIONS).
 #
 # The capability ORDER below is the reading order on screen: the app collects
 # a card's state-only rows into one block and its interactive rows into a
@@ -45,7 +44,7 @@
 # parentheses: the SmartThings app shows profile preferences in whatever the
 # driver wrote, with no per-locale variant, and this project is Korean-first.
 # Everyday ones first, the connection settings last; descriptions short (each
-# is copied into eight profiles, and the package has a size limit). Comment
+# is copied into four profiles, and the package has a size limit). Comment
 # lines like these are not copied.
 name: __NAME__
 components:
@@ -69,10 +68,8 @@ components:
         version: 1
     categories:
       - name: __CATEGORY__
-  # #107/#118/#154: what is playing, play/pause, previous/next, the volume
-  # slider and the mute toggle (standard, drawn by the app), then the audio
-  # device slots - outputs, inputs: a names row and a slot list each, so the
-  # routine reads "출력 장치" / "입력 장치".
+  # #107/#118: what is playing, play/pause, previous/next, the volume slider
+  # and the mute toggle (standard, drawn by the app).
   - id: media
     label: 미디어
     capabilities:
@@ -86,9 +83,17 @@ components:
         version: 1
       - id: audioMute
         version: 1
-      - id: numbersystem53811.pcaudioout
+  # #160: the speaker and the microphone, state only - a summary row and the
+  # names of the device slots each; the routine conditions are the default
+  # device's slot ("출력 장치" / "입력 장치"), sound playing and the mutes.
+  # Preview: the speaker's summary ("헤드셋 · 재생 중"), its slot names, the
+  # microphone's summary ("마이크 · 켜짐").
+  - id: sound
+    label: 소리
+    capabilities:
+      - id: numbersystem53811.pcspeaker
         version: 1
-      - id: numbersystem53811.pcaudioin
+      - id: numbersystem53811.pcmic
         version: 1
   # #151/#152: one state row each, so the preview reads "자리 비움 · 카메라
   # 사용 중 · 사용 중 · kim" - in use / idle / locked ("사용 상태", "입력 없는
@@ -131,21 +136,6 @@ components:
       - id: numbersystem53811.pcwatchlist
         version: 1
 # @watch-end
-# @monitor-begin
-  # #153: the primary monitor over DDC/CI - a summary row ("HDMI 1 · 40% ·
-  # DELL U2720Q") and our input list (the standard mediaInputSource has no
-  # DisplayPort), then the standard power toggle and brightness slider. Only
-  # while the PC app's monitor control is on (`features` lists `monitor`).
-  - id: monitor
-    label: 모니터
-    capabilities:
-      - id: numbersystem53811.pcmonitor
-        version: 1
-      - id: switch
-        version: 1
-      - id: switchLevel
-        version: 1
-# @monitor-end
 # @battery-begin
   - id: battery
     label: 배터리
