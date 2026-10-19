@@ -129,13 +129,13 @@ function T.test_full_status_sound_rows()
   local status = h.fixture("status.full.json")
   local events = rows_of(status)
   local S = "sound"
-  h.assert_equal(value(events, caps.SPEAKER, "summary", S), "스피커 · 재생 중", "audio.device/playing")
+  h.assert_equal(value(events, caps.SPEAKER, "summary", S), "1 스피커 · 재생 중", "audio.outputs[].default/audio.device/playing")
   h.assert_equal(value(events, caps.SPEAKER, "names", S), "1 스피커 · 3 헤드셋 · 4 LG TV",
     "audio.outputs[].slot/name")
   h.assert_equal(value(events, caps.SPEAKER, "output", S), "1", "audio.outputs[].default")
   h.assert_equal(value(events, caps.SPEAKER, "playing", S), "playing", "audio.playing")
   h.assert_equal(value(events, caps.SPEAKER, "muted", S), "unmuted", "audio.muted")
-  h.assert_equal(value(events, caps.MIC, "summary", S), "마이크 · 켜짐", "audio.input_device/input_muted")
+  h.assert_equal(value(events, caps.MIC, "summary", S), "1 마이크 · 켜짐", "audio.inputs[].default/input_device/input_muted")
   h.assert_equal(value(events, caps.MIC, "names", S), "1 마이크 · 2 헤드셋 마이크")
   h.assert_equal(value(events, caps.MIC, "input", S), "1", "audio.inputs[].default")
   h.assert_equal(value(events, caps.MIC, "muted", S), "unmuted", "audio.input_muted")
@@ -367,7 +367,7 @@ local PUSHES = {
     h.assert_equal(value(events, features.CAP_MUTE, "mute"), "muted")
     -- #160: the sound card follows the same block.
     h.assert_equal(value(events, caps.SPEAKER, "muted", "sound"), "muted", "status.audio.muted")
-    h.assert_equal(value(events, caps.SPEAKER, "summary", "sound"), "스피커 · 재생 중")
+    h.assert_equal(value(events, caps.SPEAKER, "summary", "sound"), "1 스피커 · 재생 중")
     h.assert_equal(value(events, caps.SPEAKER, "playing", "sound"), "playing", "status.audio.playing")
     h.assert_equal(value(events, caps.MIC, "muted", "sound"), "unmuted", "status.audio.input_muted")
   end,

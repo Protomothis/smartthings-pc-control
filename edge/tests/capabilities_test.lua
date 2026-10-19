@@ -964,7 +964,8 @@ function T.test_the_sound_card_is_state_and_routine_conditions_only()
   -- #160: what a routine reads - the default device's slot ("출력 장치 =
   -- 출력 3"), sound playing, the mutes. `none` and `unknown` are rests,
   -- not events, so no condition offers them. The detail view is the summary
-  -- (the card's preview) and the names that tell which slot is which.
+  -- alone ("3 헤드셋 · 재생 중": the slot number ties the device to the
+  -- condition); `names` stays defined and emitted, off screen.
   local sensors = require "sensors"
   for _, c in ipairs({
     { "speaker", "output", { summary = 60, names = 120 },
@@ -987,9 +988,9 @@ function T.test_the_sound_card_is_state_and_routine_conditions_only()
       h.assert_deep_equal(attributes.playing.schema.properties.value.enum, { "playing", "idle", "unknown" })
     end
     local detail = presentation(key).detailView
-    h.assert_equal(#detail, 2, key .. ": the summary and the names")
+    h.assert_equal(#detail, 1, key .. ": the summary alone (names is for routines only, a tidy card)")
     h.assert_equal(detail[1].state.label, "{{summary.value}}")
-    h.assert_equal(detail[2].state.label, "{{names.value}}")
+    h.assert_true(attributes.names ~= nil, key .. " keeps defining names")
     local listed = presentation(key).automation.conditions
     h.assert_equal(#listed, #order, key .. " conditions")
     for i, attr in ipairs(order) do

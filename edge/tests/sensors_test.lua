@@ -338,31 +338,48 @@ function T.test_playing_and_muted_read_booleans_and_nothing_else()
   h.assert_nil(value(events, "media", features.CAP_MUTE, "mute"), "the media card agrees")
 end
 
-function T.test_the_summary_names_the_device_and_one_word()
+function T.test_the_summary_names_the_slot_the_device_and_one_word()
   local function summaries(audio, lang, overrides)
     local status = sound({ SPEAKER }, { MIC }, audio, overrides)
     return sensors.audio_summary(status, "output", lang or "ko"), sensors.audio_summary(status, "input", lang or "ko")
   end
+  -- The slot first: the card shows no names row, and the number is what a
+  -- routine condition ("출력 1") names.
   local speaker, mic = summaries({})
-  h.assert_equal(speaker, "스피커 · 재생 중")
-  h.assert_equal(mic, "마이크 · 켜짐")
-  speaker, mic = summaries({ device = "헤드셋 (WH-1000XM4)", playing = false, input_muted = true })
-  h.assert_equal(speaker, "헤드셋 · 조용함")
-  h.assert_equal(mic, "마이크 · 음소거")
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
+  h.assert_equal(mic, "2 마이크 · 켜짐")
+  speaker, mic = summaries({ playing = false, input_muted = true })
+  h.assert_equal(speaker, "1 스피커 · 조용함")
+  h.assert_equal(mic, "2 마이크 · 음소거")
+  -- A default device in no slot: no number.
+  local headset = { slot = 3, name = "헤드셋 (WH-1000XM4)", present = true, default = true }
+  h.assert_equal(sensors.audio_summary(sound({ headset }, nil, { device = "헤드셋 (WH-1000XM4)" }), "output", "ko"),
+    "3 헤드셋 · 재생 중")
+  local other = { slot = 1, name = "스피커", present = true, default = false }
+  h.assert_equal(sensors.audio_summary(sound({ other }, nil, { device = "헤드셋 (WH-1000XM4)", playing = false }),
+    "output", "ko"), "헤드셋 · 조용함")
+  h.assert_equal(sensors.audio_summary(sound(nil, nil, { input_muted = true }), "input", "ko"), "마이크 · 음소거")
   -- The speaker's mute is the media card's toggle: not in this row (a mute
   -- command would cost one more event).
   speaker = summaries({ muted = true, playing = true })
-  h.assert_equal(speaker, "스피커 · 재생 중")
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
   speaker, mic = summaries({ playing = true }, "en")
-  h.assert_equal(speaker, "스피커 · Playing")
-  h.assert_equal(mic, "마이크 · On")
+  h.assert_equal(speaker, "1 스피커 · Playing")
+  h.assert_equal(mic, "2 마이크 · On")
   -- Whichever half is known; a long name is cut like a slot name.
+  -- No name in the reading: the slot's own; a long name is cut like a slot
+  -- name, so the row stays far inside its 60 characters.
   speaker, mic = summaries({ device = NONE, input_muted = NONE, input_device = "USB 콘덴서 마이크 프로페셔널 에디션" })
-  h.assert_equal(speaker, "재생 중")
-  h.assert_equal(mic, "USB 콘덴서 마이크 …")
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
+  h.assert_equal(mic, "2 USB 콘덴서 마이크 …")
   speaker, mic = summaries({ device = "", playing = NONE, muted = NONE, input_device = NONE, input_muted = NONE })
-  h.assert_equal(speaker, "알 수 없음")
-  h.assert_equal(mic, "알 수 없음")
+  h.assert_equal(speaker, "1 스피커")
+  h.assert_equal(mic, "2 마이크")
+  local blank = sound(nil, nil, { device = NONE, playing = NONE })
+  h.assert_equal(sensors.audio_summary(blank, "output", "ko"), "알 수 없음")
+  local longest = sound({ { slot = 5, name = string.rep("가", 40), default = true } }, nil,
+    { device = string.rep("가", 40), playing = false })
+  h.assert_true(utf8.len(sensors.audio_summary(longest, "output", "ko")) <= 60)
   -- Nobody logged in; a PC app too old for the card; nothing read at all.
   speaker, mic = summaries({ available = false })
   h.assert_equal(speaker, "사용자 없음")

@@ -193,4 +193,4 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 연결 거부와 시간 초과의 실제 오류 문구(위 "연결 거부와 시간 초과", 설계 §3.1).
 - 프로필 이전의 착지 `infoChanged`에서 `args.old_st_store.profile.id`가 달라지는지(#129).
 - v14(#151, #152): `automation.conditions`의 `numberField`(`pcPresence.idleMinutes`)가 받아들여지고 루틴에서 숫자 비교로 나오는지.
-- v16(#160): 상태 줄 넷(스피커·마이크의 `summary`·`names`)인 `sound` 카드의 미리보기 세 칸과 상세에서 같은 capability의 두 줄이 반 폭으로 잘리는지.
+- v16(#160): 상태 줄 둘(스피커·마이크의 `summary`, "3 헤드셋 · 재생 중")인 `sound` 카드의 미리보기가 각각 한 줄에 드는지.

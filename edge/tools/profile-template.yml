@@ -83,11 +83,10 @@ components:
         version: 1
       - id: audioMute
         version: 1
-  # #160: the speaker and the microphone, state only - a summary row and the
-  # names of the device slots each; the routine conditions are the default
-  # device's slot ("출력 장치" / "입력 장치"), sound playing and the mutes.
-  # Preview: the speaker's summary ("헤드셋 · 재생 중"), its slot names, the
-  # microphone's summary ("마이크 · 켜짐").
+  # #160: the speaker and the microphone, state only - one summary row each,
+  # led by the default device's slot, so the preview reads "3 헤드셋 · 재생
+  # 중 · 1 마이크 · 켜짐"; the routine conditions are that slot ("출력 장치" /
+  # "입력 장치"), sound playing and the mutes.
   - id: sound
     label: 소리
     capabilities:

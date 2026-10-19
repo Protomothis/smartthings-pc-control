@@ -224,7 +224,8 @@ end
 
 -- The PC's `sound` component ("소리", v16), right after the media card:
 -- `pcSpeaker` and `pcMic`, state only - what a routine reads as a condition.
--- Each has a summary row ("헤드셋 · 재생 중"), the names row of its device
+-- Each has one detail row, the summary ("3 헤드셋 · 재생 중": the default
+-- device's slot, its name, one word), and off screen the names of its device
 -- slots ("1 스피커 · 3 헤드셋") and the slot of the default device (`output`
 -- / `input`); the speaker also whether sound comes out of it (`playing`),
 -- both whether they are muted. Device names differ on every PC and a
@@ -382,13 +383,19 @@ function sensors.audio_muted(status, kind)
   return sensors.UNKNOWN
 end
 
---- The summary row of `kind`: the default device's short name and one word -
---- "헤드셋 · 재생 중" / "스피커 · 조용함", "마이크 · 켜짐" / "마이크 · 음소거" -
---- or whichever half is known; "사용자 없음" while nobody is logged in,
---- "알 수 없음", or "PC 앱 v1.3.0 필요". Never "". The speaker's word is
---- `playing` alone: its mute is the media card's toggle right above, and a
---- mute in this row too would cost every mute command one more event
---- (platform notes "이벤트 예산").
+--- The summary row of `kind`: the default device's slot, its short name and
+--- one word - "3 헤드셋 · 재생 중" / "1 스피커 · 조용함", "1 마이크 · 켜짐" /
+--- "1 마이크 · 음소거" - or whichever part is known; no slot number while
+--- the device sits in no slot (`none`). "사용자 없음" while nobody is logged
+--- in, "알 수 없음", or "PC 앱 v1.3.0 필요". Never "".
+---
+--- The row is the card's only detail row (the names row is a routine-only
+--- attribute, #160: a tidy screen), so the slot number is what ties the
+--- device to the routine condition "출력 3". The speaker's word is `playing`
+--- alone: its mute is the media card's toggle right above, and a mute in
+--- this row too would cost every mute command one more event (platform
+--- notes "이벤트 예산"). The slot rides with the device name, which changes
+--- with it, so it costs no event of its own.
 function sensors.audio_summary(status, kind, lang)
   if status == nil then
     return i18n.t(lang, "privacy_unknown")
@@ -402,9 +409,20 @@ function sensors.audio_summary(status, kind, lang)
   local parts = {}
   local audio = reading(status)
   local device = audio and clean(audio[sensors.AUDIO_KINDS[kind].device]) or ""
-  if device ~= "" then
-    parts[1] = features.truncate(short_name(device), features.SLOT_NAME_MAX_CHARS)
+  local slot = sensors.audio_current(status, kind)
+  if device == "" and slot ~= sensors.SLOT_NONE then
+    -- No name in the reading: the slot's own.
+    for _, entry in ipairs(sensors.audio_slots(status, kind)) do
+      if tostring(entry.slot) == slot then
+        device = entry.name
+      end
+    end
   end
+  local head = device ~= "" and features.truncate(short_name(device), features.SLOT_NAME_MAX_CHARS) or nil
+  if slot ~= sensors.SLOT_NONE then
+    head = head and (slot .. " " .. head) or slot
+  end
+  parts[1] = head
   local word
   if kind == "input" then
     local muted = sensors.audio_muted(status, kind)
