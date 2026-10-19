@@ -150,8 +150,16 @@ end
 --- records `state.apply_status` produces, so `event_value` works on both. The
 --- st.capabilities mock builds `{ capability, attribute, value }`.
 function h.emitted(device)
+  local card_of = (require "features").CARD_OF
   local out = {}
   for i, e in ipairs((device or {}).emitted or {}) do
+    -- #158: a capability v15 moved off main keeps a main-shaped row key
+    -- (emit.row_key), so `component` says nil for it like the record does;
+    -- `card` is the component the event really went to.
+    local component = e.component
+    if component ~= nil and card_of[e.capability] == component then
+      component = nil
+    end
     out[i] = {
       cap = e.capability, attr = e.attribute, value = e.value,
       -- #86: the emit options, so a test can tell a forced event (the answer to
@@ -159,7 +167,8 @@ function h.emitted(device)
       options = e.options,
       -- #107: nil for the main component (`emit_event`), the component id for
       -- `emit_component_event`.
-      component = e.component,
+      component = component,
+      card = e.component,
     }
   end
   return out
@@ -209,16 +218,28 @@ function h.components_for(profile_name)
   if type(profile_name) == "string" and profile_name:find("%-battery%.v%d+$") then
     components.battery = { id = "battery" }
   end
-  -- #123: the watch card's component, from v7 on (no name = a current device).
+  -- No name = a current device with every card (`pc-monitor-watch.v15`).
   local version = type(profile_name) == "string" and tonumber(profile_name:match("%.v(%d+)$"))
-  if not version or version >= 7 then
+  local current = not version or version >= 15
+  local stem = type(profile_name) == "string" and profile_name or "pc-monitor-watch"
+  -- #123: the watch card's component, from v7 on; #158: on `-watch` names.
+  if (version and version >= 7 and version <= 14) or (current and stem:find("-watch", 1, true)) then
     components.apps = { id = "apps" }
   end
-  -- PC app v1.3.0: the presence card, from v14 on.
+  -- PC app v1.3.0: the presence card, from v14 on; v14's audio card.
   if not version or version >= 14 then
     components.presence = { id = "presence" }
+  end
+  if version == 14 or (current and stem:find("-monitor", 1, true)) then
     components.monitor = { id = "monitor" }
+  end
+  if version == 14 then
     components.audio = { id = "audio" }
+  end
+  -- #158: the cards that took over main's media group, presets and message.
+  if current then
+    components.media = { id = "media" }
+    components.actions = { id = "actions" }
   end
   return components
 end

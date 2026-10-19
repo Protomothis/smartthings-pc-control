@@ -160,10 +160,10 @@ local function resolve(device, e, log)
   local component
   if e.component ~= nil and e.component ~= "main" then
     component = emit.component(device, e.component)
-  elseif e.component == nil and features.MEDIA_CAPS[e.cap] then
-    -- #118: a profile may keep the media group on a component of its own; the
+  elseif e.component == nil and features.CARD_OF[e.cap] then
+    -- #158: v15 moved this capability off main (v13 still has it there); the
     -- record (and its row key) stays main-shaped.
-    component = emit.component(device, features.MEDIA_COMPONENT)
+    component = emit.component(device, features.CARD_OF[e.cap])
   end
   if not attr then
     log.debug(string.format("capability %s.%s not available, skipped", tostring(e.cap), tostring(e.attr)))
@@ -271,7 +271,11 @@ function emit.last_value(device, e)
   if value ~= nil then
     return value
   end
-  local component = e.component ~= nil and e.component ~= "main" and { id = e.component } or nil
+  local id = e.component
+  if id == nil and features.CARD_OF[e.cap] and emit.component(device, features.CARD_OF[e.cap]) then
+    id = features.CARD_OF[e.cap]
+  end
+  local component = id ~= nil and id ~= "main" and { id = id } or nil
   return cached_state(device, {}, e, component)
 end
 
@@ -355,8 +359,8 @@ end
 
 --- True while a paint runs and for one budget window after its last batch:
 --- the rotation and a repaint's follow-ups wait that long, so they do not
---- land in the same window as the last two batches (v14: ~64 rows, eight
---- batches, the last one past the 30 s poll).
+--- land in the same window as the last two batches (v15 with every card:
+--- ~64 rows, eight batches, the last one past the 30 s poll).
 function emit.settling(device)
   if emit.painting(device) then
     return true

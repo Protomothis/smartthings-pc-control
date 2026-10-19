@@ -514,7 +514,7 @@ end
 -- (`push.use`) so that this module does not require it.
 local wired = {}
 
---- `hooks.follow_battery(driver, device, status)`: poll.follow_battery.
+--- `hooks.follow_cards(driver, device, status)`: poll.follow_cards.
 function push.use(hooks)
   wired = hooks or {}
 end
@@ -552,8 +552,8 @@ function push.apply_to_device(driver, device, payload, deps)
     -- reason): the watch card follows at once.
     emit.rows(device, events)
     pcall(function() device:online() end)
-    -- Every push carries the battery block too.
-    pcall(function() wired.follow_battery(driver, device, payload.status) end)
+    -- Every push carries the battery block and `features` too.
+    pcall(function() wired.follow_cards(driver, device, payload.status) end)
   else
     rows.emit_power(device, nxt)
     -- C3 without a status block: the slots that ran, stopped and forced.

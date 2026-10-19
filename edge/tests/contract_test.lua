@@ -136,7 +136,7 @@ function T.test_full_status_audio_slot_rows()
   -- the device names stay apart.
   local status = h.fixture("status.full.json")
   local events = rows_of(status)
-  local A = "audio"
+  local A = "media"
   h.assert_equal(value(events, caps.AUDIO_OUT, "names", A), "1 스피커 · 3 헤드셋 · 4 LG TV",
     "audio.outputs[].slot/name")
   h.assert_equal(value(events, caps.AUDIO_OUT, "output", A), "1", "audio.outputs[].default")
@@ -329,8 +329,8 @@ function T.test_off_status_rows()
   -- #154: media control off, so no slots - and the golden's v1.2.0 is older
   -- than the release that brought them.
   h.assert_deep_equal(status.audio.outputs, {}, "audio.outputs: []")
-  h.assert_equal(value(events, caps.AUDIO_OUT, "output", "audio"), "none")
-  h.assert_equal(value(events, caps.AUDIO_OUT, "names", "audio"), "PC 앱 v1.3.0 필요")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "output", "media"), "none")
+  h.assert_equal(value(events, caps.AUDIO_OUT, "names", "media"), "PC 앱 v1.3.0 필요")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -611,10 +611,10 @@ local SENDS = {
   end,
   -- #154: the slot number, from a list that sends strings.
   ["command.audio_output.json"] = function(device)
-    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { component = "audio", args = { slot = "3" } })
+    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { component = "media", args = { slot = "3" } })
   end,
   ["command.audio_input.json"] = function(device)
-    handlers_for(caps.AUDIO_IN).setInput(driver, device, { component = "audio", args = { slot = "2" } })
+    handlers_for(caps.AUDIO_IN).setInput(driver, device, { component = "media", args = { slot = "2" } })
   end,
   ["command.subscribe.json"] = function(device)
     client.subscribe(device, "http://192.168.1.20:39500/pc/evt", client.DEFAULT_TTL)

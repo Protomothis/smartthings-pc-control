@@ -451,7 +451,7 @@ end
 -- #154: the audio device slots
 --------------------------------------------------------------------------------
 
-local A = "audio"
+local A = "media"
 
 local function slots(outputs, inputs, overrides)
   local status = { protocol = 1, service_version = "v1.3.0",
