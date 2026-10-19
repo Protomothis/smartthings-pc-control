@@ -1,8 +1,10 @@
 package gui
 
-// The settings tab: the Windows service, the service settings, media and
-// PC notifications (notify_section.go), tools, the app's own options and
-// the developer section (debug mode, #133).
+// The settings tab, slimmed down in #157 to four sections: the Windows
+// service, the service settings (port, secret, remote access, grace, with
+// [WebUI 열기] and [서비스 재시작]), the app's own options (language,
+// autostart, updates) and the developer section (debug mode, #133),
+// folded by default. The feature opt-ins live on the features tab.
 // Its pure model is settings_model.go.
 
 import (
@@ -37,8 +39,6 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry.OnChanged = onEdit
 	u.secretEntry.OnChanged = onEdit
 	u.remoteCheck = newToggle(u.t("settings.remote"), onToggle)
-	u.mediaCheck = newToggle(u.t("settings.media"), onToggle)
-	u.monitorCheck = newToggle(u.t("settings.monitor"), onToggle)
 	u.debugCheck = newToggle(u.t("settings.debug"), onToggle)
 	u.graceValues = append([]int{0}, graceOptions...)
 	u.graceSelect = widget.NewSelect(u.graceLabels(), func(string) { u.refreshDirty() })
@@ -71,19 +71,14 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		widget.NewFormItem(u.t("settings.grace"), u.graceSelect),
 	)
 
+	// The former 도구 section's two buttons close the service section: both
+	// are about the service.
 	settingsBody := container.NewVBox(
 		form,
 		hint(u.t("settings.grace.hint")),
 		u.remoteCheck,
 		hint(u.t("settings.remote.hint")),
-	)
-	// The media switch (media.enabled, #104) heads the 미디어·알림 section,
-	// above the PC notification ones (#106, notify_section.go). The
-	// now-playing opt-in (#117) is the sharing tab's: it is about what the
-	// PC tells others, not what they may do to it.
-	mediaNotifyBody := u.buildMediaNotifySection(
-		u.mediaCheck, hint(u.t("settings.media.hint")),
-		u.monitorCheck, hint(u.t("settings.monitor.hint")),
+		container.NewHBox(openWebUI, restartBtn, layout.NewSpacer()),
 	)
 
 	u.svcBox = container.NewVBox()
@@ -110,34 +105,65 @@ func (u *ui) buildSettingsTab() fyne.CanvasObject {
 		}
 	}
 
-	// Everything below service management is meaningless until the
-	// service is reachable — hidden via applyConnected.
+	// The service settings and the developer section are meaningless until
+	// the service is reachable — hidden via applyConnected. The app's own
+	// options (the language among them) need no service and stay.
 	u.settingsExtra = container.NewVBox(
 		widget.NewSeparator(),
 		section(u.t("settings.service"), settingsBody),
-		widget.NewSeparator(),
-		section(u.t("settings.medianotify"), mediaNotifyBody),
-		widget.NewSeparator(),
-		section(u.t("audio.slots.title"), u.buildAudioSlotsSection()),
-		widget.NewSeparator(),
-		section(u.t("settings.tools"), container.NewHBox(openWebUI, restartBtn, layout.NewSpacer())),
-		widget.NewSeparator(),
-		section(u.t("settings.app"), container.NewVBox(
-			autostartCheck,
-			container.NewHBox(updateCheck, manualUpdateBtn, layout.NewSpacer()),
-		)),
-		widget.NewSeparator(),
-		section(u.t("settings.dev"), u.buildDeveloperSection()),
-		// Trailing padding so the last row never sits flush against the
-		// window edge when the tab fits without scrolling.
-		widget.NewLabel(""),
 	)
+	dev := widget.NewAccordion(widget.NewAccordionItem(u.t("settings.dev"), u.buildDeveloperSection()))
+	u.settingsDev = container.NewVBox(widget.NewSeparator(), dev)
 
 	u.settingsRoot = container.NewVBox(
 		section(u.t("svc.section"), u.svcBox),
 		u.settingsExtra,
+		widget.NewSeparator(),
+		section(u.t("settings.app"), container.NewVBox(
+			container.NewBorder(nil, nil, widget.NewLabel(u.t("settings.lang")), nil, u.buildLangSelect()),
+			autostartCheck,
+			container.NewHBox(updateCheck, manualUpdateBtn, layout.NewSpacer()),
+		)),
+		u.settingsDev,
+		// Trailing padding so the last row never sits flush against the
+		// window edge when the tab fits without scrolling.
+		widget.NewLabel(""),
 	)
 	return withSaveBar(u.settingsRoot, ft.bar)
+}
+
+// buildLangSelect is the language picker of the 앱 section (#157; it used
+// to sit in the top bar). Picking a language rebuilds the window in it.
+func (u *ui) buildLangSelect() *widget.Select {
+	langSelect := widget.NewSelect([]string{"한국어", "English"}, func(sel string) {
+		newLang := LangEn
+		if sel == "한국어" {
+			newLang = LangKo
+		}
+		if newLang == u.lang {
+			return
+		}
+		u.lang = newLang
+		u.app.Preferences().SetString("lang", string(newLang))
+		// rebuild() replaces every widget (the forms keep their edits);
+		// keep the current tab and reload status/logs/schedule so the
+		// window doesn't fall back to "Connecting...". The switch back is
+		// not the user leaving a tab, so it asks nothing.
+		selected := u.tabs.SelectedIndex()
+		u.rebuild()
+		if selected >= 0 && selected < len(u.tabs.Items) && (u.connected.Load() || offlineTab(selected)) {
+			u.selectTab(selected)
+		}
+		background(u.initialLoad)
+	})
+	// Set before anything reads u.tabs: the callback returns at once for
+	// the language already in use.
+	if u.lang == LangKo {
+		langSelect.SetSelected("한국어")
+	} else {
+		langSelect.SetSelected("English")
+	}
+	return langSelect
 }
 
 // buildDeveloperSection is the 개발자 section (#133): the debug mode switch,
@@ -161,25 +187,17 @@ func (u *ui) fillSettingsTab(cfg Config) {
 	u.portEntry.SetText(s.Port)
 	u.secretEntry.SetText(s.Secret)
 	u.remoteCheck.SetChecked(s.Remote)
-	u.mediaCheck.SetChecked(s.Media)
-	u.monitorCheck.SetChecked(s.Monitor)
 	u.debugCheck.SetChecked(s.Debug)
 	u.setGraceSelection(cfg)
-	u.fillNotifySection(cfg)
-	u.fillAudioSlots(cfg)
 }
 
 // settingsState reads the settings-tab fields into the pure model.
 func (u *ui) settingsState() settingsFormState {
 	s := settingsFormState{
-		Port:     u.portEntry.Text,
-		Secret:   u.secretEntry.Text,
-		Remote:   u.remoteCheck.Checked,
-		Media:    u.mediaCheck.Checked,
-		Monitor:  u.monitorCheck.Checked,
-		NotifyPC: u.notifySectionState(),
-		Debug:    u.debugCheck.Checked,
-		Audio:    u.audioSlotsFormState(),
+		Port:   u.portEntry.Text,
+		Secret: u.secretEntry.Text,
+		Remote: u.remoteCheck.Checked,
+		Debug:  u.debugCheck.Checked,
 	}
 	if i := u.graceSelect.SelectedIndex(); i > 0 && i < len(u.graceValues) {
 		s.GraceOn, s.GraceSec = true, u.graceValues[i]

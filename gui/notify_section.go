@@ -8,11 +8,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// The settings tab's 미디어·알림 section (media-notify doc §4, "UI 구성"):
-// the media switch of #104 next to the PC-notification switch of #106 and
-// [테스트 알림]; #117's now-playing opt-in is on the sharing tab. It shares
-// the settings tab's save bar:
-// settingsState reads it into settingsFormState.NotifyPC.
+// The features tab's PC-notification row (#106, #157): the switch and
+// [테스트 알림]. It shares the features tab's save bar: featuresState
+// reads it into featuresFormState.NotifyPC.
 
 // --- Pure model (unit-tested) ------------------------------------------------
 
@@ -37,18 +35,16 @@ func (s notifyPCState) dirty(base Config) bool {
 
 // --- Widgets -----------------------------------------------------------------
 
-// notifySection holds the section's PC-notification widgets; rebuilt with
-// the settings tab on a language change.
+// notifySection holds the row's widgets; rebuilt with the features tab on
+// a language change.
 type notifySection struct {
 	notifyCheck *toggle
 	testBtn     *widget.Button
 	testStatus  *widget.Label
 }
 
-// buildMediaNotifySection creates the section. head are the settings
-// tab's own media switch (media.enabled with its hint), placed first; the
-// PC-notification controls follow.
-func (u *ui) buildMediaNotifySection(head ...fyne.CanvasObject) fyne.CanvasObject {
+// buildNotifyPCBox creates the row's contents.
+func (u *ui) buildNotifyPCBox() fyne.CanvasObject {
 	n := &notifySection{}
 	u.pcNotify = n
 	n.notifyCheck = newToggle(u.t("notifypc.enabled"), func(bool) { u.refreshDirty() })
@@ -56,12 +52,12 @@ func (u *ui) buildMediaNotifySection(head ...fyne.CanvasObject) fyne.CanvasObjec
 	n.testStatus.Wrapping = fyne.TextWrapWord
 	n.testBtn = widget.NewButtonWithIcon(u.t("notifypc.test"), theme.MailSendIcon(), func() { u.sendNotifyTest() })
 
-	return container.NewVBox(append(head,
+	return container.NewVBox(
 		n.notifyCheck,
 		hint(u.t("notifypc.hint")),
 		container.NewHBox(n.testBtn, layout.NewSpacer()),
 		n.testStatus,
-	)...)
+	)
 }
 
 // notifySectionState reads the widgets; the zero state before the section

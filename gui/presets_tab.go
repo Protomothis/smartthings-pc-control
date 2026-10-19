@@ -456,11 +456,11 @@ func (u *ui) presetsForm(index int) *formTab {
 // --- command tab ---------------------------------------------------------
 
 // buildPresetButtons is the command tab's preset section; its buttons are
-// filled from the config (fillPresetButtons).
+// filled from the config (fillPresetButtons). Without presets the whole
+// section is hidden (applyCommandCards, #157).
 func (u *ui) buildPresetButtons() fyne.CanvasObject {
 	u.presetButtons = container.NewGridWrap(cmdButtonSize)
-	u.presetEmpty = hint(u.t("cmd.presets.empty"))
-	return section(u.t("cmd.group.presets"), container.NewVBox(u.presetEmpty, u.presetButtons))
+	return section(u.t("cmd.group.presets"), u.presetButtons)
 }
 
 // fillPresetButtons shows one [실행] button per saved preset. UI thread.
@@ -482,11 +482,6 @@ func (u *ui) fillPresetButtons(ps []Preset) {
 			})
 		}
 		u.presetButtons.Add(btn)
-	}
-	if len(ps) == 0 {
-		u.presetEmpty.Show()
-	} else {
-		u.presetEmpty.Hide()
 	}
 	u.presetButtons.Refresh()
 }

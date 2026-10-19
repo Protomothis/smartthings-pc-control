@@ -13,7 +13,7 @@ type modelTabs struct {
 	settings settingsFormState
 	notify   notifyFormState
 	st       stFormState
-	share    shareFormState
+	share    featuresFormState
 	presets  presetsFormState
 	f        *forms
 	tabs     struct{ settings, notify, st, share, presets *formTab }
@@ -46,8 +46,8 @@ func newModelTabs() *modelTabs {
 		},
 	})
 	m.tabs.share = m.f.register(&formTab{
-		index: tabShare,
-		Fill:  func(c Config) { m.share = shareStateFromConfig(c) },
+		index: tabFeatures,
+		Fill:  func(c Config) { m.share = featuresStateFromConfig(c) },
 		Dirty: func(b Config) bool { return m.share.dirty(b) },
 		ApplyTo: func(c *Config) error {
 			*c = m.share.applyTo(*c)
@@ -103,11 +103,12 @@ func TestMergeKeepsSecretAndMaskedToken(t *testing.T) {
 	m.notify.ChatID = "99"
 	m.st.Hubs = append(m.st.Hubs, "192.168.1.21")
 	m.presets.Rows[0].Name = "Games"
-	// The sharing tab edits the same smartthings and media objects as the
-	// SmartThings and settings tabs, field by field.
+	// The features tab edits the same smartthings object as the
+	// SmartThings tab, field by field; the settings tab keeps debug.
 	m.share.ExposeSession = false
 	m.share.NowPlaying = true
-	m.settings.Media = true
+	m.share.Media = true
+	m.settings.Debug = true
 
 	all := []*formTab{m.tabs.settings, m.tabs.notify, m.tabs.st, m.tabs.share, m.tabs.presets}
 	for _, saving := range [][]*formTab{
@@ -141,11 +142,11 @@ func TestMergeKeepsSecretAndMaskedToken(t *testing.T) {
 		if got := cfg.Presets[0].Name == "Games"; got != want[m.tabs.presets] {
 			t.Errorf("preset rename in merge = %v, want %v", got, want[m.tabs.presets])
 		}
-		if got := !cfg.SmartThings.ExposeSession && cfg.Media.NowPlaying; got != want[m.tabs.share] {
-			t.Errorf("sharing edits in merge = %v, want %v", got, want[m.tabs.share])
+		if got := !cfg.SmartThings.ExposeSession && cfg.Media.NowPlaying && cfg.Media.Enabled; got != want[m.tabs.share] {
+			t.Errorf("features edits in merge = %v, want %v", got, want[m.tabs.share])
 		}
-		if got := cfg.Media.Enabled; got != want[m.tabs.settings] {
-			t.Errorf("media.enabled in merge = %v, want %v", got, want[m.tabs.settings])
+		if got := cfg.Debug; got != want[m.tabs.settings] {
+			t.Errorf("debug in merge = %v, want %v", got, want[m.tabs.settings])
 		}
 	}
 
@@ -252,7 +253,7 @@ func TestAdoptOnRefreshKeepsUnsavedEdits(t *testing.T) {
 	if m.share.NowPlaying {
 		t.Error("now playing changed: a dirty tab keeps all of its widgets")
 	}
-	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabShare}) {
+	if d := dirtyIndices(m.f); !slices.Equal(d, []int{tabFeatures}) {
 		t.Errorf("dirty after refresh = %v, want only the sharing tab", d)
 	}
 }

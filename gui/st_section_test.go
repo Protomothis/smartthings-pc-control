@@ -254,7 +254,7 @@ func TestShareUserNameGatedBySessionExposure(t *testing.T) {
 	base := stBaseConfig()
 	// The user toggle keeps its position while exposure is off, but what is
 	// saved — and what counts as a change — is the gated value.
-	s := shareFormState{ExposeSession: false, ExposeSessionUser: true}
+	s := featuresFormState{ExposeSession: false, ExposeSessionUser: true}
 	if cfg := s.applyTo(base); cfg.SmartThings.ExposeSessionUser {
 		t.Error("expose_session_user was saved while expose_session is off")
 	}
@@ -267,13 +267,14 @@ func TestShareUserNameGatedBySessionExposure(t *testing.T) {
 	}
 }
 
-// The sharing tab writes the session switches, now playing and the watch
-// list; the hub list next to them and media.enabled stay as they were.
-func TestShareApplyToTouchesOnlyItsFields(t *testing.T) {
+// The features tab writes the session switches, media, now playing, the
+// watch list and the rest of its rows; the hub list next to them stays.
+func TestFeaturesApplyToTouchesOnlyItsFields(t *testing.T) {
 	base := stBaseConfig()
 	base.Media.Enabled = true
 	base.SmartThings.WoLMAC = "B4-2E-99-45-B4-F5"
-	s := shareFormState{ExposeSession: true, NowPlaying: true}
+	s := featuresStateFromConfig(base)
+	s.ExposeSession, s.NowPlaying = true, true
 	cfg := s.applyTo(base)
 	if !slices.Equal(cfg.SmartThings.AllowedHubs, base.SmartThings.AllowedHubs) || cfg.SmartThings.WoLMAC != base.SmartThings.WoLMAC {
 		t.Errorf("applyTo changed the SmartThings tab's fields: %+v", cfg.SmartThings)
@@ -284,12 +285,16 @@ func TestShareApplyToTouchesOnlyItsFields(t *testing.T) {
 	if cfg.Port != base.Port || cfg.Secret != base.Secret || !reflect.DeepEqual(cfg.Telegram, base.Telegram) {
 		t.Errorf("applyTo changed fields owned by another tab: %+v", cfg)
 	}
-	for _, mutate := range []func(*shareFormState){
-		func(s *shareFormState) { s.ExposeSession = true },
-		func(s *shareFormState) { s.NowPlaying = true },
-		func(s *shareFormState) { s.Activity.Enabled = true },
+	for _, mutate := range []func(*featuresFormState){
+		func(s *featuresFormState) { s.ExposeSession = true },
+		func(s *featuresFormState) { s.NowPlaying = true },
+		func(s *featuresFormState) { s.Activity.Enabled = true },
+		func(s *featuresFormState) { s.Media = false },
+		func(s *featuresFormState) { s.Monitor = true },
+		func(s *featuresFormState) { s.NotifyPC.Enabled = true },
+		func(s *featuresFormState) { s.Audio.Outputs[1] = "헤드셋" },
 	} {
-		changed := shareStateFromConfig(base)
+		changed := featuresStateFromConfig(base)
 		mutate(&changed)
 		if !changed.dirty(base) {
 			t.Errorf("an edit went unnoticed: %+v", changed)

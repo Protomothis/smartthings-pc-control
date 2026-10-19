@@ -2,7 +2,7 @@ package gui
 
 // Output and input device slots (#145).
 //
-// The settings tab's 미디어·알림 section gets two lists of five slots:
+// The features tab's 오디오 장치 칸 row (#157) holds two lists of five slots:
 //
 //	출력 장치 칸
 //	칸 1  [스피커 (Realtek(R) Audio)        ▾]  [↑] [↓]
@@ -15,7 +15,7 @@ package gui
 // device is not connected ("… (연결 안 됨)"), so opening the tab never
 // drops a slot. The arrows swap a slot with its neighbour: the slot
 // number is what SmartThings and Telegram switch by. The slots are saved
-// with the rest of the tab (settingsFormState.Audio).
+// with the rest of the tab (featuresFormState.Audio).
 //
 // The command tab's media card gets a picker of the filled output slots,
 // the default one selected; choosing one sends audio_output.
@@ -121,7 +121,7 @@ func endpointNames(list []useraction.AudioEndpoint) []string {
 	return out
 }
 
-// --- Settings widgets ----------------------------------------------------------
+// --- Features tab widgets ----------------------------------------------------------
 
 // readAudioDevices reads the devices for the pickers; replaced by the
 // tests (no sound card needed, nothing switched either way).
@@ -136,7 +136,7 @@ type audioSlotEditor struct {
 	syncing bool
 }
 
-// audioSlotsSection is the settings tab's two editors.
+// audioSlotsSection is the features tab's two editors.
 type audioSlotsSection struct {
 	out, in *audioSlotEditor
 	status  *widget.Label

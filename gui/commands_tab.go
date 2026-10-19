@@ -1,7 +1,8 @@
 package gui
 
-// The commands tab: the test buttons, the media card (media_card.go), the
-// keep-awake row (awake.go) and the preset buttons (presets_tab.go).
+// The commands tab: the test buttons, the keep-awake row (awake.go) and,
+// while their feature is on, the media card (media_card.go), the monitor
+// card (monitor_card.go) and the preset buttons (presets_tab.go).
 
 import (
 	"fmt"
@@ -79,19 +80,64 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 	note.Wrapping = fyne.TextWrapWord
 	note.Importance = widget.LowImportance
 
-	// Cards: general, power (with the note on what "immediately" means),
-	// media (#117), keep-awake, presets (#109).
+	// Always: general, power (with the note on what "immediately" means)
+	// and keep-awake. Then only what is turned on (#157): media (#117),
+	// monitor (#144), presets (#109) — see applyCommandCards.
+	c := &u.cmdCards
+	c.media = container.NewVBox(widget.NewSeparator(), u.buildMediaCard())
+	c.monitor = container.NewVBox(widget.NewSeparator(), u.buildMonitorCard())
+	c.presets = container.NewVBox(widget.NewSeparator(), u.buildPresetButtons())
+	more := widget.NewHyperlink(u.t("cmd.more"), nil)
+	more.OnTapped = func() { u.tabs.SelectIndex(tabFeatures) }
+	c.more = container.NewVBox(widget.NewSeparator(), more)
+	u.applyCommandCards(nil)
 	return container.NewVScroll(container.NewPadded(container.NewVBox(
 		section(u.t("cmd.group.safe"), container.NewGridWrap(cmdButtonSize, safe...)),
 		widget.NewSeparator(),
 		section(u.t("cmd.group.power"), container.NewVBox(container.NewGridWrap(cmdButtonSize, power...), note)),
 		widget.NewSeparator(),
-		u.buildMediaCard(),
-		widget.NewSeparator(),
-		u.buildMonitorCard(),
-		widget.NewSeparator(),
 		u.buildAwakeRow(),
-		widget.NewSeparator(),
-		u.buildPresetButtons(),
+		c.media,
+		c.monitor,
+		c.presets,
+		c.more,
 	)))
+}
+
+// cmdCards are the command tab's optional cards, each with the separator
+// above it, and the line that points to the features tab.
+type cmdCards struct {
+	media, monitor, presets, more *fyne.Container
+}
+
+// commandCardsShown is which optional cards the command tab shows for the
+// saved config (nil before the first load: none): media and monitor while
+// their feature is on, the presets while there are any, and the line to
+// the features tab while media or monitor is off.
+func commandCardsShown(cfg *Config) (media, monitor, presets, more bool) {
+	if cfg == nil {
+		return false, false, false, false
+	}
+	media, monitor = cfg.Media.Enabled, cfg.Monitor.Enabled
+	return media, monitor, len(cfg.Presets) > 0, !media || !monitor
+}
+
+// applyCommandCards shows the cards commandCardsShown picks. It follows the
+// saved config, not unsaved edits on the features tab. UI thread only.
+func (u *ui) applyCommandCards(cfg *Config) {
+	c := &u.cmdCards
+	if c.media == nil {
+		return
+	}
+	media, monitor, presets, more := commandCardsShown(cfg)
+	for _, s := range []struct {
+		box *fyne.Container
+		on  bool
+	}{{c.media, media}, {c.monitor, monitor}, {c.presets, presets}, {c.more, more}} {
+		if s.on {
+			s.box.Show()
+		} else {
+			s.box.Hide()
+		}
+	}
 }
