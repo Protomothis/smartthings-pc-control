@@ -358,7 +358,7 @@ func TestTelegramVolumeCommands(t *testing.T) {
 	setConfig(Config{Telegram: TelegramConfig{Lang: "ko"}})
 	n = len(run.Calls())
 	for _, cmd := range []string{"vol", "mute", "unmute", "play", "next"} {
-		if body, _ := do(cmd); !strings.Contains(body, "PC 앱 설정 탭(미디어·알림)에서 켜세요") {
+		if body, _ := do(cmd); !strings.Contains(body, "PC 앱 기능 탭에서 켜세요") {
 			t.Errorf("/%s while disabled = %q", cmd, body)
 		}
 	}

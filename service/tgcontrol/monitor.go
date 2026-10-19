@@ -37,7 +37,7 @@ type Monitor interface {
 }
 
 var monitorTexts = map[string][2]string{
-	"mon_disabled":     {"모니터 제어가 꺼져 있습니다. PC 앱 설정 탭(미디어·알림)에서 '원격 모니터 제어 허용'을 켜세요", "Monitor control is off. Turn on 'Allow remote monitor control' in the PC app's Settings tab (Media &amp; notifications)"},
+	"mon_disabled":     {"모니터 제어가 꺼져 있습니다. PC 앱 기능 탭에서 '원격 모니터 제어 허용'을 켜세요", "Monitor control is off. Turn on 'Allow remote monitor control' in the PC app's Features tab"},
 	"mon_no_user":      {"PC 화면(콘솔)에 로그인한 사용자가 없어 모니터를 제어할 수 없습니다", "Nobody is logged in at this PC's screen, so the monitor cannot be controlled"},
 	"mon_unsupported":  {"이 모니터는 DDC/CI로 제어할 수 없습니다 (모니터 메뉴에서 DDC/CI를 켜 보세요): %s", "This monitor cannot be controlled over DDC/CI (try turning DDC/CI on in its menu): %s"},
 	"mon_failed":       {"모니터 제어 실패: %s", "Monitor control failed: %s"},

@@ -201,7 +201,7 @@ var texts = map[string][2]string{
 	"media_stop":        {"⏹ 정지", "⏹ stop"},
 	"media_next":        {"⏭ 다음 곡", "⏭ next track"},
 	"media_prev":        {"⏮ 이전 곡", "⏮ previous track"},
-	"media_disabled":    {"미디어 제어가 꺼져 있습니다. PC 앱 설정 탭(미디어·알림)에서 켜세요", "Media control is off. Turn it on in the PC app's Settings tab (Media &amp; notifications)"},
+	"media_disabled":    {"미디어 제어가 꺼져 있습니다. PC 앱 기능 탭에서 켜세요", "Media control is off. Turn it on in the PC app's Features tab"},
 	"media_no_user":     {"로그인한 사용자가 없어 실행할 수 없습니다", "Nobody is logged in to this PC"},
 	"media_unsupported": {"이 PC에서는 할 수 없습니다: %s", "Not possible on this PC: %s"},
 	"media_timeout":     {"PC가 3초 안에 답하지 않았습니다", "The PC did not answer within 3 seconds"},
