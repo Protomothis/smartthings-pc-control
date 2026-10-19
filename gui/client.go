@@ -10,6 +10,8 @@ import (
 	"net/http/cookiejar"
 	"sync"
 	"time"
+
+	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
 // Config mirrors the service config exposed by /api/config.
@@ -42,8 +44,6 @@ type Config struct {
 	// and the presets tab (presets_tab.go) edit them.
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
 	Presets  []Preset       `json:"presets"`
-	// Monitor is the "monitor" object (#144), the settings tab's opt-in.
-	Monitor MonitorConfig `json:"monitor"`
 	// Privacy is the camera/microphone detection and its guard (#143),
 	// edited in the sharing tab (privacy_section.go).
 	Privacy PrivacyConfig `json:"privacy"`
@@ -492,11 +492,17 @@ type HeartbeatMedia struct {
 // HeartbeatAudio is the heartbeat's audio block. SampledAt (RFC3339) is
 // when it was read: the service keeps whichever of this and a command
 // result is newer by that time, not by arrival.
+//
+// Input is the default recording device and Playing whether sound is
+// coming out of the speakers (#159, playing.go); Playing is left out while
+// unknown.
 type HeartbeatAudio struct {
-	Volume    int    `json:"volume"`
-	Muted     bool   `json:"muted"`
-	Device    string `json:"device"`
-	SampledAt string `json:"sampled_at"`
+	Volume    int                   `json:"volume"`
+	Muted     bool                  `json:"muted"`
+	Device    string                `json:"device"`
+	Input     useraction.AudioInput `json:"input,omitzero"`
+	Playing   *bool                 `json:"playing,omitempty"`
+	SampledAt string                `json:"sampled_at"`
 }
 
 // SessionHeartbeat reports what only this app can measure (#77, #104): the
@@ -677,6 +683,27 @@ func (c *Client) GetBattery() (Battery, error) {
 		return b, nil
 	}
 	return b, fmt.Errorf("HTTP %d", resp.StatusCode)
+}
+
+// ResetAudioSlots empties the device slots; the service fills them again
+// from the devices connected now and answers the saved slots (#159). A
+// service without the route reads as errAudioSlotsUnsupported.
+func (c *Client) ResetAudioSlots() (AudioConfig, error) {
+	var slots AudioConfig
+	resp, err := c.do("POST", "/api/audio/slots/reset", nil)
+	if err != nil {
+		return slots, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return slots, json.NewDecoder(resp.Body).Decode(&slots)
+	case http.StatusUnauthorized:
+		return slots, errUnauthorized
+	case http.StatusNotFound:
+		return slots, errAudioSlotsUnsupported
+	}
+	return slots, fmt.Errorf("HTTP %d", resp.StatusCode)
 }
 
 // RestartService asks the service to restart itself.

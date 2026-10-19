@@ -56,8 +56,9 @@ var webSrv = webui.New(webui.Deps{
 	Notify:    pcNotifier{},
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
-	Monitor:   monitorControl{},
 	Privacy:   stPrivacyStatus,
+	// #159, audio_devices.go
+	ResetAudioSlots: resetAudioSlots,
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port
@@ -182,9 +183,15 @@ func (h *heartbeatStore) Idle(seconds int64) {
 	noteIdleHeartbeat(seconds)
 }
 
-func (h *heartbeatStore) Audio(a useraction.Audio, at time.Time) {
+// Audio stores the sample and the playing flag (#159). One push covers
+// both when both changed; a change of playing alone is pushed at most
+// every playingPushGap (audio_state.go).
+func (h *heartbeatStore) Audio(a useraction.Audio, playing *bool, at time.Time) {
 	noteTrayReport()
-	recordAudioSample(a, at)
+	playChanged := notePlaying(playing, at)
+	if _, changed := recordAudio(a, at); !changed && playChanged {
+		audioPush.playingChanged()
+	}
 }
 
 func (h *heartbeatStore) Media(np useraction.NowPlaying, at time.Time) {

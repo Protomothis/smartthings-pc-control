@@ -369,7 +369,7 @@ local PUSHES = {
     h.assert_equal(value(events, caps.SPEAKER, "muted", "sound"), "muted", "status.audio.muted")
     h.assert_equal(value(events, caps.SPEAKER, "summary", "sound"), "1 스피커 · 재생 중")
     h.assert_equal(value(events, caps.SPEAKER, "playing", "sound"), "playing", "status.audio.playing")
-    h.assert_equal(value(events, caps.MIC, "muted", "sound"), "unmuted", "status.audio.input_muted")
+    h.assert_equal(value(events, caps.MIC, "muted", "sound"), "muted", "status.audio.input_muted")
   end,
   ["push.media.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_PLAYBACK, "playbackStatus"), "paused")

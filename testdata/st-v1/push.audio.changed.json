@@ -2,7 +2,10 @@
   "at": "2026-10-01T21:00:05+09:00",
   "data": {
     "device": "스피커 (Realtek(R) Audio)",
+    "input_device": "마이크 (Realtek(R) Audio)",
+    "input_muted": "true",
     "muted": "true",
+    "playing": "true",
     "volume": "50"
   },
   "machine_id": "4c4c4544-0042-3510-8052-b4c04f4a3732",
@@ -31,7 +34,7 @@
       "available": true,
       "device": "스피커 (Realtek(R) Audio)",
       "input_device": "마이크 (Realtek(R) Audio)",
-      "input_muted": false,
+      "input_muted": true,
       "inputs": [
         {
           "default": true,

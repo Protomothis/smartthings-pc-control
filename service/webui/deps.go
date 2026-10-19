@@ -45,13 +45,16 @@ type Deps struct {
 	Notify    Notifier
 	Telegram  Telegram
 	Heartbeat Heartbeat
-	// Monitor is the DDC/CI monitor control (#144, monitor.go); nil: none.
-	Monitor Monitor
 
 	// Privacy is the camera/microphone block (#143) GET /api/privacy
 	// reports, nil while privacy.enabled is off; a nil func reads the
 	// same.
 	Privacy func(cfg config.Config) *status.Privacy
+
+	// ResetAudioSlots empties the output and input device slots, lets the
+	// devices connected now fill them again and returns the saved slots
+	// (#159, POST /api/audio/slots/reset); nil answers 404.
+	ResetAudioSlots func() (config.AudioConfig, error)
 }
 
 // Status is what the pages and /api report about this PC.
@@ -156,7 +159,9 @@ type Heartbeat interface {
 	// Ignored notes a heartbeat from another session.
 	Ignored(from, target uint32)
 	Idle(seconds int64)
-	Audio(a useraction.Audio, at time.Time)
+	// Audio stores the playback sample and, since #159, the playing flag
+	// (nil: unknown, or a tray app older than v1.3.0).
+	Audio(a useraction.Audio, playing *bool, at time.Time)
 	Media(np useraction.NowPlaying, at time.Time)
 	// AudioDevices stores the active devices (#145).
 	AudioDevices(outputs, inputs []useraction.AudioEndpoint, at time.Time)

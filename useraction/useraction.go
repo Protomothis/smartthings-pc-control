@@ -11,15 +11,11 @@
 //	user-action audio set <0-100>
 //	user-action audio step <-100..100>
 //	user-action audio mute <on|off|toggle>
-//	user-action audio <outputs|inputs>
-//	user-action audio <set-output|set-input> --id <endpoint id>
 //	user-action media <playpause|play|pause|stop|next|prev>
 //	user-action media info
 //	user-action notify --title <t> --text <t>
 //	user-action preset --type <program|url|script|keys|focus> --path <p> [--arg <a>]...
 //	user-action screen <off|on>
-//	user-action monitor get
-//	user-action monitor set --id <mN> (--brightness <0-100> | --input <name> | --power <on|off>)
 //
 // Output is exactly one line on stdout, and the exit code follows it:
 //
@@ -64,8 +60,6 @@ const (
 	ActionPreset = "preset"
 	// ActionScreen turns the monitors off or on (#121).
 	ActionScreen = "screen"
-	// ActionMonitor reads and sets the monitors over DDC/CI (#144).
-	ActionMonitor = "monitor"
 )
 
 // Validation limits. The service applies its own (stricter or equal)
@@ -86,6 +80,18 @@ type Audio struct {
 	Volume int    `json:"volume"`
 	Muted  bool   `json:"muted"`
 	Device string `json:"device"`
+	// Input is the default recording device (#159), read with every
+	// sample; left out when there is none, it could not be read, or the
+	// sample came from a tray app or user-action older than v1.3.0.
+	Input AudioInput `json:"input,omitzero"`
+}
+
+// AudioInput is the default recording device's name and mute (#159). The
+// zero value (Present false) means nothing is known about it.
+type AudioInput struct {
+	Present bool   `json:"present"`
+	Device  string `json:"device"`
+	Muted   bool   `json:"muted"`
 }
 
 // Validate checks the ranges a sample must be in to be stored.
@@ -93,11 +99,13 @@ func (a Audio) Validate() error {
 	if a.Volume < 0 || a.Volume > 100 {
 		return fmt.Errorf("volume %d out of range 0-100", a.Volume)
 	}
-	if utf8.RuneCountInString(a.Device) > MaxDeviceRunes {
-		return fmt.Errorf("device name longer than %d characters", MaxDeviceRunes)
-	}
-	if hasControl(a.Device) {
-		return errors.New("device name contains control characters")
+	for _, name := range []string{a.Device, a.Input.Device} {
+		if utf8.RuneCountInString(name) > MaxDeviceRunes {
+			return fmt.Errorf("device name longer than %d characters", MaxDeviceRunes)
+		}
+		if hasControl(name) {
+			return errors.New("device name contains control characters")
+		}
 	}
 	return nil
 }
@@ -115,8 +123,6 @@ type Request struct {
 	Value int
 	// Mode is the audio mute mode: on, off or toggle.
 	Mode string
-	// DeviceID is the endpoint of audio set-output/set-input (#145).
-	DeviceID string
 
 	// notify
 	Title string
@@ -126,9 +132,6 @@ type Request struct {
 	PresetType string // program, url, script, keys or focus
 	Path       string
 	Args       []string
-
-	// Monitor is a `monitor set` (#144, monitor.go); Verb is get or set.
-	Monitor MonitorRequest
 }
 
 // Handler performs one action in the user session. The returned fields are
@@ -169,7 +172,7 @@ func lookup(action string) Handler {
 
 func knownAction(action string) bool {
 	switch action {
-	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen, ActionMonitor:
+	case ActionAudio, ActionMedia, ActionNotify, ActionPreset, ActionScreen:
 		return true
 	}
 	return false
@@ -232,8 +235,6 @@ func Parse(args []string) (Request, error) {
 		return parsePreset(rest)
 	case ActionScreen:
 		return parseScreen(rest)
-	case ActionMonitor:
-		return parseMonitor(rest)
 	default:
 		return Request{}, badArgs("unknown action %q", action)
 	}
@@ -245,9 +246,6 @@ func parseAudio(args []string) (Request, error) {
 		return req, badArgs("audio: missing verb (get, set, step, mute)")
 	}
 	req.Verb = args[0]
-	if isDeviceVerb(req.Verb) {
-		return parseAudioDevice(req, args) // #145, audiodevices.go
-	}
 	switch req.Verb {
 	case "get":
 		if len(args) != 1 {

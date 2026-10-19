@@ -102,8 +102,6 @@ type ui struct {
 	lastMediaErr error
 	mediaLoaded  bool
 	hbSent       heartbeatSent
-	// Command tab: the monitor card (#144, monitor_card.go).
-	mon monitorView
 	// Command tab: the [실행] buttons of the saved presets (#109); the
 	// presets tab (presets_tab.go); the features tab's PC-notification row
 	// (notify_section.go, #106) and audio slots.
@@ -264,6 +262,7 @@ func Run(version string, minimized bool) {
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
+	go u.playingLoop() // #159, playing.go
 	if a.Preferences().BoolWithFallback("check_updates", true) {
 		// No dialog against a hidden window — tray notification only.
 		go u.checkForUpdates(!minimized)
@@ -658,7 +657,6 @@ func (u *ui) pollLoop() {
 		case <-awakeTick.C:
 			if u.connected.Load() && u.onScreen() {
 				go u.loadAwake()
-				go u.loadMonitor() // #144
 				go u.loadPrivacy() // the features tab's camera/mic state line (#143)
 			}
 		case <-batteryTick.C:

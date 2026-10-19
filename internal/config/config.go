@@ -64,13 +64,12 @@ type Config struct {
 	// service/media.go) on every path: /st/v1/command, Telegram and the
 	// audio block of the status.
 	Media MediaConfig `json:"media"`
-	// Audio holds the output and input device slots (#145, audio.go).
+	// Audio holds the output and input device slots (#145, audio.go),
+	// filled by the service as devices show up (#159).
 	Audio AudioConfig `json:"audio"`
 	// NotifyPC controls PC notifications from SmartThings and Telegram
 	// (#106, service/pc_notify.go).
 	NotifyPC NotifyPCConfig `json:"notify_pc"`
-	// Monitor is the opt-in DDC/CI monitor control (#144, monitor.go).
-	Monitor MonitorConfig `json:"monitor"`
 	// Presets are the actions SmartThings and Telegram may run by slot
 	// number (#109, presets.go). Invalid entries are refused on save and
 	// dropped (with a log line) on load.
@@ -173,7 +172,7 @@ func Default() Config {
 		Activity: ActivityConfig{Enabled: false, Watch: []ActivityWatch{}},
 		// A missing "media" object keeps volume and media keys on (§4).
 		Media: MediaConfig{Enabled: true},
-		// No device slots until the user fills them (#145).
+		// No device slots until devices are seen (#159).
 		Audio: AudioConfig{Outputs: []string{}, Inputs: []string{}},
 		// A missing "notify_pc" object keeps notifications on (§4).
 		NotifyPC: NotifyPCConfig{Enabled: true},
@@ -305,12 +304,11 @@ func Normalize(cfg Config, current Config) Config {
 	if cfg.Presets == nil {
 		cfg.Presets = current.Presets
 	}
-	if cfg.Audio.Outputs == nil {
-		cfg.Audio.Outputs = current.Audio.Outputs
-	}
-	if cfg.Audio.Inputs == nil {
-		cfg.Audio.Inputs = current.Audio.Inputs
-	}
+	// The device slots are the service's own (#159: assigned as devices
+	// show up, cleared only by the app's reset), so a POST never sets them;
+	// an app that still sends the lists it read cannot undo an assignment
+	// made since.
+	cfg.Audio = current.Audio
 	return cfg.WithDefaults()
 }
 

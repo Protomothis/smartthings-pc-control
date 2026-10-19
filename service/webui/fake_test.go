@@ -102,7 +102,7 @@ func (fakeHeartbeat) Now() time.Time                                            
 func (fakeHeartbeat) Target() (uint32, error)                                   { return 0, errors.New("no session") }
 func (fakeHeartbeat) Ignored(uint32, uint32)                                    {}
 func (fakeHeartbeat) Idle(int64)                                                {}
-func (fakeHeartbeat) Audio(useraction.Audio, time.Time)                         {}
+func (fakeHeartbeat) Audio(useraction.Audio, *bool, time.Time)                  {}
 func (fakeHeartbeat) Media(useraction.NowPlaying, time.Time)                    {}
 func (fakeHeartbeat) AudioDevices(_, _ []useraction.AudioEndpoint, _ time.Time) {}
 

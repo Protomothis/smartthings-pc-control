@@ -7,8 +7,11 @@
   },
   "audio": {
     "available": false,
+    "input_device": null,
+    "input_muted": null,
     "inputs": [],
-    "outputs": []
+    "outputs": [],
+    "playing": null
   },
   "awake": {
     "on": false,

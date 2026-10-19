@@ -76,9 +76,13 @@ func (m heartbeatMedia) sampleTime(received time.Time) (time.Time, bool) {
 // audio store compares sample times, so a heartbeat read just before a
 // volume command but delivered just after it cannot undo the command's
 // result. A tray app without sampled_at gets the receive time.
+//
+// Playing (#159) is whether sound is coming out of the speakers, which the
+// tray app measures with the peak meter; null or absent is unknown.
 type heartbeatAudio struct {
 	useraction.Audio
 	SampledAt string `json:"sampled_at,omitempty"`
+	Playing   *bool  `json:"playing"`
 }
 
 // sampleTime is when the audio block was taken: sampled_at, clamped to
@@ -173,7 +177,7 @@ func (s *Server) serveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		hb.AudioDevices(body.AudioDevices.Outputs, body.AudioDevices.Inputs, devicesAt)
 	}
 	if body.Audio != nil {
-		hb.Audio(body.Audio.Audio, audioAt)
+		hb.Audio(body.Audio.Audio, body.Audio.Playing, audioAt)
 	}
 	if body.Media != nil {
 		hb.Media(body.Media.NowPlaying, mediaAt)

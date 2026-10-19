@@ -165,17 +165,27 @@ func (a Activity) TopLabel() (label string, others int) {
 }
 
 // Audio is the default playback device's last known state (#104, §3).
-// Available is false — and every other key absent — while there is
-// nothing trustworthy to report: nobody is logged in, no sample has
-// arrived since the service started, or media.enabled is off. Device is a
-// pointer so that a device without a name still reports "" rather than
-// dropping the key.
+// Available is false — and volume, muted, device and updated_at absent —
+// while there is nothing trustworthy to report: nobody is logged in, no
+// sample has arrived since the service started, or media.enabled is off.
+// Device is a pointer so that a device without a name still reports ""
+// rather than dropping the key.
 type Audio struct {
 	Available bool    `json:"available"`
 	Volume    *int    `json:"volume,omitempty"`
 	Muted     *bool   `json:"muted,omitempty"`
 	Device    *string `json:"device,omitempty"`
 	UpdatedAt string  `json:"updated_at,omitempty"`
+	// Playing, InputDevice and InputMuted are the speaker and microphone
+	// state SmartThings routines read (#159). The keys are always there,
+	// null while unknown (and whenever available is false). Playing is
+	// whether sound is coming out of the default playback device, which
+	// only the tray app measures (it samples the peak meter several times
+	// a second); InputDevice and InputMuted are the default recording
+	// device, read with every audio sample.
+	Playing     *bool   `json:"playing"`
+	InputDevice *string `json:"input_device"`
+	InputMuted  *bool   `json:"input_muted"`
 	// Outputs and Inputs are the device slots (#145, audio_slots.go):
 	// always arrays, empty while no slot is filled or media.enabled is off.
 	Outputs []AudioSlot `json:"outputs"`

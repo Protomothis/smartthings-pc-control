@@ -4,10 +4,13 @@ package useraction
 // default playback device (eRender/eConsole), through the Core Audio
 // binding in coreaudio.go. Every reply carries the resulting state,
 //
-//	{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}
+//	{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커",
+//	 "input":{"present":true,"device":"마이크","muted":false}}}
 //
 // read back from the device after the change rather than echoed from the
-// request, so the service stores what Windows actually did.
+// request, so the service stores what Windows actually did. "input" is the
+// default recording device (#159), read best effort with every verb so
+// that no reply drops what the previous one said about it.
 //
 // ReadAudio is the same getter for in-process use: the tray app calls it
 // for the audio block of its heartbeat.
@@ -36,6 +39,9 @@ type audioEndpoint interface {
 var (
 	// openAudio opens the default playback endpoint; tests replace it.
 	openAudio = openDefaultEndpoint
+	// openInput opens the default recording endpoint (#159); tests
+	// replace it. Only Muted and Device are used.
+	openInput = openDefaultInput
 	// runCOM runs f where COM is usable; tests replace it with a plain call.
 	runCOM = withCOM
 )
@@ -46,9 +52,6 @@ func init() {
 
 // audioHandler serves `user-action audio …`.
 func audioHandler(req Request) (map[string]any, error) {
-	if isDeviceVerb(req.Verb) {
-		return audioDeviceHandler(req) // #145, audiodevices.go
-	}
 	a, err := withAudio(func(ep audioEndpoint) (Audio, error) { return applyAudio(ep, req) })
 	if err != nil {
 		return nil, err
@@ -77,8 +80,11 @@ func withAudio(f func(audioEndpoint) (Audio, error)) (Audio, error) {
 			return err
 		}
 		defer ep.Close()
-		out, err = f(ep)
-		return err
+		if out, err = f(ep); err != nil {
+			return err
+		}
+		out.Input = readInput()
+		return nil
 	})
 	switch {
 	case err == nil:
@@ -147,6 +153,23 @@ func readAudio(ep audioEndpoint) (Audio, error) {
 		return Audio{}, err
 	}
 	return Audio{Volume: levelToPercent(level), Muted: muted, Device: sanitizeDevice(ep.Device())}, nil
+}
+
+// readInput reads the default recording device's mute and name (#159),
+// best effort: no recording device, or one whose mute cannot be read, is
+// the zero AudioInput, and the playback reading stands either way. It runs
+// on the caller's COM thread.
+func readInput() AudioInput {
+	ep, err := openInput()
+	if err != nil {
+		return AudioInput{}
+	}
+	defer ep.Close()
+	muted, err := ep.Muted()
+	if err != nil {
+		return AudioInput{}
+	}
+	return AudioInput{Present: true, Device: sanitizeDevice(ep.Device()), Muted: muted}
 }
 
 // levelToPercent maps the 0.0..1.0 scalar to the 0..100 the volume flyout

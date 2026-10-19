@@ -36,9 +36,6 @@
     "enabled": true,
     "now_playing": true
   },
-  "monitor": {
-    "enabled": true
-  },
   "notify": {
     "power": {
       "resumed": true,

@@ -54,6 +54,8 @@ func (f *fakeAPI) SaveConfig(cfg Config) (SaveReply, error) {
 	if in.Activity.Watch == nil {
 		in.Activity.Watch = f.cfg.Activity.Watch
 	}
+	// The device slots are the service's (#159): a POST never sets them.
+	in.Audio = f.cfg.Audio
 	f.cfg = in
 	f.cfg.Telegram.BotToken = token
 	return SaveReply{Message: "saved", Warnings: f.warnings}, nil

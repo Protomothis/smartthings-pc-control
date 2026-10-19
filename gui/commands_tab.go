@@ -1,8 +1,8 @@
 package gui
 
 // The commands tab: the test buttons, the keep-awake row (awake.go) and,
-// while their feature is on, the media card (media_card.go), the monitor
-// card (monitor_card.go) and the preset buttons (presets_tab.go).
+// while their feature is on, the media card (media_card.go) and the
+// preset buttons (presets_tab.go).
 
 import (
 	"fmt"
@@ -82,10 +82,9 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 
 	// Always: general, power (with the note on what "immediately" means)
 	// and keep-awake. Then only what is turned on (#157): media (#117),
-	// monitor (#144), presets (#109) — see applyCommandCards.
+	// presets (#109) — see applyCommandCards.
 	c := &u.cmdCards
 	c.media = container.NewVBox(widget.NewSeparator(), u.buildMediaCard())
-	c.monitor = container.NewVBox(widget.NewSeparator(), u.buildMonitorCard())
 	c.presets = container.NewVBox(widget.NewSeparator(), u.buildPresetButtons())
 	more := widget.NewHyperlink(u.t("cmd.more"), nil)
 	more.OnTapped = func() { u.tabs.SelectIndex(tabFeatures) }
@@ -98,7 +97,6 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 		widget.NewSeparator(),
 		u.buildAwakeRow(),
 		c.media,
-		c.monitor,
 		c.presets,
 		c.more,
 	)))
@@ -107,19 +105,19 @@ func (u *ui) buildCommandsTab() fyne.CanvasObject {
 // cmdCards are the command tab's optional cards, each with the separator
 // above it, and the line that points to the features tab.
 type cmdCards struct {
-	media, monitor, presets, more *fyne.Container
+	media, presets, more *fyne.Container
 }
 
 // commandCardsShown is which optional cards the command tab shows for the
-// saved config (nil before the first load: none): media and monitor while
-// their feature is on, the presets while there are any, and the line to
-// the features tab while media or monitor is off.
-func commandCardsShown(cfg *Config) (media, monitor, presets, more bool) {
+// saved config (nil before the first load: none): media while it is on,
+// the presets while there are any, and the line to the features tab while
+// media is off.
+func commandCardsShown(cfg *Config) (media, presets, more bool) {
 	if cfg == nil {
-		return false, false, false, false
+		return false, false, false
 	}
-	media, monitor = cfg.Media.Enabled, cfg.Monitor.Enabled
-	return media, monitor, len(cfg.Presets) > 0, !media || !monitor
+	media = cfg.Media.Enabled
+	return media, len(cfg.Presets) > 0, !media
 }
 
 // applyCommandCards shows the cards commandCardsShown picks. It follows the
@@ -129,11 +127,11 @@ func (u *ui) applyCommandCards(cfg *Config) {
 	if c.media == nil {
 		return
 	}
-	media, monitor, presets, more := commandCardsShown(cfg)
+	media, presets, more := commandCardsShown(cfg)
 	for _, s := range []struct {
 		box *fyne.Container
 		on  bool
-	}{{c.media, media}, {c.monitor, monitor}, {c.presets, presets}, {c.more, more}} {
+	}{{c.media, media}, {c.presets, presets}, {c.more, more}} {
 		if s.on {
 			s.box.Show()
 		} else {

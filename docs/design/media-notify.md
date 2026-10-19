@@ -119,7 +119,7 @@
 
 - **status**에 추가:
   - `features: ["audio","media","notify"]` — 드라이버가 기능 유무를 판단한다(옛 서비스는 키 없음).
-  - `audio: { available, volume, muted, device, updated_at }` — 마지막 하트비트나 명령 결과.
+  - `audio: { available, volume, muted, device, updated_at }` — 마지막 하트비트나 명령 결과. v1.3.0에서 `playing` · `input_device` · `input_muted`(늘 있고 모르면 null)와 장치 칸 `outputs` · `inputs`가 붙었다(v1.3-sensors.md).
 - **command**(`POST /st/v1/command`)에 명령 추가. 기존 `command`/`mode`/`minutes` 옆에 `value`를 둔다.
   - `volume`(value 0–100), `volumeup`/`volumedown`(value 기본 5), `mute`/`unmute`
   - `play`/`pause`/`playpause`/`stop`/`next`/`prev`
