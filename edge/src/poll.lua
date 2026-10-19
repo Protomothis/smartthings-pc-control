@@ -6,7 +6,7 @@
 -- device/rows.lua's, the stored values device/fields.lua's. This module is the
 -- top of that layer: it is the one that calls into push, wol and discovery,
 -- and it hands the ones that need a poll back (`once`,
--- `follow_battery`) through their `use`, so none of them requires this one.
+-- `follow_cards`) through their `use`, so none of them requires this one.
 
 local client = require "client"
 local clock = require "device.clock"
@@ -99,7 +99,7 @@ end
 --- one during a running paint rejoins its queue. `opts.painted`: the caller
 --- has just repainted (`ensure_rows` in `init`).
 ---
---- A follow-up that comes while the paint still runs or has just ended (v14
+--- A follow-up that comes while the paint still runs or has just ended (v15
 --- has ~64 rows, eight batches; `emit.settling`) waits `emit.PAINT_SECONDS`
 --- and looks again: its forced rows and two batches would not fit one
 --- budget window.
@@ -139,16 +139,17 @@ function poll.repaint_soon(driver, device, opts)
   end
 end
 
---- Follow `status.battery.present` onto the plain or the `-battery` profile
---- (`profiles.apply_battery`). A switch is repainted one second later, so the
---- poll or push that got here finishes first. Returns the new profile name.
-function poll.follow_battery(driver, device, status)
-  local moved = profiles.apply_battery(device, features.battery_present(status))
+--- Follow a status onto the profile with the cards it asks for - battery,
+--- monitor, watch list (`features.card_answers`, `profiles.apply_cards`). A
+--- switch is repainted one second later, so the poll or push that got here
+--- finishes first. Returns the new profile name.
+function poll.follow_cards(driver, device, status)
+  local moved = profiles.apply_cards(device, features.card_answers(status))
   if moved and driver then
     pcall(function()
       driver:call_with_delay(1, function()
         poll.repaint_soon(driver, device)
-      end, "battery-profile")
+      end, "cards-profile")
     end)
   end
   return moved
@@ -467,7 +468,7 @@ local function once(driver, device, opts)
     rows.ensure_preset(device, opts.deps)
     rows.ensure_toast(device)
     poll.rotate_due(driver, device, opts.deps)
-    poll.follow_battery(driver, device, body)
+    poll.follow_cards(driver, device, body)
     pcall(function() device:online() end)
     -- §6.3: with the PC answering, ask it to push. A failure only means the
     -- driver keeps polling.
@@ -615,7 +616,7 @@ discovery.use({
   once = function(...) return poll.once(...) end,
 })
 push.use({
-  follow_battery = function(...) return poll.follow_battery(...) end,
+  follow_cards = function(...) return poll.follow_cards(...) end,
 })
 wol.use({
   once = function(...) return poll.once(...) end,

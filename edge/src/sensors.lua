@@ -27,11 +27,11 @@ end
 -- #151: in use, idle, locked - a routine condition
 --------------------------------------------------------------------------------
 
--- The card of the PC's `presence` component ("사용 감지"): `pcPresence`, one
+-- The card of the PC's `presence` component ("사용 상태"): `pcPresence`, one
 -- row and two routine conditions. `pcUser` keeps its rows (published, a
--- routine may read `locked`); its presentation has no idle condition and is
--- frozen, hence a new capability.
-sensors.PRESENCE_COMPONENT = "presence"
+-- routine may read `locked`; on this card since v15); its presentation has
+-- no idle condition and is frozen, hence a new capability.
+sensors.PRESENCE_COMPONENT = features.PRESENCE_COMPONENT
 sensors.CAP_PRESENCE = caps.PRESENCE
 
 -- `pcPresence.activity`. `unknown`: the session is not shared
@@ -477,14 +477,15 @@ end
 -- #154: the audio device slots
 --------------------------------------------------------------------------------
 
--- The PC's `audio` component ("오디오 장치"): `pcAudioOut` and `pcAudioIn`,
+-- The audio device slots: `pcAudioOut` and `pcAudioIn`,
 -- each a names row ("1 스피커 · 3 헤드셋"), a list of slots 1-5 resting on
 -- the slot of the default device, and a routine condition and action on the
 -- slot. Device names differ on every PC and a presentation is static, so the
 -- list names slots, like the presets (`pcPreset`) and the watch list. Two
 -- capabilities, not one: one state row each is drawn full width, two of one
 -- capability half width and cut (platform notes "화면 배치").
-sensors.AUDIO_COMPONENT = "audio"
+-- #158 (v15): on the `media` card, below the media group ("audio" in v14).
+sensors.AUDIO_COMPONENT = features.MEDIA_COMPONENT
 sensors.SLOT_NONE = "none"
 sensors.AUDIO_SLOTS = 5
 

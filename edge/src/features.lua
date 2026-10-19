@@ -154,13 +154,24 @@ features.CAP_TRACK = "mediaTrackControl"
 -- #118: what is playing (title/artist/album).
 features.CAP_TRACK_DATA = "audioTrackData"
 
--- #118: the media group, and the component it moves to in the alternative
--- profile layout (`gen-profiles.js --media-component`). emit.rows sends these
--- capabilities' events to that component when the device's profile has it.
+-- #158 (v15): the cards the capabilities v13 had on main moved to - the
+-- media group (#118) to `media` ("미디어", with the audio device slots), the
+-- session row to `presence` ("사용 상태"), presets and the message row to
+-- `actions` ("바로 실행"). Their records stay main-shaped (row key without
+-- a component); emit.rows sends them to that component when the device's
+-- profile has it, to main on a v13 profile.
 features.MEDIA_COMPONENT = "media"
-features.MEDIA_CAPS = {
-  [features.CAP_TRACK_DATA] = true, [features.CAP_PLAYBACK] = true,
-  [features.CAP_TRACK] = true, [features.CAP_VOLUME] = true, [features.CAP_MUTE] = true,
+features.PRESENCE_COMPONENT = "presence"
+features.ACTIONS_COMPONENT = "actions"
+features.CARD_OF = {
+  [features.CAP_TRACK_DATA] = features.MEDIA_COMPONENT,
+  [features.CAP_PLAYBACK] = features.MEDIA_COMPONENT,
+  [features.CAP_TRACK] = features.MEDIA_COMPONENT,
+  [features.CAP_VOLUME] = features.MEDIA_COMPONENT,
+  [features.CAP_MUTE] = features.MEDIA_COMPONENT,
+  [caps.SESSION] = features.PRESENCE_COMPONENT,
+  [caps.PRESET] = features.ACTIONS_COMPONENT,
+  [caps.TOAST] = features.ACTIONS_COMPONENT,
 }
 
 -- What the media rows offer. Constant: the service handles each of them
@@ -1074,6 +1085,21 @@ end
 function features.battery_present(status)
   local battery = (status or {}).battery
   return type(battery) == "table" and battery.present == true
+end
+
+--- #158: which of the optional cards a status asks for (profiles.apply_cards):
+--- the battery (#116), the monitor card while `features` lists `monitor`,
+--- the watch list while it lists `activity` (both opt-ins on the PC). A
+--- status without `features` (a PC app older than v1.2.0) says nothing about
+--- those two - nil, the cards stay as they are.
+function features.card_answers(status)
+  local set = features.parse(status)
+  local answers = { battery = features.battery_present(status) }
+  if set then
+    answers.monitor = set[features.MONITOR] == true
+    answers.watch = set[features.ACTIVITY] == true
+  end
+  return answers
 end
 
 --- #116: `battery.battery` (percent, left out while the service does not know

@@ -1224,29 +1224,29 @@ end
 
 function T.test_two_statuses_with_a_battery_move_a_desktop_profile()
   profiles.reset()
-  local device = device_on_profile("pc.v14")
-  h.assert_nil(profiles.apply_battery(device, true), "one status is not enough")
-  h.assert_equal(profiles.apply_battery(device, true), "pc-battery.v14")
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v14" } })
-  h.assert_true(profiles.has_battery(device), "persisted for the next migration")
+  local device = device_on_profile("pc.v15")
+  h.assert_nil(profiles.apply_cards(device, { battery = true }), "one status is not enough")
+  h.assert_equal(profiles.apply_cards(device, { battery = true }), "pc-battery.v15")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc-battery.v15" } })
+  h.assert_true(profiles.stored_cards(device).battery, "persisted for the next migration")
   -- Settled: more of the same asks for nothing.
-  h.assert_nil(profiles.apply_battery(device, true))
+  h.assert_nil(profiles.apply_cards(device, { battery = true }))
   h.assert_equal(#device.metadata_updates, 1)
 end
 
 function T.test_and_two_without_one_move_it_back()
   profiles.reset()
-  local device = device_on_profile("pc-battery.v14")
-  h.assert_nil(profiles.apply_battery(device, false))
-  h.assert_equal(profiles.apply_battery(device, false), "pc.v14")
-  h.assert_false(profiles.has_battery(device))
+  local device = device_on_profile("pc-battery.v15")
+  h.assert_nil(profiles.apply_cards(device, { battery = false }))
+  h.assert_equal(profiles.apply_cards(device, { battery = false }), "pc.v15")
+  h.assert_false(profiles.stored_cards(device).battery)
 end
 
 function T.test_a_flapping_reading_moves_nothing()
   profiles.reset()
-  local device = device_on_profile("pc.v14")
+  local device = device_on_profile("pc.v15")
   for _, present in ipairs({ true, false, true, false, true }) do
-    h.assert_nil(profiles.apply_battery(device, present))
+    h.assert_nil(profiles.apply_cards(device, { battery = present }))
   end
   h.assert_equal(#device.metadata_updates, 0)
 end
@@ -1254,64 +1254,115 @@ end
 function T.test_a_device_on_an_old_profile_is_left_to_ensure()
   profiles.reset()
   local device = device_on_profile("pc.v1")
-  profiles.apply_battery(device, true)
-  h.assert_nil(profiles.apply_battery(device, true))
+  profiles.apply_cards(device, { battery = true })
+  h.assert_nil(profiles.apply_cards(device, { battery = true }))
   h.assert_equal(#device.metadata_updates, 0)
 end
 
 function T.test_a_refused_battery_switch_is_not_asked_again_this_run()
   profiles.reset()
-  local device = device_on_profile("pc.v14")
+  local device = device_on_profile("pc.v15")
   local tries = 0
   function device:try_update_metadata()
     tries = tries + 1
     error("no such profile", 0)
   end
-  profiles.apply_battery(device, true)
-  h.assert_nil(profiles.apply_battery(device, true))
-  profiles.apply_battery(device, true)
-  profiles.apply_battery(device, true)
+  profiles.apply_cards(device, { battery = true })
+  h.assert_nil(profiles.apply_cards(device, { battery = true }))
+  profiles.apply_cards(device, { battery = true })
+  profiles.apply_cards(device, { battery = true })
   h.assert_equal(tries, 1)
 end
 
 function T.test_a_later_migration_lands_a_laptop_on_its_battery_profile()
   -- The persisted answer is what `ensure` reads for a name without a battery
   -- half: a v1 name, or a plain v2/v3 name whose statuses said "battery" just
-  -- before the update.
+  -- before the update. None of these had a watch card (v7 on), so none gets one.
   profiles.reset()
   local device = device_on_profile("pc-hub.v1", "laptop-v1")
   device:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(device), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(device), "pc-battery.v15")
   local plain = device_on_profile("pc-tv.v2", "laptop-v2-plain")
   plain:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(plain), "pc-battery.v15")
   -- A v2 or v3 battery name keeps its half without the field.
   local named = device_on_profile("pc-tv-battery.v2", "laptop-v2")
-  h.assert_equal(profiles.ensure(named), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(named), "pc-battery.v15")
   local named_v3 = device_on_profile("pc-hub-battery.v3", "laptop-v3")
-  h.assert_equal(profiles.ensure(named_v3), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(named_v3), "pc-battery.v15")
   local plain_v3 = device_on_profile("pc-remote.v3", "laptop-v3-plain")
   plain_v3:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v3), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(plain_v3), "pc-battery.v15")
   -- pcToast: and a v4 (pcNotify) name the same way.
   local named_v4 = device_on_profile("pc-plug-battery.v4", "laptop-v4")
-  h.assert_equal(profiles.ensure(named_v4), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(named_v4), "pc-battery.v15")
   local plain_v4 = device_on_profile("pc-plug.v4", "laptop-v4-plain")
   plain_v4:set_field(fields.HAS_BATTERY, true)
-  h.assert_equal(profiles.ensure(plain_v4), "pc-battery.v14")
+  h.assert_equal(profiles.ensure(plain_v4), "pc-battery.v15")
 end
 
-function T.test_a_poll_follows_the_battery_and_repaints_after()
+function T.test_a_poll_follows_the_cards_and_repaints_after()
   profiles.reset()
-  local device = device_on_profile("pc.v14", "polled-laptop")
+  local device = device_on_profile("pc.v15", "polled-laptop")
   local fake = { timers = {} }
   function fake:call_with_delay(delay, fn, name)
     self.timers[#self.timers + 1] = { delay = delay, fn = fn, name = name }
   end
-  h.assert_nil(poll.follow_battery(fake, device, laptop(50, false)))
-  h.assert_equal(poll.follow_battery(fake, device, laptop(49, false)), "pc-battery.v14")
+  h.assert_nil(poll.follow_cards(fake, device, laptop(50, false)))
+  -- (The status lists `activity`: the watch list comes along.)
+  h.assert_equal(poll.follow_cards(fake, device, laptop(49, false)), "pc-watch-battery.v15")
   h.assert_equal(#fake.timers, 1)
-  h.assert_equal(fake.timers[1].name, "battery-profile")
+  h.assert_equal(fake.timers[1].name, "cards-profile")
+end
+
+-- #158: the monitor card and the watch list follow `features`.
+function T.test_the_features_a_status_lists_pick_the_monitor_and_watch_cards()
+  h.assert_deep_equal(features.card_answers(status_v12({ features = { "awake", "monitor", "activity" } })),
+    { battery = false, monitor = true, watch = true })
+  h.assert_deep_equal(features.card_answers(status_v12({ features = { "awake" } })),
+    { battery = false, monitor = false, watch = false })
+  -- A PC app older than v1.2.0 lists nothing: no answer, the cards stay.
+  h.assert_deep_equal(features.card_answers({ service_version = "v1.1.0" }), { battery = false })
+  h.assert_deep_equal(features.card_answers(laptop(40, true)).battery, true)
+
+  profiles.reset()
+  local device = device_on_profile("pc.v15", "monitor-pc")
+  local on = features.card_answers(status_v12({ features = { "monitor", "activity" } }))
+  h.assert_nil(profiles.apply_cards(device, on))
+  h.assert_equal(profiles.apply_cards(device, on), "pc-monitor-watch.v15")
+  h.assert_deep_equal(profiles.stored_cards(device), { battery = false, monitor = true, watch = true })
+  -- An old PC app says nothing about them: the cards stay, however often.
+  for _ = 1, 3 do
+    h.assert_nil(profiles.apply_cards(device, features.card_answers({ service_version = "v1.1.0" })))
+  end
+  -- The watch list turned off: two statuses, and only that card goes.
+  local off = features.card_answers(status_v12({ features = { "monitor" } }))
+  h.assert_nil(profiles.apply_cards(device, off))
+  h.assert_equal(profiles.apply_cards(device, off), "pc-monitor.v15")
+  h.assert_false(profiles.stored_cards(device).watch)
+  h.assert_true(profiles.stored_cards(device).monitor)
+end
+
+function T.test_two_statuses_must_want_the_same_profile()
+  profiles.reset()
+  local device = device_on_profile("pc-watch.v15", "mixed-pc")
+  -- The battery shows up, then the monitor too: a new target starts over.
+  h.assert_nil(profiles.apply_cards(device, { battery = true, monitor = false, watch = true }))
+  h.assert_nil(profiles.apply_cards(device, { battery = true, monitor = true, watch = true }))
+  h.assert_equal(profiles.apply_cards(device, { battery = true, monitor = true, watch = true }),
+    "pc-monitor-watch-battery.v15")
+end
+
+function T.test_a_poll_or_push_that_fails_moves_no_card()
+  -- PC off, PC app down: no status, so `follow_cards` is not called at all
+  -- (poll.once's failure path, push without a status block). What reaches it
+  -- is a status; one without `features` keeps both cards.
+  profiles.reset()
+  local device = device_on_profile("pc-monitor-watch.v15", "quiet-pc")
+  for _ = 1, 3 do
+    h.assert_nil(poll.follow_cards(nil, device, { protocol = 1, service_version = "v1.1.0" }))
+  end
+  h.assert_equal(#device.metadata_updates, 0)
 end
 
 function T.test_a_battery_push_reaches_the_battery_component()
@@ -1319,11 +1370,11 @@ function T.test_a_battery_push_reaches_the_battery_component()
   local _, events = push.apply(state.new(state.ON),
     { type = "battery.changed", status = laptop(15, false) }, {})
   h.assert_equal(h.component_value(events, "battery", "battery", "battery"), 15)
-  local device = device_on_profile("pc-battery.v14", "pushed-laptop")
+  local device = device_on_profile("pc-battery.v15", "pushed-laptop")
   emit.rows(device, events)
   h.assert_equal(h.component_value(h.emitted(device), "battery", "battery", "battery"), 15)
   -- The same events on a desktop's profile go nowhere.
-  local desktop = device_on_profile("pc.v14", "pushed-desktop")
+  local desktop = device_on_profile("pc.v15", "pushed-desktop")
   emit.rows(desktop, events)
   h.assert_nil(h.component_value(h.emitted(desktop), "battery", "battery", "battery"))
 end
@@ -1612,7 +1663,7 @@ function T.test_the_media_group_is_emitted_in_screen_order()
   local events = features.apply_status(playing({ status = "paused", title = "X" }), { lang = "ko" })
   local order = {}
   for _, e in ipairs(events) do
-    if features.MEDIA_CAPS[e.cap] and order[#order] ~= e.cap then
+    if features.CARD_OF[e.cap] == features.MEDIA_COMPONENT and order[#order] ~= e.cap then
       order[#order + 1] = e.cap
     end
   end
@@ -1638,22 +1689,57 @@ function T.test_a_media_push_repaints_the_group_at_once()
   h.assert_deep_equal(h.event_value(events, "audioTrackData", "audioTrackData"), { title = "Song" })
 end
 
-function T.test_the_media_group_goes_to_the_media_component_when_the_profile_has_one()
-  -- #118: the alternative layout (`gen-profiles.js --media-component`).
-  local events = features.apply_status(playing({ status = "playing", title = "Song" }), { lang = "ko" })
-  local split = h.fake_device({})
-  split.profile = { components = { main = { id = "main" }, media = { id = "media" }, awake = { id = "awake" } } }
-  emit.rows(split, events)
-  local emitted = h.emitted(split)
-  h.assert_equal(h.component_value(emitted, "media", "mediaPlayback", "playbackStatus"), "playing")
-  h.assert_equal(h.component_value(emitted, "media", "audioVolume", "volume"), 30)
-  h.assert_nil(h.event_value(emitted, "mediaPlayback", "playbackStatus"), "not on main")
-  -- The rest of the screen stays on main.
-  h.assert_true(h.event_value(emitted, caps.PRESET, "names") ~= nil)
-  -- And the default layout keeps all of it on main.
-  local together = h.fake_device({})
-  emit.rows(together, events)
-  h.assert_equal(h.event_value(h.emitted(together), "mediaPlayback", "playbackStatus"), "playing")
+function T.test_the_media_group_goes_to_the_card_the_profile_has()
+  -- #158: v15 keeps the media group, the session row, presets and the
+  -- message row on cards of their own (`features.CARD_OF`); v13 still has
+  -- them on main. The record and its row key stay main-shaped either way.
+  local events = state.apply_status(state.new(state.ON), playing({ status = "playing", title = "Song" }),
+    { lang = "ko" })
+  local function card(emitted, cap, attr)
+    for _, e in ipairs(emitted) do
+      if e.cap == cap and e.attr == attr then
+        return e.card or "main"
+      end
+    end
+    return nil
+  end
+  local v15 = h.fake_device({})
+  v15.profile = { name = "pc.v15", components = h.components_for("pc.v15") }
+  emit.rows(v15, events)
+  emit.rows(v15, { rows.toast_row(v15) })
+  local emitted = h.emitted(v15)
+  h.assert_equal(card(emitted, "mediaPlayback", "playbackStatus"), "media")
+  h.assert_equal(card(emitted, "audioVolume", "volume"), "media")
+  h.assert_equal(card(emitted, caps.SESSION, "summary"), "presence")
+  h.assert_equal(card(emitted, caps.PRESET, "names"), "actions")
+  h.assert_equal(card(emitted, caps.TOAST, "lastMessage"), "actions")
+  h.assert_equal(card(emitted, caps.STATUS, "summary"), "main", "the rest of the screen stays on main")
+  h.assert_equal(h.event_value(emitted, "mediaPlayback", "playbackStatus"), "playing", "main-shaped record")
+  -- A v13 device (not migrated: a hub that refused) keeps all of it on main.
+  local v13 = h.fake_device({})
+  v13.profile = { name = "pc.v13", components = h.components_for("pc.v13") }
+  emit.rows(v13, events)
+  emitted = h.emitted(v13)
+  h.assert_equal(card(emitted, "mediaPlayback", "playbackStatus"), "main")
+  h.assert_equal(card(emitted, caps.SESSION, "summary"), "main")
+end
+
+function T.test_a_card_the_profile_lacks_is_skipped_quietly()
+  -- #158: the monitor and watch cards exist on their variants only.
+  local status = status_v12({ features = { "activity", "monitor" },
+    activity = { enabled = true, apps = {}, top = "", scanned = true } })
+  local events = state.apply_status(features.remember(state.new(state.ON), status), status, { lang = "ko" })
+  local plain = h.fake_device({})
+  plain.profile = { name = "pc.v15", components = h.components_for("pc.v15") }
+  emit.rows(plain, events)
+  local emitted = h.emitted(plain)
+  h.assert_false(h.has_capability(emitted, caps.WATCH), "no watch card on pc.v15")
+  h.assert_false(h.has_capability(emitted, caps.MONITOR), "no monitor card on pc.v15")
+  h.assert_true(h.has_capability(emitted, caps.STATUS))
+  local full = h.fake_device({})
+  full.profile = { name = "pc-monitor-watch.v15", components = h.components_for("pc-monitor-watch.v15") }
+  emit.rows(full, events)
+  h.assert_true(h.has_capability(h.emitted(full), caps.WATCH))
 end
 
 --------------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 # The ONE hand-written device profile (design doc §6.6, media-notify.md §14).
 #
-# tools/gen-profiles.js turns this file into the two current profiles in
-# profiles/: without and with the battery component (#116), both in the
-# Switch category (#136 - the user picks the icon in the app; the `iconStyle`
-# preference of #100 and its variants are gone). Edit this file, run
+# tools/gen-profiles.js turns this file into the eight current profiles in
+# profiles/: with and without each of the monitor card, the watch list and
+# the battery (#158, #116), all in the Switch category (#136 - the user picks
+# the icon in the app). Edit this file, run
 #
 #   bun tools/gen-profiles.js          (or: node tools/gen-profiles.js)
 #
@@ -11,36 +11,31 @@
 # while a file in profiles/ differs from what this template makes. The
 # placeholders are filled per profile:
 #
-#   __NAME__       the profile name - pc.v14, pc-battery.v14
+#   __NAME__       the profile name - pc.v15, pc-monitor-watch-battery.v15, …
 #   __CATEGORY__   the main component's category (profiles.CATEGORY)
+#   @monitor-begin … @monitor-end, @watch-begin … @watch-end,
 #   @battery-begin … @battery-end
-#                  kept only in the -battery profiles; the marker lines go
-#   @media-begin … @media-end, @media-component
-#                  #118: the media group. By default it stays where it is, in
-#                  main, and the three marker lines go. With
-#                  `gen-profiles.js --media-component` the group leaves main
-#                  and becomes a component `media` (label 미디어) at the
-#                  @media-component line - an alternative layout for a Dev
-#                  channel comparison, not for committing (the sync test
-#                  checks the default).
+#                  kept only in the profiles with that card; the marker
+#                  lines go. The driver picks the card set from the PC's
+#                  status (profiles.apply_cards).
 #
 # This file lives in tools/, not in profiles/, on purpose: the packager takes
 # every YAML file in profiles/ as a profile, and a template there would be a
-# third one with a placeholder for a name. The published older
-# generations stay in profiles/, frozen, for the devices not yet migrated: the
-# v1 files (pc.yml and pc-<style>.yml), the v10 ones (edge 1.1.0; their
-# bare name is the old default, others) and the two v13 ones (edge 1.2.x). The v2 to v9, v11 and v12 files this template made
-# were never published and are gone (profiles.UNSHIPPED_VERSIONS). So is the
-# app child's hand-written pc-app.yml (#123): the watch card replaced it.
+# profile with a placeholder for a name. The published older generations
+# stay in profiles/, frozen, for the devices not yet migrated: the v1 files
+# (pc.yml and pc-<style>.yml), the v10 ones (edge 1.1.0; their bare name is
+# the old default, others) and the two v13 ones (edge 1.2.x). The v2 to v9,
+# v11, v12 and v14 files this template made were never published and are
+# gone (profiles.UNSHIPPED_VERSIONS).
 #
 # The capability ORDER below is the reading order on screen: the app collects
-# every state-only row of our own capabilities into one card and every
-# interactive row into a second one, and follows this list inside each card.
-# `pcVersion` closes the edge-v1.0 set, with `pcInfo` right above it, so the
-# version row ends the status card. The v1.2.0 capabilities follow it, in the
-# order of media-notify.md §15 "UI 구성": the media group first, then the rest.
-# It is also why `pcVersion` is a capability of its own: two state rows of one
-# capability are drawn side by side and truncated (platform notes "화면 배치").
+# a card's state-only rows into one block and its interactive rows into a
+# second one, and follows this list inside each. A component card's preview
+# on the main view is its first three state rows (platform notes "화면
+# 배치"), so each card starts with the rows worth seeing at a glance. Two
+# state rows of one capability are drawn side by side and truncated, hence
+# `pcVersion` as a capability of its own. The component ORDER is the order of
+# the cards on the main view.
 #
 # The `numbersystem53811` namespace is the one SmartThings assigned to the
 # owner account (platform notes "capability id와 네임스페이스"). Keep it in sync
@@ -49,10 +44,13 @@
 # Preference titles and descriptions are Korean first with the English term in
 # parentheses: the SmartThings app shows profile preferences in whatever the
 # driver wrote, with no per-locale variant, and this project is Korean-first.
-# Keep descriptions to a sentence or two: each is copied into every profile,
-# and the package has a size limit. Comment lines like these are not copied.
+# Everyday ones first, the connection settings last; descriptions short (each
+# is copied into eight profiles, and the package has a size limit). Comment
+# lines like these are not copied.
 name: __NAME__
 components:
+  # #158: the PC itself - power, commands, schedule, connection, versions.
+  # State rows: 전원 상태 · 마지막 실행 · 예약 · 상태 · 버전.
   - id: main
     capabilities:
       - id: switch
@@ -65,17 +63,19 @@ components:
         version: 1
       - id: numbersystem53811.pcdefer
         version: 1
-      - id: numbersystem53811.pcuser
-        version: 1
       - id: numbersystem53811.pcinfo
         version: 1
       - id: numbersystem53811.pcversion
         version: 1
-      # #107/#118: the media group - what is playing, play/pause, previous/
-      # next, the volume slider and the mute toggle. Standard capabilities,
-      # drawn by the app itself. `--media-component` moves these lines into
-      # the `media` component below instead.
-# @media-begin
+    categories:
+      - name: __CATEGORY__
+  # #107/#118/#154: what is playing, play/pause, previous/next, the volume
+  # slider and the mute toggle (standard, drawn by the app), then the audio
+  # device slots - outputs, inputs: a names row and a slot list each, so the
+  # routine reads "출력 장치" / "입력 장치".
+  - id: media
+    label: 미디어
+    capabilities:
       - id: audioTrackData
         version: 1
       - id: mediaPlayback
@@ -86,68 +86,32 @@ components:
         version: 1
       - id: audioMute
         version: 1
-# @media-end
-      # #113: the preset list and the names row.
-      - id: numbersystem53811.pcpreset
+      - id: numbersystem53811.pcaudioout
         version: 1
-      # #108: "PC에 메시지 보내기" - one text field on the detail view and in
-      # the routine actions. Our own capability: the standard `notification`
-      # showed Samsung's label ("텍스트 표시"), which a device configuration
-      # cannot override (platform notes "표준 capability"). The field is bound
-      # to `lastMessage` (the last text sent): a row bound to no attribute
-      # never gets the event the app waits for and ends in "네트워크 오류".
-      - id: numbersystem53811.pctoast
+      - id: numbersystem53811.pcaudioin
         version: 1
-    categories:
-      - name: __CATEGORY__
-# @media-component
-  # PC app v1.3.0 (edge-driver.md §4.3): components, so main does not grow and
-  # each card's preview on the main view is its own (platform notes "화면
-  # 배치": the first three state rows, a third of the width each).
-  # #151: in use / idle / locked as a routine condition ("사용 상태", "입력
-  # 없는 시간"); `pcUser` on main keeps its rows. #152: the camera and the
-  # microphone in use ("카메라", "마이크"). One state row each, so the preview
-  # reads "자리 비움 · 카메라 사용 중".
+  # #151/#152: one state row each, so the preview reads "자리 비움 · 카메라
+  # 사용 중 · 사용 중 · kim" - in use / idle / locked ("사용 상태", "입력 없는
+  # 시간" as routine conditions), camera and microphone, the session row.
   - id: presence
-    label: 사용 감지
+    label: 사용 상태
     capabilities:
       - id: numbersystem53811.pcpresence
         version: 1
       - id: numbersystem53811.pcprivacy
         version: 1
-  # #123: the watch card - what runs on the PC (the opt-in watch list): a
-  # summary row ("Steam 실행 중 · 외 1개"), the names row ("1 Steam · 3 OBS")
-  # and one state per slot, which a routine reads as "감시 1".."감시 5". A
-  # component of its own so the card is one card, under the PC device where
-  # a user looks for it (platform notes "자식 장치 대신 슬롯").
-  - id: apps
-    label: 감시 목록
+      - id: numbersystem53811.pcuser
+        version: 1
+  # #113: the preset list and its names row. #108: "PC에 메시지 보내기", one
+  # text field bound to `lastMessage` (a row bound to no attribute never gets
+  # the event the app waits for and ends in "네트워크 오류"); our own
+  # capability, since the standard `notification` shows Samsung's label.
+  - id: actions
+    label: 바로 실행
     capabilities:
-      - id: numbersystem53811.pcwatchlist
+      - id: numbersystem53811.pcpreset
         version: 1
-  # #154: the audio device slots - outputs, then inputs. One capability per
-  # kind (a names row and a slot list each), so each names row is drawn full
-  # width and the routine reads "출력 장치" / "입력 장치".
-  - id: audio
-    label: 오디오 장치
-    capabilities:
-      - id: numbersystem53811.pcaudioout
-        version: 1
-      - id: numbersystem53811.pcaudioin
-        version: 1
-  # #153: the primary monitor over DDC/CI - a summary row ("HDMI 1 · 40% ·
-  # DELL U2720Q", or why there is nothing to control) and the input list of
-  # our own (the standard mediaInputSource has no DisplayPort), then the
-  # standard power toggle and brightness slider, which are the monitor's,
-  # not the PC's.
-  - id: monitor
-    label: 모니터
-    capabilities:
-      - id: numbersystem53811.pcmonitor
-        version: 1
-      - id: switch
-        version: 1
-      - id: switchLevel
+      - id: numbersystem53811.pctoast
         version: 1
   # #115: keep-awake. A standard switch of its own, so a routine can use it as
   # an action and as a condition like any other switch; it cannot be the main
@@ -157,6 +121,31 @@ components:
     capabilities:
       - id: switch
         version: 1
+# @watch-begin
+  # #123: the watch card - a summary row ("Steam 외 1"), one state per slot
+  # (routine "감시 1".."감시 5"), the names row. Only while the PC app's watch
+  # list is on (`features` lists `activity`).
+  - id: apps
+    label: 감시 목록
+    capabilities:
+      - id: numbersystem53811.pcwatchlist
+        version: 1
+# @watch-end
+# @monitor-begin
+  # #153: the primary monitor over DDC/CI - a summary row ("HDMI 1 · 40% ·
+  # DELL U2720Q") and our input list (the standard mediaInputSource has no
+  # DisplayPort), then the standard power toggle and brightness slider. Only
+  # while the PC app's monitor control is on (`features` lists `monitor`).
+  - id: monitor
+    label: 모니터
+    capabilities:
+      - id: numbersystem53811.pcmonitor
+        version: 1
+      - id: switch
+        version: 1
+      - id: switchLevel
+        version: 1
+# @monitor-end
 # @battery-begin
   - id: battery
     label: 배터리
@@ -167,77 +156,20 @@ components:
         version: 1
 # @battery-end
 preferences:
-  - name: ipAddress
-    title: PC IP 주소 (IP address)
-    description: "PC의 IPv4 주소(예: 192.168.1.20). 비우면 SSDP로 찾은 주소를 씁니다. / PC IPv4; empty = SSDP."
-    required: false
-    preferenceType: string
-    definition:
-      stringType: text
-      minLength: 0
-      maxLength: 45
-      default: ""
-  - name: followDiscovery
-    title: 검색 따라가기 (Follow discovery)
-    description: "SSDP가 알려 온 새 주소를 따라갑니다. IP 주소를 채우면 그 값이 우선합니다. / Follow the PC via SSDP."
-    required: false
-    preferenceType: boolean
-    definition:
-      default: true
-  - name: port
-    title: 서비스 포트 (Service port)
-    description: "서비스 명령 포트(기본 5001). / Service port."
-    required: false
-    preferenceType: integer
-    definition:
-      minimum: 1
-      maximum: 65535
-      default: 5001
-  - name: secret
-    title: 시크릿 (Secret)
-    description: "PC Control 설정 탭의 시크릿. 입력 중 화면에 보입니다. / Shared secret; visible while typing."
-    required: false
-    preferenceType: string
-    definition:
-      stringType: text
-      minLength: 0
-      maxLength: 64
-      default: ""
-  - name: macAddress
-    title: MAC 주소 (MAC address)
-    description: "WoL용 MAC(예: AA:BB:CC:DD:EE:FF). 비우면 서비스가 고른 어댑터. / WoL MAC; empty = service pick."
-    required: false
-    preferenceType: string
-    definition:
-      stringType: text
-      minLength: 0
-      maxLength: 17
-      default: ""
-  - name: wolBroadcast
-    title: WoL 브로드캐스트 (Broadcast)
-    description: "매직 패킷을 보낼 주소. 막히면 서브넷 브로드캐스트(예: 192.168.1.255). / Magic packet target."
-    required: false
-    preferenceType: string
-    definition:
-      stringType: text
-      minLength: 0
-      maxLength: 45
-      default: "255.255.255.255"
-  - name: pollInterval
-    title: 상태 확인 주기 (Poll interval)
-    description: "PC에 상태를 묻는 주기. / Status poll interval."
+  - name: language
+    title: 문구 언어 (Language)
+    description: "자동은 한국어. / Auto = Korean."
     required: true
     preferenceType: enumeration
     definition:
       options:
-        "10": 10초마다 (10 s)
-        "30": 30초마다 (30 s)
-        "60": 1분마다 (1 min)
-        "300": 5분마다 (5 min)
-      default: "30"
+        auto: 자동 (한국어)
+        ko: 한국어 (Korean)
+        en: English
+      default: auto
   - name: offAction
     title: 스위치 끄기 동작 (Off action)
-    description: "스위치를 끌 때 보낼 명령. 강제 종료 외에는 PC의 유예를 따릅니다. / Command for switch off."
+    description: "스위치를 끌 때 보낼 명령. / Command for switch off."
     required: true
     preferenceType: enumeration
     definition:
@@ -252,7 +184,7 @@ preferences:
       default: shutdown
   - name: buttonMode
     title: 버튼 실행 방식 (Button mode)
-    description: "명령 목록에서 고른 명령이 유예를 따를지. 유예 중에는 트레이에서 취소할 수 있습니다. / Grace for the command list."
+    description: "명령 목록이 PC의 유예를 따를지. / Grace for the command list."
     required: true
     preferenceType: enumeration
     definition:
@@ -260,20 +192,21 @@ preferences:
         default: 설정된 유예 따름 (Grace)
         immediate: 즉시 실행 (Immediate)
       default: default
-  - name: language
-    title: 문구 언어 (Language)
-    description: "상태 문구의 언어. 허브 로케일을 읽을 수 없어 자동은 한국어입니다. / Text language; auto = Korean."
+  - name: pollInterval
+    title: 상태 확인 주기 (Poll interval)
+    description: "PC에 상태를 묻는 주기. / Status poll interval."
     required: true
     preferenceType: enumeration
     definition:
       options:
-        auto: 자동 (한국어)
-        ko: 한국어 (Korean)
-        en: English
-      default: auto
+        "10": 10초마다 (10 s)
+        "30": 30초마다 (30 s)
+        "60": 1분마다 (1 min)
+        "300": 5분마다 (5 min)
+      default: "30"
   - name: awakeMinutes
     title: 잠들지 않기 시간 (Keep-awake min)
-    description: "잠들지 않기를 켰을 때 유휴 절전을 막는 시간(분, 최대 1440). 0이면 끌 때까지. / Keep-awake minutes; 0 = until off."
+    description: "분, 최대 1440. 0이면 끌 때까지. / Minutes; 0 = until off."
     required: false
     preferenceType: integer
     definition:
@@ -282,10 +215,66 @@ preferences:
       default: 60
   - name: idleThreshold
     title: 자리 비움 기준 (Idle minutes)
-    description: "입력이 이만큼(분) 없으면 '자리 비움'. PC의 세션 정보 공유가 켜져 있어야 합니다. / Idle after this many minutes; needs session sharing."
+    description: "입력 없는 시간(분). PC 세션 공유 필요. / Idle minutes; needs session sharing."
     required: false
     preferenceType: integer
     definition:
       minimum: 1
       maximum: 1440
       default: 10
+  - name: ipAddress
+    title: PC IP 주소 (IP address)
+    description: "비우면 자동으로 찾습니다(SSDP). / Empty = SSDP."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: ""
+  - name: port
+    title: 서비스 포트 (Service port)
+    description: "기본 5001. / Default 5001."
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 65535
+      default: 5001
+  - name: secret
+    title: 시크릿 (Secret)
+    description: "PC 앱 설정 탭의 값. 입력 중 보입니다. / Visible while typing."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 64
+      default: ""
+  - name: macAddress
+    title: MAC 주소 (MAC address)
+    description: "WoL용. 비우면 PC 앱이 고른 어댑터. / Empty = PC app's pick."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 17
+      default: ""
+  - name: wolBroadcast
+    title: WoL 브로드캐스트 (Broadcast)
+    description: "막히면 서브넷 주소(예: 192.168.1.255). / Magic packet target."
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 45
+      default: "255.255.255.255"
+  - name: followDiscovery
+    title: 검색 따라가기 (Follow discovery)
+    description: "PC 주소가 바뀌면 따라갑니다. IP 주소가 우선. / Follow SSDP; IP wins."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true

@@ -332,7 +332,7 @@ PC 장치에 "감시 목록" 카드 하나를 두고, 하위 장치는 없다(#1
 - main: switch, refresh, pcPower, pcRemote, pcDefer, pcUser, pcInfo, pcVersion, audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute, pcPreset, pcToast — 순서는 §15 "UI 구성"(미디어 묶음이 edge-v1.0 카드 뒤)
 - apps(label "감시 목록", #123): `pcWatchList` — 요약·슬롯 다섯·이름 줄(§11). main의 요약 줄 `pcApps`와 v7–v9의 `pcWatch`를 대신한다
 - Dev 채널에만 있던 `pc.v2`(마지막 두 자리가 표준 `notification`, `speechSynthesis`), `pc.v3`(`pcMessage`), `pc.v4`(`pcNotify`)는 마지막 자리만 다르고 그 밖에는 같다. `pc.v5`는 `pcToast`에 kind 방식 `pcActivity`(#114)였고, `pc.v6`은 main의 요약 줄 `pcApps`에 앱마다 자식 장치(`pc-app.v1`의 `pcApp`)였다. `pc.v7`은 지금과 같은 카드에 요약 → 이름 → 슬롯 순서와 병기 값("실행 중 (Running)")이었는데, 메인 화면의 미리보기 세 칸에서 값이 두 줄로 감겨 잘렸다(v8은 프레젠테이션만 바꿨다). `pc.v8`·`pc.v9`는 `pcWatch`의 프레젠테이션을 갱신(`presentation:update`)한 뒤 낸 새 이름이었는데, 둘 다 화면이 옛 프레젠테이션으로 만들어졌다 — capability 프레젠테이션은 처음 쓰인 내용으로 굳는다(플랫폼 노트 "프로필과 화면 생성"). 그래서 `pc.v10`은 같은 정의를 새 id `pcWatchList`로 만들어 지금의 프레젠테이션을 처음부터 달았다. 여덟 다 공개된 적이 없어 파일은 패키지에서 뺐고(`profiles.UNSHIPPED_VERSIONS`), 이름만 `KNOWN`에 남는다(§5). `pc-app.yml`도 지웠고, 남은 앱 자식 장치는 드라이버가 지운다(edge-driver.md §4.2)
-- media(대안 배치만, #118): audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute — `gen-profiles.js --media-component`. 기본은 위의 main 배치
+- media(대안 배치만, #118): audioTrackData, mediaPlayback, mediaTrackControl, audioVolume, audioMute — `gen-profiles.js --media-component`. 기본은 위의 main 배치. v15(#158)부터는 이 `media` 카드가 기본이고 플래그는 없앴다(edge-driver.md §5)
 - awake: switch
 - battery(배터리 변형만): battery, powerSource
 - 이름: `pc.v10`, `pc-<style>.v10`, `pc-battery.v10`, `pc-<style>-battery.v10`. `pc*.v1`~`pc*.v9`는 `KNOWN`으로 자동 이전(v2부터는 배터리 쪽도 이름 그대로).

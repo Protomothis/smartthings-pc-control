@@ -216,7 +216,8 @@ local function stamped(device, pc)
   local emit_event, emit_component_event = device.emit_event, device.emit_component_event
   local function note(event, component)
     local key = event.capability .. "." .. event.attribute
-    if component and component.id ~= "main" then
+    -- #158: a capability moved off main keeps its main-shaped row key.
+    if component and component.id ~= "main" and features.CARD_OF[event.capability] ~= component.id then
       key = component.id .. "/" .. key
     end
     trace[#trace + 1] = { at = pc.now, key = key, value = event.value,
@@ -809,7 +810,7 @@ function T.test_a_profile_change_forces_every_row_once()
       seen[key] = true
     end
     h.assert_true(forced_all(out))
-    -- v14 (#151-#154): ~64 rows with the PC app v1.3.0 cards.
+    -- v15 (#158): ~64 rows on a device with every card.
     h.assert_true(#out > 30 and #out < 80, "every row once: " .. #out)
     h.assert_equal(batches, math.ceil(#out / emit.PAINT_BATCH))
     -- A follow-up waits out the budget window after the last batch
@@ -830,7 +831,7 @@ function T.test_a_profile_change_forces_every_row_once()
 end
 
 function T.test_a_follow_up_waits_for_the_paint_to_settle()
-  -- v14 (#151-#154): ~64 rows are eight batches, so the 30 s follow-up can
+  -- v15 (#158): ~64 rows are eight batches, so the 30 s follow-up can
   -- meet the last ones. It waits out the paint and one budget window after
   -- it (`emit.settling`), then sends what it always sends.
   with_pc(function(pc)
@@ -855,24 +856,24 @@ function T.test_a_follow_up_waits_for_the_paint_to_settle()
   end)
 end
 
---- The Dev channel device on pc-monitor.v9 after the driver update (#123:
---- v12, the watch card on its new capability id), through the real `init` and then
+--- A device on the published pc.v13 after the driver update (#158: v15,
+--- the watch list kept - v13 had it), through the real `init` and then
 --- `minutes` of driver life on the clock: the default 30 s polls, the
 --- batches, the follow-ups.
 --- `landing`: the profile change lands that many seconds in (`infoChanged`).
 local function migrate(pc, minutes, landing)
   local device = new_device()
-  device.profile = { id = "v9", name = "pc-monitor.v9", components = h.components_for("pc-monitor.v9") }
-  device:set_field(fields.ROWS_PAINTED, "9")
+  device.profile = { id = "v13", name = "pc.v13", components = h.components_for("pc.v13") }
+  device:set_field(fields.ROWS_PAINTED, "13")
   local trace = stamped(device, pc)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v14")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-watch.v15")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
-      { old_st_store = { profile = { id = "v9" } } })
+      { old_st_store = { profile = { id = "v13" } } })
   end
   run_until(d, pc, start + minutes * 60)
   return device, trace, start
@@ -911,7 +912,7 @@ function T.test_a_migration_paints_every_row_within_seconds_under_the_guard()
     for _, key in ipairs(emit.PAINT_FIRST) do
       h.assert_equal(at[key], 0, key .. " goes in the first batch, at once")
     end
-    -- v14 (#151-#154): one batch per PAINT_SECONDS, however many rows there
+    -- v15 (#158): one batch per PAINT_SECONDS, however many rows there
     -- are (25 s for the 48 rows of v10).
     local bound = (math.ceil(painted / emit.PAINT_BATCH) - 1) * emit.PAINT_SECONDS
     h.assert_true(last <= bound, "the last row " .. last .. " s in, " .. bound .. " allowed (all at 0 s before)")
@@ -1480,6 +1481,49 @@ function T.test_a_pc_that_stays_off_past_the_timeout_fails_once_and_polls_on_its
   h.assert_true(run.on_at ~= nil and run.on_at > wol.WAKE_TIMEOUT, "on later, at a scheduled poll")
   h.assert_equal(between(run.polls, wol.WAKE_TIMEOUT, run.on_at), 0, "no polls between the timeout and the schedule")
   h.assert_equal(run.live_fast_polls, 0)
+end
+
+function T.test_a_card_goes_on_two_answers_and_never_while_the_pc_is_silent()
+  -- #158: the monitor card goes once two statuses without `monitor` agree.
+  -- A PC that is off, a PC app that does not answer and a PC app too old to
+  -- list its features keep it - a routine may read that card.
+  with_pc(function(pc)
+    local device = new_device()
+    local name = "pc-monitor-watch.v15"
+    device.profile = { id = name, name = name, components = h.components_for(name) }
+    device:set_field(fields.PROFILE_NAME, name)
+    local d = Driver("budget", {})
+    -- (`model` updates are discovery's, #94.)
+    local function moves()
+      local out = {}
+      for _, update in ipairs(device.metadata_updates) do
+        out[#out + 1] = update.profile
+      end
+      return out
+    end
+    for _, kind in ipairs({ "unreachable", "unreachable", "unreachable", "app_down", "app_down" }) do
+      fail_with(kind)
+      poll.once(d, device)
+    end
+    client.get_status = function() return true, { protocol = 1, service_version = "v1.1.0", power = "on" }, nil end
+    poll.once(d, device)
+    poll.once(d, device)
+    h.assert_deep_equal(moves(), {}, "no answer about the cards, no move")
+    client.get_status = function() return true, copy(pc.status), nil end
+    poll.once(d, device)
+    h.assert_deep_equal(moves(), {}, "one status is not enough")
+    poll.once(d, device)
+    h.assert_deep_equal(moves(), { "pc-watch.v15" })
+    h.assert_false(device:get_field(fields.HAS_MONITOR))
+    h.assert_true(device:get_field(fields.HAS_WATCH))
+    -- Repainted a second later, without the card that went.
+    local mark = #device.emitted
+    h.assert_true(h.fire_last(d, "cards-profile"))
+    h.fire_all(d, "repaint-batch")
+    local out = since(device, mark)
+    h.assert_false(h.has_capability(out, caps.MONITOR), "the monitor card is gone")
+    h.assert_true(h.has_capability(out, caps.WATCH), "the watch card is painted")
+  end)
 end
 
 return T

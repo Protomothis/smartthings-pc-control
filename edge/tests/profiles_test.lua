@@ -40,9 +40,12 @@ local OLD, NEW = "pc.test1", "pc.test2"
 -- expectation cannot leak a fake profile name into the rest of the suite.
 local function with_fake_versions(body)
   local pc, known, legacy = profiles.PC, profiles.KNOWN, profiles.LEGACY
+  local current, for_cards = profiles.CURRENT, profiles.for_cards
   profiles.PC, profiles.KNOWN, profiles.LEGACY = NEW, { OLD, NEW }, OLD
+  profiles.CURRENT, profiles.for_cards = { [NEW] = true }, function() return NEW end
   local ok, err = pcall(body)
   profiles.PC, profiles.KNOWN, profiles.LEGACY = pc, known, legacy
+  profiles.CURRENT, profiles.for_cards = current, for_cards
   if not ok then
     error(err, 0)
   end
@@ -62,16 +65,16 @@ end
 -- all of them land on the one current profile; the icon is the user's to
 -- pick in the app now.
 local V1 = {
-  ["pc.v1"] = "pc.v14",
-  ["pc-monitor.v1"] = "pc.v14",
-  ["pc-switch.v1"] = "pc.v14",
-  ["pc-plug.v1"] = "pc.v14",
-  ["pc-tv.v1"] = "pc.v14",
-  ["pc-projector.v1"] = "pc.v14",
-  ["pc-network.v1"] = "pc.v14",
-  ["pc-hub.v1"] = "pc.v14",
-  ["pc-theater.v1"] = "pc.v14",
-  ["pc-remote.v1"] = "pc.v14",
+  ["pc.v1"] = "pc.v15",
+  ["pc-monitor.v1"] = "pc.v15",
+  ["pc-switch.v1"] = "pc.v15",
+  ["pc-plug.v1"] = "pc.v15",
+  ["pc-tv.v1"] = "pc.v15",
+  ["pc-projector.v1"] = "pc.v15",
+  ["pc-network.v1"] = "pc.v15",
+  ["pc-hub.v1"] = "pc.v15",
+  ["pc-theater.v1"] = "pc.v15",
+  ["pc-remote.v1"] = "pc.v15",
 }
 
 -- Every name the seven unpublished generations made (#107: ten styles, with
@@ -80,67 +83,68 @@ local V1 = {
 -- the app children, v7 with the first watch card, v8 with the card whose
 -- preview fits but whose screen was built from the old capability
 -- presentation, v9 the same under a fresh name - and the same old screen),
--- and where each of them goes - the same style and the same battery half, on
--- v12 (the card on its new capability id, pcWatchList).
+-- and where each of them goes - the same battery half, and the watch list
+-- from v7 on (#158: the cards the old profile had).
 local DEV = {}
 for _, version in ipairs({ 2, 3, 4, 5, 6, 7, 8, 9 }) do
   for _, battery in ipairs({ false, true }) do
     for _, style in ipairs(profiles.STYLES) do
-      DEV[profiles.name_for(style, battery, version)] = profiles.for_battery(battery)
+      DEV[profiles.name_for(style, battery, version)] =
+        profiles.for_cards({ battery = battery, watch = version >= 7 })
     end
   end
 end
 
 function T.test_every_v1_profile_migrates_to_the_current_one_of_its_style()
-  -- #107: v2 replaced all ten v1 names at once, then v3 … v12. A v1 device
-  -- goes straight to v12. The icon a device wears survives the move, and until
-  -- a status has said "battery" it lands on the plain profile.
-  h.assert_equal(profiles.PC, "pc.v14")
+  -- #107: v2 replaced all ten v1 names at once, then v3 … v15. A v1 device
+  -- goes straight to v15 - no watch list (v1 had none), and until a status
+  -- has said "battery" the plain profile.
+  h.assert_equal(profiles.PC, "pc.v15")
   for old, new in pairs(V1) do
     h.assert_equal(profiles.migration_for(old), new, old)
-    h.assert_equal(profiles.migration_for(old, false), new, old)
+    h.assert_equal(profiles.migration_for(old, { battery = false }), new, old)
   end
   -- The development names that never left the author's hub stay unknown, and
   -- so does a generation this driver has not shipped yet.
   h.assert_nil(profiles.migration_for("pc.v17"))
-  h.assert_nil(profiles.migration_for("pc.v14"))
+  h.assert_nil(profiles.migration_for("pc.v15"))
 end
 
-function T.test_every_v2_to_v9_profile_migrates_to_the_v14_of_its_style_and_battery_half()
-  -- The 160 development names each land on their v12 twin.
+function T.test_every_v2_to_v9_profile_migrates_keeping_its_battery_half_and_watch_card()
+  -- The 160 development names each land on their v15 twin.
   local count = 0
   for old, new in pairs(DEV) do
     count = count + 1
     h.assert_equal(profiles.migration_for(old), new, old)
-    h.assert_equal(profiles.migration_for(old, false), new,
+    h.assert_equal(profiles.migration_for(old, { battery = false }), new,
       old .. ": the name's battery half wins over a field that says no")
     h.assert_false(profiles.is_current(old), old .. " must not be current any more")
   end
   h.assert_equal(count, 160)
   -- A plain v2/v3 laptop whose statuses already said "battery" goes straight
   -- onto the battery twin.
-  h.assert_equal(profiles.migration_for("pc-tv.v2", true), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-tv.v3", true), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-battery.v14")
+  h.assert_equal(profiles.migration_for("pc-tv.v2", { battery = true }), "pc-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-tv.v3", { battery = true }), "pc-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-hub-battery.v3"), "pc-battery.v15")
   -- pcToast: and the pcNotify screen the same way.
-  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc.v4", true), "pc-battery.v14")
+  h.assert_equal(profiles.migration_for("pc-tv-battery.v4"), "pc-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-monitor.v4"), "pc.v15", "the style name is no monitor card")
+  h.assert_equal(profiles.migration_for("pc.v4", { battery = true }), "pc-battery.v15")
+  -- v7 to v9 had the watch card.
+  h.assert_equal(profiles.migration_for("pc-monitor.v9"), "pc-watch.v15")
 end
 
-function T.test_every_v10_profile_moves_to_v14_and_the_old_default_becomes_switch()
+function T.test_every_v10_profile_moves_to_v15_with_its_watch_list()
   -- #136: v10 is what edge 1.1.0 published. Its bare name was Others; the
-  -- device lands on the new default, switch (`pc.v14`), and every other
-  -- style and the battery half stay. v10 stays packaged for the devices that
+  -- style goes, the battery half stays, and so does the watch list (#158:
+  -- a routine may read its slots). v10 stays packaged for the devices that
   -- have not moved yet.
-  h.assert_equal(profiles.migration_for("pc.v10"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-battery.v10"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-monitor.v10"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-monitor-battery.v10"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-switch.v10"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-tv.v10"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-tv-battery.v10"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc.v10", true), "pc-battery.v14")
+  h.assert_equal(profiles.migration_for("pc.v10"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v10"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-monitor.v10"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-monitor-battery.v10"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-tv-battery.v10"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc.v10", { battery = true }), "pc-watch-battery.v15")
   for _, name in ipairs(profiles.KNOWN) do
     h.assert_true(name ~= "pc-others.v10", "v10 never had an others name")
   end
@@ -148,45 +152,75 @@ function T.test_every_v10_profile_moves_to_v14_and_the_old_default_becomes_switc
   h.assert_true(profiles.is_shipped("pc-tv-battery.v10"))
 end
 
-function T.test_the_dev_only_v11_moves_to_v14()
-  -- #136: v11 (Dev channel only, monitor as its bare name) lands on the
-  -- current profile like every older name. Its files are not packaged.
-  h.assert_equal(profiles.migration_for("pc.v11"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-battery.v11"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-others.v11"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-switch.v11"), "pc.v14")
+function T.test_the_dev_only_v11_and_v12_move_to_v15_and_drop_their_style()
+  -- #136: v11 (monitor as its bare name) and v12 (ten styles, Switch the
+  -- default), Dev channel only, land on the current profile like every older
+  -- name. Their files are not packaged.
+  h.assert_equal(profiles.migration_for("pc.v11"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v11"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-others.v11"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc.v12"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-monitor-battery.v12"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-others.v12", { battery = true }), "pc-watch-battery.v15")
   h.assert_false(profiles.is_shipped("pc.v11"))
-end
-
-function T.test_the_dev_only_v12_moves_to_v14_and_drops_its_style()
-  -- #136: v12 (Dev channel only) still had the ten icon styles, Switch the
-  -- default. Every one of them lands on the one current profile; the
-  -- battery half stays.
-  h.assert_equal(profiles.migration_for("pc.v12"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-tv.v12"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc-monitor-battery.v12"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-others.v12", true), "pc-battery.v14")
   h.assert_false(profiles.is_shipped("pc.v12"))
 end
 
-function T.test_the_published_v13_moves_to_v14_keeping_its_battery_half()
-  -- #151-#154: v13 (edge 1.2.x, two names, Switch) is published, so its files
-  -- stay in the package; its devices land on v14 with the battery half.
-  h.assert_equal(profiles.migration_for("pc.v13"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc.v13", true), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-battery.v13"), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-battery.v13", false), "pc-battery.v14")
+function T.test_the_published_v13_moves_to_v15_keeping_its_cards()
+  -- v13 (edge 1.2.x, two names, Switch) is published, so its files stay in
+  -- the package. #158: it always had the watch list, so a device lands on a
+  -- `-watch` profile until this driver's statuses have settled the card.
+  h.assert_equal(profiles.migration_for("pc.v13"), "pc-watch.v15")
+  h.assert_equal(profiles.migration_for("pc.v13", { battery = true }), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v13"), "pc-watch-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v13", { battery = false }), "pc-watch-battery.v15")
   h.assert_nil(profiles.migration_for("pc-tv.v13"), "v13 had no styled names")
   h.assert_true(profiles.is_shipped("pc.v13"))
   h.assert_true(profiles.is_shipped("pc-battery.v13"))
   h.assert_nil(profiles.UNSHIPPED_VERSIONS[13])
 end
 
+function T.test_the_dev_only_v14_moves_to_v15_with_its_monitor_card()
+  -- v14 (Dev channel only) had every card. Its files are gone.
+  h.assert_equal(profiles.migration_for("pc.v14"), "pc-monitor-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v14"), "pc-monitor-watch-battery.v15")
+  h.assert_false(profiles.is_shipped("pc.v14"))
+  h.assert_false(profiles.is_shipped("pc-battery.v14"))
+end
+
+function T.test_a_settled_card_wins_over_what_the_old_profile_had()
+  -- #158: `fields.HAS_MONITOR` / `HAS_WATCH`, written once two statuses agreed.
+  h.assert_equal(profiles.migration_for("pc.v13", { watch = false }), "pc.v15")
+  h.assert_equal(profiles.migration_for("pc.v13", { monitor = true, watch = true }), "pc-monitor-watch.v15")
+  h.assert_equal(profiles.migration_for("pc-battery.v14", { monitor = false, watch = false, battery = true }),
+    "pc-battery.v15")
+  h.assert_equal(profiles.migration_for("pc.v1", { monitor = true }), "pc-monitor.v15")
+  -- Through `ensure`, from the persisted fields.
+  profiles.reset()
+  local device = device_on("pc.v13", "settled-v13")
+  device:set_field(fields.HAS_WATCH, false)
+  device:set_field(fields.HAS_MONITOR, true)
+  h.assert_equal(profiles.ensure(device), "pc-monitor.v15")
+  h.assert_deep_equal(profiles.stored_cards(device), { monitor = true, watch = false })
+end
+
+function T.test_the_cards_of_a_name()
+  h.assert_deep_equal(profiles.cards_of("pc-monitor-watch-battery.v15"),
+    { monitor = true, watch = true, battery = true })
+  h.assert_deep_equal(profiles.cards_of("pc-watch.v15"), { monitor = false, watch = true, battery = false })
+  h.assert_deep_equal(profiles.cards_of("pc.v15"), { monitor = false, watch = false, battery = false })
+  -- An older name: what its generation had, a style is no card.
+  h.assert_deep_equal(profiles.cards_of("pc-monitor.v10"), { monitor = false, watch = true, battery = false })
+  h.assert_deep_equal(profiles.cards_of("pc-battery.v14"), { monitor = true, watch = true, battery = true })
+  h.assert_deep_equal(profiles.cards_of("pc-tv-battery.v6"), { monitor = false, watch = false, battery = true })
+  h.assert_nil(profiles.cards_of("thermostat"))
+end
+
 function T.test_a_v1_profile_can_migrate_straight_onto_a_battery_profile()
   -- #107: the caller decides the battery half (a laptop whose status has said
   -- so), the name decides the style.
-  h.assert_equal(profiles.migration_for("pc.v1", true), "pc-battery.v14")
-  h.assert_equal(profiles.migration_for("pc-tv.v1", true), "pc-battery.v14")
+  h.assert_equal(profiles.migration_for("pc.v1", { battery = true }), "pc-battery.v15")
+  h.assert_equal(profiles.migration_for("pc-tv.v1", { battery = true }), "pc-battery.v15")
 end
 
 function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every_current_one()
@@ -201,13 +235,14 @@ function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every
       end
     end
   end
-  -- #136: from v13 a generation has two names, no style.
-  expected[#expected + 1] = "pc.v13"
-  expected[#expected + 1] = "pc-battery.v13"
-  expected[#expected + 1] = profiles.PC
-  expected[#expected + 1] = profiles.BATTERY
+  -- #136: v13 and v14 had two names each, no style; #158: eight from v15.
+  for _, name in ipairs({ "pc.v13", "pc-battery.v13", "pc.v14", "pc-battery.v14",
+    "pc.v15", "pc-battery.v15", "pc-watch.v15", "pc-watch-battery.v15",
+    "pc-monitor.v15", "pc-monitor-battery.v15", "pc-monitor-watch.v15", "pc-monitor-watch-battery.v15" }) do
+    expected[#expected + 1] = name
+  end
   h.assert_deep_equal(profiles.KNOWN, expected)
-  h.assert_equal(#profiles.KNOWN, 234)
+  h.assert_equal(#profiles.KNOWN, 242)
   for _, name in ipairs(profiles.KNOWN) do
     h.assert_true(name == "pc-battery.v13" or not name:match("^pc%-%a+%.v13$"),
       name .. ": v13 never had a styled name")
@@ -282,23 +317,27 @@ end
 -- #100: icon styles
 --------------------------------------------------------------------------------
 
-function T.test_the_battery_variants_are_named_after_the_plain_ones()
-  -- #107/#136: `pc-battery.v14`, the twin of `pc.v14`, and nothing else.
-  h.assert_equal(profiles.PC, "pc.v14")
-  h.assert_equal(profiles.BATTERY, "pc-battery.v14")
-  h.assert_equal(profiles.for_battery(true), "pc-battery.v14")
-  h.assert_equal(profiles.for_battery(false), "pc.v14")
-  h.assert_equal(profiles.for_battery(nil), "pc.v14")
-  h.assert_true(profiles.battery_of("pc-battery.v14"))
-  h.assert_false(profiles.battery_of("pc.v14"))
+function T.test_the_card_variants_are_named_after_their_cards()
+  -- #158: eight current names, `pc[-monitor][-watch][-battery].v15`.
+  h.assert_equal(profiles.PC, "pc.v15")
+  h.assert_equal(profiles.BATTERY, "pc-battery.v15")
+  h.assert_equal(profiles.for_cards({ battery = true }), "pc-battery.v15")
+  h.assert_equal(profiles.for_cards({}), "pc.v15")
+  h.assert_equal(profiles.for_cards({ watch = true, monitor = true }), "pc-monitor-watch.v15")
+  h.assert_deep_equal(profiles.CURRENT_NAMES, {
+    "pc.v15", "pc-battery.v15", "pc-watch.v15", "pc-watch-battery.v15",
+    "pc-monitor.v15", "pc-monitor-battery.v15", "pc-monitor-watch.v15", "pc-monitor-watch-battery.v15",
+  })
+  for _, name in ipairs(profiles.CURRENT_NAMES) do
+    h.assert_true(profiles.is_current(name), name)
+    h.assert_equal(profiles.for_cards(profiles.cards_of(name)), name, name .. " round trip")
+  end
   local count = 0
   for _ in pairs(profiles.CURRENT) do
     count = count + 1
   end
-  h.assert_equal(count, 2, "#136: no icon variants any more")
+  h.assert_equal(count, 8)
   h.assert_equal(profiles.CATEGORY, "Switch")
-  h.assert_nil(profiles.battery_of("pc.v1"), "a name that is not current has no battery half")
-  h.assert_nil(profiles.battery_of("pc-battery.v1"))
 end
 
 function T.test_a_name_that_is_not_current_is_not_current()
@@ -312,12 +351,16 @@ function T.test_a_name_that_is_not_current_is_not_current()
   h.assert_false(profiles.is_current("pc.v5"), "#123: nor is v5")
   h.assert_false(profiles.is_current("pc-tv-battery.v5"))
   h.assert_false(profiles.is_current("pc.v10"), "#136: nor is v10, edge 1.1.0")
+  h.assert_false(profiles.is_current("pc-monitor.v10"), "a v10 style name is no v15 card name")
   h.assert_false(profiles.is_current("pc.v11"), "#136: nor is v11, Dev only")
   h.assert_false(profiles.is_current("pc.v12"), "#136: nor is v12, Dev only")
   h.assert_false(profiles.is_current("pc-tv.v12"))
   h.assert_false(profiles.is_current("pc.v13"), "#151: nor is v13, edge 1.2.x")
   h.assert_false(profiles.is_current("pc-battery.v13"))
-  h.assert_false(profiles.is_current("pc.v15"))
+  h.assert_false(profiles.is_current("pc.v14"), "#158: nor is v14, Dev only")
+  h.assert_false(profiles.is_current("pc-battery.v14"))
+  h.assert_false(profiles.is_current("pc.v16"))
+  h.assert_false(profiles.is_current("pc-tv.v15"), "no style in v15")
   h.assert_false(profiles.is_current("pc.v6"), "#123: nor is v6")
   h.assert_false(profiles.is_current("pc-tv-battery.v6"))
   h.assert_false(profiles.is_current("pc.v7"), "nor is v7, the first watch card")
@@ -509,7 +552,7 @@ function T.test_ensure_moves_every_v1_device_once_and_keeps_its_style()
     h.assert_equal(device:get_field(fields.PROFILE_NAME), new)
   end
   -- Neither a current device nor a development name moves.
-  for _, name in ipairs({ "pc.v14", "pc-battery.v14", "pc.v17" }) do
+  for _, name in ipairs({ "pc.v15", "pc-monitor-watch-battery.v15", "pc.v17" }) do
     local device = device_on(name, "release-" .. name)
     h.assert_nil(profiles.ensure(device))
     h.assert_equal(#device.metadata_updates, 0)
@@ -589,10 +632,10 @@ function T.test_init_migrates_a_device_left_on_an_older_profile()
   end)
 end
 
-function T.test_init_moves_a_v1_device_to_v14_and_repaints_it()
+function T.test_init_moves_a_v1_device_to_v15_and_repaints_it()
   -- #107: the same device on the real constants is a v1 device (no name, no
   -- field: LEGACY), so its first init after the update moves it to the current
-  -- profile (pc.v14: the watch card on pcWatchList, the Switch default of #136) and paints the new generation of rows.
+  -- profile (pc.v15: no watch list, v1 had none) and paints the new generation of rows.
   profiles.reset()
   local poll = require "poll"
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
@@ -601,8 +644,8 @@ function T.test_init_moves_a_v1_device_to_v14_and_repaints_it()
   device.profile = { id = "abc-123", components = { { id = "main" } } }
   device:set_field(fields.ROWS_PAINTED, "1")
   lifecycle().init(fake_driver({ device }), device)
-  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v14" } })
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v14")
+  h.assert_deep_equal(device.metadata_updates, { { profile = "pc.v15" } })
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc.v15")
   h.assert_equal(device:get_field(fields.ROWS_PAINTED), poll.ROWS_VERSION,
     "the rows of the new capabilities start unset and are painted once")
   -- #129: the row generation is the profile generation.
@@ -610,36 +653,34 @@ function T.test_init_moves_a_v1_device_to_v14_and_repaints_it()
 end
 
 -- The Dev channel generations (never packaged, still known): a device on any
--- of them moves to the v12 of its style and battery half on its first init
--- after the update and paints the new row generation. A row the new profile
--- adds is painted at once, forced, because the cloud record of the new
--- profile starts empty: pcToast's `lastMessage` for a v4 device (whose
--- pcNotify text row was bound to nothing and spun into "네트워크 오류"),
--- and the watch card (#123, on its own component) for a v5 one (the
--- kind-based pcActivity row) and a v6 one (pcApps and the app children).
--- A v7, v8 or v9 device already has a card, but its new profile's record is
--- empty too (and pcWatchList is a new capability), so every slot is painted
--- again - and its style and battery stay.
-function T.test_init_moves_a_dev_generation_device_to_v14_keeping_style_and_battery()
+-- of them moves to v15 with its battery half on its first init after the
+-- update and paints the new row generation. A row the new profile adds is
+-- painted at once, forced, because the cloud record of the new profile
+-- starts empty: pcToast's `lastMessage` for a v4 or v5 device (whose pcNotify
+-- text row was bound to nothing and spun into "네트워크 오류"). A v7, v8 or v9
+-- device had the watch card (#158: so it keeps it), but its new profile's
+-- record is empty too (and pcWatchList is a new capability), so every slot is
+-- painted again. v5 and v6 had no `apps` component, so no watch list.
+function T.test_init_moves_a_dev_generation_device_to_v15_keeping_battery_and_watch()
   local caps = require "caps"
   for i, c in ipairs({
-    { "pc-battery.v2", "switch", "pc-battery.v14" },
+    { "pc-battery.v2", "switch", "pc-battery.v15" },
     -- the reviewer's own device: pcMessage's two text fields
-    { "pc-tv-battery.v3", "tv", "pc-battery.v14" },
-    { "pc-tv-battery.v4", "tv", "pc-battery.v14", nil, caps.TOAST, "lastMessage", "없음" },
-    { "pc-hub-battery.v5", "hub", "pc-battery.v14", "apps", caps.WATCH, "summary", "없음" },
+    { "pc-tv-battery.v3", "tv", "pc-battery.v15" },
+    { "pc-tv-battery.v4", "tv", "pc-battery.v15", nil, caps.TOAST, "lastMessage", "없음" },
+    { "pc-hub-battery.v5", "hub", "pc-battery.v15", nil, caps.TOAST, "lastMessage", "없음" },
     -- #123: the v6 device of the app-children build; every slot is new too.
-    { "pc-plug.v6", "plug", "pc.v14", "apps", caps.WATCH, "names", "없음" },
-    { "pc-plug-battery.v6", "plug", "pc-battery.v14", "apps", caps.WATCH, "slotFive", "empty" },
+    { "pc-plug.v6", "plug", "pc.v15" },
+    { "pc-plug-battery.v6", "plug", "pc-battery.v15" },
     -- The first watch card (v7, the preview that wrapped): same card, new screen.
-    { "pc-monitor.v7", "monitor", "pc.v14", "apps", caps.WATCH, "slotOne", "empty" },
-    { "pc-tv-battery.v7", "tv", "pc-battery.v14", "apps", caps.WATCH, "summary", "없음" },
+    { "pc-monitor.v7", "monitor", "pc-watch.v15", "apps", caps.WATCH, "slotOne", "empty" },
+    { "pc-tv-battery.v7", "tv", "pc-watch-battery.v15", "apps", caps.WATCH, "summary", "없음" },
     -- v8: the same card, a screen built from the old capability presentation.
-    { "pc-monitor.v8", "monitor", "pc.v14", "apps", caps.WATCH, "slotOne", "empty" },
-    { "pc-tv-battery.v8", "tv", "pc-battery.v14", "apps", caps.WATCH, "summary", "없음" },
+    { "pc-monitor.v8", "monitor", "pc-watch.v15", "apps", caps.WATCH, "slotOne", "empty" },
+    { "pc-tv-battery.v8", "tv", "pc-watch-battery.v15", "apps", caps.WATCH, "summary", "없음" },
     -- v9: the same again, the screen still frozen on pcWatch's first presentation.
-    { "pc-monitor.v9", "monitor", "pc.v14", "apps", caps.WATCH, "slotOne", "empty" },
-    { "pc-tv-battery.v9", "tv", "pc-battery.v14", "apps", caps.WATCH, "summary", "없음" },
+    { "pc-monitor.v9", "monitor", "pc-watch.v15", "apps", caps.WATCH, "slotOne", "empty" },
+    { "pc-tv-battery.v9", "tv", "pc-watch-battery.v15", "apps", caps.WATCH, "summary", "없음" },
   }) do
     local from, style, to, component, cap, attr, want = table.unpack(c, 1, 7)
     profiles.reset()
@@ -663,16 +704,16 @@ function T.test_init_moves_a_dev_generation_device_to_v14_keeping_style_and_batt
     end
   end
   -- And the plain twin keeps its half too.
-  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc.v14")
-  h.assert_equal(profiles.migration_for("pc.v5", true), "pc-battery.v14")
+  h.assert_equal(profiles.migration_for("pc-tv.v5"), "pc.v15")
+  h.assert_equal(profiles.migration_for("pc.v5", { battery = true }), "pc-battery.v15")
 end
 
-function T.test_init_leaves_a_v14_device_where_it_is()
+function T.test_init_leaves_a_v15_device_where_it_is()
   profiles.reset()
   local device = h.fake_device({ ipAddress = "192.168.1.20" })
-  device.id = "init-pc-v12"
+  device.id = "init-pc-v15"
   device.device_network_id = discovery.DNI_PREFIX .. "manual-abc-4"
-  device.profile = { id = "abc-123", name = "pc.v14", components = { { id = "main" } } }
+  device.profile = { id = "abc-123", name = "pc.v15", components = { { id = "main" } } }
   lifecycle().init(fake_driver({ device }), device)
   h.assert_equal(#device.metadata_updates, 0)
   h.assert_equal(device:get_field(fields.PROFILE_NAME), profiles.PC)

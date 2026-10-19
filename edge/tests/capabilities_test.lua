@@ -210,11 +210,17 @@ function T.test_the_current_profile_lists_every_capability()
   -- that has to carry the whole set. #86 added `pcversion`; the older files are
   -- left exactly as they shipped - a device still on one of them keeps the
   -- screen it was created with until the migration moves it (platform notes "프로필과 화면 생성").
+  -- #158: all eight do, but for the monitor and watch cards of the variants
+  -- without them.
   local profiles = require "profiles"
-  local name, text = profile_file_for(profiles.current())
-  h.assert_true(text ~= nil, "no profile file declares " .. profiles.current())
-  for _, id in pairs(caps.ids) do
-    h.assert_contains(text, id, "profiles/" .. tostring(name) .. " is missing ")
+  for _, current in ipairs(profiles.CURRENT_NAMES) do
+    local name, text = profile_file_for(current)
+    h.assert_true(text ~= nil, "no profile file declares " .. current)
+    local cards = profiles.cards_of(current)
+    for _, id in pairs(caps.ids) do
+      local wanted = (id ~= caps.WATCH or cards.watch) and (id ~= caps.MONITOR or cards.monitor)
+      h.assert_equal(text:find(id, 1, true) ~= nil, wanted, "profiles/" .. tostring(name) .. " " .. id)
+    end
   end
 end
 
@@ -269,8 +275,9 @@ function T.test_the_version_capability_is_last_in_the_current_profile()
   h.assert_true(at ~= nil, "profiles/" .. tostring(name) .. " does not list the version capability")
   h.assert_equal(order[at - 1], (caps.STATUS:gsub("^.*%.", "")),
     "the info card belongs directly above the version card (#86)")
+  -- #158: pcUser left main for the presence card, so it comes later.
   local v1 = {
-    pcpower = true, pcremote = true, pcdefer = true, pcuser = true, pcinfo = true,
+    pcpower = true, pcremote = true, pcdefer = true, pcinfo = true,
   }
   for i = at + 1, #order do
     h.assert_nil(v1[order[i]], order[i] .. " is listed after the version capability (#86)")
@@ -370,9 +377,9 @@ end
 function T.test_the_current_profiles_are_switches_without_an_icon_preference()
   -- #136: the user picks the icon in the app, which offers it for a Switch
   -- and not for Others or SmartMonitor. No `iconStyle` preference, no
-  -- variants: `pc.vN` and its battery twin, both Switch.
+  -- icon variants: the eight card sets of #158, all Switch.
   local profiles = require "profiles"
-  for _, name in ipairs({ profiles.PC, profiles.BATTERY }) do
+  for _, name in ipairs(profiles.CURRENT_NAMES) do
     local file, text = profile_file_for(name)
     h.assert_true(text ~= nil, name .. " has no file")
     h.assert_equal(profile_category(text), "Switch", "the category of profiles/" .. tostring(file))
@@ -400,7 +407,9 @@ function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
   local profiles = require "profiles"
   local checked = 0
   for file, text in pairs(profile_files) do
-    if profiles.is_current(profile_name(text)) then
+    local name = profile_name(text)
+    -- #158: on the `-watch` variants only.
+    if profiles.is_current(name) and profiles.cards_of(name).watch then
       checked = checked + 1
       text = text:gsub("\r\n", "\n")
       h.assert_contains(text, "\n  - id: apps\n    label: 감시 목록\n    capabilities:\n      - id: "
@@ -410,7 +419,7 @@ function T.test_the_watch_card_is_its_own_component_on_every_current_profile()
       h.assert_nil(main:find("pcwatch", 1, true), "profiles/" .. file .. " main")
     end
   end
-  h.assert_equal(checked, 2)
+  h.assert_equal(checked, 4)
 end
 
 function T.test_the_watch_definition_is_summary_names_and_five_slots()
