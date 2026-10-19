@@ -218,28 +218,32 @@ function h.components_for(profile_name)
   if type(profile_name) == "string" and profile_name:find("%-battery%.v%d+$") then
     components.battery = { id = "battery" }
   end
-  -- No name = a current device with every card (`pc-monitor-watch.v15`).
+  -- No name = a current device with every card (`pc-watch.v16`).
   local version = type(profile_name) == "string" and tonumber(profile_name:match("%.v(%d+)$"))
-  local current = not version or version >= 15
-  local stem = type(profile_name) == "string" and profile_name or "pc-monitor-watch"
+  local carded = not version or version >= 15
+  local stem = type(profile_name) == "string" and profile_name or "pc-watch"
   -- #123: the watch card's component, from v7 on; #158: on `-watch` names.
-  if (version and version >= 7 and version <= 14) or (current and stem:find("-watch", 1, true)) then
+  if (version and version >= 7 and version <= 14) or (carded and stem:find("-watch", 1, true)) then
     components.apps = { id = "apps" }
   end
   -- PC app v1.3.0: the presence card, from v14 on; v14's audio card.
   if not version or version >= 14 then
     components.presence = { id = "presence" }
   end
-  if version == 14 or (current and stem:find("-monitor", 1, true)) then
+  if version == 14 or (version == 15 and stem:find("-monitor", 1, true)) then
     components.monitor = { id = "monitor" }
   end
   if version == 14 then
     components.audio = { id = "audio" }
   end
   -- #158: the cards that took over main's media group, presets and message.
-  if current then
+  if carded then
     components.media = { id = "media" }
     components.actions = { id = "actions" }
+  end
+  -- #160: the speaker and the microphone, from v16 on.
+  if not version or version >= 16 then
+    components.sound = { id = "sound" }
   end
   return components
 end

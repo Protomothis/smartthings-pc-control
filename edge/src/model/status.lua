@@ -61,10 +61,8 @@ local ATTRIBUTES = {
   -- PC app v1.3.0 (sensors.lua).
   [caps.PRESENCE] = { activity = true, idleMinutes = true },
   [caps.PRIVACY] = { summary = true, camera = true, microphone = true },
-  [caps.MONITOR] = { summary = true, input = true, supportedInputs = true },
-  ["switchLevel"] = { level = true, levelRange = true },
-  [caps.AUDIO_OUT] = { output = true, names = true, supportedOutputs = true },
-  [caps.AUDIO_IN] = { input = true, names = true, supportedInputs = true },
+  [caps.SPEAKER] = { summary = true, names = true, output = true, playing = true, muted = true },
+  [caps.MIC] = { summary = true, names = true, input = true, muted = true },
 }
 
 --- The set above. Read-only: it is a constant, not a copy.
@@ -198,7 +196,7 @@ function status.apply_status(device_state, body, opts)
       { lang = lang, watch = (device_state.extras or {}).watch })) do
     events[#events + 1] = e
   end
-  -- PC app v1.3.0: the presence, privacy, audio device and monitor cards.
+  -- PC app v1.3.0: the presence card and the sound card (#160).
   for _, e in ipairs(sensors.apply_status(body,
       { lang = lang, idle_threshold = opts.idle_threshold })) do
     events[#events + 1] = e

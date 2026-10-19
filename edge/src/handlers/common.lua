@@ -69,10 +69,7 @@ end
 -- the same way. A power transition holds none of them back.
 -- @param answer re-sends, forced, the row the command arrived on
 -- @param keys the row keys the answer poll after a success sends forced
--- @param words optional `function(lang, note, body)`: the sentence for a
---   refusal or error note that needs arguments (#153/#154), nil for the
---   plain `features.note_text`
-function common.run_feature(driver, device, service_command, value, answer, keys, words)
+function common.run_feature(driver, device, service_command, value, answer, keys)
   local lang = fields.lang(device)
   if fields.extras(device) == nil then
     -- Nothing read in this run yet (the hub has just restarted): ask once,
@@ -83,7 +80,7 @@ function common.run_feature(driver, device, service_command, value, answer, keys
     if note == "device_in_use" then
       return sensors.in_use_note(lang, (body or {}).devices)
     end
-    return (words and words(lang, note, body)) or features.note_text(lang, note)
+    return features.note_text(lang, note)
   end
   local refusal = features.refusal(fields.extras(device), service_command)
   if refusal then

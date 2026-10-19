@@ -1,0 +1,70 @@
+{
+  "tag": "ko",
+  "label": "스피커",
+  "attributes": {
+    "summary": {
+      "label": "스피커"
+    },
+    "output": {
+      "label": "출력 장치",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "출력 1"
+          },
+          "2": {
+            "label": "출력 2"
+          },
+          "3": {
+            "label": "출력 3"
+          },
+          "4": {
+            "label": "출력 4"
+          },
+          "5": {
+            "label": "출력 5"
+          },
+          "none": {
+            "label": "칸에 없는 장치"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "출력 칸"
+    },
+    "playing": {
+      "label": "소리 재생",
+      "i18n": {
+        "value": {
+          "playing": {
+            "label": "재생 중"
+          },
+          "idle": {
+            "label": "조용함"
+          },
+          "unknown": {
+            "label": "알 수 없음"
+          }
+        }
+      }
+    },
+    "muted": {
+      "label": "스피커 음소거",
+      "i18n": {
+        "value": {
+          "muted": {
+            "label": "음소거"
+          },
+          "unmuted": {
+            "label": "음소거 안 함"
+          },
+          "unknown": {
+            "label": "알 수 없음"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

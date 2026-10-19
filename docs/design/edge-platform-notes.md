@@ -23,7 +23,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 드라이버가 `set_field(..., {persist = true})`로 남긴 "이미 칠했다" 표시는 id 변경을 넘어 살아남는다. 표시에 세대 번호를 붙여야 한 번 더 칠한다(`poll.ROWS_VERSION`).
 - capability를 **새로 하나 더 만드는 것**은 개명이 아니다. 기존 정의를 건드리지 않으므로 캐시 문제도, 지울 옛 id도 없다.
 - 쓰이지 않게 된 id는 참조가 모두 사라진 뒤 `capabilities:delete`로 계정에서 지운다.
-- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. `numbersystem53811.pcactivity`(kind 방식 앱 감지, Dev 채널의 `pc*.v5`, #123에서 `pcapps` + 자식 장치의 `pcapp`로 바뀜)와 `numbersystem53811.pcapps`·`numbersystem53811.pcapp`(Dev 채널의 `pc*.v6`과 `pc-app.v1`, 2026-10-02 감시 목록 카드 `pcwatch`로 바뀜, 아래 "자식 장치 대신 슬롯"), 그리고 `numbersystem53811.pcwatch`(Dev 채널의 `pc*.v7`–`v9`, 화면이 첫 프레젠테이션으로 굳어 2026-10-02 `pcwatchlist`로 바뀜, 아래 "프로필과 화면 생성")는 개발 장치가 `pc*.v10`으로 옮겨지고 앱 자식 장치가 지워진 뒤 2026-10-02에 지웠다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
+- **배포 후 계정에서 지울 것**: `numbersystem53811.pcdelay`(#91에서 `pcdefer`로 바뀜)와 `numbersystem53811.pcexec`(#93에서 `pcremote`로 바뀜). 드라이버가 배포되고 모든 장치가 `pc.v1`로 이전된 뒤 `smartthings capabilities:delete <id>`. `numbersystem53811.pcmessage`(Dev 채널의 `pc*.v3`)와 `numbersystem53811.pcnotify`(Dev 채널의 `pc*.v4`)는 개발 장치가 `pc*.v5`로 옮겨진 뒤 2026-10-01에 지웠다. `numbersystem53811.pcactivity`(kind 방식 앱 감지, Dev 채널의 `pc*.v5`, #123에서 `pcapps` + 자식 장치의 `pcapp`로 바뀜)와 `numbersystem53811.pcapps`·`numbersystem53811.pcapp`(Dev 채널의 `pc*.v6`과 `pc-app.v1`, 2026-10-02 감시 목록 카드 `pcwatch`로 바뀜, 아래 "자식 장치 대신 슬롯"), 그리고 `numbersystem53811.pcwatch`(Dev 채널의 `pc*.v7`–`v9`, 화면이 첫 프레젠테이션으로 굳어 2026-10-02 `pcwatchlist`로 바뀜, 아래 "프로필과 화면 생성")는 개발 장치가 `pc*.v10`으로 옮겨지고 앱 자식 장치가 지워진 뒤 2026-10-02에 지웠다. `numbersystem53811.pcmonitor`·`pcaudioout`·`pcaudioin`(Dev 채널의 `pc*.v14`·`v15`, #160에서 뺌)도 개발 장치가 `pc*.v16`으로 옮겨진 뒤 지운다. 삭제에는 `--capability-version 1`이 필요하다(없으면 CLI가 크래시).
 
 ## 프로필과 화면 생성
 
@@ -100,7 +100,7 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - 그래서 문구가 중요한 줄은 표준을 쓸 수 없다. "PC에 메시지 보내기"는 커스텀 `pcToast`(`send(text)` + 속성 `lastMessage`)로 옮겼다(media-notify.md §5). 소리내어 읽기(`speak`)까지 있던 `pcMessage`와 속성 없는 `pcNotify`는 Dev 채널에서만 쓰였고, 정의가 바뀔 때마다 새 id가 됐다. 모양은 표준 `notification`을 따른다: detailView와 `automation.actions`에 같은 `textField`(`{"command": …, "argumentType": "string", "range": [1, 200]}`), 라벨은 `{{i18n.commands.<cmd>.label}}`. detailView 쪽에만 `"value": "lastMessage.value"`를 더한다.
 - **속성 없는 커스텀 capability를 detailView 줄로 쓰면 앱이 기다릴 이벤트가 없어 회전 표시 뒤 네트워크 오류로 끝난다**(2026-10-01 실측, `pcNotify`). 정의는 받아들여지고 명령도 허브에 닿아 PC에 토스트가 떴지만, 입력 줄은 돌다가 "네트워크 오류"를 띄웠다. **입력 줄은 반드시 속성에 묶는다.** `pcToast`는 문자열 속성 `lastMessage`에 묶고, 드라이버가 `send`마다 — 보냈든 거절했든 — 그 속성을 `state_change = true`로 내보낸다(보냈으면 보낸 문구, 아니면 지금 값). 쉬는 값은 "없음"/"None"이고 빈 문자열은 쓰지 않는다. 루틴 동작(`automation.actions`)은 보여 줄 값이 없으므로 명령만으로 된다. 같은 날 Dev 허브에서 `pcToast` 줄이 회전 표시 없이 끝나고 보낸 문구를 보여 주는 것을 확인했다.
 - 표준은 문구가 앱의 것이어도 괜찮은 곳(스위치, 볼륨, 미디어 버튼, 배터리)에만 쓴다.
-- **`mediaInputSource`의 입력 enum에는 DisplayPort·DVI·VGA가 없다**(HDMI·HDMI1–6, USB, 광·동축 등 AV 기기 값, 표준 정의 기준 — 계정 조회로 다시 확인할 것). 클라우드가 인자를 enum으로 검증하므로 `setInputSource("dp1")`은 허브에 닿지 못한다. 그래서 모니터 입력은 커스텀 `pcMonitor`(#153)이고, 모니터 전원·밝기만 표준 `switch`·`switchLevel`이다.
+- **`mediaInputSource`의 입력 enum에는 DisplayPort·DVI·VGA가 없다**(HDMI·HDMI1–6, USB, 광·동축 등 AV 기기 값, 표준 정의 기준 — 계정 조회로 다시 확인할 것). 클라우드가 인자를 enum으로 검증하므로 `setInputSource("dp1")`은 허브에 닿지 못한다. 그래서 모니터 입력은 커스텀 `pcMonitor`(#153)였고, 모니터 전원·밝기만 표준 `switch`·`switchLevel`이었다(모니터 카드는 #160에서 뺐다).
 - `proposed` 표준 capability는 허브에서 `st.capabilities[<id>]`가 풀리지 않을 수 있다고 보고 등록을 pcall로 감싸야 한다. (v2 장치용으로 남겼던 `notification`·`speechSynthesis` 핸들러는 v2가 공개되지 않아 지웠다.)
 
 ## 번역
@@ -192,4 +192,5 @@ capability·프레젠테이션·프로필을 건드리기 전에 훑어볼 것.
 - `pc*.v10`(`pcWatchList`)의 감시 목록 카드 미리보기 세 칸("실행 중인 앱 · 감시 1 · 감시 2")이 각각 한 줄에 드는지, 영어 로케일에서 슬롯 값이 번역의 `Running`/`Stopped`/`Empty`로 바뀌는지(#123, "화면 배치"·"번역").
 - 연결 거부와 시간 초과의 실제 오류 문구(위 "연결 거부와 시간 초과", 설계 §3.1).
 - 프로필 이전의 착지 `infoChanged`에서 `args.old_st_store.profile.id`가 달라지는지(#129).
-- v14(#151–#154): `automation.conditions`의 `numberField`(`pcPresence.idleMinutes`)가 받아들여지고 루틴에서 숫자 비교로 나오는지, 표준 `switch`·`switchLevel`이 든 컴포넌트(`monitor`)의 메인 화면 미리보기.
+- v14(#151, #152): `automation.conditions`의 `numberField`(`pcPresence.idleMinutes`)가 받아들여지고 루틴에서 숫자 비교로 나오는지.
+- v16(#160): 상태 줄 둘(스피커·마이크의 `summary`, "3 헤드셋 · 재생 중")인 `sound` 카드의 미리보기가 각각 한 줄에 드는지.

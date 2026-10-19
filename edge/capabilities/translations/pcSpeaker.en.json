@@ -1,0 +1,70 @@
+{
+  "tag": "en",
+  "label": "Speaker",
+  "attributes": {
+    "summary": {
+      "label": "Speaker"
+    },
+    "output": {
+      "label": "Output device",
+      "i18n": {
+        "value": {
+          "1": {
+            "label": "Output 1"
+          },
+          "2": {
+            "label": "Output 2"
+          },
+          "3": {
+            "label": "Output 3"
+          },
+          "4": {
+            "label": "Output 4"
+          },
+          "5": {
+            "label": "Output 5"
+          },
+          "none": {
+            "label": "Not in a slot"
+          }
+        }
+      }
+    },
+    "names": {
+      "label": "Output slots"
+    },
+    "playing": {
+      "label": "Sound playing",
+      "i18n": {
+        "value": {
+          "playing": {
+            "label": "Playing"
+          },
+          "idle": {
+            "label": "Silent"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
+        }
+      }
+    },
+    "muted": {
+      "label": "Speaker mute",
+      "i18n": {
+        "value": {
+          "muted": {
+            "label": "Muted"
+          },
+          "unmuted": {
+            "label": "Not muted"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}

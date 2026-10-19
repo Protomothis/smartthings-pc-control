@@ -99,8 +99,8 @@ end
 --- one during a running paint rejoins its queue. `opts.painted`: the caller
 --- has just repainted (`ensure_rows` in `init`).
 ---
---- A follow-up that comes while the paint still runs or has just ended (v15
---- has ~64 rows, eight batches; `emit.settling`) waits `emit.PAINT_SECONDS`
+--- A follow-up that comes while the paint still runs or has just ended (v16
+--- has ~62 rows, seven batches; `emit.settling`) waits `emit.PAINT_SECONDS`
 --- and looks again: its forced rows and two batches would not fit one
 --- budget window.
 poll.LATE_REPAINT_SECONDS = { 30, 90 }
@@ -140,7 +140,7 @@ function poll.repaint_soon(driver, device, opts)
 end
 
 --- Follow a status onto the profile with the cards it asks for - battery,
---- monitor, watch list (`features.card_answers`, `profiles.apply_cards`). A
+--- watch list (`features.card_answers`, `profiles.apply_cards`). A
 --- switch is repainted one second later, so the poll or push that got here
 --- finishes first. Returns the new profile name.
 function poll.follow_cards(driver, device, status)

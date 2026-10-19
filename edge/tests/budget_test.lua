@@ -403,8 +403,10 @@ function T.test_four_spaced_commands_send_a_bounded_number_of_events()
     h.assert_equal(pc.polls, 1 + 4, "one answer poll per command, none stacked")
     h.assert_equal(count_forced(out, MUTE), 4, "every command's row is answered forced")
     h.assert_equal(h.last_value(out, nil, features.CAP_MUTE, "mute"), "unmuted")
-    -- mute + volume (the rows the command answers) + lastSeen, per command.
-    h.assert_equal(#out, 12, "4 commands -> " .. #out .. " events")
+    -- mute + volume (the rows the command answers) + lastSeen, per command;
+    -- #160: + the sound card's `pcSpeaker.muted` (its summary leaves the
+    -- mute to the media card).
+    h.assert_equal(#out, 16, "4 commands -> " .. #out .. " events")
   end)
 end
 
@@ -429,7 +431,7 @@ function T.test_four_rapid_commands_share_their_answer_polls()
     local out = since(device, mark)
     h.assert_equal(count_forced(out, MUTE), 2, "both answer polls force the mute row")
     h.assert_equal(h.last_value(out, nil, features.CAP_MUTE, "mute"), "unmuted")
-    h.assert_true(#out <= 6, "4 rapid commands -> " .. #out .. " events")
+    h.assert_true(#out <= 8, "4 rapid commands -> " .. #out .. " events")
     -- The next command after the windows closed is answered at once again.
     handlers_for("audioMute").mute(d, device, { command = "mute", args = {} })
     h.assert_equal(pc.polls, 1 + 3)
@@ -810,7 +812,7 @@ function T.test_a_profile_change_forces_every_row_once()
       seen[key] = true
     end
     h.assert_true(forced_all(out))
-    -- v15 (#158): ~64 rows on a device with every card.
+    -- v16 (#160): ~62 rows on a device with every card.
     h.assert_true(#out > 30 and #out < 80, "every row once: " .. #out)
     h.assert_equal(batches, math.ceil(#out / emit.PAINT_BATCH))
     -- A follow-up waits out the budget window after the last batch
@@ -831,7 +833,7 @@ function T.test_a_profile_change_forces_every_row_once()
 end
 
 function T.test_a_follow_up_waits_for_the_paint_to_settle()
-  -- v15 (#158): ~64 rows are eight batches, so the 30 s follow-up can
+  -- v16 (#160): ~62 rows are seven batches, so the 30 s follow-up can
   -- meet the last ones. It waits out the paint and one budget window after
   -- it (`emit.settling`), then sends what it always sends.
   with_pc(function(pc)
@@ -856,8 +858,8 @@ function T.test_a_follow_up_waits_for_the_paint_to_settle()
   end)
 end
 
---- A device on the published pc.v13 after the driver update (#158: v15,
---- the watch list kept - v13 had it), through the real `init` and then
+--- A device on the published pc.v13 after the driver update (#158/#160:
+--- v16, the watch list kept - v13 had it), through the real `init` and then
 --- `minutes` of driver life on the clock: the default 30 s polls, the
 --- batches, the follow-ups.
 --- `landing`: the profile change lands that many seconds in (`infoChanged`).
@@ -869,7 +871,7 @@ local function migrate(pc, minutes, landing)
   local d = clocked(Driver("budget", {}), pc)
   local start = pc.now
   init_driver.lifecycle_handlers.init(d, device)
-  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-watch.v15")
+  h.assert_equal(device:get_field(fields.PROFILE_NAME), "pc-watch.v16")
   if landing then
     run_until(d, pc, start + landing)
     init_driver.lifecycle_handlers.infoChanged(d, device, "infoChanged",
@@ -912,7 +914,7 @@ function T.test_a_migration_paints_every_row_within_seconds_under_the_guard()
     for _, key in ipairs(emit.PAINT_FIRST) do
       h.assert_equal(at[key], 0, key .. " goes in the first batch, at once")
     end
-    -- v15 (#158): one batch per PAINT_SECONDS, however many rows there
+    -- v16 (#160): one batch per PAINT_SECONDS, however many rows there
     -- are (25 s for the 48 rows of v10).
     local bound = (math.ceil(painted / emit.PAINT_BATCH) - 1) * emit.PAINT_SECONDS
     h.assert_true(last <= bound, "the last row " .. last .. " s in, " .. bound .. " allowed (all at 0 s before)")
@@ -1484,12 +1486,14 @@ function T.test_a_pc_that_stays_off_past_the_timeout_fails_once_and_polls_on_its
 end
 
 function T.test_a_card_goes_on_two_answers_and_never_while_the_pc_is_silent()
-  -- #158: the monitor card goes once two statuses without `monitor` agree.
+  -- #158: the watch card goes once two statuses without `activity` agree.
   -- A PC that is off, a PC app that does not answer and a PC app too old to
   -- list its features keep it - a routine may read that card.
   with_pc(function(pc)
+    pc.status.features = { "audio", "media", "nowplaying", "notify", "presets", "awake" }
+    pc.status.activity = nil
     local device = new_device()
-    local name = "pc-monitor-watch.v15"
+    local name = "pc-watch.v16"
     device.profile = { id = name, name = name, components = h.components_for(name) }
     device:set_field(fields.PROFILE_NAME, name)
     local d = Driver("budget", {})
@@ -1513,16 +1517,15 @@ function T.test_a_card_goes_on_two_answers_and_never_while_the_pc_is_silent()
     poll.once(d, device)
     h.assert_deep_equal(moves(), {}, "one status is not enough")
     poll.once(d, device)
-    h.assert_deep_equal(moves(), { "pc-watch.v15" })
-    h.assert_false(device:get_field(fields.HAS_MONITOR))
-    h.assert_true(device:get_field(fields.HAS_WATCH))
+    h.assert_deep_equal(moves(), { "pc.v16" })
+    h.assert_false(device:get_field(fields.HAS_WATCH))
     -- Repainted a second later, without the card that went.
     local mark = #device.emitted
     h.assert_true(h.fire_last(d, "cards-profile"))
     h.fire_all(d, "repaint-batch")
     local out = since(device, mark)
-    h.assert_false(h.has_capability(out, caps.MONITOR), "the monitor card is gone")
-    h.assert_true(h.has_capability(out, caps.WATCH), "the watch card is painted")
+    h.assert_false(h.has_capability(out, caps.WATCH), "the watch card is gone")
+    h.assert_true(h.has_capability(out, caps.SPEAKER), "the sound card is painted")
   end)
 end
 

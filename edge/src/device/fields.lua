@@ -46,8 +46,9 @@ fields.WOL_ADAPTER = "wol_adapter"
 -- so the one the driver put the device on is kept as well.
 fields.PROFILE_NAME = "profile_name"
 fields.HAS_BATTERY = "has_battery"
--- #158: the monitor card and the watch list, settled like the battery.
-fields.HAS_MONITOR = "has_monitor"
+-- #158: the watch list, settled like the battery. #160 dropped the monitor
+-- card's `has_monitor`; a v15 Dev device keeps the stored value, which
+-- nothing reads any more.
 fields.HAS_WATCH = "has_watch"
 -- The row generation the device was last painted for (poll.ROWS_VERSION).
 fields.ROWS_PAINTED = "rows_painted"
@@ -102,7 +103,6 @@ fields.PERSISTED = {
   [fields.WOL_ADAPTER] = true,
   [fields.PROFILE_NAME] = true,
   [fields.HAS_BATTERY] = true,
-  [fields.HAS_MONITOR] = true,
   [fields.HAS_WATCH] = true,
   [fields.ROWS_PAINTED] = true,
   [fields.LAST_ACTION] = true,

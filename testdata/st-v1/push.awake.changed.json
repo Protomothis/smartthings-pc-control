@@ -89,8 +89,7 @@
       "audio_output",
       "audio_input",
       "notify",
-      "presets",
-      "monitor"
+      "presets"
     ],
     "grace": {
       "enabled": true,
@@ -117,32 +116,6 @@
       "title": "Hype Boy",
       "updated_at": "2026-10-01T20:59:40+09:00"
     },
-    "monitors": [
-      {
-        "brightness": 40,
-        "ddc": true,
-        "id": "m1",
-        "input": "hdmi1",
-        "inputs": [
-          "dp1",
-          "hdmi1",
-          "hdmi2"
-        ],
-        "name": "DELL U2720Q",
-        "power": "on",
-        "primary": true
-      },
-      {
-        "brightness": null,
-        "ddc": false,
-        "id": "m2",
-        "input": null,
-        "inputs": [],
-        "name": "LG TV",
-        "power": "unknown",
-        "primary": false
-      }
-    ],
     "power": "on",
     "presets": [
       {

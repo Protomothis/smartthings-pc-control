@@ -111,39 +111,34 @@ function T.test_full_status_session_rows()
   h.assert_equal(value(events, caps.PRESENCE, "idleMinutes", "presence"), 12)
 end
 
-function T.test_full_status_monitor_rows()
-  -- #153: `monitors = [ { id, name, primary, ddc, brightness, input, inputs,
-  -- power } ]`; the card is the primary one's. m2 (a TV, no DDC) is not.
+function T.test_full_status_has_no_monitor_block()
+  -- #159/#160: the monitor control is gone from the PC app, and with it
+  -- `monitors` and the `monitor` feature.
   local status = h.fixture("status.full.json")
-  local events = rows_of(status)
-  local M = "monitor"
-  h.assert_equal(value(events, caps.MONITOR, "summary", M), "HDMI 1 · 40% · DELL U2720Q",
-    "monitors[].input/brightness/name")
-  h.assert_equal(value(events, caps.MONITOR, "input", M), "hdmi1", "monitors[].input")
-  h.assert_deep_equal(value(events, caps.MONITOR, "supportedInputs", M), { "dp1", "hdmi1", "hdmi2" },
-    "monitors[].inputs")
-  h.assert_equal(value(events, "switch", "switch", M), "on", "monitors[].power")
-  h.assert_equal(value(events, "switchLevel", "level", M), 40, "monitors[].brightness")
-  local tv = status.monitors[2]
-  h.assert_false(tv.ddc, "monitors[].ddc")
-  h.assert_false(tv.primary, "monitors[].primary")
-  h.assert_equal(tv.brightness, nil, "brightness: null without DDC")
+  h.assert_nil(status.monitors, "monitors")
+  for _, name in ipairs(status.features) do
+    h.assert_true(name ~= "monitor", "features: monitor")
+  end
 end
 
-function T.test_full_status_audio_slot_rows()
-  -- #154: `audio.outputs`/`inputs = [ { slot, name, present, default } ]`,
-  -- filled slots only. The names row drops the adapter in parentheses while
-  -- the device names stay apart.
+function T.test_full_status_sound_rows()
+  -- #159/#160: `audio.outputs`/`inputs = [ { slot, name, present, default } ]`
+  -- (slots the PC app hands out), `playing`, `input_device`, `input_muted`.
+  -- The names row drops the adapter in parentheses while the device names
+  -- stay apart; so does the summary.
   local status = h.fixture("status.full.json")
   local events = rows_of(status)
-  local A = "media"
-  h.assert_equal(value(events, caps.AUDIO_OUT, "names", A), "1 스피커 · 3 헤드셋 · 4 LG TV",
+  local S = "sound"
+  h.assert_equal(value(events, caps.SPEAKER, "summary", S), "1 스피커 · 재생 중", "audio.outputs[].default/audio.device/playing")
+  h.assert_equal(value(events, caps.SPEAKER, "names", S), "1 스피커 · 3 헤드셋 · 4 LG TV",
     "audio.outputs[].slot/name")
-  h.assert_equal(value(events, caps.AUDIO_OUT, "output", A), "1", "audio.outputs[].default")
-  h.assert_deep_equal(value(events, caps.AUDIO_OUT, "supportedOutputs", A), { "1", "3", "4" })
-  h.assert_equal(value(events, caps.AUDIO_IN, "names", A), "1 마이크 · 2 헤드셋 마이크")
-  h.assert_equal(value(events, caps.AUDIO_IN, "input", A), "1", "audio.inputs[].default")
-  h.assert_deep_equal(value(events, caps.AUDIO_IN, "supportedInputs", A), { "1", "2" })
+  h.assert_equal(value(events, caps.SPEAKER, "output", S), "1", "audio.outputs[].default")
+  h.assert_equal(value(events, caps.SPEAKER, "playing", S), "playing", "audio.playing")
+  h.assert_equal(value(events, caps.SPEAKER, "muted", S), "unmuted", "audio.muted")
+  h.assert_equal(value(events, caps.MIC, "summary", S), "1 마이크 · 켜짐", "audio.inputs[].default/input_device/input_muted")
+  h.assert_equal(value(events, caps.MIC, "names", S), "1 마이크 · 2 헤드셋 마이크")
+  h.assert_equal(value(events, caps.MIC, "input", S), "1", "audio.inputs[].default")
+  h.assert_equal(value(events, caps.MIC, "muted", S), "unmuted", "audio.input_muted")
   h.assert_false(status.audio.outputs[3].present, "audio.outputs[].present")
   h.assert_deep_equal(sensors.audio_slots(status, "output")[3],
     { slot = 4, name = "LG TV (NVIDIA High Definition Audio)", present = false, default = false })
@@ -322,15 +317,18 @@ function T.test_off_status_rows()
   h.assert_nil(status.privacy, "privacy: only while enabled")
   h.assert_equal(value(events, caps.PRIVACY, "camera", "presence"), "unknown")
   h.assert_equal(value(events, caps.PRIVACY, "summary", "presence"), "PC 앱 v1.3.0 필요")
-  -- #153: the same for the monitor; no `monitors` key while off.
-  h.assert_nil(status.monitors, "monitors: only while enabled")
-  h.assert_equal(value(events, caps.MONITOR, "summary", "monitor"), "PC 앱 v1.3.0 필요")
-  h.assert_nil(value(events, "switch", "switch", "monitor"), "no reading, no toggle")
-  -- #154: media control off, so no slots - and the golden's v1.2.0 is older
-  -- than the release that brought them.
+  -- #160: nobody logged in and no slot handed out yet. The slot lists are
+  -- there (empty), so this is not a PC app too old for them, whatever the
+  -- golden's v1.2.0 says; with no reading every state is `unknown`.
   h.assert_deep_equal(status.audio.outputs, {}, "audio.outputs: []")
-  h.assert_equal(value(events, caps.AUDIO_OUT, "output", "media"), "none")
-  h.assert_equal(value(events, caps.AUDIO_OUT, "names", "media"), "PC 앱 v1.3.0 필요")
+  h.assert_false(status.audio.available, "audio.available")
+  h.assert_equal(value(events, caps.SPEAKER, "summary", "sound"), "사용자 없음")
+  h.assert_equal(value(events, caps.SPEAKER, "output", "sound"), "none")
+  h.assert_equal(value(events, caps.SPEAKER, "names", "sound"), "없음")
+  h.assert_equal(value(events, caps.SPEAKER, "playing", "sound"), "unknown", "audio.playing: null")
+  h.assert_equal(value(events, caps.SPEAKER, "muted", "sound"), "unknown")
+  h.assert_equal(value(events, caps.MIC, "input", "sound"), "none")
+  h.assert_equal(value(events, caps.MIC, "muted", "sound"), "unknown", "audio.input_muted: null")
   h.assert_equal(value(events, caps.PRESET, "names"), "없음", "presets: []")
   h.assert_deep_equal(value(events, caps.PRESET, "supportedSlots"), { "none" }, "never an empty list")
   h.assert_equal(value(events, caps.WATCH, "summary", WATCH), "감지 꺼짐", "activity.enabled: false")
@@ -367,6 +365,11 @@ local PUSHES = {
   ["push.audio.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_VOLUME, "volume"), 50)
     h.assert_equal(value(events, features.CAP_MUTE, "mute"), "muted")
+    -- #160: the sound card follows the same block.
+    h.assert_equal(value(events, caps.SPEAKER, "muted", "sound"), "muted", "status.audio.muted")
+    h.assert_equal(value(events, caps.SPEAKER, "summary", "sound"), "1 스피커 · 재생 중")
+    h.assert_equal(value(events, caps.SPEAKER, "playing", "sound"), "playing", "status.audio.playing")
+    h.assert_equal(value(events, caps.MIC, "muted", "sound"), "unmuted", "status.audio.input_muted")
   end,
   ["push.media.changed.json"] = function(events)
     h.assert_equal(value(events, features.CAP_PLAYBACK, "playbackStatus"), "paused")
@@ -599,23 +602,6 @@ local SENDS = {
   ["command.notify.json"] = function(device)
     handlers_for(caps.TOAST).send(driver, device, { args = { text = "빨래가 끝났습니다" } })
   end,
-  -- #153: the monitor component. Brightness is a number, input and power words.
-  ["command.monitor_brightness.json"] = function(device)
-    handlers_for("switchLevel").setLevel(driver, device, { component = "monitor", args = { level = 70 } })
-  end,
-  ["command.monitor_input.json"] = function(device)
-    handlers_for(caps.MONITOR).setInput(driver, device, { component = "monitor", args = { input = "dp1" } })
-  end,
-  ["command.monitor_power.json"] = function(device)
-    handlers_for("switch").off(driver, device, { command = "off", component = "monitor", args = {} })
-  end,
-  -- #154: the slot number, from a list that sends strings.
-  ["command.audio_output.json"] = function(device)
-    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { component = "media", args = { slot = "3" } })
-  end,
-  ["command.audio_input.json"] = function(device)
-    handlers_for(caps.AUDIO_IN).setInput(driver, device, { component = "media", args = { slot = "2" } })
-  end,
   ["command.subscribe.json"] = function(device)
     client.subscribe(device, "http://192.168.1.20:39500/pc/evt", client.DEFAULT_TTL)
   end,
@@ -628,29 +614,6 @@ local REFUSALS = {
   ["command.next.media-disabled.json"] = { same_as = "command.next.json", kind = "forbidden", note = "media_disabled" },
   ["command.notify.disabled.json"] = {
     same_as = "command.notify.json", kind = "forbidden", note = "notify_disabled", notify = true,
-  },
-  ["command.monitor_brightness.disabled.json"] = {
-    same_as = "command.monitor_brightness.json", kind = "forbidden", note = "monitor_disabled",
-  },
-  ["command.monitor_brightness.no-user.json"] = {
-    same_as = "command.monitor_brightness.json", kind = "conflict", note = "no_user",
-  },
-  -- 501: the PC answered; not an unreachable PC.
-  ["command.monitor_input.unsupported.json"] = {
-    same_as = "command.monitor_input.json", kind = "unreachable", note = "monitor_unsupported",
-  },
-  -- #154: read before the bare 409/404 - not "nobody", not an old service.
-  ["command.audio_output.device-missing.json"] = {
-    same_as = "command.audio_output.json", value = 4, kind = "conflict", note = "audio_device_missing",
-  },
-  ["command.audio_output.no-user.json"] = {
-    same_as = "command.audio_output.json", kind = "conflict", note = "no_user",
-  },
-  ["command.audio_output.slot-empty.json"] = {
-    same_as = "command.audio_output.json", value = 2, kind = "incompatible", note = "audio_slot_empty",
-  },
-  ["command.audio_output.switch-failed.json"] = {
-    same_as = "command.audio_output.json", kind = "unreachable", note = "audio_switch_failed",
   },
   -- #152: the PC app's guard on "block" while the camera is in use.
   ["command.shutdown.device-in-use.json"] = {
@@ -685,10 +648,6 @@ end
 function T.test_refused_requests_are_the_same_requests()
   for name, refusal in pairs(REFUSALS) do
     local fx, base = h.fixture(name), h.fixture(refusal.same_as)
-    if refusal.value ~= nil then
-      -- The same command for another slot.
-      base.request.value = refusal.value
-    end
     h.assert_deep_equal(fx.request, base.request, name)
     h.assert_equal(fx.path, base.path, name)
   end

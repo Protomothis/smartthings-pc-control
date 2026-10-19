@@ -1,7 +1,10 @@
 {
   "tag": "en",
-  "label": "PC audio input",
+  "label": "Microphone",
   "attributes": {
+    "summary": {
+      "label": "Microphone"
+    },
     "input": {
       "label": "Input device",
       "i18n": {
@@ -30,18 +33,22 @@
     "names": {
       "label": "Input slots"
     },
-    "supportedInputs": {
-      "label": "Available inputs"
-    }
-  },
-  "commands": {
-    "setInput": {
-      "label": "Switch audio input",
-      "arguments": {
-        "slot": {
-          "label": "Slot"
+    "muted": {
+      "label": "Mic mute",
+      "i18n": {
+        "value": {
+          "muted": {
+            "label": "Muted"
+          },
+          "unmuted": {
+            "label": "Not muted"
+          },
+          "unknown": {
+            "label": "Unknown"
+          }
         }
       }
     }
-  }
+  },
+  "commands": {}
 }

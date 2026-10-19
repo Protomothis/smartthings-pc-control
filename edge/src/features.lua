@@ -31,7 +31,8 @@ features.MIN_SERVICE_VERSION = "1.1.0"
 -- 필요", and the summary and message rows nudge the user to update the PC
 -- app (`needs_app_update`).
 -- 드라이버가 새 서비스 기능을 쓰기 시작하면 이 값을 그 서비스 버전으로 올린다.
--- 1.3.0: idle/presence, camera/microphone, monitor, audio devices (#151-#154).
+-- 1.3.0: idle/presence, camera/microphone (#151, #152), the speaker and
+-- microphone state (#160).
 features.RECOMMENDED_SERVICE_VERSION = "1.3.0"
 
 --- "v1.2.0", "1.2.0", "v1.2.0-rc14" -> { 1, 2, 0 }: major.minor.patch only,
@@ -120,13 +121,10 @@ features.CAP_TOAST = caps.TOAST
 -- it has the same limit.
 features.NOTIFY_MAX_CHARS = 200
 
--- v1.3.0 (#151-#154, docs/design/v1.3-sensors.md). `monitor` and `privacy`
--- are listed only while their opt-in is on, `audio_output` / `audio_input`
--- only while the PC app has a device slot of that kind.
-features.MONITOR = "monitor"
+-- v1.3.0 (#151, #152, docs/design/v1.3-sensors.md). `privacy` is listed only
+-- while its opt-in is on. #160: the sound card needs no feature of its own -
+-- it reads `status.audio` (`AUDIO_DEVICES_SINCE`).
 features.PRIVACY = "privacy"
-features.AUDIO_OUTPUT = "audio_output"
-features.AUDIO_INPUT = "audio_input"
 
 -- The service release that first listed a feature. A PC older than that
 -- lacks the feature because of its version ("PC 앱 v%s 필요"); a newer one
@@ -135,9 +133,12 @@ features.AUDIO_INPUT = "audio_input"
 -- 제어 꺼짐" after RECOMMENDED_SERVICE_VERSION moved on.
 features.FIRST_FEATURES_VERSION = "1.2.0"
 features.SINCE = {
-  [features.MONITOR] = "1.3.0", [features.PRIVACY] = "1.3.0",
-  [features.AUDIO_OUTPUT] = "1.3.0", [features.AUDIO_INPUT] = "1.3.0",
+  [features.PRIVACY] = "1.3.0",
 }
+
+-- #160: the release whose `audio` block first carries the device slots
+-- (`outputs`, `inputs`), `playing` and the input device.
+features.AUDIO_DEVICES_SINCE = "1.3.0"
 
 -- #116: the laptop battery, on a component only the `-battery` profiles have.
 features.BATTERY = "battery"
@@ -155,14 +156,17 @@ features.CAP_TRACK = "mediaTrackControl"
 features.CAP_TRACK_DATA = "audioTrackData"
 
 -- #158 (v15): the cards the capabilities v13 had on main moved to - the
--- media group (#118) to `media` ("미디어", with the audio device slots), the
--- session row to `presence` ("사용 상태"), presets and the message row to
--- `actions` ("바로 실행"). Their records stay main-shaped (row key without
--- a component); emit.rows sends them to that component when the device's
--- profile has it, to main on a v13 profile.
+-- media group (#118) to `media` ("미디어"), the session row to `presence`
+-- ("사용 상태"), presets and the message row to `actions` ("바로 실행").
+-- Their records stay main-shaped (row key without a component); emit.rows
+-- sends them to that component when the device's profile has it, to main on
+-- a v13 profile.
 features.MEDIA_COMPONENT = "media"
 features.PRESENCE_COMPONENT = "presence"
 features.ACTIONS_COMPONENT = "actions"
+-- #160 (v16): the speaker and the microphone ("소리"), right after `media`.
+-- Their records name it (sensors.lua); a profile without it (v13) skips them.
+features.SOUND_COMPONENT = "sound"
 features.CARD_OF = {
   [features.CAP_TRACK_DATA] = features.MEDIA_COMPONENT,
   [features.CAP_PLAYBACK] = features.MEDIA_COMPONENT,
@@ -200,9 +204,6 @@ features.COMMAND_FEATURE = {
   stop = features.MEDIA, next = features.MEDIA, prev = features.MEDIA,
   preset = features.PRESETS,
   awake = features.AWAKE, awakeoff = features.AWAKE,
-  monitor_brightness = features.MONITOR, monitor_input = features.MONITOR,
-  monitor_power = features.MONITOR,
-  audio_output = features.AUDIO_OUTPUT, audio_input = features.AUDIO_INPUT,
 }
 
 -- #113: the slots a preset list can offer, and the value it rests on. Strings,
@@ -216,7 +217,6 @@ features.PRESET_SLOTS = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }
 -- is the service's word on whether there is one.
 local NEEDS_USER = {
   [features.AUDIO] = true, [features.MEDIA] = true,
-  [features.AUDIO_OUTPUT] = true, [features.AUDIO_INPUT] = true,
 }
 
 local function ev(list, cap, attr, value, component)
@@ -322,11 +322,8 @@ end
 --   needs_service    the service sends no `features` - older than v1.2.0 -
 --                    or does not list this feature while it is older than
 --                    the release that brought it (`SINCE`)
---   media_disabled   "audio"/"media" (and the v1.3.0 audio devices) missing
---                    from a service new enough: media control is off
---   monitor_disabled "monitor" missing: the PC app's monitor opt-in is off
---   audio_out_none / audio_in_none
---                    media control is on but no device slot of that kind
+--   media_disabled   "audio"/"media" missing from a service new enough:
+--                    media control is off
 --   feature_missing  a new enough service that does not list this feature
 --   no_user          `audio.available = false`: nobody is logged in, and
 --                    volume and media keys only mean something in a session
@@ -355,16 +352,6 @@ function features.refusal(extras, service_command, feature)
     if feature == features.AUDIO or feature == features.MEDIA then
       return "media_disabled"
     end
-    if feature == features.MONITOR then
-      return "monitor_disabled"
-    end
-    -- #154: the slots ride on media control; with it on, none is filled.
-    if feature == features.AUDIO_OUTPUT or feature == features.AUDIO_INPUT then
-      if not features.has(extras, features.AUDIO) then
-        return "media_disabled"
-      end
-      return feature == features.AUDIO_OUTPUT and "audio_out_none" or "audio_in_none"
-    end
     return "feature_missing"
   end
   if NEEDS_USER[feature] and ((extras.audio or {}).available == false) then
@@ -373,16 +360,10 @@ function features.refusal(extras, service_command, feature)
   return nil
 end
 
--- v1.3.0 error code -> note key. The audio ones take the slot's words as
--- arguments (handlers/audio.lua), `device_in_use` the devices.
+-- v1.3.0 error code -> note key. `device_in_use` takes the devices as its
+-- argument (sensors.in_use_note).
 features.CODE_NOTES = {
   device_in_use = "device_in_use",
-  monitor_disabled = "monitor_disabled",
-  monitor_unsupported = "monitor_unsupported",
-  monitor_failed = "monitor_failed",
-  slot_empty = "audio_slot_empty",
-  device_missing = "audio_device_missing",
-  switch_failed = "audio_switch_failed",
 }
 
 --- The note for a v1.2.0 command the service refused, or nil when the failure
@@ -394,9 +375,8 @@ features.CODE_NOTES = {
 -- still the hub allow-list (§3.1) and stays with `report_error`.
 function features.error_note(kind, body)
   local code = type(body) == "table" and body.error or nil
-  -- v1.3.0 (#152-#154): codes with a word of their own, read before the bare
-  -- 409/404 below - `device_in_use` and `device_missing` are 409s that are
-  -- not "nobody is logged in", `slot_empty` a 404 that is not an old service.
+  -- v1.3.0 (#152): a code with a word of its own, read before the bare 409
+  -- below - `device_in_use` is a 409 that is not "nobody is logged in".
   local own = features.CODE_NOTES[code or ""]
   if own then
     return own
@@ -454,6 +434,8 @@ local function has_reading(audio)
   end
   return type(audio.updated_at) == "string" and audio.updated_at ~= ""
 end
+-- #160: the sound card reads the same block by the same rule.
+features.has_reading = has_reading
 
 --- #107: `audio` -> `audioVolume.volume` and `audioMute.mute`.
 --
@@ -1088,15 +1070,14 @@ function features.battery_present(status)
 end
 
 --- #158: which of the optional cards a status asks for (profiles.apply_cards):
---- the battery (#116), the monitor card while `features` lists `monitor`,
---- the watch list while it lists `activity` (both opt-ins on the PC). A
---- status without `features` (a PC app older than v1.2.0) says nothing about
---- those two - nil, the cards stay as they are.
+--- the battery (#116) and the watch list while `features` lists `activity`
+--- (an opt-in on the PC). A status without `features` (a PC app older than
+--- v1.2.0) says nothing about the watch list - nil, the card stays as it is.
+--- #160: the monitor card (#153) is gone, and with it its axis.
 function features.card_answers(status)
   local set = features.parse(status)
   local answers = { battery = features.battery_present(status) }
   if set then
-    answers.monitor = set[features.MONITOR] == true
     answers.watch = set[features.ACTIVITY] == true
   end
   return answers

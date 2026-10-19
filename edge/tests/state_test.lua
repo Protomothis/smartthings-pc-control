@@ -150,22 +150,21 @@ local function golden(lang)
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
     { cap = caps.PRIVACY, attr = "camera", value = "unknown", component = "presence" },
     { cap = caps.PRIVACY, attr = "microphone", value = "unknown", component = "presence" },
-    -- #154: nor device slots; the lists rest on `none`.
-    { cap = caps.AUDIO_OUT, attr = "names", component = "media",
+    -- #160: nor the speaker and the microphone; the slots rest on `none`,
+    -- the states on `unknown` (never a null row).
+    { cap = caps.SPEAKER, attr = "summary", component = "sound",
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
-    { cap = caps.AUDIO_OUT, attr = "output", value = "none", component = "media" },
-    { cap = caps.AUDIO_OUT, attr = "supportedOutputs", value = { "none" }, component = "media" },
-    { cap = caps.AUDIO_IN, attr = "names", component = "media",
+    { cap = caps.SPEAKER, attr = "names", component = "sound",
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
-    { cap = caps.AUDIO_IN, attr = "input", value = "none", component = "media" },
-    { cap = caps.AUDIO_IN, attr = "supportedInputs", value = { "none" }, component = "media" },
-    -- #153: nor a monitor; the toggle and the slider value are left alone.
-    { cap = caps.MONITOR, attr = "summary", component = "monitor",
+    { cap = caps.SPEAKER, attr = "output", value = "none", component = "sound" },
+    { cap = caps.SPEAKER, attr = "playing", value = "unknown", component = "sound" },
+    { cap = caps.SPEAKER, attr = "muted", value = "unknown", component = "sound" },
+    { cap = caps.MIC, attr = "summary", component = "sound",
       value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
-    { cap = caps.MONITOR, attr = "input", value = "unknown", component = "monitor" },
-    { cap = caps.MONITOR, attr = "supportedInputs", value = { "unknown" }, component = "monitor" },
-    -- The slider's range goes out regardless (no null row in the cloud).
-    { cap = "switchLevel", attr = "levelRange", value = { minimum = 0, maximum = 100 }, component = "monitor" },
+    { cap = caps.MIC, attr = "names", component = "sound",
+      value = en and "Needs PC app v1.3.0" or "PC 앱 v1.3.0 필요" },
+    { cap = caps.MIC, attr = "input", value = "none", component = "sound" },
+    { cap = caps.MIC, attr = "muted", value = "unknown", component = "sound" },
   }
 end
 

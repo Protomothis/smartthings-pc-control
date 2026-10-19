@@ -1,6 +1,6 @@
--- The PC app v1.3.0 cards (src/sensors.lua, handlers/monitor.lua,
--- handlers/audio.lua): status -> rows, the commands and their refusals.
--- The golden bodies are contract_test.lua's; these are the edge cases.
+-- The PC app v1.3.0 cards (src/sensors.lua): status -> rows, and the power
+-- commands the camera or the microphone held back. The golden bodies are
+-- contract_test.lua's; these are the edge cases.
 
 local h = require "helpers"
 local caps = require "caps"
@@ -257,206 +257,23 @@ function T.test_a_command_list_restart_held_back_names_both_devices()
 end
 
 --------------------------------------------------------------------------------
--- #153: the primary monitor
+-- #160: the speaker and the microphone
 --------------------------------------------------------------------------------
 
-local M = "monitor"
+local S = "sound"
 
-local function dell(overrides)
-  local m = { id = "m1", name = "DELL U2720Q", primary = true, ddc = true, brightness = 40,
-    input = "hdmi1", inputs = { "dp1", "hdmi1", "hdmi2" }, power = "on" }
-  for k, v in pairs(overrides or {}) do
+local function sound(outputs, inputs, audio, overrides)
+  local block = { available = true, volume = 30, muted = false, device = "스피커 (Realtek(R) Audio)",
+    playing = true, input_device = "마이크 (Realtek(R) Audio)", input_muted = false,
+    outputs = outputs or {}, inputs = inputs or {} }
+  for k, v in pairs(audio or {}) do
     if v == NONE then
-      m[k] = nil
+      block[k] = nil
     else
-      m[k] = v
+      block[k] = v
     end
   end
-  return m
-end
-
-local function monitors(list, overrides)
-  local status = { protocol = 1, service_version = "v1.3.0", features = { "monitor", "audio" }, monitors = list }
-  for k, v in pairs(overrides or {}) do
-    status[k] = v
-  end
-  return status
-end
-
-function T.test_the_monitor_card_follows_the_primary_monitor()
-  local tv = { id = "m2", name = "LG TV", primary = false, ddc = false, inputs = {}, power = "unknown" }
-  local events = rows_of(monitors({ tv, dell() }))
-  h.assert_equal(value(events, M, caps.MONITOR, "summary"), "HDMI 1 · 40% · DELL U2720Q")
-  h.assert_equal(value(events, M, caps.MONITOR, "input"), "hdmi1")
-  h.assert_equal(value(events, M, "switch", "switch"), "on")
-  h.assert_equal(value(events, M, "switchLevel", "level"), 40)
-  -- No primary flag at all: the first one.
-  h.assert_equal(sensors.primary_monitor(monitors({ dell({ primary = false }), tv })).id, "m1")
-end
-
-function T.test_the_monitor_summary_says_why_there_is_nothing_to_control()
-  for _, c in ipairs({
-    { monitors({ dell({ power = "standby" }) }), "대기 · DELL U2720Q", "Standby · DELL U2720Q" },
-    { monitors({ dell({ ddc = false, brightness = NONE, input = NONE, power = "unknown" }) }),
-      "지원 안 함 (DDC/CI) · DELL U2720Q", "Not supported (DDC/CI) · DELL U2720Q" },
-    { monitors({ dell({ input = "vcp:0x1b", brightness = 72.4 }) }), "vcp:0x1b · 72% · DELL U2720Q",
-      "vcp:0x1b · 72% · DELL U2720Q" },
-    -- Before the first read: `monitors: []`.
-    { monitors({}), "모니터 정보 없음", "No monitor info" },
-    -- The opt-in off: no `monitors`, no feature.
-    { { service_version = "v1.3.0", features = { "audio" } }, "모니터 제어 꺼짐", "Monitor control is off" },
-    { { service_version = "v1.2.0", features = { "audio" } }, "PC 앱 v1.3.0 필요", "Needs PC app v1.3.0" },
-  }) do
-    h.assert_equal(sensors.monitor_summary(c[1], "ko"), c[2])
-    h.assert_equal(sensors.monitor_summary(c[1], "en"), c[3])
-  end
-  h.assert_equal(sensors.monitor_summary(nil, "ko"), "모니터 정보 없음")
-end
-
-function T.test_the_toggle_and_the_slider_move_only_on_a_reading()
-  -- An opt-in switched off, a monitor without DDC/CI or one whose power is
-  -- not known is not a monitor switched off: a routine on "꺼지면" must not
-  -- fire. A repaint paints "off" and 0 where nothing was read ("-" else).
-  for _, status in ipairs({
-    { service_version = "v1.3.0", features = { "audio" } },
-    monitors({}),
-    monitors({ dell({ ddc = false, brightness = NONE, power = "unknown" }) }),
-  }) do
-    local events = rows_of(status)
-    h.assert_nil(value(events, M, "switch", "switch"))
-    h.assert_nil(value(events, M, "switchLevel", "level"))
-    local filled = sensors.monitor_events(status, "ko", true)
-    h.assert_equal(value(filled, M, "switch", "switch"), "off")
-    h.assert_equal(value(filled, M, "switchLevel", "level"), 0)
-    -- The range goes with every level: never a null row in the cloud.
-    h.assert_deep_equal(value(filled, M, "switchLevel", "levelRange"), { minimum = 0, maximum = 100 })
-  end
-  h.assert_deep_equal(value(rows_of(monitors({})), M, "switchLevel", "levelRange"), { minimum = 0, maximum = 100 },
-    "no level read, the range still goes out")
-  local standby = rows_of(monitors({ dell({ power = "standby" }) }))
-  h.assert_equal(value(standby, M, "switch", "switch"), "off")
-  local unknown_power = rows_of(monitors({ dell({ power = "unknown" }) }))
-  h.assert_nil(value(unknown_power, M, "switch", "switch"))
-  h.assert_equal(value(unknown_power, M, "switchLevel", "level"), 40)
-end
-
-function T.test_inputs_without_a_name_take_the_other_places_in_order()
-  local m = dell({ input = "vcp:0x1b", inputs = { "vcp:0x1b", "DP1", "composite1", "hdmi1", "vcp:0xd0", "vcp:0xd1" } })
-  local map = sensors.input_map(m)
-  h.assert_deep_equal(map.keys, { "other1", "dp1", "other2", "hdmi1", "other3" }, "three places, the fourth left out")
-  h.assert_equal(map.raw.other1, "vcp:0x1b")
-  h.assert_equal(map.raw.other2, "composite1")
-  h.assert_equal(map.raw.other3, "vcp:0xd0")
-  local status = monitors({ m })
-  h.assert_equal(sensors.monitor_input(status), "other1")
-  h.assert_deep_equal(sensors.supported_inputs(status), map.keys)
-  -- The capability string could not be read: only the current input.
-  local only = monitors({ dell({ inputs = {} }) })
-  h.assert_deep_equal(sensors.supported_inputs(only), { "hdmi1" })
-  -- Nothing to offer: never an empty list.
-  h.assert_deep_equal(sensors.supported_inputs(monitors({})), { "unknown" })
-  h.assert_equal(sensors.monitor_input(monitors({})), "unknown")
-end
-
---- A PC device whose last status was `status`, its monitor card painted from
---- it, with `client.action` and `poll.once` recorded.
-local function on_monitor(status, fn, answer)
-  local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s" })
-  device.device_network_id = "pc-control-monitor"
-  local s = features.remember(state.new(state.ON), status)
-  fields.set_state(device, s)
-  emit.rows(device, sensors.monitor_events(status, "ko"))
-  local sent = {}
-  local original = { action = client.action, once = poll.once }
-  client.action = function(_, command, v)
-    sent[#sent + 1] = { command = command, value = v }
-    if answer then
-      return table.unpack(answer)
-    end
-    return true, {}, nil
-  end
-  poll.once = function() return true end
-  local ok, err = pcall(fn, device)
-  client.action, poll.once = original.action, original.once
-  if not ok then
-    error(err, 0)
-  end
-  return device, sent
-end
-
-function T.test_the_monitor_toggle_is_the_monitors_power_not_the_pcs()
-  local _, sent = on_monitor(monitors({ dell() }), function(device)
-    handlers_for("switch").off(driver, device, { command = "off", component = M, args = {} })
-    handlers_for("switch").on(driver, device, { command = "on", component = M, args = {} })
-  end)
-  h.assert_deep_equal(sent, { { command = "monitor_power", value = "off" }, { command = "monitor_power", value = "on" } })
-end
-
-function T.test_a_monitor_that_does_not_wake_says_to_use_its_button()
-  local device = on_monitor(monitors({ dell({ power = "standby" }) }), function(device)
-    handlers_for("switch").on(driver, device, { command = "on", component = M, args = {} })
-  end, { false, { error = "monitor_failed", message = "some monitors stop listening" }, "unreachable" })
-  local emitted = h.emitted(device)
-  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "summary"), "모니터 전원 버튼으로 켜세요")
-  h.assert_equal(h.last_value(emitted, M, "switch", "switch"), "off", "the toggle springs back")
-  h.assert_nil(h.event_value(emitted, caps.STATUS, "connection"), "the PC answered")
-  device = on_monitor(monitors({ dell() }), function(d)
-    handlers_for("switchLevel").setLevel(driver, d, { component = M, args = { level = 50 } })
-  end, { false, { error = "monitor_failed" }, "unreachable" })
-  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "summary"), "모니터가 명령을 거절함")
-end
-
-function T.test_the_brightness_is_clamped_and_rounded()
-  local _, sent = on_monitor(monitors({ dell() }), function(device)
-    handlers_for("switchLevel").setLevel(driver, device, { component = M, args = { level = 70.6, rate = 0 } })
-    handlers_for("switchLevel").setLevel(driver, device, { component = M, args = { level = 140 } })
-  end)
-  h.assert_deep_equal(sent, { { command = "monitor_brightness", value = 71 }, { command = "monitor_brightness", value = 100 } })
-end
-
-function T.test_a_dismissed_input_list_does_nothing_and_other_places_send_the_service_word()
-  local m = dell({ inputs = { "hdmi1", "vcp:0x1b" } })
-  local device, sent = on_monitor(monitors({ m }), function(device)
-    -- Closed without a pick: the row's own value comes back.
-    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "hdmi1" } })
-    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "unknown" } })
-    -- USB-C on this monitor is the first input MCCS has no name for.
-    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "other1" } })
-    -- A place the monitor does not fill is not sent.
-    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "other2" } })
-  end)
-  h.assert_deep_equal(sent, { { command = "monitor_input", value = "vcp:0x1b" } })
-  local emitted = h.emitted(device)
-  h.assert_true(h.component_forced(emitted, M, caps.MONITOR, "input"), "the row is answered")
-  h.assert_equal(h.last_value(emitted, nil, caps.STATUS, "summary"), "이 모니터에 없는 입력")
-end
-
-function T.test_a_monitor_command_with_the_opt_in_off_is_not_sent()
-  local device, sent = on_monitor({ service_version = "v1.3.0", features = { "audio" } }, function(device)
-    handlers_for(caps.MONITOR).setInput(driver, device, { args = { input = "dp1" } })
-  end)
-  h.assert_equal(#sent, 0)
-  h.assert_equal(h.last_value(h.emitted(device), nil, caps.STATUS, "summary"), "모니터 제어 꺼짐")
-  h.assert_equal(h.last_value(h.emitted(device), M, caps.MONITOR, "input"), "unknown")
-end
-
-function T.test_a_pc_that_is_not_there_keeps_the_monitor_toggle()
-  local records = rows.offline_rows(h.fake_device({}), state.new(state.OFF))
-  h.assert_equal(value(records, M, caps.MONITOR, "summary"), "PC 꺼짐")
-  h.assert_nil(value(records, M, "switch", "switch"))
-  h.assert_nil(value(records, M, "switchLevel", "level"))
-end
-
---------------------------------------------------------------------------------
--- #154: the audio device slots
---------------------------------------------------------------------------------
-
-local A = "media"
-
-local function slots(outputs, inputs, overrides)
-  local status = { protocol = 1, service_version = "v1.3.0",
-    features = { "audio", "media", "audio_output", "audio_input" },
-    audio = { available = true, volume = 30, muted = false, outputs = outputs or {}, inputs = inputs or {} } }
+  local status = { protocol = 1, service_version = "v1.3.0", features = { "audio", "media" }, audio = block }
   for k, v in pairs(overrides or {}) do
     status[k] = v
   end
@@ -466,120 +283,169 @@ end
 local SPEAKER = { slot = 1, name = "스피커 (Realtek(R) Audio)", present = true, default = true }
 local HEADSET = { slot = 3, name = "헤드셋 (WH-1000XM4)", present = true, default = false }
 local TV = { slot = 4, name = "LG TV (NVIDIA High Definition Audio)", present = false, default = false }
+local MIC = { slot = 2, name = "마이크 (Realtek(R) Audio)", present = true, default = true }
 
 function T.test_the_names_row_names_each_slot_shortly()
-  h.assert_equal(sensors.audio_names(slots({ SPEAKER, HEADSET, TV }), "output", "ko"), "1 스피커 · 3 헤드셋 · 4 LG TV")
+  h.assert_equal(sensors.audio_names(sound({ SPEAKER, HEADSET, TV }), "output", "ko"), "1 스피커 · 3 헤드셋 · 4 LG TV")
   -- Two devices of the same kind keep their adapters to stay apart.
   local usb = { slot = 2, name = "스피커 (USB Audio)", present = true, default = false }
-  h.assert_equal(sensors.audio_names(slots({ SPEAKER, usb }), "output", "ko"),
+  h.assert_equal(sensors.audio_names(sound({ SPEAKER, usb }), "output", "ko"),
     "1 스피커 (Realtek… · 2 스피커 (USB Aud…")
   -- Malformed entries are left out; the list is by slot.
   local odd = { { slot = 9, name = "x" }, { slot = 2, name = "" }, HEADSET, { slot = 3, name = "again" }, SPEAKER }
-  h.assert_equal(sensors.audio_names(slots(odd), "output", "en"), "1 스피커 · 3 헤드셋")
-  h.assert_equal(sensors.audio_names(slots({}), "output", "ko"), "없음")
+  h.assert_equal(sensors.audio_names(sound(odd), "output", "en"), "1 스피커 · 3 헤드셋")
+  h.assert_equal(sensors.audio_names(sound({}), "output", "ko"), "없음")
+  h.assert_equal(sensors.audio_names(sound(nil, { MIC }), "input", "ko"), "2 마이크")
+  -- A PC app older than the slots: no list at all.
   h.assert_equal(sensors.audio_names({ service_version = "v1.2.0", features = { "audio" } }, "input", "en"),
     "Needs PC app v1.3.0")
+  h.assert_equal(sensors.audio_names({ service_version = "v1.1.0" }, "output", "ko"), "PC 앱 v1.3.0 필요")
   h.assert_equal(sensors.audio_names(nil, "output", "ko"), "없음")
 end
 
-function T.test_the_list_rests_on_the_default_devices_slot()
-  local events = rows_of(slots({ SPEAKER, HEADSET }, { { slot = 2, name = "마이크", default = true } }))
-  h.assert_equal(value(events, A, caps.AUDIO_OUT, "output"), "1")
-  h.assert_deep_equal(value(events, A, caps.AUDIO_OUT, "supportedOutputs"), { "1", "3" })
-  h.assert_equal(value(events, A, caps.AUDIO_IN, "input"), "2")
-  -- The default device is in no slot (switched on the PC itself).
+function T.test_the_slot_rows_rest_on_the_default_devices_slot()
+  local events = rows_of(sound({ SPEAKER, HEADSET }, { MIC }))
+  h.assert_equal(value(events, S, caps.SPEAKER, "output"), "1")
+  h.assert_equal(value(events, S, caps.MIC, "input"), "2")
+  -- The default device is in no slot (a sixth device, or none at all).
   local other = { slot = 1, name = "스피커", present = true, default = false }
-  events = rows_of(slots({ other }))
-  h.assert_equal(value(events, A, caps.AUDIO_OUT, "output"), "none")
-  h.assert_deep_equal(value(events, A, caps.AUDIO_IN, "supportedInputs"), { "none" }, "never empty")
+  events = rows_of(sound({ other }))
+  h.assert_equal(value(events, S, caps.SPEAKER, "output"), "none")
+  h.assert_equal(value(events, S, caps.MIC, "input"), "none")
 end
 
---- A PC device whose last status was `status`, its audio card painted from
---- it, with `client.action` and `poll.once` recorded.
-local function on_audio(status, fn, answer)
-  local device = h.fake_device({ ipAddress = "192.168.1.20", secret = "s" })
-  device.device_network_id = "pc-control-audio"
-  fields.set_state(device, features.remember(state.new(state.ON), status))
-  emit.rows(device, sensors.audio_events(status, "output", "ko"))
-  emit.rows(device, sensors.audio_events(status, "input", "ko"))
-  local sent = {}
-  local original = { action = client.action, once = poll.once }
-  client.action = function(_, command, v)
-    sent[#sent + 1] = { command = command, value = v }
-    if answer then
-      return table.unpack(answer)
+function T.test_playing_and_muted_read_booleans_and_nothing_else()
+  local cases = {
+    { {}, "playing", "unmuted", "unmuted" },
+    { { playing = false, muted = true, input_muted = true }, "idle", "muted", "muted" },
+    -- null (missing here) is not a value: never null on the row either.
+    { { playing = NONE, muted = NONE, input_muted = NONE }, "unknown", "unknown", "unknown" },
+    { { playing = "yes", muted = "true", input_muted = 0 }, "unknown", "unknown", "unknown" },
+  }
+  for i, c in ipairs(cases) do
+    local events = rows_of(sound({ SPEAKER }, { MIC }, c[1]))
+    h.assert_equal(value(events, S, caps.SPEAKER, "playing"), c[2], "case " .. i)
+    h.assert_equal(value(events, S, caps.SPEAKER, "muted"), c[3], "case " .. i)
+    h.assert_equal(value(events, S, caps.MIC, "muted"), c[4], "case " .. i)
+  end
+  -- A block with no reading (nobody has logged in since the PC started)
+  -- says nothing, whatever placeholders it carries - like the media card's
+  -- mute toggle.
+  local events = rows_of(sound({ SPEAKER }, { MIC }, { available = false }))
+  h.assert_equal(value(events, S, caps.SPEAKER, "playing"), "unknown")
+  h.assert_equal(value(events, S, caps.SPEAKER, "muted"), "unknown")
+  h.assert_equal(value(events, S, caps.MIC, "muted"), "unknown")
+  h.assert_nil(value(events, "media", features.CAP_MUTE, "mute"), "the media card agrees")
+end
+
+function T.test_the_summary_names_the_slot_the_device_and_one_word()
+  local function summaries(audio, lang, overrides)
+    local status = sound({ SPEAKER }, { MIC }, audio, overrides)
+    return sensors.audio_summary(status, "output", lang or "ko"), sensors.audio_summary(status, "input", lang or "ko")
+  end
+  -- The slot first: the card shows no names row, and the number is what a
+  -- routine condition ("출력 1") names.
+  local speaker, mic = summaries({})
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
+  h.assert_equal(mic, "2 마이크 · 켜짐")
+  speaker, mic = summaries({ playing = false, input_muted = true })
+  h.assert_equal(speaker, "1 스피커 · 조용함")
+  h.assert_equal(mic, "2 마이크 · 음소거")
+  -- A default device in no slot: no number.
+  local headset = { slot = 3, name = "헤드셋 (WH-1000XM4)", present = true, default = true }
+  h.assert_equal(sensors.audio_summary(sound({ headset }, nil, { device = "헤드셋 (WH-1000XM4)" }), "output", "ko"),
+    "3 헤드셋 · 재생 중")
+  local other = { slot = 1, name = "스피커", present = true, default = false }
+  h.assert_equal(sensors.audio_summary(sound({ other }, nil, { device = "헤드셋 (WH-1000XM4)", playing = false }),
+    "output", "ko"), "헤드셋 · 조용함")
+  h.assert_equal(sensors.audio_summary(sound(nil, nil, { input_muted = true }), "input", "ko"), "마이크 · 음소거")
+  -- The speaker's mute is the media card's toggle: not in this row (a mute
+  -- command would cost one more event).
+  speaker = summaries({ muted = true, playing = true })
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
+  speaker, mic = summaries({ playing = true }, "en")
+  h.assert_equal(speaker, "1 스피커 · Playing")
+  h.assert_equal(mic, "2 마이크 · On")
+  -- Whichever half is known; a long name is cut like a slot name.
+  -- No name in the reading: the slot's own; a long name is cut like a slot
+  -- name, so the row stays far inside its 60 characters.
+  speaker, mic = summaries({ device = NONE, input_muted = NONE, input_device = "USB 콘덴서 마이크 프로페셔널 에디션" })
+  h.assert_equal(speaker, "1 스피커 · 재생 중")
+  h.assert_equal(mic, "2 USB 콘덴서 마이크 …")
+  speaker, mic = summaries({ device = "", playing = NONE, muted = NONE, input_device = NONE, input_muted = NONE })
+  h.assert_equal(speaker, "1 스피커")
+  h.assert_equal(mic, "2 마이크")
+  local blank = sound(nil, nil, { device = NONE, playing = NONE })
+  h.assert_equal(sensors.audio_summary(blank, "output", "ko"), "알 수 없음")
+  local longest = sound({ { slot = 5, name = string.rep("가", 40), default = true } }, nil,
+    { device = string.rep("가", 40), playing = false })
+  h.assert_true(utf8.len(sensors.audio_summary(longest, "output", "ko")) <= 60)
+  -- Nobody logged in; a PC app too old for the card; nothing read at all.
+  speaker, mic = summaries({ available = false })
+  h.assert_equal(speaker, "사용자 없음")
+  h.assert_equal(mic, "사용자 없음")
+  h.assert_equal(sensors.audio_summary({ service_version = "v1.2.0", features = { "audio" },
+    audio = { available = true, muted = false } }, "output", "ko"), "PC 앱 v1.3.0 필요")
+  h.assert_equal(sensors.audio_summary(nil, "input", "ko"), "알 수 없음")
+end
+
+function T.test_every_row_goes_out_on_the_sound_card_and_never_empty()
+  for _, status in ipairs({ sound({ SPEAKER }, { MIC }), sound(nil, nil, { available = false }),
+      { protocol = 1, service_version = "v1.1.0" } }) do
+    local events = sensors.audio_events(status, "output", "ko")
+    local inputs = sensors.audio_events(status, "input", "ko")
+    h.assert_equal(#events, 5, "summary, names, output, playing, muted")
+    h.assert_equal(#inputs, 4, "summary, names, input, muted")
+    for _, e in ipairs(events) do
+      inputs[#inputs + 1] = e
     end
-    return true, {}, nil
+    for _, e in ipairs(inputs) do
+      h.assert_equal(e.component, S, e.attr)
+      h.assert_true(type(e.value) == "string" and e.value ~= "", e.attr .. " is never empty or null")
+    end
   end
-  poll.once = function() return true end
-  local ok, err = pcall(fn, device)
-  client.action, poll.once = original.action, original.once
-  if not ok then
-    error(err, 0)
-  end
-  return device, sent
+  local initial = sensors.initial_rows("ko")
+  h.assert_equal(value(initial, S, caps.SPEAKER, "summary"), "알 수 없음")
+  h.assert_equal(value(initial, S, caps.SPEAKER, "names"), "없음")
+  h.assert_equal(value(initial, S, caps.SPEAKER, "output"), "none")
+  h.assert_equal(value(initial, S, caps.SPEAKER, "playing"), "unknown")
+  h.assert_equal(value(initial, S, caps.MIC, "muted"), "unknown")
 end
 
-local function summary_of(device)
-  return h.last_value(h.emitted(device), nil, caps.STATUS, "summary")
-end
-
-function T.test_switching_sends_the_slot_and_a_dismissed_list_does_nothing()
-  local device, sent = on_audio(slots({ SPEAKER, HEADSET }, { { slot = 2, name = "마이크", default = true } }),
-    function(device)
-      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "1" } })
-      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "none" } })
-      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "3" } })
-      handlers_for(caps.AUDIO_IN).setInput(driver, device, { args = { slot = "2" } })
-    end)
-  h.assert_deep_equal(sent, { { command = "audio_output", value = 3 } })
-  h.assert_true(h.component_forced(h.emitted(device), A, caps.AUDIO_OUT, "output"), "the row is answered")
-end
-
-function T.test_an_empty_slot_is_not_sent()
-  local device, sent = on_audio(slots({ SPEAKER, HEADSET }), function(device)
-    handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "2" } })
-  end)
-  h.assert_equal(#sent, 0)
-  h.assert_equal(summary_of(device), "출력 2 비어 있음")
-  h.assert_equal(h.last_value(h.emitted(device), A, caps.AUDIO_OUT, "output"), "1", "the list goes back")
-  -- The PC app lists audio_input only while it has an input slot.
-  device, sent = on_audio(slots({ SPEAKER }, {}, { features = { "audio", "media", "audio_output" } }), function(d)
-    handlers_for(caps.AUDIO_IN).setInput(driver, d, { args = { slot = "5" } })
-  end)
-  h.assert_equal(#sent, 0)
-  h.assert_equal(summary_of(device), "입력 칸 없음 · PC 앱에서 설정", "media control on, no input slot")
-end
-
-function T.test_the_services_refusals_name_the_slot()
-  for _, c in ipairs({
-    { { error = "device_missing", message = "LG TV is not connected" }, "conflict", "출력 4 연결 안 됨" },
-    { { error = "switch_failed" }, "unreachable", "Windows가 장치를 못 바꿈" },
-    { { error = "no_user_session" }, "conflict", "사용자 없음" },
-    { { error = "slot_empty" }, "incompatible", "출력 4 비어 있음" },
-  }) do
-    local device, sent = on_audio(slots({ SPEAKER, HEADSET, TV }), function(device)
-      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "4" } })
-    end, { false, c[1], c[2] })
-    h.assert_deep_equal(sent, { { command = "audio_output", value = 4 } }, c[3])
-    h.assert_equal(summary_of(device), c[3])
-    h.assert_nil(h.event_value(h.emitted(device), caps.STATUS, "connection"), c[3] .. ": the PC answered")
+function T.test_a_pc_that_is_not_there_plays_nothing_and_keeps_its_slots()
+  for _, power_state in ipairs({ state.OFF, state.SLEEPING, state.HIBERNATED }) do
+    local records = rows.offline_rows(h.fake_device({}), state.new(power_state))
+    local text = value(records, PRESENCE, caps.PRIVACY, "summary")
+    h.assert_contains(text, "PC ", power_state)
+    h.assert_equal(value(records, S, caps.SPEAKER, "summary"), text, power_state)
+    h.assert_equal(value(records, S, caps.MIC, "summary"), text, power_state)
+    h.assert_equal(value(records, S, caps.SPEAKER, "playing"), "unknown", "nothing plays on it")
+    for _, row in ipairs({ { caps.SPEAKER, "output" }, { caps.SPEAKER, "names" }, { caps.SPEAKER, "muted" },
+        { caps.MIC, "input" }, { caps.MIC, "names" }, { caps.MIC, "muted" } }) do
+      h.assert_nil(value(records, S, row[1], row[2]), row[2] .. " keeps its value")
+    end
   end
 end
 
-function T.test_a_switch_the_pc_cannot_do_is_not_sent()
-  for _, c in ipairs({
-    { slots({ SPEAKER, HEADSET }, nil, { features = { "awake" } }), "미디어 제어 꺼짐" },
-    { slots({ SPEAKER, HEADSET }, nil, { service_version = "v1.2.0", features = { "audio", "media" } }),
-      "PC 앱 v1.3.0 필요" },
-    { slots({ SPEAKER, HEADSET }, nil, { audio = { available = false, outputs = { SPEAKER, HEADSET } } }),
-      "사용자 없음" },
-  }) do
-    local device, sent = on_audio(c[1], function(device)
-      handlers_for(caps.AUDIO_OUT).setOutput(driver, device, { args = { slot = "3" } })
-    end)
-    h.assert_equal(#sent, 0, c[2])
-    h.assert_equal(summary_of(device), c[2])
+function T.test_a_profile_without_the_sound_card_skips_its_rows()
+  -- v13 has no `sound` component: the rows are dropped, nothing raises.
+  local device = h.fake_device({})
+  device.profile = { components = h.components_for("pc.v13") }
+  emit.rows(device, sensors.audio_events(sound({ SPEAKER }, { MIC }), "output", "ko"))
+  emit.rows(device, sensors.audio_events(sound({ SPEAKER }, { MIC }), "input", "ko"))
+  h.assert_equal(#h.emitted(device), 0)
+  device.profile = { components = h.components_for("pc.v16") }
+  emit.rows(device, sensors.audio_events(sound({ SPEAKER }, { MIC }), "output", "ko"))
+  h.assert_equal(h.last_value(h.emitted(device), S, caps.SPEAKER, "output"), "1")
+end
+
+function T.test_the_sound_card_takes_no_command()
+  h.assert_nil((driver.capability_handlers or {})[caps.SPEAKER], "pcSpeaker is state only")
+  h.assert_nil((driver.capability_handlers or {})[caps.MIC], "pcMic is state only")
+  h.assert_nil((driver.capability_handlers or {}).switchLevel, "no monitor brightness any more")
+  for _, command in ipairs({ "audio_output", "audio_input", "monitor_brightness", "monitor_input",
+      "monitor_power" }) do
+    h.assert_nil(features.COMMAND_FEATURE[command], command)
   end
 end
 
