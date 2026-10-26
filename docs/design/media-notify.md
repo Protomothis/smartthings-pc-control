@@ -168,7 +168,7 @@
 - 표준 capability는 정의 캐시 문제가 없고 앱 기본 UI를 그대로 쓴다.
 - `mediaPlayback.playbackStatus`는 서비스가 `media` 블록을 줄 때만 보고한다(#118, §15). 블록이 없는 옛 서비스에서는
   상태를 `stopped`로 꾸며 내지 않고 `supportedPlaybackCommands`만 내보낸다.
-- **프로필:** capability가 늘어 프로필 세대를 올렸다(지금 `pc*.v10`, §14). 공개된 `pc*.v1`은 `KNOWN`으로 자동 이전한다
+- **프로필:** capability가 늘어 프로필 세대를 올렸다(지금 `pc.v13`·`pc-battery.v13`, edge-driver.md §6.6). 공개된 `pc*.v1`은 `KNOWN`으로 자동 이전한다
   (edge-driver.md §6.6). 이전 직후 `repaint_soon`.
 - **옛 서비스(features 없음):** 볼륨 줄은 비활성 안내("PC 앱 v1.2.0 필요")를 요약에 쓰고 명령은 보내지 않는다.
 - **사용자 세션 없음:** `audio.available=false`면 명령을 보내지 않고 요약에 "사용자 없음".
@@ -186,7 +186,7 @@
   표시"라 부르고, 장치 쪽(프로필·임베디드 장치 구성)에서 표준 capability의 라벨을 바꿀 방법이 없다(플랫폼 노트 "표준
   capability"). "PC에 메시지 보내기"라고 읽히려면 라벨이 우리 번역 파일에 있어야 하므로 커스텀 capability를 만들었다. 모양은
   표준 `notification`을 따르되(`textField` + `argumentType: "string"`, 인자 하나) 상세 화면 줄에 `"value": "lastMessage.value"`를
-  더한다. `pc.v5`부터의 프로필에 있다(지금은 `pc.v10`, §14).
+  더한다. `pc.v5`부터의 프로필에 있다(지금은 `pc.v13`, edge-driver.md §6.6).
 - **소리내어 읽기는 없다.** Dev 채널에서는 `pc.v2`가 표준 `notification`·`speechSynthesis`를, `pc.v3`가 `send`·`speak` 둘짜리
   `pcMessage`를, `pc.v4`가 속성 없는 `pcNotify`를 썼다. 정의가 바뀔 때마다 새 id가 됐고(`pcnotify` → `pctoast`), 어느 것도 공개된
   적이 없으므로 그 핸들러는 남기지 않는다. 개발 장치는 첫 `init`에서 같은 아이콘·배터리 쪽의 현재 버전(v10)으로 옮겨지고, v2·v3·v4에서 만든

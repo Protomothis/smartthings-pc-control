@@ -536,6 +536,11 @@ function push.apply_to_device(driver, device, payload, deps)
     -- A push proves the PC is up: a pending wake timeout is done with (§6.4).
     pcall(function() wol.cancel_wake(driver, device) end)
   end
+  if event == "status_ok" then
+    -- #142: `power.started` after a night off comes to a subscription that
+    -- lapsed; take a live one again rather than wait for the next poll.
+    pcall(push.resubscribe_if_lapsed, driver, device, deps)
+  end
   -- Any push is the PC speaking - `power.stopping` is often the last thing it
   -- says - so it counts as "마지막 확인" as much as a successful poll.
   pcall(function() fields.remember_last_seen(device, clock.epoch(deps)) end)
@@ -624,23 +629,50 @@ function push.ensure(driver, device, deps)
   return true, "subscribed"
 end
 
---- Arm the renewal timer at 80% of the TTL (§3.5).
-function push.schedule_renew(driver, device, ttl, deps)
+-- One `push.ensure` after `delay`, in the renewal timer's slot.
+local function arm_ensure(driver, device, delay, deps, name)
   if not driver then
     return nil
   end
   push.cancel_renew(driver, device)
   local ok, timer = pcall(function()
-    return driver:call_with_delay(push.renew_delay(ttl), function()
+    return driver:call_with_delay(delay, function()
       fields.set(device, fields.PUSH_RENEW_TIMER, nil)
       push.ensure(driver, device, deps)
-    end, "pc-push-renew")
+    end, name)
   end)
   if ok then
     fields.set(device, fields.PUSH_RENEW_TIMER, timer)
     return timer
   end
   return nil
+end
+
+--- Arm the renewal timer at 80% of the TTL (§3.5).
+function push.schedule_renew(driver, device, ttl, deps)
+  return arm_ensure(driver, device, push.renew_delay(ttl), deps, "pc-push-renew")
+end
+
+-- #142: how soon after a push from a PC this hub holds no live subscription
+-- for the driver subscribes again.
+push.RESUBSCRIBE_DELAY = 1
+
+--- Subscribe again soon when `device` has no live subscription for this
+--- hub's listener (#142). A PC that was off past its subscription's TTL
+--- announces itself with `power.started` to the subscription it remembers;
+--- without this the driver would only subscribe again at its next successful
+--- poll, a whole `pollInterval` later, and miss every push until then. Not in
+--- the listener's own task: the subscribe is an HTTP request. True when armed.
+function push.resubscribe_if_lapsed(driver, device, deps)
+  deps = deps or {}
+  local callback = push.callback_url(push.listener(driver))
+  if not callback then
+    return false
+  end
+  if push.subscription_live(fields.get(device, fields.PUSH_SUB), callback, clock.epoch(deps)) then
+    return false
+  end
+  return arm_ensure(driver, device, push.RESUBSCRIBE_DELAY, deps, "pc-push-resubscribe") ~= nil
 end
 
 function push.cancel_renew(driver, device)

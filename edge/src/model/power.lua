@@ -170,7 +170,7 @@ function power.transition(s, event, arg)
     -- No answer at all now, not even a refusal.
     nxt.app_down = false
     if cur == power.WAKING then
-      -- Still waking: silence is expected until the 90s timeout (§6.4).
+      -- Still waking: silence is expected until the wake timeout (§6.4).
       nxt.power_state = power.WAKING
     elseif cur == power.SLEEPING or cur == power.HIBERNATED then
       -- A sleeping PC is supposed to be unreachable; keep the finer state.
