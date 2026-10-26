@@ -130,6 +130,9 @@ type ui struct {
 	// and the sections hidden until the service is reachable.
 	settingsRoot  *fyne.Container
 	settingsExtra *fyne.Container
+	// svcDiag is the service state seen while unreachable (conn_diag.go,
+	// #140); svcUnknown while connected. UI thread only.
+	svcDiag svcState
 	// Tray menu items that only make sense while the service is reachable.
 	trayNeedsConn []*fyne.MenuItem
 	trayStatus    *fyne.MenuItem
@@ -172,6 +175,10 @@ type ui struct {
 	logsShownMsg   string
 	logsOffsetY    float32
 	logsScrolling  bool
+
+	// logsSource says the view shows service.log read from disk, or why
+	// it could not be read, while the service is unreachable (#140).
+	logsSource *widget.Label
 }
 
 // Run opens the native GUI window. Blocks until the app quits. With
@@ -389,7 +396,7 @@ func (u *ui) rebuild() {
 	}
 	u.statusText = u.t(statusKey)
 	if statusKey == "status.unreachable" {
-		u.statusText = fmt.Sprintf(u.statusText, currentWebUIPort())
+		u.statusText = u.unreachableText(u.svcDiag)
 	}
 	u.status = widget.NewLabel(u.statusText)
 	// Never let a long status line (e.g. "command sent: …") widen the window.
@@ -489,8 +496,9 @@ func (u *ui) rebuild() {
 }
 
 // applyConnected gates UI that needs the service: while unreachable, only
-// the Settings tab (install/start lives there) and basic tray entries stay
-// usable. Must be called on the UI thread.
+// the Settings tab (install/start lives there), the Logs tab (service.log
+// from disk, #140) and basic tray entries stay usable. Must be called on
+// the UI thread.
 func (u *ui) applyConnected(on bool) {
 	for _, item := range u.trayNeedsConn {
 		item.Disabled = !on
@@ -505,12 +513,12 @@ func (u *ui) applyConnected(on bool) {
 	// while the service is gone, and back to where the user was (the
 	// commands tab after a start) once it answers. The tab is noted before
 	// disabling: AppTabs moves off a tab that gets disabled.
-	if !on && u.curTab != tabSettings && u.returnTab == 0 {
+	if !on && !offlineTab(u.curTab) && u.returnTab == 0 {
 		u.returnTab = u.curTab + 1
 	}
 	u.switching = true
 	for i := range u.tabs.Items {
-		if i == tabSettings {
+		if offlineTab(i) { // settings, and logs read from disk (#140)
 			continue
 		}
 		if on {
@@ -524,7 +532,9 @@ func (u *ui) applyConnected(on bool) {
 	case !on:
 		// The battery reading comes from the service; without it, say nothing.
 		u.applyBattery(Battery{})
-		u.selectTab(tabSettings)
+		if !offlineTab(u.curTab) {
+			u.selectTab(tabSettings)
+		}
 	case u.returnTab != 0:
 		back := u.returnTab - 1
 		u.returnTab = 0
@@ -561,6 +571,10 @@ func (u *ui) initialLoad() {
 		// below is only for when it does not.
 		cfg, err = u.client.GetConfig()
 	}
+	svc := svcUnknown
+	if err != nil && !errors.Is(err, errUnauthorized) {
+		svc = unreachableSvcState() // why not (#140)
+	}
 	fyne.Do(func() {
 		if errors.Is(err, errUnauthorized) {
 			u.connected.Store(false)
@@ -575,12 +589,13 @@ func (u *ui) initialLoad() {
 		if err != nil {
 			u.connected.Store(false)
 			u.forgetLocalSession()
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
+			u.showUnreachable(svc)
 			return
 		}
 		u.connected.Store(true)
+		u.svcDiagReset()
 		u.setStatus(u.t("status.connected"))
 		u.setConn(connOK)
 		u.applyConnected(true)
@@ -690,10 +705,11 @@ func (u *ui) markDisconnectedOnNetError(err error) {
 	}
 	if u.connected.Swap(false) {
 		u.forgetLocalSession()
+		svc := unreachableSvcState()
 		fyne.Do(func() {
-			u.setStatus(fmt.Sprintf(u.t("status.unreachable"), currentWebUIPort()))
 			u.setConn(connLost)
 			u.applyConnected(false)
+			u.showUnreachable(svc)
 		})
 	}
 }

@@ -1,9 +1,12 @@
 package gui
 
-// The logs tab: the service log, filtered, refreshed while it is shown.
+// The logs tab: the service log, filtered, refreshed while it is shown —
+// from the service, or from service.log itself while it is unreachable.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +70,10 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 	// controls plus the entry would push the window's minimum width past
 	// its default size (and differently per language, see #53).
 	toolbar := container.NewHBox(u.logsAuto, refreshBtn, layout.NewSpacer(), openFileBtn, openDirBtn)
-	top := container.NewVBox(toolbar, u.logsFilter)
+	u.logsSource = hint("")
+	u.logsSource.Importance = widget.WarningImportance
+	u.logsSource.Hide()
+	top := container.NewVBox(toolbar, u.logsFilter, u.logsSource)
 	return container.NewBorder(top, nil, nil, nil, u.logsScroll)
 }
 
@@ -109,16 +115,96 @@ func (u *ui) openServiceLog(folder bool) {
 	}
 }
 
+// serviceLogTailLines is how many lines the tab shows, as /api/logs.
+const serviceLogTailLines = 100
+
+// serviceLogFile is where loadLogs reads the log from without the service;
+// the tests replace it.
+var serviceLogFile = serviceLogPath
+
+// loadLogs fetches the log from the service, or, while the service does
+// not answer, reads service.log itself (#140): that is when the log is
+// needed most — a WebUI port taken by another program is only named there.
+// The file stays readable by every user (service/private_files.go).
 func (u *ui) loadLogs() {
+	if !u.connected.Load() {
+		u.loadLogsFromFile()
+		return
+	}
 	lines, err := u.client.Logs()
 	if err != nil {
 		u.markDisconnectedOnNetError(err)
+		if !u.connected.Load() {
+			u.loadLogsFromFile()
+		}
 		return
 	}
 	fyne.Do(func() {
+		u.setLogsSource("")
 		u.logLines = lines
 		u.renderLogs()
 	})
+}
+
+// loadLogsFromFile shows the tail of service.log read from disk, with a
+// line above saying so, or why it could not be read.
+func (u *ui) loadLogsFromFile() {
+	path, err := serviceLogFile()
+	var lines []string
+	if err == nil {
+		lines, err = readServiceLogTail(path, serviceLogTailLines)
+	}
+	fyne.Do(func() {
+		u.setLogsSource(u.logsFileNote(path, err))
+		u.logLines = lines
+		u.renderLogs()
+	})
+}
+
+// readServiceLogTail is the last max lines of the log at path, split like
+// /api/logs does.
+func readServiceLogTail(path string, max int) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	text := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	if text == "" {
+		return nil, nil
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > max {
+		lines = lines[len(lines)-max:]
+	}
+	return lines, nil
+}
+
+// logsFileNote is the line above a log read from disk: where it came
+// from, or why reading it failed.
+func (u *ui) logsFileNote(path string, err error) string {
+	switch {
+	case err == nil:
+		return u.t("logs.file.shown")
+	case errors.Is(err, fs.ErrPermission):
+		return fmt.Sprintf(u.t("logs.file.denied"), path)
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Sprintf(u.t("logs.file.missing"), path)
+	}
+	return fmt.Sprintf(u.t("logs.file.error"), err)
+}
+
+// setLogsSource shows note above the view, or hides it for "". UI
+// goroutine only.
+func (u *ui) setLogsSource(note string) {
+	if u.logsSource == nil {
+		return // not built yet (a minimized start)
+	}
+	if note == "" {
+		u.logsSource.Hide()
+		return
+	}
+	u.logsSource.SetText(note)
+	u.logsSource.Show()
 }
 
 // renderLogs shows the cached lines that match the filter. The view is
@@ -278,9 +364,7 @@ func (u *ui) onLogsAutoChanged(on bool) {
 		return
 	}
 	u.logsToBottom()
-	if u.connected.Load() {
-		background(u.loadLogs)
-	}
+	background(u.loadLogs) // from disk while disconnected (#140)
 }
 
 // logsShownAgain puts the view back on the newest line when the logs tab

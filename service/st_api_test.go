@@ -473,6 +473,21 @@ func TestSTHubAPIDiagnostics(t *testing.T) {
 		t.Errorf("last_search.at = %q: %v", at, err)
 	}
 
+	// The command-port rule as last checked (#139): unchecked first, then
+	// the port and the answer of the start-time check.
+	prevFW := commandFirewall.Load()
+	t.Cleanup(func() { commandFirewall.Store(prevFW) })
+	commandFirewall.Store(nil)
+	cp, ok := hub()["command_port"].(map[string]any)
+	if !ok || cp["checked"] != false || cp["firewall_rule"] != false {
+		t.Errorf("command_port before the check = %v", hub()["command_port"])
+	}
+	commandFirewall.Store(&commandFirewallState{Port: 5005, OK: true})
+	cp, _ = hub()["command_port"].(map[string]any)
+	if cp["checked"] != true || cp["firewall_rule"] != true || cp["port"] != float64(5005) {
+		t.Errorf("command_port after the check = %v", cp)
+	}
+
 	// The existing fields are untouched by the additions.
 	for _, key := range []string{"connected", "ip", "driver_version", "last_seen"} {
 		if _, present := got[key]; !present {
