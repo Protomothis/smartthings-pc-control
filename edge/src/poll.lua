@@ -5,7 +5,7 @@
 -- Sending is device/emit.lua's, the rows the driver writes itself are
 -- device/rows.lua's, the stored values device/fields.lua's. This module is the
 -- top of that layer: it is the one that calls into push, wol and discovery,
--- and it hands the two of them that need a poll back (`once`,
+-- and it hands the ones that need a poll back (`once`,
 -- `follow_battery`) through their `use`, so none of them requires this one.
 
 local client = require "client"
@@ -473,7 +473,7 @@ local function once(driver, device, opts)
     nxt = state.transition(current, kind)
     pcall(function() device:online() end)
     if kind == "app_down" then
-      -- The PC is up, so a wake under way is over - not "깨우기 실패" in 90 s.
+      -- The PC is up, so a wake under way is over - not "깨우기 실패" later.
       wol.cancel_wake(driver, device)
     end
     -- §6.5: the PC may have moved; one targeted SSDP search (rate limited).
@@ -600,6 +600,9 @@ discovery.use({
 })
 push.use({
   follow_battery = function(...) return poll.follow_battery(...) end,
+})
+wol.use({
+  once = function(...) return poll.once(...) end,
 })
 
 return poll

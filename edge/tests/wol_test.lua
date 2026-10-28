@@ -1,4 +1,6 @@
 local h = require "helpers"
+local fields = require "device.fields"
+local state = require "state"
 local wol = require "wol"
 
 local T = {}
@@ -197,10 +199,108 @@ function T.test_wake_warns_about_the_adapter_it_knows_has_wol_off()
 end
 
 function T.test_retry_schedule_matches_the_design()
-  -- §6.4: immediately, at 2s and at 5s; give up after 90s.
+  -- §6.4: immediately, at 2s and at 5s.
   h.assert_deep_equal(wol.RETRY_DELAYS, { 0, 2, 5 })
-  h.assert_equal(wol.WAKE_TIMEOUT, 90)
   h.assert_deep_equal(wol.PORTS, { 7, 9 })
+end
+
+--------------------------------------------------------------------------------
+-- #149: fast polls while waking, and one last look before "깨우기 실패"
+--------------------------------------------------------------------------------
+
+-- A waking PC with the real device glue, a driver whose timers a test fires
+-- by name (newest first), and a poll stand-in: `pc.up` decides whether it
+-- finds the PC.
+local function waking_pc()
+  local factory = recording_socket()
+  local device = h.fake_device({ macAddress = "AA:BB:CC:DD:EE:FF", language = "ko" })
+  fields.set_state(device, state.transition(state.new(state.OFF), "switch_on"))
+  local driver = { delays = {} }
+  function driver:call_with_delay(seconds, fn, name)
+    local timer = { seconds = seconds, fn = fn, name = name }
+    self.delays[#self.delays + 1] = timer
+    return timer
+  end
+  function driver:cancel_timer(timer)
+    timer.done = true
+  end
+  function driver:fire(name)
+    for i = #self.delays, 1, -1 do
+      local timer = self.delays[i]
+      if timer.name == name and not timer.done then
+        timer.done = true
+        timer.fn()
+        return true
+      end
+    end
+    return false
+  end
+  local pc = { up = false, polls = 0, driver = driver, device = device }
+  pc.deps = {
+    socket = factory,
+    -- What poll.once does with the answer that matters here.
+    once = function(d, dev)
+      pc.polls = pc.polls + 1
+      if pc.up then
+        fields.set_state(dev, state.transition(fields.state(dev), "status_ok"))
+        wol.cancel_wake(d, dev)
+      else
+        fields.set_state(dev, state.transition(fields.state(dev), "unreachable"))
+      end
+    end,
+  }
+  return pc
+end
+
+local function messages(device)
+  local out = {}
+  for _, e in ipairs(h.emitted(device)) do
+    if e.attr == "message" then
+      out[#out + 1] = e.value
+    end
+  end
+  return table.concat(out, " | ")
+end
+
+function T.test_waking_polls_every_few_seconds_until_the_pc_answers()
+  local pc = waking_pc()
+  h.assert_true(wol.wake(pc.driver, pc.device, pc.deps))
+  for _ = 1, 3 do
+    h.assert_true(pc.driver:fire("wol-poll"), "a fast poll is due")
+  end
+  h.assert_equal(pc.polls, 3)
+  h.assert_equal(fields.state(pc.device).power_state, state.WAKING)
+  pc.up = true
+  h.assert_true(pc.driver:fire("wol-poll"))
+  h.assert_equal(fields.state(pc.device).power_state, state.ON)
+  h.assert_false(pc.driver:fire("wol-poll"), "no fast poll once the PC answered")
+  h.assert_false(pc.driver:fire("wol-timeout"), "the timeout went with the wake")
+  for _, timer in ipairs(pc.driver.delays) do
+    if timer.name == "wol-poll" then
+      h.assert_equal(timer.seconds, wol.WAKE_POLL_SECONDS)
+    end
+  end
+end
+
+function T.test_the_timeout_takes_one_last_look()
+  -- The PC came up between the last fast poll and the timeout.
+  local pc = waking_pc()
+  wol.wake(pc.driver, pc.device, pc.deps)
+  pc.up = true
+  h.assert_true(pc.driver:fire("wol-timeout"))
+  h.assert_equal(pc.polls, 1, "one last poll")
+  h.assert_equal(fields.state(pc.device).power_state, state.ON)
+  h.assert_nil(messages(pc.device):find("깨우기 실패", 1, true), "not a failure")
+  h.assert_false(pc.driver:fire("wol-poll"), "no fast poll after the timeout")
+
+  -- Still nothing at the end: back to off, and it says so.
+  local silent = waking_pc()
+  wol.wake(silent.driver, silent.device, silent.deps)
+  h.assert_true(silent.driver:fire("wol-timeout"))
+  h.assert_equal(silent.polls, 1)
+  h.assert_equal(fields.state(silent.device).power_state, state.OFF)
+  h.assert_contains(messages(silent.device), "깨우기 실패")
+  h.assert_false(silent.driver:fire("wol-poll"), "the timeout ended the fast polls")
 end
 
 return T
