@@ -69,6 +69,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **검색이 안 될 때** — 앱 **SmartThings 탭**의 검색 상태(응답기 · 방화벽 규칙 · 마지막 검색 요청 시각)부터 봅니다. 시각이 갱신되지 않으면 PC와 허브 사이 네트워크 문제입니다.
 - **어느 장치가 어느 PC인지** — 장치 정보의 모델 `PC Control · <8자리>`가 SmartThings 탭의 **이 PC의 ID**와 같습니다.
 - **WoL이 안 될 때** — SmartThings 탭의 **WoL 어댑터**에서 고른 랜카드와 그 WoL 상태를 확인합니다.
+- **모던 스탠바이(S0) 노트북** — `powercfg /a`의 사용 가능한 상태에 `S0 저전력 유휴`가 보이는 PC입니다(`service.log` 시작 줄 `Power: modern standby …`). 이런 PC에서 절전은 화면을 꺼서 Windows 절전에 들어가고, 화면 끄기도 같은 절전이 됩니다. 그 뒤에는 Windows가 실제 키보드 · 마우스 입력이나 전원 버튼으로만 깨어나서 원격 화면 켜기는 듣지 않을 수 있습니다.
 - **로그** — 서비스는 exe 옆 `service.log`(앱 로그 탭), 트레이는 `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
 - **앱이나 서비스가 갑자기 꺼질 때** — 설정 탭 맨 아래 **개발자 → 디버그 모드**를 켜 두면 다음 비정상 종료 때 크래시 기록이 `%LOCALAPPDATA%\SmartThings PC Control\crash\`(앱, [크래시 폴더 열기])와 설치 폴더의 `crash\`(서비스, 관리자만 읽기)에 남습니다.
 - **`config.json`을 직접 고칠 때** — 관리자 권한 편집기가 필요합니다. 키는 Wiki [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스)에 있습니다.
@@ -136,6 +137,7 @@ The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, 
 ### Troubleshooting and security
 
 If discovery finds nothing, check the discovery status and last search request on the **SmartThings** tab.
+On a modern standby (S0 low power idle) laptop — `powercfg /a` lists `Standby (S0 Low Power Idle)`, and `service.log` starts with `Power: modern standby …` — Sleep turns the display off to enter Windows standby, and so does Screen off; Windows then wakes only on real keyboard or mouse input or the power button, so a remote Screen on may not wake it.
 Logs: `service.log` next to the exe (Logs tab) and `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
 If the app or the service quits unexpectedly, turn on **Developer → Debug mode** at the bottom of the Settings tab: the next crash leaves a record in `%LOCALAPPDATA%\SmartThings PC Control\crash\` (the app; **Open crash folder**) and in `crash\` in the install folder (the service; administrators only).
 The driver sends the secret in the `X-PC-Secret` header; an empty secret lets anyone on the LAN control the PC.

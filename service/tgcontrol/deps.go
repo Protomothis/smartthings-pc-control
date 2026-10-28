@@ -44,6 +44,10 @@ type Deps struct {
 	// ActionTimeout is how long a user-session action may take (/run, /say
 	// wait a second more).
 	ActionTimeout func() time.Duration
+	// ModernStandby reports whether the PC sleeps in S0 low power idle
+	// (#161, #162): the sleep and screen replies then say what that
+	// means. Nil is false.
+	ModernStandby func() bool
 
 	Status   Status
 	Commands Commands

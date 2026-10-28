@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/Protomothis/smartthings-pc-control/service/power"
 )
 
 // TestMain points configDir at a folder of the test run's own, so every
@@ -26,6 +28,10 @@ func TestMain(m *testing.M) {
 		setConfig(cfg.WithDefaults())
 		return nil
 	}
+	// A desktop with S3 whatever the test machine is: on a modern standby
+	// laptop the suspend and screen commands take another path (#162),
+	// which the tests that want it fake on their own (fakePowerCaps).
+	sys.powerCaps = func() (power.Capabilities, error) { return power.Capabilities{S3: true}, nil }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
