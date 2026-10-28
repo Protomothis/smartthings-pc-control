@@ -54,6 +54,9 @@ var sys = struct {
 	netsh netshRunner
 	// suspend is power.SetSuspendState.
 	suspend func(hibernate bool) error
+	// powerCaps is power.ReadCapabilities, read once per process
+	// (powerCaps in power_api.go): modern standby or S3 (#162).
+	powerCaps func() (power.Capabilities, error)
 	// disconnect is session.Disconnect (the lock command).
 	disconnect func(session uint32) error
 	// shutdownLog returns the newest User32/1074 record (shutdown_reason.go).
@@ -74,6 +77,7 @@ var sys = struct {
 	tool:           runSystemTool,
 	netsh:          runNetshCommand,
 	suspend:        power.SetSuspendState,
+	powerCaps:      power.ReadCapabilities,
 	disconnect:     session.Disconnect,
 	shutdownLog:    runLocalShutdownQuery,
 	trayLaunch:     launchTrayApp,

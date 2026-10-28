@@ -218,6 +218,12 @@ var texts = map[string][2]string{
 	"origin_remote":      {"원격", "remote"},
 	"origin_telegram":    {"텔레그램", "Telegram"},
 	"origin_smartthings": {"SmartThings", "SmartThings"},
+
+	// modern standby notes under a sleep / screen reply (#161, #162),
+	// "standby_" + the command (standbyNote)
+	"standby_suspend":       {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면을 꺼서 Windows 절전에 들어갑니다. 깨울 때는 키보드 · 마우스 · 전원 버튼을 쓰세요.", "ℹ️ This PC uses modern standby (S0): it goes to sleep by turning the display off. Wake it with the keyboard, mouse or power button."},
+	"standby_turnscreenoff": {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면을 끄면 절전에 들어가고, 원격 화면 켜기로는 깨어나지 않을 수 있습니다.", "ℹ️ This PC uses modern standby (S0): turning the screen off puts it to sleep, and a remote screen on may not wake it."},
+	"standby_turnscreenon":  {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면 끄기로 절전에 들어간 뒤에는 Windows가 실제 키보드 · 마우스 입력이나 전원 버튼으로만 깨어납니다.", "ℹ️ This PC uses modern standby (S0): once screen off has put it to sleep, Windows wakes only on real keyboard or mouse input or the power button."},
 }
 
 // text returns the ko/en string for key (telegram.lang), formatted with
@@ -382,6 +388,18 @@ func (c *Control) runCommand(name string) bool {
 	return c.d.Commands.RunNow(name)
 }
 
+// standbyNote is the line appended to a sleep or screen reply on a modern
+// standby PC (#161, #162), "\n" + the note; "" for other commands and PCs.
+func (c *Control) standbyNote(name string) string {
+	if c.d.ModernStandby == nil || !c.d.ModernStandby() {
+		return ""
+	}
+	if _, ok := texts["standby_"+name]; !ok {
+		return ""
+	}
+	return "\n" + c.text("standby_"+name)
+}
+
 // runScheduledNow ends the active schedule (by=telegram) and executes its
 // command immediately; ok is false when nothing was scheduled.
 func (c *Control) runScheduledNow() (string, bool) {
@@ -442,7 +460,7 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 	case "lock", "screenoff", "screenon":
 		name := telegramAliases[cmd]
 		c.runCommand(name)
-		return c.text("executed", c.commandLabel(name)), nil, nil
+		return c.text("executed", c.commandLabel(name)) + c.standbyNote(name), nil, nil
 	case "sleep", "hibernate", "restart", "shutdown":
 		return c.powerCommand(telegramAliases[cmd], args)
 	case "cancel":
@@ -665,7 +683,7 @@ func (c *Control) handleCallback(_ context.Context, chatID string, msgID int, ms
 			return "", c.text("unknown_button"), fmt.Errorf("callback %q: unknown command", data)
 		}
 		c.runCommand(name)
-		return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
+		return appendStamp(keep(msgText, c.promptCandidates()...), c.commandLabel(name), c.stamp("stamp_executed")) + c.standbyNote(name), c.text("toast_executed"), nil
 	case "cmd":
 		name, ok := c.commandName(arg)
 		if !ok {
@@ -675,7 +693,7 @@ func (c *Control) handleCallback(_ context.Context, chatID string, msgID int, ms
 			return "", c.text("confirm_needed"), nil
 		}
 		c.runCommand(name)
-		return appendStamp(keep(msgText, c.menuTitle()), c.commandLabel(name), c.stamp("stamp_executed")), c.text("toast_executed"), nil
+		return appendStamp(keep(msgText, c.menuTitle()), c.commandLabel(name), c.stamp("stamp_executed")) + c.standbyNote(name), c.text("toast_executed"), nil
 	case "confirm":
 		name, ok := c.commandName(arg)
 		if !ok || !c.isGrace(name) {
