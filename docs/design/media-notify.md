@@ -90,6 +90,20 @@
   그대로 둔다(로그온 화면의 Winlogon 데스크톱에는 SYSTEM 프로세스를 띄워야 하는데 화면 명령에 쓸 권한이 아니고,
   그 화면에서는 Windows가 스스로 모니터를 끈다). 이 실행은 대상 세션 기록(`observeTargetSession`)과 audio·media
   저장값을 건드리지 않는다(`runUserActionIn(sessionConsole, …)`).
+  **모던 스탠바이(S0 저전력 유휴) PC**(#161, #162): 서비스가 시작할 때 `GetPwrCapabilities`로
+  `SYSTEM_POWER_CAPABILITIES`의 `SystemS3`(오프셋 5)·`AoAc`(오프셋 20, 구조체 76바이트)를 한 번 읽어 로그에 남긴다
+  (`Power: modern standby (S0 low power idle), no S3, hibernate on`, `service/power/caps.go`). `AoAc`면
+  - `suspend`는 `SetSuspendState`를 부르지 않는다 — S3가 없어 Windows가 최대 절전(S4)으로 처리하고 전원 버튼으로만 깨어난다.
+    모던 스탠바이에 들어가는 문서화된 API는 없고, 시작 메뉴의 절전처럼 화면이 꺼지는 것이 그 시작이라 이 `screen off`를
+    콘솔 세션에서 실행한다. 시간 초과는 성공으로 친다(화면이 꺼지면 데스크톱 프로세스가 조절된다). 실행 자체가 실패하면
+    최대 절전으로 대신하지 않고 `system.exec_failed`. `power.stopping` 힌트는 남기지 않는다 — 절전 브로드캐스트가 오면
+    힌트 없이도 `suspend`이고, 남기면 2분 안의 다른 서비스 중지(깨운 뒤 재시작 등)가 절전으로 보인다. 유예는 `Execute` 전
+    `dispatchCommand`에서 그대로 적용된다.
+  - `screen off`는 이 PC에서 절전이 된다고 로그에 남긴다. 그 뒤 Windows는 실제 입력이나 전원 버튼으로만 깨어나고, 주입한
+    입력·`SC_MONITORPOWER -1`은 문서화된 해제 방법이 아니다. 그래서 `screen on`이 시간 초과되면 "적용된 것으로 간주"하지
+    않고 절전 중이라 깨울 수 없다고 로그에 남기고 `system.exec_failed`(`turnscreenon`)를 보내며 `display`는 그대로 둔다.
+    응답이 오면(아직 절전 전) 평소처럼 `on`.
+  - 텔레그램의 `/sleep`(확인 후) · `/screenoff` · `/screenon` · 메뉴 화면 끄기 답장에 같은 안내 한 줄이 붙는다(`Deps.ModernStandby`).
 - 사용자 세션의 자식은 서비스(SYSTEM)의 환경 변수를 물려받는다. 프리셋이 띄우는 프로그램에는
   `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경을 준다(#109).
 - 출력은 stdout 한 줄: `{"ok":true,...}`(종료 0) 또는 `{"ok":false,"error":"<code>","message":"..."}`(종료 1).
