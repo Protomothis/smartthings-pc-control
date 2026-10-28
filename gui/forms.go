@@ -316,7 +316,11 @@ func (u *ui) postForms(sent Config, quiet bool, done func(ok bool)) {
 			if lines := presetWarningLines(u.lang, res.warnings); len(lines) > 0 {
 				msg = strings.TrimSpace(msg + "\n\n" + strings.Join(lines, "\n\n"))
 			}
-			dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+			if serviceNeedsRestart(res.msg) {
+				u.offerRestart(msg) // [지금 재시작] (#139)
+			} else {
+				dialog.ShowInformation(u.t("settings.saved"), msg, u.win)
+			}
 		}
 		if res.reloginErr != nil {
 			u.promptLogin(func() { go u.initialLoad() })
@@ -329,7 +333,7 @@ func (u *ui) postForms(sent Config, quiet bool, done func(ok bool)) {
 // ever says "Settings saved." or adds that port/remote-access changes need
 // a service restart.
 func (u *ui) savedMessage(serviceMsg string) string {
-	if strings.Contains(serviceMsg, "Restart service") {
+	if serviceNeedsRestart(serviceMsg) {
 		return u.t("settings.saved.restart")
 	}
 	return u.t("settings.saved.body")

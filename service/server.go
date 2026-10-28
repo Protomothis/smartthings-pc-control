@@ -101,6 +101,7 @@ func StartHTTPServer(stop chan struct{}) {
 		setConfig(cfg)
 	}
 	logMsg("Service starting on port %d", cfg.Port)
+	logPowerCapabilities() // modern standby or S3 (#162)
 
 	if cfg.Secret == "" {
 		logMsg("WARNING: No secret configured. Anyone on your network can control this PC.")

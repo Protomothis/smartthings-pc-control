@@ -6,6 +6,8 @@ package service
 // WebUI port when webui_remote is on) and UDP 1900 for the SSDP responder
 // (#69). Without the UDP rule the Edge driver's M-SEARCH never reaches us
 // on a default Windows firewall, so discovery silently finds nothing.
+// Both the SSDP and the command-port rule are re-checked at every service
+// start, the latter against the port in config.json (#139).
 //
 // Every rule goes through the same netsh runner, which tests replace: no
 // test in this package ever shells out to the real netsh.
@@ -13,6 +15,7 @@ package service
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
@@ -128,4 +131,90 @@ func ensureSSDPFirewallRuleAtStart() {
 		return
 	}
 	logMsg("SSDP: firewall rule %q added (inbound UDP %d)", ssdpFirewallRuleName, stapi.SSDPPort)
+}
+
+// commandFirewallState is the last answer about firewallRuleName (#139):
+// the port the rule was checked against and whether a rule for exactly
+// that port is in place. Cached for the same reason as ssdpFirewallOK.
+type commandFirewallState struct {
+	Port int
+	OK   bool
+}
+
+var commandFirewall atomic.Pointer[commandFirewallState]
+
+// commandFirewallRuleState reports the cached answer; checked is false
+// before the first check has finished.
+func commandFirewallRuleState() (st commandFirewallState, checked bool) {
+	if p := commandFirewall.Load(); p != nil {
+		return *p, true
+	}
+	return commandFirewallState{}, false
+}
+
+// firewallRuleLocalPorts asks for the rules named name and returns the
+// LocalPort of each, plus whether any rule of that name exists. netsh
+// translates its labels ("LocalPort:", "로컬 포트:"), so a port is any
+// "label: value" line whose value is a plain number — in "show rule"
+// output only LocalPort and RemotePort can be, and ours has RemotePort Any.
+// Splitting at the first colon keeps an IPv6 LocalIP from passing for one.
+func firewallRuleLocalPorts(name string) (ports []string, exists bool) {
+	out, err := sys.netsh("advfirewall", "firewall", "show", "rule", "name="+name)
+	if err != nil {
+		return nil, false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		_, value, ok := strings.Cut(line, ":")
+		value = strings.TrimSpace(value)
+		if !ok || value == "" || strings.Trim(value, "0123456789") != "" {
+			continue
+		}
+		ports = append(ports, value)
+	}
+	return ports, true
+}
+
+// ensureCommandFirewallRule makes the command-port rule allow port: left
+// alone when every rule of that name already does, otherwise deleted (a
+// stale port, a duplicate, output we could not read) and added again.
+// changed reports whether it touched the firewall. The outcome is cached
+// for the app's SmartThings tab either way.
+func ensureCommandFirewallRule(port int) (changed bool, err error) {
+	want := strconv.Itoa(port)
+	ports, exists := firewallRuleLocalPorts(firewallRuleName)
+	inSync := exists && len(ports) > 0
+	for _, p := range ports {
+		inSync = inSync && p == want
+	}
+	if inSync {
+		commandFirewall.Store(&commandFirewallState{Port: port, OK: true})
+		return false, nil
+	}
+	if exists {
+		if err := deleteFirewallRule(firewallRuleName); err != nil {
+			commandFirewall.Store(&commandFirewallState{Port: port})
+			return false, err
+		}
+	}
+	err = ensureFirewallRule(firewallRuleName, firewallProtoTCP, port)
+	commandFirewall.Store(&commandFirewallState{Port: port, OK: err == nil})
+	return true, err
+}
+
+// ensureCommandFirewallRuleAtStart follows a changed command port (#139):
+// the rule used to be written at install only, so a port changed in the
+// settings stayed blocked after the restart that applied it. Best effort
+// like the SSDP rule — a failure is logged and startup continues.
+func ensureCommandFirewallRuleAtStart(port int) {
+	if port <= 0 {
+		return
+	}
+	changed, err := ensureCommandFirewallRule(port)
+	switch {
+	case err != nil:
+		logMsg("WARNING: could not ensure firewall rule %q for TCP %d (the hub may be blocked): %v",
+			firewallRuleName, port, err)
+	case changed:
+		logMsg("Firewall rule %q now allows inbound TCP %d", firewallRuleName, port)
+	}
 }
