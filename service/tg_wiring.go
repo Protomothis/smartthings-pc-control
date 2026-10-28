@@ -20,6 +20,7 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	Bus:           currentBus,
 	StartedAt:     serviceStartedAt,
 	ActionTimeout: func() time.Duration { return userActions.Timeout },
+	ModernStandby: modernStandby,
 	Status:        sources,
 	Commands:      tgCommands{},
 	Awake:         awakeControl{},

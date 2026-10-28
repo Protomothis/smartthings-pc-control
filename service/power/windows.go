@@ -6,7 +6,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var procSetSuspendState = windows.NewLazySystemDLL("powrprof.dll").NewProc("SetSuspendState")
+// modPowrprof is powrprof.dll: SetSuspendState here, GetPwrCapabilities
+// in caps.go.
+var modPowrprof = windows.NewLazySystemDLL("powrprof.dll")
+
+var procSetSuspendState = modPowrprof.NewProc("SetSuspendState")
 
 // enableShutdownPrivilege turns SE_SHUTDOWN_NAME on in the process token,
 // which SetSuspendState requires. LocalSystem holds the privilege but has
@@ -31,7 +35,8 @@ func enableShutdownPrivilege() {
 // SetSuspendState is powrprof's SetSuspendState(hibernate, FALSE, FALSE):
 // wake events stay enabled. It returns when the PC has resumed. (#127: it
 // replaced PowerShell's [System.Windows.Forms.Application]::SetSuspendState,
-// which makes the same call.)
+// which makes the same call.) On a modern standby PC it hibernates instead
+// of sleeping, so the service does not call it there (#162, caps.go).
 func SetSuspendState(hibernate bool) error {
 	enableShutdownPrivilege()
 	var h uintptr
