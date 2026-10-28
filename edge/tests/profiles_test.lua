@@ -190,8 +190,12 @@ function T.test_known_is_every_v1_name_then_every_dev_generation_name_then_every
   end
   expected[#expected + 1] = profiles.PC
   expected[#expected + 1] = profiles.BATTERY
+  -- edge 1.2.1: then the Dev-only edge-v1.3.0 names, to roll back.
+  for _, name in ipairs(profiles.ROLLBACK) do
+    expected[#expected + 1] = name
+  end
   h.assert_deep_equal(profiles.KNOWN, expected)
-  h.assert_equal(#profiles.KNOWN, 232)
+  h.assert_equal(#profiles.KNOWN, 232 + 14)
 end
 
 function T.test_only_v1_and_the_current_generation_are_shipped()
@@ -222,6 +226,20 @@ function T.test_the_current_profile_does_not_migrate()
   with_fake_versions(function()
     h.assert_nil(profiles.migration_for(NEW))
   end)
+end
+
+function T.test_the_dev_only_edge_1_3_profiles_roll_back_to_v13()
+  -- edge 1.2.1: the Dev channel went back to the released driver; a device
+  -- the edge-v1.3.0 builds moved on comes back to the two current names.
+  h.assert_equal(#profiles.ROLLBACK, 2 + 8 + 4)
+  for _, name in ipairs(profiles.ROLLBACK) do
+    local battery = name:match("%-battery%.v%d+$") ~= nil
+    h.assert_equal(profiles.migration_for(name), battery and profiles.BATTERY or profiles.PC, name)
+    h.assert_false(profiles.is_shipped(name), name .. " must not be packaged")
+  end
+  h.assert_equal(profiles.migration_for("pc-watch.v16"), "pc.v13")
+  h.assert_equal(profiles.migration_for("pc-monitor-watch-battery.v15"), "pc-battery.v13")
+  h.assert_equal(profiles.migration_for("pc.v14", true), "pc-battery.v13")
 end
 
 function T.test_an_unknown_profile_is_left_alone()

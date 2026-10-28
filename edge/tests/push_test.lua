@@ -14,6 +14,7 @@ local json = require "st.json"
 local poll = require "poll"
 local push = require "push"
 local state = require "state"
+local wol = require "wol"
 
 local T = {}
 
@@ -610,6 +611,57 @@ function T.test_app_stop_paints_the_app_down_rows_and_keeps_the_power_on()
       "a refusal after app_stop re-sends " .. tostring(e.cap) .. "." .. tostring(e.attr))
   end
   h.assert_true(fields.state(device).app_down)
+end
+
+--------------------------------------------------------------------------------
+-- #142: the PC announces itself after its subscription lapsed
+--------------------------------------------------------------------------------
+
+local function live_timer(driver, name)
+  local found
+  for _, t in ipairs(driver.timers) do
+    if t.name == name and not t.cancelled then
+      found = t
+    end
+  end
+  return found
+end
+
+function T.test_power_started_to_a_lapsed_subscription_ends_the_wake_and_resubscribes()
+  local driver = fake_driver({})
+  push.start(driver, { socket = fake_socket(41234), hub_ip = "192.168.1.9", spawn = function() end })
+  local device = pc_device("9f3c-guid")
+  driver.devices = { device }
+  -- Off overnight: the renewal failed and dropped the subscription
+  -- (push.ensure). Then the switch was pressed.
+  fields.set(device, fields.PUSH_SUB, nil)
+  fields.set_state(device, state.transition(state.new(state.OFF), "switch_on"))
+  local wake_timer = driver:call_with_delay(wol.WAKE_TIMEOUT, function() end, "wol-timeout")
+  fields.set(device, fields.WAKE_TIMER, wake_timer)
+  local deps = { now = function() return 5000 end }
+
+  -- The service sends power.started to the callback it still remembers
+  -- (stapi wakeTargets): the driver routes by machine_id and takes it.
+  h.assert_true(push.deliver(driver, json.encode(payload({ type = "power.started" })), deps))
+  h.assert_equal(fields.state(device).power_state, state.ON)
+  h.assert_equal(h.last_value(h.emitted(device), nil, state.CAP_SWITCH, "switch"), "on")
+  h.assert_true(wake_timer.cancelled, "the wake is over")
+
+  -- A live subscription is taken again right away, not at the next poll.
+  local resubscribe = live_timer(driver, "pc-push-resubscribe")
+  h.assert_true(resubscribe ~= nil, "a resubscribe is armed")
+  h.assert_equal(resubscribe.delay, push.RESUBSCRIBE_DELAY)
+  local http, captured = fake_http(200, '{"id":"sub-9","expires_at":"x"}')
+  deps.http = http
+  resubscribe.cancelled = true
+  resubscribe.fn()
+  h.assert_equal(captured.url, "http://192.168.1.20:5001/st/v1/subscribe")
+  h.assert_equal(fields.get(device, fields.PUSH_SUB).id, "sub-9")
+  h.assert_true(live_timer(driver, "pc-push-renew") ~= nil, "and renewed as usual from there")
+
+  -- With a live subscription a push arms nothing more.
+  push.deliver(driver, json.encode(payload({ type = "display.changed" })), deps)
+  h.assert_nil(live_timer(driver, "pc-push-resubscribe"))
 end
 
 return T

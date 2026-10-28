@@ -63,11 +63,11 @@ PC Control 서비스를 위한 전용 SmartThings Edge 드라이버다.
 | 배터리 | **노트북에만.** 잔량(%)과 전원 공급원 |
 
 장치의 화면은 **추가한 시점의 프로필로 굳는다.**
-드라이버는 첫 `init`에서 장치를 현재 프로필(`pc*.v10`)로 옮기고, 비는 줄은 30초 안에 다시 채운다.
+드라이버는 첫 `init`에서 장치를 현재 프로필(`pc.v13`, 배터리가 있으면 `pc-battery.v13`)로 옮기고, 비는 줄은 30초 안에 다시 채운다.
 
 ## 사용
 
-**스위치** — 켜면 매직 패킷을 세 번(즉시 · 2초 · 5초) 보내고 상태가 `깨우는 중`이 된다. 90초 안에 응답이 없으면 "깨우기 실패"를 표시한다.
+**스위치** — 켜면 매직 패킷을 세 번(즉시 · 2초 · 5초) 보내고 상태가 `깨우는 중`이 된다. 그동안은 확인 주기와 상관없이 5초마다 확인해 켜지는 대로 표시하고, 180초 뒤 마지막으로 한 번 더 확인해도 응답이 없으면 "깨우기 실패"를 표시한다.
 끄면 환경설정 `스위치 끄기 동작`(기본 종료)을 보내고, PC의 유예를 따른다.
 PC에서 유예를 취소하면 스위치가 다시 켜짐으로 돌아온다.
 
@@ -171,7 +171,7 @@ node tools/build.js && smartthings edge:drivers:package build/edge
 smartthings edge:channels:assign <driverId> <version> --channel <channelId>
 ```
 
-- **프로필은 손으로 쓰지 않는다.** 현재 프로필 스무 개는 `tools/profile-template.yml`에서 `tools/gen-profiles.js`가 만든다. 화면을 바꾸면 프로필 버전을 올린다(설계 §6.6).
+- **프로필은 손으로 쓰지 않는다.** 현재 프로필 두 개(`pc.v13`, `pc-battery.v13`)는 `tools/profile-template.yml`에서 `tools/gen-profiles.js`가 만든다. 화면을 바꾸면 프로필 버전을 올린다(설계 §6.6).
 - **정의를 바꾸면 새 capability id가 필요하다.** 허브가 정의를 id 단위로 캐시한다. 계정 작업은 `tools/create-capabilities.sh`(최초 생성)와 `tools/sync-capabilities.sh`(갱신), 다른 계정으로 옮길 때는 `tools/apply-namespace.js`.
 - 패키지는 `tools/build.js`가 주석을 빈 줄로 바꿔 만든 `build/edge/`다(커밋하지 않음). 허브 로그의 줄 번호는 `src/`와 같다.
 - CI가 `edge-vX.Y.Z` 태그에서 같은 일을 한다. 태그는 `src/driver_version.lua`와 일치해야 한다.

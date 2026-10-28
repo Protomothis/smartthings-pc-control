@@ -48,6 +48,10 @@ func stoppingReason(fallback string) string { return powerHint.Reason(fallback) 
 // resetPowerCommandHint forgets the hint (tests).
 func resetPowerCommandHint() { powerHint.Reset() }
 
+// errScreenOnStandby is system.exec_failed's error for a `screen on` that
+// timed out on a modern standby PC (#161).
+var errScreenOnStandby = errors.New("modern standby: the PC is in standby after screen off; Windows only leaves it on real input or the power button")
+
 // consoleUserAction is runUserActionIn pinned to the console session
 // (userRun.screen).
 func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, error) {
@@ -73,10 +77,27 @@ func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, e
 // monitor reacts to the first window that handles it. Any other failure
 // (nobody logged in at the console, the child could not start) leaves the
 // state alone.
+//
+// On a modern standby PC (#161) the display going off is the system going
+// into standby: Windows throttles desktop processes, and leaves standby on
+// real input or the power button — injected input and SC_MONITORPOWER are
+// not documented ways out. `screen off` says so in the log; a `screen on`
+// that times out there is not assumed to have worked: it is logged as the
+// PC being in standby, raised as system.exec_failed (Telegram) and the
+// display state stays as it was. The Telegram reply carries the same note
+// (tgcontrol, Deps.ModernStandby).
 func setScreen(state string) {
+	standby := modernStandby()
+	if standby && state == "off" {
+		logMsg("screen off: modern standby - on this PC the display off puts it into standby; screen on may not wake it (only real input or the power button does)")
+	}
 	_, err := userRun.screen(context.Background(), useraction.ActionScreen, state)
 	switch {
 	case err == nil:
+	case standby && state == "on" && errors.Is(err, errUserActionTimeout):
+		logMsg("screen on: modern standby - the PC is in standby after screen off; Windows only leaves it on real input or the power button (%v)", err)
+		reportExecFailure("turnscreenon", errScreenOnStandby, nil)
+		return
 	case errors.Is(err, errUserActionTimeout):
 		logMsg("screen %s: %v (assuming it took effect)", state, err)
 	default:
@@ -121,7 +142,7 @@ var Commands = map[string]Command{
 	},
 	"suspend": {
 		Response: "Suspending...",
-		Execute:  suspendPC, // SetSuspendState (power_api.go)
+		Execute:  suspendPC, // SetSuspendState, display off on modern standby (power_api.go)
 	},
 	"lock": {
 		Response: "Locking...",
