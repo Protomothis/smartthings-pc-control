@@ -125,6 +125,27 @@ end
 profiles.KNOWN[#profiles.KNOWN + 1] = profiles.PC
 profiles.KNOWN[#profiles.KNOWN + 1] = profiles.BATTERY
 
+-- edge 1.2.1: the profiles of the edge-v1.3.0 work that only
+-- the Dev channel saw - v14 (two names), v15 (`pc[-monitor][-watch][-battery]`)
+-- and v16 (`pc[-watch][-battery]`). The Dev channel went back to the released
+-- driver, and a device left on one of them would keep a screen this driver
+-- does not paint. Known here, it migrates back to `PC`/`BATTERY` like any
+-- older name; nothing in them is packaged (UNSHIPPED_VERSIONS).
+profiles.ROLLBACK = { "pc.v14", "pc-battery.v14" }
+for _, monitor in ipairs({ "", "-monitor" }) do
+  for _, watch in ipairs({ "", "-watch" }) do
+    for _, battery in ipairs({ "", "-battery" }) do
+      profiles.ROLLBACK[#profiles.ROLLBACK + 1] = "pc" .. monitor .. watch .. battery .. ".v15"
+      if monitor == "" then
+        profiles.ROLLBACK[#profiles.ROLLBACK + 1] = "pc" .. watch .. battery .. ".v16"
+      end
+    end
+  end
+end
+for _, name in ipairs(profiles.ROLLBACK) do
+  profiles.KNOWN[#profiles.KNOWN + 1] = name
+end
+
 -- Generations that only ever lived on the Dev channel. Their names stay in
 -- KNOWN so a development device still on one migrates, but their files are
 -- not packaged: the package limit is 655360 bytes.
@@ -132,6 +153,8 @@ profiles.UNSHIPPED_VERSIONS = {
   [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [9] = true,
   -- #136: the SmartMonitor default and the Switch default, Dev channel only.
   [11] = true, [12] = true,
+  -- edge-v1.3.0 Dev builds (ROLLBACK).
+  [14] = true, [15] = true, [16] = true,
 }
 
 --- True when the package carries a file for this profile name.
