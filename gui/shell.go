@@ -2,9 +2,8 @@ package gui
 
 // What the Gio app shell (package ui, #165) needs from here besides the
 // client and the texts: the single-instance slot, the start-up chores, the
-// app log, debug mode, the update check and the save model. Thin exports of
-// the toolkit-free parts the Fyne window uses too, so both apps behave the
-// same; no toolkit in this file.
+// app log, debug mode, the update check and the save model. Thin exports;
+// no toolkit in this file.
 
 import (
 	"errors"
@@ -97,7 +96,8 @@ func CheckLatestRelease() (UpdateCheck, error) { return checkLatestRelease() }
 // false for a dev build.
 func IsNewerRelease(version, tag string) bool { return release.IsNewer(version, tag) }
 
-// Preference keys of the update check, kept where the Fyne app keeps them.
+// Preference keys of the update check, under the names the Fyne app
+// used (its preferences file is still read, ui/prefs.go).
 const (
 	PrefUpdateSkipped  = "update_skipped"  // a version the user chose to skip (#135)
 	PrefUpdateNotified = "update_notified" // the version last notified about

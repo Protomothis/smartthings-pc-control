@@ -13,14 +13,10 @@ package gui
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 
-	"fyne.io/fyne/v2/dialog"
-
 	"github.com/Protomothis/smartthings-pc-control/internal/crashdump"
-	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -107,19 +103,5 @@ var setDebugMode = func(on bool) {
 		for _, p := range crashdump.Unreported(dir, prefix) {
 			guiLog("debug", "previous crash recorded: %s", p)
 		}
-	}
-}
-
-// openCrashFolder opens the per-user crash folder in Explorer, making it
-// first when debug mode has not yet.
-func (u *ui) openCrashFolder() {
-	dir, err := PrepareCrashDir()
-	if err != nil {
-		dialog.ShowError(err, u.win)
-		return
-	}
-	// explorer.exe is a GUI app: no console to hide.
-	if err := exec.Command(systool.Explorer(), dir).Start(); err != nil {
-		dialog.ShowError(err, u.win)
 	}
 }

@@ -2,9 +2,8 @@ package ui
 
 // 서비스 관리: the Windows service itself — install (after the install
 // location check), start, restart, stop and uninstall — plus the WebUI,
-// the crash folder and where the service runs from. The old settings
-// tab's 서비스 관리 box, 도구 row and crash-folder button (gui/settings_tab.go,
-// gui/conn_diag.go, gui/debug.go).
+// the crash folder and where the service runs from. What the Fyne
+// settings tab's 서비스 관리 box, 도구 row and crash-folder button did.
 //
 // The service state comes from the SCM (cheap, no process): when the page
 // opens, every few seconds while it is in front, when the connection

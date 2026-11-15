@@ -13,6 +13,7 @@ package ui
 //	┌ 로그 → ┐
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -300,7 +301,13 @@ func (u *UI) loginCard(gtx C) D {
 		if secret == "" {
 			u.toast.show(u.t("login.empty"), true, gtx.Now)
 		} else {
-			u.act(func() error { return u.api.Login(secret) }, "", u.connect)
+			l := u.language()
+			u.act(func() error {
+				if err := u.api.Login(secret); err != nil {
+					return errors.New(gui.LoginErrorText(l, err)) // a wrong secret, the rate limit
+				}
+				return nil
+			}, "", u.connect)
 		}
 	}
 	return card(gtx, func(gtx C) D {

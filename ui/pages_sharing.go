@@ -3,9 +3,7 @@ package ui
 // 공유: what this PC may tell SmartThings (and Telegram) about the people
 // using it (#128) — the session's lock and idle state and who is signed in,
 // what is playing (#117) and which watched programs run (#110, #123). All
-// of it is opt-in. It replaces the Fyne sharing tab (gui/share_tab.go and
-// gui/activity_section.go); the model is gui.ShareForm
-// (gui/export_sharing.go).
+// of it is opt-in. The model is gui.ShareForm (gui/export_sharing.go).
 //
 // The watch list: up to five entries, each in a numbered slot (the
 // priority, and the routine condition "감시 N" on the PC device). A row's

@@ -9,10 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
-
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
 )
 
@@ -246,82 +242,5 @@ func TestClientRunningProcesses(t *testing.T) {
 	got, err := c.RunningProcesses()
 	if err != nil || !slices.Equal(got, []string{"Code.exe", "steam.exe"}) {
 		t.Errorf("RunningProcesses = %v, %v", got, err)
-	}
-}
-
-// activityRowSelect is the slot selector of editor row i.
-func activityRowSelect(t *testing.T, a *activityBox, i int) *widget.Select {
-	t.Helper()
-	var found *widget.Select
-	var walk func(o fyne.CanvasObject)
-	walk = func(o fyne.CanvasObject) {
-		switch v := o.(type) {
-		case *widget.Select:
-			if found == nil {
-				found = v
-			}
-		case *fyne.Container:
-			for _, c := range v.Objects {
-				walk(c)
-			}
-		}
-	}
-	walk(a.rows.Objects[i])
-	if found == nil {
-		t.Fatalf("row %d has no slot selector", i)
-	}
-	return found
-}
-
-// TestActivityEditorSlots drives the real editor: rows come in slot order,
-// each selector offers its own and the free slots, choosing one re-sorts
-// the rows, adding takes the lowest free slot and stops at five.
-func TestActivityEditorSlots(t *testing.T) {
-	u := newTestUI(t, LangKo, nil)
-	a := &u.share.activity
-	u.fillShareTab(Config{Activity: ActivityConfig{Enabled: true, Watch: []ActivityWatch{
-		aw(4, "obs64.exe", "OBS"), aw(1, "steam.exe", "Steam"),
-	}}})
-	if !slices.Equal(a.watch, []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(4, "obs64.exe", "OBS")}) {
-		t.Fatalf("filled rows = %+v, want slot order", a.watch)
-	}
-	sel := activityRowSelect(t, a, 1)
-	if want := []string{"감시 2", "감시 3", "감시 4", "감시 5"}; !slices.Equal(sel.Options, want) || sel.Selected != "감시 4" {
-		t.Errorf("row 2 offers %v (selected %q), want %v with 감시 4", sel.Options, sel.Selected, want)
-	}
-	if a.addBtn.Disabled() || a.pickBtn.Disabled() {
-		t.Error("add/pick disabled with three free slots")
-	}
-
-	// OBS to slot 2: the entry moves, and slot 2 leaves Steam's choices.
-	sel.SetSelected("감시 2")
-	if !slices.Equal(a.watch, []ActivityWatch{aw(1, "steam.exe", "Steam"), aw(2, "obs64.exe", "OBS")}) {
-		t.Errorf("after choosing 감시 2: %+v", a.watch)
-	}
-	if got := activityRowSelect(t, a, 0).Options; !slices.Equal(got, []string{"감시 1", "감시 3", "감시 4", "감시 5"}) {
-		t.Errorf("row 1 offers %v after the move (2 is taken now)", got)
-	}
-	// Steam to slot 5 puts it last.
-	activityRowSelect(t, a, 0).SetSelected("감시 5")
-	if !slices.Equal(a.watch, []ActivityWatch{aw(2, "obs64.exe", "OBS"), aw(5, "steam.exe", "Steam")}) {
-		t.Errorf("after moving Steam to 감시 5: %+v", a.watch)
-	}
-
-	// [추가] fills the lowest free slot, then 3, 4; at five it is disabled.
-	for _, want := range []int{1, 3, 4} {
-		test.Tap(a.addBtn)
-		if !slices.ContainsFunc(a.watch, func(w ActivityWatch) bool { return w.Slot == want && w.Process == "" }) {
-			t.Fatalf("add did not fill slot %d: %+v", want, a.watch)
-		}
-	}
-	if len(a.watch) != 5 || len(a.rows.Objects) != 5 {
-		t.Fatalf("%d entries, %d rows", len(a.watch), len(a.rows.Objects))
-	}
-	if !a.addBtn.Disabled() || !a.pickBtn.Disabled() {
-		t.Error("add/pick still enabled with all five slots used")
-	}
-	test.Tap(a.addBtn)
-	if len(a.watch) != 5 {
-		t.Error("a sixth row was added")
 	}
 }

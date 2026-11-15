@@ -1,7 +1,7 @@
 package ui
 
 // 프리셋: the actions SmartThings routines and Telegram /run start by slot
-// number (#109) — the Fyne presets tab's editor. A form (forms.go): the
+// number (#109). A form (forms.go): the
 // rows are read from their widgets at the top of body; fill, dirty and
 // apply work on those values, and the save asks about routine slots
 // changing hands on its own.

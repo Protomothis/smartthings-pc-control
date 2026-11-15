@@ -2,9 +2,8 @@ package gui
 
 // The update flow without a toolkit: what to offer for a release (self
 // update, or only the release page and why), the release notes to show,
-// and the self update itself with its progress. The Fyne dialogs
-// (update_ui.go) and the Gio update page (ui/pages_update.go) both drive
-// it, so the two apps check, verify and apply the same way.
+// and the self update itself with its progress. The update page
+// (ui/pages_update.go) drives it.
 
 import (
 	"context"
@@ -168,7 +167,7 @@ type UpdateProgress struct {
 	Done, Total int64 // StageDownloading; Total is -1 when unknown
 }
 
-// Text is the progress line, as the Fyne dialog showed it.
+// Text is the progress line.
 func (p UpdateProgress) Text(l Lang) string { return p.text(func(k string) string { return T(l, k) }) }
 
 func (p UpdateProgress) text(t func(string) string) string {
@@ -256,4 +255,19 @@ func UpdateFailedText(l Lang, err error) string {
 		return T(l, "update.hashmismatch")
 	}
 	return T(l, "update.failed") + err.Error()
+}
+
+// maxNotes caps the versions the update page shows notes for; the rest
+// are a link to the releases page away.
+const maxNotes = 10
+
+// updateNotes is the releases whose notes the update page shows for chk:
+// every app release newer than current, highest first. A build that is
+// not behind (dev, or the manual check of an rc) gets the offered
+// release's notes alone.
+func updateNotes(chk updateCheck, current string) []release.Info {
+	if notes := release.NotesSince(chk.list, current); len(notes) > 0 {
+		return notes
+	}
+	return []release.Info{*chk.rel}
 }

@@ -2,8 +2,7 @@ package ui
 
 // 텔레그램: the bot (token, chat ID, test message, finding the chat), what
 // it may do (notifications, remote control and the chats allowed to),
-// which events it reports, quiet hours and how messages look — the old
-// 텔레그램 tab (gui/notify_tab.go) as a form. The model is gui.TelegramForm
+// which events it reports, quiet hours and how messages look — a form. The model is gui.TelegramForm
 // (gui/export_telegram.go); the widgets are read into p.form at the top of
 // body, and fill, dirty and apply work on p.form only.
 //

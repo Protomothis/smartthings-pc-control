@@ -459,8 +459,7 @@ func (p *logsPage) mono(th *material.Theme, txt string, col color.NRGBA) materia
 	return l
 }
 
-// logRoleColor is the palette colour of a part of a line; the same roles
-// the Fyne tab maps to its theme.
+// logRoleColor is the palette colour of a part of a line (gui.LogRole).
 func logRoleColor(r gui.LogRole) color.NRGBA {
 	switch r {
 	case gui.LogDim:

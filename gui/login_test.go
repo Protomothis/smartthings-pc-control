@@ -2,71 +2,11 @@ package gui
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
-
-// TestShouldAutoLoad: connTick must not fire initialLoad while the login
-// dialog is up or an attempt is in flight — that is what stacked dialogs
-// every 5 s and swallowed the user's typing (#98).
-func TestShouldAutoLoad(t *testing.T) {
-	cases := []struct {
-		connected bool
-		st        loginState
-		want      bool
-	}{
-		{false, loginIdle, true},
-		{false, loginPrompting, false},
-		// Deferred still polls: initialLoad does not prompt then, and a
-		// GetConfig is not a login attempt.
-		{false, loginDeferred, true},
-		{true, loginIdle, false},
-		{true, loginPrompting, false},
-		{true, loginDeferred, false},
-	}
-	for _, tc := range cases {
-		if got := shouldAutoLoad(tc.connected, tc.st); got != tc.want {
-			t.Errorf("shouldAutoLoad(%v, %d) = %v, want %v", tc.connected, tc.st, got, tc.want)
-		}
-	}
-}
-
-func TestShouldPromptLogin(t *testing.T) {
-	cases := []struct {
-		st   loginState
-		want bool
-	}{
-		{loginIdle, true},
-		{loginPrompting, false}, // one dialog at a time
-		{loginDeferred, false},  // cancelled: wait for the Login button
-	}
-	for _, tc := range cases {
-		if got := shouldPromptLogin(tc.st); got != tc.want {
-			t.Errorf("shouldPromptLogin(%d) = %v, want %v", tc.st, got, tc.want)
-		}
-	}
-}
-
-func TestRetryPromptAfter(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"wrong secret", errLoginInvalid, true},
-		{"wrapped wrong secret", fmt.Errorf("login: %w", errLoginInvalid), true},
-		{"rate limited", errLoginLimited, false},
-		{"service gone", errors.New("dial tcp 127.0.0.1:8080: connection refused"), false},
-	}
-	for _, tc := range cases {
-		if got := retryPromptAfter(tc.err); got != tc.want {
-			t.Errorf("%s: retryPromptAfter = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
 
 func TestShouldReloginAfterSave(t *testing.T) {
 	cases := []struct {

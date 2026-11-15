@@ -1,7 +1,6 @@
 package ui
 
-// SmartThings: how the Edge driver reaches this PC (the Fyne SmartThings
-// tab: gui/smartthings_tab.go and gui/st_section.go). The hub at the top,
+// SmartThings: how the Edge driver reaches this PC. The hub at the top,
 // then this PC's id and command port, the discovery diagnostics, the WoL
 // adapter (a pick list), the allowed hubs (a list editor) and the network
 // adapters. The form owns smartthings.allowed_hubs and .wol_mac only

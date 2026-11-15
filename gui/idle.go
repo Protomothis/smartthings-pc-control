@@ -201,8 +201,7 @@ type HeartbeatClient interface {
 
 // HeartbeatSender posts the session heartbeats (#77, #104, #117) and
 // remembers what arrived, so the 3s check posts only changes. It has no
-// toolkit in it: the Fyne window and the Gio one (#165) each keep one and
-// call SendFull every HeartbeatInterval and SendChanges every
+// toolkit in it: the app (package ui, #165) keeps one and calls SendFull every HeartbeatInterval and SendChanges every
 // MediaWatchInterval, whether or not the window is open.
 //
 // Every failure is silent: the service being down, mid-restart or simply
@@ -253,23 +252,6 @@ func (h *HeartbeatSender) Post(c HeartbeatClient, hb Heartbeat) {
 		noteHeartbeatReply(ignored)
 	}
 }
-
-// fyneHeartbeat is the Fyne window's HeartbeatClient.
-type fyneHeartbeat struct{ u *ui }
-
-func (f fyneHeartbeat) SessionHeartbeat(hb Heartbeat) (bool, error) {
-	return f.u.client.SessionHeartbeat(hb)
-}
-func (f fyneHeartbeat) Relogin() bool { return f.u.tryLocalLogin() }
-
-// sendIdleHeartbeat posts one heartbeat, or does nothing at all.
-func (u *ui) sendIdleHeartbeat() { u.hb.SendFull(fyneHeartbeat{u}) }
-
-// watchMediaChanges is the 3s check (#117).
-func (u *ui) watchMediaChanges() { u.hb.SendChanges(fyneHeartbeat{u}) }
-
-// postHeartbeat delivers hb and records what arrived.
-func (u *ui) postHeartbeat(hb Heartbeat) { u.hb.Post(fyneHeartbeat{u}, hb) }
 
 var (
 	// heartbeatSessionID is the Windows session this process runs in,

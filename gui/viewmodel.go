@@ -1,11 +1,10 @@
 package gui
 
-// Screen texts and choices that do not depend on a toolkit (#165). The
-// Fyne window's methods (u.formatMinutes, u.batteryText, …) call these, and
-// the Gio window (package ui) uses them directly, so both say the same
-// thing; once the Fyne files are gone this file stays.
+// Screen texts and choices that do not depend on a toolkit (#165); the
+// window (package ui) uses them directly.
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"net/http"
@@ -322,6 +321,11 @@ func MediaReason(l Lang, m MediaState, err error) string {
 	}
 	return ""
 }
+
+// iconBytes is the app icon as a PNG.
+//
+//go:embed icon.png
+var iconBytes []byte
 
 // IconPNG is the app icon (the tray's and the window's).
 func IconPNG() []byte { return iconBytes }

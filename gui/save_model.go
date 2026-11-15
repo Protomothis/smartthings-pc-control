@@ -1,7 +1,6 @@
 package gui
 
-// The save model shared by the Fyne window (forms.go) and the Gio one
-// (package ui, #165): what a save posts, the baseline to fall back on, the
+// The save model of the app's forms (package ui, #165): what a save posts, the baseline to fall back on, the
 // restart notice and the routine-slot question. No toolkit here.
 
 import (

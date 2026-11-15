@@ -1,8 +1,8 @@
 package ui
 
 // 업데이트: the running version against the newest release, the release
-// notes since this version, and the update itself with its progress — the
-// Fyne app's update dialogs (gui/update_ui.go) as one page. The shell
+// notes since this version, and the update itself with its progress — on
+// one page (the Fyne app had dialogs). The shell
 // checks GitHub at start and daily (shell.go: snapshot.updateCheck, the
 // badge on the home update row); this page starts from that, checks again
 // when it knows nothing yet or on [지금 확인], and drives the update

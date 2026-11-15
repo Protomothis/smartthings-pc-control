@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 )
 
 // localService is a service with a secret set: every API route wants the
@@ -114,59 +113,6 @@ func TestClientLocalLogin(t *testing.T) {
 	}
 }
 
-func TestLocalLoginGate(t *testing.T) {
-	var g localLoginGate
-	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	calls := 0
-	refused := func() error { calls++; return errLocalLoginRefused }
-	if g.try(now, refused) || calls != 1 {
-		t.Fatalf("first refusal: calls=%d", calls)
-	}
-	if g.try(now.Add(time.Minute), refused) || calls != 1 {
-		t.Errorf("asked again %d times within the backoff", calls-1)
-	}
-	if g.try(now.Add(localLoginRetryAfter), refused) || calls != 2 {
-		t.Errorf("not asked again after the backoff: calls=%d", calls)
-	}
-	// A network error (service restarting) does not hold the next try back.
-	var g2 localLoginGate
-	down := func() error { calls++; return errors.New("connection refused") }
-	g2.try(now, down)
-	if !g2.try(now, func() error { return nil }) {
-		t.Error("a network error blocked the next attempt")
-	}
-}
-
-// TestHeartbeatLogsInLocally: a heartbeat answered 401 asks for the local
-// session and is delivered on the retry; refused, it gives up quietly and
-// the next posts do not keep asking.
-func TestHeartbeatLogsInLocally(t *testing.T) {
-	savedID := heartbeatSessionID
-	heartbeatSessionID = func() uint32 { return 1 }
-	t.Cleanup(func() { heartbeatSessionID = savedID })
-	idle := int64(5)
-
-	svc := &localService{status: http.StatusOK}
-	u := &ui{client: clientFor(t, svc.server(t))}
-	u.postHeartbeat(Heartbeat{IdleSeconds: &idle})
-	if svc.loginCount() != 1 {
-		t.Fatalf("local logins = %d, want 1", svc.loginCount())
-	}
-	u.postHeartbeat(Heartbeat{IdleSeconds: &idle})
-	if svc.loginCount() != 1 {
-		t.Errorf("logged in again with a valid session: %d", svc.loginCount())
-	}
-
-	refusing := &localService{status: http.StatusForbidden}
-	u2 := &ui{client: clientFor(t, refusing.server(t))}
-	for range 5 {
-		u2.postHeartbeat(Heartbeat{IdleSeconds: &idle})
-	}
-	if refusing.loginCount() != 1 {
-		t.Errorf("refused local login asked %d times, want once per backoff", refusing.loginCount())
-	}
-}
-
 func TestToastActionLogsInLocally(t *testing.T) {
 	svc := &localService{status: http.StatusOK}
 	runToastAction(clientFor(t, svc.server(t)), "stpc://cancel")
@@ -183,59 +129,6 @@ func TestToastActionLogsInLocally(t *testing.T) {
 	}))
 	defer open.Close()
 	runToastAction(clientFor(t, open), "stpc://cancel")
-}
-
-// lockedAPI is fakeAPI behind a secret: GetConfig answers 401 until a
-// local login succeeded.
-type lockedAPI struct {
-	*fakeAPI
-	local    error
-	loggedIn bool
-	logins   int
-}
-
-func (l *lockedAPI) GetConfig() (Config, error) {
-	if !l.loggedIn {
-		return Config{}, errUnauthorized
-	}
-	return l.fakeAPI.GetConfig()
-}
-
-func (l *lockedAPI) LocalLogin() error {
-	l.logins++
-	l.loggedIn = l.local == nil
-	return l.local
-}
-
-// TestInitialLoadLocalLogin is the window's path: a 401 tries the local
-// login first and connects without a dialog; refused, the login dialog
-// opens as before (and a reconnect does not ask the service again within
-// the backoff).
-func TestInitialLoadLocalLogin(t *testing.T) {
-	trusted := &lockedAPI{fakeAPI: &fakeAPI{cfg: storedConfig()}}
-	u := newTestUI(t, LangEn, trusted)
-	u.initialLoad()
-	if !u.connected.Load() || trusted.logins != 1 {
-		t.Fatalf("connected=%v logins=%d, want a local login and a connection", u.connected.Load(), trusted.logins)
-	}
-	if u.loginState() != loginIdle {
-		t.Errorf("login state %d, want idle (no dialog)", u.loginState())
-	}
-
-	refused := &lockedAPI{fakeAPI: &fakeAPI{cfg: storedConfig()}, local: errLocalLoginRefused}
-	u2 := newTestUI(t, LangEn, refused)
-	u2.initialLoad()
-	if u2.connected.Load() {
-		t.Fatal("connected without a session")
-	}
-	if u2.loginState() != loginPrompting {
-		t.Errorf("login state %d, want the dialog (prompting)", u2.loginState())
-	}
-	u2.setLoginState(loginDeferred) // the user cancelled the dialog
-	u2.initialLoad()                // connTick, 5 s later
-	if refused.logins != 1 {
-		t.Errorf("local logins = %d, want 1 within the backoff", refused.logins)
-	}
 }
 
 func TestReadLocalConfigFile(t *testing.T) {

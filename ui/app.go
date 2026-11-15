@@ -1,7 +1,7 @@
 // Package ui is the desktop app drawn with Gio (#165): a tray icon and one
-// window with a home screen of cards and a few sub-pages. It replaces the
-// Fyne window in package gui, whose toolkit-free parts (the API client,
-// texts, formatting) it uses.
+// window with a home screen of cards and a few sub-pages. It replaced the
+// Fyne window (v1.2.4); package gui holds the toolkit-free parts it uses
+// (the API client, texts, formatting, the save model).
 //
 // Threading follows proto-easy-mount: the tray runs on the main thread
 // (systray locks it), the window runs its own event loop on a goroutine and
