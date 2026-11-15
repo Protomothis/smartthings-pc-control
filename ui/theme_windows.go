@@ -66,3 +66,29 @@ func systemLang() gui.Lang {
 	}
 	return gui.LangEn
 }
+
+// restoreWindow un-minimises the window and brings it to the front, as
+// the Fyne app's restoreIfMinimized did. Gio's ActionRaise does the same
+// on the window's own thread; this runs straight away from whichever
+// goroutine asked (the tray, a later launch, a toast button), so the
+// foreground right that a later launch hands over with
+// AllowSetForegroundWindow is used before it lapses. A no-op without a
+// window.
+func restoreWindow(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
+		procShowWindow.Call(hwnd, swRestore)
+	}
+	procSetForegroundWindow.Call(hwnd)
+}
+
+var (
+	user32                  = windows.NewLazySystemDLL("user32.dll")
+	procIsIconic            = user32.NewProc("IsIconic")
+	procShowWindow          = user32.NewProc("ShowWindow")
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+)
+
+const swRestore = 9 // SW_RESTORE

@@ -140,11 +140,7 @@ func TestLogsFillsWindow(t *testing.T) {
 	p := u.pages[pageLogs].(*logsPage)
 	u.open(pageLogs)
 	frames(u, winW, winH, 3)
-	first := p.bodyH
-	frames(u, winW, winH, 2)
-	if p.bodyH != first {
-		t.Fatalf("height did not settle: %d then %d", first, p.bodyH)
-	}
+	first := p.list.Position.Count
 	if pos := u.pageList.Position; pos.OffsetLast != 0 || pos.Offset != 0 {
 		t.Fatalf("page overflows its window: %+v", pos)
 	}
@@ -152,7 +148,15 @@ func TestLogsFillsWindow(t *testing.T) {
 		t.Fatal("not at the newest line")
 	}
 	frames(u, winW, winH+200, 3)
-	if p.bodyH <= first {
-		t.Fatalf("taller window, body %d (was %d)", p.bodyH, first)
+	if pos := u.pageList.Position; pos.OffsetLast != 0 || pos.Offset != 0 {
+		t.Fatalf("taller window: page overflows: %+v", pos)
+	}
+	if n := p.list.Position.Count; n <= first {
+		t.Fatalf("taller window shows %d rows (was %d)", n, first)
+	}
+	// Shorter than the least body height: the page scrolls instead.
+	frames(u, winW, 300, 3)
+	if pos := u.pageList.Position; pos.OffsetLast >= 0 {
+		t.Fatalf("short window: page does not scroll: %+v", pos)
 	}
 }

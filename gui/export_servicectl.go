@@ -2,8 +2,7 @@ package gui
 
 // What the 서비스 관리 page (ui/pages_servicectl.go, #165) needs from the
 // Windows side: the service's state, the elevated install / start / stop /
-// uninstall, the install-location check and the crash folders. The Fyne
-// settings tab calls the same functions.
+// uninstall, the install-location check and the crash folders.
 
 import (
 	"os"

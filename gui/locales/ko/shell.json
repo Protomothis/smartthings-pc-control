@@ -9,6 +9,5 @@
   "ui.conn.waiting": "확인 중",
   "ui.home.update.new": "새 버전 %s",
   "ui.home.servicectl.sub": "설치·시작·중지, 설치 위치",
-  "ui.home.unreachable.open": "서비스 관리 열기",
-  "ui.home.presets.edit": "편집"
+  "ui.home.unreachable.open": "서비스 관리 열기"
 }

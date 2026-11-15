@@ -20,11 +20,18 @@ type fakeAPI struct{ API }
 
 var errFake = errors.New("fake")
 
-func (fakeAPI) GetSTHub() (gui.STHub, error)                 { return gui.STHub{}, errFake }
-func (fakeAPI) TelegramState() (gui.TelegramState, error)    { return gui.TelegramState{}, errFake }
-func (fakeAPI) Logs() ([]string, error)                      { return nil, errFake }
-func (fakeAPI) GetConfig() (gui.Config, error)               { return gui.Config{}, errFake }
-func (fakeAPI) SaveConfig(gui.Config) (gui.SaveReply, error) { return gui.SaveReply{}, errFake }
+func (fakeAPI) GetSTHub() (gui.STHub, error)                       { return gui.STHub{}, errFake }
+func (fakeAPI) TelegramState() (gui.TelegramState, error)          { return gui.TelegramState{}, errFake }
+func (fakeAPI) Logs() ([]string, error)                            { return nil, errFake }
+func (fakeAPI) GetConfig() (gui.Config, error)                     { return gui.Config{}, errFake }
+func (fakeAPI) SaveConfig(gui.Config) (gui.SaveReply, error)       { return gui.SaveReply{}, errFake }
+func (fakeAPI) GetWoLStatus() (gui.WoLStatus, error)               { return gui.WoLStatus{}, errFake }
+func (fakeAPI) RunningProcesses() ([]string, error)                { return nil, errFake }
+func (fakeAPI) TestPreset(gui.Preset) ([]gui.PresetWarning, error) { return nil, errFake }
+func (fakeAPI) TestTelegram(_, _ string) error                     { return errFake }
+func (fakeAPI) TelegramMe() (string, string, error)                { return "", "", errFake }
+func (fakeAPI) TelegramChats(string) ([]gui.TelegramChat, error)   { return nil, errFake }
+func (fakeAPI) TestNotify() (gui.NotifyResult, error)              { return gui.NotifyResult{}, errFake }
 
 // literalKey finds the keys looked up by literal: u.t("…") and
 // gui.T(l, "…").

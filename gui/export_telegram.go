@@ -1,7 +1,7 @@
 package gui
 
-// The Telegram form's model, shared by the Fyne tab (notify_tab.go) and
-// the Gio page (ui/pages_telegram.go, #165): the event catalogue, the
+// The Telegram form's model, used by the Telegram page
+// (ui/pages_telegram.go, #165): the event catalogue, the
 // config round trip, the dirty check and the token/chat helpers. No
 // toolkit here.
 

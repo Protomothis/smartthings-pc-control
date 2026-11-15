@@ -34,6 +34,13 @@ type API interface {
 	GetSTHub() (gui.STHub, error)
 	TelegramState() (gui.TelegramState, error)
 	RunPreset(slot int) error
+	TestPreset(p gui.Preset) ([]gui.PresetWarning, error)
+	GetWoLStatus() (gui.WoLStatus, error)
+	RunningProcesses() ([]string, error)
+	TestTelegram(token, chatID string) error
+	TelegramMe() (username, name string, err error)
+	TelegramChats(token string) ([]gui.TelegramChat, error)
+	TestNotify() (gui.NotifyResult, error)
 	RestartService() error
 	SessionHeartbeat(hb gui.Heartbeat) (ignored bool, err error)
 }

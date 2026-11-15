@@ -1,8 +1,8 @@
 package ui
 
 // The form framework: every sub-page that edits part of the service config
-// is a form, and one coordinator serves them all, as gui/forms.go does for
-// the Fyne tabs.
+// is a form, and one coordinator serves them all (as the Fyne app's
+// coordinator did for its tabs).
 //
 //   - Baseline. The config as last read (snapshot.cfg, with an old
 //     service's missing grace length filled in) is every form's baseline.

@@ -1,9 +1,9 @@
 name: Race detector
 
-# `go test -race ./...` once a week. The race detector needs cgo, which the
-# windows-latest image provides (MinGW gcc, the same toolchain the Fyne build
-# uses), but the instrumented run is several times slower than ci.yml's tests,
-# so it is not on the push path.
+# `go test -race ./...` once a week. The race detector needs cgo (the app
+# itself builds without it since #165); the windows-latest image ships MinGW
+# gcc for it. The instrumented run is several times slower than ci.yml's
+# tests, so it is not on the push path.
 #
 # GitHub runs scheduled workflows on the default branch (main) only. To race a
 # milestone branch before it is merged, start this workflow by hand from the

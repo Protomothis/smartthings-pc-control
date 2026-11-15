@@ -65,7 +65,7 @@ func graceToastActions(lang Lang) []useraction.ToastAction {
 // (useraction.ShowToast): escaped XML, a fixed script, and the Start menu
 // shortcut's AUMID (with any other app ID Windows keeps the toast out of
 // sight in the notification center). Returns an error so the caller can
-// fall back to a plain Fyne notification.
+// fall back to a plain notification (Notify).
 func showGraceToast(lang Lang, title, message string) error {
 	return useraction.ShowToast(title, message, graceToastActions(lang))
 }
@@ -253,6 +253,10 @@ func localMediaEnabled() bool {
 // localNowPlaying reports the media.now_playing opt-in (#117): whether the
 // heartbeat's media block may carry the track and the app.
 func localNowPlaying() bool { return readLocalConfig().Media.NowPlaying }
+
+// defaultWebUIPort is the API port when tray.json is absent (SmartThings
+// port 5001 + 1).
+const defaultWebUIPort = 5002
 
 // localWebUIPort returns the service's WebUI/API port (SmartThings port +
 // 1, matching service/webui_wiring.go), defaulting to 5002 when tray.json has

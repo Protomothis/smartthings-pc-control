@@ -9,6 +9,5 @@
   "ui.conn.waiting": "Checking",
   "ui.home.update.new": "New %s",
   "ui.home.servicectl.sub": "Install, start, stop, install location",
-  "ui.home.unreachable.open": "Open service management",
-  "ui.home.presets.edit": "Edit"
+  "ui.home.unreachable.open": "Open service management"
 }

@@ -101,3 +101,23 @@ func (s settingsFormState) dirty(base Config) bool {
 		s.Debug != base.Debug ||
 		s.NotifyPC.dirty(base)
 }
+
+// notifyPCState is the PC-notification part of the settings as plain
+// values.
+type notifyPCState struct {
+	Enabled bool
+}
+
+func notifyPCStateFromConfig(cfg Config) notifyPCState {
+	return notifyPCState{Enabled: cfg.NotifyPC.Enabled}
+}
+
+// applyTo writes the state into cfg.
+func (s notifyPCState) applyTo(cfg *Config) {
+	cfg.NotifyPC = NotifyPCConfig(s)
+}
+
+// dirty reports whether saving would change base.
+func (s notifyPCState) dirty(base Config) bool {
+	return s.Enabled != base.NotifyPC.Enabled
+}

@@ -1,8 +1,7 @@
 package gui
 
-// The sharing screen's toolkit-free model (#128, #110, #123), shared by the
-// Fyne tab (share_tab.go, activity_section.go) and the Gio page
-// (ui/pages_sharing.go): the form as plain values, the watch-list rules
+// The sharing screen's toolkit-free model (#128, #110, #123), used by the
+// sharing page (ui/pages_sharing.go): the form as plain values, the watch-list rules
 // and the exported surface the Gio page uses.
 
 import (

@@ -207,10 +207,4 @@ func TestTelegramActions(t *testing.T) {
 	if !slices.Contains(p.allowed, "55") {
 		t.Fatal("found chat not allowed")
 	}
-	// without the helpers (an old client) the page says so
-	u.api = fakeAPI{}
-	p.sendTest(u)
-	if p.test.tone != toneBad || p.testBusy {
-		t.Fatal("no helpers: test not refused")
-	}
 }

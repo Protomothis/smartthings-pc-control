@@ -10,21 +10,33 @@
 ## 커밋
 
 - 제목은 `<스코프>: <한국어 제목>`, 50자 이하, 마침표 없이 무엇을 하는지 쓴다. 예: `service: 잠기지 않은 사용자 세션을 대상으로 고른다`
-- 스코프: `service` `gui` `edge` `docs` `ci` `test` `internal` `useraction`. 둘에 걸치면 `gui/useraction:`처럼 쓴다.
+- 스코프: `service` `gui` `ui` `edge` `docs` `ci` `test` `internal` `useraction`. 둘에 걸치면 `gui/useraction:`처럼 쓴다.
 - 본문에는 **왜** 바꾸는지를 쓴다. 실측 결과, 버린 대안, 남은 위험도 여기에 둔다. 관련 이슈는 `(#n)`으로 적는다.
 - AI 도구의 도움을 받았으면 본문 끝에 `Co-Authored-By:` 트레일러를 붙인다.
 - 사용자에게 보이는 변경은 `CHANGELOG.md`(Windows 앱) 또는 `edge/CHANGELOG.md`(드라이버)의 `[Unreleased]`에 한두 문장으로 적는다. 구현 세부는 커밋 본문에 둔다.
 
 ## 테스트
 
-Go 쪽은 Fyne 때문에 CGO와 MinGW-w64 gcc가 필요하다(예: `PATH="/c/msys64/mingw64/bin:$PATH"`).
+Go 쪽은 cgo 없이 빌드된다(v1.2.4의 Gio UI부터, #165). C 컴파일러는 `go test -race`와 아래 리소스 재생성에만 필요하다.
 
 ```bash
 gofmt -l .                                         # 비어 있어야 한다
-CGO_ENABLED=1 go vet ./... && CGO_ENABLED=1 go test ./...
+CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...
 golangci-lint run ./...                            # 설정은 .golangci.yml
 go test ./service -run TestContract -update        # /st/v1 계약을 바꿨을 때 testdata/st-v1 다시 쓰기
-CGO_ENABLED=1 go build -ldflags="-s -w -H=windowsgui -X main.Version=dev" -o smartthings-pc-control.exe .
+CGO_ENABLED=0 go build -ldflags="-s -w -H=windowsgui -X main.Version=dev" -o smartthings-pc-control.exe .
+```
+
+데스크톱 앱(`ui/`, Gio) 화면은 창 없이 그려 PNG로 본다. 화면을 바꿨으면 해당 화면을 다시 찍어 확인한다.
+
+```bash
+STPC_SHOTS_DIR=/tmp/shots go test -run Shots ./ui/
+```
+
+exe의 아이콘과 애플리케이션 매니페스트(asInvoker, 지원 OS)는 `rsrc_windows_amd64.syso`에 들어 있다. `icon.ico`나 `smartthings-pc-control.manifest`를 바꾸면 MinGW의 windres로 다시 만들고 함께 커밋한다(`TestResourcesCurrent`가 확인한다).
+
+```bash
+windres -O coff -F pe-x86-64 -i rsrc.rc -o rsrc_windows_amd64.syso
 ```
 
 계약 golden(`testdata/st-v1`)은 Go와 Lua 테스트가 함께 쓴다. `-update`로 다시 썼으면 Lua 테스트도 돌린다.
@@ -40,7 +52,7 @@ node tools/gen-profiles.js --check      # 생성된 프로필이 템플릿과 �
 
 - **버그를 고치면 회귀 테스트 1개**를 같은 커밋에 넣는다.
 - 반드시 지키는 것: 외부 계약(`/st/v1`, 푸시, 설정 마이그레이션 — 가능하면 golden), 보안 경계(인증, 시크릿 유출, CSRF·Host, 셸 해석 금지), 상태 기계(유예·예약·전환·awake·로그인), 파서, Edge 플랫폼 규칙.
-- 하지 않는 것: 상수·인자 목록을 그대로 다시 적는 단언, 번역 문장 통째 비교(키 존재·서식 동사 일치와 golden 몇 개로), 개수 하드코딩, 생성기를 다시 구현한 비교(`check-profiles`가 본다), Fyne 레이아웃 세부, Win32 호출 자체.
+- 하지 않는 것: 상수·인자 목록을 그대로 다시 적는 단언, 번역 문장 통째 비교(키 존재·서식 동사 일치와 golden 몇 개로), 개수 하드코딩, 생성기를 다시 구현한 비교(`check-profiles`가 본다), 화면 레이아웃 세부(화면은 아래 스크린샷으로 본다), Win32 호출 자체.
 - 같은 모양의 경우가 여럿이면 테스트 함수 여러 개 대신 표 하나로. 루트 `service` 패키지의 통합 테스트가 표면(`stapi`·`webui`·`tgcontrol`)만의 동작을 보려고 테스트 전용 메서드를 늘리지 않는다 — 그 패키지에서 가짜 `Deps`로 돈다.
 
 ## Edge 드라이버 빌드와 배포

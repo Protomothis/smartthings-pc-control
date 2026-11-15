@@ -1,7 +1,6 @@
 # golangci-lint v2 configuration (CI pins the version in .github/workflows/ci.yml).
 #
-# Run locally from the repository root (Fyne needs cgo, so a MinGW gcc must be
-# on PATH, e.g. PATH="/c/msys64/mingw64/bin:$PATH"):
+# Run locally from the repository root (no cgo needed since the Gio UI, #165):
 #
 #   golangci-lint run ./...
 #
@@ -11,8 +10,8 @@
 version: "2"
 
 run:
-  # The app is Windows-only (golang.org/x/sys/windows, Fyne + cgo), so it is
-  # linted on windows-latest like it is built; a cold run type-checks Fyne.
+  # The app is Windows-only (golang.org/x/sys/windows), so it is linted on
+  # windows-latest like it is built.
   timeout: 10m
 
 linters:
@@ -138,16 +137,11 @@ linters:
 
       # Taint analysis flags paths/commands built from %SystemRoot% and
       # %WINDIR%. Those come from the OS environment of the same process
-      # (explorer.exe for the unelevated relaunch, the Fonts folder for the
-      # Korean theme), not from untrusted input.
+      # (explorer.exe for the unelevated relaunch), not from untrusted input.
       - path: gui/selfupdate\.go
         linters: [gosec]
         text: G702
         source: explorer\.exe
-      - path: gui/theme\.go
-        linters: [gosec]
-        text: G703
-        source: fontsDir
 
       # ---- errcheck debt inventoried when the linter was introduced (#124).
       # Each rule is pinned to the exact call pattern, so new code in the
@@ -166,7 +160,7 @@ linters:
       # Fire-and-forget UI actions: opening the browser, the toast protocol
       # registration, tray/toast buttons whose outcome the service reports
       # itself (log + notification).
-      - path: gui/(gui|tray|toast)\.go
+      - path: gui/toast\.go
         linters: [errcheck]
         source: (systool\.Command\(.*\)\.Start\(\)|SetStringValue\(|\.CancelSchedule\(|\.TestCommand\(|\.Login\(|EnsureToastShortcut\(|SetAutostart\()
       # Self-update: the service is restarted best-effort (the new exe starts

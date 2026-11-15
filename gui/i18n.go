@@ -4,9 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"io/fs"
-	"strings"
-
-	"fyne.io/fyne/v2/lang"
 )
 
 type Lang string
@@ -18,14 +15,6 @@ const (
 
 // languages are the shipped translations, each locales/<lang>.json.
 var languages = []Lang{LangKo, LangEn}
-
-// systemLang returns the OS display language, mapped to a supported Lang.
-func systemLang() Lang {
-	if strings.HasPrefix(strings.ToLower(lang.SystemLocale().String()), "ko") {
-		return LangKo
-	}
-	return LangEn
-}
 
 // The texts live in locales/ko.json and locales/en.json, one flat object
 // of key → text each, embedded in the exe. Both languages carry the same

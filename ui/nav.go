@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/unit"
 )
 
 // screen is a sub-page. Pages are built once (buildPages) and keep their
@@ -30,6 +31,15 @@ type shower interface {
 // while it is in front; s.logs carries it.
 type logsWanter interface {
 	wantsLogs() bool
+}
+
+// viewportFiller is a sub-page whose body fills the window under the top
+// bar instead of growing with its content (the log: its card scrolls,
+// the page does not). Its body is laid out exactly as tall as the room
+// left under the notice, but never shorter than minBodyHeight; below
+// that the page scrolls as usual.
+type viewportFiller interface {
+	minBodyHeight() unit.Dp
 }
 
 // leaveArm is how long a second back press discards unsaved changes.

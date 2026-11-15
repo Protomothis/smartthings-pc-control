@@ -21,23 +21,14 @@ import (
 	"time"
 
 	"gioui.org/font"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
-	"golang.org/x/exp/shiny/materialdesign/icons"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
-
-func init() {
-	iconData["search"] = icons.ActionSearch
-	iconData["todown"] = icons.NavigationArrowDownward
-}
 
 const (
 	// logsFileTail is how many lines of service.log the page reads from
@@ -47,8 +38,6 @@ const (
 	// logsMinH is the least height of the page body (dp); a shorter
 	// window scrolls the page instead.
 	logsMinH unit.Dp = 380
-	// logsFirstH is the body height before the window's has been measured.
-	logsFirstH unit.Dp = 560
 	// logsCompactW is the log card width (dp) under which a row shows the
 	// time without the date.
 	logsCompactW unit.Dp = 520
@@ -167,7 +156,6 @@ type logsPage struct {
 	fileBusy bool
 	fileAt   time.Time
 
-	bodyH int  // the body's height last frame (px)
 	away  bool // the user scrolled up from the newest line
 	jump  bool // go to the newest line at the next layout
 	listW int  // the list's width last frame: rows re-wrap when it changes
@@ -193,6 +181,9 @@ func (p *logsPage) shown(u *UI, s snapshot) {
 
 // wantsLogs: the poller reads the log every 3s unless paused.
 func (p *logsPage) wantsLogs() bool { return !p.paused }
+
+// minBodyHeight makes the page fill the window (viewportFiller).
+func (p *logsPage) minBodyHeight() unit.Dp { return logsMinH }
 
 // fromFile is whether the page shows service.log from disk: the service
 // is not there, or did not give its log.
@@ -300,23 +291,9 @@ func (p *logsPage) body(gtx C, u *UI, s snapshot) D {
 	}
 	p.sync(lines, file, strings.ToLower(strings.TrimSpace(p.filter.Text())), p.level)
 
-	// Fill the window: the page list says how far the body fell short of
-	// (or ran past) its viewport last frame.
-	h := p.bodyH
-	if pos := u.pageList.Position; pos.Count == 1 && pos.First == 0 && h > 0 {
-		h += pos.OffsetLast - pos.Offset
-	} else {
-		if h == 0 {
-			h = gtx.Dp(logsFirstH)
-		}
-		gtx.Execute(op.InvalidateCmd{}) // measured next frame
-	}
-	h = max(h, gtx.Dp(logsMinH))
-	if h != p.bodyH {
-		p.bodyH = h
-		gtx.Execute(op.InvalidateCmd{})
-	}
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+	// The window gives the body the viewport's height (viewportFiller).
+	h := gtx.Constraints.Max.Y
+	gtx.Constraints.Min.Y = h
 
 	var children []layout.FlexChild
 	if file && p.fileSet {
@@ -344,7 +321,7 @@ func (p *logsPage) controls(gtx C, u *UI) D {
 	return surface(gtx, colCard, radiusL, func(gtx C) D {
 		return layout.UniformInset(gapM).Layout(gtx, func(gtx C) D {
 			return column(gtx,
-				layout.Rigid(func(gtx C) D { return p.searchField(gtx, u) }),
+				layout.Rigid(func(gtx C) D { return searchField(gtx, u.th, &p.filter, &p.clear, u.t("logs.filter")) }),
 				vspace(gapS),
 				layout.Rigid(func(gtx C) D {
 					labels := []string{
@@ -356,7 +333,9 @@ func (p *logsPage) controls(gtx C, u *UI) D {
 					return layout.Flex{Alignment: layout.Start}.Layout(gtx,
 						layout.Flexed(1, func(gtx C) D { return p.levels.Layout(gtx, th, labels, p.level) }),
 						hspace(gapXS),
-						layout.Rigid(func(gtx C) D { return p.liveButton(gtx, u) }),
+						layout.Rigid(func(gtx C) D {
+							return liveButton(gtx, u.th, &p.live, !p.paused, u.t("ui.logs.live"), u.t("ui.logs.paused"))
+						}),
 					)
 				}),
 			)
@@ -369,67 +348,6 @@ func (p *logsPage) levelLabel(name string, n int) string {
 		return name
 	}
 	return fmt.Sprintf("%s %d", name, n)
-}
-
-// searchField is the filter: a magnifier, the editor and, while it holds
-// text, a clear button.
-func (p *logsPage) searchField(gtx C, u *UI) D {
-	return fieldFrame(gtx, func(gtx C) D {
-		return row(gtx,
-			layout.Rigid(func(gtx C) D { return drawIcon(gtx, "search", 18, colSub) }),
-			hspace(8),
-			layout.Flexed(1, func(gtx C) D {
-				e := material.Editor(u.th, &p.filter, u.t("logs.filter"))
-				e.HintColor = colFaint
-				e.TextSize = textL
-				return e.Layout(gtx)
-			}),
-			layout.Rigid(func(gtx C) D {
-				if p.filter.Len() == 0 {
-					return D{}
-				}
-				return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
-					return iconButton(gtx, &p.clear, "close", 20, colSub, colGhost)
-				})
-			}),
-		)
-	})
-}
-
-// liveButton shows whether the log is read live and switches it.
-func (p *logsPage) liveButton(gtx C, u *UI) D {
-	txt, fg, bg := u.t("ui.logs.live"), colOK, mix(colCard, colOK, 0.14)
-	if p.paused {
-		txt, fg, bg = u.t("ui.logs.paused"), colSub, colGhost
-	}
-	return p.live.Layout(gtx, func(gtx C) D {
-		pointer.CursorPointer.Add(gtx.Ops)
-		return layout.Stack{}.Layout(gtx,
-			layout.Expanded(func(gtx C) D {
-				r := image.Rectangle{Max: gtx.Constraints.Min}
-				c := bg
-				if p.live.Hovered() {
-					c = mix(bg, fg, 0.12)
-				}
-				paint.FillShape(gtx.Ops, c, clip.UniformRRect(r, gtx.Dp(radiusS)).Op(gtx.Ops))
-				return D{Size: r.Max}
-			}),
-			layout.Stacked(func(gtx C) D {
-				return layout.Inset{Top: 7, Bottom: 7, Left: 10, Right: 12}.Layout(gtx, func(gtx C) D {
-					return row(gtx,
-						layout.Rigid(func(gtx C) D {
-							if p.paused {
-								return drawIcon(gtx, "pause", 16, fg)
-							}
-							return layout.UniformInset(4).Layout(gtx, func(gtx C) D { return statusDot(gtx, fg, 8) })
-						}),
-						hspace(4),
-						layout.Rigid(line(u.th, textM, txt, fg, font.SemiBold).Layout),
-					)
-				})
-			}),
-		)
-	})
 }
 
 // logCard is the log itself: a header with the count and the file
@@ -515,7 +433,7 @@ func (p *logsPage) rowsView(gtx C, u *UI, loaded bool) D {
 			if !p.away {
 				return D{}
 			}
-			return layout.Inset{Bottom: gapS}.Layout(gtx, func(gtx C) D { return p.toEndPill(gtx, u) })
+			return layout.Inset{Bottom: gapS}.Layout(gtx, func(gtx C) D { return floatingPill(gtx, u.th, &p.toEnd, "todown", u.t("ui.logs.toend")) })
 		}),
 	)
 }
@@ -541,8 +459,7 @@ func (p *logsPage) mono(th *material.Theme, txt string, col color.NRGBA) materia
 	return l
 }
 
-// logRoleColor is the palette colour of a part of a line; the same roles
-// the Fyne tab maps to its theme.
+// logRoleColor is the palette colour of a part of a line (gui.LogRole).
 func logRoleColor(r gui.LogRole) color.NRGBA {
 	switch r {
 	case gui.LogDim:
@@ -611,33 +528,6 @@ func (p *logsPage) rowView(gtx C, th *material.Theme, r *logRow, stampW int, com
 			return content(gtx)
 		}
 		return surface(gtx, mix(colCard, colDanger, 0.08), radiusS, content)
-	})
-}
-
-// toEndPill is the floating button back to the newest line.
-func (p *logsPage) toEndPill(gtx C, u *UI) D {
-	return p.toEnd.Layout(gtx, func(gtx C) D {
-		pointer.CursorPointer.Add(gtx.Ops)
-		return layout.Stack{}.Layout(gtx,
-			layout.Expanded(func(gtx C) D {
-				r := image.Rectangle{Max: gtx.Constraints.Min}
-				c := colAccent
-				if p.toEnd.Hovered() {
-					c = mix(colAccent, colOnAccent, 0.12)
-				}
-				paint.FillShape(gtx.Ops, c, clip.UniformRRect(r, r.Dy()/2).Op(gtx.Ops))
-				return D{Size: r.Max}
-			}),
-			layout.Stacked(func(gtx C) D {
-				return layout.Inset{Top: 8, Bottom: 8, Left: 12, Right: 14}.Layout(gtx, func(gtx C) D {
-					return row(gtx,
-						layout.Rigid(func(gtx C) D { return drawIcon(gtx, "todown", 16, colOnAccent) }),
-						hspace(6),
-						layout.Rigid(line(u.th, textM, u.t("ui.logs.toend"), colOnAccent, font.SemiBold).Layout),
-					)
-				})
-			}),
-		)
 	})
 }
 

@@ -2,7 +2,7 @@ package ui
 
 // The tray icon, through fyne.io/systray directly: a left click opens the
 // window, the menu has the status, the two safe quick commands, schedule
-// cancel, the WebUI and quit — the Fyne tray's entries (gui/tray.go).
+// cancel, the WebUI and quit — the entries the Fyne tray had.
 
 import (
 	"bytes"

@@ -9,6 +9,7 @@ package ui
 import (
 	"slices"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/widget"
 
@@ -23,11 +24,20 @@ type servicePage struct {
 	graceVals                    []int // 0 is off
 	graceSel                     int
 	form                         gui.SettingsForm
+
+	// [테스트 알림]: a PC notification shown now, allowed or not yet.
+	notifyTest     widget.Clickable
+	notifyTesting  bool
+	notifyResult   string
+	notifyResultTn tone
 }
 
 func newServicePage() screen { return &servicePage{} }
 
 func (p *servicePage) title(u *UI) string { return u.t("settings.service") }
+
+// shown clears the last notification test: its line belongs to one visit.
+func (p *servicePage) shown(*UI, snapshot) { p.notifyResult = "" }
 
 // fill puts cfg into the widgets.
 func (p *servicePage) fill(_ *UI, cfg gui.Config) {
@@ -67,6 +77,9 @@ func (p *servicePage) dirty(_ *UI, base gui.Config) bool { return p.form.Dirty(b
 func (p *servicePage) apply(u *UI, cfg *gui.Config) error { return p.form.ApplyTo(cfg, u.language()) }
 
 func (p *servicePage) body(gtx C, u *UI, _ snapshot) D {
+	if p.notifyTest.Clicked(gtx) && !p.notifyTesting {
+		p.sendNotifyTest(u)
+	}
 	if i := p.grace.Clicked(gtx, len(p.graceVals)); i >= 0 {
 		p.graceSel = i
 	}
@@ -113,7 +126,13 @@ func (p *servicePage) body(gtx C, u *UI, _ snapshot) D {
 					return toggleRowIcon(gtx, th, &p.media, "volume", toneAccent, u.t("ui.service.media"), u.t("ui.service.media.hint"))
 				},
 				func(gtx C) D {
-					return toggleRowIcon(gtx, th, &p.notify, "bell", toneAccent, u.t("ui.service.notify"), u.t("ui.service.notify.hint"))
+					return column(gtx,
+						layout.Rigid(func(gtx C) D {
+							return toggleRowIcon(gtx, th, &p.notify, "bell", toneAccent, u.t("ui.service.notify"), u.t("ui.service.notify.hint"))
+						}),
+						vspace(gapS),
+						layout.Rigid(func(gtx C) D { return p.notifyTestRow(gtx, u) }),
+					)
 				},
 			)
 		}),
@@ -121,4 +140,48 @@ func (p *servicePage) body(gtx C, u *UI, _ snapshot) D {
 			return toggleRowIcon(gtx, th, &p.debug, "bug", toneOff, u.t("ui.service.debug"), u.t("ui.service.debug.hint"))
 		}),
 	)
+}
+
+// notifyTestRow is [테스트 알림] under the PC-notification switch, lined
+// up with the switch's text, and what the last test did beside it.
+func (p *servicePage) notifyTestRow(gtx C, u *UI) D {
+	th := u.th
+	return layout.Inset{Left: 36 + gapS}.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				b := smallButton(th, &p.notifyTest, u.t("notifypc.test"), colAccent)
+				if p.notifyTesting {
+					b.Color = colFaint
+				}
+				return b.Layout(gtx)
+			}),
+			hspace(gapS),
+			layout.Flexed(1, func(gtx C) D {
+				if p.notifyResult == "" {
+					return D{}
+				}
+				fg, _ := p.notifyResultTn.colors()
+				return label(th, textS, p.notifyResult, fg, font.Medium).Layout(gtx)
+			}),
+		)
+	})
+}
+
+// sendNotifyTest asks the service to show a test notification, whether or
+// not PC notifications are allowed yet (the Fyne settings tab's button).
+func (p *servicePage) sendNotifyTest(u *UI) {
+	p.notifyTesting = true
+	p.notifyResult, p.notifyResultTn = u.t("notifypc.test.sending"), toneOff
+	l := u.language()
+	go func() {
+		_, err := withLocalSession(u, u.api.TestNotify)
+		u.onWindow(func() {
+			p.notifyTesting = false
+			if err != nil {
+				p.notifyResult, p.notifyResultTn = gui.ActionErrorText(l, err), toneBad
+				return
+			}
+			p.notifyResult, p.notifyResultTn = u.t("notifypc.test.shown"), toneOK
+		})
+	}()
 }

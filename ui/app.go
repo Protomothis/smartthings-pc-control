@@ -1,7 +1,7 @@
 // Package ui is the desktop app drawn with Gio (#165): a tray icon and one
-// window with a home screen of cards and a few sub-pages. It replaces the
-// Fyne window in package gui, whose toolkit-free parts (the API client,
-// texts, formatting) it uses.
+// window with a home screen of cards and a few sub-pages. It replaced the
+// Fyne window (v1.2.4); package gui holds the toolkit-free parts it uses
+// (the API client, texts, formatting, the save model).
 //
 // Threading follows proto-easy-mount: the tray runs on the main thread
 // (systray locks it), the window runs its own event loop on a goroutine and
@@ -121,6 +121,9 @@ func (u *UI) Show() {
 	u.mu.Lock()
 	if w := u.win; w != nil {
 		u.mu.Unlock()
+		// A minimised window is restored, not just raised (ActionRaise
+		// restores too, but later, on the window's thread).
+		restoreWindow(u.hwnd.Load())
 		w.Perform(system.ActionRaise)
 		return
 	}
@@ -257,8 +260,10 @@ func (u *UI) layout(gtx C) D {
 	} else {
 		bottom = u.layoutPage(gtx, top, s)
 	}
-	u.layoutSheet(gtx)
+	// The toast goes under the sheet: an open question dims it with the
+	// rest of the window instead of being covered by it.
 	u.toast.layout(gtx, u.th, bottom+gtx.Dp(gapL))
+	u.layoutSheet(gtx)
 	return D{Size: gtx.Constraints.Max}
 }
 
@@ -283,19 +288,7 @@ func (u *UI) layoutPage(gtx C, p screen, s snapshot) int {
 		layout.Rigid(func(gtx C) D {
 			return centered(gtx, pageColumnW, func(gtx C) D { return topBar(gtx, u.th, &u.back, p.title(u)) })
 		}),
-		layout.Flexed(1, func(gtx C) D {
-			return material.List(u.th, &u.pageList).Layout(gtx, 1, func(gtx C, _ int) D {
-				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				return centered(gtx, pageColumnW, func(gtx C) D {
-					return layout.Inset{Left: gapM, Right: gapM, Top: 4, Bottom: gapL}.Layout(gtx, func(gtx C) D {
-						return column(gtx,
-							layout.Rigid(func(gtx C) D { return u.layoutNotice(gtx, p) }),
-							layout.Rigid(func(gtx C) D { return p.body(gtx, u, s) }),
-						)
-					})
-				})
-			})
-		}),
+		layout.Flexed(1, func(gtx C) D { return u.layoutPageBody(gtx, p, s) }),
 		layout.Rigid(func(gtx C) D {
 			if !dirty {
 				return D{}
@@ -310,4 +303,38 @@ func (u *UI) layoutPage(gtx C, p screen, s snapshot) int {
 		}),
 	)
 	return barH
+}
+
+// pageInset is the room around a sub-page's body inside the scrolling
+// column.
+var pageInset = layout.Inset{Left: gapM, Right: gapM, Top: 4, Bottom: gapL}
+
+// layoutPageBody draws p's notice and body in the scrolling column. A
+// viewportFiller's body is given exactly the height left in the viewport
+// (at least its minimum), so it fills the window without a page scroll.
+func (u *UI) layoutPageBody(gtx C, p screen, s snapshot) D {
+	viewH := gtx.Constraints.Max.Y
+	f, fills := p.(viewportFiller)
+	return material.List(u.th, &u.pageList).Layout(gtx, 1, func(gtx C, _ int) D {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		if fills {
+			h := max(viewH, gtx.Dp(f.minBodyHeight())+gtx.Dp(pageInset.Top+pageInset.Bottom))
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+		}
+		return centered(gtx, pageColumnW, func(gtx C) D {
+			return pageInset.Layout(gtx, func(gtx C) D {
+				body := layout.Rigid(func(gtx C) D { return p.body(gtx, u, s) })
+				if fills {
+					body = layout.Flexed(1, func(gtx C) D {
+						gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+						return p.body(gtx, u, s)
+					})
+				}
+				return column(gtx,
+					layout.Rigid(func(gtx C) D { return u.layoutNotice(gtx, p) }),
+					body,
+				)
+			})
+		})
+	})
 }

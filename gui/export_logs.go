@@ -3,8 +3,7 @@ package gui
 // The service log without a toolkit (#134, #140, #165): where service.log
 // lives and how its tail is read from disk, how a line splits into
 // coloured parts, what level a line is, and how far a new tail moved up.
-// The Fyne logs tab (logs_*.go) and the Gio logs page (ui/pages_logs.go)
-// both use it.
+// The logs page (ui/pages_logs.go) uses it.
 
 import (
 	"errors"

@@ -557,7 +557,7 @@ func guiLog(tag, format string, args ...interface{}) {
 }
 
 // messageBox shows a blocking native message box (the elevated updater has
-// no Fyne window of its own).
+// no window of its own).
 func messageBox(title, text string) {
 	t, _ := windows.UTF16PtrFromString(title)
 	m, _ := windows.UTF16PtrFromString(text)

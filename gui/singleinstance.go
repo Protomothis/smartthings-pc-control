@@ -5,8 +5,6 @@ import (
 	"sync"
 	"unsafe"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/driver"
 	"golang.org/x/sys/windows"
 )
 
@@ -18,8 +16,8 @@ const windowTitle = "SmartThings PC Control"
 // updater's relaunch) asks the running one to open its window through a
 // named auto-reset event, not by looking for the window: a minimized start
 // (login autostart, the service waking the tray) creates no native window
-// until it is first shown (visibility.go; Fyne only creates it on Show), so
-// there is nothing to find. The running instance waits on the event and
+// until it is first shown (the Gio window is made on Show), so there is
+// nothing to find. The running instance waits on the event and
 // opens the window the way the tray's Open entry does.
 const (
 	instanceMutexName = "SmartThingsPCControl-GUI"
@@ -133,27 +131,8 @@ func watchActivation(ev windows.Handle, activate func()) (stop func()) {
 	}
 }
 
-// restoreIfMinimized un-minimises a window minimised to the taskbar: Show
-// only makes a hidden window visible (SW_SHOWNA), which leaves a minimised
-// one on the taskbar. A no-op for a window without a native handle (the
-// tests' in-memory windows). UI goroutine only.
-func restoreIfMinimized(w fyne.Window) {
-	nw, ok := w.(driver.NativeWindow)
-	if !ok {
-		return
-	}
-	nw.RunNative(func(ctx any) {
-		wc, ok := ctx.(driver.WindowsWindowContext)
-		if !ok || wc.HWND == 0 {
-			return
-		}
-		if iconic, _, _ := procIsIconic.Call(wc.HWND); iconic != 0 {
-			procShowWindow.Call(wc.HWND, swRestore)
-		}
-	})
-}
-
 var (
+	procFindWindowW              = modUser32.NewProc("FindWindowW")
 	procShowWindow               = modUser32.NewProc("ShowWindow")
 	procSetForegroundWindow      = modUser32.NewProc("SetForegroundWindow")
 	procAllowSetForegroundWindow = modUser32.NewProc("AllowSetForegroundWindow")

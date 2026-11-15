@@ -2,9 +2,8 @@ package gui
 
 // The SmartThings screen's toolkit-free logic (#70, #95, #96, #139): the
 // form model of its two config fields (the allowed hubs and the WoL
-// adapter), the WoL adapter choices and the diagnostic lines. The Fyne
-// section (st_section.go) and the Gio page (ui/pages_smartthings.go) both
-// build on it.
+// adapter), the WoL adapter choices and the diagnostic lines. The
+// SmartThings page (ui/pages_smartthings.go) builds on it.
 
 import (
 	"fmt"

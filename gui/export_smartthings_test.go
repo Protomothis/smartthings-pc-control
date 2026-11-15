@@ -48,38 +48,6 @@ func TestSTRelKey(t *testing.T) {
 	}
 }
 
-func TestSTHubLine(t *testing.T) {
-	now := time.Date(2026, 9, 17, 23, 0, 0, 0, time.UTC)
-	seen := now.Add(-3 * time.Second).Format(time.RFC3339)
-	hub := STHub{Connected: true, IP: "192.168.1.20", DriverVersion: "1.0.0", LastSeen: seen}
-
-	ko := (&ui{lang: LangKo}).stHubLine(hub, now)
-	if ko != "허브 192.168.1.20 · 드라이버 v1.0.0 · 마지막 확인 3초 전" {
-		t.Errorf("ko line = %q", ko)
-	}
-	en := (&ui{lang: LangEn}).stHubLine(hub, now)
-	if en != "Hub 192.168.1.20 · driver v1.0.0 · last seen 3s ago" {
-		t.Errorf("en line = %q", en)
-	}
-
-	// Not connected (and the "never seen" zero value) get the install hint.
-	for _, h := range []STHub{{}, {Connected: false, IP: "192.168.1.20"}, {Connected: true}} {
-		if got := (&ui{lang: LangEn}).stHubLine(h, now); got != T(LangEn, "st.hub.none") {
-			t.Errorf("stHubLine(%+v) = %q, want the no-hub line", h, got)
-		}
-	}
-	// An unknown driver version must not break the format string.
-	got := (&ui{lang: LangEn}).stHubLine(STHub{Connected: true, IP: "10.0.0.2", LastSeen: seen}, now)
-	if strings.Contains(got, "%") || !strings.Contains(got, "driver v?") {
-		t.Errorf("missing driver version renders as %q", got)
-	}
-	// An unparseable timestamp falls back instead of printing a zero time.
-	got = (&ui{lang: LangKo}).stHubLine(STHub{Connected: true, IP: "10.0.0.2", DriverVersion: "1.0.0"}, now)
-	if !strings.Contains(got, T(LangKo, "st.rel.unknown")) {
-		t.Errorf("empty last_seen renders as %q", got)
-	}
-}
-
 // ---- this PC's id and the search diagnostics (#95) -------------------------
 
 func TestSTMachineIDShort(t *testing.T) {
@@ -93,88 +61,6 @@ func TestSTMachineIDShort(t *testing.T) {
 		if got := stMachineIDShort(id); got != want {
 			t.Errorf("stMachineIDShort(%q) = %q, want %q", id, got, want)
 		}
-	}
-}
-
-func TestSTMachineIDLine(t *testing.T) {
-	const id = "58bff996-6d9a-4a2f-8e1c-0123456789ab"
-	if got := (&ui{lang: LangKo}).stMachineIDLine(id); got != "이 PC의 ID 58bff996" {
-		t.Errorf("ko line = %q", got)
-	}
-	if got := (&ui{lang: LangEn}).stMachineIDLine(id); got != "This PC's ID 58bff996" {
-		t.Errorf("en line = %q", got)
-	}
-	// Before the service answers there is no id to show — and no "%!s".
-	for _, l := range []Lang{LangKo, LangEn} {
-		got := (&ui{lang: l}).stMachineIDLine("")
-		if got != T(l, "st.machineid.unknown") || strings.Contains(got, "%") {
-			t.Errorf("%s line for an unknown id = %q", l, got)
-		}
-	}
-}
-
-func TestSTSearchLine(t *testing.T) {
-	now := time.Date(2026, 9, 26, 21, 0, 0, 0, time.UTC)
-	at := now.Add(-12 * time.Second).Format(time.RFC3339)
-	search := &STLastSearch{IP: "192.168.1.105", At: at}
-
-	cases := []struct {
-		name   string
-		state  STSSDPState
-		ko, en string
-	}{
-		{
-			name:  "everything in order",
-			state: STSSDPState{Running: true, FirewallRule: true, LastSearch: search},
-			ko:    "검색 응답기 켜짐 · 방화벽 규칙 OK · 마지막 검색 요청 192.168.1.105, 12초 전",
-			en:    "Discovery responder on · Firewall rule OK · Last search from 192.168.1.105, 12s ago",
-		},
-		{
-			name:  "no search has arrived yet",
-			state: STSSDPState{Running: true, FirewallRule: true},
-			ko:    "검색 응답기 켜짐 · 방화벽 규칙 OK · 검색 요청 없음",
-			en:    "Discovery responder on · Firewall rule OK · No search yet",
-		},
-		{
-			name:  "the firewall rule is missing",
-			state: STSSDPState{Running: true},
-			ko:    "검색 응답기 켜짐 · 방화벽 규칙 없음 (서비스를 다시 시작하면 만듭니다) · 검색 요청 없음",
-			en:    "Discovery responder on · No firewall rule (restart the service to create it) · No search yet",
-		},
-		{
-			// A responder with no socket answers nothing, so the rest of
-			// the line would only distract.
-			name:  "the responder could not start",
-			state: STSSDPState{Running: false, FirewallRule: true, LastSearch: search},
-			ko:    "검색 응답기 꺼짐 (소켓 열기 실패, 로그 확인)",
-			en:    "Discovery responder off (no socket could be opened, check the log)",
-		},
-		{
-			// An older service that does not send last_search yet, and a
-			// malformed one: neither may print a bare "%!s(MISSING)".
-			name:  "a last_search with no address",
-			state: STSSDPState{Running: true, FirewallRule: true, LastSearch: &STLastSearch{At: at}},
-			ko:    "검색 응답기 켜짐 · 방화벽 규칙 OK · 검색 요청 없음",
-			en:    "Discovery responder on · Firewall rule OK · No search yet",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := (&ui{lang: LangKo}).stSearchLine(c.state, now); got != c.ko {
-				t.Errorf("ko = %q\nwant %q", got, c.ko)
-			}
-			if got := (&ui{lang: LangEn}).stSearchLine(c.state, now); got != c.en {
-				t.Errorf("en = %q\nwant %q", got, c.en)
-			}
-		})
-	}
-
-	// An unparseable timestamp falls back instead of printing a zero time.
-	got := (&ui{lang: LangKo}).stSearchLine(STSSDPState{
-		Running: true, FirewallRule: true, LastSearch: &STLastSearch{IP: "10.0.0.2"},
-	}, now)
-	if !strings.Contains(got, T(LangKo, "st.rel.unknown")) || strings.Contains(got, "%") {
-		t.Errorf("a last_search with no time renders as %q", got)
 	}
 }
 

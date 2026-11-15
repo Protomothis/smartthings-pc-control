@@ -8,7 +8,6 @@ package ui
 
 import (
 	"image"
-	"image/color"
 
 	"gioui.org/font"
 	"gioui.org/io/pointer"
@@ -93,7 +92,7 @@ func (u *UI) layoutSheet(gtx C) {
 	}
 	// The scrim takes every click, so nothing under it reacts.
 	q.scrim.Layout(gtx, func(gtx C) D {
-		paint.FillShape(gtx.Ops, color.NRGBA{A: 0x66}, clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
+		paint.FillShape(gtx.Ops, colScrim, clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 		return D{Size: gtx.Constraints.Max}
 	})
 	gtx.Constraints.Min = gtx.Constraints.Max
@@ -102,7 +101,7 @@ func (u *UI) layoutSheet(gtx C) {
 			return centered(gtx, pageColumnW, func(gtx C) D {
 				// the sheet swallows clicks that miss its buttons
 				return q.sheet.Layout(gtx, func(gtx C) D {
-					return card(gtx, func(gtx C) D {
+					return u.sheetCard(gtx, func(gtx C) D {
 						pointer.CursorDefault.Add(gtx.Ops)
 						children := []layout.FlexChild{
 							layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, a.title, nil) }),
@@ -131,4 +130,13 @@ func (u *UI) layoutSheet(gtx C) {
 			})
 		})
 	})
+}
+
+// sheetCard is the sheet's card; on the dark palette a hairline edge
+// sets it apart from the dimmed window, which is nearly the same shade.
+func (u *UI) sheetCard(gtx C, w layout.Widget) D {
+	if !u.dark {
+		return card(gtx, w)
+	}
+	return widget.Border{Color: colLine, CornerRadius: radiusL, Width: 1}.Layout(gtx, func(gtx C) D { return card(gtx, w) })
 }

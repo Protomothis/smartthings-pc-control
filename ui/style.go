@@ -35,6 +35,9 @@ var (
 	// destructive confirmation and the warning colour of a remote
 	// schedule.
 	colDangerDim, colWarn color.NRGBA
+	// colScrim dims the window behind a bottom sheet; the dark set needs
+	// far more of it to read as a dimmed layer on a near-black window.
+	colScrim color.NRGBA
 )
 
 type palette [12]uint32
@@ -59,8 +62,10 @@ func usePalette(dark bool) {
 	}
 	if dark {
 		colDangerDim, colWarn = rgb(0x3a2226), rgb(0xffb331)
+		colScrim = color.NRGBA{A: 0xb8}
 	} else {
 		colDangerDim, colWarn = rgb(0xffeeee), rgb(0xe08600)
+		colScrim = color.NRGBA{A: 0x66}
 	}
 }
 
@@ -108,8 +113,10 @@ func setThemeColors(th *material.Theme) {
 	th.Palette = material.Palette{Bg: colBg, Fg: colText, ContrastBg: colAccent, ContrastFg: colOnAccent}
 }
 
+// label is a text in the theme's face. Korean wraps at spaces only
+// (keepWords), so no syllable is left alone on a line.
 func label(th *material.Theme, size unit.Sp, txt string, col color.NRGBA, weight font.Weight) material.LabelStyle {
-	l := material.Label(th, size, txt)
+	l := material.Label(th, size, keepWords(txt))
 	l.Color = col
 	l.Font.Weight = weight
 	return l
