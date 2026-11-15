@@ -12,14 +12,13 @@ import (
 func fakeRunner(out string, err error) (*Runner, *int, *int) {
 	before, replies := 0, 0
 	return &Runner{
-		Exec: func(ctx context.Context, _ Target, _ string, _ []string) ([]byte, error) {
+		Exec: func(ctx context.Context, _ Target, _ []string) ([]byte, error) {
 			if out == "hang" {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}
 			return []byte(out), err
 		},
-		Exe:       func() (string, error) { return `C:\stpc.exe`, nil },
 		Timeout:   50 * time.Millisecond,
 		BeforeRun: func() { before++ },
 		OnReply:   func([]string, Result) { replies++ },
@@ -51,6 +50,10 @@ func TestRunnerErrors(t *testing.T) {
 	rn, _, _ := fakeRunner("", fmt.Errorf("get session: %w", ErrNoUserSession))
 	if _, err := rn.Run(ctx, ActiveUser, "audio", "get"); !errors.Is(err, ErrNoUserSession) {
 		t.Errorf("no user: %v", err)
+	}
+	rn, _, _ = fakeRunner("", fmt.Errorf("%w: no tray app polls in session 1", ErrTrayUnavailable))
+	if _, err := rn.Run(ctx, ActiveUser, "audio", "get"); !errors.Is(err, ErrTrayUnavailable) || errors.Is(err, ErrOutput) {
+		t.Errorf("no tray: %v", err)
 	}
 	rn, _, _ = fakeRunner("hang", nil)
 	if _, err := rn.Run(ctx, ActiveUser, "audio", "get"); !errors.Is(err, ErrTimeout) {

@@ -295,7 +295,7 @@ func screenSessionSetup(t *testing.T, consoleUser bool) (targets *[]sessionTarge
 	fakeLocks(t, map[uint32]bool{1: true, 2: false})
 	fakeUserAction(t, nil)
 	targets, sessions = new([]sessionTarget), new([]uint32)
-	userActions.Exec = func(_ context.Context, target sessionTarget, _ string, args []string) ([]byte, error) {
+	userActions.Exec = func(_ context.Context, target sessionTarget, args []string) ([]byte, error) {
 		*targets = append(*targets, target)
 		id, tok, err := wts.Find(target)
 		if err != nil {

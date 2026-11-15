@@ -9,9 +9,10 @@ import (
 // userEnviron is the logged-in user's own environment block (APPDATA,
 // TEMP, USERPROFILE, PATH with the user's entries…).
 //
-// The service starts this subcommand with CreateProcessAsUser under the
-// user's token but hands it the service's environment, which is SYSTEM's:
-// APPDATA points into C:\Windows\system32\config\systemprofile and TEMP at
+// The actions run in the tray app (#164), which the service may have
+// started itself for a grace toast (CreateProcessAsUser under the user's
+// token, but with the service's environment, which is SYSTEM's): APPDATA
+// then points into C:\Windows\system32\config\systemprofile and TEMP at
 // C:\Windows\TEMP. Anything a preset launches would inherit that and, say,
 // keep its settings in the wrong profile. CreateEnvironmentBlock for the
 // process token builds the block the user's shell would have. On failure

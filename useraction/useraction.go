@@ -1,9 +1,11 @@
-// Package useraction is the `user-action` subcommand (#103): the half of
-// the user-session action channel that runs inside the logged-in user's
-// session. The service lives in session 0, where the default audio
-// endpoint, media keys and toasts mean nothing, so it launches this
-// same executable in the user's session (CreateProcessAsUser) with a fixed
-// argument vector and reads back one line of JSON.
+// Package useraction is the half of the user-session action channel that
+// runs inside the logged-in user's session (#103). The service lives in
+// session 0, where the default audio endpoint, media keys and toasts mean
+// nothing, so it hands a fixed argument vector to the tray app running in
+// the user's session (#164, package trayexec), which runs it here (Run)
+// and sends back one line of JSON. The `user-action` subcommand (Main)
+// does the same from a terminal; until #164 the service launched it for
+// every action.
 //
 // Grammar (exact strings, docs/design/media-notify.md §2):
 //
