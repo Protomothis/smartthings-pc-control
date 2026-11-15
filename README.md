@@ -43,13 +43,15 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 
 ### 설치
 
-1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 `smartthings-pc-control.exe`를 받아 고정된 폴더(권장 `C:\Program Files\SmartThings PC Control\`)에 둡니다.
-2. exe를 실행하고 홈의 **설정 → 서비스 관리 → [설치]** → UAC 승인. 서비스, 자동 시작, 방화벽 규칙(TCP 5001, UDP 1900)이 만들어집니다.
-3. **설정 → 서비스 설정**에서 **시크릿**을 정하고 [저장]합니다.
-4. 채널 **Protomothis** 초대 링크를 열고 [Enroll] → 허브 선택: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
-5. 채널의 **SmartThings PC Control** 드라이버를 [Install]합니다.
-6. PC와 PC Control이 켜진 상태에서 SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**. 장치를 추가하는 방법은 이 검색뿐입니다.
-7. 생긴 장치의 설정에 **시크릿**을 넣습니다.
+1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 둘 중 하나를 받습니다. 어느 쪽이든 서비스, 자동 시작, 방화벽 규칙(TCP 5001, UDP 1900)이 만들어집니다.
+   - **설치 프로그램** `SmartThingsPCControl-Setup-<버전>.exe` — 실행하고 마법사를 따라갑니다(UAC 승인). `C:\Program Files\SmartThings PC Control\`에 설치되고 Windows 설정 → 앱 목록에 등록되며, 업데이트도 새 설치 프로그램으로 조용히 합니다. 제거는 앱 목록에서 하고, 설정과 로그를 지울지는 그때 묻습니다.
+   - **exe 하나** `smartthings-pc-control.exe` — 고정된 폴더(권장 `C:\Program Files\SmartThings PC Control\`)에 두고 실행한 뒤 홈의 **설정 → 서비스 관리 → [설치]** → UAC 승인.
+   - exe로 설치해 쓰던 PC에서 설치 프로그램을 실행해도 됩니다. 같은 폴더면 덮어쓰고, 다른 폴더였으면 `config.json`을 새 폴더로 복사해 옵니다.
+2. **설정 → 서비스 설정**에서 **시크릿**을 정하고 [저장]합니다.
+3. 채널 **Protomothis** 초대 링크를 열고 [Enroll] → 허브 선택: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
+4. 채널의 **SmartThings PC Control** 드라이버를 [Install]합니다.
+5. PC와 PC Control이 켜진 상태에서 SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**. 장치를 추가하는 방법은 이 검색뿐입니다.
+6. 생긴 장치의 설정에 **시크릿**을 넣습니다.
 
 설치 폴더는 관리자 전용으로 잠깁니다(일반 사용자는 읽기·실행만).
 설치 뒤에는 exe를 옮기지 말고, 관리자 권한 없이 고칠 파일(프리셋 스크립트 등)은 이 폴더에 두지 마세요.
@@ -85,7 +87,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - 텔레그램 · SmartThings로 가는 프리셋 실패 문구에는 경로 대신 파일 이름만 씁니다. 프리셋 파일이나 그 폴더를 다른 계정도 고칠 수 있으면 앱이 저장할 때 경고합니다.
 - 시크릿이 든 `config.json`은 관리자만 읽습니다. 텔레그램 봇 토큰은 DPAPI로 암호화합니다.
 - 앱 감지는 감시 목록에 넣은 프로그램만 보고하고, 다른 프로그램 이름은 저장 · 로그 · 전송하지 않습니다.
-- 자동 업데이트는 Ed25519 매니페스트 서명과 exe의 SHA-256을 확인한 뒤에만 설치합니다.
+- 자동 업데이트는 Ed25519 매니페스트 서명과 exe(설치 프로그램으로 깐 경우 설치 프로그램)의 SHA-256을 확인한 뒤에만 설치합니다.
 - 예전 형식의 `/{secret}/{command}` 경로도 호환을 위해 남아 있습니다.
 
 ### 문서와 개발
@@ -122,8 +124,10 @@ Volume, media, notifications and presets need a signed-in user on the PC.
 
 ### Install
 
-1. Download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) into a permanent folder of its own.
-2. Run it → on the home screen, **Settings → Service Management → [Install]** (UAC). This creates the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** under **Settings → Service Settings** and save.
+1. From [Releases](https://github.com/Protomothis/smartthings-pc-control/releases), take either:
+   - **the setup program** `SmartThingsPCControl-Setup-<version>.exe` — run the wizard (UAC). It installs into `C:\Program Files\SmartThings PC Control\`, appears in Windows Settings → Apps, and updates by running the next setup quietly. Uninstall from Apps; it asks whether to delete the settings and logs. Running it over an exe install upgrades it (and copies `config.json` over if that was in another folder); or
+   - **the single exe** `smartthings-pc-control.exe` — put it in a permanent folder of its own, run it → on the home screen, **Settings → Service Management → [Install]** (UAC).
+2. Either way you get the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** under **Settings → Service Settings** and save.
 3. Open the **Protomothis** channel invite <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>, enroll your hub, and install **SmartThings PC Control**.
 4. With the PC on and PC Control running, tap **[+] → Add device → Scan nearby** in the SmartThings app. This is the only way to add the device. Enter the secret in the device settings.
 
@@ -141,7 +145,7 @@ If the app or the service quits unexpectedly, turn on **Settings → Service Set
 The driver sends the secret in the `X-PC-Secret` header; an empty secret lets anyone on the LAN control the PC.
 The local API binds to `127.0.0.1:5002`, and the WebUI opens to the LAN only when you enable remote access with a secret set. The browser WebUI covers status, power commands, schedules and core settings; editing and testing presets, the watch list and the running-program list are for the desktop app on the PC only (its local login).
 Running-app detection reports only programs on your watch list.
-Updates install only after the Ed25519 manifest signature and the exe's SHA-256 check out.
+Updates install only after the Ed25519 manifest signature and the SHA-256 of the exe (or, for a setup install, of the setup program) check out.
 
 ### Docs
 
