@@ -32,3 +32,12 @@ const ShortcutFile = DisplayName + ".lnk"
 // shortcutArgs are the arguments the shortcut starts the exe with: the
 // desktop app, window shown (a user clicking it in the Start menu).
 const shortcutArgs = "gui"
+
+// The login autostart is a per-user Run value: the GUI writes and removes
+// it (gui/autostart.go), and the service reads it in the user's hive
+// (HKU\<SID>\RunKeyPath) to decide whether to start a missing tray app
+// when it starts (#167).
+const (
+	RunKeyPath   = `Software\Microsoft\Windows\CurrentVersion\Run`
+	RunValueName = "SmartThingsPCControl"
+)

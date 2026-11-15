@@ -20,12 +20,14 @@ import (
 // freshTrays gives the test a broker of its own.
 func freshTrays(t *testing.T) *session.Broker {
 	t.Helper()
-	saved := trays
+	saved, savedL := trays, trayLauncher
 	trays = session.NewBroker()
+	// No launches unless the test fakes them (fakeLauncher).
+	trayLauncher = session.NewLauncher(trays, nil, nil)
 	resetTargetSession()
 	resetAudioSample()
 	t.Cleanup(func() {
-		trays = saved
+		trays, trayLauncher = saved, savedL
 		resetTargetSession()
 		resetAudioSample()
 	})

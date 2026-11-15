@@ -95,8 +95,14 @@ type Runner struct {
 	// (Broker.Do): nobody logged in is ErrNoUserSession
 	// (ErrNoConsoleSession for Console), no tray app ErrTrayUnavailable.
 	Exec func(ctx context.Context, target Target, args []string) ([]byte, error)
-	// Timeout bounds one run end to end: finding the session, handing the
-	// job over and reading its reply.
+	// Ready runs before Exec, outside Timeout: it makes sure the target
+	// session has a tray app, starting one when it is missing (#167,
+	// Launcher.Ensure). It returns ErrTrayUnavailable when none came, and
+	// nil also when it could not tell (Exec then reports the lookup).
+	// nil: nothing.
+	Ready func(ctx context.Context, target Target) error
+	// Timeout bounds one run end to end once Ready is done: finding the
+	// session, handing the job over and reading its reply.
 	Timeout time.Duration
 	// BeforeRun is called before an ActiveUser run, so a moved target
 	// drops the old session's samples before this reply is stored. nil:
@@ -131,6 +137,14 @@ func (rn Runner) Run(ctx context.Context, target Target, args ...string) (Result
 	tracksTarget := target == ActiveUser
 	if tracksTarget && rn.BeforeRun != nil {
 		rn.BeforeRun()
+	}
+	if rn.Ready != nil {
+		if err := rn.Ready(ctx, target); err != nil {
+			if ctx.Err() != nil {
+				return Result{}, ctx.Err()
+			}
+			return Result{}, err
+		}
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, rn.Timeout)

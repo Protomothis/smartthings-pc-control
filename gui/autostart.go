@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 )
 
 // Login autostart is a per-user Run entry (HKCU, no elevation). The tray
@@ -15,8 +17,8 @@ import (
 // (it runs them for the service), so this is on by default and re-pointed
 // at the current exe on every GUI start.
 const (
-	runKeyPath   = `Software\Microsoft\Windows\CurrentVersion\Run`
-	runValueName = "SmartThingsPCControl"
+	runKeyPath   = appid.RunKeyPath
+	runValueName = appid.RunValueName
 	// minimizedFlag starts the app in the tray without showing the window.
 	minimizedFlag = "--minimized"
 )

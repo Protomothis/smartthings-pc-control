@@ -155,7 +155,7 @@ func TestTrayRefusals(t *testing.T) {
 			peer := trustedTray()
 			tc.change(&peer)
 			s, srv := trayEndpointSetup(t, config.Config{Port: 5001}, &peer)
-			for _, path := range []string{trayexec.PathPoll, trayexec.PathResult} {
+			for _, path := range []string{trayexec.PathPoll, trayexec.PathResult, trayexec.PathQuit} {
 				code, body := trayPost(t, srv.URL, path, trayexec.ResultBody{ID: "x", Result: json.RawMessage(`{"ok":true}`)})
 				var r map[string]string
 				json.Unmarshal(body, &r)
@@ -165,6 +165,11 @@ func TestTrayRefusals(t *testing.T) {
 			}
 			if s.trays.Connected(peer.SessionID) {
 				t.Error("a refused caller counts as a connected tray")
+			}
+			select {
+			case id := <-s.quits:
+				t.Errorf("a refused caller's quit notice was taken (session %d)", id)
+			default:
 			}
 		})
 	}
@@ -177,5 +182,24 @@ func TestTrayNeedsSession(t *testing.T) {
 	_, srv := trayEndpointSetup(t, config.Config{Port: 5001, Secret: "s3cr3t"}, &peer)
 	if code, _ := trayPost(t, srv.URL, trayexec.PathPoll, nil); code != http.StatusUnauthorized {
 		t.Errorf("poll without a session: %d, want 401", code)
+	}
+}
+
+// The quit notice (#167) names the calling tray's session, whatever the
+// request says.
+func TestTrayQuitNotice(t *testing.T) {
+	peer := trustedTray()
+	peer.SessionID = 3
+	s, srv := trayEndpointSetup(t, config.Config{Port: 5001}, &peer)
+	if code, body := trayPost(t, srv.URL, trayexec.PathQuit, map[string]any{"session_id": 1}); code != http.StatusOK {
+		t.Fatalf("quit: %d %s", code, body)
+	}
+	select {
+	case id := <-s.quits:
+		if id != 3 {
+			t.Errorf("quit recorded for session %d, want the caller's 3", id)
+		}
+	default:
+		t.Error("the quit notice was not passed on")
 	}
 }

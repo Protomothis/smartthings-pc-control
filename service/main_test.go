@@ -25,6 +25,9 @@ func TestMain(m *testing.M) {
 	// laptop the suspend and screen commands take another path (#162),
 	// which the tests that want it fake on their own (fakePowerCaps).
 	sys.powerCaps = func() (power.Capabilities, error) { return power.Capabilities{S3: true}, nil }
+	// Never start a real process from a test (#167): os.Executable is the
+	// test binary. The tests that want launches fake one (fakeLauncher).
+	trayLauncher.Start = nil
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
