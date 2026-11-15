@@ -12,6 +12,39 @@ import (
 	"time"
 )
 
+// stRelKey maps the age of the last hub contact to the i18n key of its
+// relative-time phrase and the number to format into it; n < 0 means the
+// phrase takes no number ("just now").
+func stRelKey(age time.Duration) (key string, n int) {
+	switch {
+	case age < time.Second: // includes a service clock running ahead
+		return "st.rel.now", -1
+	case age < time.Minute:
+		return "st.rel.sec", int(age.Seconds())
+	case age < time.Hour:
+		return "st.rel.min", int(age.Minutes())
+	case age < 24*time.Hour:
+		return "st.rel.hour", int(age.Hours())
+	default:
+		return "st.rel.day", int(age.Hours() / 24)
+	}
+}
+
+// RelativeTime renders an RFC3339 timestamp as "3초 전" / "3s ago"
+// relative to now. An unparseable or empty value falls back to a neutral
+// phrase.
+func RelativeTime(l Lang, rfc3339 string, now time.Time) string {
+	ts, err := time.Parse(time.RFC3339, rfc3339)
+	if err != nil {
+		return T(l, "st.rel.unknown")
+	}
+	key, n := stRelKey(now.Sub(ts))
+	if n < 0 {
+		return T(l, key)
+	}
+	return fmt.Sprintf(T(l, key), n)
+}
+
 // Languages lists the shipped translations.
 func Languages() []Lang { return append([]Lang(nil), languages...) }
 
@@ -282,3 +315,28 @@ func MediaReason(l Lang, m MediaState, err error) string {
 	}
 	return ""
 }
+
+// IconPNG is the app icon (the tray's and the window's).
+func IconPNG() []byte { return iconBytes }
+
+// SettingsForm is the service settings form as plain values
+// (settings_model.go): port and secret text, browser access, media
+// control, the grace period, PC notifications and debug mode.
+type SettingsForm = settingsFormState
+
+// NewSettingsForm is what the form shows for cfg.
+func NewSettingsForm(cfg Config) SettingsForm { return settingsStateFromConfig(cfg) }
+
+// ApplyTo writes the form over cfg and checks it; see applyTo.
+func (s settingsFormState) ApplyTo(cfg *Config, l Lang) error { return s.applyTo(cfg, l) }
+
+// Dirty reports whether saving would change base.
+func (s settingsFormState) Dirty(base Config) bool { return s.dirty(base) }
+
+// SettingsBaseline is cfg as the form compares against it: an older
+// service's grace period without a length gets the default one.
+func SettingsBaseline(cfg Config) Config { return withGraceFallback(cfg) }
+
+// GraceOptions are the grace periods offered, in seconds; "off" comes
+// before them.
+func GraceOptions() []int { return append([]int(nil), graceOptions...) }

@@ -190,36 +190,9 @@ func stWoLLine(l Lang, sel *STWoLSelected) string {
 	return fmt.Sprintf(T(l, "st.wol.unsupported"), sel.Name)
 }
 
-// stRelKey maps the age of the last hub contact to the i18n key of its
-// relative-time phrase and the number to format into it; n < 0 means the
-// phrase takes no number ("just now").
-func stRelKey(age time.Duration) (key string, n int) {
-	switch {
-	case age < time.Second: // includes a service clock running ahead
-		return "st.rel.now", -1
-	case age < time.Minute:
-		return "st.rel.sec", int(age.Seconds())
-	case age < time.Hour:
-		return "st.rel.min", int(age.Minutes())
-	case age < 24*time.Hour:
-		return "st.rel.hour", int(age.Hours())
-	default:
-		return "st.rel.day", int(age.Hours() / 24)
-	}
-}
-
-// stRelative renders an RFC3339 timestamp as "3초 전" / "3s ago" relative
-// to now. An unparseable or empty value falls back to a neutral phrase.
+// stRelative is RelativeTime (viewmodel.go).
 func (u *ui) stRelative(rfc3339 string, now time.Time) string {
-	ts, err := time.Parse(time.RFC3339, rfc3339)
-	if err != nil {
-		return u.t("st.rel.unknown")
-	}
-	key, n := stRelKey(now.Sub(ts))
-	if n < 0 {
-		return u.t(key)
-	}
-	return fmt.Sprintf(u.t(key), n)
+	return RelativeTime(u.lang, rfc3339, now)
 }
 
 // stHubLine is the connection status line: the hub, the driver version and

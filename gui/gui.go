@@ -577,16 +577,6 @@ func (u *ui) initialLoad() {
 	}
 }
 
-// withGraceFallback mirrors what the grace select shows for a service
-// predating grace_seconds (enabled, no period), so a config adopted as the
-// baseline does not leave the settings form dirty.
-func withGraceFallback(cfg Config) Config {
-	if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
-		cfg.GraceSeconds = fallbackGraceSeconds
-	}
-	return cfg
-}
-
 // pollLoop drives periodic refreshes until the window closes.
 func (u *ui) pollLoop() {
 	logsTick := time.NewTicker(3 * time.Second)
