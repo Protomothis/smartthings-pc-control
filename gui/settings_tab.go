@@ -16,7 +16,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
@@ -250,7 +249,7 @@ func (u *ui) fillSvcBox(state svcState) {
 
 	installBtn := widget.NewButtonWithIcon(u.t("svc.install"), theme.DownloadIcon(), func() {
 		install := func() {
-			elevated(func() error { return runElevatedSelfWait("install --gui") })
+			elevated(InstallService)
 		}
 		// config.json / service.log land next to the exe and the service
 		// points at this path, so installing from Downloads, Desktop, a
@@ -275,7 +274,7 @@ func (u *ui) fillSvcBox(state svcState) {
 	})
 	installBtn.Importance = widget.HighImportance
 	startBtn := widget.NewButtonWithIcon(u.t("svc.start"), theme.MediaPlayIcon(), func() {
-		elevated(func() error { return runElevatedWait("sc.exe", "start "+serviceName) })
+		elevated(StartService)
 	})
 	startBtn.Importance = widget.HighImportance
 	uninstallBtn := widget.NewButtonWithIcon(u.t("svc.uninstall"), theme.DeleteIcon(), func() {
@@ -283,19 +282,7 @@ func (u *ui) fillSvcBox(state svcState) {
 			if !ok {
 				return
 			}
-			elevated(func() error {
-				if err := runElevatedSelfWait("uninstall"); err != nil {
-					return err
-				}
-				// The Start menu shortcut is this user's (the elevated
-				// child may run as another admin), so it goes here, once
-				// the service is really gone. Best effort; the next tray
-				// start makes it again.
-				if queryServiceState() == svcNotInstalled {
-					appid.RemoveToastShortcut()
-				}
-				return nil
-			})
+			elevated(UninstallService)
 		}, u.win)
 	})
 
