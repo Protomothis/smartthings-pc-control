@@ -1,0 +1,13 @@
+{
+  "ui.logs.level.all": "All",
+  "ui.logs.level.error": "Error",
+  "ui.logs.level.warn": "Warn",
+  "ui.logs.level.debug": "Debug",
+  "ui.logs.live": "Live",
+  "ui.logs.paused": "Paused",
+  "ui.logs.count": "%d lines",
+  "ui.logs.count.filtered": "%d lines, %d shown",
+  "ui.logs.openfile": "Open file",
+  "ui.logs.toend": "Jump to latest",
+  "ui.logs.loading": "Loading the log…"
+}
