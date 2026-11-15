@@ -184,6 +184,20 @@ func TestEnsureShortcutBesideInstallerShortcut(t *testing.T) {
 		t.Error("the installer's shortcut was touched")
 	}
 
+	// A per-user copy from an older [설치] that differs in its other
+	// fields (here the AUMID) still starts this exe, so it goes too.
+	old := wantLink(exe)
+	old.aumid = ""
+	if err := withCOM(func() error { return writeLink(filepath.Join(user, ShortcutFile), old) }); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := ensureShortcutBeside(common, user, exe); err != nil || res != Unchanged {
+		t.Fatalf("beside an older per-user copy: %q, %v; want unchanged", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(user, ShortcutFile)); err == nil {
+		t.Error("an older per-user copy of the installer's shortcut was kept")
+	}
+
 	// An all-users shortcut for another exe (a portable copy runs
 	// elsewhere) does not count: that copy gets its own.
 	other := filepath.Join(root, "portable")

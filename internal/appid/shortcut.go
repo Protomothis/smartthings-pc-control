@@ -418,7 +418,7 @@ func EnsureToastShortcut() (Result, error) {
 // and the user's Start menu folders given; common may be "".
 func ensureShortcutBeside(common, user, exe string) (Result, error) {
 	if common != "" && !samePath(common, user) && ShortcutMatches(common, exe) {
-		if ShortcutMatches(user, exe) {
+		if shortcutTargets(user, exe) {
 			if err := RemoveShortcut(user); err != nil {
 				return "", err
 			}
@@ -426,6 +426,23 @@ func ensureShortcutBeside(common, user, exe string) (Result, error) {
 		return Unchanged, nil
 	}
 	return EnsureShortcut(user, exe)
+}
+
+// shortcutTargets reports whether dir\ShortcutFile exists and starts exe,
+// whatever its other fields: a per-user copy left by an older [설치] may
+// differ in them and is still the installer shortcut's twin.
+func shortcutTargets(dir, exe string) bool {
+	path := filepath.Join(dir, ShortcutFile)
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	ok := false
+	_ = withCOM(func() error {
+		have, err := readLink(path)
+		ok = err == nil && samePath(have.target, exe)
+		return nil
+	})
+	return ok
 }
 
 // ShortcutMatches reports whether dir\ShortcutFile exists and is exactly
