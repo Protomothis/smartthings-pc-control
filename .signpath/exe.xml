@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "exe": the zip release.yml uploads with
+     smartthings-pc-control.exe at its root, signed before the setup packs
+     it. Paste into the SignPath project (slug smartthings-pc-control). -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="smartthings-pc-control.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

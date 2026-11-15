@@ -8,3 +8,6 @@ err.txt
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# scripts/build-windows.ps1 output (#166)
+dist/

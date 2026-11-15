@@ -31,6 +31,9 @@
 *.ps1 text eol=crlf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+# Inno Setup script and the setup's notice pages (#166), Windows-only too.
+*.iss text eol=crlf
+installer/*.txt text eol=crlf
 
 # Binary assets, never diffed or converted.
 *.png  binary
