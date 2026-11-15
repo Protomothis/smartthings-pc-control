@@ -7,7 +7,6 @@ package gui
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -15,14 +14,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
-
-// awakePresets are the durations the row offers, in minutes; 0 is "until
-// turned off". The service accepts 0–1440.
-var awakePresets = []int{30, 60, 120, 240, 0}
-
-// defaultAwakePreset is preselected until the service's default_minutes is
-// known (and when that is not one of the presets).
-const defaultAwakePreset = 60
 
 // awakePollInterval refreshes the row. The remaining time is shown in
 // minutes, so this is plenty.
@@ -51,34 +42,12 @@ func awakePresetIndex(minutes int) int {
 }
 
 // awakePresetLabel names one preset: "30분", "1시간", "끌 때까지".
-func (u *ui) awakePresetLabel(minutes int) string {
-	if minutes == 0 {
-		return u.t("awake.forever")
-	}
-	return u.formatMinutes(minutes)
-}
+func (u *ui) awakePresetLabel(minutes int) string { return AwakePresetLabel(u.lang, minutes) }
 
 // awakeStatusText is the line next to the toggle: "42분 남음 · 14:30까지",
 // "켜짐 · 끌 때까지" or "꺼짐 — …".
 func (u *ui) awakeStatusText(a Awake, now time.Time) string {
-	if !a.On {
-		return u.t("awake.off")
-	}
-	until, err := time.Parse(time.RFC3339, a.Until)
-	if a.Until == "" || err != nil {
-		return u.t("awake.on.forever")
-	}
-	until = until.In(now.Location())
-	// Round up: "1분 남음" until the very end, never "0분".
-	left := (a.RemainingSeconds + 59) / 60
-	if left < 1 {
-		left = 1
-	}
-	at := until.Format("15:04")
-	if y, m, d := until.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
-		at = fmt.Sprintf(u.t("awake.tomorrow"), at)
-	}
-	return fmt.Sprintf(u.t("awake.left"), u.formatMinutes(left), at)
+	return AwakeStatusText(u.lang, a, now)
 }
 
 // buildAwakeRow creates the row for the command tab.

@@ -15,29 +15,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Preset delays (minutes) on the schedule tab. These are the only choices:
-// free-form minute entry was dropped in v0.3.4 (#52).
-//
-// #89: the same sixteen the Edge driver's list offers, up to three days
-// (maxScheduleMinutes in service/server.go). Sixteen radio buttons do not fit
-// on a row, so the tab shows them in a dropdown.
-var schedulePresets = []int{5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440, 2880, 4320}
-
-// defaultSchedulePreset is preselected on the schedule tab.
-const defaultSchedulePreset = 30
-
-// Commands offered for scheduling.
-var scheduleCommands = []struct {
-	Name     string
-	LabelKey string
-}{
-	{"shutdown", "cmd.shutdown"},
-	{"forceshutdown", "cmd.forceshutdown"},
-	{"restart", "cmd.restart"},
-	{"hibernate", "cmd.hibernate"},
-	{"suspend", "cmd.suspend"},
-	{"lock", "cmd.lock"},
-}
+// The delays and commands offered live in viewmodel.go (schedulePresets,
+// scheduleCommands).
 
 func (u *ui) buildScheduleTab() fyne.CanvasObject {
 	// Countdown block: the remaining time in large type, the command it
@@ -201,27 +180,10 @@ func (u *ui) loadSchedule() {
 
 // commandLabel returns the localised name of a scheduleable command,
 // falling back to the raw name.
-func (u *ui) commandLabel(name string) string {
-	for _, sc := range scheduleCommands {
-		if sc.Name == name {
-			return u.t(sc.LabelKey)
-		}
-	}
-	return name
-}
+func (u *ui) commandLabel(name string) string { return CommandLabel(u.lang, name) }
 
 // originShortKey maps a wire origin to the i18n key of its short label.
-func (u *ui) originShortKey(origin string) string {
-	switch origin {
-	case "remote":
-		return "origin.remote.short"
-	case "telegram":
-		return "origin.telegram.short"
-	case "smartthings":
-		return "origin.smartthings.short"
-	}
-	return "origin.ui.short"
-}
+func (u *ui) originShortKey(origin string) string { return OriginShortKey(origin) }
 
 // showScheduleDetail writes the line under the countdown and enables the
 // cancel button while a schedule is active. Remote deferrals get the
