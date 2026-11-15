@@ -373,12 +373,14 @@ func goldenWorld(t *testing.T, cfg Config, opts worldOpts) *fakeAwake {
 	t.Cleanup(func() { setDisplayState(savedDisplay) })
 
 	// session: WTS through the seam, idle through the tray heartbeat.
-	savedQuery := sources.sessionQuery
+	savedQuery, savedTray := sources.sessionQuery, sources.tray
 	sources.sessionQuery = func() (sessionInfo, error) { return sessionInfo{Locked: opts.locked, User: "golden"}, nil }
+	// tray: the tray app takes the user-session commands (#164).
+	sources.tray = func() bool { return true }
 	clock.idle = func() time.Time { return goldenNow }
 	noteIdleHeartbeat(754)
 	t.Cleanup(func() {
-		sources.sessionQuery = savedQuery
+		sources.sessionQuery, sources.tray = savedQuery, savedTray
 		clock.idle = time.Now
 		resetIdleHeartbeat()
 	})
@@ -521,9 +523,11 @@ func offWorld(t *testing.T) {
 	resetAudioSample()
 	resetMediaSample()
 	resetIdleHeartbeat()
-	savedPresent := sys.sessionPresent
+	savedPresent, savedTray := sys.sessionPresent, sources.tray
 	sys.sessionPresent = func() bool { return true }
-	t.Cleanup(func() { sys.sessionPresent = savedPresent })
+	// No tray app yet (#164): it has not been started since the install.
+	sources.tray = func() bool { return false }
+	t.Cleanup(func() { sys.sessionPresent, sources.tray = savedPresent, savedTray })
 
 	lastRemoteMu.Lock()
 	savedRemote := lastRemote

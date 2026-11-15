@@ -26,7 +26,8 @@ var clock = struct {
 	idle:  time.Now,
 }
 
-// userActionFunc is one `user-action` run in a user session.
+// userActionFunc is one user-session action, run by the tray app there
+// (#164).
 type userActionFunc func(ctx context.Context, args ...string) (UserActionResult, error)
 
 // userRun is the user-action run behind each feature (runUserAction, in

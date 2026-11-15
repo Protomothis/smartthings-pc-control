@@ -262,6 +262,8 @@
   "presets.type.url": "URL · app link",
   "presets.warn.line": "Preset %d: %s",
   "presets.warn.writable": "Other users can modify this file (or its folder). Move it somewhere only you write to, such as your Documents folder",
+  "quit.body": "With the tray app closed, mute, volume, media, notification, preset and screen off/on commands from SmartThings and Telegram stop working. Exit anyway?",
+  "quit.title": "Exit the tray app",
   "savebar.leave": "You have unsaved changes. Press back again to leave without saving.",
   "savebar.revert": "Revert",
   "schedule.cancel": "Cancel Schedule",

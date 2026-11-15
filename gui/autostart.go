@@ -10,8 +10,10 @@ import (
 )
 
 // Login autostart is a per-user Run entry (HKCU, no elevation). The tray
-// app must be running for the grace-period toast to appear, so this is on
-// by default and re-pointed at the current exe on every GUI start.
+// app must be running for the grace-period toast to appear and, since
+// #164, for mute, media, notifications, presets and the screen commands
+// (it runs them for the service), so this is on by default and re-pointed
+// at the current exe on every GUI start.
 const (
 	runKeyPath   = `Software\Microsoft\Windows\CurrentVersion\Run`
 	runValueName = "SmartThingsPCControl"

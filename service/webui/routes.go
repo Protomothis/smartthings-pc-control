@@ -16,6 +16,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/power"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
+	"github.com/Protomothis/smartthings-pc-control/trayexec"
 )
 
 //go:embed web/login.html
@@ -88,6 +89,11 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 
 	// API: idle-time heartbeat from the tray app (#77, see heartbeat.go)
 	mux.HandleFunc("/api/session/heartbeat", s.apiAuth(s.serveHeartbeat, http.MethodPost))
+
+	// API: the tray app takes the user-session actions and answers them
+	// (#164, see tray.go)
+	mux.HandleFunc(trayexec.PathPoll, s.apiAuth(s.serveTrayPoll, http.MethodPost))
+	mux.HandleFunc(trayexec.PathResult, s.apiAuth(s.serveTrayResult, http.MethodPost))
 
 	// API: keep-awake toggle on the app's command tab (#111)
 	mux.HandleFunc("/api/awake", s.apiAuth(s.serveAwake, http.MethodGet, http.MethodPost, http.MethodDelete))

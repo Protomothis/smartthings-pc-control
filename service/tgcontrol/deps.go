@@ -45,6 +45,10 @@ type Deps struct {
 	// (#161, #162): the sleep and screen replies then say what that
 	// means. Nil is false.
 	ModernStandby func() bool
+	// TrayMissing reports whether someone is logged in to target's
+	// session but no tray app there takes the user-session commands
+	// (#164): the screen replies and /status then say so. Nil is false.
+	TrayMissing func(target session.Target) bool
 
 	Status   Status
 	Commands Commands

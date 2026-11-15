@@ -101,10 +101,12 @@ func main() {
 		}
 
 	case "user-action":
-		// Hidden: launched by the service in the logged-in user's session
-		// (#103) with a fixed argument vector. Prints exactly one JSON line
-		// and exits 0/1; see useraction/useraction.go. In debug mode a
-		// crash is recorded (#133); os.Exit skips defers, hence the order.
+		// Hidden: runs one user-session action in this process and prints
+		// its one JSON line, exit 0/1; see useraction/useraction.go. The
+		// service no longer launches it (#164: the tray app runs the same
+		// code in-process, package trayexec); it stays for checking an
+		// action by hand from a terminal. In debug mode a crash is
+		// recorded (#133); os.Exit skips defers, hence the order.
 		stopCrashDump := useraction.StartCrashDump(Version)
 		code := useraction.Main(os.Args[2:], os.Stdout)
 		stopCrashDump()

@@ -255,7 +255,7 @@ func TestAudioChangedPush(t *testing.T) {
 	}
 
 	// A command through the real runUserAction path.
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		return []byte(`{"ok":true,"audio":{"volume":55,"muted":false,"device":"스피커"}}`), nil
 	})
 	recordAudioSample(useraction.Audio{Volume: 20, Device: "스피커"}, t0) // fakeUserAction reset the store

@@ -44,6 +44,7 @@ func (fakeSource) Activity(config.Config) status.Activity {
 func (fakeSource) Audio(config.Config) status.Audio { return status.Audio{} }
 func (fakeSource) Media(config.Config) status.Media { return status.Media{Status: "none"} }
 func (f fakeSource) WoLScan() status.WoLStatus      { return f.wol }
+func (fakeSource) TrayConnected() bool              { return false }
 
 // fakeCommands knows no command and schedules nothing.
 type fakeCommands struct{}
