@@ -96,6 +96,10 @@ func TestShotsResponsive(t *testing.T) {
 		shotW(t, dir, "quit"+suffix, winW, winH, u.layout)
 		u.quitAsk.Store(false)
 		u.nav.stack = nil
+
+		// the English home screen wide, for README.en.md
+		en := sampleUI(gui.LangEn, dark)
+		shotW(t, dir, "home-1200-en"+suffix, 1200, 0, func(gtx C) D { return en.homeColumn(gtx, en.current()) })
 	}
 	usePalette(false)
 }
