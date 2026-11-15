@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/devstate"
+	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -193,9 +194,9 @@ func (f *sessionFill) report(k fillKind, err error) {
 }
 
 // readSessionInto runs one reading of store k, stores it and pushes the
-// change.
+// change. A background reading never starts a tray app (#167): only commands do.
 func readSessionInto(k fillKind) error {
-	ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
+	ctx, cancel := context.WithTimeout(session.WithoutLaunch(context.Background()), userActions.Timeout+time.Second)
 	defer cancel()
 	if k == fillAudio {
 		return fillAudioSample(ctx)

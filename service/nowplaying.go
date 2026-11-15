@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/action"
+	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -116,8 +117,9 @@ const mediaRefreshDelay = 1200 * time.Millisecond
 // and the hub before the tray's next media heartbeat (sys.mediaRefresh).
 func refreshMediaSoon() {
 	go func() {
+		// Background, like the status fill: never starts a tray app (#167).
 		time.Sleep(mediaRefreshDelay)
-		ctx, cancel := context.WithTimeout(context.Background(), userActions.Timeout+time.Second)
+		ctx, cancel := context.WithTimeout(session.WithoutLaunch(context.Background()), userActions.Timeout+time.Second)
 		defer cancel()
 		if _, err := readNowPlayingNow(ctx); err != nil {
 			logMsg("media refresh after a command: %v", err)

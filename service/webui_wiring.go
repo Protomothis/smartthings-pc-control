@@ -56,7 +56,7 @@ var webSrv = webui.New(webui.Deps{
 	Notify:    pcNotifier{},
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
-	Trays:     trays,
+	Trays:     trayJobs{},
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port

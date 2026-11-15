@@ -94,18 +94,30 @@ type trayExec struct {
 
 func newTrayExec(c *gui.Client, u *UI) *trayExec { return &trayExec{c: c, u: u} }
 
-func (t *trayExec) Start() {
-	t.stop = trayexec.Start(trayexec.Options{
+func (t *trayExec) options() trayexec.Options {
+	return trayexec.Options{
 		Base:    t.c.BaseURL,
 		Jar:     t.c.CookieJar(),
 		Relogin: t.u.relogin,
 		Logf:    func(format string, args ...any) { gui.Logf("trayexec", format, args...) },
-	})
+	}
+}
+
+func (t *trayExec) Start() {
+	t.stop = trayexec.Start(t.options())
 }
 
 func (t *trayExec) Stop() {
 	if t.stop != nil {
 		t.stop()
+	}
+	// After the poll loop has ended, so no poll of this process follows the
+	// notice: the user quit, the service should not bring the tray back on
+	// its own (#167). An update closing the app sends nothing.
+	if t.u.userQuit.Load() {
+		if err := trayexec.NotifyQuit(t.options()); err != nil {
+			gui.Logf("trayexec", "quit notice to the service: %v", err)
+		}
 	}
 }
 

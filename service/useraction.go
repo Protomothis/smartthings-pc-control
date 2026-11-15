@@ -38,6 +38,19 @@ var (
 // serves its endpoints (webSrv's Deps.Trays).
 var trays = session.NewBroker()
 
+// trayLauncher starts the tray app in a session where none polls (#167):
+// before a command (userActions.Ready) and once after the service start
+// (launchMissingTrays). The tests replace it with one that has no Start.
+var trayLauncher = newTrayLauncher(trays)
+
+// newTrayLauncher is the real launcher over b.
+func newTrayLauncher(b *session.Broker) *session.Launcher {
+	l := session.NewLauncher(b, startTrayIn, wts.QueryLogon)
+	l.Autostart = autostartOn
+	l.Logf = logMsg
+	return l
+}
+
 // userActions runs the user-session actions. The tests replace its Exec
 // and Timeout.
 var userActions = session.Runner{
@@ -47,8 +60,26 @@ var userActions = session.Runner{
 	// Look at the target session first: when it moved, the samples of the
 	// old one are dropped now, not after this reply has been stored.
 	BeforeRun: func() { targetUserSession() },
-	OnReply:   storeUserActionReply,
+	// A missing tray app is started first (#167); its wait is not part of
+	// the 3s.
+	Ready:   ensureTray,
+	OnReply: storeUserActionReply,
 }
+
+// trayJobs is the WebUI's view of the tray side (webui.TrayJobs): the
+// broker's poll and reply, the launcher's quit notice. It reads the
+// variables on each call, so a test that swaps them is followed.
+type trayJobs struct{}
+
+func (trayJobs) Poll(ctx context.Context, sessionID, pid uint32) (session.Job, bool) {
+	return trays.Poll(ctx, sessionID, pid)
+}
+
+func (trayJobs) Reply(sessionID uint32, id string, line []byte) error {
+	return trays.Reply(sessionID, id, line)
+}
+
+func (trayJobs) Quit(sessionID uint32) { trayLauncher.UserQuit(sessionID) }
 
 // trayExec looks the target session up and hands args to its tray app.
 // Nobody logged in stays errNoUserSession (errNoConsoleSession for the
@@ -59,6 +90,17 @@ func trayExec(ctx context.Context, target sessionTarget, args []string) ([]byte,
 		return nil, fmt.Errorf("get session: %w", err)
 	}
 	return trays.Do(ctx, id, args)
+}
+
+// ensureTray makes sure target's session has a tray app polling, starting
+// one when it is missing (session.Launcher.Ensure). A failed lookup is
+// left to trayExec, which reports it.
+func ensureTray(ctx context.Context, target sessionTarget) error {
+	id, err := findSessionID(target)
+	if err != nil {
+		return nil
+	}
+	return trayLauncher.Ensure(ctx, id)
 }
 
 // findSessionID is wts.Find without the token.

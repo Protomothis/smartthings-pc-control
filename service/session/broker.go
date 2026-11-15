@@ -68,6 +68,9 @@ type Broker struct {
 	mu    sync.Mutex
 	trays map[uint32]*trayConn
 	jobs  map[string]*pendingJob
+	// arrive holds, per session, a channel closed when a poll starts there
+	// (WaitConnected).
+	arrive map[uint32]chan struct{}
 }
 
 // trayConn is what the broker knows about one session's tray app.
@@ -79,6 +82,11 @@ type trayConn struct {
 	lastPoll time.Time
 	// pid is the process that polled last, for the log.
 	pid uint32
+	// polls counts the polls ever started (PollCount).
+	polls uint64
+	// forgotten: the tray app said it is quitting (Forget); a poll still
+	// open when it did leaves no Linger behind.
+	forgotten bool
 }
 
 // pendingJob is a job waiting for its reply.
@@ -97,6 +105,7 @@ func NewBroker() *Broker {
 		Now:      time.Now,
 		trays:    map[uint32]*trayConn{},
 		jobs:     map[string]*pendingJob{},
+		arrive:   map[uint32]chan struct{}{},
 	}
 }
 
@@ -170,11 +179,21 @@ func (b *Broker) Poll(ctx context.Context, session, pid uint32) (job Job, ok boo
 	}
 	t.pid = pid
 	t.polling++
+	t.polls++
+	t.forgotten = false
+	if ch := b.arrive[session]; ch != nil {
+		close(ch)
+		delete(b.arrive, session)
+	}
 	b.mu.Unlock()
 	defer func() {
 		b.mu.Lock()
 		t.polling--
-		t.lastPoll = b.Now()
+		if t.forgotten {
+			t.lastPoll = time.Time{}
+		} else {
+			t.lastPoll = b.Now()
+		}
 		b.mu.Unlock()
 	}()
 
@@ -220,4 +239,51 @@ func newJobID() (string, error) {
 		return "", fmt.Errorf("job id: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+// WaitConnected waits until a tray app polls for session's jobs: true at
+// once when one does (or did within Linger), else when the next poll
+// there starts; false when ctx ends first.
+func (b *Broker) WaitConnected(ctx context.Context, session uint32) bool {
+	b.mu.Lock()
+	if b.connected(b.trays[session]) {
+		b.mu.Unlock()
+		return true
+	}
+	ch := b.arrive[session]
+	if ch == nil {
+		ch = make(chan struct{})
+		b.arrive[session] = ch
+	}
+	b.mu.Unlock()
+	select {
+	case <-ch:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// PollCount is the number of polls ever started for session's jobs: a
+// higher count than an earlier reading means a tray app polled since.
+func (b *Broker) PollCount(session uint32) uint64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if t := b.trays[session]; t != nil {
+		return t.polls
+	}
+	return 0
+}
+
+// Forget ends session's Linger now: the tray app said it is quitting, so
+// jobs fail at once instead of waiting in a queue nobody reads. A poll
+// still open (its end not yet seen) keeps it connected until that poll
+// ends, with no Linger after.
+func (b *Broker) Forget(session uint32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if t := b.trays[session]; t != nil {
+		t.lastPoll = time.Time{}
+		t.forgotten = true
+	}
 }

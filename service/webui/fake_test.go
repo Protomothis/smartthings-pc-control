@@ -28,6 +28,8 @@ type testServer struct {
 	session func() (session.Info, error)
 	// trays is the real job broker behind Deps.Trays.
 	trays *session.Broker
+	// quits are the sessions whose tray app said the user quit it.
+	quits chan uint32
 }
 
 type fakeStatus struct{ ts *testServer }
@@ -111,7 +113,7 @@ func (fakeHeartbeat) Media(useraction.NowPlaying, time.Time) {}
 // change the live config.
 func newTestServer(t *testing.T, cfg config.Config) *testServer {
 	t.Helper()
-	ts := &testServer{cfg: cfg, trays: session.NewBroker()}
+	ts := &testServer{cfg: cfg, trays: session.NewBroker(), quits: make(chan uint32, 4)}
 	ts.Server = New(Deps{
 		Config:     func() config.Config { return ts.cfg },
 		SaveConfig: func(c config.Config) error { ts.cfg = c; return nil },
@@ -131,7 +133,15 @@ func newTestServer(t *testing.T, cfg config.Config) *testServer {
 		Notify:    fakeNotifier{},
 		Telegram:  fakeTelegram{},
 		Heartbeat: fakeHeartbeat{},
-		Trays:     ts.trays,
+		Trays:     testTrays{ts.trays, ts.quits},
 	})
 	return ts
 }
+
+// testTrays is the broker with the quit notice recorded.
+type testTrays struct {
+	*session.Broker
+	quits chan uint32
+}
+
+func (t testTrays) Quit(session uint32) { t.quits <- session }

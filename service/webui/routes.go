@@ -94,6 +94,7 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// (#164, see tray.go)
 	mux.HandleFunc(trayexec.PathPoll, s.apiAuth(s.serveTrayPoll, http.MethodPost))
 	mux.HandleFunc(trayexec.PathResult, s.apiAuth(s.serveTrayResult, http.MethodPost))
+	mux.HandleFunc(trayexec.PathQuit, s.apiAuth(s.serveTrayQuit, http.MethodPost))
 
 	// API: keep-awake toggle on the app's command tab (#111)
 	mux.HandleFunc("/api/awake", s.apiAuth(s.serveAwake, http.MethodGet, http.MethodPost, http.MethodDelete))

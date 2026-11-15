@@ -6,6 +6,7 @@ package webui
 //
 //	POST /api/tray/poll    → 200 {"job":{"id","args"}} | 204 nothing within ~25s
 //	POST /api/tray/result  {"id","result"} → 200 | 404 unknown_job
+//	POST /api/tray/quit    → 200 (the user quit the tray app, #167)
 //
 // Both sit behind apiAuth like every call of the tray app (its session
 // cookie when a secret is set, and the CSRF header), and on top of that
@@ -104,5 +105,18 @@ func (s *Server) serveTrayResult(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// serveTrayQuit serves POST /api/tray/quit: the caller's tray app is
+// quitting because its user chose 종료 (#167). The service then starts no
+// tray app in that session on its own until one runs there again. Like
+// the poll, the session is the calling process's, never the request's.
+func (s *Server) serveTrayQuit(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.trayPeer(w, r)
+	if !ok {
+		return
+	}
+	s.d.Trays.Quit(p.SessionID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

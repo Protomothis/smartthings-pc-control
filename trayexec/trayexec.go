@@ -42,6 +42,9 @@ import (
 const (
 	PathPoll   = "/api/tray/poll"
 	PathResult = "/api/tray/result"
+	// PathQuit is posted once when the user quits the tray app from its
+	// menu, so the service does not start it again on its own (#167).
+	PathQuit = "/api/tray/quit"
 )
 
 // Job is one action: the useraction argument vector, as it follows
@@ -365,4 +368,25 @@ func (c cancelOnClose) Close() error {
 	err := c.ReadCloser.Close()
 	c.cancel()
 	return err
+}
+
+// quitTimeout bounds the quit notice: the app is closing.
+const quitTimeout = 2 * time.Second
+
+// NotifyQuit tells the service that the user quit the tray app (PathQuit),
+// so it does not start the app again by itself in this logon (#167). Call
+// it after stop, so no poll of this process can follow it. Best effort: an
+// older service (404) or an unreachable one is not an error worth more
+// than the return value.
+func NotifyQuit(o Options) error {
+	e := &executor{o: o, http: &http.Client{Jar: o.Jar, Timeout: quitTimeout}}
+	resp, err := e.post(context.Background(), PathQuit, nil, quitTimeout)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"syscall"
@@ -30,14 +31,36 @@ func (w WTS) Command(ctx context.Context, target Target, name string, args ...st
 }
 
 // Start launches a command in the active user's desktop session without
-// waiting for it: the tray app, for the grace-period toast. It is the
-// service's only process start in a user session; the user-session
-// actions go to the running tray app instead (Broker, #164).
+// waiting for it: the tray app, for the grace-period toast. With StartIn it
+// is the service's only process start in a user session — the tray app,
+// for a grace toast or where it is missing (Launcher, #167); the
+// user-session actions go to the running tray app instead (Broker, #164).
 func (w WTS) Start(name string, args ...string) error {
 	cmd, token, err := w.Command(context.Background(), ActiveUser, name, args...)
 	if err != nil {
 		return err
 	}
+	return startDetached(cmd, token)
+}
+
+// StartIn is Start in the given session, whoever is logged on there;
+// ErrNoUserSession (wrapped) when nobody is.
+func (w WTS) StartIn(session uint32, name string, args ...string) error {
+	t, err := w.QueryUserToken(session)
+	if errors.Is(err, errorNoToken) {
+		return fmt.Errorf("%w: session %d has no logged-in user", ErrNoUserSession, session)
+	}
+	if err != nil {
+		return fmt.Errorf("WTSQueryUserToken(session %d): %w", session, err)
+	}
+	token := syscall.Token(t)
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Token: token}
+	return startDetached(cmd, token)
+}
+
+// startDetached starts cmd and lets it go; it closes token.
+func startDetached(cmd *exec.Cmd, token syscall.Token) error {
 	defer token.Close()
 
 	if err := cmd.Start(); err != nil {

@@ -62,7 +62,7 @@ func (u *UI) askQuit() {
 		return
 	}
 	a := askSpec{title: u.t("quit.title"), body: u.t("quit.body"), ok: u.t("tray.exit"), danger: true,
-		onOK: func() { go u.quit() }}
+		onOK: func() { u.userQuit.Store(true); go u.quit() }}
 	if u.formDirty(u.nav.top()) {
 		a.note = u.t("unsaved.indicator")
 	}

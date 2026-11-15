@@ -201,3 +201,35 @@ func TestBrokerTrayGoneAndBack(t *testing.T) {
 		t.Errorf("reply %q", line)
 	}
 }
+
+// A quitting tray (Forget, #167) leaves no Linger, even when the server
+// sees its last poll end only after the quit notice.
+func TestBrokerForgetWithPollOpen(t *testing.T) {
+	b, _ := testBroker(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	polled := make(chan struct{})
+	go func() {
+		b.Poll(ctx, 1, 1)
+		close(polled)
+	}()
+	waitConnected(t, b, 1)
+	b.Forget(1)
+	if !b.Connected(1) {
+		t.Error("the open poll stopped counting before it ended")
+	}
+	cancel()
+	<-polled
+	if b.Connected(1) {
+		t.Error("connected after the forgotten tray's poll ended")
+	}
+	// A new poll (the user started the tray again) counts as usual.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { b.Poll(ctx2, 1, 2); close(done) }()
+	waitConnected(t, b, 1)
+	cancel2()
+	<-done
+	if !b.Connected(1) {
+		t.Error("a later tray's poll left no Linger")
+	}
+}

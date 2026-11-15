@@ -179,3 +179,32 @@ func TestExecutorStopEndsPoll(t *testing.T) {
 		t.Fatal("stop did not end the waiting poll")
 	}
 }
+
+// The quit notice (#167) is one POST to PathQuit with the CSRF header; an
+// older service without the endpoint is an error, not a hang.
+func TestNotifyQuit(t *testing.T) {
+	var got atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc(PathQuit, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		got.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	if err := NotifyQuit(Options{Base: func() string { return srv.URL }}); err != nil {
+		t.Fatalf("NotifyQuit: %v", err)
+	}
+	if got.Load() != 1 {
+		t.Errorf("%d quit posts, want 1", got.Load())
+	}
+
+	old := httptest.NewServer(http.NotFoundHandler())
+	defer old.Close()
+	if err := NotifyQuit(Options{Base: func() string { return old.URL }}); err == nil {
+		t.Error("an older service's 404 was not reported")
+	}
+}

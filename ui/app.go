@@ -58,7 +58,11 @@ type UI struct {
 	wantLogs atomic.Bool // the logs page is open: poll the log
 	sysDark  atomic.Bool // Windows' own setting, followed while the window is open
 	quitAsk  atomic.Bool // the tray asked to quit: show the sheet
-	tasks    []func()    // onWindow's queue, under mu
+	// userQuit: the user confirmed 종료 (not an update closing the app); the
+	// service is told on the way out so it does not start the tray again
+	// by itself (#167).
+	userQuit atomic.Bool
+	tasks    []func() // onWindow's queue, under mu
 
 	gate      loginGate
 	trust     atomic.Int32 // a trustState

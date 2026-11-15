@@ -4,8 +4,8 @@
 // the user is — volume, media keys, toasts, presets, the screen commands —
 // goes through here: a WTS lookup for the session, then a job for the tray
 // app running there (broker.go) and its reply (run.go). Starting the tray
-// app itself for a grace toast is the one CreateProcessAsUser left
-// (exec.go).
+// app itself — for a grace toast, or where it is missing (launch.go, #167)
+// — is the one CreateProcessAsUser left (exec.go).
 package session
 
 import (
@@ -251,4 +251,35 @@ func (w WTS) LoggedOn() ([]uint32, error) {
 		out = append(out, s.ID)
 	}
 	return out, nil
+}
+
+// QueryLogon reads who is logged on to session (LogonInfo): the user's
+// SID and the logon session's ID from their token. Nobody logged on is
+// ErrNoUserSession (wrapped).
+func (w WTS) QueryLogon(session uint32) (LogonInfo, error) {
+	t, err := w.QueryUserToken(session)
+	if errors.Is(err, errorNoToken) {
+		return LogonInfo{}, fmt.Errorf("%w: session %d has no logged-in user", ErrNoUserSession, session)
+	}
+	if err != nil {
+		return LogonInfo{}, fmt.Errorf("WTSQueryUserToken(session %d): %w", session, err)
+	}
+	defer t.Close()
+	user, err := t.GetTokenUser()
+	if err != nil {
+		return LogonInfo{}, fmt.Errorf("token user (session %d): %w", session, err)
+	}
+	// TOKEN_STATISTICS starts with TokenId and AuthenticationId (two
+	// LUIDs); the latter names the logon session. 56 bytes in all.
+	// uint64s keep it 8-byte aligned.
+	var stats [7]uint64
+	var n uint32
+	if err := windows.GetTokenInformation(t, windows.TokenStatistics, (*byte)(unsafe.Pointer(&stats[0])), uint32(unsafe.Sizeof(stats)), &n); err != nil {
+		return LogonInfo{}, fmt.Errorf("token statistics (session %d): %w", session, err)
+	}
+	auth := (*windows.LUID)(unsafe.Pointer(&stats[1]))
+	return LogonInfo{
+		ID:  fmt.Sprintf("%08x-%08x", auth.HighPart, auth.LowPart),
+		SID: user.User.Sid.String(),
+	}, nil
 }
