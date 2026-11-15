@@ -39,6 +39,20 @@ exe의 아이콘과 애플리케이션 매니페스트(asInvoker, 지원 OS)는 
 windres -O coff -F pe-x86-64 -i rsrc.rc -o rsrc_windows_amd64.syso
 ```
 
+### 설치 프로그램 (#166)
+
+릴리스의 exe와 설치 프로그램은 `scripts/build-windows.ps1`이 `dist\`에 만든다. 설치 프로그램에는 [Inno Setup 6](https://jrsoftware.org/isinfo.php)이 필요하다(`winget install JRSoftware.InnoSetup`).
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1 -Version 1.2.4-dev.1   # dist\smartthings-pc-control.exe, dist\SmartThingsPCControl-Setup-1.2.4-dev.1.exe
+scripts\build-windows.ps1 -Stage exe        # exe만 (-Stage installer는 dist\의 exe로 설치 프로그램만)
+```
+
+- 스크립트는 `installer/smartthings-pc-control.iss`다. 설치 로직(서비스 · 방화벽 · 폴더 권한)은 exe의 `install`/`uninstall` 하나로 두고, 스크립트는 파일 복사 · 서비스와 트레이 중지 · 시작 메뉴 · 앱 목록만 맡는다.
+- `AppId`는 바꾸지 않는다. 앱이 이 값의 제거 키로 설치 프로그램 설치본을 알아보고(`gui/installsource.go`) 새 설치 프로그램으로 업데이트한다. `TestInstallerScriptAgrees`가 AppId · AUMID · 시작 메뉴 바로가기를 앱과 맞춰 본다.
+- 설치 안내 페이지는 `installer/privacy.{ko,en}.txt`(UTF-8 BOM, CRLF). 앱이 밖으로 보내는 요청이 바뀌면 같이 고친다.
+- 릴리스 워크플로를 손으로 돌리면(`gh workflow run release.yml --ref <브랜치> -f version=1.2.4-dev.1`) 릴리스 없이 빌드만 하고 결과를 아티팩트로 남긴다. 저장소 변수 `SIGNPATH_ORGANIZATION_ID`가 있으면 exe와 설치 프로그램을 SignPath로 서명한다(설정은 `.signpath/`).
+
 계약 golden(`testdata/st-v1`)은 Go와 Lua 테스트가 함께 쓴다. `-update`로 다시 썼으면 Lua 테스트도 돌린다.
 
 ```bash

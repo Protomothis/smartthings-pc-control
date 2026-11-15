@@ -1,0 +1,18 @@
+﻿Before you install
+
+SmartThings PC Control installs a Windows service (always on, no sign-in needed) and a tray app. Registering the service needs administrator rights, so it is installed for all users only.
+
+Network
+- It talks directly to the Edge driver on your SmartThings hub inside your own network. It does not connect to a SmartThings account or the cloud.
+- For that it adds firewall rules for TCP 5001 (the hub's commands) and UDP 1900 (the hub's device discovery). The local API the app uses listens on this PC only (127.0.0.1:5002). The browser WebUI opens to the LAN only when you set a secret and enable remote access.
+- Telegram is contacted (api.telegram.org, to send notifications and receive commands) only when you enter a bot token.
+
+Requests to the internet
+- Update check: the service once a day, and the app at startup and once a day, ask GitHub (api.github.com) for the public release list. The app's check can be turned off on its Update page. Updates install only files whose signature checks out, downloaded from GitHub.
+- Public IP: api.ipify.org is asked for this PC's public IP, shown with the network details and the PC-started notification (cached for 10 minutes).
+These requests carry no account or settings data, but like any web request the server sees the IP address they come from.
+
+Where things are stored
+- The settings (config.json, including the secret), the state file and the service log are in the install folder, which only administrators can change. The Telegram bot token is encrypted with DPAPI.
+- The tray app's log and preferences are in your user folders (%LOCALAPPDATA%\SmartThings PC Control, %APPDATA%\fyne).
+- Uninstalling keeps the settings and logs and asks separately whether to delete them.

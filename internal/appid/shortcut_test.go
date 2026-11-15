@@ -156,3 +156,46 @@ func TestEnsureShortcutNeedsExe(t *testing.T) {
 		t.Error("an empty exe was accepted")
 	}
 }
+
+// The setup program (#166) writes the shortcut into the all-users Start
+// menu; the app then neither adds a per-user twin nor keeps one from an
+// earlier [설치] for the same exe.
+func TestEnsureShortcutBesideInstallerShortcut(t *testing.T) {
+	root := t.TempDir()
+	exe := fakeExe(t, root, "stpc.exe")
+	common := filepath.Join(root, "common")
+	user := filepath.Join(root, "user")
+
+	// No all-users shortcut: the user's is made as before.
+	if res, err := ensureShortcutBeside(common, user, exe); err != nil || res != Created {
+		t.Fatalf("without the installer's shortcut: %q, %v; want created", res, err)
+	}
+	// The installer's shortcut appears: the user's twin goes.
+	if _, err := EnsureShortcut(common, exe); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := ensureShortcutBeside(common, user, exe); err != nil || res != Unchanged {
+		t.Fatalf("beside the installer's shortcut: %q, %v; want unchanged", res, err)
+	}
+	if ShortcutMatches(user, exe) {
+		t.Error("the per-user twin of the installer's shortcut was kept")
+	}
+	if !ShortcutMatches(common, exe) {
+		t.Error("the installer's shortcut was touched")
+	}
+
+	// An all-users shortcut for another exe (a portable copy runs
+	// elsewhere) does not count: that copy gets its own.
+	other := filepath.Join(root, "portable")
+	os.Mkdir(other, 0o755)
+	portable := fakeExe(t, other, "stpc.exe")
+	if res, err := ensureShortcutBeside(common, user, portable); err != nil || res != Created {
+		t.Fatalf("portable copy: %q, %v; want created", res, err)
+	}
+	if !ShortcutMatches(common, exe) {
+		t.Error("the installer's shortcut was rewritten for the portable copy")
+	}
+	if ShortcutMatches(filepath.Join(root, "nowhere"), exe) {
+		t.Error("ShortcutMatches found a shortcut in a missing folder")
+	}
+}

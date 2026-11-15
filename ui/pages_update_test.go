@@ -352,3 +352,14 @@ func TestNoteBlocks(t *testing.T) {
 		t.Error("empty notes gave blocks")
 	}
 }
+
+// A copy the setup program installed updates through the next setup
+// (#166); any other copy swaps its exe as before.
+func TestPickUpdater(t *testing.T) {
+	if _, ok := pickUpdater(true).(installerUpdater); !ok {
+		t.Errorf("installed by the setup: %T, want installerUpdater", pickUpdater(true))
+	}
+	if _, ok := pickUpdater(false).(selfUpdater); !ok {
+		t.Errorf("installed with [설치]: %T, want selfUpdater", pickUpdater(false))
+	}
+}

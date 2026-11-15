@@ -75,6 +75,11 @@ type Manifest struct {
 	// PublishedAt is RFC 3339 UTC, informational.
 	PublishedAt string          `json:"published_at"`
 	Assets      []ManifestAsset `json:"assets"`
+	// Installer is the release's Inno Setup installer (#166), which copies
+	// installed by it update through. It is a key of its own rather than
+	// another entry in Assets: apps from before #166 pick the first asset
+	// matching their arch from Assets and must keep getting the exe.
+	Installer *ManifestAsset `json:"installer,omitempty"`
 
 	// Signed and Signature are the exact update.json bytes and .sig text
 	// VerifyManifest accepted (never encoded). The GUI hands both to the
@@ -159,6 +164,9 @@ func VerifyManifest(data, sig []byte, pub ed25519.PublicKey) (*Manifest, error) 
 		if strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.SHA256) == "" {
 			return nil, fmt.Errorf("%w: asset %d lacks name or sha256", ErrBadSignature, i)
 		}
+	}
+	if a := m.Installer; a != nil && (strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.SHA256) == "") {
+		return nil, fmt.Errorf("%w: installer lacks name or sha256", ErrBadSignature)
 	}
 	m.Signed = append([]byte(nil), data...)
 	m.Signature = append([]byte(nil), sig...)
@@ -261,6 +269,19 @@ func (m *Manifest) AssetFor(arch string) (*ManifestAsset, bool) {
 	}
 	if wild != nil {
 		return wild, true
+	}
+	return nil, false
+}
+
+// InstallerFor is the release's installer when it is built for arch (an
+// empty Arch matches any); false when the manifest has none, as every
+// manifest before #166.
+func (m *Manifest) InstallerFor(arch string) (*ManifestAsset, bool) {
+	if m == nil || m.Installer == nil {
+		return nil, false
+	}
+	if a := m.Installer; a.Arch == "" || strings.EqualFold(a.Arch, arch) {
+		return a, true
 	}
 	return nil, false
 }

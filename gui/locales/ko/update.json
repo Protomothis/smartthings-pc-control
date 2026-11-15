@@ -18,5 +18,6 @@
   "ui.update.ask.title": "지금 업데이트할까요?",
   "ui.update.notes": "릴리스 노트",
   "ui.update.settings": "설정",
-  "ui.update.auto.hint": "시작할 때와 하루에 한 번 확인하고, 새 버전이면 알려요"
+  "ui.update.auto.hint": "시작할 때와 하루에 한 번 확인하고, 새 버전이면 알려요",
+  "update.applying.installer": "UAC 승인 창이 떠요. 앱이 종료된 뒤 설치 프로그램이 서비스를 중지하고 새 버전을 설치한 다음 다시 실행해요."
 }

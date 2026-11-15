@@ -133,6 +133,27 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "update-install":
+		// Hidden (#166): launched elevated by the tray of a copy the setup
+		// program installed, as `update-install "<setup.exe>" <guiPid>
+		// "<update.json>" "<update.json.sig>"`. Re-verifies the staged
+		// setup and runs it silently; see gui/installerupdate.go.
+		args, err := gui.ParseUpdateApplyArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			gui.AbortUpdateApply(err)
+			os.Exit(2)
+		}
+		if err := gui.InstallUpdate(args, Version); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "relaunch-gui":
+		// Hidden (#166): the elevated setup program starts the tray this
+		// way, so it runs as the desktop user rather than elevated.
+		gui.RelaunchTray()
+
 	default:
 		fmt.Printf("SmartThings PC Control %s\n", Version)
 		fmt.Println("")

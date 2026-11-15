@@ -81,10 +81,26 @@ type UpdatePlan struct {
 	m        *release.Manifest
 	asset    *release.ManifestAsset
 	assetURL string
+	// installer: asset is the release's setup program (#166), run instead
+	// of swapping the exe.
+	installer bool
 }
 
 // CanApply reports whether the release can be downloaded and applied.
 func (p UpdatePlan) CanApply() bool { return p.Block == UpdateCanApply && p.asset != nil }
+
+// ViaInstaller reports whether applying runs the release's setup program
+// (a copy the setup installed, #166) rather than swapping the exe.
+func (p UpdatePlan) ViaInstaller() bool { return p.installer && p.CanApply() }
+
+// ApplyingText is what applying the plan will do, for the question before
+// it.
+func (p UpdatePlan) ApplyingText(l Lang) string {
+	if p.ViaInstaller() {
+		return T(l, "update.applying.installer")
+	}
+	return T(l, "update.applying")
+}
 
 // Note is the line that explains a blocked plan, "" when there is none
 // (it can be applied, or it is a dev build).
@@ -141,6 +157,37 @@ func PlanUpdate(chk UpdateCheck, version string, m *release.Manifest, err error)
 	return p
 }
 
+// PlanInstallerUpdate is PlanUpdate for a copy the setup program installed
+// (#166): it applies the release's setup when the signed manifest lists one
+// for this arch, and otherwise (releases before #166) falls back to the
+// exe swap PlanUpdate offers, so such a copy still updates.
+func PlanInstallerUpdate(chk UpdateCheck, version string, m *release.Manifest, err error) UpdatePlan {
+	p := PlanUpdate(chk, version, m, err)
+	if p.Block != UpdateCanApply && p.Block != UpdateNoAsset {
+		return p
+	}
+	a, ok := m.InstallerFor(runtime.GOARCH)
+	if !ok {
+		return p
+	}
+	url := release.AssetURL(chk.rel, a.Name)
+	if url == "" {
+		return p
+	}
+	p.Block, p.asset, p.assetURL, p.installer = UpdateCanApply, a, url, true
+	return p
+}
+
+// PrepareInstallerUpdate is PrepareUpdate for a copy the setup program
+// installed.
+func PrepareInstallerUpdate(chk UpdateCheck, version string) UpdatePlan {
+	if !CanSelfUpdate(version) || chk.rel == nil {
+		return PlanInstallerUpdate(chk, version, nil, nil)
+	}
+	m, err := fetchManifest(chk.rel)
+	return PlanInstallerUpdate(chk, version, m, err)
+}
+
 // PrepareUpdate fetches and verifies chk's signed manifest (#66) and
 // plans the update. Network: off the window goroutine.
 func PrepareUpdate(chk UpdateCheck, version string) UpdatePlan {
@@ -165,6 +212,7 @@ const (
 type UpdateProgress struct {
 	Stage       UpdateStage
 	Done, Total int64 // StageDownloading; Total is -1 when unknown
+	Installer   bool  // the setup program does the install (#166)
 }
 
 // Text is the progress line.
@@ -177,6 +225,9 @@ func (p UpdateProgress) text(t func(string) string) string {
 	case StageVerifying:
 		return t("update.verifying")
 	case StageApplying:
+		if p.Installer {
+			return t("update.applying.installer")
+		}
 		return t("update.applying")
 	}
 	switch {
@@ -244,6 +295,46 @@ func ApplySelfUpdate(ctx context.Context, plan UpdatePlan, progress func(UpdateP
 		return err
 	}
 	return runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d "%s" "%s"`, path, os.Getpid(), man, sig))
+}
+
+// ApplyInstallerUpdate downloads plan's setup program, checks its SHA-256
+// and size against the signed manifest and hands it to the elevated
+// update-install (installerupdate.go), which verifies it again and runs it
+// silently once this process has quit. On nil the caller quits the app. A
+// plan that is not ViaInstaller (a release without a setup program) is an
+// ordinary ApplySelfUpdate.
+func ApplyInstallerUpdate(ctx context.Context, plan UpdatePlan, progress func(UpdateProgress)) error {
+	if !plan.ViaInstaller() {
+		return ApplySelfUpdate(ctx, plan, progress)
+	}
+	report := func(p UpdateProgress) {
+		p.Installer = true
+		if progress != nil {
+			progress(p)
+		}
+	}
+	path, err := downloadTo(ctx, plan.assetURL, installerStagingPath(stagingDir(), plan.rel.TagName), func(done, total int64) {
+		report(UpdateProgress{Stage: StageDownloading, Done: done, Total: total})
+	})
+	if err != nil {
+		return err
+	}
+	// The bytes must be exactly what the signed manifest promised; the
+	// setup has no "version" to ask, so this is the check before UAC.
+	report(UpdateProgress{Stage: StageHash})
+	if err := verifyDownloadedHash(path, plan.asset); err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		os.Remove(path)
+		return ctx.Err()
+	}
+	report(UpdateProgress{Stage: StageApplying})
+	man, sig, err := stageManifest(filepath.Dir(path), plan.m)
+	if err != nil {
+		return err
+	}
+	return runElevatedSelf(fmt.Sprintf(`update-install "%s" %d "%s" "%s"`, path, os.Getpid(), man, sig))
 }
 
 // IsHashMismatch reports a download that differs from the manifest.

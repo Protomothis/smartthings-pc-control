@@ -227,6 +227,24 @@ func applyUpdate(a UpdateApplyArgs, current string) error {
 // else has been touched; a hash mismatch wraps errHashMismatch, a bad
 // signature release.ErrBadSignature.
 func stageVerifiedUpdate(a UpdateApplyArgs, cur, current string, pub ed25519.PublicKey) (verified string, err error) {
+	return stageVerified(a, cur, current, pub, exeAsset, verifiedExeName)
+}
+
+// assetPicker chooses the manifest entry the staged file must match.
+type assetPicker func(m *release.Manifest) (*release.ManifestAsset, error)
+
+// exeAsset is the exe for this arch: what update-apply swaps in.
+func exeAsset(m *release.Manifest) (*release.ManifestAsset, error) {
+	asset, ok := m.AssetFor(runtime.GOARCH)
+	if !ok {
+		return nil, fmt.Errorf("manifest %s has no asset for %s", m.Version, runtime.GOARCH)
+	}
+	return asset, nil
+}
+
+// stageVerified is stageVerifiedUpdate for the manifest entry pick
+// chooses, copied to <install>\update\<name>.
+func stageVerified(a UpdateApplyArgs, cur, current string, pub ed25519.PublicKey, pick assetPicker, name string) (verified string, err error) {
 	updDir := filepath.Join(filepath.Dir(cur), "update")
 	if err := prepareUpdateDir(updDir); err != nil {
 		return "", fmt.Errorf("prepare %s: %w", updDir, err)
@@ -239,7 +257,7 @@ func stageVerifiedUpdate(a UpdateApplyArgs, cur, current string, pub ed25519.Pub
 
 	manPath := filepath.Join(updDir, release.ManifestName)
 	sigPath := filepath.Join(updDir, release.ManifestSigName)
-	verified = filepath.Join(updDir, verifiedExeName)
+	verified = filepath.Join(updDir, name)
 	if err := copyLimited(a.Manifest, manPath, maxStagedManifest); err != nil {
 		return "", fmt.Errorf("copy manifest: %w", err)
 	}
@@ -269,9 +287,9 @@ func stageVerifiedUpdate(a UpdateApplyArgs, cur, current string, pub ed25519.Pub
 	if !m.Allows(current) {
 		return "", fmt.Errorf("%s cannot be updated to directly from %s (min_version %s)", m.Version, current, m.MinVersion)
 	}
-	asset, ok := m.AssetFor(runtime.GOARCH)
-	if !ok {
-		return "", fmt.Errorf("manifest %s has no asset for %s", m.Version, runtime.GOARCH)
+	asset, err := pick(m)
+	if err != nil {
+		return "", err
 	}
 	sum, size, err := fileSHA256(verified)
 	if err != nil {
@@ -280,7 +298,7 @@ func stageVerifiedUpdate(a UpdateApplyArgs, cur, current string, pub ed25519.Pub
 	if err := asset.Verify(sum, size); err != nil {
 		return "", fmt.Errorf("%w: %v", errHashMismatch, err)
 	}
-	updateLog("verified %s against the signed manifest %s", verifiedExeName, m.Version)
+	updateLog("verified %s against the signed manifest %s", name, m.Version)
 	return verified, nil
 }
 

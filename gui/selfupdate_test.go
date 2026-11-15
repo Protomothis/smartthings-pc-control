@@ -24,6 +24,7 @@ type stagedUpdate struct {
 	asset   *release.ManifestAsset
 	m       *release.Manifest
 	pub     ed25519.PublicKey
+	priv    ed25519.PrivateKey // signs variants of the manifest (#166)
 }
 
 func newStagedUpdate(t *testing.T, version string) *stagedUpdate {
@@ -41,7 +42,7 @@ func newStagedUpdate(t *testing.T, version string) *stagedUpdate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &stagedUpdate{pub: pub, payload: []byte("MZ new release " + version)}
+	s := &stagedUpdate{pub: pub, priv: priv, payload: []byte("MZ new release " + version)}
 	sum := sha256.Sum256(s.payload)
 	data, err := release.EncodeManifest(&release.Manifest{
 		Version: version,

@@ -145,6 +145,18 @@ func stageManifest(dir string, m *release.Manifest) (manifest, sig string, err e
 // e.g. <dir>\smartthings-pc-control.v0.3.3.exe. The tag is sanitised so a
 // hostile release name cannot escape dir.
 func stagingPath(dir, tag string) string {
+	return filepath.Join(dir, "smartthings-pc-control."+safeTag(tag)+".exe")
+}
+
+// installerStagingPath is stagingPath for the release's setup program
+// (#166): <dir>\SmartThingsPCControl-Setup.v1.2.4.exe.
+func installerStagingPath(dir, tag string) string {
+	return filepath.Join(dir, "SmartThingsPCControl-Setup."+safeTag(tag)+".exe")
+}
+
+// safeTag keeps a release tag to letters, digits, '.', '-' and '_' for use
+// in a file name; "latest" when nothing is left.
+func safeTag(tag string) string {
 	var b strings.Builder
 	for _, r := range tag {
 		switch {
@@ -154,11 +166,10 @@ func stagingPath(dir, tag string) string {
 			b.WriteRune('_')
 		}
 	}
-	name := b.String()
-	if name == "" {
-		name = "latest"
+	if b.Len() == 0 {
+		return "latest"
 	}
-	return filepath.Join(dir, "smartthings-pc-control."+name+".exe")
+	return b.String()
 }
 
 // downloadUpdate streams url into stagingPath(dir, tag), writing to a ".part"
@@ -166,7 +177,12 @@ func stagingPath(dir, tag string) string {
 // nil) receives bytes so far and the total (-1 when unknown). Returns the
 // final path.
 func downloadUpdate(ctx context.Context, url, dir, tag string, progress func(done, total int64)) (string, error) {
-	final := stagingPath(dir, tag)
+	return downloadTo(ctx, url, stagingPath(dir, tag), progress)
+}
+
+// downloadTo is downloadUpdate into the file final (its folder is created).
+func downloadTo(ctx context.Context, url, final string, progress func(done, total int64)) (string, error) {
+	dir := filepath.Dir(final)
 	part := final + ".part"
 
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,8 @@ func TestVerifyManifest(t *testing.T) {
 		"no version": {Assets: sampleManifest().Assets},
 		"no assets":  {Version: "v1.0.0"},
 		"no sha256":  {Version: "v1.0.0", Assets: []ManifestAsset{{Name: "x.exe"}}},
+		"installer without sha256": {Version: "v1.0.0", Assets: sampleManifest().Assets,
+			Installer: &ManifestAsset{Name: "Setup.exe"}},
 	} {
 		d, s := signed(t, bad, priv)
 		if _, err := VerifyManifest(d, s, pub); !errors.Is(err, ErrBadSignature) {
@@ -285,5 +288,49 @@ func TestAssetVerify(t *testing.T) {
 	unsized := &ManifestAsset{SHA256: "aa"}
 	if err := unsized.Verify("aa", 999); err != nil {
 		t.Errorf("size 0 in manifest must not be checked: %v", err)
+	}
+}
+
+// The installer entry (#166) sits beside Assets so that apps from before it
+// keep updating from the exe, and a manifest without it encodes as before.
+func TestManifestInstaller(t *testing.T) {
+	pub, priv := testKey(t)
+
+	plain, _ := signed(t, sampleManifest(), priv)
+	if strings.Contains(string(plain), "installer") {
+		t.Errorf("manifest without an installer mentions one: %s", plain)
+	}
+	if _, ok := sampleManifest().InstallerFor("amd64"); ok {
+		t.Error("InstallerFor found an installer in a manifest without one")
+	}
+
+	m := sampleManifest()
+	m.Installer = &ManifestAsset{Name: "SmartThingsPCControl-Setup-1.0.0.exe", SHA256: strings.Repeat("cd", 32), Arch: "amd64", Size: 999}
+	data, sig := signed(t, m, priv)
+	if !strings.Contains(string(data), `"installer"`) {
+		t.Fatalf("encoded manifest lacks the installer key: %s", data)
+	}
+	got, err := VerifyManifest(data, sig, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := got.AssetFor("amd64"); !ok || a.Name != "smartthings-pc-control.exe" {
+		t.Errorf("AssetFor = %+v, %v; the exe must stay the asset older apps install", a, ok)
+	}
+	if a, ok := got.InstallerFor("amd64"); !ok || a.Name != m.Installer.Name || a.Size != 999 {
+		t.Errorf("InstallerFor(amd64) = %+v, %v", a, ok)
+	}
+	if _, ok := got.InstallerFor("arm64"); ok {
+		t.Error("an amd64 installer was offered to arm64")
+	}
+
+	// What an app from before #166 decodes: the same bytes into the old
+	// shape still name the exe.
+	var old struct {
+		Version string          `json:"version"`
+		Assets  []ManifestAsset `json:"assets"`
+	}
+	if err := json.Unmarshal(data, &old); err != nil || len(old.Assets) != 1 || old.Assets[0].Name != "smartthings-pc-control.exe" {
+		t.Errorf("old-shape decode = %+v, %v", old, err)
 	}
 }
