@@ -14,7 +14,7 @@ require (
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	golang.org/x/image v0.26.0 // indirect
+	golang.org/x/image v0.26.0
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )

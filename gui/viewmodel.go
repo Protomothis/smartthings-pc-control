@@ -322,13 +322,22 @@ func MediaReason(l Lang, m MediaState, err error) string {
 	return ""
 }
 
-// iconBytes is the app icon as a PNG.
-//
-//go:embed icon.png
-var iconBytes []byte
+// iconBytes is the app icon as a 256 px PNG; trayICO the tray icon. Both
+// are rendered from assets/logo by internal/tools/logo.
+var (
+	//go:embed icon.png
+	iconBytes []byte
+	//go:embed tray.ico
+	trayICO []byte
+)
 
-// IconPNG is the app icon (the tray's and the window's).
+// IconPNG is the app icon, 256 px. The exe and its window take theirs
+// from icon.ico through the resource file.
 func IconPNG() []byte { return iconBytes }
+
+// TrayICO is the tray icon: frames for every small-icon size, plus each
+// drawn at twice its size for the shell to halve (internal/tools/logo).
+func TrayICO() []byte { return trayICO }
 
 // SettingsForm is the service settings form as plain values
 // (settings_model.go): port and secret text, browser access, media
