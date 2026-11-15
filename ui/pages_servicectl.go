@@ -18,11 +18,9 @@ import (
 	"time"
 
 	"gioui.org/font"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
@@ -381,33 +379,4 @@ func (p *serviceCtlPage) info(u *UI) layout.Widget {
 		}
 		return rows(gtx, ws...)
 	}
-}
-
-// actionRow is a tappable row that does something: an icon tile, a title
-// (red for a destructive one) over a grey line, and a chevron. A
-// candidate for widgets.go.
-func actionRow(gtx C, th *material.Theme, clk *widget.Clickable, iconName string, t tone, title, sub string, danger bool) D {
-	titleCol := colText
-	if danger {
-		titleCol = colDanger
-	}
-	return clk.Layout(gtx, func(gtx C) D {
-		pointer.CursorPointer.Add(gtx.Ops)
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		return layout.Inset{Top: 2, Bottom: 2}.Layout(gtx, func(gtx C) D {
-			return row(gtx,
-				layout.Rigid(func(gtx C) D { return iconTile(gtx, iconName, t, 36) }),
-				hspace(gapS),
-				layout.Flexed(1, func(gtx C) D {
-					return column(gtx,
-						layout.Rigid(label(th, textL, title, titleCol, font.Medium).Layout),
-						vspace(3),
-						layout.Rigid(label(th, textS, sub, colSub, font.Normal).Layout),
-					)
-				}),
-				hspace(4),
-				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "chevron", 20, colFaint) }),
-			)
-		})
-	})
 }

@@ -19,7 +19,6 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
@@ -41,16 +40,9 @@ type stPage struct {
 
 // stNet is the network adapter list as the page last read it.
 type stNet struct {
-	status      gui.WoLStatus
-	err         error
-	set         bool // an answer (or an error) arrived
-	unsupported bool // the API has no adapter list (a test fake)
-}
-
-// wolStatusAPI is the read the adapter list needs. *gui.Client has it; it
-// is not part of API, so a fake without it just hides the section.
-type wolStatusAPI interface {
-	GetWoLStatus() (gui.WoLStatus, error)
+	status gui.WoLStatus
+	err    error
+	set    bool // an answer (or an error) arrived
 }
 
 func newSmartThingsPage() screen { return &stPage{} }
@@ -63,17 +55,12 @@ func (p *stPage) shown(u *UI, _ snapshot) { p.reload(u) }
 // picture) and the adapter list. Window goroutine.
 func (p *stPage) reload(u *UI) {
 	go u.loadHub()
-	a, ok := u.api.(wolStatusAPI)
-	if !ok {
-		p.net = stNet{unsupported: true}
-		return
-	}
-	go p.loadNetwork(u, a)
+	go p.loadNetwork(u)
 }
 
 // loadNetwork reads the adapter list. Off the window goroutine.
-func (p *stPage) loadNetwork(u *UI, a wolStatusAPI) {
-	s, err := a.GetWoLStatus()
+func (p *stPage) loadNetwork(u *UI) {
+	s, err := u.api.GetWoLStatus()
 	u.onWindow(func() { p.net = stNet{status: s, err: err, set: true} })
 }
 
@@ -153,9 +140,7 @@ func (p *stPage) body(gtx C, u *UI, s snapshot) D {
 		section(th, u.t("st.wol"), p.wolCard(u, s)),
 		section(th, u.t("st.hubs"), p.hubsCard(u, s)),
 	)
-	if !p.net.unsupported {
-		blocks = append(blocks, section(th, u.t("ui.smartthings.network"), p.netCard(u)))
-	}
+	blocks = append(blocks, section(th, u.t("ui.smartthings.network"), p.netCard(u)))
 	blocks = append(blocks, section(th, u.t("ui.smartthings.share"), func(gtx C) D {
 		return listRow(gtx, th, &p.share, u.t("st.session"), u.t("ui.smartthings.share.sub"), u.onOff(s.cfg.SmartThings.ExposeSession))
 	}))
@@ -434,89 +419,4 @@ func stAdapterRow(u *UI, a gui.WoLAdapter) layout.Widget {
 			}),
 		)
 	}
-}
-
-// --- choiceList ----------------------------------------------------------------
-
-// choiceItem is one row of a choiceList: a title, a grey line and an
-// optional pill in a tone.
-type choiceItem struct {
-	title, sub string
-	pill       string
-	tone       tone
-}
-
-// choiceList picks one of several rows that each need more than a chip's
-// word (WoL adapters: a name, a MAC, a state). The selected row has a
-// tinted panel and a check. Candidate for widgets.go.
-type choiceList struct {
-	clks []widget.Clickable
-}
-
-// Clicked returns the row tapped since the last frame, or -1.
-func (c *choiceList) Clicked(gtx C, n int) int {
-	c.grow(n)
-	hit := -1
-	for i := range n {
-		if c.clks[i].Clicked(gtx) {
-			hit = i
-		}
-	}
-	return hit
-}
-
-func (c *choiceList) grow(n int) {
-	if len(c.clks) < n {
-		c.clks = append(c.clks, make([]widget.Clickable, n-len(c.clks))...)
-	}
-}
-
-// Layout draws the rows, selected (-1 for none) highlighted.
-func (c *choiceList) Layout(gtx C, th *material.Theme, items []choiceItem, selected int) D {
-	c.grow(len(items))
-	children := make([]layout.FlexChild, 0, 2*len(items))
-	for i, it := range items {
-		if i > 0 {
-			children = append(children, vspace(4))
-		}
-		children = append(children, layout.Rigid(func(gtx C) D {
-			return choiceRow(gtx, th, &c.clks[i], it, i == selected)
-		}))
-	}
-	return column(gtx, children...)
-}
-
-// choiceRow is one row of a choiceList.
-func choiceRow(gtx C, th *material.Theme, clk *widget.Clickable, it choiceItem, selected bool) D {
-	return clk.Layout(gtx, func(gtx C) D {
-		pointer.CursorPointer.Add(gtx.Ops)
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		bg, edge := colCard, colLine
-		if selected {
-			bg, edge = colAccentDim, colAccentDim
-		}
-		border := widget.Border{Color: edge, CornerRadius: radiusM, Width: 1}
-		return border.Layout(gtx, func(gtx C) D {
-			return surface(gtx, bg, radiusM, func(gtx C) D {
-				return layout.Inset{Top: 10, Bottom: 10, Left: 12, Right: 12}.Layout(gtx, func(gtx C) D {
-					return row(gtx,
-						layout.Rigid(func(gtx C) D {
-							if selected {
-								return drawIcon(gtx, "check", 20, colAccent)
-							}
-							return D{Size: imagePt(gtx.Dp(20))}
-						}),
-						hspace(10),
-						layout.Flexed(1, titled(th, it.title, it.sub)),
-						layout.Rigid(func(gtx C) D {
-							if it.pill == "" {
-								return D{}
-							}
-							return layout.Inset{Left: 8}.Layout(gtx, statusPill(th, it.pill, it.tone))
-						}),
-					)
-				})
-			})
-		})
-	})
 }

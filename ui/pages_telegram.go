@@ -13,35 +13,17 @@ package ui
 
 import (
 	"fmt"
-	"image"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	"gioui.org/font"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
-	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
-	"golang.org/x/exp/shiny/materialdesign/icons"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
-
-func init() { iconData["chevleft"] = icons.NavigationChevronLeft }
-
-// tgAPI is the part of the client only this page uses: the helpers of
-// /api/telegram/*. The client has them; a test fake may not, and the page
-// then says the action is unavailable.
-type tgAPI interface {
-	TestTelegram(token, chatID string) error
-	TelegramMe() (username, name string, err error)
-	TelegramChats(token string) ([]gui.TelegramChat, error)
-}
 
 // tgResult is the outcome of an action shown in the page (a test message,
 // the bot check): a tone and a text, "" for none.
@@ -128,8 +110,10 @@ func (u *UI) tgStatus(s snapshot) (hero, string) {
 		return hero{icon: "telegram", tone: toneOff, headline: u.t("ui.telegram.hero.off"), sub: u.t("ui.telegram.off.sub")}, u.t("ui.conn.off")
 	case !tg.BotTokenSet:
 		return hero{icon: "telegram", tone: toneWarn, headline: u.t("ui.telegram.hero.notoken"), sub: u.tgLine(s)}, u.t("ui.conn.check")
+	// The why and what to do is the banner over the control switch, said
+	// once; the hero only names the problem.
 	case s.tg.Conflict:
-		return hero{icon: "telegram", tone: toneWarn, headline: u.t("ui.telegram.hero.conflict"), sub: u.t("notify.control.conflict")}, u.t("ui.conn.check")
+		return hero{icon: "telegram", tone: toneWarn, headline: u.t("ui.telegram.hero.conflict"), sub: u.tgLine(s)}, u.t("ui.conn.check")
 	}
 	return hero{icon: "telegram", tone: toneOK, headline: u.t("ui.telegram.hero.on"), sub: u.tgLine(s)}, u.t("ui.conn.on")
 }
@@ -270,15 +254,10 @@ func (p *tgPage) checkBot(u *UI, set bool) {
 		p.bot = tgResult{tone: toneOff, text: u.t("notify.bot.none")}
 		return
 	}
-	a, ok := u.api.(tgAPI)
-	if !ok {
-		p.bot = tgResult{}
-		return
-	}
 	p.bot = tgResult{tone: toneOff, text: u.t("notify.bot.checking")}
 	go func() {
 		name, err := withLocalSession(u, func() (string, error) {
-			n, _, err := a.TelegramMe()
+			n, _, err := u.api.TelegramMe()
 			return n, err
 		})
 		u.onWindow(func() {
@@ -300,16 +279,11 @@ func (p *tgPage) tokenForLookup() string {
 // sendTest sends one test message with the page's current, unsaved token
 // and chat ID.
 func (p *tgPage) sendTest(u *UI) {
-	a, ok := u.api.(tgAPI)
-	if !ok {
-		p.test = tgResult{tone: toneBad, text: u.t("ui.telegram.unavailable")}
-		return
-	}
 	p.testBusy = true
 	p.test = tgResult{}
 	token, chatID := p.tokenForLookup(), strings.TrimSpace(p.chat.Text())
 	go func() {
-		_, err := withLocalSession(u, func() (struct{}, error) { return struct{}{}, a.TestTelegram(token, chatID) })
+		_, err := withLocalSession(u, func() (struct{}, error) { return struct{}{}, u.api.TestTelegram(token, chatID) })
 		u.onWindow(func() {
 			p.testBusy = false
 			if err != nil {
@@ -323,15 +297,10 @@ func (p *tgPage) sendTest(u *UI) {
 
 // findChats lists the chats that recently wrote to the bot, in the page.
 func (p *tgPage) findChats(u *UI) {
-	a, ok := u.api.(tgAPI)
-	if !ok {
-		p.found, p.findErr = &[]gui.TelegramChat{}, u.t("ui.telegram.unavailable")
-		return
-	}
 	p.finding = true
 	token := p.tokenForLookup()
 	go func() {
-		chats, err := withLocalSession(u, func() ([]gui.TelegramChat, error) { return a.TelegramChats(token) })
+		chats, err := withLocalSession(u, func() ([]gui.TelegramChat, error) { return u.api.TelegramChats(token) })
 		u.onWindow(func() { p.showChats(chats, err) })
 	}()
 }
@@ -678,80 +647,18 @@ func (p *tgPage) eventsCard(gtx C, u *UI) D {
 	return rows(gtx, ws...)
 }
 
-// natural lays w out at its own width instead of the card's (a lone
-// button in a column).
-func natural(w layout.Widget) layout.Widget {
-	return func(gtx C) D {
-		gtx.Constraints.Min.X = 0
-		return w(gtx)
-	}
-}
-
-// checkChip is a chip of a multiple choice: grey while off, accent text
-// on the accent tint with a check while on. A candidate for widgets.go
-// next to chip.
-func checkChip(th *material.Theme, clk *widget.Clickable, txt string, on bool) layout.Widget {
-	return func(gtx C) D {
-		return clk.Layout(gtx, func(gtx C) D {
-			pointer.CursorPointer.Add(gtx.Ops)
-			fg, bg, weight := colText, colGhost, font.Medium
-			if on {
-				fg, bg, weight = colAccent, colAccentDim, font.SemiBold
-			}
-			if clk.Hovered() {
-				bg = mix(bg, fg, 0.08)
-			}
-			return layout.Stack{}.Layout(gtx,
-				layout.Expanded(func(gtx C) D {
-					r := image.Rectangle{Max: gtx.Constraints.Min}
-					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(r, gtx.Dp(radiusS)).Op(gtx.Ops))
-					return D{Size: gtx.Constraints.Min}
-				}),
-				layout.Stacked(func(gtx C) D {
-					left := unit.Dp(12)
-					if on {
-						left = 8
-					}
-					return layout.Inset{Top: 7, Bottom: 7, Left: left, Right: 12}.Layout(gtx, func(gtx C) D {
-						children := []layout.FlexChild{}
-						if on {
-							children = append(children,
-								layout.Rigid(func(gtx C) D { return drawIcon(gtx, "check", 16, fg) }),
-								hspace(4))
-						}
-						children = append(children, layout.Rigid(line(th, textM, txt, fg, weight).Layout))
-						return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
-					})
-				}),
-			)
-		})
-	}
-}
-
 func (p *tgPage) quietCard(gtx C, u *UI) D {
 	th := u.th
-	stepper := func(down, up *widget.Clickable, v string) layout.Widget {
-		return func(gtx C) D {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx C) D { return iconButton(gtx, down, "chevleft", 32, colText, colGhost) }),
-				layout.Rigid(func(gtx C) D {
-					gtx.Constraints.Min.X = gtx.Dp(64)
-					return layout.Center.Layout(gtx, line(th, textL, v, colText, font.SemiBold).Layout)
-				}),
-				layout.Rigid(func(gtx C) D { return iconButton(gtx, up, "chevron", 32, colText, colGhost) }),
-			)
-		}
-	}
 	ws := []layout.Widget{func(gtx C) D {
 		return toggleRowIcon(gtx, th, &p.quiet, "sleep", toneAccent, u.t("notify.quiet.enabled"), u.t("ui.telegram.quiet.sub"))
 	}}
 	if p.quiet.Value {
 		ws = append(ws,
 			func(gtx C) D {
-				return settingRow(gtx, th, u.t("ui.telegram.quiet.start"), "", stepper(&p.startDown, &p.startUp, p.form.Quiet.Start))
+				return settingRow(gtx, th, u.t("ui.telegram.quiet.start"), "", timeStepper(th, &p.startDown, &p.startUp, p.form.Quiet.Start))
 			},
 			func(gtx C) D {
-				return settingRow(gtx, th, u.t("ui.telegram.quiet.end"), "", stepper(&p.endDown, &p.endUp, p.form.Quiet.End))
+				return settingRow(gtx, th, u.t("ui.telegram.quiet.end"), "", timeStepper(th, &p.endDown, &p.endUp, p.form.Quiet.End))
 			},
 			func(gtx C) D { return toggleRow(gtx, th, &p.quietSec, u.t("notify.quiet.security"), "") },
 			func(gtx C) D { return toggleRow(gtx, th, &p.quietDigest, u.t("notify.quiet.digest"), "") },

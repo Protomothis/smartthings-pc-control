@@ -735,7 +735,11 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 		}
 	}
 	if h.presetAdd.Clicked(gtx) {
-		u.open(pagePresets)
+		if p, ok := u.pages[pagePresets].(*presetsPage); ok {
+			p.StartNew(u)
+		} else {
+			u.open(pagePresets)
+		}
 	}
 	return card(gtx, func(gtx C) D {
 		children := []layout.FlexChild{

@@ -14,7 +14,6 @@ package ui
 
 import (
 	"fmt"
-	"image"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,12 +22,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
-	"gioui.org/text"
-	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
@@ -52,7 +46,7 @@ type presetEdit struct {
 
 	head              widget.Clickable
 	types             chipGroup
-	slots             slotPicker
+	slots             numberGrid
 	browse, test, del widget.Clickable
 
 	// status is the last test run's result, in statusTone.
@@ -88,12 +82,6 @@ func (e *presetEdit) set(r gui.PresetRow) {
 	setText(&e.path, r.Path)
 	setText(&e.args, r.Args)
 	e.slot, e.typ = r.Slot, r.Type
-}
-
-func setText(ed *widget.Editor, s string) {
-	if ed.Text() != s {
-		ed.SetText(s)
-	}
 }
 
 // state is every row as typed.
@@ -206,12 +194,6 @@ func (p *presetsPage) pickPath(u *UI, e *presetEdit) {
 	})
 }
 
-// presetTester is the service call behind 테스트 (gui.Client has it; the
-// window's API does not list it yet).
-type presetTester interface {
-	TestPreset(p gui.Preset) ([]gui.PresetWarning, error)
-}
-
 // runTest runs e as typed via /api/presets/test, the result under it.
 func (p *presetsPage) runTest(u *UI, e *presetEdit) {
 	r := e.row()
@@ -222,16 +204,11 @@ func (p *presetsPage) runTest(u *UI, e *presetEdit) {
 		e.status, e.statusTone = fmt.Sprintf(u.t(k), r.Slot), toneBad
 		return
 	}
-	tester, ok := u.api.(presetTester)
-	if !ok {
-		e.status, e.statusTone = u.t("action.err.unsupported"), toneBad
-		return
-	}
 	pr, _ := gui.PresetOf(r)
 	e.status, e.statusTone, e.testing = u.t("presets.testing"), toneOff, true
 	l := u.language()
 	go func() {
-		ws, err := withLocalSession(u, func() ([]gui.PresetWarning, error) { return tester.TestPreset(pr) })
+		ws, err := withLocalSession(u, func() ([]gui.PresetWarning, error) { return u.api.TestPreset(pr) })
 		u.onWindow(func() {
 			e.testing = false
 			switch {
@@ -303,7 +280,7 @@ func (p *presetsPage) events(gtx C, u *UI, locked bool) {
 		if i := e.types.Clicked(gtx, len(types)); i >= 0 && !locked {
 			e.setType(types[i])
 		}
-		if s := e.slots.Clicked(gtx); s > 0 && !locked && !p.slotTaken(e, s) {
+		if s := e.slots.Clicked(gtx, gui.PresetMaxSlots); s > 0 && !locked && !p.slotTaken(e, s) {
 			e.slot = s
 		}
 		if e.browse.Clicked(gtx) && !locked {
@@ -458,7 +435,7 @@ func (p *presetsPage) layoutEditor(gtx C, u *UI, e *presetEdit, problem, warned 
 		vspace(gapM),
 		fieldLabel(th, u.t("presets.slot")),
 		layout.Rigid(func(gtx C) D {
-			return e.slots.Layout(gtx, th, e.slot, func(s int) bool { return p.slotTaken(e, s) })
+			return e.slots.Layout(gtx, th, gui.PresetMaxSlots, e.slot, func(s int) bool { return p.slotTaken(e, s) })
 		}),
 		layout.Rigid(func(gtx C) D {
 			if locked {
@@ -522,69 +499,3 @@ func (p *presetsPage) layoutEditor(gtx C, u *UI, e *presetEdit, problem, warned 
 	}
 	return column(gtx, children...)
 }
-
-// fieldButton is a quiet button as tall as the field beside it.
-func fieldButton(th *material.Theme, clk *widget.Clickable, txt string) material.ButtonStyle {
-	b := smallButton(th, clk, txt, colText)
-	b.CornerRadius = radiusM
-	b.Inset = layout.Inset{Top: 13, Bottom: 13, Left: 14, Right: 14}
-	return b
-}
-
-// --- slot picker -----------------------------------------------------------------
-
-// slotPicker is a row of the ten slot numbers: the chosen one in accent,
-// the ones other presets use faint. A candidate for widgets.go if another
-// page needs a number grid.
-type slotPicker struct {
-	clks [gui.PresetMaxSlots]widget.Clickable
-}
-
-// Clicked returns the slot (1 …) tapped since the last frame, or 0.
-func (sp *slotPicker) Clicked(gtx C) int {
-	hit := 0
-	for i := range sp.clks {
-		if sp.clks[i].Clicked(gtx) {
-			hit = i + 1
-		}
-	}
-	return hit
-}
-
-// Layout draws the slots in equal cells across the width.
-func (sp *slotPicker) Layout(gtx C, th *material.Theme, selected int, taken func(int) bool) D {
-	cells := make([]layout.Widget, len(sp.clks))
-	for i := range sp.clks {
-		slot := i + 1
-		cells[i] = func(gtx C) D {
-			fg, bg := colText, colGhost
-			switch {
-			case slot == selected:
-				fg, bg = colOnAccent, colAccent
-			case taken(slot):
-				fg = colFaint
-			}
-			return sp.clks[i].Layout(gtx, func(gtx C) D {
-				if slot != selected && !taken(slot) {
-					pointer.CursorPointer.Add(gtx.Ops)
-					if sp.clks[i].Hovered() {
-						bg = mix(bg, colText, 0.06)
-					}
-				}
-				w, h := gtx.Constraints.Max.X, gtx.Dp(slotCellH)
-				r := clip.UniformRRect(image.Rect(0, 0, w, h), gtx.Dp(radiusS))
-				paint.FillShape(gtx.Ops, bg, r.Op(gtx.Ops))
-				gtx.Constraints = layout.Exact(image.Pt(w, h))
-				return layout.Center.Layout(gtx, func(gtx C) D {
-					l := label(th, textM, fmt.Sprint(slot), fg, font.SemiBold)
-					l.Alignment = text.Middle
-					return l.Layout(gtx)
-				})
-			})
-		}
-	}
-	return grid(gtx, 4, cells...)
-}
-
-// slotCellH is a slot cell's height.
-const slotCellH unit.Dp = 34

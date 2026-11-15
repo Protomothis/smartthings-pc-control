@@ -23,9 +23,7 @@ import (
 	"slices"
 
 	"gioui.org/font"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"golang.org/x/exp/shiny/materialdesign/icons"
@@ -36,7 +34,6 @@ import (
 func init() {
 	iconData["apps"] = icons.NavigationApps
 	iconData["person"] = icons.SocialPerson
-	iconData["search"] = icons.ActionSearch
 }
 
 // pickerShown caps the picker's rows; the search narrows the rest.
@@ -44,12 +41,6 @@ const pickerShown = 40
 
 // slotPillW is the slot pill's width, so the fields of every row line up.
 const slotPillW unit.Dp = 80
-
-// processLister is the part of the API the picker needs; *gui.Client has
-// it (the page's API interface does not, so tests can leave it out).
-type processLister interface {
-	RunningProcesses() ([]string, error)
-}
 
 type sharePage struct {
 	// form is the page as plain values, read from the widgets at the top
@@ -259,15 +250,11 @@ func (p *sharePage) candidates() []string {
 // openPicker opens the panel and fetches the running programs off the
 // window goroutine.
 func (p *sharePage) openPicker(u *UI) {
-	lister, ok := u.api.(processLister)
-	if !ok {
-		return
-	}
 	u.clearNotice(p)
 	p.picker.reset()
 	p.picker.open, p.picker.loading = true, true
 	go func() {
-		names, err := withLocalSession(u, lister.RunningProcesses)
+		names, err := withLocalSession(u, u.api.RunningProcesses)
 		u.onWindow(func() { p.gotProcesses(u, names, err) })
 	}()
 }
@@ -306,9 +293,7 @@ func (p *sharePage) body(gtx C, u *UI, s snapshot) D {
 					return toggleRowIcon(gtx, th, &p.session, "lock", toneAccent, u.t("st.session"), u.t("ui.sharing.session.hint"))
 				},
 				func(gtx C) D {
-					if !p.session.Value {
-						defer paint.PushOpacity(gtx.Ops, 0.45).Pop()
-					}
+					defer dim(gtx, !p.session.Value)()
 					return toggleRowIcon(gtx, th, &p.user, "person", toneOff, u.t("st.session.user"), u.t("ui.sharing.user.hint"))
 				},
 			)
@@ -493,7 +478,7 @@ func (p *sharePage) pickerPanel(gtx C, u *UI) D {
 			pk.grow(len(shown))
 			ws := make([]layout.Widget, len(shown))
 			for k, name := range shown {
-				ws[k] = func(gtx C) D { return pickRow(gtx, u, &pk.rows[k], name) }
+				ws[k] = func(gtx C) D { return pickRow(gtx, th, &pk.rows[k], name) }
 			}
 			children = append(children, layout.Rigid(func(gtx C) D { return rows(gtx, ws...) }))
 			if more > 0 {
@@ -501,25 +486,6 @@ func (p *sharePage) pickerPanel(gtx C, u *UI) D {
 					layout.Rigid(label(th, textS, fmt.Sprintf(u.t("ui.sharing.pick.more"), more), colFaint, font.Normal).Layout))
 			}
 			return column(gtx, children...)
-		})
-	})
-}
-
-// pickRow is one running program: its name and an add mark.
-func pickRow(gtx C, u *UI, clk *widget.Clickable, name string) D {
-	return clk.Layout(gtx, func(gtx C) D {
-		pointer.CursorPointer.Add(gtx.Ops)
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		col := colText
-		if clk.Hovered() {
-			col = colAccent
-		}
-		return layout.Inset{Top: 2, Bottom: 2, Left: 4}.Layout(gtx, func(gtx C) D {
-			return row(gtx,
-				layout.Flexed(1, line(u.th, textL, name, col, font.Normal).Layout),
-				hspace(gapS),
-				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "add", 20, colAccent) }),
-			)
 		})
 	})
 }

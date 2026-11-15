@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,4 +83,19 @@ func TestComponentsLayout(t *testing.T) {
 		}
 	}
 	usePalette(false)
+}
+
+// Korean text may break only at spaces; other text is left alone.
+func TestKeepWords(t *testing.T) {
+	if got := keepWords("plain text"); got != "plain text" {
+		t.Fatalf("latin changed: %q", got)
+	}
+	got := keepWords("저장했어요. 3초 뒤")
+	want := "저\u2060장\u2060했\u2060어\u2060요\u2060. 3\u2060초 뒤"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if strings.ReplaceAll(got, "\u2060", "") != "저장했어요. 3초 뒤" {
+		t.Fatal("text changed beyond joiners")
+	}
 }

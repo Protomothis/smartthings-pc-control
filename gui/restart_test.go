@@ -25,10 +25,10 @@ func TestSTCommandPortLine(t *testing.T) {
 			"명령 포트 TCP 5001 · 방화벽 규칙 OK",
 			"Command port TCP 5001 · firewall rule OK"},
 		{"rule missing", STCommandPort{Port: 5001, Checked: true}, 0,
-			"명령 포트 TCP 5001 · 방화벽 규칙 없음 (허브가 이 PC에 닿지 못할 수 있습니다, 로그 확인)",
+			"명령 포트 TCP 5001 · 방화벽 규칙 없음 (허브가 이 PC에 닿지 못할 수 있어요, 로그 확인)",
 			"Command port TCP 5001 · no firewall rule (the hub may not reach this PC, check the log)"},
 		{"saved port not applied yet", STCommandPort{Port: 5001, FirewallRule: true, Checked: true}, 5005,
-			"명령 포트 TCP 5001 · 방화벽 규칙 OK · 저장한 포트 5005는 서비스를 다시 시작하면 적용됩니다",
+			"명령 포트 TCP 5001 · 방화벽 규칙 OK · 저장한 포트 5005는 서비스를 다시 시작하면 적용돼요",
 			"Command port TCP 5001 · firewall rule OK · the saved port 5005 applies after a service restart"},
 	}
 	for _, c := range cases {

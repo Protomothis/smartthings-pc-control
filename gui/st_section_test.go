@@ -138,7 +138,7 @@ func TestSTSearchLine(t *testing.T) {
 		{
 			name:  "the firewall rule is missing",
 			state: STSSDPState{Running: true},
-			ko:    "검색 응답기 켜짐 · 방화벽 규칙 없음 (서비스를 다시 시작하면 만듭니다) · 검색 요청 없음",
+			ko:    "검색 응답기 켜짐 · 방화벽 규칙 없음 (서비스를 다시 시작하면 만들어요) · 검색 요청 없음",
 			en:    "Discovery responder on · No firewall rule (restart the service to create it) · No search yet",
 		},
 		{

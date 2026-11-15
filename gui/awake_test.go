@@ -48,7 +48,7 @@ func TestAwakeStatusText(t *testing.T) {
 		a    Awake
 		want string
 	}{
-		{ko, Awake{}, "꺼짐 — 평소 절전 설정을 따릅니다"},
+		{ko, Awake{}, "꺼짐 — 평소 절전 설정을 따라요"},
 		{ko, Awake{On: true}, "켜짐 · 끌 때까지"},
 		{ko, Awake{On: true, Until: until(42 * time.Minute), RemainingSeconds: 42 * 60}, "42분 남음 · 14:30까지"},
 		// Seconds round up, never "0분".

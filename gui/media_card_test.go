@@ -101,9 +101,9 @@ func TestMediaReason(t *testing.T) {
 		want string
 	}{
 		{on, nil, ""},
-		{MediaState{Session: true}, nil, "설정 탭에서 '원격 볼륨·미디어 제어 허용'을 켜면 쓸 수 있습니다"},
-		{MediaState{Enabled: true}, nil, "로그인한 사용자가 없어 쓸 수 없습니다"},
-		{MediaState{}, errMediaUnsupported, "미디어 카드는 서비스 v1.2.0 이상이 필요합니다"},
+		{MediaState{Session: true}, nil, "서비스 설정에서 '볼륨·미디어 제어'를 켜면 쓸 수 있어요"},
+		{MediaState{Enabled: true}, nil, "로그인한 사용자가 없어 쓸 수 없어요"},
+		{MediaState{}, errMediaUnsupported, "미디어 카드는 서비스 v1.2.0 이상이 필요해요"},
 	}
 	for _, c := range cases {
 		if got := ko.mediaReason(c.m, c.err); got != c.want {
@@ -115,9 +115,9 @@ func TestMediaReason(t *testing.T) {
 func TestMediaErrorText(t *testing.T) {
 	ko := &ui{lang: LangKo}
 	cases := map[error]string{
-		&mediaCommandError{Code: "no_user_session"}:                                    "로그인한 사용자가 없어 쓸 수 없습니다",
-		&mediaCommandError{Code: "timeout"}:                                            "PC가 3초 안에 답하지 않았습니다",
-		&mediaCommandError{Code: "unsupported", Message: "no default playback device"}: "이 PC에서는 할 수 없습니다: no default playback device",
+		&mediaCommandError{Code: "no_user_session"}:                                    "로그인한 사용자가 없어 쓸 수 없어요",
+		&mediaCommandError{Code: "timeout"}:                                            "PC가 3초 안에 답하지 않았어요",
+		&mediaCommandError{Code: "unsupported", Message: "no default playback device"}: "이 PC에서는 할 수 없어요: no default playback device",
 		&mediaCommandError{Code: "failed"}:                                             "실패: user-action",
 		errors.New("connection refused"):                                               "실패: connection refused",
 	}

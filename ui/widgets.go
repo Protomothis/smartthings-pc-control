@@ -15,20 +15,35 @@ package ui
 //	                  fieldRow (title left, narrow field right: a port),
 //	                  listRow (tappable row with a chevron → sub-page),
 //	                  connRow (icon tile, title, summary, status pill,
-//	                  chevron: the home 연결 card's rows).
+//	                  chevron: the home 연결 card's rows),
+//	                  actionRow (icon tile, title, grey line, chevron: does
+//	                  something rather than open a page), pickRow (a name
+//	                  with an add mark: pick-from lists).
 //	Inputs            field (one line), textArea (several lines),
-//	                  secretField (masked, with an eye), chipGroup (≤6
-//	                  choices; wraps), toggle (the switch itself).
+//	                  secretField (masked, with an eye), searchField
+//	                  (magnifier and clear button), chipGroup (≤6 choices;
+//	                  wraps), checkChip (one of a multiple choice),
+//	                  choiceList (one of several rows that each need a
+//	                  name, a line and a pill), numberGrid (1…n in equal
+//	                  cells: preset slots), timeStepper (a value between
+//	                  ‹ and ›), fieldButton (a button as tall as a field),
+//	                  toggle (the switch itself). setText refills an editor
+//	                  without moving the caret.
 //	Lists             listEditor: rows the user adds and deletes (hubs,
 //	                  chat IDs, watched programs). Call Deleted/Added
 //	                  before Layout each frame.
 //	Buttons           primaryButton (the one strong action), secondaryButton,
 //	                  greyButton, dangerButton, smallButton (quiet pill),
-//	                  iconButton (round), copyButton (copies, then says so).
+//	                  iconButton (round), copyButton (copies, then says so),
+//	                  liveButton (live/paused pill), floatingPill (accent
+//	                  pill laid over content).
 //	State             tone (toneOK/Off/Warn/Bad/Accent) colours statusPill,
 //	                  iconTile and heroCard alike; banner shows a coloured
 //	                  line (u.setNotice puts one at the top of a page: save
 //	                  errors, warnings); statusDot, usageBar, pill.
+//	Layout            natural (own width inside a column), dim (fades a
+//	                  row that only matters while another setting is on),
+//	                  wrap, grid, fill.
 //	Questions         u.ask(askSpec{…}) opens a sheet with confirm/cancel
 //	                  (quit.go); u.toast.show / showAction for a passing
 //	                  message, optionally with one action.
@@ -44,8 +59,10 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gioui.org/font"
 	"gioui.org/io/clipboard"
@@ -110,6 +127,9 @@ var iconData = map[string][]byte{
 	"music":     icons.AVQueueMusic,
 	"check":     icons.NavigationCheck,
 	"close":     icons.NavigationClose,
+	"chevleft":  icons.NavigationChevronLeft,
+	"search":    icons.ActionSearch,
+	"todown":    icons.NavigationArrowDownward,
 }
 
 var iconCache = map[string]*widget.Icon{}
@@ -882,3 +902,423 @@ func (c *copyButton) Layout(gtx C, th *material.Theme, value, txt, done string) 
 	}
 	return smallButton(th, &c.clk, shown, colAccent).Layout(gtx)
 }
+
+// --- more inputs -----------------------------------------------------------------
+
+// setText puts s in ed unless it already says so, so the caret stays put
+// when a form is refilled with what is typed.
+func setText(ed *widget.Editor, s string) {
+	if ed.Text() != s {
+		ed.SetText(s)
+	}
+}
+
+// fieldButton is a quiet button as tall as the field beside it ([찾아보기]
+// next to a path).
+func fieldButton(th *material.Theme, clk *widget.Clickable, txt string) material.ButtonStyle {
+	b := smallButton(th, clk, txt, colText)
+	b.CornerRadius = radiusM
+	b.Inset = layout.Inset{Top: 13, Bottom: 13, Left: 14, Right: 14}
+	return b
+}
+
+// searchField is a filter box: a magnifier, the editor and, while it
+// holds text, a clear button. The caller empties ed on clear.Clicked.
+func searchField(gtx C, th *material.Theme, ed *widget.Editor, clear *widget.Clickable, hint string) D {
+	return fieldFrame(gtx, func(gtx C) D {
+		return row(gtx,
+			layout.Rigid(func(gtx C) D { return drawIcon(gtx, "search", 18, colSub) }),
+			hspace(8),
+			layout.Flexed(1, func(gtx C) D {
+				e := material.Editor(th, ed, hint)
+				e.HintColor = colFaint
+				e.TextSize = textL
+				return e.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx C) D {
+				if ed.Len() == 0 {
+					return D{}
+				}
+				return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
+					return iconButton(gtx, clear, "close", 20, colSub, colGhost)
+				})
+			}),
+		)
+	})
+}
+
+// timeStepper is a value ("22:00") between a back and a forward button;
+// the caller moves the value on down/up.Clicked.
+func timeStepper(th *material.Theme, down, up *widget.Clickable, v string) layout.Widget {
+	return func(gtx C) D {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx C) D { return iconButton(gtx, down, "chevleft", 32, colText, colGhost) }),
+			layout.Rigid(func(gtx C) D {
+				gtx.Constraints.Min.X = gtx.Dp(64)
+				return layout.Center.Layout(gtx, line(th, textL, v, colText, font.SemiBold).Layout)
+			}),
+			layout.Rigid(func(gtx C) D { return iconButton(gtx, up, "chevron", 32, colText, colGhost) }),
+		)
+	}
+}
+
+// numberGrid is a row of the numbers 1…n in equal cells: the chosen one in
+// accent, the ones taken elsewhere faint (preset slots).
+type numberGrid struct {
+	clks []widget.Clickable
+}
+
+func (g *numberGrid) grow(n int) {
+	if len(g.clks) < n {
+		g.clks = append(g.clks, make([]widget.Clickable, n-len(g.clks))...)
+	}
+}
+
+// Clicked returns the number (1 …) tapped since the last frame, or 0.
+func (g *numberGrid) Clicked(gtx C, n int) int {
+	g.grow(n)
+	hit := 0
+	for i := range n {
+		if g.clks[i].Clicked(gtx) {
+			hit = i + 1
+		}
+	}
+	return hit
+}
+
+// numberCellH is a numberGrid cell's height.
+const numberCellH unit.Dp = 34
+
+// Layout draws 1…n across the width.
+func (g *numberGrid) Layout(gtx C, th *material.Theme, n, selected int, taken func(int) bool) D {
+	g.grow(n)
+	cells := make([]layout.Widget, n)
+	for i := range n {
+		num := i + 1
+		cells[i] = func(gtx C) D {
+			fg, bg := colText, colGhost
+			switch {
+			case num == selected:
+				fg, bg = colOnAccent, colAccent
+			case taken(num):
+				fg = colFaint
+			}
+			return g.clks[i].Layout(gtx, func(gtx C) D {
+				if num != selected && !taken(num) {
+					pointer.CursorPointer.Add(gtx.Ops)
+					if g.clks[i].Hovered() {
+						bg = mix(bg, colText, 0.06)
+					}
+				}
+				w, h := gtx.Constraints.Max.X, gtx.Dp(numberCellH)
+				r := clip.UniformRRect(image.Rect(0, 0, w, h), gtx.Dp(radiusS))
+				paint.FillShape(gtx.Ops, bg, r.Op(gtx.Ops))
+				gtx.Constraints = layout.Exact(image.Pt(w, h))
+				return layout.Center.Layout(gtx, func(gtx C) D {
+					l := label(th, textM, strconv.Itoa(num), fg, font.SemiBold)
+					l.Alignment = text.Middle
+					return l.Layout(gtx)
+				})
+			})
+		}
+	}
+	return grid(gtx, 4, cells...)
+}
+
+// checkChip is a chip of a multiple choice: grey while off, accent text
+// on the accent tint with a check while on.
+func checkChip(th *material.Theme, clk *widget.Clickable, txt string, on bool) layout.Widget {
+	return func(gtx C) D {
+		return clk.Layout(gtx, func(gtx C) D {
+			pointer.CursorPointer.Add(gtx.Ops)
+			fg, bg, weight := colText, colGhost, font.Medium
+			if on {
+				fg, bg, weight = colAccent, colAccentDim, font.SemiBold
+			}
+			if clk.Hovered() {
+				bg = mix(bg, fg, 0.08)
+			}
+			return layout.Stack{}.Layout(gtx,
+				layout.Expanded(func(gtx C) D {
+					r := image.Rectangle{Max: gtx.Constraints.Min}
+					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(r, gtx.Dp(radiusS)).Op(gtx.Ops))
+					return D{Size: gtx.Constraints.Min}
+				}),
+				layout.Stacked(func(gtx C) D {
+					left := unit.Dp(12)
+					if on {
+						left = 8
+					}
+					return layout.Inset{Top: 7, Bottom: 7, Left: left, Right: 12}.Layout(gtx, func(gtx C) D {
+						children := []layout.FlexChild{}
+						if on {
+							children = append(children,
+								layout.Rigid(func(gtx C) D { return drawIcon(gtx, "check", 16, fg) }),
+								hspace(4))
+						}
+						children = append(children, layout.Rigid(line(th, textM, txt, fg, weight).Layout))
+						return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
+					})
+				}),
+			)
+		})
+	}
+}
+
+// --- choice list -----------------------------------------------------------------
+
+// choiceItem is one row of a choiceList: a title, a grey line and an
+// optional pill in a tone.
+type choiceItem struct {
+	title, sub string
+	pill       string
+	tone       tone
+}
+
+// choiceList picks one of several rows that each need more than a chip's
+// word (WoL adapters: a name, a MAC, a state). The selected row has a
+// tinted panel and a check.
+type choiceList struct {
+	clks []widget.Clickable
+}
+
+// Clicked returns the row tapped since the last frame, or -1.
+func (c *choiceList) Clicked(gtx C, n int) int {
+	c.grow(n)
+	hit := -1
+	for i := range n {
+		if c.clks[i].Clicked(gtx) {
+			hit = i
+		}
+	}
+	return hit
+}
+
+func (c *choiceList) grow(n int) {
+	if len(c.clks) < n {
+		c.clks = append(c.clks, make([]widget.Clickable, n-len(c.clks))...)
+	}
+}
+
+// Layout draws the rows, selected (-1 for none) highlighted.
+func (c *choiceList) Layout(gtx C, th *material.Theme, items []choiceItem, selected int) D {
+	c.grow(len(items))
+	children := make([]layout.FlexChild, 0, 2*len(items))
+	for i, it := range items {
+		if i > 0 {
+			children = append(children, vspace(4))
+		}
+		children = append(children, layout.Rigid(func(gtx C) D {
+			return choiceRow(gtx, th, &c.clks[i], it, i == selected)
+		}))
+	}
+	return column(gtx, children...)
+}
+
+// choiceRow is one row of a choiceList.
+func choiceRow(gtx C, th *material.Theme, clk *widget.Clickable, it choiceItem, selected bool) D {
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		bg, edge := colCard, colLine
+		if selected {
+			bg, edge = colAccentDim, colAccentDim
+		}
+		border := widget.Border{Color: edge, CornerRadius: radiusM, Width: 1}
+		return border.Layout(gtx, func(gtx C) D {
+			return surface(gtx, bg, radiusM, func(gtx C) D {
+				return layout.Inset{Top: 10, Bottom: 10, Left: 12, Right: 12}.Layout(gtx, func(gtx C) D {
+					return row(gtx,
+						layout.Rigid(func(gtx C) D {
+							if selected {
+								return drawIcon(gtx, "check", 20, colAccent)
+							}
+							return D{Size: imagePt(gtx.Dp(20))}
+						}),
+						hspace(10),
+						layout.Flexed(1, titled(th, it.title, it.sub)),
+						layout.Rigid(func(gtx C) D {
+							if it.pill == "" {
+								return D{}
+							}
+							return layout.Inset{Left: 8}.Layout(gtx, statusPill(th, it.pill, it.tone))
+						}),
+					)
+				})
+			})
+		})
+	})
+}
+
+// --- more rows -------------------------------------------------------------------
+
+// actionRow is a tappable row that does something: an icon tile, a title
+// (red for a destructive one) over a grey line, and a chevron.
+func actionRow(gtx C, th *material.Theme, clk *widget.Clickable, iconName string, t tone, title, sub string, danger bool) D {
+	titleCol := colText
+	if danger {
+		titleCol = colDanger
+	}
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Inset{Top: 2, Bottom: 2}.Layout(gtx, func(gtx C) D {
+			return row(gtx,
+				layout.Rigid(func(gtx C) D { return iconTile(gtx, iconName, t, 36) }),
+				hspace(gapS),
+				layout.Flexed(1, func(gtx C) D {
+					return column(gtx,
+						layout.Rigid(label(th, textL, title, titleCol, font.Medium).Layout),
+						vspace(3),
+						layout.Rigid(label(th, textS, sub, colSub, font.Normal).Layout),
+					)
+				}),
+				hspace(4),
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "chevron", 20, colFaint) }),
+			)
+		})
+	})
+}
+
+// pickRow is one entry of a pick-from list (a running program): its name
+// and an add mark; the name turns accent under the pointer.
+func pickRow(gtx C, th *material.Theme, clk *widget.Clickable, name string) D {
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		col := colText
+		if clk.Hovered() {
+			col = colAccent
+		}
+		return layout.Inset{Top: 2, Bottom: 2, Left: 4}.Layout(gtx, func(gtx C) D {
+			return row(gtx,
+				layout.Flexed(1, line(th, textL, name, col, font.Normal).Layout),
+				hspace(gapS),
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "add", 20, colAccent) }),
+			)
+		})
+	})
+}
+
+// dimOpacity is how much of a dimmed row shows.
+const dimOpacity = 0.45
+
+// dim fades what is drawn until the returned func runs, when on is set: a
+// row that only matters while another setting is on.
+//
+//	defer dim(gtx, !p.session.Value)()
+func dim(gtx C, on bool) func() {
+	if !on {
+		return func() {}
+	}
+	return paint.PushOpacity(gtx.Ops, dimOpacity).Pop
+}
+
+// natural lays w out at its own width instead of the card's (a lone
+// button in a column).
+func natural(w layout.Widget) layout.Widget {
+	return func(gtx C) D {
+		gtx.Constraints.Min.X = 0
+		return w(gtx)
+	}
+}
+
+// --- live and floating pills ------------------------------------------------------
+
+// liveButton is a pill that shows whether something updates live (a green
+// dot and liveTxt) or is paused (a pause mark and pausedTxt); the caller
+// switches it on clk.Clicked.
+func liveButton(gtx C, th *material.Theme, clk *widget.Clickable, live bool, liveTxt, pausedTxt string) D {
+	txt, fg, bg := liveTxt, colOK, mix(colCard, colOK, 0.14)
+	if !live {
+		txt, fg, bg = pausedTxt, colSub, colGhost
+	}
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		return layout.Stack{}.Layout(gtx,
+			layout.Expanded(func(gtx C) D {
+				r := image.Rectangle{Max: gtx.Constraints.Min}
+				c := bg
+				if clk.Hovered() {
+					c = mix(bg, fg, 0.12)
+				}
+				paint.FillShape(gtx.Ops, c, clip.UniformRRect(r, gtx.Dp(radiusS)).Op(gtx.Ops))
+				return D{Size: r.Max}
+			}),
+			layout.Stacked(func(gtx C) D {
+				return layout.Inset{Top: 7, Bottom: 7, Left: 10, Right: 12}.Layout(gtx, func(gtx C) D {
+					return row(gtx,
+						layout.Rigid(func(gtx C) D {
+							if !live {
+								return drawIcon(gtx, "pause", 16, fg)
+							}
+							return layout.UniformInset(4).Layout(gtx, func(gtx C) D { return statusDot(gtx, fg, 8) })
+						}),
+						hspace(4),
+						layout.Rigid(line(th, textM, txt, fg, font.SemiBold).Layout),
+					)
+				})
+			}),
+		)
+	})
+}
+
+// floatingPill is an accent pill with an icon and a word, laid over
+// content (맨 아래로 over the log).
+func floatingPill(gtx C, th *material.Theme, clk *widget.Clickable, iconName, txt string) D {
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		return layout.Stack{}.Layout(gtx,
+			layout.Expanded(func(gtx C) D {
+				r := image.Rectangle{Max: gtx.Constraints.Min}
+				c := colAccent
+				if clk.Hovered() {
+					c = mix(colAccent, colOnAccent, 0.12)
+				}
+				paint.FillShape(gtx.Ops, c, clip.UniformRRect(r, r.Dy()/2).Op(gtx.Ops))
+				return D{Size: r.Max}
+			}),
+			layout.Stacked(func(gtx C) D {
+				return layout.Inset{Top: 8, Bottom: 8, Left: 12, Right: 14}.Layout(gtx, func(gtx C) D {
+					return row(gtx,
+						layout.Rigid(func(gtx C) D { return drawIcon(gtx, iconName, 16, colOnAccent) }),
+						hspace(6),
+						layout.Rigid(line(th, textM, txt, colOnAccent, font.SemiBold).Layout),
+					)
+				})
+			}),
+		)
+	})
+}
+
+// --- Korean line breaking --------------------------------------------------------
+
+// wordJoiner (U+2060) forbids a line break on either side and draws
+// nothing.
+const wordJoiner = '\u2060'
+
+// keepWords makes Korean text wrap at spaces only, like CSS
+// word-break: keep-all. The line breaker allows a break between any two
+// Hangul syllables, so a sentence would otherwise leave one syllable
+// ("다") alone on the last line. A word joiner goes between two
+// neighbours when either is Hangul and neither is a space; a word too
+// long for the line is still broken (Gio falls back to graphemes).
+func keepWords(s string) string {
+	if !strings.ContainsFunc(s, isHangul) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) * 2)
+	var prev rune
+	for i, r := range s {
+		if i > 0 && (isHangul(prev) || isHangul(r)) && !unicode.IsSpace(prev) && !unicode.IsSpace(r) {
+			b.WriteRune(wordJoiner)
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	return b.String()
+}
+
+// isHangul reports a Hangul syllable or jamo.
+func isHangul(r rune) bool { return unicode.Is(unicode.Hangul, r) }

@@ -102,13 +102,3 @@ func TestSTWoLItems(t *testing.T) {
 		t.Errorf("auto without adapters = %+v", it)
 	}
 }
-
-// A client without the adapter list hides the section without a request.
-func TestSTPageNoAdapterAPI(t *testing.T) {
-	u := New(fakeAPI{}, "dev", loadPrefs(""), func() {})
-	p := u.pages[pageSmartThings].(*stPage)
-	p.reload(u)
-	if !p.net.unsupported {
-		t.Error("fake API without GetWoLStatus should mark the list unsupported")
-	}
-}

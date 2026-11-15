@@ -95,9 +95,9 @@ func TestLoginErrorMessage(t *testing.T) {
 		lang Lang
 		want string
 	}{
-		{"limited ko", errLoginLimited, LangKo, "로그인 시도가 너무 많습니다. 60초 후 다시 시도하세요."},
+		{"limited ko", errLoginLimited, LangKo, "로그인 시도가 너무 많아요. 60초 후 다시 시도하세요."},
 		{"limited en", errLoginLimited, LangEn, "Too many login attempts. Try again in 60 seconds."},
-		{"invalid ko", errLoginInvalid, LangKo, "시크릿이 올바르지 않습니다."},
+		{"invalid ko", errLoginInvalid, LangKo, "시크릿이 올바르지 않아요."},
 		{"invalid en", errLoginInvalid, LangEn, "Invalid secret."},
 		{"other passes through", other, LangKo, "login failed (HTTP 500)"},
 	}

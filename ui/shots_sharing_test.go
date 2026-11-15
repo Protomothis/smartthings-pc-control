@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -89,7 +88,7 @@ func TestShotsSharing(t *testing.T) {
 // shotSharingUI is sampleUI with a watch list, the 공유 page open.
 func shotSharingUI(lang gui.Lang, dark bool) (*UI, *sharePage) {
 	u := sampleUI(lang, dark)
-	u.api = shotProcAPI{}
+	u.api = fakeAPI{}
 	cfg := u.current().cfg
 	cfg.SmartThings.ExposeSessionUser = false
 	cfg.Activity = gui.ActivityConfig{Enabled: true, Watch: []gui.ActivityWatch{
@@ -102,11 +101,6 @@ func shotSharingUI(lang gui.Lang, dark bool) (*UI, *sharePage) {
 	u.open(pageSharing)
 	return u, u.pages[pageSharing].(*sharePage)
 }
-
-// shotProcAPI is fakeAPI that lists nothing (the shots fill the picker).
-type shotProcAPI struct{ fakeAPI }
-
-func (shotProcAPI) RunningProcesses() ([]string, error) { return nil, errors.New("fake") }
 
 // pageFull draws a page as the window's scrolling column does, but as
 // tall as its content.

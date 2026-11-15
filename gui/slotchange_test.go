@@ -84,7 +84,7 @@ func TestSlotChangeText(t *testing.T) {
 	changes := configSlotChanges(old, next)
 	body := slotChangeBody(LangKo, changes)
 	want := "프리셋 3: 게임 모드 → (비어 있음)\n감시 1: Steam → OBS\n\n" +
-		"이 칸을 쓰는 SmartThings 루틴이 다른 대상을 가리키게 됩니다. 저장할까요?"
+		"이 칸을 쓰는 SmartThings 루틴이 다른 대상을 가리키게 돼요. 저장할까요?"
 	if body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
