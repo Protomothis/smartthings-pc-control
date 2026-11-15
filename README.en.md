@@ -29,9 +29,9 @@ One exe to install, and it is ready even before anyone signs in.
 
 ## What it does
 
-| | |
+| Feature | What it does |
 |---|---|
-| ⏻ **Power** | Shutdown, restart, sleep, hibernate, lock, screen off/on. A remote shutdown waits out a grace period (5 min by default) you can cancel from anywhere. |
+| ⚡ **Power** | Shutdown, restart, sleep, hibernate, lock, screen off/on. A remote shutdown waits out a grace period (5 min by default) you can cancel from anywhere. |
 | 📡 **Real power state** | The SmartThings app shows on, asleep, hibernating, off, waking and shutdown pending as they are. |
 | ⏰ **Wake and schedule** | Turning the switch on wakes the PC with Wake-on-LAN. Schedule a command 5 minutes to 3 days ahead, and cancel it any time. |
 | ☀️ **Keep awake** | Hold off idle sleep for a while. Shutdown and sleep you ask for still happen. |
