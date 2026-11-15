@@ -29,6 +29,9 @@ var (
 	errUserActionTimeout = session.ErrTimeout
 	// errUserActionOutput: no readable reply line.
 	errUserActionOutput = session.ErrOutput
+	// errTrayUnavailable: someone is logged in, but no tray app takes
+	// jobs in that session (#164); answered 409 tray_unavailable.
+	errTrayUnavailable = session.ErrTrayUnavailable
 )
 
 // trays hands the user-session actions to the tray apps (#164); the WebUI
@@ -73,6 +76,14 @@ func findSessionID(target sessionTarget) (uint32, error) {
 func trayConnected(target sessionTarget) bool {
 	id, err := findSessionID(target)
 	return err == nil && trays.Connected(id)
+}
+
+// trayMissing reports whether someone is logged in to target's session
+// but its tray app takes no jobs: the one cause of a failing user-session
+// command the user can fix on the spot (Telegram says so).
+func trayMissing(target sessionTarget) bool {
+	id, err := findSessionID(target)
+	return err == nil && !trays.Connected(id)
 }
 
 // storeUserActionReply folds an ok reply of an active-user run into the

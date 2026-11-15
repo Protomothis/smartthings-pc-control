@@ -101,6 +101,9 @@
       "locked": true,
       "user": "golden"
     },
+    "tray": {
+      "connected": true
+    },
     "update": {
       "available": true,
       "latest": "v1.2.1"

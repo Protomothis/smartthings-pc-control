@@ -22,8 +22,8 @@ const (
 	NotifyMaxTitle = useraction.MaxTitleRunes
 )
 
-// NotifyResult is what the user-action child reported for a shown
-// notification.
+// NotifyResult is what the user session (the tray app, #164) reported for
+// a shown notification.
 type NotifyResult struct {
 	Toast string `json:"toast"` // "shown" or "pending"
 }

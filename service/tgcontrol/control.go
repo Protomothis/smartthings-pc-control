@@ -16,6 +16,7 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/service/power"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
+	"github.com/Protomothis/smartthings-pc-control/service/session"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 	"github.com/Protomothis/smartthings-pc-control/service/telegram"
 )
@@ -400,6 +401,19 @@ func (c *Control) standbyNote(name string) string {
 	return "\n" + c.text("standby_"+name)
 }
 
+// trayNote is the line appended to a screen reply when the console's tray
+// app is not running (#164): the command is sent but nothing in the
+// session can carry it out. "" otherwise and for other commands.
+func (c *Control) trayNote(name string) string {
+	if name != "turnscreenoff" && name != "turnscreenon" {
+		return ""
+	}
+	if c.d.TrayMissing == nil || !c.d.TrayMissing(session.Console) {
+		return ""
+	}
+	return "\n" + c.text("tray_off_note")
+}
+
 // runScheduledNow ends the active schedule (by=telegram) and executes its
 // command immediately; ok is false when nothing was scheduled.
 func (c *Control) runScheduledNow() (string, bool) {
@@ -460,7 +474,7 @@ func (c *Control) handleCommand(ctx context.Context, chatID string, cmd string, 
 	case "lock", "screenoff", "screenon":
 		name := telegramAliases[cmd]
 		c.runCommand(name)
-		return c.text("executed", c.commandLabel(name)) + c.standbyNote(name), nil, nil
+		return c.text("executed", c.commandLabel(name)) + c.standbyNote(name) + c.trayNote(name), nil, nil
 	case "sleep", "hibernate", "restart", "shutdown":
 		return c.powerCommand(telegramAliases[cmd], args)
 	case "cancel":
@@ -844,6 +858,11 @@ func (c *Control) statusText() string {
 		if until := bus.MutedUntil(); !until.IsZero() {
 			fmt.Fprintf(&b, "\n%s: %s", c.text("st_muted"), c.text("st_until", until.Format("15:04")))
 		}
+	}
+	// #164: a missing tray app is the one reason the user-session
+	// commands fail that the user can fix on the spot.
+	if c.d.TrayMissing != nil && c.d.TrayMissing(session.ActiveUser) {
+		b.WriteString("\n" + c.text("tray_off_note"))
 	}
 	return b.String()
 }

@@ -117,12 +117,16 @@ func suspendToStandby() {
 		logMsg("suspend ok: display off, Windows enters modern standby")
 	case errors.Is(err, errUserActionTimeout):
 		// Windows throttles desktop processes as the display goes off,
-		// so the child may not answer in time; the broadcast was sent.
+		// so the tray may not answer in time; the broadcast was sent.
 		logMsg("suspend: %v (the display was turning off; assuming Windows enters modern standby)", err)
 	default:
 		why := err.Error()
-		if errors.Is(err, errNoConsoleSession) {
+		switch {
+		case errors.Is(err, errNoConsoleSession):
 			why = "nobody is signed in on the PC's own screen"
+		case errors.Is(err, errTrayUnavailable):
+			// #164: the screen off runs in the console session's tray app.
+			why = "the tray app is not running on the PC's own screen"
 		}
 		logMsg("suspend error: modern standby - could not turn the display off: %s (not falling back to SetSuspendState, which would hibernate)", why)
 		reportExecFailure("suspend", fmt.Errorf("modern standby: could not turn the display off (%s); not hibernating instead", why), nil)

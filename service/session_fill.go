@@ -8,9 +8,12 @@ package service
 // them: status said audio.available=false, the driver therefore sent no
 // command, and no command reply ever filled the store.
 //
-// So the service reads the target session itself — `user-action audio
-// get` and `user-action media info` through the usual runner, whose reply
-// is stored like a command's — whenever someone is logged in there and
+// So the service reads the target session itself — `audio get` and
+// `media info` through the usual runner, whose reply is stored like a
+// command's; since #164 the target session's tray app runs them, so this
+// covers a tray app that takes jobs but whose heartbeat has not arrived
+// (yet), and without one the reading fails as tray_unavailable (logged
+// once) — whenever someone is logged in there and
 // there is no recent sample and no tray app reporting from it: shortly
 // after the service starts, when the target session changes, and on the
 // status reads that find the sample missing or old. A tray app that

@@ -140,6 +140,8 @@ func (c *Control) mediaError(err error) (string, *telegram.InlineKeyboard, error
 		return c.text("media_disabled"), nil, nil
 	case errors.Is(err, session.ErrNoUserSession):
 		return c.text("media_no_user"), nil, nil
+	case errors.Is(err, session.ErrTrayUnavailable):
+		return c.text("tray_unavailable"), nil, nil
 	case errors.As(err, &valErr):
 		return c.text("vol_usage"), nil, err
 	case errors.Is(err, session.ErrTimeout):
