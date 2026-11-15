@@ -1,0 +1,12 @@
+{
+  "ui.presets.count": "Presets %d/%d",
+  "ui.presets.hint": "SmartThings and Telegram send only the slot number. What runs is stored on this PC only and starts as the user at the PC, without a shell.",
+  "ui.presets.empty.hint": "Put a program, a web or app link, or a script in a slot to run it from routines",
+  "ui.presets.full": "All 10 slots are in use",
+  "ui.presets.unnamed": "Unnamed",
+  "ui.presets.check": "Check",
+  "ui.presets.name": "Name",
+  "ui.presets.kind": "Kind",
+  "ui.presets.slot.hint": "The number routines and /run call. Faint numbers are used by other presets.",
+  "ui.presets.delete": "Delete"
+}

@@ -25,6 +25,9 @@ var sayTexts = map[string][2]string{
 	"say_bad_text":     {"문구는 1~200자여야 합니다", "The text must be 1–200 characters"},
 	"say_rate_limited": {"알림이 너무 잦습니다. %d초 뒤에 다시 보내 주세요 (분당 10개)", "Too many notifications; send again in %d s (10 a minute)"},
 	"no_user_session":  {"PC에 로그인한 사용자가 없어 할 수 없습니다", "Nobody is logged in on the PC"},
+	// #164: the user-session commands run in the tray app.
+	"tray_unavailable": {"PC의 트레이 앱이 꺼져 있어 할 수 없습니다 (PC에서 SmartThings PC Control을 켜 주세요)", "The tray app is not running on the PC (start SmartThings PC Control there)"},
+	"tray_off_note":    {"⚠️ 트레이 앱이 꺼져 있어 음소거·볼륨·미디어·알림·프리셋·화면 명령이 동작하지 않습니다", "⚠️ The tray app is not running: mute, volume, media, notification, preset and screen commands do not work"},
 	"action_timeout":   {"PC가 제때 응답하지 않았습니다", "The PC did not answer in time"},
 	"action_failed":    {"실패: %s", "Failed: %s"},
 }
@@ -71,6 +74,8 @@ func (c *Control) actionError(err error) string {
 	switch _, code, msg := action.Status(err); code {
 	case "no_user_session":
 		return c.text("no_user_session")
+	case "tray_unavailable":
+		return c.text("tray_unavailable")
 	case "timeout":
 		return c.text("action_timeout")
 	default:

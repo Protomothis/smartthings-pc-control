@@ -1,12 +1,35 @@
 name: Build and Release
 
+# A v* tag builds the exe and the setup program (#166), signs the update
+# manifest and publishes a GitHub release whose notes are the tag's
+# CHANGELOG.md section. v1.2.3 is a release (Latest, offered to every app);
+# v1.2.3-rc1 is a prerelease, which the updater never offers (#119).
+#
+# Code signing (SignPath Foundation, free for open source): when the
+# repository variable SIGNPATH_ORGANIZATION_ID is set, the exe is signed
+# before the setup packs it, and the setup after it is built. Without it
+# everything else runs as before, unsigned.
+#
+# Running the workflow by hand builds (and signs) without releasing: the
+# files come back as a workflow artifact, to try the setup or the signing.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the v (e.g. 1.2.4-dev.1)'
+        required: true
 
 permissions:
   contents: write
+  actions: read # the SignPath connector downloads the uploaded artifacts
+
+env:
+  CGO_ENABLED: '0' # pure Go since the Gio UI (#165): no C toolchain needed
+  TAG: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
+  SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
 
 jobs:
   build:
@@ -18,7 +41,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           # setup-go's built-in cache keys only on go.sum and, because GitHub
-          # caches are immutable per key, it would save the compiled Fyne/cgo
+          # caches are immutable per key, it would save the compiled
           # build cache once and never refresh it as sources change. The explicit
           # actions/cache step below keys on go.sum + *.go so every CI run stores
           # a current build cache and tag builds restore it via restore-keys.
@@ -41,41 +64,126 @@ jobs:
       # A tag can sit on a commit CI never checked (e.g. pushed straight to a
       # milestone branch), so the release build gates on vet/test itself.
       - name: Vet
-        env:
-          CGO_ENABLED: 1
         run: go vet ./...
 
       - name: Test
-        env:
-          CGO_ENABLED: 1
         run: go test ./...
 
-      - name: Build
-        env:
-          CGO_ENABLED: 1 # Fyne (GUI) requires cgo; windows-latest ships MinGW gcc
-        run: go build -ldflags="-s -w -H=windowsgui -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc.exe -ErrorAction SilentlyContinue) -and
+              -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          ./scripts/build-windows.ps1 -Version $version -Stage exe
+          "VERSION=$version" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "INSTALLER=dist/SmartThingsPCControl-Setup-$version.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      # SignPath signs what it receives as a GitHub artifact: a zip with the
+      # exe at its root (artifact configuration "exe", .signpath/exe.xml).
+      # A release-signing request waits for an approver in SignPath.
+      - name: Upload exe for signing
+        if: env.SIGN == 'true'
+        id: unsigned-exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: dist/smartthings-pc-control.exe
+          if-no-files-found: error
+
+      - name: Sign exe
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'smartthings-pc-control' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/exe
+
+      - name: Use signed exe
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item signed/exe/*.exe dist/ -Force
+
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Version $env:VERSION -Stage installer
+
+      - name: Upload installer for signing
+        if: env.SIGN == 'true'
+        id: unsigned-installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: ${{ env.INSTALLER }}
+          if-no-files-found: error
+
+      - name: Sign installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'smartthings-pc-control' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/installer
+
+      - name: Use signed installer
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item signed/installer/*.exe dist/ -Force
 
       # Signed update manifest (#66): the app only auto-updates from a
       # release whose update.json verifies against the ed25519 public key
-      # embedded in internal/release. The seed lives solely in the
-      # UPDATE_SIGNING_KEY secret; env: keeps it off the command line.
+      # embedded in internal/release. It lists the exe (assets: what copies
+      # installed with [설치] swap in) and the setup (installer: what copies
+      # the setup installed run, #166; older apps ignore that key). Signed
+      # after code signing, so the hashes are the final files'. The seed
+      # lives solely in the UPDATE_SIGNING_KEY secret; env: keeps it off the
+      # command line.
       - name: Sign update manifest
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: go run ./internal/tools/signmanifest sign -key env:UPDATE_SIGNING_KEY -version ${{ github.ref_name }} -arch amd64 -out update.json smartthings-pc-control.exe
+        run: go run ./internal/tools/signmanifest sign -key env:UPDATE_SIGNING_KEY -version ${{ env.TAG }} -arch amd64 -installer ${{ env.INSTALLER }} -out update.json dist/smartthings-pc-control.exe
 
       # Fails the build when the secret does not match the embedded public
       # key (e.g. after a key rotation that touched only one side).
       - name: Verify update manifest against embedded key
         run: go run ./internal/tools/signmanifest verify update.json update.json.sig
 
+      - name: Keep the build (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ env.VERSION }}
+          path: |
+            ${{ env.INSTALLER }}
+            dist/smartthings-pc-control.exe
+            update.json
+            update.json.sig
+          if-no-files-found: error
+
       # The body is the tag's CHANGELOG.md section only (no generated commit
       # list). An rc tag has no section of its own yet, so it gets
       # [Unreleased] - what the rc is a candidate for.
       - name: Extract release notes
-        id: notes
+        if: github.event_name == 'push'
+        shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG
           $content = Get-Content CHANGELOG.md -Raw
           $match = [regex]::Match($content, "(?s)## \[$([regex]::Escape($tag))\].*?(?=## \[|$)")
           if (-not $match.Success -and $tag.Contains('-')) {
@@ -83,20 +191,25 @@ jobs:
           }
           $notes = $match.Value
           if (-not $match.Success) { $notes = "_CHANGELOG.md has no [$tag] section._" }
-          $notes = $notes.TrimEnd() + "`n`n---`n이 릴리스가 도움이 됐다면 ⭐ Star나 [GitHub Sponsors](https://github.com/sponsors/Protomothis)로 응원해 주세요.`n"
-          $notes | Out-File -FilePath release_notes.txt -Encoding utf8
-        shell: pwsh
+          $footer = "`n`n---`n"
+          if ($env:SIGN -eq 'true') {
+            $footer += "Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).`n`n"
+          }
+          $footer += "이 릴리스가 도움이 됐다면 ⭐ Star나 [GitHub Sponsors](https://github.com/sponsors/Protomothis)로 응원해 주세요.`n"
+          ($notes.TrimEnd() + $footer) | Out-File -FilePath release_notes.txt -Encoding utf8
 
       # A tag with a suffix (v1.2.0-rc1) is a prerelease and never Latest:
       # the updater only offers plain vX.Y.Z releases that are not marked
       # prerelease (#119), so an rc reaches nobody's auto-update.
       - name: Create Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            smartthings-pc-control.exe
+            dist/smartthings-pc-control.exe
+            ${{ env.INSTALLER }}
             update.json
             update.json.sig
           body_path: release_notes.txt
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ !contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.TAG, '-') }}
+          make_latest: ${{ !contains(env.TAG, '-') }}

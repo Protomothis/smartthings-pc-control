@@ -45,7 +45,7 @@
 `.github/workflows/release.yml` 의 Build 단계 뒤:
 
 ```
-go run ./internal/tools/signmanifest sign -key env:UPDATE_SIGNING_KEY -version <tag> -arch amd64 -out update.json smartthings-pc-control.exe
+go run ./internal/tools/signmanifest sign -key env:UPDATE_SIGNING_KEY -version <tag> -arch amd64 -installer dist/SmartThingsPCControl-Setup-<ver>.exe -out update.json dist/smartthings-pc-control.exe
 go run ./internal/tools/signmanifest verify update.json update.json.sig
 ```
 
@@ -85,6 +85,40 @@ go run ./internal/tools/signmanifest verify update.json update.json.sig
 하나라도 어긋나면 설치된 exe는 건드리지 않고 메시지 상자와 `gui.log`로 알린다. `update-apply`는
 언제나 설치된 exe(트레이 자신의 이미지)로 실행되므로 트레이와 업데이터의 버전이 같다. 그래서
 매니페스트 없는 옛 2인자 형식은 받지 않는다.
+
+### 3.1 설치 프로그램으로 깐 설치본 (#166)
+
+v1.2.4부터 릴리스에 `SmartThingsPCControl-Setup-<버전>.exe`(Inno Setup, `installer/`)도 붙고,
+매니페스트에 최상위 키 `installer`가 생긴다. 모양은 `assets`의 항목과 같다.
+
+```json
+  "installer": {
+    "name": "SmartThingsPCControl-Setup-1.2.4.exe",
+    "sha256": "…64 hex…",
+    "arch": "amd64",
+    "size": 7419011
+  }
+```
+
+- `assets` 배열에 넣지 않은 이유: 옛 앱의 `AssetFor`는 arch가 맞는 첫 항목을 고르므로, 배열에
+  섞이면 옛 앱이 설치 프로그램을 exe로 알고 받을 수 있다. 옛 앱은 모르는 키를 무시하므로
+  최상위 키는 하위 호환이다. 키가 없으면 인코딩 결과도 예전과 바이트 단위로 같다.
+- `signmanifest sign -installer <setup.exe>`가 이 항목을 채운다. `VerifyManifest`는 항목이 있으면
+  `name`·`sha256`을 요구한다. 앱은 `InstallerFor(GOARCH)`로 고른다.
+- 설치 프로그램으로 깐 설치본인지는 Inno의 제거 키
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{AppId}_is1`의 `InstallLocation`이
+  실행 중인 exe의 폴더와 같은지로 판단한다(`gui/installsource.go`). 다운로드 폴더의 휴대용
+  사본은 설치본이 따로 있어도 exe 교체 경로를 쓴다.
+- 그런 설치본은 업데이트 화면이 `installerUpdater`를 쓴다(`ui/pages_update.go`). 매니페스트에
+  `installer`가 있으면 설치 프로그램을 받아 해시를 대조하고, `update-install <setup> <pid>
+  <update.json> <update.json.sig>`를 관리자 권한으로 띄운 뒤 종료한다. 없으면(옛 릴리스) exe 교체로
+  돌아간다.
+- `update-install`(`gui/installerupdate.go`)은 `update-apply`와 같은 방식으로 세 파일을
+  `<설치 폴더>\update\`에 복사해 서명·버전·`installer` 해시를 다시 확인하고, 트레이 종료를 기다린 뒤
+  검증된 복사본을 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /RELAUNCH=1 /LOG=<update\setup.log>`로
+  띄우고 **기다리지 않고** 끝난다(자기 이미지가 설치 대상이므로). 설치 프로그램이 서비스와 모든
+  트레이를 멈추고 파일을 바꾼 뒤 `install`을 실행하고, `/RELAUNCH=1`이면 `relaunch-gui`로 트레이를
+  데스크톱 사용자 권한으로 다시 띄운다. 그래서 Windows 앱 목록의 버전도 함께 올라간다.
 
 ## 4. 키 관리
 

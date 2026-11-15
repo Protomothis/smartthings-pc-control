@@ -158,7 +158,7 @@ func TestMediaCommandUpdatesStore(t *testing.T) {
 
 // A `media info` reply through the real runUserAction path is stored.
 func TestRunUserActionStoresNowPlaying(t *testing.T) {
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		return []byte(`{"ok":true,"media":{"status":"playing","title":"Hype Boy","artist":"NewJeans","app":"Spotify"}}` + "\n"), nil
 	})
 	nowPlayingSetup(t, optIn())

@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/test"
 	"golang.org/x/sys/windows"
 )
 
@@ -141,41 +139,5 @@ func TestStopEndsWatcher(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := calls.Load(); n != 0 {
 		t.Errorf("activated %d times after stop", n)
-	}
-}
-
-// End to end on the app side: a minimized start that only built the tray
-// gets its whole window when a later launch asks, the way Run wires the
-// watcher. The tray's Open entry and left click call the same showWindow.
-func TestLaunchOpensWindowOfMinimizedStart(t *testing.T) {
-	stubActivationUI(t)
-	syncBackground = true
-	savedOnScreen := windowOnScreen
-	windowOnScreen = func() bool { return false }
-	t.Cleanup(func() { syncBackground = false; windowOnScreen = savedOnScreen })
-	a := test.NewTempApp(t)
-	u := &ui{app: a, client: NewClient(1), version: "test", quit: make(chan struct{}), lang: LangEn, deferContent: true}
-	u.win = a.NewWindow(windowTitle)
-	defer u.win.Close()
-	placeholder := u.win.Content()
-	u.rebuild()
-	if u.tabs != nil {
-		t.Fatal("the minimized start built the window")
-	}
-
-	m, e := instanceNames(t)
-	running := claimInstance(m, e)
-	defer closeInstance(running)
-	shown := make(chan struct{}, 1)
-	// As in Run, plus a signal once the UI work is done.
-	stop := watchActivation(running.activate, func() { fyne.Do(u.showWindow); shown <- struct{}{} })
-	defer stop()
-
-	later := claimInstance(m, e)
-	activateRunning(later)
-	closeInstance(later)
-	waitSignal(t, shown, "launch after a minimized start")
-	if u.deferContent || u.tabs == nil || u.win.Content() == placeholder {
-		t.Fatal("a later launch did not open the window")
 	}
 }

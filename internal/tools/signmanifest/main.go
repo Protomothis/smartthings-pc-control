@@ -8,8 +8,11 @@
 //	    maintainer's backup); the pub is embedded in internal/release.
 //
 //	signmanifest sign -key <base64 seed | env:NAME> -version <tag>
-//	    [-min-version <tag>] [-arch amd64] [-out update.json] <asset files...>
-//	    Hashes each asset and writes update.json plus update.json.sig.
+//	    [-min-version <tag>] [-arch amd64] [-installer Setup.exe]
+//	    [-out update.json] <asset files...>
+//	    Hashes each asset and writes update.json plus update.json.sig. The
+//	    -installer file (#166) goes under its own "installer" key, which
+//	    apps from before it ignore.
 //
 //	signmanifest verify [-pub <base64>] update.json update.json.sig
 //	    Verifies the pair (default key: the embedded production key) and
@@ -41,7 +44,7 @@ func main() {
 	}
 }
 
-var errUsage = errors.New("usage: signmanifest genkey | sign -key <seed|env:NAME> -version <tag> [-min-version <tag>] [-arch <arch>] [-out update.json] <files...> | verify [-pub <base64>] update.json update.json.sig")
+var errUsage = errors.New("usage: signmanifest genkey | sign -key <seed|env:NAME> -version <tag> [-min-version <tag>] [-arch <arch>] [-installer <setup.exe>] [-out update.json] <files...> | verify [-pub <base64>] update.json update.json.sig")
 
 // run dispatches the subcommand; tests call it directly.
 func run(args []string, stdout io.Writer) error {
@@ -77,6 +80,7 @@ func sign(args []string, stdout io.Writer) error {
 	version := fs.String("version", "", "release tag the manifest is for (v1.2.3)")
 	minVersion := fs.String("min-version", "", "oldest installed version allowed to auto-update (optional)")
 	arch := fs.String("arch", "", "GOARCH the assets are built for; empty matches any")
+	installer := fs.String("installer", "", "the release's Inno Setup installer (optional, #166)")
 	out := fs.String("out", release.ManifestName, "manifest path; the signature is written next to it as <out>.sig")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%v\n%w", err, errUsage)
@@ -115,6 +119,13 @@ func sign(args []string, stdout io.Writer) error {
 		}
 		m.Assets = append(m.Assets, a)
 	}
+	if *installer != "" {
+		a, err := hashAsset(*installer, *arch)
+		if err != nil {
+			return err
+		}
+		m.Installer = &a
+	}
 	data, err := release.EncodeManifest(m)
 	if err != nil {
 		return err
@@ -126,7 +137,11 @@ func sign(args []string, stdout io.Writer) error {
 	if err := os.WriteFile(*out+".sig", sig, 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "wrote %s and %s.sig (%d asset(s), version %s, pub=%s)\n", *out, *out, len(m.Assets), m.Version,
+	withInstaller := ""
+	if m.Installer != nil {
+		withInstaller = " + installer " + m.Installer.Name
+	}
+	fmt.Fprintf(stdout, "wrote %s and %s.sig (%d asset(s)%s, version %s, pub=%s)\n", *out, *out, len(m.Assets), withInstaller, m.Version,
 		base64.StdEncoding.EncodeToString(priv.Public().(ed25519.PublicKey)))
 	return nil
 }
@@ -160,6 +175,9 @@ func verify(args []string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "OK: %s signed manifest for %s", fs.Arg(0), m.Version)
 	if m.MinVersion != "" {
 		fmt.Fprintf(stdout, " (min_version %s)", m.MinVersion)
+	}
+	if m.Installer != nil {
+		fmt.Fprintf(stdout, " (installer %s)", m.Installer.Name)
 	}
 	fmt.Fprintln(stdout)
 	stdout.Write(data)

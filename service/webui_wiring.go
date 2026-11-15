@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -55,6 +56,7 @@ var webSrv = webui.New(webui.Deps{
 	Notify:    pcNotifier{},
 	Telegram:  telegramInfo{},
 	Heartbeat: heartbeat,
+	Trays:     trayJobs{},
 })
 
 // StartWebUI starts a local web UI for configuration on a separate port
@@ -88,15 +90,20 @@ func StartWebUI(stop chan struct{}) {
 		removeWebUIFirewallRule()
 	}
 
+	// The tray's job poll (#164) waits up to 25s; Shutdown waits for
+	// requests to end, so the stop ends the polls through their context.
+	baseCtx, endRequests := context.WithCancel(context.Background())
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", bindAddr, webPort),
 		Handler:           webSrv.Handler(webPort, pagesEnabled),
 		ReadHeaderTimeout: httpReadHeaderTimeout, // gosec G112, see server.go
 		ErrorLog:          logx.ErrorLog(),       // handler panics, see server.go
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 	}
 
 	go func() {
 		<-stop
+		endRequests()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		server.Shutdown(ctx)

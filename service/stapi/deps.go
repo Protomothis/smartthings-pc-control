@@ -61,6 +61,9 @@ type StatusSource interface {
 	Media(cfg config.Config) status.Media
 	// WoLScan is the adapter scan (PowerShell); the Server caches it.
 	WoLScan() status.WoLStatus
+	// TrayConnected reports whether the tray app of the target session
+	// takes the user-session commands (#164).
+	TrayConnected() bool
 }
 
 // Mode says whether a command may wait out the grace period (§3.3).

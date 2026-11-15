@@ -10,6 +10,24 @@ import (
 // stFormState: the widgets are read into it, and the config round trip,
 // the checks and the dirty test are unit-tested on it.
 
+// Grace period choices (seconds) for remote power commands (#51). The
+// settings select shows "Off" first, then these.
+var graceOptions = []int{10, 30, 60, 300, 600, 1800}
+
+// fallbackGraceSeconds is used when the service reports grace enabled but
+// no period (an older service) — matches the service default.
+const fallbackGraceSeconds = 300
+
+// withGraceFallback mirrors what the grace select shows for a service
+// predating grace_seconds (enabled, no period), so a config adopted as the
+// baseline does not leave the settings form dirty.
+func withGraceFallback(cfg Config) Config {
+	if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
+		cfg.GraceSeconds = fallbackGraceSeconds
+	}
+	return cfg
+}
+
 // settingsFormState is the settings tab's contents as plain values.
 type settingsFormState struct {
 	// Port is the entry text; it only becomes a number on save.
@@ -82,4 +100,24 @@ func (s settingsFormState) dirty(base Config) bool {
 		(s.GraceOn && s.GraceSec != base.GraceSeconds) ||
 		s.Debug != base.Debug ||
 		s.NotifyPC.dirty(base)
+}
+
+// notifyPCState is the PC-notification part of the settings as plain
+// values.
+type notifyPCState struct {
+	Enabled bool
+}
+
+func notifyPCStateFromConfig(cfg Config) notifyPCState {
+	return notifyPCState{Enabled: cfg.NotifyPC.Enabled}
+}
+
+// applyTo writes the state into cfg.
+func (s notifyPCState) applyTo(cfg *Config) {
+	cfg.NotifyPC = NotifyPCConfig(s)
+}
+
+// dirty reports whether saving would change base.
+func (s notifyPCState) dirty(base Config) bool {
+	return s.Enabled != base.NotifyPC.Enabled
 }

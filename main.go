@@ -10,6 +10,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 	"github.com/Protomothis/smartthings-pc-control/service"
+	"github.com/Protomothis/smartthings-pc-control/ui"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -48,7 +49,7 @@ func main() {
 		if isSvc, _ := svc.IsWindowsService(); isSvc {
 			service.RunService()
 		} else {
-			gui.Run(Version, false)
+			ui.Run(Version, false)
 		}
 		return
 	}
@@ -89,10 +90,14 @@ func main() {
 		service.RunConsole()
 
 	case "gui":
-		// Native GUI — talks to the running service via localhost API.
-		// "--minimized" (login autostart) keeps the window hidden, tray only.
+		// The desktop app (package ui, Gio): tray icon and window, talking to
+		// the running service via its localhost API. "--minimized" (login
+		// autostart, the service waking the tray) keeps the window hidden,
+		// tray only. The double-click (no arguments), the Start menu
+		// shortcut, the autostart Run key, the service's tray launch and the
+		// self-updater's relaunch all come through here.
 		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
-		gui.Run(Version, minimized)
+		ui.Run(Version, minimized)
 
 	case "toast":
 		// Invoked by toast notification action buttons (stpc:// protocol)
@@ -101,10 +106,12 @@ func main() {
 		}
 
 	case "user-action":
-		// Hidden: launched by the service in the logged-in user's session
-		// (#103) with a fixed argument vector. Prints exactly one JSON line
-		// and exits 0/1; see useraction/useraction.go. In debug mode a
-		// crash is recorded (#133); os.Exit skips defers, hence the order.
+		// Hidden: runs one user-session action in this process and prints
+		// its one JSON line, exit 0/1; see useraction/useraction.go. The
+		// service no longer launches it (#164: the tray app runs the same
+		// code in-process, package trayexec); it stays for checking an
+		// action by hand from a terminal. In debug mode a crash is
+		// recorded (#133); os.Exit skips defers, hence the order.
 		stopCrashDump := useraction.StartCrashDump(Version)
 		code := useraction.Main(os.Args[2:], os.Stdout)
 		stopCrashDump()
@@ -125,6 +132,27 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 			os.Exit(1)
 		}
+
+	case "update-install":
+		// Hidden (#166): launched elevated by the tray of a copy the setup
+		// program installed, as `update-install "<setup.exe>" <guiPid>
+		// "<update.json>" "<update.json.sig>"`. Re-verifies the staged
+		// setup and runs it silently; see gui/installerupdate.go.
+		args, err := gui.ParseUpdateApplyArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			gui.AbortUpdateApply(err)
+			os.Exit(2)
+		}
+		if err := gui.InstallUpdate(args, Version); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "relaunch-gui":
+		// Hidden (#166): the elevated setup program starts the tray this
+		// way, so it runs as the desktop user rather than elevated.
+		gui.RelaunchTray()
 
 	default:
 		fmt.Printf("SmartThings PC Control %s\n", Version)

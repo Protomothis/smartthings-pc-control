@@ -1,0 +1,17 @@
+{
+  "ui.service.access": "접속",
+  "ui.service.remote": "원격 명령",
+  "ui.service.allowed": "허용 범위",
+  "ui.service.advanced": "고급",
+  "ui.service.port.hint": "SmartThings 명령 포트, WebUI는 +1",
+  "ui.service.webui": "브라우저로 WebUI 접속",
+  "ui.service.webui.hint": "로컬·LAN, 시크릿 필요 · 재시작 후 적용",
+  "ui.service.grace": "종료 명령 유예",
+  "ui.service.grace.hint": "SmartThings의 종료·재시작·절전을 이만큼 기다려요. 그 사이 알림·트레이에서 취소할 수 있어요.",
+  "ui.service.media": "볼륨·미디어 제어",
+  "ui.service.media.hint": "SmartThings·텔레그램에서 볼륨과 재생을 조절해요",
+  "ui.service.notify": "PC 알림",
+  "ui.service.notify.hint": "루틴과 /say가 화면에 알림을 띄워요 (분당 10개)",
+  "ui.service.debug": "디버그 모드",
+  "ui.service.debug.hint": "비정상 종료 때 크래시 기록을 남겨요"
+}

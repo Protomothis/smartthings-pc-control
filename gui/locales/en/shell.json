@@ -1,0 +1,13 @@
+{
+  "ui.form.saving": "Saving…",
+  "ui.copy": "Copy",
+  "ui.copied": "Copied",
+  "ui.pick.all": "All files",
+  "ui.conn.on": "Connected",
+  "ui.conn.off": "Off",
+  "ui.conn.check": "Check",
+  "ui.conn.waiting": "Checking",
+  "ui.home.update.new": "New %s",
+  "ui.home.servicectl.sub": "Install, start, stop, install location",
+  "ui.home.unreachable.open": "Open service management"
+}

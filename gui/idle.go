@@ -182,47 +182,73 @@ func sameMediaBlock(a, b *HeartbeatMedia) bool {
 	return x == y
 }
 
-// sendIdleHeartbeat posts one heartbeat, or does nothing at all.
+// HeartbeatInterval is how often the full heartbeat is posted, and
+// MediaWatchInterval how often the audio and the media session are checked
+// for a change between them. Both apps' tickers use these.
+const (
+	HeartbeatInterval  = idleHeartbeatInterval
+	MediaWatchInterval = mediaWatchInterval
+)
+
+// HeartbeatClient is what a HeartbeatSender needs of the app: the post
+// itself, and the local login (#131) to retry once after a 401.
+type HeartbeatClient interface {
+	SessionHeartbeat(hb Heartbeat) (ignored bool, err error)
+	// Relogin asks the service to vouch for this process again; true when
+	// it did.
+	Relogin() bool
+}
+
+// HeartbeatSender posts the session heartbeats (#77, #104, #117) and
+// remembers what arrived, so the 3s check posts only changes. It has no
+// toolkit in it: the app (package ui, #165) keeps one and calls SendFull every HeartbeatInterval and SendChanges every
+// MediaWatchInterval, whether or not the window is open.
 //
 // Every failure is silent: the service being down, mid-restart or simply
 // not listening yet is the normal state of affairs for a tray app, and the
 // next tick retries anyway.
-func (u *ui) sendIdleHeartbeat() {
+type HeartbeatSender struct {
+	sent heartbeatSent
+}
+
+// SendFull posts one full heartbeat, or does nothing when the switches
+// allow nothing.
+func (h *HeartbeatSender) SendFull(c HeartbeatClient) {
 	hb, ok := buildHeartbeat()
 	if !ok {
 		return
 	}
-	u.postHeartbeat(hb)
+	h.Post(c, hb)
 }
 
-// watchMediaChanges is the 3s check (#117): sample the audio and the media
+// SendChanges is the 3s check (#117): sample the audio and the media
 // session and post only the blocks that changed since the last delivery.
-func (u *ui) watchMediaChanges() {
-	hb, ok := u.hbSent.changes(sampleMediaBlocks())
+func (h *HeartbeatSender) SendChanges(c HeartbeatClient) {
+	hb, ok := h.sent.changes(sampleMediaBlocks())
 	if !ok {
 		return
 	}
-	u.postHeartbeat(hb)
+	h.Post(c, hb)
 }
 
-// postHeartbeat delivers hb and records what arrived.
-func (u *ui) postHeartbeat(hb Heartbeat) {
+// Post delivers hb and records what arrived.
+func (h *HeartbeatSender) Post(c HeartbeatClient, hb Heartbeat) {
 	hb.SessionID = heartbeatSessionID()
-	ignored, err := u.client.SessionHeartbeat(hb)
+	ignored, err := c.SessionHeartbeat(hb)
 	if errors.Is(err, errUnauthorized) {
 		// A secret is configured and this client has no session yet (the
 		// user never opened the window, or the service restarted). Ask the
 		// service to vouch for this process (#131) and retry once; refused,
 		// the post waits for a manual login in the window.
-		if u.tryLocalLogin() {
-			ignored, err = u.client.SessionHeartbeat(hb)
+		if c.Relogin() {
+			ignored, err = c.SessionHeartbeat(hb)
 		}
 	}
 	if err == nil {
 		// An ignored post counts as delivered too: the 3s check then posts
 		// only on a change rather than every 3s, and the 30s heartbeat
 		// sends everything anyway once this session becomes the target.
-		u.hbSent.delivered(hb)
+		h.sent.delivered(hb)
 		noteHeartbeatReply(ignored)
 	}
 }

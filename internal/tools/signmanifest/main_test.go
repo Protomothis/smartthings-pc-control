@@ -141,6 +141,42 @@ func TestSignThenVerify(t *testing.T) {
 	}
 }
 
+// -installer (#166) lands under its own key, never in assets, so apps from
+// before it keep installing the exe.
+func TestSignWithInstaller(t *testing.T) {
+	seed, pub := genkeyOutput(t)
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "smartthings-pc-control.exe")
+	setup := filepath.Join(dir, "SmartThingsPCControl-Setup-1.2.4.exe")
+	os.WriteFile(exe, []byte("exe bytes"), 0o644)
+	setupBytes := []byte(strings.Repeat("setup", 100))
+	os.WriteFile(setup, setupBytes, 0o644)
+	out := filepath.Join(dir, "update.json")
+	var stdout bytes.Buffer
+	if err := run([]string{"sign", "-key", seed, "-version", "v1.2.4", "-arch", "amd64", "-installer", setup, "-out", out, exe}, &stdout); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	data, _ := os.ReadFile(out)
+	sig, _ := os.ReadFile(out + ".sig")
+	pubRaw, _ := base64.StdEncoding.DecodeString(pub)
+	m, err := release.VerifyManifest(data, sig, ed25519.PublicKey(pubRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Assets) != 1 || m.Assets[0].Name != "smartthings-pc-control.exe" {
+		t.Errorf("assets = %+v, want the exe alone", m.Assets)
+	}
+	sum := sha256.Sum256(setupBytes)
+	if a := m.Installer; a == nil || a.Name != filepath.Base(setup) || a.SHA256 != hex.EncodeToString(sum[:]) ||
+		a.Size != int64(len(setupBytes)) || a.Arch != "amd64" {
+		t.Errorf("installer = %+v", m.Installer)
+	}
+	stdout.Reset()
+	if err := run([]string{"verify", "-pub", pub, out, out + ".sig"}, &stdout); err != nil || !strings.Contains(stdout.String(), "installer "+filepath.Base(setup)) {
+		t.Errorf("verify: %v, printed %q", err, stdout.String())
+	}
+}
+
 func TestSignArgumentErrors(t *testing.T) {
 	seed, _ := genkeyOutput(t)
 	dir := t.TempDir()
@@ -158,6 +194,8 @@ func TestSignArgumentErrors(t *testing.T) {
 		"no files":          {"sign", "-key", seed, "-version", "v1.0.0", "-out", out},
 		"missing file":      {"sign", "-key", seed, "-version", "v1.0.0", "-out", out, filepath.Join(dir, "nope.exe")},
 		"empty file":        {"sign", "-key", seed, "-version", "v1.0.0", "-out", out, empty},
+		"missing installer": {"sign", "-key", seed, "-version", "v1.0.0", "-installer", filepath.Join(dir, "nope-setup.exe"), "-out", out, exe},
+		"installer only":    {"sign", "-key", seed, "-version", "v1.0.0", "-installer", exe, "-out", out},
 		"garbage key":       {"sign", "-key", "not base64", "-version", "v1.0.0", "-out", out, exe},
 		"short key":         {"sign", "-key", base64.StdEncoding.EncodeToString([]byte("short")), "-version", "v1.0.0", "-out", out, exe},
 		"unset env":         {"sign", "-key", "env:SIGNMANIFEST_TEST_UNSET", "-version", "v1.0.0", "-out", out, exe},

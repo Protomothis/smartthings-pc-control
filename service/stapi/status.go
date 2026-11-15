@@ -57,6 +57,10 @@ type Status struct {
 	// Presets are the registered preset slots and their names (#109, §10),
 	// in slot order; never null. What a slot runs never leaves this PC.
 	Presets []status.PresetRef `json:"presets"`
+	// Tray says whether the tray app takes the user-session commands
+	// (#164); without it they answer 409 tray_unavailable. The driver
+	// does not read it (yet); unknown keys are ignored there.
+	Tray status.Tray `json:"tray"`
 }
 
 // features lists what this service supports right now. Some entries depend
@@ -387,5 +391,6 @@ func (s *Server) buildStatus(cfg config.Config, fromCache bool) Status {
 		Audio:             src.Audio(cfg),
 		Media:             src.Media(cfg),
 		Presets:           presetList(cfg.Presets),
+		Tray:              status.Tray{Connected: src.TrayConnected()},
 	}
 }

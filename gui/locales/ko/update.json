@@ -1,0 +1,23 @@
+{
+  "ui.update.hero.checking": "새 버전을 확인하고 있어요",
+  "ui.update.hero.unknown": "아직 확인하지 않았어요",
+  "ui.update.hero.failed": "업데이트를 확인하지 못했어요",
+  "ui.update.hero.uptodate": "최신 버전이에요",
+  "ui.update.hero.new": "%s 버전이 나왔어요",
+  "ui.update.hero.dev": "개발 빌드예요",
+  "ui.update.hero.running": "업데이트하고 있어요",
+  "ui.update.current": "현재 %s",
+  "ui.update.using": "%s 사용 중",
+  "ui.update.latest": "최신 릴리스 %s",
+  "ui.update.to": "%s → %s",
+  "ui.update.skipped.short": "건너뛴 버전",
+  "ui.update.checknow": "지금 확인",
+  "ui.update.checkingbtn": "확인 중…",
+  "ui.update.preparing": "업데이트 정보를 확인하고 있어요",
+  "ui.update.dev.note": "개발 빌드는 스스로 업데이트하지 않아요. 릴리스 페이지에서 받아 주세요.",
+  "ui.update.ask.title": "지금 업데이트할까요?",
+  "ui.update.notes": "릴리스 노트",
+  "ui.update.settings": "설정",
+  "ui.update.auto.hint": "시작할 때와 하루에 한 번 확인하고, 새 버전이면 알려요",
+  "update.applying.installer": "UAC 승인 창이 떠요. 앱이 종료된 뒤 설치 프로그램이 서비스를 중지하고 새 버전을 설치한 다음 다시 실행해요."
+}

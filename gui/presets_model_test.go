@@ -201,7 +201,7 @@ func TestPresetWarningTexts(t *testing.T) {
 	if got := presetWarningText(LangKo, ws[0]); got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
-	if !strings.Contains(want, "다른 사용자도 고칠 수 있습니다") {
+	if !strings.Contains(want, "다른 사용자도 고칠 수 있어요") {
 		t.Errorf("ko text = %q", want)
 	}
 	if got := presetSlotWarnings(LangKo, ws, 2); strings.Count(got, T(LangKo, "presets.warn.writable")) != 2 || !strings.Contains(got, `C:\Shared`) {

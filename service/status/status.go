@@ -197,6 +197,13 @@ type PresetRef struct {
 	Name string `json:"name"`
 }
 
+// Tray is the status "tray" block (#164): whether the tray app of the
+// target user session takes the user-session commands (volume, mute,
+// media, notify, presets, screen). False also while nobody is logged in.
+type Tray struct {
+	Connected bool `json:"connected"`
+}
+
 // WoLStatus is the adapter scan behind the wol block and GET
 // /api/wol-status: every physical adapter with its WoL state.
 type WoLStatus struct {

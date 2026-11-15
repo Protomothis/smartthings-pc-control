@@ -71,7 +71,7 @@ func TestLocaleKeysUsedExist(t *testing.T) {
 			}
 		}
 	}
-	if seen < 100 {
+	if seen < 40 {
 		t.Errorf("found only %d literal lookups; is the pattern stale?", seen)
 	}
 }

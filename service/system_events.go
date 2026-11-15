@@ -291,6 +291,10 @@ func startupHooks(stop <-chan struct{}) {
 	// Audio and media state when no tray app reports for the target
 	// session: read it there shortly after the start (session_fill.go).
 	startSessionFill(stop)
+	// A tray app missing from the sessions commands go to (the install
+	// script ends every tray on an update) is started once, after a grace
+	// period for the login autostart (#167).
+	go launchMissingTrays(stop)
 }
 
 // emitStarted emits power.started with the boot time and the public IP

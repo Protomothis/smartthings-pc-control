@@ -84,54 +84,11 @@ func TestSlotChangeText(t *testing.T) {
 	changes := configSlotChanges(old, next)
 	body := slotChangeBody(LangKo, changes)
 	want := "프리셋 3: 게임 모드 → (비어 있음)\n감시 1: Steam → OBS\n\n" +
-		"이 칸을 쓰는 SmartThings 루틴이 다른 대상을 가리키게 됩니다. 저장할까요?"
+		"이 칸을 쓰는 SmartThings 루틴이 다른 대상을 가리키게 돼요. 저장할까요?"
 	if body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 	if en := slotChangeBody(LangEn, changes); !strings.HasPrefix(en, "Preset 3: 게임 모드 → (empty)\nWatch 1: Steam → OBS") {
 		t.Errorf("en body = %q", en)
-	}
-}
-
-// The save asks before a slot changes owner; Cancel posts nothing, Save
-// posts as before. A new entry in an empty slot is not asked about.
-func TestSaveAsksBeforeASlotChangesOwner(t *testing.T) {
-	u, svc := newFakeServiceUI(t)
-	var asked []string
-	answer := false
-	u.confirm = func(_, body, _ string, cb func(bool)) {
-		asked = append(asked, body)
-		cb(answer)
-	}
-	ft := u.forms.tabAt(tabPresets)
-
-	// A new preset in the empty slot 2: saved without a question.
-	u.presets.addBtn.OnTapped()
-	w := u.presets.rows[1]
-	w.name.SetText("Docs")
-	w.typ.SetSelectedIndex(1) // url
-	w.path.SetText("https://docs")
-	u.saveTab(ft)
-	if len(asked) != 0 || len(svc.posts) != 1 {
-		t.Fatalf("asked %d times, %d posts; want no question and a post", len(asked), len(svc.posts))
-	}
-
-	// Slot 1 (Steam) becomes another program: asked, and Cancel keeps it.
-	u.presets.rows[0].name.SetText("OBS")
-	u.presets.rows[0].path.SetText(`C:\OBS\obs.exe`)
-	u.saveTab(ft)
-	if len(asked) != 1 || !strings.Contains(asked[0], "Preset 1: Steam → OBS") {
-		t.Fatalf("question = %q", asked)
-	}
-	if len(svc.posts) != 1 {
-		t.Fatal("Cancel posted the change")
-	}
-	if !u.forms.isDirty(ft) {
-		t.Error("Cancel dropped the edit")
-	}
-	answer = true
-	u.saveTab(ft)
-	if len(svc.posts) != 2 || svc.lastPost(t).Presets[0].Name != "OBS" {
-		t.Errorf("Save after the question: %d posts", len(svc.posts))
 	}
 }

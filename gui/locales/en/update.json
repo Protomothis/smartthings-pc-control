@@ -1,0 +1,23 @@
+{
+  "ui.update.hero.checking": "Checking for a new version",
+  "ui.update.hero.unknown": "Not checked yet",
+  "ui.update.hero.failed": "Couldn't check for updates",
+  "ui.update.hero.uptodate": "You're up to date",
+  "ui.update.hero.new": "%s is available",
+  "ui.update.hero.dev": "This is a development build",
+  "ui.update.hero.running": "Updating",
+  "ui.update.current": "Current: %s",
+  "ui.update.using": "Running %s",
+  "ui.update.latest": "Latest release: %s",
+  "ui.update.to": "%s → %s",
+  "ui.update.skipped.short": "skipped",
+  "ui.update.checknow": "Check now",
+  "ui.update.checkingbtn": "Checking…",
+  "ui.update.preparing": "Reading the update details",
+  "ui.update.dev.note": "Development builds never update themselves. Get the release from its page.",
+  "ui.update.ask.title": "Update now?",
+  "ui.update.notes": "Release notes",
+  "ui.update.settings": "Settings",
+  "ui.update.auto.hint": "Checks at startup and once a day, and tells you about a new version",
+  "update.applying.installer": "A UAC prompt will appear. The app closes, then the setup program stops the service, installs the new version and relaunches it."
+}

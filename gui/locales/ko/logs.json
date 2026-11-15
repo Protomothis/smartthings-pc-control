@@ -1,0 +1,13 @@
+{
+  "ui.logs.level.all": "전체",
+  "ui.logs.level.error": "오류",
+  "ui.logs.level.warn": "경고",
+  "ui.logs.level.debug": "디버그",
+  "ui.logs.live": "실시간",
+  "ui.logs.paused": "일시정지",
+  "ui.logs.count": "%d줄",
+  "ui.logs.count.filtered": "%d줄 중 %d줄",
+  "ui.logs.openfile": "파일 열기",
+  "ui.logs.toend": "최신 로그로",
+  "ui.logs.loading": "로그를 불러오는 중…"
+}

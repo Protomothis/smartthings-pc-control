@@ -45,6 +45,21 @@ type Deps struct {
 	Notify    Notifier
 	Telegram  Telegram
 	Heartbeat Heartbeat
+	// Trays hands the user-session actions to the tray apps (#164).
+	Trays TrayJobs
+}
+
+// TrayJobs is the job broker behind the tray endpoints (session.Broker)
+// and the launcher's quit notice (session.Launcher).
+type TrayJobs interface {
+	// Poll waits for a job for session; pid is the polling process.
+	Poll(ctx context.Context, session, pid uint32) (session.Job, bool)
+	// Reply delivers a job's reply line posted from session;
+	// session.ErrUnknownJob when no such job waits for that session.
+	Reply(session uint32, id string, line []byte) error
+	// Quit records that session's tray app was quit by the user: no
+	// automatic start there until it runs again (#167, session.Launcher).
+	Quit(session uint32)
 }
 
 // Status is what the pages and /api report about this PC.

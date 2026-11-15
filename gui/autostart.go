@@ -7,14 +7,18 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/Protomothis/smartthings-pc-control/internal/appid"
 )
 
 // Login autostart is a per-user Run entry (HKCU, no elevation). The tray
-// app must be running for the grace-period toast to appear, so this is on
-// by default and re-pointed at the current exe on every GUI start.
+// app must be running for the grace-period toast to appear and, since
+// #164, for mute, media, notifications, presets and the screen commands
+// (it runs them for the service), so this is on by default and re-pointed
+// at the current exe on every GUI start.
 const (
-	runKeyPath   = `Software\Microsoft\Windows\CurrentVersion\Run`
-	runValueName = "SmartThingsPCControl"
+	runKeyPath   = appid.RunKeyPath
+	runValueName = appid.RunValueName
 	// minimizedFlag starts the app in the tray without showing the window.
 	minimizedFlag = "--minimized"
 )
@@ -37,10 +41,6 @@ func AutostartEnabled() bool {
 	v, _, err := k.GetStringValue(runValueName)
 	return err == nil && strings.TrimSpace(v) != ""
 }
-
-// setAutostart is SetAutostart, replaced by the tests: the Run entry is the
-// real user's.
-var setAutostart = SetAutostart
 
 // SetAutostart writes or removes the Run entry. Writing always uses the
 // current exe path, so a moved exe is picked up on the next start.

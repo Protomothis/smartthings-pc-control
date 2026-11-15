@@ -1,0 +1,12 @@
+{
+  "ui.presets.count": "프리셋 %d/%d",
+  "ui.presets.hint": "SmartThings·텔레그램은 슬롯 번호만 보내요. 실행할 내용은 이 PC에만 저장되고, 지금 PC를 쓰는 사용자로 셸 없이 실행돼요.",
+  "ui.presets.empty.hint": "프로그램, 웹 주소·앱 링크, 스크립트를 슬롯에 등록하면 루틴에서 실행할 수 있어요",
+  "ui.presets.full": "슬롯 10개를 모두 썼어요",
+  "ui.presets.unnamed": "이름 없음",
+  "ui.presets.check": "확인 필요",
+  "ui.presets.name": "이름",
+  "ui.presets.kind": "종류",
+  "ui.presets.slot.hint": "루틴과 /run이 부르는 번호예요. 흐린 번호는 다른 프리셋이 쓰고 있어요.",
+  "ui.presets.delete": "삭제"
+}

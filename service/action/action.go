@@ -76,6 +76,12 @@ func Classify(err error) Failure {
 		return Failure{Status: http.StatusForbidden, Code: "media_disabled", Message: "media control is turned off in the app settings"}
 	case errors.Is(err, session.ErrNoUserSession):
 		return Failure{Status: http.StatusConflict, Code: "no_user_session", Message: "nobody is logged in on this PC"}
+	case errors.Is(err, session.ErrTrayUnavailable):
+		// 409 like no_user_session: the PC is up and understood the
+		// command, it just has nobody to run it in the user's session.
+		// The Edge driver reads a 409 as such a refusal, not as an
+		// unreachable PC (edge/src/client.lua classify).
+		return Failure{Status: http.StatusConflict, Code: "tray_unavailable", Message: "the tray app is not running in the user's session"}
 	case errors.As(err, &ve):
 		// The range message is the code the driver shows (§3).
 		return Failure{Status: http.StatusBadRequest, Code: ve.Msg, Message: ve.Msg}

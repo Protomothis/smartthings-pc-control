@@ -74,13 +74,12 @@ func TestParseUserActionOutput(t *testing.T) {
 }
 
 // fakeUserAction installs a runner and restores the real one afterwards.
-func fakeUserAction(t *testing.T, run func(ctx context.Context, exe string, args []string) ([]byte, error)) {
+func fakeUserAction(t *testing.T, run func(ctx context.Context, args []string) ([]byte, error)) {
 	t.Helper()
 	saved := userActions
-	userActions.Exec = func(ctx context.Context, _ sessionTarget, exe string, args []string) ([]byte, error) {
-		return run(ctx, exe, args)
+	userActions.Exec = func(ctx context.Context, _ sessionTarget, args []string) ([]byte, error) {
+		return run(ctx, args)
 	}
-	userActions.Exe = func() (string, error) { return `C:\PC Control\SmartThingsPCControl.exe`, nil }
 	resetAudioSample()
 	t.Cleanup(func() {
 		userActions = saved
@@ -90,10 +89,9 @@ func fakeUserAction(t *testing.T, run func(ctx context.Context, exe string, args
 }
 
 func TestRunUserActionOK(t *testing.T) {
-	var gotExe string
 	var gotArgs []string
-	fakeUserAction(t, func(ctx context.Context, exe string, args []string) ([]byte, error) {
-		gotExe, gotArgs = exe, args
+	fakeUserAction(t, func(ctx context.Context, args []string) ([]byte, error) {
+		gotArgs = args
 		if _, has := ctx.Deadline(); !has {
 			t.Error("runner context has no deadline")
 		}
@@ -106,10 +104,7 @@ func TestRunUserActionOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUserAction: %v", err)
 	}
-	if gotExe != `C:\PC Control\SmartThingsPCControl.exe` {
-		t.Errorf("exe = %q", gotExe)
-	}
-	if want := []string{"user-action", "audio", "set", "42"}; !reflect.DeepEqual(gotArgs, want) {
+	if want := []string{"audio", "set", "42"}; !reflect.DeepEqual(gotArgs, want) {
 		t.Errorf("args = %q, want %q", gotArgs, want)
 	}
 	if !res.OK || res.Audio == nil || res.Audio.Volume != 42 {
@@ -124,7 +119,7 @@ func TestRunUserActionOK(t *testing.T) {
 
 func TestRunUserActionArgsAreNotShellParsed(t *testing.T) {
 	var gotArgs []string
-	fakeUserAction(t, func(ctx context.Context, exe string, args []string) ([]byte, error) {
+	fakeUserAction(t, func(ctx context.Context, args []string) ([]byte, error) {
 		gotArgs = args
 		return []byte(`{"ok":true}`), nil
 	})
@@ -132,14 +127,14 @@ func TestRunUserActionArgsAreNotShellParsed(t *testing.T) {
 	if _, err := runUserAction(context.Background(), "notify", "--title", "t", "--text", text); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"user-action", "notify", "--title", "t", "--text", text}; !reflect.DeepEqual(gotArgs, want) {
+	if want := []string{"notify", "--title", "t", "--text", text}; !reflect.DeepEqual(gotArgs, want) {
 		t.Errorf("args = %q, want them passed through untouched", gotArgs)
 	}
 }
 
 func TestRunUserActionBadArgsNotLaunched(t *testing.T) {
 	launched := false
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		launched = true
 		return nil, nil
 	})
@@ -157,7 +152,7 @@ func TestRunUserActionBadArgsNotLaunched(t *testing.T) {
 }
 
 func TestRunUserActionErrorReply(t *testing.T) {
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		// The child exits 1 after an {"ok":false} line; the reply still
 		// decides what happened.
 		return []byte(`{"ok":false,"error":"unsupported","message":"audio is not available in this build"}` + "\n"),
@@ -174,9 +169,9 @@ func TestRunUserActionErrorReply(t *testing.T) {
 }
 
 func TestRunUserActionUnreadable(t *testing.T) {
-	for name, run := range map[string]func(context.Context, string, []string) ([]byte, error){
-		"empty, exit 0": func(context.Context, string, []string) ([]byte, error) { return nil, nil },
-		"garbage, exit 2": func(context.Context, string, []string) ([]byte, error) {
+	for name, run := range map[string]func(context.Context, []string) ([]byte, error){
+		"empty, exit 0": func(context.Context, []string) ([]byte, error) { return nil, nil },
+		"garbage, exit 2": func(context.Context, []string) ([]byte, error) {
 			return []byte("panic: boom\ngoroutine 1\n"), errors.New("exit status 2")
 		},
 	} {
@@ -188,7 +183,7 @@ func TestRunUserActionUnreadable(t *testing.T) {
 }
 
 func TestRunUserActionNoSession(t *testing.T) {
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		return nil, fmt.Errorf("get session: %w", fmt.Errorf("%w: no explorer.exe process found", errNoUserSession))
 	})
 	if _, err := runUserAction(context.Background(), "media", "play"); !errors.Is(err, errNoUserSession) {
@@ -198,7 +193,7 @@ func TestRunUserActionNoSession(t *testing.T) {
 
 func TestRunUserActionTimeout(t *testing.T) {
 	killed := make(chan struct{})
-	fakeUserAction(t, func(ctx context.Context, _ string, _ []string) ([]byte, error) {
+	fakeUserAction(t, func(ctx context.Context, _ []string) ([]byte, error) {
 		// Behave like exec.CommandContext: run until the context kills us.
 		<-ctx.Done()
 		close(killed)
@@ -231,7 +226,7 @@ func TestRunUserActionTimeoutDefault(t *testing.T) {
 }
 
 func TestRunUserActionCallerCancel(t *testing.T) {
-	fakeUserAction(t, func(ctx context.Context, _ string, _ []string) ([]byte, error) {
+	fakeUserAction(t, func(ctx context.Context, _ []string) ([]byte, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	})
@@ -243,7 +238,7 @@ func TestRunUserActionCallerCancel(t *testing.T) {
 }
 
 func TestRunUserActionInvalidAudioIgnored(t *testing.T) {
-	fakeUserAction(t, func(context.Context, string, []string) ([]byte, error) {
+	fakeUserAction(t, func(context.Context, []string) ([]byte, error) {
 		return []byte(`{"ok":true,"audio":{"volume":180,"muted":false,"device":"x"}}`), nil
 	})
 	if _, err := runUserAction(context.Background(), "audio", "get"); err != nil {

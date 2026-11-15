@@ -1,0 +1,15 @@
+{
+  "ui.sharing.hero.sub": "Only what you turn on goes to SmartThings and Telegram",
+  "ui.sharing.browser": "Browser access",
+  "ui.sharing.count": "%d on",
+  "ui.sharing.session.hint": "Sends the lock state and idle time to the hub for routines",
+  "ui.sharing.user.hint": "Also sends the signed-in Windows account name",
+  "ui.sharing.nowplaying.hint": "Sends title, artist and app. Off, only whether something plays",
+  "ui.sharing.activity.hint": "Sends only whether the listed programs run",
+  "ui.sharing.watch.priority": "Lower numbers win. Routines pick them as 'Watch 1–5' on the PC device",
+  "ui.sharing.watch.hint": "File names only, no path. Removing one breaks routines using its slot",
+  "ui.sharing.watch.full": "All five slots are taken. Remove one to add another",
+  "ui.sharing.pick.hint": "Shown on this PC only, never sent anywhere",
+  "ui.sharing.pick.loading": "Loading running programs…",
+  "ui.sharing.pick.more": "%d more. Search by name to narrow them down"
+}

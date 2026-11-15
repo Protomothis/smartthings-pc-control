@@ -396,7 +396,11 @@ func ProgramsDir() (string, error) {
 }
 
 // EnsureToastShortcut is EnsureShortcut for the running exe in the
-// calling user's Start menu.
+// calling user's Start menu — unless the setup program (#166) already put
+// the same shortcut, AUMID included, in the all-users Start menu: toasts
+// work with that one, and a second, per-user copy would only show the app
+// twice in Start. A per-user copy left by an earlier [설치] for this same
+// exe is removed then.
 func EnsureToastShortcut() (Result, error) {
 	dir, err := ProgramsDir()
 	if err != nil {
@@ -406,7 +410,56 @@ func EnsureToastShortcut() (Result, error) {
 	if err != nil {
 		return "", err
 	}
-	return EnsureShortcut(dir, exe)
+	common, _ := windows.KnownFolderPath(windows.FOLDERID_CommonPrograms, 0)
+	return ensureShortcutBeside(common, dir, exe)
+}
+
+// ensureShortcutBeside is EnsureToastShortcut with the all-users (common)
+// and the user's Start menu folders given; common may be "".
+func ensureShortcutBeside(common, user, exe string) (Result, error) {
+	if common != "" && !samePath(common, user) && ShortcutMatches(common, exe) {
+		if shortcutTargets(user, exe) {
+			if err := RemoveShortcut(user); err != nil {
+				return "", err
+			}
+		}
+		return Unchanged, nil
+	}
+	return EnsureShortcut(user, exe)
+}
+
+// shortcutTargets reports whether dir\ShortcutFile exists and starts exe,
+// whatever its other fields: a per-user copy left by an older [설치] may
+// differ in them and is still the installer shortcut's twin.
+func shortcutTargets(dir, exe string) bool {
+	path := filepath.Join(dir, ShortcutFile)
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	ok := false
+	_ = withCOM(func() error {
+		have, err := readLink(path)
+		ok = err == nil && samePath(have.target, exe)
+		return nil
+	})
+	return ok
+}
+
+// ShortcutMatches reports whether dir\ShortcutFile exists and is exactly
+// the shortcut EnsureShortcut would write for exe (target, `gui`, working
+// folder, AUMID).
+func ShortcutMatches(dir, exe string) bool {
+	path := filepath.Join(dir, ShortcutFile)
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	ok := false
+	_ = withCOM(func() error {
+		have, err := readLink(path)
+		ok = err == nil && have.matches(wantLink(exe))
+		return nil
+	})
+	return ok
 }
 
 // RemoveToastShortcut removes the calling user's shortcut, if any.

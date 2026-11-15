@@ -25,7 +25,7 @@ func PresetFailure(err error, p config.Preset) (f Failure, reason string) {
 	f = Classify(err)
 	var ue *session.ActionError
 	if !errors.As(err, &ue) {
-		// No session, a timeout, a start of the child that failed: their
+		// No session, no tray app, a timeout, an unreadable reply: their
 		// messages are fixed texts already, and the last one is the
 		// generic "could not be run" (Classify keeps details out).
 		return f, ""
