@@ -33,6 +33,12 @@ CGO_ENABLED=0 go build -ldflags="-s -w -H=windowsgui -X main.Version=dev" -o sma
 STPC_SHOTS_DIR=/tmp/shots go test -run Shots ./ui/
 ```
 
+앱 로고의 원본은 `assets/logo/*.svg`다(`logo.svg`가 디자인, `logo-16/-20/-24/-32.svg`는 그 크기의 픽셀에 맞춘 변형). 로고를 바꿨으면 래스터를 모두 다시 만든다: `assets/logo/png`, `icon.ico`, `gui/icon.png`, `gui/tray.ico`. `-social`은 `docs/social-preview.png`도 다시 그리고(Windows 글꼴 Segoe UI·맑은 고딕을 쓴다), `-contact`는 크기별 확인용 시트를 쓴다. 그다음 아래처럼 .syso를 다시 만든다.
+
+```bash
+go run ./internal/tools/logo -social -contact /tmp/contact.png
+```
+
 exe의 아이콘과 애플리케이션 매니페스트(asInvoker, 지원 OS)는 `rsrc_windows_amd64.syso`에 들어 있다. `icon.ico`나 `smartthings-pc-control.manifest`를 바꾸면 MinGW의 windres로 다시 만들고 함께 커밋한다(`TestResourcesCurrent`가 확인한다).
 
 ```bash

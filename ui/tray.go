@@ -5,11 +5,8 @@ package ui
 // cancel, the WebUI and quit — the entries the Fyne tray had.
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
-	"image/png"
 	"sync"
 
 	"fyne.io/systray"
@@ -36,9 +33,7 @@ type tray struct {
 
 // trayReady runs on systray's ready callback.
 func (u *UI) trayReady() {
-	if ico := pngToICO(gui.IconPNG()); ico != nil {
-		systray.SetIcon(ico)
-	}
+	systray.SetIcon(gui.TrayICO())
 	systray.SetTitle(windowTitle)
 	systray.SetOnTapped(u.Show) // left click opens the window; right click the menu
 	u.tray.mu.Lock()
@@ -135,27 +130,4 @@ func (u *UI) buildTrayMenu() {
 	on(systray.AddMenuItem(gui.T(l, "tray.exit"), ""), u.requestQuit)
 	t.needConn = []*systray.MenuItem{cmds, cancelSched, webUI}
 	t.conn = true // forces the first enable/disable pass
-}
-
-// pngToICO wraps a PNG in a one-image ICO, which is what the Windows tray
-// takes (Vista and later read PNG-compressed entries).
-func pngToICO(data []byte) []byte {
-	cfg, err := png.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil
-	}
-	dim := func(n int) byte {
-		if n >= 256 {
-			return 0 // 0 means 256
-		}
-		return byte(n)
-	}
-	var b bytes.Buffer
-	le := binary.LittleEndian
-	_ = binary.Write(&b, le, [3]uint16{0, 1, 1}) // reserved, type icon, one image
-	b.Write([]byte{dim(cfg.Width), dim(cfg.Height), 0, 0})
-	_ = binary.Write(&b, le, [2]uint16{1, 32})                 // planes, bits per pixel
-	_ = binary.Write(&b, le, [2]uint32{uint32(len(data)), 22}) // size, offset (6+16)
-	b.Write(data)
-	return b.Bytes()
 }

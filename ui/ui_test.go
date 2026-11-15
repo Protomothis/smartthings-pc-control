@@ -1,10 +1,7 @@
 package ui
 
 import (
-	"bytes"
 	"errors"
-	"image"
-	"image/png"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,17 +63,28 @@ func TestLocaleKeysExist(t *testing.T) {
 	}
 }
 
-func TestPNGToICO(t *testing.T) {
-	var b bytes.Buffer
-	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 32, 32))); err != nil {
-		t.Fatal(err)
+// TestTrayICO checks the embedded tray icon has a frame for every
+// small-icon size and the double-size ones the shell halves.
+func TestTrayICO(t *testing.T) {
+	ico := gui.TrayICO()
+	if len(ico) < 6 || ico[2] != 1 || ico[3] != 0 {
+		t.Fatal("not an .ico")
 	}
-	ico := pngToICO(b.Bytes())
-	if len(ico) != 22+b.Len() || ico[2] != 1 || ico[4] != 1 || ico[6] != 32 || ico[18] != 22 {
-		t.Fatalf("bad header % x", ico[:22])
+	n := int(ico[4]) | int(ico[5])<<8
+	got := map[int]bool{}
+	for i := 0; i < n; i++ {
+		e := ico[6+16*i:]
+		size := int(uint32(e[8]) | uint32(e[9])<<8 | uint32(e[10])<<16 | uint32(e[11])<<24)
+		off := int(uint32(e[12]) | uint32(e[13])<<8 | uint32(e[14])<<16 | uint32(e[15])<<24)
+		if off+size > len(ico) {
+			t.Fatalf("frame %d runs past the end", i)
+		}
+		got[int(e[0])] = true
 	}
-	if pngToICO([]byte("not a png")) != nil {
-		t.Fatal("garbage became an icon")
+	for _, s := range []int{16, 20, 24, 32, 40, 48, 64} {
+		if !got[s] {
+			t.Errorf("no %d px frame", s)
+		}
 	}
 }
 
