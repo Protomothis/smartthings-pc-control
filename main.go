@@ -49,7 +49,7 @@ func main() {
 		if isSvc, _ := svc.IsWindowsService(); isSvc {
 			service.RunService()
 		} else {
-			gui.Run(Version, false)
+			ui.Run(Version, false)
 		}
 		return
 	}
@@ -90,15 +90,12 @@ func main() {
 		service.RunConsole()
 
 	case "gui":
-		// Native GUI — talks to the running service via localhost API.
-		// "--minimized" (login autostart) keeps the window hidden, tray only.
-		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
-		gui.Run(Version, minimized)
-
-	case "gui-next":
-		// Hidden, for development only (#165): the Gio window that will
-		// replace "gui". It has no single-instance lock yet, so close the
-		// regular app first.
+		// The desktop app (package ui, Gio): tray icon and window, talking to
+		// the running service via its localhost API. "--minimized" (login
+		// autostart, the service waking the tray) keeps the window hidden,
+		// tray only. The double-click (no arguments), the Start menu
+		// shortcut, the autostart Run key, the service's tray launch and the
+		// self-updater's relaunch all come through here.
 		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
 		ui.Run(Version, minimized)
 

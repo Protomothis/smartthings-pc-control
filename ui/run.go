@@ -15,7 +15,8 @@ import (
 // and Gio windows on Windows run their own message loops on other threads,
 // so app.Main is not needed.
 //
-// It does what gui.Run does for the Fyne window: one app per session (a
+// It is what "gui" (and a double-click) runs, and does what the Fyne
+// app's gui.Run did: one app per session (a
 // later launch opens this one's window), debug mode from tray.json, the
 // toast protocol and shortcut, the autostart entry rewritten for the
 // current exe, the heartbeats and the service's user-session jobs
