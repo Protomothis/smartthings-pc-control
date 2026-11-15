@@ -22,10 +22,6 @@ import (
 // The service owns delivery; this tab only edits the telegram/notify parts
 // of the config and offers the test/lookup helpers of /api/telegram/*.
 
-// maskedTokenPrefix is how GET /api/config hands the bot token to the GUI
-// ("****6789"); sending it back unchanged keeps the stored token.
-const maskedTokenPrefix = "****"
-
 // botFatherURL is the hint hyperlink of the connection section.
 const botFatherURL = "https://core.telegram.org/bots#how-do-i-create-a-bot"
 
@@ -202,33 +198,6 @@ func tokenToSend(typed, masked string) string {
 		return masked
 	}
 	return typed
-}
-
-// maskToken mirrors the service's masking ("****" + last 4, or "****" for
-// short tokens) for the local fallback when the post-save re-fetch fails.
-func maskToken(plain string) string {
-	if plain == "" {
-		return ""
-	}
-	r := []rune(plain)
-	if len(r) < 8 {
-		return maskedTokenPrefix
-	}
-	return maskedTokenPrefix + string(r[len(r)-4:])
-}
-
-// maskedAfterSave is the masked token the baseline should hold after a
-// save of typed when the service could not be re-read: a kept token keeps
-// its old mask, "-" clears, a new token is masked locally.
-func maskedAfterSave(typed, oldMasked string) string {
-	switch {
-	case typed == "" || strings.HasPrefix(typed, maskedTokenPrefix):
-		return oldMasked
-	case typed == "-":
-		return ""
-	default:
-		return maskToken(typed)
-	}
 }
 
 // parseChatIDs splits the comma-separated entry, trimming blanks and

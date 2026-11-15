@@ -89,12 +89,12 @@ type ui struct {
 	awake *awakeRow
 	// Command tab: the media card (#117, media_card.go). lastMedia (and
 	// whether it was ever loaded) survives a rebuild so the card comes
-	// back at once; hbSent is what the tray's 3s check last delivered.
+	// back at once; hb posts the heartbeats and remembers what arrived.
 	media        *mediaCard
 	lastMedia    MediaState
 	lastMediaErr error
 	mediaLoaded  bool
-	hbSent       heartbeatSent
+	hb           HeartbeatSender
 	// Command tab: the [실행] buttons of the saved presets (#109) and the
 	// line shown when there are none; the presets tab (presets_tab.go) and
 	// the settings tab's PC-notification switches (notify_section.go, #106).
