@@ -25,6 +25,8 @@ func TestComponentsLayout(t *testing.T) {
 	var chips chipGroup
 	var exp expander
 	var bar saveBarState
+	var list listEditor
+	var cp copyButton
 	for _, dark := range []bool{false, true} {
 		usePalette(dark)
 		comps := map[string]layout.Widget{
@@ -45,9 +47,30 @@ func TestComponentsLayout(t *testing.T) {
 			"tile":      func(gtx C) D { return tile(gtx, th, &clk, "shutdown", "종료", colDanger, colDangerDim) },
 			"topBar":    func(gtx C) D { return topBar(gtx, th, &clk, "SmartThings") },
 			"saveBar": func(gtx C) D {
-				return saveBar(gtx, th, &bar, "저장되지 않은 변경 사항", "되돌리기", "저장")
+				return saveBar(gtx, th, &bar, "저장되지 않은 변경 사항", "되돌리기", "저장", false)
 			},
-			"card": func(gtx C) D { return card(gtx, fixed(10)) },
+			"card":       func(gtx C) D { return card(gtx, fixed(10)) },
+			"statusPill": statusPill(th, "연결됨", toneOK),
+			"iconTile":   func(gtx C) D { return iconTile(gtx, "hub", toneAccent, 40) },
+			"connRow": func(gtx C) D {
+				return connRow(gtx, th, &clk, "hub", toneAccent, "SmartThings", "허브 연결됨 · 192.168.1.20", "연결됨", toneOK)
+			},
+			"toggleRowIcon": func(gtx C) D { return toggleRowIcon(gtx, th, &b, "bell", toneAccent, "PC 알림", "루틴") },
+			"fieldRow":      func(gtx C) D { return fieldRow(gtx, th, &ed, "포트", "", "5001", 96) },
+			"textArea":      textArea(th, &ed, "여러 줄", 3),
+			"banner":        func(gtx C) D { return banner(gtx, th, toneWarn, "경고") },
+			"listEditor": func(gtx C) D {
+				return list.Layout(gtx, th, 2, "없음", "추가", func(gtx C, i int) D { return infoRow(th, "허브", "192.168.1.2")(gtx) })
+			},
+			"listEditorEmpty": func(gtx C) D { return list.Layout(gtx, th, 0, "없음", "", nil) },
+			"copy":            func(gtx C) D { return cp.Layout(gtx, th, "abc", "복사", "복사했어요") },
+			"hero": func(gtx C) D {
+				return heroCard(gtx, th, hero{icon: "hub", tone: toneOK, headline: "허브 연결됨", sub: "192.168.1.20"}, nil)
+			},
+			"section": section(th, "접속", fixed(10)),
+			"listRowBadge": func(gtx C) D {
+				return listRowBadge(gtx, th, &clk, "업데이트", "v1.2.4", statusPill(th, "새 버전", toneAccent))
+			},
 		}
 		for name, w := range comps {
 			ops.Reset()

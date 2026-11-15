@@ -34,6 +34,8 @@ type API interface {
 	GetSTHub() (gui.STHub, error)
 	TelegramState() (gui.TelegramState, error)
 	RunPreset(slot int) error
+	RestartService() error
+	SessionHeartbeat(hb gui.Heartbeat) (ignored bool, err error)
 }
 
 var _ API = (*gui.Client)(nil)
@@ -55,6 +57,7 @@ type snapshot struct {
 
 	cfg    gui.Config
 	cfgSet bool
+	cfgGen uint64 // bumped by every config read; the forms adopt each once
 
 	battery gui.Battery
 
@@ -72,6 +75,11 @@ type snapshot struct {
 	logs     []string
 	logsSet  bool
 	logsErr  error
+
+	// updateTag is a newer release found by the update check, "" for
+	// none; updateCheck is what the check learned (the update page uses it).
+	updateTag   string
+	updateCheck gui.UpdateCheck
 }
 
 // remaining is the schedule's time left at now.

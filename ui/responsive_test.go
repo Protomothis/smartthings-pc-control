@@ -62,8 +62,8 @@ func TestMasonryGridSpans(t *testing.T) {
 	}
 }
 
-// The home screen keeps today's stack in one column and folds the
-// connections and the log into cards in the grid.
+// The home screen keeps one stack in one column (the 연결 card included)
+// and folds the log into the settings card in the grid.
 func TestHomeItems(t *testing.T) {
 	u := sampleUI(gui.LangKo, false)
 	one, two := u.homeItems(u.current(), 1), u.homeItems(u.current(), 2)
@@ -72,7 +72,7 @@ func TestHomeItems(t *testing.T) {
 			t.Fatal("one column has a cell")
 		}
 	}
-	if len(one) != 11 || len(two) != 7 || !two[0].span || two[1].span {
+	if len(one) != 8 || len(two) != 7 || !two[0].span || two[1].span {
 		t.Fatalf("one column %d items, grid %d", len(one), len(two))
 	}
 }

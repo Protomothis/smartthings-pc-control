@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"sync"
 	"time"
 
 	"fyne.io/systray"
@@ -10,21 +9,47 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/trayexec"
 )
 
-// Run starts the tray and, unless minimized, the window; it blocks until
-// the app quits. Call it from the main goroutine: systray needs the main
-// thread, and Gio windows on Windows run their own message loops on other
-// threads, so app.Main is not needed. The service's user-session jobs
-// (trayexec, #164) run as long as the tray does.
+// Run is the whole app: the single-instance check, the start-up chores,
+// the tray and, unless minimized, the window. It blocks until the app
+// quits. Call it from the main goroutine: systray needs the main thread,
+// and Gio windows on Windows run their own message loops on other threads,
+// so app.Main is not needed.
 //
-// Not yet here (later #165 phases, still only in gui.Run): the single
-// instance lock, the idle and media heartbeats, the grace toast, the
-// update check and the autostart refresh.
+// It does what gui.Run does for the Fyne window: one app per session (a
+// later launch opens this one's window), debug mode from tray.json, the
+// toast protocol and shortcut, the autostart entry rewritten for the
+// current exe, the heartbeats and the service's user-session jobs
+// (trayexec, #164) for as long as the tray runs, the grace toast and the
+// daily update check.
 func Run(version string, minimized bool) {
+	inst := gui.ClaimInstance()
+	if !inst.First() {
+		// A minimized launch (login autostart, or the service waking the
+		// tray app for a grace toast) stays silent: the running app has the
+		// tray and shows the toast itself. Any other launch opens its
+		// window.
+		if !minimized {
+			inst.ActivateRunning()
+		}
+		return
+	}
+	gui.StartDebugMode(version)
+	defer gui.StopDebugMode()
+	gui.PrepareStart()
+
 	port := gui.LocalWebUIPort()
 	client := gui.NewClient(port)
 	u := New(client, version, loadPrefs(defaultPrefsPath()), systray.Quit)
 	u.snap.port = port
-	run(u, newTrayExec(client), minimized)
+	// Default on: the grace toast and, since #164, the service's
+	// user-session commands only work while the tray app runs. Rewritten
+	// every start so it tracks the current exe path.
+	if u.prefs.Bool(prefAutostart, true) {
+		go func() { _ = gui.SetAutostart(true) }()
+	}
+	stopActivation := inst.WatchActivation(u.Show)
+	defer stopActivation()
+	run(u, background{newTrayExec(client, u), &shellLoops{u: u, startup: !minimized}}, minimized)
 }
 
 // run drives the tray with bg started alongside it.
@@ -43,25 +68,38 @@ func run(u *UI, bg Background, minimized bool) {
 	})
 }
 
-// reloginEvery holds back the executor's local re-login after an attempt,
-// like the Fyne app's gate (gui/locallogin.go): a refusal will not change
-// soon, and each one is a log line on the service.
-const reloginEvery = 2 * time.Minute
+// background runs several Backgrounds as one.
+type background []Background
 
-// trayExec runs trayexec on the window's client, sharing its session
-// cookie and port.
-type trayExec struct {
-	c    *gui.Client
-	stop func()
-
-	mu   sync.Mutex
-	last time.Time
+func (b background) Start() {
+	for _, x := range b {
+		x.Start()
+	}
 }
 
-func newTrayExec(c *gui.Client) *trayExec { return &trayExec{c: c} }
+func (b background) Stop() {
+	for i := len(b) - 1; i >= 0; i-- {
+		b[i].Stop()
+	}
+}
+
+// trayExec runs trayexec on the window's client, sharing its session
+// cookie, its port and its local-login gate.
+type trayExec struct {
+	c    *gui.Client
+	u    *UI
+	stop func()
+}
+
+func newTrayExec(c *gui.Client, u *UI) *trayExec { return &trayExec{c: c, u: u} }
 
 func (t *trayExec) Start() {
-	t.stop = trayexec.Start(trayexec.Options{Base: t.c.BaseURL, Jar: t.c.CookieJar(), Relogin: t.relogin})
+	t.stop = trayexec.Start(trayexec.Options{
+		Base:    t.c.BaseURL,
+		Jar:     t.c.CookieJar(),
+		Relogin: t.u.relogin,
+		Logf:    func(format string, args ...any) { gui.Logf("trayexec", format, args...) },
+	})
 }
 
 func (t *trayExec) Stop() {
@@ -70,19 +108,67 @@ func (t *trayExec) Stop() {
 	}
 }
 
-func (t *trayExec) relogin() bool {
-	t.mu.Lock()
-	if time.Since(t.last) < reloginEvery {
-		t.mu.Unlock()
-		return false
-	}
-	t.last = time.Now()
-	t.mu.Unlock()
-	if t.c.LocalLogin() != nil {
-		return false
-	}
-	t.mu.Lock()
-	t.last = time.Time{} // only a refusal holds the next attempt back
-	t.mu.Unlock()
-	return true
+// updateEvery is how often the update check runs after the one at start.
+const updateEvery = 24 * time.Hour
+
+// shellLoops are the tray's own timers, window or not: the full heartbeat
+// every 30s, the media change check every 3s (#117) and the update check.
+type shellLoops struct {
+	u       *UI
+	startup bool // the window opens at start: the first check may say so
+	done    chan struct{}
+	stopped chan struct{}
 }
+
+func (l *shellLoops) Start() {
+	l.done = make(chan struct{})
+	l.stopped = make(chan struct{})
+	go l.loop()
+}
+
+func (l *shellLoops) Stop() {
+	if l.done == nil {
+		return
+	}
+	close(l.done)
+	<-l.stopped
+}
+
+func (l *shellLoops) loop() {
+	defer close(l.stopped)
+	u := l.u
+	hb := time.NewTicker(gui.HeartbeatInterval)
+	defer hb.Stop()
+	media := time.NewTicker(gui.MediaWatchInterval)
+	defer media.Stop()
+	upd := time.NewTicker(updateEvery)
+	defer upd.Stop()
+	go u.checkUpdates(l.startup)
+	for {
+		select {
+		case <-l.done:
+			return
+		case <-hb.C:
+			go u.heartbeat.SendFull(heartbeatClient{u})
+		case <-media.C:
+			// Like the heartbeat, not gated on the connection: the change
+			// check keeps the service current while the window is closed.
+			if u.mediaBusy.CompareAndSwap(false, true) {
+				go func() {
+					defer u.mediaBusy.Store(false)
+					u.heartbeat.SendChanges(heartbeatClient{u})
+				}()
+			}
+		case <-upd.C:
+			go u.checkUpdates(false)
+		}
+	}
+}
+
+// heartbeatClient is the UI's gui.HeartbeatClient.
+type heartbeatClient struct{ u *UI }
+
+func (h heartbeatClient) SessionHeartbeat(hb gui.Heartbeat) (bool, error) {
+	return h.u.api.SessionHeartbeat(hb)
+}
+func (h heartbeatClient) Relogin() bool { return h.u.relogin() }

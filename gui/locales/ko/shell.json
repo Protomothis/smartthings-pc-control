@@ -1,0 +1,15 @@
+{
+  "ui.form.saving": "저장하는 중…",
+  "ui.page.pending": "이 화면의 편집 기능은 곧 여기로 옮겨 와요. 지금은 기존 설정 앱에서 바꿀 수 있어요.",
+  "ui.copy": "복사",
+  "ui.copied": "복사했어요",
+  "ui.pick.all": "모든 파일",
+  "ui.conn.on": "연결됨",
+  "ui.conn.off": "꺼짐",
+  "ui.conn.check": "확인 필요",
+  "ui.conn.waiting": "확인 중",
+  "ui.home.update.new": "새 버전 %s",
+  "ui.home.servicectl.sub": "설치·시작·중지, 설치 위치",
+  "ui.home.unreachable.open": "서비스 관리 열기",
+  "ui.home.presets.edit": "편집"
+}

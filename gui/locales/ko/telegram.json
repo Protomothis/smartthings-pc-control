@@ -1,0 +1,13 @@
+{
+  "ui.telegram.hero.on": "텔레그램 연결됨",
+  "ui.telegram.hero.off": "텔레그램 꺼짐",
+  "ui.telegram.hero.conflict": "다른 PC와 봇이 겹쳐요",
+  "ui.telegram.hero.notoken": "봇 토큰이 필요해요",
+  "ui.telegram.off.sub": "알림과 원격 제어 모두 꺼져 있어요",
+  "ui.telegram.bot": "봇",
+  "ui.telegram.features": "기능",
+  "ui.telegram.notify": "알림",
+  "ui.telegram.control": "원격 제어",
+  "ui.telegram.token.set": "등록됨",
+  "ui.telegram.token.unset": "없음"
+}

@@ -1,0 +1,9 @@
+{
+  "ui.sharing.hero.sub": "Only what you turn on goes to SmartThings and Telegram",
+  "ui.sharing.sent": "What is sent",
+  "ui.sharing.browser": "Browser access",
+  "ui.sharing.session.sub": "Away and lock state",
+  "ui.sharing.media.sub": "Track title, artist and app",
+  "ui.sharing.activity.sub": "Whether the programs you pick are running",
+  "ui.sharing.count": "%d on"
+}

@@ -1,0 +1,17 @@
+{
+  "ui.service.access": "Access",
+  "ui.service.remote": "Remote commands",
+  "ui.service.allowed": "Allowed",
+  "ui.service.advanced": "Advanced",
+  "ui.service.port.hint": "SmartThings command port; WebUI is +1",
+  "ui.service.webui": "WebUI in a browser",
+  "ui.service.webui.hint": "Local and LAN, needs a secret · after a restart",
+  "ui.service.grace": "Power command delay",
+  "ui.service.grace.hint": "SmartThings shutdown, restart and sleep wait this long; cancel from the toast or tray meanwhile.",
+  "ui.service.media": "Volume and media control",
+  "ui.service.media.hint": "Volume and playback from SmartThings and Telegram",
+  "ui.service.notify": "PC notifications",
+  "ui.service.notify.hint": "Routines and /say show a notice on screen (10 a minute)",
+  "ui.service.debug": "Debug mode",
+  "ui.service.debug.hint": "Keeps a crash record when something stops unexpectedly"
+}
