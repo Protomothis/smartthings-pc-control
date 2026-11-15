@@ -1,9 +1,11 @@
-// Package useraction is the `user-action` subcommand (#103): the half of
-// the user-session action channel that runs inside the logged-in user's
-// session. The service lives in session 0, where the default audio
-// endpoint, media keys and toasts mean nothing, so it launches this
-// same executable in the user's session (CreateProcessAsUser) with a fixed
-// argument vector and reads back one line of JSON.
+// Package useraction is the half of the user-session action channel that
+// runs inside the logged-in user's session (#103). The service lives in
+// session 0, where the default audio endpoint, media keys and toasts mean
+// nothing, so it hands a fixed argument vector to the tray app running in
+// the user's session (#164, package trayexec), which runs it here (Run)
+// and sends back one line of JSON. The `user-action` subcommand (Main)
+// does the same from a terminal; until #164 the service launched it for
+// every action.
 //
 // Grammar (exact strings, docs/design/media-notify.md §2):
 //
@@ -447,10 +449,18 @@ func hasControl(s string) bool {
 // Main runs the subcommand: args are what follows "user-action". It writes
 // exactly one JSON line to stdout and returns the process exit code.
 func Main(args []string, stdout io.Writer) int {
-	fields, err := dispatch(args)
-	line, code := render(fields, err)
+	line, code := Run(args)
 	stdout.Write(line)
 	return code
+}
+
+// Run performs one action in this process and returns its reply line
+// (with the trailing newline) and the exit code the subcommand would
+// return. The tray app runs the service's jobs through it (#164,
+// package trayexec), so a job and the subcommand answer alike.
+func Run(args []string) ([]byte, int) {
+	fields, err := dispatch(args)
+	return render(fields, err)
 }
 
 // dispatch parses the arguments and calls the registered handler. A panic

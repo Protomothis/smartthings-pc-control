@@ -21,6 +21,7 @@ var tgCtl = tgcontrol.New(tgcontrol.Deps{
 	StartedAt:     serviceStartedAt,
 	ActionTimeout: func() time.Duration { return userActions.Timeout },
 	ModernStandby: modernStandby,
+	TrayMissing:   trayMissing,
 	Status:        sources,
 	Commands:      tgCommands{},
 	Awake:         awakeControl{},

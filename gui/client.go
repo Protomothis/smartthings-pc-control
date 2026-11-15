@@ -159,6 +159,13 @@ func (c *Client) SetPort(webPort int) {
 	c.baseMu.Unlock()
 }
 
+// baseURL is the WebUI address the client talks to now.
+func (c *Client) baseURL() string {
+	c.baseMu.RLock()
+	defer c.baseMu.RUnlock()
+	return c.base
+}
+
 func (c *Client) do(method, path string, body any) (*http.Response, error) {
 	var buf bytes.Buffer
 	if body != nil {
@@ -166,9 +173,7 @@ func (c *Client) do(method, path string, body any) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	c.baseMu.RLock()
-	base := c.base
-	c.baseMu.RUnlock()
+	base := c.baseURL()
 	req, err := http.NewRequestWithContext(context.Background(), method, base+path, &buf)
 	if err != nil {
 		return nil, err

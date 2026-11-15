@@ -2,14 +2,14 @@ package session
 
 // The service half of the user-session action channel (#103, design
 // docs/design/media-notify.md §2). Volume, media keys and toasts only mean
-// something in the logged-in user's session, so the service runs its own
-// executable there as `user-action …` (Command) and reads its one-line
-// JSON reply. The subcommand itself — grammar, validation, output — is
-// package useraction.
+// something in the logged-in user's session, so the service hands the
+// action to the tray app running there (Broker, #164) and reads back its
+// one-line JSON reply. Grammar, validation and reply are package
+// useraction's, the same as the `user-action` subcommand's.
 //
-// The argument vector goes to CreateProcessAsUser as-is; no shell ever sees
-// it (§7). It is validated with the subcommand's own parser before anything
-// is launched, so a bad request costs no process.
+// The argument vector reaches the tray app as a JSON array and useraction
+// as-is; no shell ever sees it (§7). It is validated with useraction's own
+// parser before it is sent, so a bad request never reaches the tray.
 
 import (
 	"bytes"
@@ -22,11 +22,11 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
-// ErrTimeout is returned when the child did not answer within the runner's
-// Timeout (it has been killed by then).
+// ErrTimeout is returned when the tray app did not answer within the
+// runner's Timeout.
 var ErrTimeout = errors.New("user-action timed out")
 
-// ErrOutput is returned when the child's last output line is not a
+// ErrOutput is returned when the reply's last line is not a
 // user-action reply: nothing at all, or not JSON with an "ok" field.
 var ErrOutput = errors.New("user-action: unreadable output")
 
@@ -37,7 +37,7 @@ type ActionError struct {
 	Message string
 	// Reason refines the failure (useraction.Preset*), "" when none.
 	Reason string
-	// Detail is the child's full error, for service.log only: Error()
+	// Detail is the user session's full error, for service.log only: Error()
 	// includes it, Message (what clients see) does not.
 	Detail string
 }
@@ -86,17 +86,17 @@ func (r Result) ReplyString(key string) string {
 	return s
 }
 
-// Runner runs `<exe> user-action <args…>` in a user session. Every field
-// is a dependency the service fills in (and a test replaces).
+// Runner runs one useraction in a user session. Every field is a
+// dependency the service fills in (and a test replaces).
 type Runner struct {
-	// Exec runs exe with args in the target session and returns its
-	// combined output, also when the process fails. It must stop when ctx
-	// is done; the real one (WTS.Output) never touches a shell.
-	Exec func(ctx context.Context, target Target, exe string, args []string) ([]byte, error)
-	// Exe is the executable to run: os.Executable.
-	Exe func() (string, error)
-	// Timeout bounds one run end to end: finding the session, starting the
-	// child and reading its reply. The child is killed when it runs out.
+	// Exec runs args (what follows "user-action") in the target session
+	// and returns the reply line. It must stop when ctx is done. The real
+	// one looks the session up and hands the job to the tray app there
+	// (Broker.Do): nobody logged in is ErrNoUserSession
+	// (ErrNoConsoleSession for Console), no tray app ErrTrayUnavailable.
+	Exec func(ctx context.Context, target Target, args []string) ([]byte, error)
+	// Timeout bounds one run end to end: finding the session, handing the
+	// job over and reading its reply.
 	Timeout time.Duration
 	// BeforeRun is called before an ActiveUser run, so a moved target
 	// drops the old session's samples before this reply is stored. nil:
@@ -108,14 +108,14 @@ type Runner struct {
 	OnReply func(args []string, res Result)
 }
 
-// Run runs `<exe> user-action <args…>` in target's session and returns its
-// reply.
+// Run runs args in target's session and returns the reply.
 //
 // err is nil only for an {"ok":true} reply. Otherwise it is one of:
 // ErrNoUserSession (nobody logged in), ErrNoConsoleSession (Console only,
 // kept whole: it says whether the console is at the logon screen),
+// ErrTrayUnavailable (logged in, but no tray app polls there, kept whole),
 // ErrTimeout, *ActionError (an {"ok":false} reply, whose code is also in
-// the returned result), ErrOutput (no reply line), or a start error.
+// the returned result), ErrOutput (no reply line), or a lookup error.
 //
 // Only an ActiveUser run touches the target bookkeeping (BeforeRun,
 // OnReply). A Console run does neither — the console is not "the target"
@@ -128,11 +128,6 @@ func (rn Runner) Run(ctx context.Context, target Target, args ...string) (Result
 		res := Result{OK: false, Error: ue.Code, Message: ue.Message}
 		return res, &ActionError{Code: ue.Code, Message: ue.Message}
 	}
-	exe, err := rn.Exe()
-	if err != nil {
-		return Result{}, fmt.Errorf("get executable: %w", err)
-	}
-
 	tracksTarget := target == ActiveUser
 	if tracksTarget && rn.BeforeRun != nil {
 		rn.BeforeRun()
@@ -140,12 +135,12 @@ func (rn Runner) Run(ctx context.Context, target Target, args ...string) (Result
 
 	runCtx, cancel := context.WithTimeout(ctx, rn.Timeout)
 	defer cancel()
-	out, runErr := rn.Exec(runCtx, target, exe, append([]string{"user-action"}, args...))
+	out, runErr := rn.Exec(runCtx, target, args)
 
 	switch {
 	case errors.Is(runErr, ErrNoUserSession):
 		return Result{}, ErrNoUserSession
-	case errors.Is(runErr, ErrNoConsoleSession):
+	case errors.Is(runErr, ErrNoConsoleSession), errors.Is(runErr, ErrTrayUnavailable):
 		return Result{}, runErr
 	case ctx.Err() != nil:
 		// The caller gave up (service stopping, request gone).
@@ -170,10 +165,10 @@ func (rn Runner) Run(ctx context.Context, target Target, args ...string) (Result
 	return res, nil
 }
 
-// ParseOutput reads the reply from a child's combined output: the last
-// non-empty line, which must be a JSON object with a boolean "ok". Anything
-// before it — a runtime warning, a stray line some DLL printed — is
-// ignored. An {"ok":false} reply without a code gets "failed".
+// ParseOutput reads a reply: the last non-empty line, which must be a JSON
+// object with a boolean "ok". Anything before it is ignored (the
+// `user-action` subcommand's output may carry a line some DLL printed). An
+// {"ok":false} reply without a code gets "failed".
 func ParseOutput(out []byte) (Result, error) {
 	line := lastNonEmptyLine(out)
 	if len(line) == 0 {

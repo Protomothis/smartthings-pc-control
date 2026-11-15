@@ -62,8 +62,9 @@ func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, e
 // session on the physical console — a service has no interactive desktop
 // (session 0 isolation) — and records the display state. It replaced a
 // PowerShell SendMessage(HWND_BROADCAST) that one hung window could block
-// forever (#121); the child now uses SendMessageTimeoutW and runUserAction
-// bounds the whole run (userActions.Timeout, child killed when it runs out).
+// forever (#121); the action uses SendMessageTimeoutW and runUserAction
+// bounds the whole run (userActions.Timeout). Since #164 it runs in the
+// console session's tray app; without one it is errTrayUnavailable.
 //
 // Unlike the other user actions it never follows the unlocked-session
 // target: next to a locked console that is an RDP session, whose display
@@ -75,8 +76,8 @@ func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, e
 //
 // A run that timed out still counts: the broadcast was under way and the
 // monitor reacts to the first window that handles it. Any other failure
-// (nobody logged in at the console, the child could not start) leaves the
-// state alone.
+// (nobody logged in at the console, no tray app there) leaves the state
+// alone.
 //
 // On a modern standby PC (#161) the display going off is the system going
 // into standby: Windows throttles desktop processes, and leaves standby on

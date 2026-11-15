@@ -25,11 +25,15 @@ type serviceSources struct {
 	// wolScan is the adapter scan (wolscan.Scan), which shells out to
 	// PowerShell and queries the public IP.
 	wolScan func() WoLStatus
+	// tray is whether the target session's tray app takes jobs (#164);
+	// the contract tests fix it.
+	tray func() bool
 }
 
 var sources = &serviceSources{
 	sessionQuery: querySessionInfo,
 	wolScan:      wolscan.Scan,
+	tray:         func() bool { return trayConnected(sessionActiveUser) },
 }
 
 func (*serviceSources) MachineID() string                { return machineID() }
@@ -47,6 +51,7 @@ func (*serviceSources) Media(cfg Config) stMedia         { return stMediaStatus(
 func (s *serviceSources) WoLScan() WoLStatus             { return s.wolScan() }
 func (*serviceSources) LastCommand() *status.LastCommand { return lastCommandBlock() }
 func (*serviceSources) Processes() ([]string, error)     { return runningProcessNames() }
+func (s *serviceSources) TrayConnected() bool            { return s.tray() }
 
 // lastCommandBlock is the last remote command as the status reports it,
 // nil before one.

@@ -26,6 +26,8 @@ type testServer struct {
 	*Server
 	cfg     config.Config
 	session func() (session.Info, error)
+	// trays is the real job broker behind Deps.Trays.
+	trays *session.Broker
 }
 
 type fakeStatus struct{ ts *testServer }
@@ -109,7 +111,7 @@ func (fakeHeartbeat) Media(useraction.NowPlaying, time.Time) {}
 // change the live config.
 func newTestServer(t *testing.T, cfg config.Config) *testServer {
 	t.Helper()
-	ts := &testServer{cfg: cfg}
+	ts := &testServer{cfg: cfg, trays: session.NewBroker()}
 	ts.Server = New(Deps{
 		Config:     func() config.Config { return ts.cfg },
 		SaveConfig: func(c config.Config) error { ts.cfg = c; return nil },
@@ -129,6 +131,7 @@ func newTestServer(t *testing.T, cfg config.Config) *testServer {
 		Notify:    fakeNotifier{},
 		Telegram:  fakeTelegram{},
 		Heartbeat: fakeHeartbeat{},
+		Trays:     ts.trays,
 	})
 	return ts
 }

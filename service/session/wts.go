@@ -1,10 +1,11 @@
-// Package session finds the interactive user's Windows session and runs
-// programs in it. The service runs in session 0, which has no desktop, no
-// audio endpoint and no toasts, so everything that must happen where the
-// user is — volume, media keys, toasts, presets, the screen commands, the
-// tray app — goes through here: a WTS lookup for the session and its
-// user's token, then CreateProcessAsUser with that token (exec.Cmd with
-// SysProcAttr.Token), and for `user-action` the reply it prints (run.go).
+// Package session finds the interactive user's Windows session and gets
+// things done in it. The service runs in session 0, which has no desktop,
+// no audio endpoint and no toasts, so everything that must happen where
+// the user is — volume, media keys, toasts, presets, the screen commands —
+// goes through here: a WTS lookup for the session, then a job for the tray
+// app running there (broker.go) and its reply (run.go). Starting the tray
+// app itself for a grace toast is the one CreateProcessAsUser left
+// (exec.go).
 package session
 
 import (

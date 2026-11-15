@@ -24,18 +24,22 @@
 **로그인한 사용자의 세션에서만** 의미가 있다.
 
 ```
-허브 ──/st/v1──▶ 서비스(세션 0) ──runInUserSession──▶ exe user-action …(사용자 세션)
-                     ▲                                       │ stdout: JSON 결과·현재 상태
-                     └───────────────────────────────────────┘
+허브 ──/st/v1──▶ 서비스(세션 0) ◀──POST /api/tray/poll(롱폴)·/api/tray/result── 트레이 앱(사용자 세션)
+                                                                                  └ useraction.Run(같은 프로세스)
 트레이 앱(사용자 세션) ──/api/session/heartbeat(30초, audio 포함)──▶ 서비스
 ```
 
-- **실행 경로:** 서비스가 이미 쓰는 `runInUserSession`(CreateProcessAsUser, 출력 수집)으로 같은 exe의
-  하위 명령 `user-action`을 사용자 세션에서 실행한다. 트레이 앱이 꺼져 있어도 동작한다.
-  - `user-action audio get` / `audio set <0-100>` / `audio step <±n>` / `audio mute <on|off|toggle>`
-  - `user-action media <playpause|play|pause|stop|next|prev>`
-  - `user-action notify --title … --text …`
-  - 결과는 한 줄 JSON(`{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}`)으로 stdout에 쓴다.
+- **실행 경로(#164부터):** 대상 세션에서 이미 도는 트레이 앱이 서비스에서 작업(`useraction` 인자 배열)을 롱폴로
+  받아 자기 프로세스에서 `useraction.Run`으로 실행하고 한 줄 JSON 결과를 돌려준다(`trayexec/`, `service/session/broker.go`,
+  `service/webui/tray.go`). v1.2.3까지는 서비스가 CreateProcessAsUser로 같은 exe의 `user-action`을 명령마다 띄웠는데,
+  서명 없는 exe라 스마트 앱 컨트롤이 매번 판정하다 가끔 막았다(#163). 그래서 **트레이가 꺼져 있으면** 로그인해 있어도
+  `409 tray_unavailable`로 바로 실패한다(아무도 로그인하지 않았으면 먼저 `409 no_user_session`). 트레이 자동 시작은 기본으로 켜져 있다.
+  - 작업은 명령의 대상 세션(잠기지 않은 세션, 화면 명령은 콘솔) 트레이에만 간다. 서비스는 폴 요청이 아니라 연결을 연
+    프로세스(TCP 표 → PID)로 세션을 정하고, 그 프로세스가 서비스와 같은 exe·대화형 로그온·그 세션 사용자 본인인지 본다
+    (로컬 로그인과 달리 관리자는 요구하지 않는다). 인증은 다른 트레이 호출과 같은 세션 쿠키·CSRF 헤더다.
+  - 트레이가 폴 중이거나 마지막 폴 뒤 10초 안이면 연결된 것으로 본다. 제한 시간은 예전처럼 3초. status의 `tray.connected`가 이 상태다.
+  - 작업 문법은 아래 `user-action` 문법 그대로이고, 결과도 하위 명령의 stdout 한 줄과 같다
+    (`{"ok":true,"audio":{"volume":30,"muted":false,"device":"스피커"}}`). `user-action` 하위 명령은 손으로 확인하는 용도로 남았다.
 - **상태 보고:** 볼륨은 사용자가 키보드로도 바꾸므로, 트레이 하트비트(30초)에 `audio` 블록을 실어 보낸다.
   명령 직후에는 `user-action`의 결과로 즉시 갱신하고 푸시로 허브에 알린다.
 - **대상 세션에 트레이가 없을 때(v1.2.0-rc15 실측):** 하트비트는 명령이 실행되는 대상 세션의 것만 받으므로, 트레이가 다른 세션
@@ -221,7 +225,8 @@
 - 기존과 같이 시크릿(`X-PC-Secret`)과 `allowed_hubs`가 모든 `/st/v1`를 막는다.
 - 알림 문구는 길이 제한·제어 문자 제거·출처별 속도 제한. 토스트는 문구만 보여 주고 링크나 동작 버튼을 달지 않는다.
 - 미디어 키·볼륨은 파괴적이지 않지만 설정으로 끌 수 있게 한다.
-- `user-action`은 서비스가 사용자 세션에 띄우는 내부 하위 명령이며, 인자를 그대로 셸에 넘기지 않는다.
+- 사용자 세션 작업은 인자 배열 그대로 트레이의 `useraction`에 가며 셸을 거치지 않는다. 트레이 작업 엔드포인트는 연결한
+  프로세스가 이 exe의 트레이인지 매번 확인하고, 작업 ID(128비트 난수)와 세션이 맞는 결과만 받는다(#164).
 
 ## 8. 테스트
 

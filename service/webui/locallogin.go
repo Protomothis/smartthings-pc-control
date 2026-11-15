@@ -64,6 +64,8 @@ type localLogin struct {
 	// lastRefusal is the last refusal logged, so a tray that keeps asking
 	// costs one log line, not one per attempt.
 	lastRefusal string
+	// lastTrayRefusal is the same for the tray job endpoints (tray.go).
+	lastTrayRefusal string
 }
 
 // localTrustError is why a peer is refused; code goes to the client and
@@ -85,9 +87,25 @@ func refuse(code, format string, args ...any) error {
 }
 
 // trustLocalPeer is the decision on what inspectProcess found; nil means
-// the caller may have a session. The order puts the cheap, telling checks
-// first so the log names the most basic reason.
+// the caller may have a session: trustTrayPeer, and an administrator.
 func trustLocalPeer(p peerProcess, sameExe func(image string) bool) error {
+	if err := trustTrayPeer(p, sameExe); err != nil {
+		return err
+	}
+	if !p.Admin {
+		return refuse("not_admin", "pid %d (%s) is not an administrator", p.PID, p.UserSID)
+	}
+	return nil
+}
+
+// trustTrayPeer is whether p is this app's tray running in its session:
+// an interactive session's own user, started from this service's exe. It
+// is trustLocalPeer without the administrator check — the tray job
+// endpoints (tray.go) run what the service sends as that user, in their
+// own session, which is what the service did for every user before #164.
+// The order puts the cheap, telling checks first so the log names the
+// most basic reason.
+func trustTrayPeer(p peerProcess, sameExe func(image string) bool) error {
 	switch {
 	case p.SessionID == 0:
 		return refuse("session_0", "pid %d runs in session 0 (a service)", p.PID)
@@ -95,8 +113,6 @@ func trustLocalPeer(p peerProcess, sameExe func(image string) bool) error {
 		return refuse("not_interactive", "pid %d has no interactive logon", p.PID)
 	case p.SessionUserSID == "" || p.SessionUserSID != p.UserSID:
 		return refuse("not_session_user", "pid %d runs as %s, session %d belongs to %q", p.PID, p.UserSID, p.SessionID, p.SessionUserSID)
-	case !p.Admin:
-		return refuse("not_admin", "pid %d (%s) is not an administrator", p.PID, p.UserSID)
 	case !sameExe(p.Image):
 		return refuse("other_exe", "pid %d is %s", p.PID, p.Image)
 	}
@@ -117,6 +133,16 @@ func loopbackV4(addr string) (netip.AddrPort, bool) {
 
 // identifyLocalPeer finds and judges the process that sent r.
 func (s *Server) identifyLocalPeer(r *http.Request) (peerProcess, error) {
+	p, err := s.findLocalPeer(r)
+	if err != nil {
+		return p, err
+	}
+	return p, trustLocalPeer(p, s.peerSameExe)
+}
+
+// findLocalPeer looks up the process that sent r over loopback, without
+// judging it.
+func (s *Server) findLocalPeer(r *http.Request) (peerProcess, error) {
 	client, ok := loopbackV4(r.RemoteAddr)
 	if !ok {
 		return peerProcess{}, refuse("not_loopback", "request from %s", r.RemoteAddr)
@@ -141,7 +167,7 @@ func (s *Server) identifyLocalPeer(r *http.Request) (peerProcess, error) {
 	if err != nil {
 		return p, refuse("unknown_peer", "%v", err)
 	}
-	return p, trustLocalPeer(p, s.peerSameExe)
+	return p, nil
 }
 
 // isServiceExe reports whether image is the very file this service runs

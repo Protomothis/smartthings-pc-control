@@ -270,12 +270,28 @@ func (u *ui) onCloseRequest() {
 // it — the tray may be all that is on screen — and quits once they are
 // saved or discarded; [계속 편집] keeps the app running. quit is
 // u.app.Quit; the tests pass their own.
+//
+// Either way it then warns that the service's user-session commands stop
+// with the tray (#164) and quits on [종료].
 func (u *ui) requestQuit(quit func()) {
+	warned := func() { u.warnTrayQuit(quit) }
 	dirty := u.forms.dirtyTabs()
 	if len(dirty) == 0 {
-		quit()
+		warned()
 		return
 	}
 	u.showWindow()
-	u.promptUnsaved("unsaved.body.quit", dirty, quit)
+	u.promptUnsaved("unsaved.body.quit", dirty, warned)
+}
+
+// warnTrayQuit says that mute, media, notifications, presets and the
+// screen commands run in the tray app (#164) and stop when it quits, and
+// quits on confirmation. UI thread only.
+func (u *ui) warnTrayQuit(quit func()) {
+	u.showWindow()
+	u.ask(u.t("quit.title"), u.t("quit.body"), u.t("tray.exit"), func(ok bool) {
+		if ok {
+			quit()
+		}
+	})
 }

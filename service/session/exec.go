@@ -5,13 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"syscall"
-	"time"
 )
-
-// waitDelay bounds how long a waited-for user-session command may keep its
-// output pipes open after it exited or was killed — a grandchild that
-// inherited them must not keep CombinedOutput blocked.
-const waitDelay = 500 * time.Millisecond
 
 // Command builds an exec.Cmd that runs under the token of the target
 // session's user, i.e. inside their interactive desktop session. The
@@ -35,29 +29,10 @@ func (w WTS) Command(ctx context.Context, target Target, name string, args ...st
 	return cmd, token, nil
 }
 
-// Output executes a command in the target user's desktop session (Session
-// 0 isolation keeps the service off the interactive desktop), waits for it
-// and returns the combined output. The child is killed when ctx is done.
-// The output is returned even when the command fails, since a failing
-// child may still have said why on stdout — user-action does exactly that.
-func (w WTS) Output(ctx context.Context, target Target, name string, args ...string) ([]byte, error) {
-	cmd, token, err := w.Command(ctx, target, name, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer token.Close()
-	cmd.WaitDelay = waitDelay
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return output, fmt.Errorf("exec error: %w - output: %s", err, string(output))
-	}
-	return output, nil
-}
-
 // Start launches a command in the active user's desktop session without
-// waiting for it. Used for long-lived processes such as the tray app, where
-// waiting would pin a goroutine for the app's lifetime.
+// waiting for it: the tray app, for the grace-period toast. It is the
+// service's only process start in a user session; the user-session
+// actions go to the running tray app instead (Broker, #164).
 func (w WTS) Start(name string, args ...string) error {
 	cmd, token, err := w.Command(context.Background(), ActiveUser, name, args...)
 	if err != nil {

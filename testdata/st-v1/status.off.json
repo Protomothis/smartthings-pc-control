@@ -48,6 +48,9 @@
   "session": {
     "exposed": false
   },
+  "tray": {
+    "connected": false
+  },
   "update": {
     "available": false,
     "latest": ""
