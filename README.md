@@ -13,7 +13,7 @@
 
 [한국어](#한국어) · [English](#english)
 
-<img src="docs/gui-commands.png" alt="명령 탭" width="49%"> <img src="docs/gui-share.png" alt="공유 탭" width="49%">
+<img src="docs/gui-home.png" alt="홈 화면" width="49%"> <img src="docs/gui-share.png" alt="공유 화면" width="49%">
 
 </div>
 
@@ -36,7 +36,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 - **실행 중 앱 감지(옵트인)** — 감시 목록(최대 5개)의 프로그램이 실행 중인지 PC 장치의 '감시 목록' 카드에 보여 주고, 감시 1~5 칸의 실행 중/꺼짐을 루틴 조건으로 씁니다. 실행 파일 이름으로만 구분하므로 이름이 같은 다른 프로그램 · 스토어 앱의 호스트 프로세스 · 다른 사용자의 프로그램도 세고, 10초보다 짧은 실행은 놓칠 수 있습니다.
 - **노트북 배터리** — 잔량과 충전 상태를 SmartThings · 텔레그램 · 앱에 보여 줍니다.
 - **텔레그램(선택)** — 봇으로 알림을 받고 `/status` `/shutdown 30` 같은 명령으로 제어합니다.
-- **데스크톱 앱** — 명령 · 예약 · 프리셋 · 공유 · SmartThings · 텔레그램 · 설정 · 로그 탭, 한국어/English.
+- **데스크톱 앱** — 홈 화면 한 장에 바로 실행 · 미디어 · 예약 · 프리셋 · 연결 상태, 설정은 카드를 눌러 들어가는 화면으로. 시스템 다크 모드 · 한국어/English.
 - **서명된 자동 업데이트** — 서명을 확인한 릴리스만 설치하고, 실패하면 되돌립니다.
 
 볼륨 · 미디어 · PC 알림 · 프리셋은 PC에 로그인한 사용자가 있어야 동작합니다.
@@ -44,8 +44,8 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 ### 설치
 
 1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 `smartthings-pc-control.exe`를 받아 고정된 폴더(권장 `C:\Program Files\SmartThings PC Control\`)에 둡니다.
-2. exe를 실행하고 **설정 탭 → [설치]** → UAC 승인. 서비스, 자동 시작, 방화벽 규칙(TCP 5001, UDP 1900)이 만들어집니다.
-3. 설정 탭에서 **시크릿**을 정하고 [저장]합니다.
+2. exe를 실행하고 홈의 **설정 → 서비스 관리 → [설치]** → UAC 승인. 서비스, 자동 시작, 방화벽 규칙(TCP 5001, UDP 1900)이 만들어집니다.
+3. **설정 → 서비스 설정**에서 **시크릿**을 정하고 [저장]합니다.
 4. 채널 **Protomothis** 초대 링크를 열고 [Enroll] → 허브 선택: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
 5. 채널의 **SmartThings PC Control** 드라이버를 [Install]합니다.
 6. PC와 PC Control이 켜진 상태에서 SmartThings 앱 **[+] → 기기 추가 → 주변 기기 검색**. 장치를 추가하는 방법은 이 검색뿐입니다.
@@ -58,19 +58,19 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 
 ### 텔레그램 (선택)
 
-[@BotFather](https://t.me/BotFather)로 봇을 만들고, 앱 **텔레그램 탭**에 토큰을 넣은 뒤 [Chat ID 찾기]로 채팅을 고릅니다.
+[@BotFather](https://t.me/BotFather)로 봇을 만들고, 앱 홈의 **연결 → 텔레그램**에 토큰을 넣은 뒤 [Chat ID 찾기]로 채팅을 고릅니다.
 포트 개방이나 웹훅은 필요 없습니다.
 **봇 하나에 PC 하나**를 씁니다(같은 토큰을 공유하면 한 PC만 명령을 받습니다).
 명령 목록은 Wiki [텔레그램](https://github.com/Protomothis/smartthings-pc-control/wiki/텔레그램)에 있습니다.
 
 ### 문제 해결
 
-- **검색이 안 될 때** — 앱 **SmartThings 탭**의 검색 상태(응답기 · 방화벽 규칙 · 마지막 검색 요청 시각)부터 봅니다. 시각이 갱신되지 않으면 PC와 허브 사이 네트워크 문제입니다.
-- **어느 장치가 어느 PC인지** — 장치 정보의 모델 `PC Control · <8자리>`가 SmartThings 탭의 **이 PC의 ID**와 같습니다.
-- **WoL이 안 될 때** — SmartThings 탭의 **WoL 어댑터**에서 고른 랜카드와 그 WoL 상태를 확인합니다.
+- **검색이 안 될 때** — 앱 홈의 **연결 → SmartThings** 화면의 검색 상태(응답기 · 방화벽 규칙 · 마지막 검색 요청 시각)부터 봅니다. 시각이 갱신되지 않으면 PC와 허브 사이 네트워크 문제입니다.
+- **어느 장치가 어느 PC인지** — 장치 정보의 모델 `PC Control · <8자리>`가 SmartThings 화면의 **이 PC의 ID**와 같습니다.
+- **WoL이 안 될 때** — SmartThings 화면의 **WoL 어댑터**에서 고른 랜카드와 그 WoL 상태를 확인합니다.
 - **모던 스탠바이(S0) 노트북** — `powercfg /a`의 사용 가능한 상태에 `S0 저전력 유휴`가 보이는 PC입니다(`service.log` 시작 줄 `Power: modern standby …`). 이런 PC에서 절전은 화면을 꺼서 Windows 절전에 들어가고, 화면 끄기도 같은 절전이 됩니다. 그 뒤에는 Windows가 실제 키보드 · 마우스 입력이나 전원 버튼으로만 깨어나서 원격 화면 켜기는 듣지 않을 수 있습니다.
-- **로그** — 서비스는 exe 옆 `service.log`(앱 로그 탭), 트레이는 `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
-- **앱이나 서비스가 갑자기 꺼질 때** — 설정 탭 맨 아래 **개발자 → 디버그 모드**를 켜 두면 다음 비정상 종료 때 크래시 기록이 `%LOCALAPPDATA%\SmartThings PC Control\crash\`(앱, [크래시 폴더 열기])와 설치 폴더의 `crash\`(서비스, 관리자만 읽기)에 남습니다.
+- **로그** — 서비스는 exe 옆 `service.log`(앱 홈 맨 아래 **로그**), 트레이는 `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
+- **앱이나 서비스가 갑자기 꺼질 때** — **설정 → 서비스 설정 → 고급 → 디버그 모드**를 켜 두면 다음 비정상 종료 때 크래시 기록이 `%LOCALAPPDATA%\SmartThings PC Control\crash\`(앱, **서비스 관리 → 크래시 폴더 열기**)와 설치 폴더의 `crash\`(서비스, 관리자만 읽기)에 남습니다.
 - **`config.json`을 직접 고칠 때** — 관리자 권한 편집기가 필요합니다. 키는 Wiki [설정 파일 레퍼런스](https://github.com/Protomothis/smartthings-pc-control/wiki/설정-파일-레퍼런스)에 있습니다.
 
 더 많은 사례는 Wiki [문제 해결과 FAQ](https://github.com/Protomothis/smartthings-pc-control/wiki/문제-해결과-FAQ)에 있습니다.
@@ -123,21 +123,21 @@ Volume, media, notifications and presets need a signed-in user on the PC.
 ### Install
 
 1. Download `smartthings-pc-control.exe` from [Releases](https://github.com/Protomothis/smartthings-pc-control/releases) into a permanent folder of its own.
-2. Run it → **Settings → [Install]** (UAC). This creates the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** and save.
+2. Run it → on the home screen, **Settings → Service Management → [Install]** (UAC). This creates the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** under **Settings → Service Settings** and save.
 3. Open the **Protomothis** channel invite <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>, enroll your hub, and install **SmartThings PC Control**.
 4. With the PC on and PC Control running, tap **[+] → Add device → Scan nearby** in the SmartThings app. This is the only way to add the device. Enter the secret in the device settings.
 
 The install folder is restricted to administrators; editing `config.json` by hand needs an elevated editor.
 The driver needs service v1.1.0+, and v1.2.0 for the driver 1.1 features.
 Hub and PC must share a subnet on a **Private** network profile.
-The app's tabs are Commands, Schedule, Presets, Sharing, SmartThings, Telegram, Settings and Logs.
+The app is one home screen (quick actions, media, schedule, presets, connections, settings) with a page behind each card; it follows the Windows dark mode.
 
 ### Troubleshooting and security
 
-If discovery finds nothing, check the discovery status and last search request on the **SmartThings** tab.
+If discovery finds nothing, check the discovery status and last search request on the **SmartThings** page (home → Connections).
 On a modern standby (S0 low power idle) laptop — `powercfg /a` lists `Standby (S0 Low Power Idle)`, and `service.log` starts with `Power: modern standby …` — Sleep turns the display off to enter Windows standby, and so does Screen off; Windows then wakes only on real keyboard or mouse input or the power button, so a remote Screen on may not wake it.
-Logs: `service.log` next to the exe (Logs tab) and `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
-If the app or the service quits unexpectedly, turn on **Developer → Debug mode** at the bottom of the Settings tab: the next crash leaves a record in `%LOCALAPPDATA%\SmartThings PC Control\crash\` (the app; **Open crash folder**) and in `crash\` in the install folder (the service; administrators only).
+Logs: `service.log` next to the exe (**Logs** at the bottom of the home screen) and `%LOCALAPPDATA%\SmartThings PC Control\gui.log`.
+If the app or the service quits unexpectedly, turn on **Settings → Service Settings → Advanced → Debug mode**: the next crash leaves a record in `%LOCALAPPDATA%\SmartThings PC Control\crash\` (the app; **Service Management → Open crash folder**) and in `crash\` in the install folder (the service; administrators only).
 The driver sends the secret in the `X-PC-Secret` header; an empty secret lets anyone on the LAN control the PC.
 The local API binds to `127.0.0.1:5002`, and the WebUI opens to the LAN only when you enable remote access with a secret set. The browser WebUI covers status, power commands, schedules and core settings; editing and testing presets, the watch list and the running-program list are for the desktop app on the PC only (its local login).
 Running-app detection reports only programs on your watch list.

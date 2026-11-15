@@ -1,0 +1,10 @@
+// Resources linked into the exe through rsrc_windows_amd64.syso: the app
+// icon and the application manifest. Regenerate the .syso after changing
+// either (CONTRIBUTING.md):
+//
+//   windres -O coff -F pe-x86-64 -i rsrc.rc -o rsrc_windows_amd64.syso
+
+#define RT_MANIFEST 24
+
+1 ICON "icon.ico"
+1 RT_MANIFEST "smartthings-pc-control.manifest"

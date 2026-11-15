@@ -18,7 +18,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           # setup-go's built-in cache keys only on go.sum and, because GitHub
-          # caches are immutable per key, it would save the compiled Fyne/cgo
+          # caches are immutable per key, it would save the compiled
           # build cache once and never refresh it as sources change. The explicit
           # actions/cache step below keys on go.sum + *.go so every CI run stores
           # a current build cache and tag builds restore it via restore-keys.
@@ -42,17 +42,17 @@ jobs:
       # milestone branch), so the release build gates on vet/test itself.
       - name: Vet
         env:
-          CGO_ENABLED: 1
+          CGO_ENABLED: 0
         run: go vet ./...
 
       - name: Test
         env:
-          CGO_ENABLED: 1
+          CGO_ENABLED: 0
         run: go test ./...
 
       - name: Build
         env:
-          CGO_ENABLED: 1 # Fyne (GUI) requires cgo; windows-latest ships MinGW gcc
+          CGO_ENABLED: 0 # pure Go since the Gio UI (#165): no C toolchain needed
         run: go build -ldflags="-s -w -H=windowsgui -X main.Version=${{ github.ref_name }}" -o smartthings-pc-control.exe .
 
       # Signed update manifest (#66): the app only auto-updates from a
