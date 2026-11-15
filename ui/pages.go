@@ -225,20 +225,6 @@ func infoRows(gtx C, ws ...layout.Widget) D {
 	return column(gtx, children...)
 }
 
-// pendingNote is a quiet line at the end of a page that only shows what
-// it will soon edit (until its #165 phase-2 screen lands).
-func pendingNote(u *UI) layout.Widget {
-	return func(gtx C) D {
-		return layout.Inset{Left: 4, Top: 2}.Layout(gtx, func(gtx C) D {
-			return row(gtx,
-				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "info", 16, colFaint) }),
-				hspace(6),
-				layout.Flexed(1, label(u.th, textS, u.t("ui.page.pending"), colFaint, font.Normal).Layout),
-			)
-		})
-	}
-}
-
 func (u *UI) onOff(on bool) string {
 	if on {
 		return u.t("home.on")

@@ -87,18 +87,6 @@ func newCtlTest(t *testing.T, f *fakeSvc) (*UI, *serviceCtlPage) {
 }
 
 // waitFor runs the window tasks until ok holds.
-func waitFor(t *testing.T, u *UI, ok func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for !ok() {
-		if time.Now().After(deadline) {
-			t.Fatal("timed out")
-		}
-		time.Sleep(5 * time.Millisecond)
-		u.runTasks()
-	}
-}
-
 func ctlGtx() C { return layout.Context{Ops: new(op.Ops), Now: time.Now()} }
 
 func TestServiceCtlRealOpsWired(t *testing.T) {

@@ -9,8 +9,7 @@ package ui
 //
 //	Page frame        pages.go: heroCard (status at the top of a connection
 //	                  page), section (small grey header over a card),
-//	                  sections (stacks them), infoRow (read-only fact),
-//	                  pendingNote (quiet "more comes later" line).
+//	                  sections (stacks them), infoRow (read-only fact).
 //	Rows              toggleRow / toggleRowIcon (setting + switch),
 //	                  settingRow (title left, any control right),
 //	                  fieldRow (title left, narrow field right: a port),
