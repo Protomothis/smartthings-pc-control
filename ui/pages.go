@@ -340,9 +340,7 @@ func (p *updatePage) body(gtx C, u *UI, _ snapshot) D {
 
 // logsPage shows the service log, newest at the bottom, polled every 3s
 // while open (u.wantLogs).
-type logsPage struct {
-	list widget.List
-}
+type logsPage struct{}
 
 func (p *logsPage) title(u *UI) string { return u.t("tab.logs") }
 
@@ -384,4 +382,3 @@ func logColor(l string) color.NRGBA {
 	}
 	return colText
 }
-

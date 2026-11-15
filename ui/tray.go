@@ -133,7 +133,7 @@ func (u *UI) buildTrayMenu() {
 		_ = systool.Command(systool.Cmd, "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", u.current().port)).Start()
 	})
 	systray.AddSeparator()
-	on(systray.AddMenuItem(gui.T(l, "tray.exit"), ""), u.quit)
+	on(systray.AddMenuItem(gui.T(l, "tray.exit"), ""), u.requestQuit)
 	t.needConn = []*systray.MenuItem{cmds, cancelSched, webUI}
 	t.conn = true // forces the first enable/disable pass
 }
@@ -155,7 +155,7 @@ func pngToICO(data []byte) []byte {
 	le := binary.LittleEndian
 	_ = binary.Write(&b, le, [3]uint16{0, 1, 1}) // reserved, type icon, one image
 	b.Write([]byte{dim(cfg.Width), dim(cfg.Height), 0, 0})
-	_ = binary.Write(&b, le, [2]uint16{1, 32})                  // planes, bits per pixel
+	_ = binary.Write(&b, le, [2]uint16{1, 32})                 // planes, bits per pixel
 	_ = binary.Write(&b, le, [2]uint32{uint32(len(data)), 22}) // size, offset (6+16)
 	b.Write(data)
 	return b.Bytes()

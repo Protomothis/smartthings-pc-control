@@ -8,9 +8,16 @@ package gui
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 )
+
+// BaseURL is the WebUI address the client talks to now (trayexec, #164).
+func (c *Client) BaseURL() string { return c.baseURL() }
+
+// CookieJar holds the client's session cookie, which trayexec shares.
+func (c *Client) CookieJar() http.CookieJar { return c.http.Jar }
 
 // stRelKey maps the age of the last hub contact to the i18n key of its
 // relative-time phrase and the number to format into it; n < 0 means the

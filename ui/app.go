@@ -57,6 +57,7 @@ type UI struct {
 	toast    toaster
 	wantLogs atomic.Bool // the logs page is open: poll the log
 	sysDark  atomic.Bool // Windows' own setting, followed while the window is open
+	quitAsk  atomic.Bool // the tray asked to quit: show the sheet
 
 	// Window goroutine only.
 	th       *material.Theme
@@ -68,6 +69,7 @@ type UI struct {
 	saveBar  saveBarState
 	home     homeState
 	pages    pages
+	quitW    quitState
 
 	tray tray
 }
@@ -239,6 +241,7 @@ func (u *UI) layout(gtx C) D {
 	} else {
 		bottom = u.layoutPage(gtx, top, s)
 	}
+	u.layoutQuit(gtx, s)
 	u.toast.layout(gtx, u.th, bottom+gtx.Dp(gapL))
 	return D{Size: gtx.Constraints.Max}
 }

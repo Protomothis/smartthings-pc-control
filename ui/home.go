@@ -141,7 +141,9 @@ func (u *UI) homeItems(s snapshot, cols int) []gridItem {
 				full(func(gtx C) D { return u.sectionLabel(gtx, u.t("home.connections")) }),
 				full(func(gtx C) D { return u.connCard(gtx, &u.home.stRow, u.t("tab.smartthings"), u.stLine(s), u.pages.st) }),
 				full(func(gtx C) D { return u.connCard(gtx, &u.home.tgRow, u.t("tab.telegram"), u.tgLine(s), u.pages.tg) }),
-				full(func(gtx C) D { return u.connCard(gtx, &u.home.shareRow, u.t("tab.share"), u.shareLine(s), u.pages.share) }),
+				full(func(gtx C) D {
+					return u.connCard(gtx, &u.home.shareRow, u.t("tab.share"), u.shareLine(s), u.pages.share)
+				}),
 			)
 		} else {
 			items = append(items, cell(func(gtx C) D { return u.connectionsCard(gtx, s) }))
@@ -214,9 +216,9 @@ func (u *UI) homeColumn(gtx C, s snapshot) D {
 func (u *UI) connectionsCard(gtx C, s snapshot) D {
 	h := &u.home
 	rows := []struct {
-		clk       *widget.Clickable
+		clk        *widget.Clickable
 		title, sub string
-		page      screen
+		page       screen
 	}{
 		{&h.stRow, u.t("tab.smartthings"), u.stLine(s), u.pages.st},
 		{&h.tgRow, u.t("tab.telegram"), u.tgLine(s), u.pages.tg},

@@ -91,6 +91,10 @@ func TestShotsResponsive(t *testing.T) {
 		u.nav.push(u, u.pages.service)
 		u.pages.service.port.SetText("5011")
 		shotW(t, dir, "service-1200"+suffix, 1200, 800, u.layout)
+		// the tray asked to quit, over a page with an unsaved change
+		u.quitAsk.Store(true)
+		shotW(t, dir, "quit"+suffix, winW, winH, u.layout)
+		u.quitAsk.Store(false)
 		u.nav.stack = nil
 	}
 	usePalette(false)

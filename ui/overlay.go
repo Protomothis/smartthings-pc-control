@@ -59,24 +59,24 @@ func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTx
 			return centered(gtx, pageColumnW, func(gtx C) D {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return layout.Inset{Top: gapS, Bottom: gapS, Left: gapL, Right: gapL}.Layout(gtx, func(gtx C) D {
-				return row(gtx,
-					layout.Flexed(1, line(th, textM, msg, colSub, font.Medium).Layout),
-					hspace(8),
-					layout.Rigid(func(gtx C) D {
-						b := greyButton(th, &s.discard, discardTxt)
-						b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 14, Right: 14}
-						b.TextSize = textM
-						return b.Layout(gtx)
-					}),
-					hspace(8),
-					layout.Rigid(func(gtx C) D {
-						b := primaryButton(th, &s.save, saveTxt)
-						b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 18, Right: 18}
-						b.TextSize = textM
-						return b.Layout(gtx)
-					}),
-				)
-			})
+					return row(gtx,
+						layout.Flexed(1, line(th, textM, msg, colSub, font.Medium).Layout),
+						hspace(8),
+						layout.Rigid(func(gtx C) D {
+							b := greyButton(th, &s.discard, discardTxt)
+							b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 14, Right: 14}
+							b.TextSize = textM
+							return b.Layout(gtx)
+						}),
+						hspace(8),
+						layout.Rigid(func(gtx C) D {
+							b := primaryButton(th, &s.save, saveTxt)
+							b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 18, Right: 18}
+							b.TextSize = textM
+							return b.Layout(gtx)
+						}),
+					)
+				})
 			})
 		}),
 	)

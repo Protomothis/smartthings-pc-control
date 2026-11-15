@@ -58,21 +58,20 @@ type snapshot struct {
 
 	battery gui.Battery
 
-	awake      gui.Awake
-	awakeSet   bool
-	awakeErr   error
-	sched      gui.Schedule
-	schedAt    time.Time // when sched was read; the countdown runs on from it
-	media      gui.MediaState
-	mediaErr   error
-	mediaSet   bool
-	hub        gui.STHub
-	hubSet     bool
-	tg         gui.TelegramState
-	logs       []string
-	logsSet    bool
-	logsErr    error
-	lastAction string // the last command sent, for the status line
+	awake    gui.Awake
+	awakeSet bool
+	awakeErr error
+	sched    gui.Schedule
+	schedAt  time.Time // when sched was read; the countdown runs on from it
+	media    gui.MediaState
+	mediaErr error
+	mediaSet bool
+	hub      gui.STHub
+	hubSet   bool
+	tg       gui.TelegramState
+	logs     []string
+	logsSet  bool
+	logsErr  error
 }
 
 // remaining is the schedule's time left at now.
