@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -126,36 +123,16 @@ func (u *ui) showUpdateChoice(chk updateCheck, m *release.Manifest, err error) {
 		u.showUpdatePrompt(rel.TagName, skipped, body, u.t("update.open"), openPage)
 	}
 
-	var asset *release.ManifestAsset
-	var assetURL string
-	switch {
-	case !u.canSelfUpdate():
-		// dev build: version comparison is meaningless, never overwrite.
-	case errors.Is(err, release.ErrNoManifest):
-		note(u.t("update.unsigned"))
-	case errors.Is(err, release.ErrBadSignature):
-		note(u.t("update.badsig"))
-	case err != nil:
-		note(u.t("update.checkfailed") + err.Error())
-	case !m.Allows(u.version):
-		note(fmt.Sprintf(u.t("update.minversion"), m.MinVersion))
-	default:
-		var ok bool
-		asset, ok = m.AssetFor(runtime.GOARCH)
-		if ok {
-			assetURL = release.AssetURL(rel, asset.Name)
-		}
-		if !ok || assetURL == "" {
-			asset = nil
-			note(u.t("update.noasset"))
-		}
+	plan := PlanUpdate(chk, u.version, m, err)
+	if n := plan.note(u.t); n != "" {
+		note(n)
 	}
-	if asset == nil {
+	if !plan.CanApply() {
 		pageOnly()
 		return
 	}
 	u.showUpdatePrompt(rel.TagName, skipped, body, u.t("update.now"), func() {
-		u.startSelfUpdate(rel, m, asset, assetURL)
+		u.startSelfUpdate(plan)
 	})
 }
 
@@ -257,13 +234,13 @@ func compactHeadings(md string) string {
 	return strings.Join(lines, "\n")
 }
 
-// startSelfUpdate downloads the manifest's asset behind a progress dialog,
-// checks its SHA-256/size against the signed manifest, runs the exe's own
-// version check, then hands over to the elevated updater (see
-// selfupdate.go) and quits — the updater waits for this process to exit
-// before swapping the binary. Download errors, a hash mismatch and a
-// declined UAC prompt leave the app running.
-func (u *ui) startSelfUpdate(rel *release.Info, m *release.Manifest, asset *release.ManifestAsset, assetURL string) {
+// startSelfUpdate runs ApplySelfUpdate (export_update.go) behind a
+// progress dialog: download, SHA-256/size against the signed manifest, the
+// exe's own version check, then the elevated updater (selfupdate.go), and
+// quits — the updater waits for this process to exit before swapping the
+// binary. Download errors, a hash mismatch and a declined UAC prompt leave
+// the app running.
+func (u *ui) startSelfUpdate(plan UpdatePlan) {
 	status := widget.NewLabel(u.t("update.downloading"))
 	status.Wrapping = fyne.TextWrapWord // the "applying" text is a couple of sentences
 	bar := widget.NewProgressBar()
@@ -274,45 +251,20 @@ func (u *ui) startSelfUpdate(rel *release.Info, m *release.Manifest, asset *rele
 	d.Show()
 
 	go func() {
-		path, err := downloadUpdate(ctx, assetURL, stagingDir(), rel.TagName, func(done, total int64) {
+		err := ApplySelfUpdate(ctx, plan, func(p UpdateProgress) {
 			fyne.Do(func() {
-				if total > 0 {
-					bar.SetValue(float64(done) / float64(total))
-					status.SetText(fmt.Sprintf("%s  %s / %s", u.t("update.downloading"), formatBytes(done), formatBytes(total)))
-				} else {
-					status.SetText(fmt.Sprintf("%s  %s", u.t("update.downloading"), formatBytes(done)))
+				if p.Stage == StageDownloading && p.Total > 0 {
+					bar.SetValue(p.Fraction())
 				}
+				status.SetText(p.text(u.t))
 			})
 		})
-		if err == nil {
-			// First gate: the bytes must be exactly what the signed
-			// manifest promised. Nothing has executed yet.
-			fyne.Do(func() { status.SetText(u.t("update.checking")) })
-			err = verifyDownloadedHash(path, asset)
-		}
-		if err == nil {
-			fyne.Do(func() { status.SetText(u.t("update.verifying")) })
-			err = verifyDownloadedExe(path, rel.TagName)
-			if err != nil {
-				os.Remove(path)
-			}
-		}
-		if err == nil {
-			// The elevated updater re-verifies everything itself from its
-			// own admin-only copies (#126), so it gets the signed manifest
-			// too.
-			fyne.Do(func() { status.SetText(u.t("update.applying")) })
-			var man, sig string
-			if man, sig, err = stageManifest(filepath.Dir(path), m); err == nil {
-				err = runElevatedSelf(fmt.Sprintf(`update-apply "%s" %d "%s" "%s"`, path, os.Getpid(), man, sig))
-			}
-		}
 		fyne.Do(func() {
 			d.Hide()
 			if err != nil {
 				if ctx.Err() == nil { // user cancel is not an error worth a dialog
 					msg := u.t("update.failed") + err.Error()
-					if errors.Is(err, errHashMismatch) {
+					if IsHashMismatch(err) {
 						msg = u.t("update.hashmismatch")
 					}
 					dialog.ShowError(errors.New(msg), u.win)
