@@ -4,7 +4,6 @@ import (
 	"errors"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
@@ -213,18 +212,5 @@ func TestTelegramActions(t *testing.T) {
 	p.sendTest(u)
 	if p.test.tone != toneBad || p.testBusy {
 		t.Fatal("no helpers: test not refused")
-	}
-}
-
-// waitTasks runs onWindow's queue until done reports true.
-func waitTasks(t *testing.T, u *UI, done func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !done() {
-		u.runTasks()
-		if time.Now().After(deadline) {
-			t.Fatal("never finished")
-		}
-		time.Sleep(5 * time.Millisecond)
 	}
 }
