@@ -19,6 +19,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/Protomothis/smartthings-pc-control/trayexec"
 )
 
 // defaultWebUIPort is the API port when tray.json is absent (SmartThings
@@ -208,9 +210,10 @@ func Run(version string, minimized bool) {
 	a.Settings().SetTheme(newKoreanTheme())
 
 	webUIPort.Store(int32(localWebUIPort()))
+	client := NewClient(currentWebUIPort())
 	u := &ui{
 		app:     a,
-		client:  NewClient(currentWebUIPort()),
+		client:  client,
 		version: version,
 		quit:    make(chan struct{}),
 	}
@@ -225,8 +228,9 @@ func Run(version string, minimized bool) {
 	// Toasts show as banners only under the AUMID of a Start menu
 	// shortcut; made or repaired (exe moved) on every start.
 	go ensureToastShortcut()
-	// Default on: the grace-period toast only appears while the tray app
-	// is running. Rewritten every start so it tracks the current exe path.
+	// Default on: the grace-period toast and, since #164, the service's
+	// user-session commands only work while the tray app is running.
+	// Rewritten every start so it tracks the current exe path.
 	if a.Preferences().BoolWithFallback("autostart", true) {
 		SetAutostart(true)
 	}
@@ -250,6 +254,16 @@ func Run(version string, minimized bool) {
 	u.rebuild()
 	go u.initialLoad()
 	go u.pollLoop()
+	// The service's user-session commands (mute, media, notify, presets,
+	// screen) run here now (#164); the executor shares this client's
+	// session cookie.
+	stopExec := trayexec.Start(trayexec.Options{
+		Base:    client.baseURL,
+		Jar:     client.http.Jar,
+		Relogin: u.tryLocalLogin,
+		Logf:    func(format string, args ...any) { guiLog("trayexec", format, args...) },
+	})
+	defer stopExec()
 	if a.Preferences().BoolWithFallback("check_updates", true) {
 		// No dialog against a hidden window — tray notification only.
 		go u.checkForUpdates(!minimized)

@@ -15,6 +15,8 @@ func TestTrayQuitAsksAboutUnsavedEdits(t *testing.T) {
 	quit := func() { quits++ }
 
 	u, svc := newFakeServiceUI(t)
+	// The tray warning (#164) that follows is answered [종료] here.
+	u.confirm = func(_, _, _ string, cb func(bool)) { cb(true) }
 	u.requestQuit(quit)
 	if quits != 1 || shownDialog(u) != nil {
 		t.Fatalf("nothing unsaved: %d quits, dialog %v; want a quit and no question", quits, shownDialog(u))
@@ -62,5 +64,27 @@ func TestTrayQuitAsksAboutUnsavedEdits(t *testing.T) {
 	test.Tap(buttons[T(LangEn, "unsaved.discard")])
 	if quits != 1 || len(svc.posts) != posts {
 		t.Errorf("discard: %d quits, %d new posts; want a quit and none", quits, len(svc.posts)-posts)
+	}
+}
+
+// Quitting the tray stops the service's user-session commands (#164), so
+// [종료] says so first; [취소] keeps the tray running.
+func TestTrayQuitWarnsAboutCommands(t *testing.T) {
+	quits := 0
+	u, _ := newFakeServiceUI(t)
+	var asked []string
+	answer := false
+	u.confirm = func(_, body, _ string, cb func(bool)) {
+		asked = append(asked, body)
+		cb(answer)
+	}
+	u.requestQuit(func() { quits++ })
+	if quits != 0 || len(asked) != 1 || asked[0] != T(LangEn, "quit.body") {
+		t.Fatalf("cancel: %d quits, asked %q", quits, asked)
+	}
+	answer = true
+	u.requestQuit(func() { quits++ })
+	if quits != 1 {
+		t.Errorf("confirm: %d quits, want 1", quits)
 	}
 }

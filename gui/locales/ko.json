@@ -231,6 +231,8 @@
   "presets.type.url": "URL · 앱 링크",
   "presets.warn.line": "프리셋 %d: %s",
   "presets.warn.writable": "이 파일(또는 폴더)을 다른 사용자도 고칠 수 있습니다. 문서 폴더처럼 나만 쓰는 곳으로 옮기세요",
+  "quit.body": "트레이를 끄면 SmartThings·텔레그램에서 보내는 음소거·볼륨·미디어·알림·프리셋·화면 끄기/켜기 명령이 동작하지 않습니다. 종료할까요?",
+  "quit.title": "트레이 종료",
   "schedule.cancel": "예약 취소",
   "schedule.command": "명령",
   "schedule.countdown": "'%s' 실행까지 %s 남음",
