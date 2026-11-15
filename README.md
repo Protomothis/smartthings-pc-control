@@ -46,7 +46,7 @@ exe 하나가 Windows 서비스(로그인 없이 항상 실행)와 트레이 앱
 1. [Releases](https://github.com/Protomothis/smartthings-pc-control/releases)에서 둘 중 하나를 받습니다. 어느 쪽이든 서비스, 자동 시작, 방화벽 규칙(TCP 5001, UDP 1900)이 만들어집니다.
    - **설치 프로그램** `SmartThingsPCControl-Setup-<버전>.exe` — 실행하고 마법사를 따라갑니다(UAC 승인). `C:\Program Files\SmartThings PC Control\`에 설치되고 Windows 설정 → 앱 목록에 등록되며, 업데이트도 새 설치 프로그램으로 조용히 합니다. 제거는 앱 목록에서 하고, 설정과 로그를 지울지는 그때 묻습니다.
    - **exe 하나** `smartthings-pc-control.exe` — 고정된 폴더(권장 `C:\Program Files\SmartThings PC Control\`)에 두고 실행한 뒤 홈의 **설정 → 서비스 관리 → [설치]** → UAC 승인.
-   - exe로 설치해 쓰던 PC에서 설치 프로그램을 실행해도 됩니다. 같은 폴더면 덮어쓰고, 다른 폴더였으면 `config.json`을 새 폴더로 복사해 옵니다.
+   - exe로 설치해 쓰던 PC에서 설치 프로그램을 실행하면 기본으로 그 폴더에 그대로 덮어씁니다. 폴더 화면에서 다른 폴더를 고르면 `config.json`을 새 폴더로 복사해 옵니다.
 2. **설정 → 서비스 설정**에서 **시크릿**을 정하고 [저장]합니다.
 3. 채널 **Protomothis** 초대 링크를 열고 [Enroll] → 허브 선택: <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>
 4. 채널의 **SmartThings PC Control** 드라이버를 [Install]합니다.
@@ -125,7 +125,7 @@ Volume, media, notifications and presets need a signed-in user on the PC.
 ### Install
 
 1. From [Releases](https://github.com/Protomothis/smartthings-pc-control/releases), take either:
-   - **the setup program** `SmartThingsPCControl-Setup-<version>.exe` — run the wizard (UAC). It installs into `C:\Program Files\SmartThings PC Control\`, appears in Windows Settings → Apps, and updates by running the next setup quietly. Uninstall from Apps; it asks whether to delete the settings and logs. Running it over an exe install upgrades it (and copies `config.json` over if that was in another folder); or
+   - **the setup program** `SmartThingsPCControl-Setup-<version>.exe` — run the wizard (UAC). It installs into `C:\Program Files\SmartThings PC Control\`, appears in Windows Settings → Apps, and updates by running the next setup quietly. Uninstall from Apps; it asks whether to delete the settings and logs. Run over an exe install, it upgrades that folder in place by default (pick another folder and it copies `config.json` over); or
    - **the single exe** `smartthings-pc-control.exe` — put it in a permanent folder of its own, run it → on the home screen, **Settings → Service Management → [Install]** (UAC).
 2. Either way you get the service and firewall rules for TCP 5001 and UDP 1900. Set a **secret** under **Settings → Service Settings** and save.
 3. Open the **Protomothis** channel invite <https://bestow-regional.api.smartthings.com/invite/Kr2zNWYgpp2A>, enroll your hub, and install **SmartThings PC Control**.

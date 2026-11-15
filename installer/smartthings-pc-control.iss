@@ -44,9 +44,12 @@ VersionInfoProductVersion={#AppVersionNumeric}
 VersionInfoDescription={#AppName} Setup
 ; All users only: the Windows service needs administrator rights anyway.
 PrivilegesRequired=admin
-; The same folder as the desktop app's recommended install, so a copy
-; installed with [설치] there is upgraded in place.
-DefaultDirName={autopf}\{#AppName}
+; A copy installed with the desktop app's [설치] button is upgraded in place:
+; the folder its service runs from when that holds our exe (the settings
+; live next to it). Otherwise the app's recommended folder,
+; {autopf}\{#AppName}. Later setups reuse the folder chosen first
+; (UsePreviousAppDir), and the folder page shows on the first install only.
+DefaultDirName={code:DefaultInstallDir}
 DisableDirPage=auto
 DisableProgramGroupPage=yes
 DisableReadyPage=no
@@ -219,10 +222,37 @@ begin
     Result := ExtractFileDir(RemoveQuotes(Trim(ImagePath)));
 end;
 
+// ExistingInstallDir is the folder of a copy installed with [설치]: the
+// service's ImagePath names our exe and that exe is still there. '' when
+// there is no such copy.
+function ExistingInstallDir: String;
+var
+  ImagePath, Exe: String;
+begin
+  Result := '';
+  if not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\{#ServiceName}', 'ImagePath', ImagePath) then
+    Exit;
+  Exe := RemoveQuotes(Trim(ImagePath));
+  if (CompareText(ExtractFileName(Exe), '{#AppExe}') = 0) and FileExists(Exe) then
+    Result := ExtractFileDir(Exe);
+end;
+
+// DefaultInstallDir is DefaultDirName: upgrade a [설치] copy where it is,
+// else the recommended folder.
+function DefaultInstallDir(Param: String): String;
+begin
+  Result := ExistingInstallDir;
+  if Result = '' then
+    Result := ExpandConstant('{autopf}\{#AppName}');
+  Log('Default install folder: ' + Result);
+end;
+
 // CarryOverConfig copies config.json and state.json from a service that so
-// far ran from another folder (installed with [설치] elsewhere) into {app},
-// unless {app} has its own: the settings live next to the exe, and
-// `install` would otherwise start the moved service with defaults.
+// far ran from another folder into {app} - only when the user picked a
+// different folder on the folder page than the one the [설치] copy is in
+// (the default upgrades it in place) - unless {app} has its own: the
+// settings live next to the exe, and `install` would otherwise start the
+// moved service with defaults.
 procedure CarryOverConfig;
 var
   OldDir, NewDir: String;

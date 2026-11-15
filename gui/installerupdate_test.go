@@ -22,6 +22,7 @@ func TestOwnedByInstaller(t *testing.T) {
 		{`C:\Program Files\SmartThings PC Control`, `C:\Program Files\SmartThings PC Control\`, true}, // Inno's trailing backslash
 		{`C:\Program Files\SmartThings PC Control`, `c:\program files\smartthings pc control`, true},
 		{`C:\Program Files\SmartThings PC Control`, `C:\Program Files\SmartThings PC Control\.`, true},
+		{`C:\PC Control`, `C:\PC Control\`, true},                                    // a [설치] copy the setup upgraded in place
 		{`C:\Users\me\Downloads`, `C:\Program Files\SmartThings PC Control\`, false}, // a portable copy beside an installed one
 		{`C:\Program Files\SmartThings PC Control\sub`, `C:\Program Files\SmartThings PC Control\`, false},
 		{`C:\Program Files\SmartThings PC Control`, ``, false},
@@ -51,7 +52,12 @@ func TestInstallerScriptAgrees(t *testing.T) {
 	for _, want := range []string{
 		`#define AppUserModelID "` + appid.AUMID + `"`,
 		`#define AppName "` + appid.DisplayName + `"`,
-		`DefaultDirName={autopf}\{#AppName}`,
+		// A [설치] copy is upgraded where its service runs from, else the
+		// recommended folder.
+		`DefaultDirName={code:DefaultInstallDir}`,
+		`ExpandConstant('{autopf}\{#AppName}')`,
+		`#define ServiceName "` + serviceName + `"`,
+		`#define AppExe "smartthings-pc-control.exe"`,
 	} {
 		if !strings.Contains(iss, want) {
 			t.Errorf("the .iss lacks %s", want)
