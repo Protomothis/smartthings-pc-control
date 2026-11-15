@@ -1,9 +1,15 @@
 {
   "ui.sharing.hero.sub": "켠 것만 SmartThings·텔레그램에 보내요",
-  "ui.sharing.sent": "보내는 정보",
   "ui.sharing.browser": "브라우저 접속",
-  "ui.sharing.session.sub": "자리 비움·잠금 상태",
-  "ui.sharing.media.sub": "곡 제목·아티스트·앱",
-  "ui.sharing.activity.sub": "지정한 프로그램이 실행 중인지",
-  "ui.sharing.count": "%d가지"
+  "ui.sharing.count": "%d가지",
+  "ui.sharing.session.hint": "잠금·유휴 시간을 허브에 보내 루틴 조건으로 써요",
+  "ui.sharing.user.hint": "로그인한 Windows 계정 이름도 보내요",
+  "ui.sharing.nowplaying.hint": "제목·아티스트·앱을 보내요. 끄면 재생 여부만",
+  "ui.sharing.activity.hint": "목록에 넣은 프로그램이 실행 중인지만 보내요",
+  "ui.sharing.watch.priority": "번호가 작을수록 우선해요. 루틴에서는 PC 장치의 '감시 1~5'로 골라요",
+  "ui.sharing.watch.hint": "파일 이름만(경로 없이). 빼면 그 칸을 쓰던 루틴은 안 맞아요",
+  "ui.sharing.watch.full": "다섯 칸을 모두 썼어요. 하나를 빼야 더 넣을 수 있어요",
+  "ui.sharing.pick.hint": "이 목록은 이 PC에만 보이고 어디에도 보내지 않아요",
+  "ui.sharing.pick.loading": "실행 중인 프로그램을 불러오는 중…",
+  "ui.sharing.pick.more": "%d개 더 있어요. 이름으로 찾아 좁혀 보세요"
 }

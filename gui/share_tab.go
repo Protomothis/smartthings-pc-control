@@ -6,63 +6,14 @@ package gui
 // what is playing (media.now_playing, #117) and which watched programs run
 // (activity, #110/#123, activity_section.go). All of it is opt-in. The
 // switches used to sit in the settings and network tabs.
+//
+// The form model (shareFormState) lives in export_sharing.go.
 
 import (
-	"errors"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
-
-// --- Pure form model (unit-tested) -----------------------------------------
-
-// shareFormState is the tab's contents as plain values.
-type shareFormState struct {
-	ExposeSession     bool
-	ExposeSessionUser bool
-	NowPlaying        bool
-	// Activity is the running-app detection toggle and watch list.
-	Activity ActivityConfig
-}
-
-// shareStateFromConfig is what the tab shows for cfg. The watch list is
-// copied so editing it never writes into the baseline.
-func shareStateFromConfig(cfg Config) shareFormState {
-	return shareFormState{
-		ExposeSession:     cfg.SmartThings.ExposeSession,
-		ExposeSessionUser: cfg.SmartThings.ExposeSessionUser,
-		NowPlaying:        cfg.Media.NowPlaying,
-		Activity:          cloneActivity(cfg.Activity),
-	}
-}
-
-// effectiveUser is the value saved for expose_session_user: the toggle
-// keeps its position while session exposure is off (like the telegram
-// tab's category masters), but off gates it.
-func (s shareFormState) effectiveUser() bool {
-	return s.ExposeSession && s.ExposeSessionUser
-}
-
-// applyTo returns base with the tab's fields written over it — only those:
-// the rest of smartthings and media belong to the SmartThings and settings
-// tabs.
-func (s shareFormState) applyTo(base Config) Config {
-	cfg := base
-	cfg.SmartThings.ExposeSession = s.ExposeSession
-	cfg.SmartThings.ExposeSessionUser = s.effectiveUser()
-	cfg.Media.NowPlaying = s.NowPlaying
-	cfg.Activity = normalizeActivity(s.Activity)
-	return cfg
-}
-
-// dirty reports whether saving would change base.
-func (s shareFormState) dirty(base Config) bool {
-	return s.ExposeSession != base.SmartThings.ExposeSession ||
-		s.effectiveUser() != base.SmartThings.ExposeSessionUser ||
-		s.NowPlaying != base.Media.NowPlaying ||
-		!activityEqual(s.Activity, base.Activity)
-}
 
 // --- Widgets -----------------------------------------------------------------
 
@@ -109,17 +60,10 @@ func (u *ui) buildShareTab() fyne.CanvasObject {
 	// The watch list is checked here first so the reason comes in the
 	// app's language; the service checks it again.
 	ft := u.forms.register(&formTab{
-		index: tabShare,
-		Fill:  u.fillShareTab,
-		Dirty: func(base Config) bool { return t.state().dirty(base) },
-		ApplyTo: func(cfg *Config) error {
-			s := t.state()
-			*cfg = s.applyTo(*cfg)
-			if problem := activityProblem(u.lang, s.Activity); problem != "" {
-				return errors.New(problem)
-			}
-			return nil
-		},
+		index:   tabShare,
+		Fill:    u.fillShareTab,
+		Dirty:   func(base Config) bool { return t.state().dirty(base) },
+		ApplyTo: func(cfg *Config) error { return t.state().ApplyTo(cfg, u.lang) },
 	})
 	ft.bar = newSaveBar(u, func() { u.saveTab(ft) })
 
