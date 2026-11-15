@@ -113,8 +113,8 @@ var setDebugMode = func(on bool) {
 // openCrashFolder opens the per-user crash folder in Explorer, making it
 // first when debug mode has not yet.
 func (u *ui) openCrashFolder() {
-	dir := guiCrashDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := PrepareCrashDir()
+	if err != nil {
 		dialog.ShowError(err, u.win)
 		return
 	}
