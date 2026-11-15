@@ -18,5 +18,6 @@
   "ui.update.ask.title": "Update now?",
   "ui.update.notes": "Release notes",
   "ui.update.settings": "Settings",
-  "ui.update.auto.hint": "Checks at startup and once a day, and tells you about a new version"
+  "ui.update.auto.hint": "Checks at startup and once a day, and tells you about a new version",
+  "update.applying.installer": "A UAC prompt will appear. The app closes, then the setup program stops the service, installs the new version and relaunches it."
 }

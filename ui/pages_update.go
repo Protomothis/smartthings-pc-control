@@ -49,6 +49,27 @@ func (selfUpdater) apply(ctx context.Context, plan gui.UpdatePlan, progress func
 	return gui.ApplySelfUpdate(ctx, plan, progress)
 }
 
+// installerUpdater is a copy the setup program installed (#166): it runs
+// the release's setup silently, so Windows' app list follows the version,
+// and swaps the exe like selfUpdater only for a release without a setup.
+type installerUpdater struct{ selfUpdater }
+
+func (installerUpdater) prepare(chk gui.UpdateCheck, version string) gui.UpdatePlan {
+	return gui.PrepareInstallerUpdate(chk, version)
+}
+
+func (installerUpdater) apply(ctx context.Context, plan gui.UpdatePlan, progress func(gui.UpdateProgress)) error {
+	return gui.ApplyInstallerUpdate(ctx, plan, progress)
+}
+
+// pickUpdater is the updater for how this copy was installed.
+func pickUpdater(byInstaller bool) updater {
+	if byInstaller {
+		return installerUpdater{}
+	}
+	return selfUpdater{}
+}
+
 // recheckAfter is how old the page's knowledge may be before opening it
 // checks again by itself.
 const recheckAfter = 10 * time.Minute
@@ -78,7 +99,7 @@ type updatePage struct {
 	stopping context.CancelFunc
 }
 
-func newUpdatePage() screen { return &updatePage{upd: selfUpdater{}} }
+func newUpdatePage() screen { return &updatePage{upd: pickUpdater(gui.InstalledByInstaller())} }
 
 func (p *updatePage) title(u *UI) string { return u.t("update.manual") }
 
@@ -182,7 +203,7 @@ func (p *updatePage) skipped(u *UI) bool {
 func (p *updatePage) askUpdate(u *UI) {
 	u.ask(askSpec{
 		title: u.t("ui.update.ask.title"),
-		body:  u.t("update.applying"),
+		body:  p.plan.ApplyingText(u.language()),
 		ok:    u.t("update.now"),
 		onOK:  func() { p.startUpdate(u) },
 	})
