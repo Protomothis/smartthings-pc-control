@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/sys/windows/registry"
 
@@ -66,6 +68,79 @@ func graceToastActions(lang Lang) []useraction.ToastAction {
 // fall back to a plain Fyne notification.
 func showGraceToast(lang Lang, title, message string) error {
 	return useraction.ShowToast(title, message, graceToastActions(lang))
+}
+
+// GraceNotice is the toast for a schedule that appeared or changed hands
+// (a remote grace deferral replacing a local timer, or vice versa), so it
+// can be run or cancelled straight from the notification. Both windows
+// raise it from their schedule poll; no toolkit here.
+type GraceNotice struct {
+	// Key tells schedules apart: a new key is a new notice.
+	Key string
+	// Title is the toast's title; Text its line, the countdown sentence
+	// the tray shows too ("'종료' 실행까지 05:30 남음").
+	Title, Text string
+	// Body is the line of the plain notification shown when the toast
+	// with buttons cannot be.
+	Body string
+}
+
+// NewGraceNotice describes the active schedule s; the zero GraceNotice
+// (empty Key) when none is active. Origin decides the wording (#54): a
+// remote grace deferral is "SmartThings … grace period", a timer set here
+// is "scheduled from this app".
+func NewGraceNotice(l Lang, s Schedule) GraceNotice {
+	if !s.Active {
+		return GraceNotice{}
+	}
+	remain := FormatCountdown(l, time.Duration(s.RemainingSec)*time.Second)
+	cmd := CommandLabel(l, s.Command)
+	countdownKey, titleKey := "schedule.countdown", "notify.schedule.title"
+	if s.Origin == "remote" {
+		countdownKey, titleKey = "schedule.countdown.remote", "notify.grace.title"
+	}
+	return GraceNotice{
+		Key:   s.Origin + ":" + s.Command,
+		Title: T(l, titleKey),
+		Text:  fmt.Sprintf(T(l, countdownKey), cmd, remain),
+		Body:  fmt.Sprintf(T(l, "notify.grace.body"), cmd, remain),
+	}
+}
+
+// GraceWatch remembers the schedule last announced, so each one is
+// announced once. Safe from any goroutine.
+type GraceWatch struct {
+	mu   sync.Mutex
+	last string
+}
+
+// Next returns the notice to show for s, if s is a schedule not yet
+// announced; a schedule that ends resets the watch.
+func (g *GraceWatch) Next(l Lang, s Schedule) (GraceNotice, bool) {
+	n := NewGraceNotice(l, s)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if n.Key == g.last {
+		return n, false
+	}
+	g.last = n.Key
+	return n, n.Key != ""
+}
+
+// ShowGraceNotice pops n as a Windows toast with Run now / Cancel buttons
+// and, when that fails (PowerShell unavailable, say), as a plain
+// notification. Blocks for the PowerShell run: call it off the UI thread.
+func ShowGraceNotice(l Lang, n GraceNotice) {
+	if showGraceToast(l, n.Title, n.Text) != nil {
+		_ = Notify(n.Title, n.Body)
+	}
+}
+
+// Notify shows a plain Windows notification (no buttons) under the app's
+// Start menu AUMID, like the PC notifications (useraction.ShowToast).
+// Blocks for the PowerShell run: call it off the UI thread.
+func Notify(title, body string) error {
+	return useraction.ShowToast(title, body, nil)
 }
 
 // HandleToastAction is invoked as `exe toast stpc://...` when the user

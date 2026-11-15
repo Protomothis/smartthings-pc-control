@@ -54,13 +54,13 @@ func TestShots(t *testing.T) {
 
 			// the service settings page with an unsaved change: the save bar
 			u.home.armed = nil
-			u.nav.push(u, u.pages.service)
-			u.pages.service.secret.ed.SetText("hunter22")
-			u.pages.service.port.SetText("5011")
+			u.nav.push(u, u.pages[pageService].(*servicePage))
+			u.pages[pageService].(*servicePage).secret.ed.SetText("hunter22")
+			u.pages[pageService].(*servicePage).port.SetText("5011")
 			shot(t, u, dir, "service-"+name, winH, u.layout)
 			u.nav.stack = nil
 
-			u.nav.push(u, u.pages.st)
+			u.nav.push(u, u.pages[pageSmartThings])
 			shot(t, u, dir, "smartthings-"+name, winH, u.layout)
 			u.nav.stack = nil
 		}
@@ -88,8 +88,8 @@ func TestShotsResponsive(t *testing.T) {
 			shotW(t, dir, fmt.Sprintf("home-%d%s", w, suffix), w, 0, func(gtx C) D { return u.homeColumn(gtx, u.current()) })
 		}
 		shotW(t, dir, "window-1200"+suffix, 1200, 800, u.layout)
-		u.nav.push(u, u.pages.service)
-		u.pages.service.port.SetText("5011")
+		u.nav.push(u, u.pages[pageService].(*servicePage))
+		u.pages[pageService].(*servicePage).port.SetText("5011")
 		shotW(t, dir, "service-1200"+suffix, 1200, 800, u.layout)
 		// the tray asked to quit, over a page with an unsaved change
 		u.quitAsk.Store(true)
@@ -138,6 +138,8 @@ func sampleUI(lang gui.Lang, dark bool) *UI {
 		hubSet: true,
 		tg:     gui.TelegramState{Polling: true},
 	}
+	u.snap.cfgGen = 1
+	u.syncForms(u.current())
 	u.home.autostart.Value = true
 	return u
 }

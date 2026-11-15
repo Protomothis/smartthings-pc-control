@@ -1,0 +1,11 @@
+{
+  "ui.smartthings.hero.on": "허브 연결됨",
+  "ui.smartthings.hero.off": "연결된 허브 없음",
+  "ui.smartthings.hero.loading": "허브 확인 중",
+  "ui.smartthings.seen": "%s 확인",
+  "ui.smartthings.off.sub": "SmartThings 앱에서 주변 기기 검색을 눌러 연결해요",
+  "ui.smartthings.hub": "허브",
+  "ui.smartthings.discovery": "검색·깨우기",
+  "ui.smartthings.search.on": "켜짐",
+  "ui.smartthings.search.off": "꺼짐"
+}

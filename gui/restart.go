@@ -4,19 +4,10 @@ package gui
 // and the offer after a save whose change only applies on restart (#139).
 
 import (
-	"strings"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
-
-// serviceNeedsRestart reports whether the service's save confirmation
-// says the change applies only after a restart (the port, browser
-// access). The service answers in English only.
-func serviceNeedsRestart(serviceMsg string) bool {
-	return strings.Contains(serviceMsg, "Restart service")
-}
 
 // restartService asks the service to restart itself and shows the status
 // bar as reconnecting; the poll picks the service up again. busy marks the

@@ -1,9 +1,10 @@
 package ui
 
-// Quitting from the tray: since #164 mute, media, notifications, presets
-// and the screen commands run in the tray app, so the app says so before
-// it ends. The question is a sheet over the window (opened for it) rather
-// than a dialog; it also mentions unsaved changes on the page in front.
+// Questions are a sheet over the window rather than a dialog: a title, a
+// grey body, an optional warning line and two full-width buttons. Any
+// screen asks one with u.ask (a delete, a routine slot changing hands);
+// the tray's 종료 asks through it too, since #164 mute, media,
+// notifications, presets and the screen commands run in the tray app.
 
 import (
 	"image"
@@ -17,12 +18,37 @@ import (
 	"gioui.org/widget"
 )
 
-// quitState is the sheet's widgets.
-type quitState struct {
+// askSpec is one question.
+type askSpec struct {
+	title, body string
+	// note is an extra line in the warning colour ("저장하지 않은 변경").
+	note string
+	// ok is the confirm button's text; danger paints it red (the action
+	// cannot be taken back). cancel defaults to 취소.
+	ok, cancel string
+	danger     bool
+	// onOK runs on the window goroutine when confirmed, onCancel (may be
+	// nil) when cancelled or dismissed by a click beside the sheet.
+	onOK, onCancel func()
+}
+
+// sheetState is the open question and the sheet's widgets.
+type sheetState struct {
+	open                     *askSpec
 	scrim, sheet, cancel, ok widget.Clickable
 }
 
-// requestQuit shows the window with the quit sheet. Safe from any
+// ask shows a question, replacing one already open. Window goroutine
+// only; from elsewhere wrap it in u.onWindow.
+func (u *UI) ask(a askSpec) {
+	if a.cancel == "" {
+		a.cancel = u.t("login.cancel")
+	}
+	u.sheetW.open = &a
+	u.invalidate()
+}
+
+// requestQuit shows the window with the quit question. Safe from any
 // goroutine.
 func (u *UI) requestQuit() {
 	u.quitAsk.Store(true)
@@ -30,24 +56,40 @@ func (u *UI) requestQuit() {
 	u.invalidate()
 }
 
-// layoutQuit draws the sheet while a quit is asked; call after the screen.
-func (u *UI) layoutQuit(gtx C, s snapshot) {
-	if !u.quitAsk.Load() {
+// askQuit turns the tray's request into the quit question; it mentions
+// unsaved changes on the page in front.
+func (u *UI) askQuit() {
+	if !u.quitAsk.Swap(false) {
 		return
 	}
-	q := &u.quitW
+	a := askSpec{title: u.t("quit.title"), body: u.t("quit.body"), ok: u.t("tray.exit"), danger: true,
+		onOK: func() { go u.quit() }}
+	if u.formDirty(u.nav.top()) {
+		a.note = u.t("unsaved.indicator")
+	}
+	u.ask(a)
+}
+
+// layoutSheet draws the open question, if any; call after the screen.
+func (u *UI) layoutSheet(gtx C) {
+	q := &u.sheetW
+	a := q.open
+	if a == nil {
+		return
+	}
 	if q.cancel.Clicked(gtx) || q.scrim.Clicked(gtx) {
-		u.quitAsk.Store(false)
+		q.open = nil
+		if a.onCancel != nil {
+			a.onCancel()
+		}
 		return
 	}
 	if q.ok.Clicked(gtx) {
-		u.quitAsk.Store(false)
-		go u.quit()
+		q.open = nil
+		if a.onOK != nil {
+			a.onOK()
+		}
 		return
-	}
-	unsaved := false
-	if ed, ok := u.nav.top().(editor); ok && ed.dirty(s) {
-		unsaved = true
 	}
 	// The scrim takes every click, so nothing under it reacts.
 	q.scrim.Layout(gtx, func(gtx C) D {
@@ -63,18 +105,24 @@ func (u *UI) layoutQuit(gtx C, s snapshot) {
 					return card(gtx, func(gtx C) D {
 						pointer.CursorDefault.Add(gtx.Ops)
 						children := []layout.FlexChild{
-							layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, u.t("quit.title"), nil) }),
-							vspace(gapXS),
-							layout.Rigid(label(u.th, textM, u.t("quit.body"), colSub, font.Normal).Layout),
+							layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, a.title, nil) }),
 						}
-						if unsaved {
+						if a.body != "" {
 							children = append(children, vspace(gapXS),
-								layout.Rigid(label(u.th, textM, u.t("unsaved.indicator"), colWarn, font.Medium).Layout))
+								layout.Rigid(label(u.th, textM, a.body, colSub, font.Normal).Layout))
+						}
+						if a.note != "" {
+							children = append(children, vspace(gapXS),
+								layout.Rigid(label(u.th, textM, a.note, colWarn, font.Medium).Layout))
+						}
+						okBtn := primaryButton(u.th, &q.ok, a.ok)
+						if a.danger {
+							okBtn = dangerButton(u.th, &q.ok, a.ok)
 						}
 						children = append(children, vspace(gapM), layout.Rigid(func(gtx C) D {
 							return grid(gtx, 8,
-								fill(greyButton(u.th, &q.cancel, u.t("login.cancel")).Layout),
-								fill(dangerButton(u.th, &q.ok, u.t("tray.exit")).Layout),
+								fill(greyButton(u.th, &q.cancel, a.cancel).Layout),
+								fill(okBtn.Layout),
 							)
 						}))
 						return column(gtx, children...)

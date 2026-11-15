@@ -1,8 +1,8 @@
 package ui
 
 // Navigation: the home screen at the bottom of a stack of sub-pages. A
-// sub-page has a top bar with a back button; one that edits settings also
-// reports unsaved changes, and the save bar shows while it has some.
+// sub-page has a top bar with a back button; one that edits settings is a
+// form (forms.go), and the save bar shows while it has unsaved changes.
 
 import (
 	"time"
@@ -10,25 +10,26 @@ import (
 	"gioui.org/layout"
 )
 
-// screen is a sub-page.
+// screen is a sub-page. Pages are built once (buildPages) and keep their
+// state while the app runs; the window being closed and reopened does not
+// reset them.
 type screen interface {
 	title(u *UI) string
-	// body is the scrolling content under the top bar.
+	// body is the scrolling content under the top bar (and the page's
+	// notice). s is this frame's copy of the service state.
 	body(gtx C, u *UI, s snapshot) D
 }
 
-// editor is a sub-page with a form; the save bar follows dirty.
-type editor interface {
-	screen
-	dirty(s snapshot) bool
-	save(u *UI, s snapshot)
-	revert(s snapshot)
-}
-
 // shower is a sub-page that wants to know when it is opened (to load data
-// or to reset its form).
+// of its own). A form is filled before shown runs.
 type shower interface {
 	shown(u *UI, s snapshot)
+}
+
+// logsWanter is a sub-page that wants the service log polled (every 3s)
+// while it is in front; s.logs carries it.
+type logsWanter interface {
+	wantsLogs() bool
 }
 
 // leaveArm is how long a second back press discards unsaved changes.
@@ -50,9 +51,19 @@ func (n *nav) top() screen {
 	return n.stack[len(n.stack)-1]
 }
 
+// open pushes the registered page id. Window goroutine only.
+func (u *UI) open(id pageID) {
+	if p := u.pages[id]; p != nil {
+		u.nav.push(u, p)
+	}
+}
+
 func (n *nav) push(u *UI, s screen) {
 	n.stack = append(n.stack, s)
 	n.leaving = time.Time{}
+	if f, ok := s.(form); ok {
+		u.formOpened(f)
+	}
 	if sh, ok := s.(shower); ok {
 		sh.shown(u, u.current())
 	}
@@ -66,14 +77,15 @@ func (n *nav) back(u *UI, now time.Time) bool {
 	if top == nil {
 		return false
 	}
-	if ed, ok := top.(editor); ok && ed.dirty(u.current()) {
+	if u.formDirty(top) {
 		if now.After(n.leaving) {
 			n.leaving = now.Add(leaveArm)
 			u.toast.show(u.t("savebar.leave"), false, now)
 			return false
 		}
-		ed.revert(u.current())
+		u.revertForm(top.(form))
 	}
+	u.clearNotice(top)
 	n.stack = n.stack[:len(n.stack)-1]
 	n.leaving = time.Time{}
 	u.pageList.Position = layout.Position{}

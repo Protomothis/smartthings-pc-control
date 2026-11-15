@@ -1,15 +1,55 @@
 package ui
 
-// Components: buttons, chips, fields, toggles, list rows, the inline
-// expander, the status dot and the meter. Each takes its state (a
-// widget.Clickable, widget.Bool, widget.Editor …) from the caller and only
-// draws; the screens decide what a click does.
+// Components. Each takes its state (a widget.Clickable, widget.Bool,
+// widget.Editor …) from the caller and only draws; the screens decide what
+// a click does. Read a click before laying the widget out
+// (`if clk.Clicked(gtx) {…}` at the top of body), as Gio wants.
+//
+// How a screen (ui/pages_<id>.go) uses them:
+//
+//	Page frame        pages.go: heroCard (status at the top of a connection
+//	                  page), section (small grey header over a card),
+//	                  sections (stacks them), infoRow (read-only fact),
+//	                  pendingNote (quiet "more comes later" line).
+//	Rows              toggleRow / toggleRowIcon (setting + switch),
+//	                  settingRow (title left, any control right),
+//	                  fieldRow (title left, narrow field right: a port),
+//	                  listRow (tappable row with a chevron → sub-page),
+//	                  connRow (icon tile, title, summary, status pill,
+//	                  chevron: the home 연결 card's rows).
+//	Inputs            field (one line), textArea (several lines),
+//	                  secretField (masked, with an eye), chipGroup (≤6
+//	                  choices; wraps), toggle (the switch itself).
+//	Lists             listEditor: rows the user adds and deletes (hubs,
+//	                  chat IDs, watched programs). Call Deleted/Added
+//	                  before Layout each frame.
+//	Buttons           primaryButton (the one strong action), secondaryButton,
+//	                  greyButton, dangerButton, smallButton (quiet pill),
+//	                  iconButton (round), copyButton (copies, then says so).
+//	State             tone (toneOK/Off/Warn/Bad/Accent) colours statusPill,
+//	                  iconTile and heroCard alike; banner shows a coloured
+//	                  line (u.setNotice puts one at the top of a page: save
+//	                  errors, warnings); statusDot, usageBar, pill.
+//	Questions         u.ask(askSpec{…}) opens a sheet with confirm/cancel
+//	                  (quit.go); u.toast.show / showAction for a passing
+//	                  message, optionally with one action.
+//	Shell helpers     shellopen_windows.go: openURL, openPath, revealPath,
+//	                  u.pickFile (native Open dialog, off the window
+//	                  goroutine; hand the result back with u.onWindow).
+//
+// Colours, gaps, radii and text sizes come from style.go only; icons by
+// name from iconData below; a screen adds its own from its file with
+// func init() { iconData["name"] = icons.X }.
 
 import (
 	"image"
 	"image/color"
+	"io"
+	"strings"
+	"time"
 
 	"gioui.org/font"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -48,6 +88,29 @@ var iconData = map[string][]byte{
 	"eye":       icons.ActionVisibility,
 	"eyeoff":    icons.ActionVisibilityOff,
 	"timer":     icons.ImageTimer,
+	"hub":       icons.HardwareRouter,
+	"telegram":  icons.ContentSend,
+	"share":     icons.SocialShare,
+	"settings":  icons.ActionSettings,
+	"service":   icons.ActionDNS,
+	"warn":      icons.AlertWarning,
+	"error":     icons.AlertError,
+	"ok":        icons.ActionCheckCircle,
+	"info":      icons.ActionInfoOutline,
+	"copy":      icons.ContentContentCopy,
+	"delete":    icons.ActionDelete,
+	"folder":    icons.FileFolderOpen,
+	"bell":      icons.SocialNotifications,
+	"bug":       icons.ActionBugReport,
+	"refresh":   icons.NavigationRefresh,
+	"open":      icons.ActionOpenInNew,
+	"key":       icons.CommunicationVPNKey,
+	"update":    icons.NotificationSystemUpdate,
+	"logs":      icons.ActionDescription,
+	"remote":    icons.ActionSettingsRemote,
+	"music":     icons.AVQueueMusic,
+	"check":     icons.NavigationCheck,
+	"close":     icons.NavigationClose,
 }
 
 var iconCache = map[string]*widget.Icon{}
@@ -352,6 +415,23 @@ func listRow(gtx C, th *material.Theme, clk *widget.Clickable, title, sub, value
 	})
 }
 
+// listRowBadge is listRow with a widget (a statusPill) before the
+// chevron instead of a grey value.
+func listRowBadge(gtx C, th *material.Theme, clk *widget.Clickable, title, sub string, badge layout.Widget) D {
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Inset{Top: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
+			return row(gtx,
+				layout.Flexed(1, titled(th, title, sub)),
+				layout.Rigid(func(gtx C) D { return layout.Inset{Left: 8}.Layout(gtx, badge) }),
+				hspace(4),
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "chevron", 20, colFaint) }),
+			)
+		})
+	})
+}
+
 // settingRow puts a title on the left and any control on the right.
 func settingRow(gtx C, th *material.Theme, title, sub string, control layout.Widget) D {
 	return row(gtx,
@@ -551,4 +631,255 @@ func iconBadge(gtx C, name string, fg, bg color.NRGBA) D {
 		layout.Stacked(func(gtx C) D { return iconBadgeBg(gtx, bg) }),
 		layout.Stacked(func(gtx C) D { return drawIcon(gtx, name, 20, fg) }),
 	)
+}
+
+// --- tones -------------------------------------------------------------------
+
+// tone is the colour of a state, shared by pills, icon tiles, banners and
+// the hero card, so "연결됨" is the same green everywhere.
+type tone int
+
+const (
+	toneOff    tone = iota // grey: off, not set up, unknown
+	toneOK                 // green: connected, on, working
+	toneWarn               // amber: needs a look
+	toneBad                // red: failed, unreachable
+	toneAccent             // blue: neutral emphasis
+)
+
+// colors are the tone's foreground and its tinted background.
+func (t tone) colors() (fg, bg color.NRGBA) {
+	switch t {
+	case toneOK:
+		return colOK, mix(colCard, colOK, 0.14)
+	case toneWarn:
+		return colWarn, mix(colCard, colWarn, 0.16)
+	case toneBad:
+		return colDanger, colDangerDim
+	case toneAccent:
+		return colAccent, colAccentDim
+	}
+	return colSub, colGhost
+}
+
+// statusPill is a small tinted badge in a tone ("연결됨", "꺼짐").
+func statusPill(th *material.Theme, txt string, t tone) layout.Widget {
+	fg, bg := t.colors()
+	return pill(th, txt, fg, bg)
+}
+
+// iconTile is an icon on a rounded square tinted in a tone (size dp),
+// the leading mark of a connection row or a toggle.
+func iconTile(gtx C, name string, t tone, size unit.Dp) D {
+	fg, bg := t.colors()
+	s := gtx.Dp(size)
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(func(gtx C) D {
+			r := image.Rect(0, 0, s, s)
+			paint.FillShape(gtx.Ops, bg, clip.UniformRRect(r, gtx.Dp(radiusM)).Op(gtx.Ops))
+			return D{Size: r.Max}
+		}),
+		layout.Stacked(func(gtx C) D {
+			gtx.Constraints = layout.Exact(imagePt(s))
+			return layout.Center.Layout(gtx, func(gtx C) D { return drawIcon(gtx, name, size*0.55, fg) })
+		}),
+	)
+}
+
+// connRow is a tappable row with an icon tile, a title over a one-line
+// summary, a status pill and a chevron: the home 연결 card.
+func connRow(gtx C, th *material.Theme, clk *widget.Clickable, iconName string, iconTone tone, title, sub, status string, statusTone tone) D {
+	return clk.Layout(gtx, func(gtx C) D {
+		pointer.CursorPointer.Add(gtx.Ops)
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Inset{Top: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
+			return row(gtx,
+				layout.Rigid(func(gtx C) D { return iconTile(gtx, iconName, iconTone, 40) }),
+				hspace(gapS),
+				layout.Flexed(1, func(gtx C) D {
+					return column(gtx,
+						layout.Rigid(line(th, textL, title, colText, font.SemiBold).Layout),
+						vspace(2),
+						layout.Rigid(line(th, textS, sub, colSub, font.Normal).Layout),
+					)
+				}),
+				layout.Rigid(func(gtx C) D {
+					if status == "" {
+						return D{}
+					}
+					return layout.Inset{Left: 8}.Layout(gtx, statusPill(th, status, statusTone))
+				}),
+				hspace(2),
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "chevron", 20, colFaint) }),
+			)
+		})
+	})
+}
+
+// toggleRowIcon is toggleRow with an icon tile in front, for rhythm in a
+// card of several switches.
+func toggleRowIcon(gtx C, th *material.Theme, b *widget.Bool, iconName string, t tone, title, sub string) D {
+	return row(gtx,
+		layout.Rigid(func(gtx C) D { return iconTile(gtx, iconName, t, 36) }),
+		hspace(gapS),
+		layout.Flexed(1, titled(th, title, sub)),
+		hspace(gapS),
+		layout.Rigid(toggle(th, b, title).Layout),
+	)
+}
+
+// fieldRow puts a title (and a grey line) on the left and a narrow
+// one-line field of width dp on the right: a port, a number.
+func fieldRow(gtx C, th *material.Theme, ed *widget.Editor, title, sub, hint string, width unit.Dp) D {
+	return row(gtx,
+		layout.Flexed(1, titled(th, title, sub)),
+		hspace(gapS),
+		layout.Rigid(func(gtx C) D {
+			w := gtx.Dp(width)
+			gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
+			ed.SingleLine = true
+			border := widget.Border{Color: colLine, CornerRadius: radiusM, Width: unit.Dp(1)}
+			return border.Layout(gtx, func(gtx C) D {
+				return layout.Inset{Top: 9, Bottom: 9, Left: 12, Right: 12}.Layout(gtx, func(gtx C) D {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					e := material.Editor(th, ed, hint)
+					e.HintColor = colFaint
+					e.TextSize = textL
+					return e.Layout(gtx)
+				})
+			})
+		}),
+	)
+}
+
+// textArea is a bordered box of several lines (at least lines tall) that
+// grows with its text.
+func textArea(th *material.Theme, ed *widget.Editor, hint string, lines int) layout.Widget {
+	return func(gtx C) D {
+		ed.SingleLine = false
+		return fieldFrame(gtx, func(gtx C) D {
+			gtx.Constraints.Min.Y = int(float32(lines) * float32(gtx.Sp(textL)) * 1.45)
+			e := material.Editor(th, ed, hint)
+			e.HintColor = colFaint
+			e.TextSize = textL
+			return e.Layout(gtx)
+		})
+	}
+}
+
+// --- banners -------------------------------------------------------------------
+
+// bannerIcon names the icon of a banner in tone t.
+func bannerIcon(t tone) string {
+	switch t {
+	case toneOK:
+		return "ok"
+	case toneWarn:
+		return "warn"
+	case toneBad:
+		return "error"
+	}
+	return "info"
+}
+
+// banner is an inline status line on a tinted panel: an icon and text in
+// the tone's colour. For a page-level message use u.setNotice instead,
+// which puts one at the top of the page.
+func banner(gtx C, th *material.Theme, t tone, txt string) D {
+	fg, bg := t.colors()
+	return surface(gtx, bg, radiusM, func(gtx C) D {
+		return layout.Inset{Top: 12, Bottom: 12, Left: 14, Right: 14}.Layout(gtx, func(gtx C) D {
+			return layout.Flex{Alignment: layout.Start}.Layout(gtx,
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, bannerIcon(t), 18, fg) }),
+				hspace(10),
+				layout.Flexed(1, label(th, textM, txt, colText, font.Medium).Layout),
+			)
+		})
+	})
+}
+
+// --- lists -------------------------------------------------------------------
+
+// listEditor is the state of a list the user edits: a delete button per
+// row and an add button under them. Each frame, before Layout:
+//
+//	if i := p.hubs.Deleted(gtx, len(hubs)); i >= 0 { hubs = slices.Delete(hubs, i, i+1) }
+//	if p.hubs.Added(gtx) { … }
+type listEditor struct {
+	del []widget.Clickable
+	add widget.Clickable
+}
+
+// Deleted returns the row whose delete button was pressed, or -1.
+func (l *listEditor) Deleted(gtx C, n int) int {
+	l.grow(n)
+	hit := -1
+	for i := range n {
+		if l.del[i].Clicked(gtx) {
+			hit = i
+		}
+	}
+	return hit
+}
+
+// Added reports a press of the add button.
+func (l *listEditor) Added(gtx C) bool { return l.add.Clicked(gtx) }
+
+func (l *listEditor) grow(n int) {
+	if len(l.del) < n {
+		l.del = append(l.del, make([]widget.Clickable, n-len(l.del))...)
+	}
+}
+
+// Layout draws n rows (row draws row i's content), each with a delete
+// button, hairlines between them, then the add button; empty is the grey
+// line shown without rows, addLabel the button's text ("" hides it).
+func (l *listEditor) Layout(gtx C, th *material.Theme, n int, empty, addLabel string, row func(gtx C, i int) D) D {
+	l.grow(n)
+	children := make([]layout.FlexChild, 0, 2*n+2)
+	if n == 0 && empty != "" {
+		children = append(children, layout.Rigid(label(th, textM, empty, colSub, font.Normal).Layout))
+	}
+	for i := range n {
+		if i > 0 {
+			children = append(children, vspace(8), layout.Rigid(divider), vspace(8))
+		}
+		children = append(children, layout.Rigid(func(gtx C) D {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx C) D { return row(gtx, i) }),
+				hspace(8),
+				layout.Rigid(func(gtx C) D { return iconButton(gtx, &l.del[i], "delete", 32, colDanger, colGhost) }),
+			)
+		}))
+	}
+	if addLabel != "" {
+		children = append(children, vspace(gapS), layout.Rigid(smallButton(th, &l.add, "+ "+addLabel, colAccent).Layout))
+	}
+	return column(gtx, children...)
+}
+
+// --- copy ----------------------------------------------------------------------
+
+// copiedShown is how long a copy button says it copied.
+const copiedShown = 1500 * time.Millisecond
+
+// copyButton puts a text on the clipboard and says so for a moment.
+type copyButton struct {
+	clk   widget.Clickable
+	until time.Time
+}
+
+// Layout draws the button (txt, then done once pressed) and copies value
+// when it is pressed.
+func (c *copyButton) Layout(gtx C, th *material.Theme, value, txt, done string) D {
+	if c.clk.Clicked(gtx) {
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
+		c.until = gtx.Now.Add(copiedShown)
+	}
+	shown := txt
+	if gtx.Now.Before(c.until) {
+		shown = done
+		gtx.Execute(op.InvalidateCmd{At: c.until})
+	}
+	return smallButton(th, &c.clk, shown, colAccent).Layout(gtx)
 }

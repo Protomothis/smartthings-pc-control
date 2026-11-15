@@ -5,6 +5,7 @@ package ui
 // ask for a frame.
 
 import (
+	"reflect"
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
@@ -18,6 +19,7 @@ const (
 	awakeEvery   = 10 // the remaining time is shown in minutes
 	hubEvery     = 10
 	logsEvery    = 3
+	cfgEvery     = 10 // others (the WebUI, Telegram) may change it; the forms follow
 	batteryEvery = 60 // the service reads the battery once a minute
 )
 
@@ -56,6 +58,9 @@ func (u *UI) pollLoop(stop <-chan struct{}) {
 		if n%batteryEvery == 0 {
 			u.loadBattery()
 		}
+		if n%cfgEvery == 0 {
+			u.loadConfig()
+		}
 		if n%logsEvery == 0 && u.wantLogs.Load() {
 			u.loadLogs()
 		}
@@ -78,16 +83,20 @@ func (u *UI) update(fn func(s *snapshot)) {
 }
 
 // connect logs in on this PC (the service vouches for the app, #131), reads
-// the config and, when that works, everything else once.
+// the config and, when that works, everything else once. The local session
+// comes first, secret or not (C5): a config read without it has the preset
+// paths masked.
 func (u *UI) connect() {
-	_ = u.api.LocalLogin() // refused or unreachable: GetConfig says which
+	if trustState(u.trust.Load()) != trustLocal {
+		u.relogin() // refused or unreachable: GetConfig says which
+	}
 	cfg, err := u.api.GetConfig()
 	if err != nil && !gui.IsUnauthorized(err) {
 		// The service may have come back on another port (#121).
 		if p := gui.LocalWebUIPort(); p != u.current().port {
 			u.api.SetPort(p)
 			u.update(func(s *snapshot) { s.port = p })
-			_ = u.api.LocalLogin()
+			u.relogin()
 			cfg, err = u.api.GetConfig()
 		}
 	}
@@ -96,10 +105,12 @@ func (u *UI) connect() {
 		u.update(func(s *snapshot) { s.conn = connLogin })
 		return
 	case err != nil:
+		u.forgetSession()
 		u.update(func(s *snapshot) { s.conn = connLost; s.battery = gui.Battery{} })
 		return
 	}
-	u.update(func(s *snapshot) { s.conn, s.cfg, s.cfgSet = connOK, cfg, true })
+	u.setConfig(cfg)
+	u.update(func(s *snapshot) { s.conn = connOK })
 	u.loadSchedule()
 	u.loadAwake()
 	u.loadBattery()
@@ -116,7 +127,29 @@ func (u *UI) lost(err error) {
 		u.update(func(s *snapshot) { s.conn = connLogin })
 		return
 	}
+	u.forgetSession()
 	u.update(func(s *snapshot) { s.conn = connLost })
+}
+
+// forgetSession is for the service going away: its restart drops the
+// session, so the next connect asks again. A refusal is kept.
+func (u *UI) forgetSession() {
+	u.trust.CompareAndSwap(int32(trustLocal), int32(trustUnknown))
+}
+
+// setConfig records a config read from the service: the forms adopt it at
+// the next frame (forms.go), and the app's crash record follows its debug
+// switch (#133). An unchanged config changes nothing, so the 10s poll does
+// not refill the forms under the user's caret. Safe from any goroutine.
+func (u *UI) setConfig(cfg gui.Config) {
+	u.update(func(s *snapshot) {
+		if s.cfgSet && reflect.DeepEqual(s.cfg, cfg) {
+			return
+		}
+		s.cfg, s.cfgSet = cfg, true
+		s.cfgGen++
+	})
+	gui.FollowDebugMode(cfg.Debug)
 }
 
 func (u *UI) loadSchedule() {
@@ -126,6 +159,7 @@ func (u *UI) loadSchedule() {
 		return
 	}
 	u.update(func(s *snapshot) { s.sched, s.schedAt = sc, time.Now() })
+	u.announceSchedule(sc)
 	u.refreshTray()
 }
 
@@ -172,7 +206,7 @@ func (u *UI) loadConfig() {
 		u.lost(err)
 		return
 	}
-	u.update(func(s *snapshot) { s.cfg, s.cfgSet = cfg, true })
+	u.setConfig(cfg)
 }
 
 // act runs fn off the window goroutine and toasts its outcome: ok on

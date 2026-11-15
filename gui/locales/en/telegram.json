@@ -1,0 +1,13 @@
+{
+  "ui.telegram.hero.on": "Telegram connected",
+  "ui.telegram.hero.off": "Telegram off",
+  "ui.telegram.hero.conflict": "Another PC uses this bot",
+  "ui.telegram.hero.notoken": "A bot token is needed",
+  "ui.telegram.off.sub": "Notifications and remote control are both off",
+  "ui.telegram.bot": "Bot",
+  "ui.telegram.features": "Features",
+  "ui.telegram.notify": "Notifications",
+  "ui.telegram.control": "Remote control",
+  "ui.telegram.token.set": "Set",
+  "ui.telegram.token.unset": "None"
+}

@@ -52,14 +52,6 @@ func retryPromptAfter(err error) bool {
 	return errors.Is(err, errLoginInvalid)
 }
 
-// shouldReloginAfterSave reports whether saving the settings changed the
-// secret to a non-empty value. Going from no secret to one leaves this
-// client without a valid session, so it logs in with the new secret right
-// away instead of waiting for the next 401 to prompt.
-func shouldReloginAfterSave(oldSecret, newSecret string) bool {
-	return newSecret != "" && newSecret != oldSecret
-}
-
 // loginErrorMessage is the text shown after a failed login attempt. The
 // "60초" in login.limited is service/webui_wiring.go loginLockDuration.
 func loginErrorMessage(err error, l Lang) string {

@@ -15,7 +15,6 @@ import (
 	"fyne.io/systray"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
-	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
 // trayTooltipMax caps the tooltip; the Windows NOTIFYICONDATA tip buffer
@@ -130,7 +129,7 @@ func (u *UI) buildTrayMenu() {
 	})
 	webUI := systray.AddMenuItem(gui.T(l, "settings.openwebui"), "")
 	on(webUI, func() {
-		_ = systool.Command(systool.Cmd, "/c", "start", fmt.Sprintf("http://127.0.0.1:%d", u.current().port)).Start()
+		_ = openURL(fmt.Sprintf("http://127.0.0.1:%d", u.current().port))
 	})
 	systray.AddSeparator()
 	on(systray.AddMenuItem(gui.T(l, "tray.exit"), ""), u.requestQuit)

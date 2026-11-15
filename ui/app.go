@@ -58,6 +58,14 @@ type UI struct {
 	wantLogs atomic.Bool // the logs page is open: poll the log
 	sysDark  atomic.Bool // Windows' own setting, followed while the window is open
 	quitAsk  atomic.Bool // the tray asked to quit: show the sheet
+	tasks    []func()    // onWindow's queue, under mu
+
+	gate      loginGate
+	trust     atomic.Int32 // a trustState
+	grace     gui.GraceWatch
+	heartbeat gui.HeartbeatSender
+	mediaBusy atomic.Bool // a media change check is in flight
+	hwnd      atomic.Uintptr
 
 	// Window goroutine only.
 	th       *material.Theme
@@ -68,8 +76,10 @@ type UI struct {
 	back     widget.Clickable
 	saveBar  saveBarState
 	home     homeState
-	pages    pages
-	quitW    quitState
+	pages    map[pageID]screen
+	formSt   formState
+	notices  map[screen]notice
+	sheetW   sheetState
 
 	tray tray
 }
@@ -83,7 +93,8 @@ func New(api API, version string, p *prefs, quit func()) *UI {
 	}
 	u.homeList.Axis = layout.Vertical
 	u.pageList.Axis = layout.Vertical
-	u.pages.init()
+	u.pages = buildPages()
+	u.notices = map[screen]notice{}
 	u.home.init()
 	return u
 }
@@ -158,6 +169,7 @@ func (u *UI) loop(w *app.Window) {
 		e := w.Event()
 		if h, ok := windowHandle(e); ok {
 			hwnd = h
+			u.hwnd.Store(h)
 			darkTitleBar(hwnd, u.dark)
 		}
 		switch e := e.(type) {
@@ -166,6 +178,7 @@ func (u *UI) loop(w *app.Window) {
 			u.mu.Lock()
 			u.win = nil
 			u.mu.Unlock()
+			u.hwnd.Store(0)
 			u.wantLogs.Store(false)
 			return
 		case app.FrameEvent:
@@ -223,17 +236,20 @@ func (u *UI) watchTheme(w *app.Window, stop <-chan struct{}) {
 	}
 }
 
-// layout draws one frame: the home screen or the top sub-page, and the
-// toast over either.
+// layout draws one frame: the home screen or the top sub-page, then the
+// question sheet and the toast over either.
 func (u *UI) layout(gtx C) D {
 	fillBg(gtx)
+	u.runTasks()
 	s := u.current()
+	u.syncForms(s)
+	u.askQuit()
 	if u.back.Clicked(gtx) {
 		u.nav.back(u, gtx.Now)
 	}
 	top := u.nav.top()
-	_, logsOpen := top.(*logsPage)
-	u.wantLogs.Store(logsOpen)
+	lw, ok := top.(logsWanter)
+	u.wantLogs.Store(ok && lw.wantsLogs())
 
 	bottom := 0
 	if top == nil {
@@ -241,22 +257,25 @@ func (u *UI) layout(gtx C) D {
 	} else {
 		bottom = u.layoutPage(gtx, top, s)
 	}
-	u.layoutQuit(gtx, s)
+	u.layoutSheet(gtx)
 	u.toast.layout(gtx, u.th, bottom+gtx.Dp(gapL))
 	return D{Size: gtx.Constraints.Max}
 }
 
-// layoutPage draws a sub-page and returns the height of its save bar (0
-// when there is none).
+// layoutPage draws a sub-page: the top bar, its notice, the scrolling body
+// and, while a form has unsaved edits, the save bar under the scrolling
+// part (it never covers the last card). It returns the save bar's height
+// (0 when there is none).
 func (u *UI) layoutPage(gtx C, p screen, s snapshot) int {
-	ed, isEditor := p.(editor)
-	dirty := isEditor && ed.dirty(s)
-	if dirty {
+	f, isForm := p.(form)
+	dirty := isForm && u.formDirty(p)
+	busy := u.formSt.saving
+	if dirty && !busy {
 		if u.saveBar.save.Clicked(gtx) {
-			ed.save(u, s)
+			u.saveForm(f)
 		}
 		if u.saveBar.discard.Clicked(gtx) {
-			ed.revert(s)
+			u.revertForm(f)
 		}
 	}
 	var barH int
@@ -269,7 +288,10 @@ func (u *UI) layoutPage(gtx C, p screen, s snapshot) int {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return centered(gtx, pageColumnW, func(gtx C) D {
 					return layout.Inset{Left: gapM, Right: gapM, Top: 4, Bottom: gapL}.Layout(gtx, func(gtx C) D {
-						return p.body(gtx, u, s)
+						return column(gtx,
+							layout.Rigid(func(gtx C) D { return u.layoutNotice(gtx, p) }),
+							layout.Rigid(func(gtx C) D { return p.body(gtx, u, s) }),
+						)
 					})
 				})
 			})
@@ -278,7 +300,11 @@ func (u *UI) layoutPage(gtx C, p screen, s snapshot) int {
 			if !dirty {
 				return D{}
 			}
-			d := saveBar(gtx, u.th, &u.saveBar, u.t("unsaved.indicator"), u.t("savebar.revert"), u.t("unsaved.save"))
+			msg := u.t("unsaved.indicator")
+			if busy {
+				msg = u.t("ui.form.saving")
+			}
+			d := saveBar(gtx, u.th, &u.saveBar, msg, u.t("savebar.revert"), u.t("unsaved.save"), busy)
 			barH = d.Size.Y
 			return d
 		}),

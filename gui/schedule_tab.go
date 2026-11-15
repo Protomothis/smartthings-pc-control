@@ -138,10 +138,10 @@ func (u *ui) loadSchedule() {
 		// Origin decides the wording everywhere (#54): a remote grace
 		// deferral is "SmartThings … grace period", a timer set here is
 		// "scheduled from this app".
-		countdownKey, titleKey, originKey := "schedule.countdown", "notify.schedule.title", "schedule.origin.ui"
+		countdownKey, originKey := "schedule.countdown", "schedule.origin.ui"
 		switch s.Origin {
 		case "remote":
-			countdownKey, titleKey, originKey = "schedule.countdown.remote", "notify.grace.title", "schedule.origin.remote"
+			countdownKey, originKey = "schedule.countdown.remote", "schedule.origin.remote"
 		case "telegram":
 			originKey = "schedule.origin.telegram"
 		case "smartthings":
@@ -160,18 +160,16 @@ func (u *ui) loadSchedule() {
 		// A schedule appeared or changed hands (a remote grace deferral
 		// replacing a local timer, or vice versa) — notify with Run now /
 		// Cancel buttons so it can be handled straight from the toast.
-		key := s.Origin + ":" + s.Command
-		if key != u.lastSchedCmd {
-			u.lastSchedCmd = key
+		notice := NewGraceNotice(u.lang, s)
+		if notice.Key != u.lastSchedCmd {
+			u.lastSchedCmd = notice.Key
 			lang := u.lang
-			title := u.t(titleKey)
 			go func() {
-				if err := showGraceToast(lang, title, countdown); err != nil {
+				if err := showGraceToast(lang, notice.Title, notice.Text); err != nil {
 					// Toast failed (e.g. PowerShell unavailable) — plain
 					// notification, sent from the UI goroutine like every
 					// other Fyne call.
-					body := fmt.Sprintf(T(lang, "notify.grace.body"), cmdLabel, remain)
-					fyne.Do(func() { u.app.SendNotification(fyne.NewNotification(title, body)) })
+					fyne.Do(func() { u.app.SendNotification(fyne.NewNotification(notice.Title, notice.Body)) })
 				}
 			}()
 		}

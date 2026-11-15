@@ -1,0 +1,11 @@
+{
+  "ui.smartthings.hero.on": "Hub connected",
+  "ui.smartthings.hero.off": "No hub connected",
+  "ui.smartthings.hero.loading": "Checking the hub",
+  "ui.smartthings.seen": "seen %s",
+  "ui.smartthings.off.sub": "Tap Scan nearby in the SmartThings app to connect",
+  "ui.smartthings.hub": "Hub",
+  "ui.smartthings.discovery": "Discovery and wake",
+  "ui.smartthings.search.on": "On",
+  "ui.smartthings.search.off": "Off"
+}

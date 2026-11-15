@@ -110,34 +110,3 @@ func TestScheduleRemaining(t *testing.T) {
 		t.Fatalf("past the end: %v", got)
 	}
 }
-
-// A back press over unsaved changes only warns; the second one leaves and
-// throws the edits away.
-func TestBackWarnsOnUnsaved(t *testing.T) {
-	u := sampleUI(gui.LangKo, false)
-	u.nav.push(u, u.pages.service)
-	p := u.pages.service
-	p.port.SetText("5011")
-	p.read()
-	if !p.dirty(u.current()) {
-		t.Fatal("edit not dirty")
-	}
-	now := time.Now()
-	if u.nav.back(u, now) || u.nav.top() == nil {
-		t.Fatal("left on the first press")
-	}
-	if !u.nav.back(u, now.Add(time.Second)) || u.nav.top() != nil {
-		t.Fatal("stayed on the second press")
-	}
-	u.nav.push(u, p)
-	if p.dirty(u.current()) || p.port.Text() != "5001" {
-		t.Fatal("edits survived leaving")
-	}
-	// after the arm runs out, a press only warns again
-	p.port.SetText("5011")
-	p.read()
-	u.nav.back(u, now)
-	if u.nav.back(u, now.Add(leaveArm+time.Second)) {
-		t.Fatal("an old warning still counted")
-	}
-}

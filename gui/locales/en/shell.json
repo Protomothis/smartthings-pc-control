@@ -1,0 +1,15 @@
+{
+  "ui.form.saving": "Saving…",
+  "ui.page.pending": "Editing on this page moves here soon. For now, change it in the current settings app.",
+  "ui.copy": "Copy",
+  "ui.copied": "Copied",
+  "ui.pick.all": "All files",
+  "ui.conn.on": "Connected",
+  "ui.conn.off": "Off",
+  "ui.conn.check": "Check",
+  "ui.conn.waiting": "Checking",
+  "ui.home.update.new": "New %s",
+  "ui.home.servicectl.sub": "Install, start, stop, install location",
+  "ui.home.unreachable.open": "Open service management",
+  "ui.home.presets.edit": "Edit"
+}

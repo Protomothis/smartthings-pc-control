@@ -83,18 +83,19 @@ type homeState struct {
 	schedStart    widget.Clickable
 	schedCancel   widget.Clickable
 
-	presetRun  []widget.Clickable
-	presetAdd  widget.Clickable
-	presetOpen bool
+	presetRun []widget.Clickable
+	presetAdd widget.Clickable
 
 	stRow, tgRow, shareRow widget.Clickable
 
-	themeChips chipGroup
-	langChips  chipGroup
-	autostart  widget.Bool
-	serviceRow widget.Clickable
-	updateRow  widget.Clickable
-	logsRow    widget.Clickable
+	themeChips    chipGroup
+	langChips     chipGroup
+	autostart     widget.Bool
+	serviceRow    widget.Clickable
+	serviceCtlRow widget.Clickable
+	unreachOpen   widget.Clickable
+	updateRow     widget.Clickable
+	logsRow       widget.Clickable
 }
 
 func (h *homeState) init() {
@@ -136,23 +137,12 @@ func (u *UI) homeItems(s snapshot, cols int) []gridItem {
 			cell(func(gtx C) D { return u.scheduleCard(gtx, s) }),
 			cell(func(gtx C) D { return u.presetsCard(gtx, s) }),
 		)
-		if cols == 1 {
-			items = append(items,
-				full(func(gtx C) D { return u.sectionLabel(gtx, u.t("home.connections")) }),
-				full(func(gtx C) D { return u.connCard(gtx, &u.home.stRow, u.t("tab.smartthings"), u.stLine(s), u.pages.st) }),
-				full(func(gtx C) D { return u.connCard(gtx, &u.home.tgRow, u.t("tab.telegram"), u.tgLine(s), u.pages.tg) }),
-				full(func(gtx C) D {
-					return u.connCard(gtx, &u.home.shareRow, u.t("tab.share"), u.shareLine(s), u.pages.share)
-				}),
-			)
-		} else {
-			items = append(items, cell(func(gtx C) D { return u.connectionsCard(gtx, s) }))
-		}
+		items = append(items, cell(func(gtx C) D { return u.connectionsCard(gtx, s) }))
 	}
 	items = append(items, cell(func(gtx C) D { return u.settingsCard(gtx, s, cols > 1) }))
 	if cols == 1 {
 		items = append(items, full(func(gtx C) D {
-			return u.connCard(gtx, &u.home.logsRow, u.t("tab.logs"), u.t("home.logs.sub"), u.pages.logs)
+			return u.connCard(gtx, &u.home.logsRow, u.t("tab.logs"), u.t("home.logs.sub"), pageLogs)
 		}))
 	}
 	return items
@@ -211,33 +201,44 @@ func (u *UI) homeColumn(gtx C, s snapshot) D {
 	return column(gtx, children...)
 }
 
-// connectionsCard is the grid's 연결 card: the three connection rows in one
-// card.
+// connectionsCard is the 연결 card: SmartThings, 텔레그램 and 공유, each an
+// icon tile, its one-line summary and a status pill, opening its page.
 func (u *UI) connectionsCard(gtx C, s snapshot) D {
 	h := &u.home
-	rows := []struct {
+	stHero, stPill := u.stStatus(s)
+	tgHero, tgPill := u.tgStatus(s)
+	shHero, shPill := u.shareStatus(s)
+	conns := []struct {
 		clk        *widget.Clickable
+		page       pageID
 		title, sub string
-		page       screen
+		hero       hero
+		status     string
 	}{
-		{&h.stRow, u.t("tab.smartthings"), u.stLine(s), u.pages.st},
-		{&h.tgRow, u.t("tab.telegram"), u.tgLine(s), u.pages.tg},
-		{&h.shareRow, u.t("tab.share"), u.shareLine(s), u.pages.share},
+		{&h.stRow, pageSmartThings, u.t("tab.smartthings"), u.stLine(s), stHero, stPill},
+		{&h.tgRow, pageTelegram, u.t("tab.telegram"), u.tgLine(s), tgHero, tgPill},
+		{&h.shareRow, pageSharing, u.t("tab.share"), u.shareLine(s), shHero, shPill},
 	}
-	children := []layout.FlexChild{
-		layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, u.t("home.connections"), nil) }),
-		vspace(gapS),
-	}
-	for i, r := range rows {
-		if r.clk.Clicked(gtx) {
-			u.nav.push(u, r.page)
+	ws := make([]layout.Widget, len(conns))
+	for i, c := range conns {
+		if c.clk.Clicked(gtx) {
+			u.open(c.page)
 		}
-		if i > 0 {
-			children = append(children, vspace(gapS), layout.Rigid(divider), vspace(gapS))
+		iconTone := toneAccent
+		if c.hero.tone == toneOff {
+			iconTone = toneOff
 		}
-		children = append(children, layout.Rigid(func(gtx C) D { return listRow(gtx, u.th, r.clk, r.title, r.sub, "") }))
+		ws[i] = func(gtx C) D {
+			return connRow(gtx, u.th, c.clk, c.hero.icon, iconTone, c.title, c.sub, c.status, c.hero.tone)
+		}
 	}
-	return card(gtx, func(gtx C) D { return column(gtx, children...) })
+	return card(gtx, func(gtx C) D {
+		return column(gtx,
+			layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, u.t("home.connections"), nil) }),
+			vspace(gapS),
+			layout.Rigid(func(gtx C) D { return rows(gtx, ws...) }),
+		)
+	})
 }
 
 // --- header and connection ---
@@ -316,18 +317,18 @@ func (u *UI) loginCard(gtx C) D {
 }
 
 func (u *UI) unreachableCard(gtx C, s snapshot) D {
+	if u.home.unreachOpen.Clicked(gtx) {
+		u.open(pageServiceCtl)
+	}
 	return card(gtx, func(gtx C) D {
 		return column(gtx,
 			layout.Rigid(func(gtx C) D { return cardTitle(gtx, u.th, u.t("svc.section"), nil) }),
 			vspace(4),
 			layout.Rigid(label(u.th, textM, fmt.Sprintf(u.t("status.unreachable"), s.port), colSub, font.Normal).Layout),
+			vspace(gapS),
+			layout.Rigid(fill(secondaryButton(u.th, &u.home.unreachOpen, u.t("ui.home.unreachable.open")).Layout)),
 		)
 	})
-}
-
-// sectionLabel is the small grey heading above a group of cards.
-func (u *UI) sectionLabel(gtx C, txt string) D {
-	return layout.Inset{Left: 4, Top: gapS}.Layout(gtx, label(u.th, textM, txt, colSub, font.SemiBold).Layout)
 }
 
 // --- 바로 실행 ---
@@ -734,7 +735,7 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 		}
 	}
 	if h.presetAdd.Clicked(gtx) {
-		h.presetOpen = !h.presetOpen
+		u.open(pagePresets)
 	}
 	return card(gtx, func(gtx C) D {
 		children := []layout.FlexChild{
@@ -772,13 +773,6 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 				})
 			}))
 		}
-		if h.presetOpen {
-			children = append(children, vspace(gapS), layout.Rigid(func(gtx C) D {
-				return surface(gtx, colGhost, radiusM, func(gtx C) D {
-					return layout.UniformInset(gapM).Layout(gtx, label(u.th, textM, u.t("home.later"), colSub, font.Normal).Layout)
-				})
-			}))
-		}
 		return column(gtx, children...)
 	})
 }
@@ -807,9 +801,9 @@ func slotBadge(gtx C, th *material.Theme, slot int) D {
 // --- 연결 ---
 
 // connCard is one compact card that opens a sub-page.
-func (u *UI) connCard(gtx C, clk *widget.Clickable, title, sub string, page screen) D {
+func (u *UI) connCard(gtx C, clk *widget.Clickable, title, sub string, page pageID) D {
 	if clk.Clicked(gtx) {
-		u.nav.push(u, page)
+		u.open(page)
 	}
 	return surface(gtx, colCard, radiusL, func(gtx C) D {
 		return layout.Inset{Top: gapM, Bottom: gapM, Left: gapL, Right: gapM}.Layout(gtx, func(gtx C) D {
@@ -855,7 +849,7 @@ func (u *UI) shareLine(s snapshot) string {
 func (u *UI) settingsCard(gtx C, s snapshot, withLogs bool) D {
 	h := &u.home
 	if withLogs && h.logsRow.Clicked(gtx) {
-		u.nav.push(u, u.pages.logs)
+		u.open(pageLogs)
 	}
 	if i := h.themeChips.Clicked(gtx, len(themeValues)); i >= 0 {
 		u.prefs.Set(prefTheme, themeValues[i])
@@ -870,10 +864,17 @@ func (u *UI) settingsCard(gtx C, s snapshot, withLogs bool) D {
 		u.act(func() error { return gui.SetAutostart(on) }, "", nil)
 	}
 	if h.serviceRow.Clicked(gtx) {
-		u.nav.push(u, u.pages.service)
+		u.open(pageService)
+	}
+	if h.serviceCtlRow.Clicked(gtx) {
+		u.open(pageServiceCtl)
 	}
 	if h.updateRow.Clicked(gtx) {
-		u.nav.push(u, u.pages.update)
+		u.open(pageUpdate)
+	}
+	updateValue := u.version
+	if s.updateTag != "" {
+		updateValue = ""
 	}
 	themeLabels := []string{u.t("theme.system"), u.t("theme.light"), u.t("theme.dark")}
 	themeSel := indexOfString(themeValues, u.prefs.String(prefTheme, ""))
@@ -916,7 +917,15 @@ func (u *UI) settingsCard(gtx C, s snapshot, withLogs bool) D {
 			}),
 			vspace(4),
 			layout.Rigid(func(gtx C) D {
-				return listRow(gtx, u.th, &h.updateRow, u.t("update.manual"), "", u.version)
+				return listRow(gtx, u.th, &h.serviceCtlRow, u.t("svc.section"), u.t("ui.home.servicectl.sub"), "")
+			}),
+			vspace(4),
+			layout.Rigid(func(gtx C) D {
+				if s.updateTag == "" {
+					return listRow(gtx, u.th, &h.updateRow, u.t("update.manual"), "", updateValue)
+				}
+				return listRowBadge(gtx, u.th, &h.updateRow, u.t("update.manual"), u.version,
+					statusPill(u.th, fmt.Sprintf(u.t("ui.home.update.new"), s.updateTag), toneAccent))
 			}),
 			layout.Rigid(func(gtx C) D {
 				if !withLogs {

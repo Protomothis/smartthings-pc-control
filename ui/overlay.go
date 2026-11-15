@@ -45,8 +45,9 @@ type saveBarState struct {
 }
 
 // saveBar is pinned to the bottom of a sub-page while it has unsaved
-// changes: what is pending, 되돌리기 and 저장.
-func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTxt string) D {
+// changes: what is pending, 되돌리기 and 저장. busy (a save in flight)
+// dims both buttons; the caller ignores their clicks meanwhile.
+func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTxt string, busy bool) D {
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx C) D {
 			sz := gtx.Constraints.Min
@@ -66,6 +67,9 @@ func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTx
 							b := greyButton(th, &s.discard, discardTxt)
 							b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 14, Right: 14}
 							b.TextSize = textM
+							if busy {
+								b.Color = colFaint
+							}
 							return b.Layout(gtx)
 						}),
 						hspace(8),
@@ -73,6 +77,9 @@ func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTx
 							b := primaryButton(th, &s.save, saveTxt)
 							b.Inset = layout.Inset{Top: 10, Bottom: 10, Left: 18, Right: 18}
 							b.TextSize = textM
+							if busy {
+								b.Background = mix(colAccent, colCard, 0.5)
+							}
 							return b.Layout(gtx)
 						}),
 					)
@@ -82,49 +89,86 @@ func saveBar(gtx C, th *material.Theme, s *saveBarState, msg, discardTxt, saveTx
 	)
 }
 
-// toastShown is how long a toast stays.
-const toastShown = 2500 * time.Millisecond
+// toastShown is how long a toast stays; one with an action stays longer,
+// long enough to read and reach for the button.
+const (
+	toastShown       = 2500 * time.Millisecond
+	toastActionShown = 7 * time.Second
+)
 
-// toaster holds the current toast. show is safe from any goroutine.
+// toaster holds the current toast. show and showAction are safe from any
+// goroutine; layout runs on the window goroutine.
 type toaster struct {
-	mu    sync.Mutex
-	text  string
-	bad   bool
-	until time.Time
+	mu     sync.Mutex
+	text   string
+	bad    bool
+	until  time.Time
+	action string // the button's text, "" for none
+	do     func() // runs on the window goroutine when the button is pressed
+
+	btn widget.Clickable // window goroutine only
 }
 
 func (t *toaster) show(text string, bad bool, now time.Time) {
 	t.mu.Lock()
-	t.text, t.bad, t.until = text, bad, now.Add(toastShown)
+	t.text, t.bad, t.until, t.action, t.do = text, bad, now.Add(toastShown), "", nil
 	t.mu.Unlock()
 }
 
+// showAction is a toast with one button ([지금 재시작]); pressing it runs
+// do and dismisses the toast.
+func (t *toaster) showAction(text, action string, do func(), now time.Time) {
+	t.mu.Lock()
+	t.text, t.bad, t.until, t.action, t.do = text, false, now.Add(toastActionShown), action, do
+	t.mu.Unlock()
+}
+
+// toastNow is the toast to draw.
+type toastNow struct {
+	text, action string
+	bad          bool
+	until        time.Time
+	do           func()
+}
+
 // current is the toast to draw at now, if any.
-func (t *toaster) current(now time.Time) (text string, bad bool, until time.Time, ok bool) {
+func (t *toaster) current(now time.Time) (toastNow, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.text == "" || !now.Before(t.until) {
-		return "", false, time.Time{}, false
+		return toastNow{}, false
 	}
-	return t.text, t.bad, t.until, true
+	return toastNow{text: t.text, action: t.action, bad: t.bad, until: t.until, do: t.do}, true
 }
 
-// layoutToast draws the toast as a dark pill near the bottom, bottomGap
-// above the edge, and asks for a frame when it should go.
+// dismiss ends the toast now.
+func (t *toaster) dismiss() {
+	t.mu.Lock()
+	t.text = ""
+	t.mu.Unlock()
+}
+
+// layout draws the toast as a dark pill near the bottom, bottomGap above
+// the edge, and asks for a frame when it should go.
 func (t *toaster) layout(gtx C, th *material.Theme, bottomGap int) D {
-	text, bad, until, ok := t.current(gtx.Now)
+	cur, ok := t.current(gtx.Now)
 	if !ok {
 		return D{}
 	}
-	gtx.Execute(op.InvalidateCmd{At: until})
+	if cur.do != nil && t.btn.Clicked(gtx) {
+		t.dismiss()
+		cur.do()
+		return D{}
+	}
+	gtx.Execute(op.InvalidateCmd{At: cur.until})
 	bg := rgb(0x333d4b)
-	if bad {
+	if cur.bad {
 		bg = colDanger
 	}
 	macro := op.Record(gtx.Ops)
 	cgtx := gtx
 	cgtx.Constraints.Min = image.Point{}
-	cgtx.Constraints.Max.X -= gtx.Dp(48)
+	cgtx.Constraints.Max.X = min(cgtx.Constraints.Max.X-gtx.Dp(48), gtx.Dp(pageColumnW))
 	d := layout.Stack{}.Layout(cgtx,
 		layout.Expanded(func(gtx C) D {
 			r := image.Rectangle{Max: gtx.Constraints.Min}
@@ -132,8 +176,20 @@ func (t *toaster) layout(gtx C, th *material.Theme, bottomGap int) D {
 			return D{Size: gtx.Constraints.Min}
 		}),
 		layout.Stacked(func(gtx C) D {
-			return layout.Inset{Top: 12, Bottom: 12, Left: 18, Right: 18}.Layout(gtx,
-				label(th, textM, text, rgb(0xffffff), font.Medium).Layout)
+			return layout.Inset{Top: 12, Bottom: 12, Left: 18, Right: 18}.Layout(gtx, func(gtx C) D {
+				if cur.action == "" {
+					return label(th, textM, cur.text, rgb(0xffffff), font.Medium).Layout(gtx)
+				}
+				return row(gtx,
+					layout.Flexed(1, label(th, textM, cur.text, rgb(0xffffff), font.Medium).Layout),
+					hspace(gapS),
+					layout.Rigid(func(gtx C) D {
+						b := smallButton(th, &t.btn, cur.action, rgb(0xffffff))
+						b.Background = colAccent
+						return b.Layout(gtx)
+					}),
+				)
+			})
 		}),
 	)
 	call := macro.Stop()
