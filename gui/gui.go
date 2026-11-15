@@ -9,7 +9,6 @@ package gui
 
 import (
 	"errors"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -287,52 +286,16 @@ func (u *ui) t(key string) string { return T(u.lang, key) }
 
 // formatSeconds renders whole minutes as "5분"/"5 min" and anything
 // shorter (or uneven) as seconds.
-func (u *ui) formatSeconds(sec int) string {
-	if sec >= 60 && sec%60 == 0 {
-		return fmt.Sprintf(u.t("duration.min"), sec/60)
-	}
-	return fmt.Sprintf(u.t("duration.sec"), sec)
-}
+func (u *ui) formatSeconds(sec int) string { return FormatSeconds(u.lang, sec) }
 
 // formatMinutes renders a schedule delay in the largest unit that fits:
 // "45분", "1시간 30분", "3일" (#89). The presets now reach three days, and
 // "4320분" is not a label anyone reads as that.
-func (u *ui) formatMinutes(min int) string {
-	switch {
-	case min < 60:
-		return fmt.Sprintf(u.t("duration.min"), min)
-	case min < 1440:
-		if rest := min % 60; rest != 0 {
-			return fmt.Sprintf(u.t("duration.hourmin"), min/60, rest)
-		}
-		return fmt.Sprintf(u.t("duration.hour"), min/60)
-	default:
-		// The odd minutes are noise at a day's distance.
-		if hours := (min % 1440) / 60; hours != 0 {
-			return fmt.Sprintf(u.t("duration.dayhour"), min/1440, hours)
-		}
-		return fmt.Sprintf(u.t("duration.day"), min/1440)
-	}
-}
+func (u *ui) formatMinutes(min int) string { return FormatMinutes(u.lang, min) }
 
 // formatCountdown renders the remaining time for the big countdown block:
 // "05:30", "3:15:00" and, from a day on, "2일 3:15:00" (#89).
-func (u *ui) formatCountdown(d time.Duration) string {
-	if d < 0 {
-		d = 0
-	}
-	total := int(d.Seconds())
-	days, rest := total/86400, total%86400
-	hh, mm, ss := rest/3600, rest%3600/60, rest%60
-	switch {
-	case days > 0:
-		return fmt.Sprintf(u.t("schedule.countdown.days"), days,
-			fmt.Sprintf("%d:%02d:%02d", hh, mm, ss))
-	case hh > 0:
-		return fmt.Sprintf("%d:%02d:%02d", hh, mm, ss)
-	}
-	return fmt.Sprintf("%02d:%02d", mm, ss)
-}
+func (u *ui) formatCountdown(d time.Duration) string { return FormatCountdown(u.lang, d) }
 
 // section renders a subtle bold header above content — lighter than
 // widget.Card, which draws a large title and a visible card surface.
@@ -626,16 +589,6 @@ func (u *ui) initialLoad() {
 			u.loadShown()
 		}
 	}
-}
-
-// withGraceFallback mirrors what the grace select shows for a service
-// predating grace_seconds (enabled, no period), so a config adopted as the
-// baseline does not leave the settings form dirty.
-func withGraceFallback(cfg Config) Config {
-	if cfg.ShutdownGrace && cfg.GraceSeconds <= 0 {
-		cfg.GraceSeconds = fallbackGraceSeconds
-	}
-	return cfg
 }
 
 // pollLoop drives periodic refreshes until the window closes.

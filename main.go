@@ -10,6 +10,7 @@ import (
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 	"github.com/Protomothis/smartthings-pc-control/service"
+	"github.com/Protomothis/smartthings-pc-control/ui"
 	"github.com/Protomothis/smartthings-pc-control/useraction"
 )
 
@@ -93,6 +94,13 @@ func main() {
 		// "--minimized" (login autostart) keeps the window hidden, tray only.
 		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
 		gui.Run(Version, minimized)
+
+	case "gui-next":
+		// Hidden, for development only (#165): the Gio window that will
+		// replace "gui". It has no single-instance lock yet, so close the
+		// regular app first.
+		minimized := len(os.Args) > 2 && os.Args[2] == "--minimized"
+		ui.Run(Version, minimized)
 
 	case "toast":
 		// Invoked by toast notification action buttons (stpc:// protocol)

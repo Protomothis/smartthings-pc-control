@@ -39,13 +39,6 @@ var mediaButtonSize = fyne.NewSize(64, 38)
 // (a poll would otherwise replace it within 3s).
 const mediaErrorShown = 8 * time.Second
 
-// Media states of MediaInfo.Status.
-const (
-	mediaPlaying = "playing"
-	mediaPaused  = "paused"
-	mediaStopped = "stopped"
-)
-
 // mediaCard is the card's widgets and the last state they show.
 type mediaCard struct {
 	icon    *widget.Icon
@@ -97,18 +90,8 @@ func mediaPlayButtonIcon(status string) fyne.Resource {
 	return theme.MediaPlayIcon()
 }
 
-// mediaToggleCommand is what the ⏯ button sends: an explicit pause or play
-// when the state is known (the session tells them apart), the toggle when
-// it is not.
-func mediaToggleCommand(status string) string {
-	switch status {
-	case mediaPlaying:
-		return "pause"
-	case mediaPaused, mediaStopped:
-		return "play"
-	}
-	return "playpause"
-}
+// mediaToggleCommand is MediaToggleCommand (viewmodel.go).
+func mediaToggleCommand(status string) string { return MediaToggleCommand(status) }
 
 // mediaLineText is the now-playing line: "Hype Boy — NewJeans · Spotify",
 // "재생 중 · VLC" for a session without a title, just "재생 중" /
@@ -144,59 +127,14 @@ func (u *ui) mediaLineText(m MediaInfo, share bool) string {
 // first line, "artist · app" under it. Without a title the artist (or the
 // state) moves up; without the opt-in only the state is shown.
 func (u *ui) mediaLines(m MediaInfo, share bool) (string, string) {
-	switch m.Status {
-	case mediaPlaying, mediaPaused, mediaStopped:
-	default:
-		return u.t("media.none"), ""
-	}
-	state := u.t("media." + m.Status)
-	if !share {
-		return state, ""
-	}
-	join := func(parts ...string) string {
-		out := ""
-		for _, p := range parts {
-			if p == "" {
-				continue
-			}
-			if out != "" {
-				out += " · "
-			}
-			out += p
-		}
-		return out
-	}
-	switch {
-	case m.Title != "":
-		return m.Title, join(m.Artist, m.App)
-	case m.Artist != "":
-		return m.Artist, m.App
-	}
-	return state, m.App
+	return MediaLines(u.lang, m, share)
 }
 
 // mediaLevelText is the volume value next to the slider, "—" while unknown.
-func mediaLevelText(a MediaAudio) string {
-	if !a.Available || a.Volume == nil {
-		return "—"
-	}
-	return strconv.Itoa(*a.Volume) + "%"
-}
+func mediaLevelText(a MediaAudio) string { return MediaLevelText(a) }
 
 // mediaReason is the one line that says why the card is disabled, or "".
-func (u *ui) mediaReason(m MediaState, err error) string {
-	switch {
-	case errors.Is(err, errMediaUnsupported):
-		return u.t("media.reason.old")
-	case err != nil:
-		return ""
-	case !m.Enabled:
-		return u.t("media.reason.disabled")
-	case !m.Session:
-		return u.t("media.reason.nouser")
-	}
-	return ""
-}
+func (u *ui) mediaReason(m MediaState, err error) string { return MediaReason(u.lang, m, err) }
 
 // mediaErrorText words a failed command for the card.
 func (u *ui) mediaErrorText(err error) string {

@@ -4,8 +4,6 @@ package gui
 // it; on a desktop the label stays hidden and costs one request a minute.
 
 import (
-	"fmt"
-	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -17,23 +15,7 @@ const batteryPollInterval = 60 * time.Second
 
 // batteryText is the label: "배터리 80% · 충전 중", "배터리 100% · 전원
 // 연결됨", "배터리 15%". "" means no battery, and no label.
-func (u *ui) batteryText(b Battery) string {
-	if !b.Present {
-		return ""
-	}
-	level := u.t("battery.unknown")
-	if b.Percent >= 0 {
-		level = strconv.Itoa(b.Percent) + "%"
-	}
-	text := fmt.Sprintf(u.t("battery.label"), level)
-	switch {
-	case b.Charging:
-		text += " · " + u.t("battery.charging")
-	case b.AC:
-		text += " · " + u.t("battery.ac")
-	}
-	return text
-}
+func (u *ui) batteryText(b Battery) string { return BatteryText(u.lang, b) }
 
 // loadBattery polls the service. Runs off the UI thread; any error just
 // hides the label (the connection state has its own indicator).

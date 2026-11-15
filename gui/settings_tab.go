@@ -20,14 +20,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/systool"
 )
 
-// Grace period choices (seconds) for remote power commands (#51). The
-// settings select shows "Off" first, then these.
-var graceOptions = []int{10, 30, 60, 300, 600, 1800}
-
-// fallbackGraceSeconds is used when the service reports grace enabled but
-// no period (an older service) — matches the service default.
-const fallbackGraceSeconds = 300
-
 func (u *ui) buildSettingsTab() fyne.CanvasObject {
 	u.portEntry = widget.NewEntry()
 	u.secretEntry = widget.NewPasswordEntry()
