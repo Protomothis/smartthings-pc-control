@@ -6,8 +6,6 @@ package gui
 // running back under the timestamps.
 
 import (
-	"slices"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -51,19 +49,9 @@ func (r *logRow) show(line string) {
 	r.msg.Refresh()
 }
 
-// logsShift is how many lines dropped off the top between old and lines:
-// the smallest k for which lines starts with old[k:] (old itself counts,
-// at k 0). It is 0 when lines does not continue old at all. Rows rotate by
-// it, so they keep their lines through the usual poll, where a few lines
-// come in at the bottom and as many go out at the top of the 100.
-func logsShift(old, lines []string) int {
-	for k := range old {
-		if n := len(old) - k; n <= len(lines) && slices.Equal(old[k:], lines[:n]) {
-			return k
-		}
-	}
-	return 0
-}
+// logsShift is LogsShift: rows rotate by it, so they keep their lines
+// through the usual poll.
+func logsShift(old, lines []string) int { return LogsShift(old, lines) }
 
 // logRowsLayout stacks rows (the container's objects are their widgets;
 // the layout goes by rows): the stamp cells in a column as wide as

@@ -4,12 +4,9 @@ package gui
 // from the service, or from service.log itself while it is unreachable.
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -77,15 +74,8 @@ func (u *ui) buildLogsTab() fyne.CanvasObject {
 	return container.NewBorder(top, nil, nil, nil, u.logsScroll)
 }
 
-// serviceLogPath is service.log next to the exe — the same location the
-// service uses.
-func serviceLogPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(exe), "service.log"), nil
-}
+// serviceLogPath is ServiceLogPath.
+func serviceLogPath() (string, error) { return ServiceLogPath() }
 
 // openServiceLog opens service.log in the default viewer, or reveals it in
 // Explorer when folder is set. Shows an error if the file does not exist.
@@ -161,36 +151,15 @@ func (u *ui) loadLogsFromFile() {
 	})
 }
 
-// readServiceLogTail is the last max lines of the log at path, split like
-// /api/logs does.
+// readServiceLogTail is ReadServiceLogTail.
 func readServiceLogTail(path string, max int) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	text := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
-	if text == "" {
-		return nil, nil
-	}
-	lines := strings.Split(text, "\n")
-	if len(lines) > max {
-		lines = lines[len(lines)-max:]
-	}
-	return lines, nil
+	return ReadServiceLogTail(path, max)
 }
 
 // logsFileNote is the line above a log read from disk: where it came
 // from, or why reading it failed.
 func (u *ui) logsFileNote(path string, err error) string {
-	switch {
-	case err == nil:
-		return u.t("logs.file.shown")
-	case errors.Is(err, fs.ErrPermission):
-		return fmt.Sprintf(u.t("logs.file.denied"), path)
-	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Sprintf(u.t("logs.file.missing"), path)
-	}
-	return fmt.Sprintf(u.t("logs.file.error"), err)
+	return LogsFileNote(u.lang, path, err)
 }
 
 // setLogsSource shows note above the view, or hides it for "". UI
