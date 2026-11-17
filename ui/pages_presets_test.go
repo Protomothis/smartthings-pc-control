@@ -189,12 +189,16 @@ func TestPresetsOpenSlot(t *testing.T) {
 	if p.rows[0].open || p.rows[1].open || !p.rows[2].open {
 		t.Fatalf("open = %v %v %v", p.rows[0].open, p.rows[1].open, p.rows[2].open)
 	}
-	if p.arrive != p.rows[2] || !p.rows[2].glowUntil.After(time.Now()) {
+	if p.arrive != p.rows[2] {
 		t.Fatal("no arrival for slot 3")
 	}
 	frames(u, winW, 300, 3)
 	if p.arrive != nil {
 		t.Fatal("still waiting to scroll after three frames")
+	}
+	// The highlight starts once the row is on screen, not at the tap.
+	if !p.rows[2].glowUntil.After(time.Now()) {
+		t.Error("no highlight after arriving")
 	}
 	if off := u.pageList.Position.Offset; off <= 0 {
 		t.Errorf("not scrolled to slot 3: offset %d", off)

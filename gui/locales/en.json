@@ -69,6 +69,7 @@
   "home.presets.empty": "No presets yet",
   "home.quick": "Quick actions",
   "home.run": "Run",
+  "home.edit": "Edit",
   "home.schedule.until": "until '%s'",
   "home.share.none": "Nothing shared",
   "home.share.some": "Sharing %d kinds of information",

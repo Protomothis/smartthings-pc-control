@@ -92,6 +92,8 @@ type homeState struct {
 	// presetOpen: a tap on a preset (not its [실행]) opens it in the
 	// presets page.
 	presetOpen []widget.Clickable
+	// presetEdit: the [편집] button, the same as a tap on the preset.
+	presetEdit []widget.Clickable
 	presetAdd  widget.Clickable
 
 	stRow, tgRow, shareRow widget.Clickable
@@ -876,6 +878,7 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 	if len(h.presetRun) < len(presets) {
 		h.presetRun = make([]widget.Clickable, len(presets))
 		h.presetOpen = make([]widget.Clickable, len(presets))
+		h.presetEdit = make([]widget.Clickable, len(presets))
 	}
 	for i, p := range presets {
 		if h.presetRun[i].Clicked(gtx) {
@@ -884,7 +887,8 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 		}
 	}
 	for i, p := range presets {
-		if h.presetOpen[i].Clicked(gtx) {
+		// [편집] and a tap on the preset itself both open it.
+		if h.presetEdit[i].Clicked(gtx) || h.presetOpen[i].Clicked(gtx) {
 			if pg, ok := u.pages[pagePresets].(*presetsPage); ok {
 				pg.OpenSlot(u, p.Slot)
 			}
@@ -932,6 +936,10 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 							})
 						}),
 						hspace(gapS),
+						layout.Rigid(func(gtx C) D {
+							return smallButton(u.th, &h.presetEdit[i], u.t("home.edit"), colText).Layout(gtx)
+						}),
+						hspace(gapXS),
 						layout.Rigid(func(gtx C) D {
 							b := smallButton(u.th, &h.presetRun[i], u.t("home.run"), colAccent)
 							b.Background = colAccentDim

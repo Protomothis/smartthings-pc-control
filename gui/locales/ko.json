@@ -69,6 +69,7 @@
   "home.presets.empty": "아직 프리셋이 없어요",
   "home.quick": "바로 실행",
   "home.run": "실행",
+  "home.edit": "편집",
   "home.schedule.until": "'%s' 실행까지",
   "home.share.none": "보내는 정보 없음",
   "home.share.some": "%d가지 정보를 보내는 중",

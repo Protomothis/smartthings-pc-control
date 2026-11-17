@@ -175,7 +175,7 @@ func (p *presetsPage) OpenSlot(u *UI, slot int) {
 		if e.slot == slot {
 			p.openRow(e)
 			p.arrive = e
-			e.glowUntil = time.Now().Add(arrivalGlow)
+			e.glowUntil = time.Time{} // starts when it is on screen (scrollToArrival)
 			return
 		}
 	}
@@ -412,6 +412,8 @@ func (p *presetsPage) scrollToArrival(gtx C, u *UI, header string, bannerH *int)
 	for _, x := range p.rows {
 		if x == e {
 			u.pageList.Position = layout.Position{Offset: max(y-gtx.Dp(gapS), 0)}
+			e.glowUntil = gtx.Now.Add(arrivalGlow)
+			gtx.Execute(op.InvalidateCmd{})
 			p.arrive = nil
 			return
 		}
