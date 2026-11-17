@@ -114,7 +114,7 @@ var texts = map[string][2]string{
 	"menu_title":      {"무엇을 할까요?", "What should I do?"},
 	"executed":        {"✅ %s 실행", "✅ %s executed"},
 	"confirm_q":       {"⚠️ <b>%s</b> – 지금 바로 실행할까요?", "⚠️ <b>%s</b> – run it right now?"},
-	"bad_minutes":     {"분은 1~4320(3일) 사이의 숫자여야 합니다. 예: <code>/shutdown 30</code>", "Minutes must be a number from 1 to 4320 (3 days), e.g. <code>/shutdown 30</code>"},
+	"bad_minutes":     {"분은 1~10080(7일) 사이의 숫자여야 합니다. 예: <code>/shutdown 30</code>", "Minutes must be a number from 1 to 10080 (7 days), e.g. <code>/shutdown 30</code>"},
 	"scheduled":       {"⏱ <b>%s</b> %s 후 예약됨 (%s)", "⏱ <b>%s</b> scheduled in %s (%s)"},
 	"schedule_failed": {"예약 실패: %s", "Scheduling failed: %s"},
 	"cancelled":       {"✅ 취소됨: %s", "✅ Cancelled: %s"},
@@ -533,7 +533,7 @@ func (c *Control) powerCommand(name string, args []string) (string, *telegram.In
 		return c.text("confirm_q", label), c.confirmKeyboard(name), nil
 	}
 	minutes, err := strconv.Atoi(args[0])
-	// #89: up to three days, the same ceiling /st/v1 and the app carry.
+	// #89, #173: up to a week, the same ceiling /st/v1 and the app carry.
 	if err != nil || minutes < 1 || minutes > power.MaxScheduleMinutes {
 		return c.text("bad_minutes"), nil, fmt.Errorf("invalid minutes %q", args[0])
 	}

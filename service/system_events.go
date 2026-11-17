@@ -40,6 +40,8 @@ type serviceState struct {
 	// cleared again on the next start (edge-driver doc §3.2): finding it
 	// false at startup means the PC lost power instead of shutting down.
 	CleanShutdown bool `json:"clean_shutdown"`
+	// Schedule is the armed schedule, restored at the next start (#173).
+	Schedule *savedSchedule `json:"schedule,omitempty"`
 }
 
 // lastShutdownClean is what CleanShutdown said at startup, reported by
@@ -275,6 +277,8 @@ func startupHooks(stop <-chan struct{}) {
 	// touch state.json; GET /st/v1/status reports it for this run.
 	lastShutdownClean.Store(takeCleanShutdown(path))
 	recordVersion(path, Version)
+	// A schedule saved by the previous run (#173).
+	restoreSchedule(path)
 	go emitStarted()
 	go newUpdateChecker(path, Version).run(stop)
 	// session.locked/unlocked for the SmartThings push (#68); it checks

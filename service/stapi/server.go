@@ -31,7 +31,6 @@ import (
 	"github.com/Protomothis/smartthings-pc-control/internal/httpx"
 	"github.com/Protomothis/smartthings-pc-control/internal/logx"
 	"github.com/Protomothis/smartthings-pc-control/internal/ratelimit"
-	"github.com/Protomothis/smartthings-pc-control/service/power"
 	"github.com/Protomothis/smartthings-pc-control/service/secret"
 	"github.com/Protomothis/smartthings-pc-control/service/status"
 )
@@ -46,11 +45,12 @@ const (
 	DriverAgent = "smartthings-pc-control-edge"
 	// MaxBody caps a command body; the JSON is a handful of fields.
 	MaxBody = 8 << 10
-	// MaxMinutes matches /api/schedule, the Telegram bot and the app's
-	// schedule tab: three days (#89, power.MaxScheduleMinutes). The
-	// driver's `schedule(minutes)` definition carries the same maximum, and
-	// the cloud rejects anything outside it before the hub ever sees it.
-	MaxMinutes = power.MaxScheduleMinutes
+	// MaxMinutes is the driver's `schedule(minutes)` maximum: three days
+	// (#89). The cloud rejects anything outside it before the hub ever sees
+	// it, so /st/v1 keeps it although the service's own ceiling is a week
+	// (#173, power.MaxScheduleMinutes) — a schedule armed from the app for
+	// longer still shows and cancels from SmartThings.
+	MaxMinutes = 3 * 24 * 60
 )
 
 // Server is the /st/v1 surface and the SSDP responder. The func fields are

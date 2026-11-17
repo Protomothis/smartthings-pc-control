@@ -64,6 +64,7 @@ type fakeCommands struct{}
 
 func (fakeCommands) RunNow(string, string) bool           { return false }
 func (fakeCommands) Schedule(string, time.Duration) error { return errors.New("no schedules") }
+func (fakeCommands) ScheduleAt(string, time.Time) error   { return errors.New("no schedules") }
 func (fakeCommands) CancelSchedule(string) bool           { return false }
 
 type fakeAwake struct{}

@@ -38,7 +38,8 @@ var scheduler = &power.Scheduler{
 		cmd, ok := Commands[command]
 		return cmd.Execute, ok
 	},
-	Log: logMsg,
+	Log:  logMsg,
+	Save: saveSchedule,
 	Hooks: power.Hooks{
 		Replaced: func(old power.Task, command string, origin power.Origin) {
 			emit("schedule", "replaced", map[string]string{
@@ -166,4 +167,59 @@ func takeScheduleForRun(by string) (string, bool) {
 // command on behalf of origin (#62).
 func activeScheduleSeq(command string, origin scheduleOrigin) (uint64, bool) {
 	return scheduler.ActiveSeq(command, origin)
+}
+
+// savedSchedule is the armed schedule in state.json (#173), so a service
+// restart (a reboot, an update) does not drop it.
+type savedSchedule struct {
+	Command string    `json:"command"`
+	Origin  string    `json:"origin"`
+	At      time.Time `json:"at"`
+}
+
+// saveSchedule is the scheduler's Save: the slot into state.json, or out
+// of it when t is nil. It runs under the scheduler's lock; state.json's
+// own lock is never held while taking that one.
+func saveSchedule(t *power.Task) {
+	path := statePath()
+	if path == "" {
+		return
+	}
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	st := loadState(path)
+	var next *savedSchedule
+	if t != nil {
+		next = &savedSchedule{Command: t.Command, Origin: t.Origin.String(), At: t.ExecuteAt}
+	}
+	if next == nil && st.Schedule == nil {
+		return
+	}
+	st.Schedule = next
+	if err := saveState(path, st); err != nil {
+		logMsg("WARNING: %s 저장 실패 (예약은 서비스가 다시 시작되면 사라짐): %v", stateFileName, err)
+	}
+}
+
+// restoreSchedule arms the schedule an earlier run saved, once at start.
+// One whose time passed while the service was not running is dropped
+// with a line in the log; a schedule made since the start is kept.
+func restoreSchedule(path string) {
+	if path == "" {
+		return
+	}
+	stateMu.Lock()
+	saved := loadState(path).Schedule
+	stateMu.Unlock()
+	if saved == nil {
+		return
+	}
+	if _, busy := scheduler.Current(); busy {
+		logMsg("Saved schedule %s at %s not restored: a newer schedule took the slot", saved.Command, saved.At.Format("2006-01-02 15:04"))
+		return
+	}
+	if err := scheduler.Restore(saved.Command, saved.At, power.ParseOrigin(saved.Origin)); err != nil {
+		logMsg("Saved schedule %s dropped: %v", saved.Command, err)
+		saveSchedule(nil)
+	}
 }

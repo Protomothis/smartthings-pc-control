@@ -156,3 +156,153 @@ func TestOrigin(t *testing.T) {
 		}
 	}
 }
+
+// fakeClock drives a Scheduler's clock and timers by hand.
+type fakeClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*fakeWait
+	saved  []*Task
+}
+
+type fakeWait struct {
+	d       time.Duration
+	f       func()
+	stopped bool
+}
+
+func newClocked() (*Scheduler, *recorder, *fakeClock) {
+	s, r := newRecorder()
+	c := &fakeClock{now: time.Date(2026, 11, 17, 22, 0, 0, 0, time.Local)}
+	s.Now = func() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+	s.AfterFunc = func(d time.Duration, f func()) func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		w := &fakeWait{d: d, f: f}
+		c.timers = append(c.timers, w)
+		return func() bool { w.stopped = true; return true }
+	}
+	s.Save = func(t *Task) { c.saved = append(c.saved, t) }
+	return s, r, c
+}
+
+func (c *fakeClock) advance(d time.Duration) { c.mu.Lock(); c.now = c.now.Add(d); c.mu.Unlock() }
+
+// fireLast runs the newest timer, as if its wait were over.
+func (c *fakeClock) fireLast() *fakeWait {
+	c.mu.Lock()
+	w := c.timers[len(c.timers)-1]
+	c.mu.Unlock()
+	if !w.stopped {
+		w.f()
+	}
+	return w
+}
+
+// A long wait is cut into ScheduleCheckEvery pieces, each checking the
+// wall clock: a PC that slept through the time runs the schedule at the
+// next check, not hours late (#173).
+func TestSchedulerWallClock(t *testing.T) {
+	s, r, c := newClocked()
+	if err := s.Schedule("shutdown", 2*time.Hour, OriginUI); err != nil {
+		t.Fatal(err)
+	}
+	if d := c.timers[0].d; d != ScheduleCheckEvery {
+		t.Fatalf("first wait %v, want %v", d, ScheduleCheckEvery)
+	}
+	// A piece ends early on the wall clock: the wait goes on.
+	c.advance(ScheduleCheckEvery)
+	c.fireLast()
+	if _, ok := s.Current(); !ok || len(c.timers) != 2 {
+		t.Fatalf("ran early: timers %d", len(c.timers))
+	}
+	// The PC sleeps past the time; the next piece finds it due.
+	c.advance(3 * time.Hour)
+	c.fireLast()
+	select {
+	case cmd := <-r.ran:
+		if cmd != "shutdown" {
+			t.Errorf("ran %q", cmd)
+		}
+	default:
+		t.Fatal("a due schedule did not run")
+	}
+	if _, ok := s.Current(); ok {
+		t.Error("slot not cleared")
+	}
+	if last := c.saved[len(c.saved)-1]; last != nil {
+		t.Errorf("saved %+v after the run, want nil", last)
+	}
+	// The last piece is only as long as the time left.
+	s.Schedule("lock", 10*time.Second, OriginUI)
+	if d := c.timers[len(c.timers)-1].d; d != 10*time.Second {
+		t.Errorf("short wait %v", d)
+	}
+}
+
+func TestSchedulerScheduleAt(t *testing.T) {
+	s, _, c := newClocked()
+	at := c.now.Add(6*24*time.Hour + 9*time.Hour + 30*time.Minute)
+	if err := s.ScheduleAt("restart", at, OriginUI); err != nil {
+		t.Fatal(err)
+	}
+	if cur, _ := s.Current(); !cur.ExecuteAt.Equal(at) {
+		t.Errorf("ExecuteAt %v, want %v", cur.ExecuteAt, at)
+	}
+	for _, bad := range []time.Time{c.now, c.now.Add(-time.Minute), c.now.Add(MaxScheduleDelay + 2*time.Minute)} {
+		if err := s.ScheduleAt("restart", bad, OriginUI); err == nil {
+			t.Errorf("ScheduleAt(%v) accepted", bad)
+		}
+	}
+	// A week on the dot, picked a moment before the service read it.
+	if err := s.ScheduleAt("restart", c.now.Add(MaxScheduleDelay+30*time.Second), OriginUI); err != nil {
+		t.Errorf("a week refused: %v", err)
+	}
+}
+
+// Save sees every change; a remote grace deferral is never saved.
+func TestSchedulerSaves(t *testing.T) {
+	s, _, c := newClocked()
+	s.Schedule("shutdown", time.Hour, OriginTelegram)
+	s.Schedule("restart", time.Minute, OriginRemote)
+	s.Schedule("lock", time.Hour, OriginSmartThings)
+	s.End("app", false)
+	var got []string
+	for _, t := range c.saved {
+		if t == nil {
+			got = append(got, "nil")
+			continue
+		}
+		got = append(got, t.Command+"/"+t.Origin.String())
+	}
+	want := []string{"shutdown/telegram", "nil", "lock/smartthings", "nil"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("saved %v, want %v", got, want)
+	}
+}
+
+// Restore arms a saved schedule quietly; one that is past is refused.
+func TestSchedulerRestore(t *testing.T) {
+	s, r, c := newClocked()
+	at := c.now.Add(3 * 24 * time.Hour)
+	if err := s.Restore("shutdown", at, OriginTelegram); err != nil {
+		t.Fatal(err)
+	}
+	cur, ok := s.Current()
+	if !ok || !cur.ExecuteAt.Equal(at) || cur.Origin != OriginTelegram {
+		t.Errorf("current %+v %v", cur, ok)
+	}
+	if got := r.got(); len(got) != 0 {
+		t.Errorf("restore announced: %q", got)
+	}
+	s.End("api", false)
+	if err := s.Restore("shutdown", c.now.Add(-time.Minute), OriginUI); err == nil {
+		t.Error("a missed schedule was restored")
+	}
+	if err := s.Restore("shutdown", c.now, OriginUI); err == nil {
+		t.Error("a schedule due this instant was restored")
+	}
+	if ParseOrigin("telegram") != OriginTelegram || ParseOrigin("smartthings") != OriginSmartThings || ParseOrigin("") != OriginUI || ParseOrigin("remote") != OriginRemote {
+		t.Error("ParseOrigin")
+	}
+}
