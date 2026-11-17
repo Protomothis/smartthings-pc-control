@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/health"
 	"github.com/Protomothis/smartthings-pc-control/service/wolscan"
 
 	"golang.org/x/sys/windows"
@@ -39,6 +40,8 @@ type serviceState struct {
 	// cleared again on the next start (edge-driver doc §3.2): finding it
 	// false at startup means the PC lost power instead of shutting down.
 	CleanShutdown bool `json:"clean_shutdown"`
+	// Schedule is the armed schedule, restored at the next start (#173).
+	Schedule *savedSchedule `json:"schedule,omitempty"`
 }
 
 // lastShutdownClean is what CleanShutdown said at startup, reported by
@@ -274,6 +277,8 @@ func startupHooks(stop <-chan struct{}) {
 	// touch state.json; GET /st/v1/status reports it for this run.
 	lastShutdownClean.Store(takeCleanShutdown(path))
 	recordVersion(path, Version)
+	// A schedule saved by the previous run (#173).
+	restoreSchedule(path)
 	go emitStarted()
 	go newUpdateChecker(path, Version).run(stop)
 	// session.locked/unlocked for the SmartThings push (#68); it checks
@@ -295,7 +300,14 @@ func startupHooks(stop <-chan struct{}) {
 	// script ends every tray on an update) is started once, after a grace
 	// period for the login autostart (#167).
 	go launchMissingTrays(stop)
+	// What the service holds, in service.log every 6 hours and whenever it
+	// looks like a pile-up: a leak shows long before the PC slows down.
+	go health.Watch(stop, serviceHealthLimits, logMsg)
 }
+
+// serviceHealthLimits are well above what the service holds normally
+// (around 20 threads and 500 handles).
+var serviceHealthLimits = health.Limits{Goroutines: 500, Threads: 100, Handles: 3000}
 
 // emitStarted emits power.started with the boot time and the public IP
 // ("-" when the lookup fails). It blocks on the lookup (3s timeout) and is

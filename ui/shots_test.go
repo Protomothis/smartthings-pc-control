@@ -43,6 +43,15 @@ func TestShots(t *testing.T) {
 			// what the window shows at its default size
 			shot(t, u, dir, "window-"+name, winH, u.layout)
 
+			// the schedule card picking a clock time tomorrow, wide
+			u.home.schedPick = gui.SchedulePick{At: true, Day: 1, Hour: 7, Minute: 30}
+			shotW(t, dir, "home-at-1200-"+name, 1200, 0, func(gtx C) D { return u.homeColumn(gtx, u.current()) })
+			u.home.schedPick = gui.SchedulePick{Hours: 1, Mins: 30}
+			shotW(t, dir, "home-after-1200-"+name, 1200, 0, func(gtx C) D { return u.homeColumn(gtx, u.current()) })
+			u.home.schedPick = gui.SchedulePick{At: true, Hour: 0}
+			shotW(t, dir, "home-past-1200-"+name, 1200, 0, func(gtx C) D { return u.homeColumn(gtx, u.current()) })
+			u.home.schedPick = gui.DefaultSchedulePick(time.Now())
+
 			// a running schedule and an armed destructive command
 			u.update(func(s *snapshot) {
 				s.sched = gui.Schedule{Active: true, Command: "shutdown", RemainingSec: 1530, Origin: "remote"}
@@ -111,7 +120,7 @@ func sampleUI(lang gui.Lang, dark bool) *UI {
 	if dark {
 		p.Set(prefTheme, "dark")
 	}
-	u := New(fakeAPI{}, "v1.2.4", p, func() {})
+	u := New(fakeAPI{}, "v1.2.5", p, func() {})
 	u.th = newTheme()
 	u.setDark(dark)
 	vol, muted, dev := 42, false, "스피커 (Realtek(R) Audio)"

@@ -151,6 +151,10 @@ func (uiCommands) Schedule(command string, delay time.Duration) error {
 	return setSchedule(command, delay, originUI)
 }
 
+func (uiCommands) ScheduleAt(command string, at time.Time) error {
+	return scheduler.ScheduleAt(command, at, originUI)
+}
+
 func (uiCommands) CancelSchedule(by string) bool { return cancelScheduleBy(by) }
 
 // telegramInfo is what the app's notify tab asks about Telegram.

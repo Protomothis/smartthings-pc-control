@@ -167,3 +167,44 @@ func TestParentDir(t *testing.T) {
 		}
 	}
 }
+
+// GET /api/config says when it masked the presets, so the desktop app can
+// tell a lapsed local session (a service restart it missed) from a config
+// that really has no presets, and log in again.
+func TestConfigSaysPresetsMasked(t *testing.T) {
+	s := newTestServer(t, config.Config{Port: 5001, Presets: []config.Preset{
+		{Slot: 1, Name: "notepad", Type: "program", Path: `C:\Windows\notepad.exe`, Args: []string{"x"}},
+	}})
+	read := func(r *http.Request) map[string]any {
+		w := httptest.NewRecorder()
+		s.Routes(false).ServeHTTP(w, r)
+		var got map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("GET /api/config: %d %s", w.Code, w.Body.String())
+		}
+		return got
+	}
+	plain := httptest.NewRequest("GET", "/api/config", nil)
+	plain.RemoteAddr = "127.0.0.1:52431"
+	got := read(plain)
+	ps := got["presets"].([]any)
+	if got["presets_masked"] != true || ps[0].(map[string]any)["path"] != "" {
+		t.Errorf("without the local session: masked=%v presets=%v", got["presets_masked"], ps)
+	}
+
+	// A stale cookie (the token changed when the service restarted) is the
+	// same as none.
+	s.SetLocalSessionToken("now")
+	stale := httptest.NewRequest("GET", "/api/config", nil)
+	stale.RemoteAddr = "127.0.0.1:52431"
+	stale.AddCookie(&http.Cookie{Name: "session", Value: "before-restart"})
+	if got := read(stale); got["presets_masked"] != true {
+		t.Errorf("stale cookie: masked=%v", got["presets_masked"])
+	}
+
+	got = read(localRequest(s, httptest.NewRequest("GET", "/api/config", nil)))
+	ps = got["presets"].([]any)
+	if _, ok := got["presets_masked"]; ok || ps[0].(map[string]any)["path"] != `C:\Windows\notepad.exe` {
+		t.Errorf("local session: masked=%v presets=%v", got["presets_masked"], ps)
+	}
+}

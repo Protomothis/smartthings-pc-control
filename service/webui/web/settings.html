@@ -80,7 +80,7 @@ footer{text-align:center;font-size:.85em;color:var(--muted)}
 <option value="hibernate" data-i18n="optHibernate">Hibernate</option>
 <option value="forceshutdown" data-i18n="optForce">Force shut down</option>
 </select>
-<input type="number" id="schedMin" min="1" max="4320" value="30" style="width:80px"><span data-i18n="minLater">min later</span>
+<input type="number" id="schedMin" min="1" max="10080" value="30" style="width:80px"><span data-i18n="minLater">min later</span>
 <button class="btn primary" onclick="scheduleCmd()" data-i18n="scheduleBtn">Schedule</button>
 </div>
 </section>
@@ -136,7 +136,7 @@ const i18n = {
         save: '💾 Save', restartService: '🔄 Restart service', otherSettings: 'Other settings are in the PC app.',
         confirmExec: 'Run {cmd} now? It affects the PC immediately.', confirmSchedule: 'Schedule {cmd} in {min} minutes?',
         confirmCancel: 'Cancel the scheduled task?', confirmRestart: 'Restart the service? This page disconnects briefly.',
-        sent: '{cmd} sent', failed: 'Request failed', badMinutes: 'Minutes must be between 1 and 4320',
+        sent: '{cmd} sent', failed: 'Request failed', badMinutes: 'Minutes must be between 1 and 10080',
         badGrace: 'Grace period must be between 5 and 3600 seconds', badPort: 'Port must be between 1 and 65535',
         restarting: 'Service restarting…', d: 'd', h: 'h', m: 'm', s: 's',
     },
@@ -159,7 +159,7 @@ const i18n = {
         save: '💾 저장', restartService: '🔄 서비스 재시작', otherSettings: '나머지 설정은 PC의 앱에서',
         confirmExec: '{cmd}을(를) 지금 실행할까요? PC에 바로 적용됩니다.', confirmSchedule: '{min}분 후 {cmd}을(를) 예약할까요?',
         confirmCancel: '예약된 작업을 취소할까요?', confirmRestart: '서비스를 재시작할까요? 잠시 연결이 끊깁니다.',
-        sent: '{cmd} 보냄', failed: '요청 실패', badMinutes: '분은 1~4320 사이여야 합니다',
+        sent: '{cmd} 보냄', failed: '요청 실패', badMinutes: '분은 1~10080 사이여야 합니다',
         badGrace: '유예 시간은 5~3600초 사이여야 합니다', badPort: '포트는 1~65535 사이여야 합니다',
         restarting: '서비스를 재시작합니다…', d: '일 ', h: '시간 ', m: '분 ', s: '초',
     }
@@ -252,7 +252,7 @@ async function runCmd(cmd) {
 }
 async function scheduleCmd() {
     const command = $('schedCmd').value, minutes = parseInt($('schedMin').value, 10);
-    if (!(minutes >= 1 && minutes <= 4320)) { toast(t('badMinutes'), 'error'); return; }
+    if (!(minutes >= 1 && minutes <= 10080)) { toast(t('badMinutes'), 'error'); return; }
     if (!confirm(t('confirmSchedule').replace('{cmd}', cmdName(command)).replace('{min}', minutes))) return;
     try { const d = await api('POST', '/api/schedule', {command, minutes}); toast(d.message, 'success'); }
     catch (e) { toast(t('failed') + ': ' + e.message, 'error'); }

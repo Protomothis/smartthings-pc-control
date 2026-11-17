@@ -316,7 +316,7 @@ func (p *sharePage) watchCard(gtx C, u *UI, locked bool) D {
 	children := []layout.FlexChild{}
 	if locked {
 		children = append(children,
-			layout.Rigid(func(gtx C) D { return banner(gtx, th, noticeWarn, u.t("localonly.note")) }),
+			layout.Rigid(func(gtx C) D { return banner(gtx, th, noticeWarn, u.lockedNote()) }),
 			vspace(gapS))
 	}
 	children = append(children,

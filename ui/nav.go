@@ -78,6 +78,9 @@ func (n *nav) push(u *UI, s screen) {
 		sh.shown(u, u.current())
 	}
 	u.pageList.Position = layout.Position{}
+	// The tap that opened it was handled mid-frame, over the screen it
+	// leaves: draw the new one now, not at the next mouse move or poll.
+	u.invalidate()
 }
 
 // back pops the top page, unless it has unsaved changes and this is the
@@ -99,5 +102,6 @@ func (n *nav) back(u *UI, now time.Time) bool {
 	n.stack = n.stack[:len(n.stack)-1]
 	n.leaving = time.Time{}
 	u.pageList.Position = layout.Position{}
+	u.invalidate()
 	return true
 }

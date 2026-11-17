@@ -15,12 +15,18 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"image"
 	"path/filepath"
 	"time"
 
 	"gioui.org/font"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
+	"gioui.org/text"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -52,9 +58,6 @@ var (
 	}
 )
 
-// scheduleQuick is how many delays show before 더 보기 opens all of them.
-const scheduleQuick = 6
-
 // homeState is the home screen's widgets. Window goroutine only.
 type homeState struct {
 	secret  secretField
@@ -75,17 +78,23 @@ type homeState struct {
 	vol                    widget.Float
 	volPending             bool
 
-	schedCmds     chipGroup
-	schedCmdSel   int
-	schedDelays   chipGroup
-	schedDelaySel int
-	schedAll      bool
-	schedMore     widget.Clickable
-	schedStart    widget.Clickable
-	schedCancel   widget.Clickable
+	schedCmds   chipGroup
+	schedCmdSel int
+	// schedPick is when a new schedule runs: a length of time or a clock
+	// time, picked with wheels (gui.SchedulePick).
+	schedPick             gui.SchedulePick
+	schedModes, schedDays chipGroup
+	schedWheels           [2]wheel
+	schedStart            widget.Clickable
+	schedCancel           widget.Clickable
 
 	presetRun []widget.Clickable
-	presetAdd widget.Clickable
+	// presetOpen: a tap on a preset (not its [실행]) opens it in the
+	// presets page.
+	presetOpen []widget.Clickable
+	// presetEdit: the [편집] button, the same as a tap on the preset.
+	presetEdit []widget.Clickable
+	presetAdd  widget.Clickable
 
 	stRow, tgRow, shareRow widget.Clickable
 
@@ -102,7 +111,7 @@ type homeState struct {
 func (h *homeState) init() {
 	h.awakeSel = -1
 	h.schedCmdSel = 0
-	h.schedDelaySel = indexOf(gui.SchedulePresets(), gui.DefaultSchedulePreset)
+	h.schedPick = gui.DefaultSchedulePick(time.Now())
 	h.autostart.Value = gui.AutostartEnabled()
 }
 
@@ -641,58 +650,192 @@ func (u *UI) scheduleCard(gtx C, s snapshot) D {
 	}
 	h := &u.home
 	l := u.language()
+	pk := &h.schedPick
 	cmds := gui.ScheduleCommands()
-	delays := gui.SchedulePresets()
 	if i := h.schedCmds.Clicked(gtx, len(cmds)); i >= 0 {
 		h.schedCmdSel = i
 	}
-	shown := delays
-	if !h.schedAll {
-		shown = delays[:scheduleQuick]
+	if i := h.schedModes.Clicked(gtx, 2); i >= 0 {
+		pk.At = i == 1
 	}
-	if i := h.schedDelays.Clicked(gtx, len(shown)); i >= 0 {
-		h.schedDelaySel = i
+	if i := h.schedDays.Clicked(gtx, gui.ScheduleDays); i >= 0 {
+		pk.Day = i
 	}
-	if h.schedMore.Clicked(gtx) {
-		h.schedAll = !h.schedAll
+	now := gtx.Now
+	if now.IsZero() {
+		now = time.Now()
 	}
-	if h.schedStart.Clicked(gtx) && h.schedDelaySel >= 0 {
-		cmd, minutes := cmds[h.schedCmdSel].Name, delays[h.schedDelaySel]
-		u.act(func() error { return u.api.SetSchedule(cmd, minutes) }, "", u.loadSchedule)
+	if h.schedStart.Clicked(gtx) {
+		if minutes, problem := pk.Minutes(time.Now()); problem == "" {
+			cmd := cmds[h.schedCmdSel].Name
+			if pk.At {
+				at := pk.When(time.Now())
+				u.act(func() error { return u.api.SetScheduleAt(cmd, minutes, at) }, "", u.loadSchedule)
+			} else {
+				u.act(func() error { return u.api.SetSchedule(cmd, minutes) }, "", u.loadSchedule)
+			}
+		}
 	}
+	// The summary names a clock time: redraw when the minute turns.
+	gtx.Execute(op.InvalidateCmd{At: now.Truncate(time.Minute).Add(time.Minute)})
+
 	cmdLabels := make([]string, len(cmds))
 	for i, c := range cmds {
 		cmdLabels[i] = u.t(c.LabelKey)
 	}
-	delayLabels := make([]string, len(shown))
-	for i, m := range shown {
-		delayLabels[i] = gui.FormatMinutes(l, m)
+	modeSel := 0
+	if pk.At {
+		modeSel = 1
 	}
-	sel := h.schedDelaySel
-	if sel >= len(shown) {
-		sel = -1 // picked from the full list, now folded away
+	// The wheels take their input while they are laid out, so the summary
+	// and the start button read the pick after them.
+	ok := true
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx C) D {
+			return cardTitle(gtx, u.th, u.t("tab.schedule"), label(u.th, textM, u.t("schedule.none"), colSub, font.Normal).Layout)
+		}),
+		vspace(gapM),
+		fieldLabel(u.th, u.t("schedule.command")),
+		layout.Rigid(func(gtx C) D { return h.schedCmds.Layout(gtx, u.th, cmdLabels, h.schedCmdSel) }),
+		vspace(gapM),
+		fieldLabel(u.th, u.t("schedule.when")),
+		layout.Rigid(func(gtx C) D {
+			return h.schedModes.Layout(gtx, u.th, []string{u.t("schedule.mode.after"), u.t("schedule.mode.at")}, modeSel)
+		}),
 	}
-	moreTxt := u.t("home.more")
-	if h.schedAll {
-		moreTxt = u.t("home.less")
+	if pk.At {
+		children = append(children, vspace(gapS), layout.Rigid(func(gtx C) D {
+			return dayStrip(gtx, u.th, &h.schedDays, pk.Day, func(i int) (string, string) { return gui.ScheduleDayCell(l, now, i) })
+		}))
 	}
-	return card(gtx, func(gtx C) D {
-		return column(gtx,
-			layout.Rigid(func(gtx C) D {
-				return cardTitle(gtx, u.th, u.t("tab.schedule"), label(u.th, textM, u.t("schedule.none"), colSub, font.Normal).Layout)
-			}),
-			vspace(gapM),
-			fieldLabel(u.th, u.t("schedule.command")),
-			layout.Rigid(func(gtx C) D { return h.schedCmds.Layout(gtx, u.th, cmdLabels, h.schedCmdSel) }),
-			vspace(gapM),
-			fieldLabel(u.th, u.t("schedule.delay")),
-			layout.Rigid(func(gtx C) D { return h.schedDelays.Layout(gtx, u.th, delayLabels, sel) }),
-			vspace(gapXS),
-			layout.Rigid(smallButton(u.th, &h.schedMore, moreTxt, colAccent).Layout),
-			vspace(gapM),
-			layout.Rigid(fill(primaryButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)),
-		)
-	})
+	children = append(children,
+		vspace(gapS),
+		layout.Rigid(func(gtx C) D {
+			return surface(gtx, colGhost, radiusM, func(gtx C) D {
+				return layout.UniformInset(gapS).Layout(gtx, func(gtx C) D {
+					return column(gtx,
+						layout.Rigid(func(gtx C) D { return u.scheduleWheels(gtx) }),
+						vspace(gapXS),
+						layout.Rigid(func(gtx C) D {
+							summary, good := gui.ScheduleSummary(l, *pk, now)
+							ok = good
+							col := colSub
+							if !good {
+								col = colDanger
+							}
+							lb := label(u.th, textM, summary, col, font.Medium)
+							lb.Alignment = text.Middle
+							return lb.Layout(gtx)
+						}),
+						vspace(4),
+					)
+				})
+			})
+		}),
+		vspace(gapM),
+		layout.Rigid(func(gtx C) D {
+			if !ok { // nothing to start until the pick is fixed
+				return fill(greyButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)(gtx)
+			}
+			return fill(primaryButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)(gtx)
+		}),
+	)
+	return card(gtx, func(gtx C) D { return column(gtx, children...) })
+}
+
+// schedWheelW is one wheel's width.
+const schedWheelW unit.Dp = 92
+
+// scheduleWheels draws the two wheels of the pick on the band that marks
+// the chosen row: hours and minutes of a length, or the hour and minute of
+// a clock time with a colon between them.
+func (u *UI) scheduleWheels(gtx C) D {
+	h := &u.home
+	pk := &h.schedPick
+	step := gui.ScheduleMinuteStep
+	a, b := &h.schedWheels[0], &h.schedWheels[1]
+	sep := func(gtx C) D { return D{Size: image.Pt(gtx.Dp(gapS), 0)} }
+	var wa, wb layout.Widget
+	if pk.At {
+		wa = func(gtx C) D {
+			d, v := a.Layout(gtx, u.th, schedWheelW, 24, pk.Hour, true, func(i int) string { return fmt.Sprintf("%02d", i) })
+			pk.Hour = v
+			return d
+		}
+		wb = func(gtx C) D {
+			d, v := b.Layout(gtx, u.th, schedWheelW, 60/step, pk.Minute/step, true, func(i int) string { return fmt.Sprintf("%02d", i*step) })
+			pk.Minute = v * step
+			return d
+		}
+		sep = func(gtx C) D {
+			return layout.Inset{Left: 4, Right: 4}.Layout(gtx, line(u.th, titleSize, ":", colText, font.SemiBold).Layout)
+		}
+	} else {
+		wa = func(gtx C) D {
+			d, v := a.Layout(gtx, u.th, schedWheelW, gui.ScheduleMaxHours+1, pk.Hours, false, func(i int) string { return fmt.Sprintf(u.t("schedule.unit.hours"), i) })
+			pk.Hours = v
+			return d
+		}
+		wb = func(gtx C) D {
+			d, v := b.Layout(gtx, u.th, schedWheelW, 60/step, pk.Mins/step, true, func(i int) string { return fmt.Sprintf(u.t("schedule.unit.mins"), i*step) })
+			pk.Mins = v * step
+			return d
+		}
+	}
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
+	return layout.Stack{}.Layout(gtx,
+		// The band behind the middle row: the chosen values.
+		layout.Expanded(func(gtx C) D {
+			rowH := gtx.Dp(wheelRowH)
+			y := (gtx.Constraints.Min.Y - rowH) / 2
+			r := image.Rect(0, y, gtx.Constraints.Min.X, y+rowH)
+			paint.FillShape(gtx.Ops, colCard, clip.UniformRRect(r, gtx.Dp(radiusS)).Op(gtx.Ops))
+			return D{Size: gtx.Constraints.Min}
+		}),
+		layout.Stacked(func(gtx C) D {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceSides}.Layout(gtx,
+				layout.Rigid(wa), layout.Rigid(sep), layout.Rigid(wb))
+		}),
+	)
+}
+
+// dayStrip is a week of days in equal cells, a word over the date (오늘
+// 17, 내일 18, 목 19 …), the chosen one in accent.
+func dayStrip(gtx C, th *material.Theme, g *chipGroup, sel int, cell func(int) (string, string)) D {
+	g.grow(gui.ScheduleDays)
+	children := make([]layout.FlexChild, 0, 2*gui.ScheduleDays)
+	for i := range gui.ScheduleDays {
+		if i > 0 {
+			children = append(children, hspace(4))
+		}
+		children = append(children, layout.Flexed(1, func(gtx C) D {
+			top, date := cell(i)
+			clk := &g.clks[i]
+			return clk.Layout(gtx, func(gtx C) D {
+				fg, sub, bg := colText, colSub, colGhost
+				if i == sel {
+					fg, sub, bg = colOnAccent, colOnAccent, colAccent
+				} else {
+					pointer.CursorPointer.Add(gtx.Ops)
+					if clk.Hovered() {
+						bg = mix(bg, colText, 0.06)
+					}
+				}
+				w, hgt := gtx.Constraints.Max.X, gtx.Dp(52)
+				paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rect(0, 0, w, hgt), gtx.Dp(radiusS)).Op(gtx.Ops))
+				gtx.Constraints = layout.Exact(image.Pt(w, hgt))
+				return layout.Center.Layout(gtx, func(gtx C) D {
+					gtx.Constraints.Min.X = 0
+					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(line(th, textS, top, sub, font.Normal).Layout),
+						layout.Rigid(line(th, textL, date, fg, font.SemiBold).Layout),
+					)
+				})
+			})
+		}))
+	}
+	return layout.Flex{}.Layout(gtx, children...)
 }
 
 func (u *UI) scheduleActive(gtx C, s snapshot) D {
@@ -734,11 +877,21 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 	presets := s.cfg.Presets
 	if len(h.presetRun) < len(presets) {
 		h.presetRun = make([]widget.Clickable, len(presets))
+		h.presetOpen = make([]widget.Clickable, len(presets))
+		h.presetEdit = make([]widget.Clickable, len(presets))
 	}
 	for i, p := range presets {
 		if h.presetRun[i].Clicked(gtx) {
 			slot, name := p.Slot, p.Name
 			u.act(func() error { return u.api.RunPreset(slot) }, fmt.Sprintf(u.t("cmd.presets.started"), name), nil)
+		}
+	}
+	for i, p := range presets {
+		// [편집] and a tap on the preset itself both open it.
+		if h.presetEdit[i].Clicked(gtx) || h.presetOpen[i].Clicked(gtx) {
+			if pg, ok := u.pages[pagePresets].(*presetsPage); ok {
+				pg.OpenSlot(u, p.Slot)
+			}
 		}
 	}
 	if h.presetAdd.Clicked(gtx) {
@@ -765,16 +918,28 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 			children = append(children, layout.Rigid(func(gtx C) D {
 				return layout.Inset{Top: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
 					return row(gtx,
-						layout.Rigid(func(gtx C) D { return slotBadge(gtx, u.th, p.Slot) }),
-						hspace(gapS),
 						layout.Flexed(1, func(gtx C) D {
-							return column(gtx,
-								layout.Rigid(line(u.th, textL, p.Name, colText, font.Medium).Layout),
-								vspace(2),
-								layout.Rigid(line(u.th, textS, u.presetLine(p), colSub, font.Normal).Layout),
-							)
+							return h.presetOpen[i].Layout(gtx, func(gtx C) D {
+								pointer.CursorPointer.Add(gtx.Ops)
+								gtx.Constraints.Min.X = gtx.Constraints.Max.X
+								return row(gtx,
+									layout.Rigid(func(gtx C) D { return slotBadge(gtx, u.th, p.Slot) }),
+									hspace(gapS),
+									layout.Flexed(1, func(gtx C) D {
+										return column(gtx,
+											layout.Rigid(line(u.th, textL, p.Name, colText, font.Medium).Layout),
+											vspace(2),
+											layout.Rigid(line(u.th, textS, u.presetLine(p), colSub, font.Normal).Layout),
+										)
+									}),
+								)
+							})
 						}),
 						hspace(gapS),
+						layout.Rigid(func(gtx C) D {
+							return smallButton(u.th, &h.presetEdit[i], u.t("home.edit"), colText).Layout(gtx)
+						}),
+						hspace(gapXS),
 						layout.Rigid(func(gtx C) D {
 							b := smallButton(u.th, &h.presetRun[i], u.t("home.run"), colAccent)
 							b.Background = colAccentDim
@@ -791,8 +956,11 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 // presetLine is a preset's grey line: its kind and target.
 func (u *UI) presetLine(p gui.Preset) string {
 	target := p.Path
-	if p.Type != "url" {
+	if p.Type != "url" && target != "" {
 		target = filepath.Base(p.Path)
+	}
+	if target == "" {
+		return u.t("presets.type." + p.Type)
 	}
 	return u.t("presets.type."+p.Type) + " · " + target
 }

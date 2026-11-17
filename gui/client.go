@@ -44,6 +44,10 @@ type Config struct {
 	// omitempty: a POST without the key keeps the stored value, so "off"
 	// has to be sent.
 	Debug bool `json:"debug"`
+	// PresetsMasked is the service saying Presets come without their
+	// paths and arguments: this client has no local trusted session. Read
+	// only; never sent back (wireConfig).
+	PresetsMasked bool `json:"presets_masked,omitempty"`
 }
 
 // NotifyPCConfig mirrors service.NotifyPCConfig.
@@ -558,9 +562,20 @@ func (c *Client) GetSchedule() (Schedule, error) {
 	return s, json.NewDecoder(resp.Body).Decode(&s)
 }
 
+// SetScheduleAt schedules a command at a clock time (#173). minutes, the
+// same moment as a delay, goes along for a service from before "at", which
+// reads it instead.
+func (c *Client) SetScheduleAt(command string, minutes int, at time.Time) error {
+	return c.postSchedule(map[string]any{"command": command, "minutes": minutes, "at": at.Format(time.RFC3339)})
+}
+
 // SetSchedule schedules a command after the given number of minutes.
 func (c *Client) SetSchedule(command string, minutes int) error {
-	resp, err := c.do("POST", "/api/schedule", map[string]any{"command": command, "minutes": minutes})
+	return c.postSchedule(map[string]any{"command": command, "minutes": minutes})
+}
+
+func (c *Client) postSchedule(body map[string]any) error {
+	resp, err := c.do("POST", "/api/schedule", body)
 	if err != nil {
 		return err
 	}

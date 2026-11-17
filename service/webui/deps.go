@@ -103,6 +103,8 @@ type Commands interface {
 	RunNow(name, by string) bool
 	// Schedule arms command to run after delay.
 	Schedule(command string, delay time.Duration) error
+	// ScheduleAt arms command to run at a clock time (#173).
+	ScheduleAt(command string, at time.Time) error
 	// CancelSchedule ends the schedule on behalf of by; false when there
 	// was none.
 	CancelSchedule(by string) bool

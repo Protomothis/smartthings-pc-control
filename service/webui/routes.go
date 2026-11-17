@@ -254,25 +254,44 @@ func (s *Server) serveSchedule(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Command string `json:"command"`
 			Minutes int    `json:"minutes"`
+			// At (RFC3339), when given, is the clock time to run at and
+			// wins over Minutes (#173). The app sends both, so a service
+			// from before it still gets a delay it understands.
+			At string `json:"at"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "Invalid JSON"})
 			return
 		}
-		// #89: the same ceiling as /st/v1, the Telegram bot and the app.
-		if body.Minutes < 1 || body.Minutes > power.MaxScheduleMinutes {
+		fail := func(msg string) {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"status": "error",
-				"message": fmt.Sprintf("Minutes must be between 1 and %d", power.MaxScheduleMinutes)})
-			return
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": msg})
 		}
-		if err := s.d.Commands.Schedule(body.Command, time.Duration(body.Minutes)*time.Minute); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
-			return
+		var msg string
+		if body.At != "" {
+			at, err := time.Parse(time.RFC3339, body.At)
+			if err != nil {
+				fail("at must be an RFC 3339 time")
+				return
+			}
+			if err := s.d.Commands.ScheduleAt(body.Command, at); err != nil {
+				fail(err.Error())
+				return
+			}
+			msg = fmt.Sprintf("%s scheduled at %s", body.Command, at.Local().Format("2006-01-02 15:04"))
+		} else {
+			// #89: the same ceiling as /st/v1, the Telegram bot and the app.
+			if body.Minutes < 1 || body.Minutes > power.MaxScheduleMinutes {
+				fail(fmt.Sprintf("Minutes must be between 1 and %d", power.MaxScheduleMinutes))
+				return
+			}
+			if err := s.d.Commands.Schedule(body.Command, time.Duration(body.Minutes)*time.Minute); err != nil {
+				fail(err.Error())
+				return
+			}
+			msg = fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)
 		}
-		msg := fmt.Sprintf("%s scheduled in %d minutes", body.Command, body.Minutes)
 		if rep, ok := s.d.Status.Schedule()["replaced"].(*power.Replaced); ok && rep != nil {
 			msg += fmt.Sprintf(" (replaced %s schedule: %s)", rep.Origin, rep.Command)
 		}
@@ -338,6 +357,12 @@ func (s *Server) serveCommand(w http.ResponseWriter, r *http.Request) {
 type configView struct {
 	config.Config
 	Telegram telegramConfigView `json:"telegram"`
+	// PresetsMasked says the presets come without what they run
+	// (maskPresets): the caller has no local trusted session. The desktop
+	// app takes it as its session having lapsed — a service restart it
+	// did not notice — logs in again and reads once more, rather than
+	// showing every preset with an empty path.
+	PresetsMasked bool `json:"presets_masked,omitempty"`
 }
 
 type telegramConfigView struct {
@@ -377,6 +402,7 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 		view := maskedConfig(liveCfg)
 		if !local {
 			view.Presets = maskPresets(view.Presets)
+			view.PresetsMasked = true
 		}
 		httpx.WriteJSON(w, http.StatusOK, view)
 		return

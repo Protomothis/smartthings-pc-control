@@ -90,14 +90,14 @@ func (u *UI) connect() {
 	if trustState(u.trust.Load()) != trustLocal {
 		u.relogin() // refused or unreachable: GetConfig says which
 	}
-	cfg, err := u.api.GetConfig()
+	cfg, err := u.readConfig()
 	if err != nil && !gui.IsUnauthorized(err) {
 		// The service may have come back on another port (#121).
 		if p := gui.LocalWebUIPort(); p != u.current().port {
 			u.api.SetPort(p)
 			u.update(func(s *snapshot) { s.port = p })
 			u.relogin()
-			cfg, err = u.api.GetConfig()
+			cfg, err = u.readConfig()
 		}
 	}
 	switch {
@@ -135,6 +135,29 @@ func (u *UI) lost(err error) {
 // session, so the next connect asks again. A refusal is kept.
 func (u *UI) forgetSession() {
 	u.trust.CompareAndSwap(int32(trustLocal), int32(trustUnknown))
+}
+
+// readConfig reads the config. One that comes with the preset paths
+// masked although the service never refused this process means its local
+// session lapsed: the service restarted between two polls, too quickly
+// for one to fail, and without a secret the stale cookie is not even a
+// 401. It logs in again and reads once more. Still masked, the editors
+// lock (editorsLocked) instead of showing presets with empty paths. Off
+// the window goroutine.
+func (u *UI) readConfig() (gui.Config, error) {
+	cfg, err := u.api.GetConfig()
+	if err == nil && cfg.PresetsMasked && trustState(u.trust.Load()) != trustRefused {
+		u.trust.Store(int32(trustUnknown))
+		if u.relogin() {
+			if again, err2 := u.api.GetConfig(); err2 == nil {
+				cfg = again
+			}
+		}
+	}
+	if err == nil {
+		u.masked.Store(cfg.PresetsMasked && trustState(u.trust.Load()) != trustRefused)
+	}
+	return cfg, err
 }
 
 // setConfig records a config read from the service: the forms adopt it at
@@ -201,7 +224,7 @@ func (u *UI) loadLogs() {
 }
 
 func (u *UI) loadConfig() {
-	cfg, err := u.api.GetConfig()
+	cfg, err := u.readConfig()
 	if err != nil {
 		u.lost(err)
 		return

@@ -175,3 +175,46 @@ func waitTasks(t *testing.T, u *UI, done func() bool) {
 	}
 	t.Fatal("never finished")
 }
+
+// A tap on a preset in the home card opens the presets page on that
+// preset: opened, the others closed, scrolled down to it, highlighted.
+func TestPresetsOpenSlot(t *testing.T) {
+	u := sampleUI(gui.LangKo, false)
+	p := u.pages[pagePresets].(*presetsPage)
+	p.rows[0].open = true
+	p.OpenSlot(u, 3)
+	if top := u.nav.stack[len(u.nav.stack)-1]; top != screen(p) {
+		t.Fatalf("top page = %T", top)
+	}
+	if p.rows[0].open || p.rows[1].open || !p.rows[2].open {
+		t.Fatalf("open = %v %v %v", p.rows[0].open, p.rows[1].open, p.rows[2].open)
+	}
+	if p.arrive != p.rows[2] {
+		t.Fatal("no arrival for slot 3")
+	}
+	frames(u, winW, 300, 3)
+	if p.arrive != nil {
+		t.Fatal("still waiting to scroll after three frames")
+	}
+	// The highlight starts once the row is on screen, not at the tap.
+	if !p.rows[2].glowUntil.After(time.Now()) {
+		t.Error("no highlight after arriving")
+	}
+	if off := u.pageList.Position.Offset; off <= 0 {
+		t.Errorf("not scrolled to slot 3: offset %d", off)
+	}
+
+	// The first preset needs no scroll; a slot that is gone just opens
+	// the page.
+	u.nav.stack = nil
+	p.OpenSlot(u, 1)
+	frames(u, winW, 300, 3)
+	if !p.rows[0].open || p.arrive != nil {
+		t.Errorf("slot 1: open=%v arrive=%v", p.rows[0].open, p.arrive)
+	}
+	u.nav.stack = nil
+	p.OpenSlot(u, 9)
+	if p.arrive != nil || len(u.nav.stack) != 1 {
+		t.Errorf("missing slot: arrive=%v stack=%d", p.arrive, len(u.nav.stack))
+	}
+}
