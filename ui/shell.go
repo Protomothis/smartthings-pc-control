@@ -62,7 +62,21 @@ func (u *UI) relogin() bool {
 // it would refuse a save that changes the presets or the watch list. The
 // pages that edit those show why and keep their save off; the save path
 // sends both as "keep" (gui.WireConfig).
-func (u *UI) editorsLocked() bool { return trustState(u.trust.Load()) == trustRefused }
+//
+// A config that still came masked after readConfig tried to log in again
+// locks them too: its presets have no paths, and saving them as shown
+// would empty every one (the service refuses that anyway).
+// lockedNote says why the editors are locked.
+func (u *UI) lockedNote() string {
+	if trustState(u.trust.Load()) != trustRefused && u.masked.Load() {
+		return u.t("localonly.relogin")
+	}
+	return u.t("localonly.note")
+}
+
+func (u *UI) editorsLocked() bool {
+	return trustState(u.trust.Load()) == trustRefused || u.masked.Load()
+}
 
 // withLocalSession runs call and, when the service wants the local session
 // again (it restarted, the secret changed), obtains it once more and

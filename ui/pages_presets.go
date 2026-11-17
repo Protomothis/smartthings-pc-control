@@ -313,7 +313,7 @@ func (p *presetsPage) body(gtx C, u *UI, _ snapshot) D {
 
 	blocks := []layout.Widget{}
 	if locked {
-		blocks = append(blocks, func(gtx C) D { return banner(gtx, th, noticeWarn, u.t("localonly.note")) })
+		blocks = append(blocks, func(gtx C) D { return banner(gtx, th, noticeWarn, u.lockedNote()) })
 	}
 	header := fmt.Sprintf(u.t("ui.presets.count"), len(p.rows), gui.PresetMaxSlots)
 	blocks = append(blocks,

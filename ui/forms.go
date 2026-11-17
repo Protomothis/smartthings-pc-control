@@ -228,7 +228,7 @@ func (u *UI) sendConfig(f form, base, sent gui.Config) {
 			}
 		}
 		var err error
-		if out.fresh, err = u.api.GetConfig(); err != nil {
+		if out.fresh, err = u.readConfig(); err != nil {
 			out.fresh = gui.SavedFallback(sent, base.Telegram.BotToken)
 		}
 	}

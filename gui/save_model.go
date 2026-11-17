@@ -53,6 +53,7 @@ func savedFallback(sent Config, oldMasked string) Config {
 // (C5) the presets came masked and the service refuses any change to them
 // or to the watch list, so both travel as null: "keep the stored ones".
 func wireConfig(sent Config, locked bool) Config {
+	sent.PresetsMasked = false
 	if locked {
 		sent.Presets = nil
 		sent.Activity.Watch = nil

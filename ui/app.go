@@ -64,11 +64,15 @@ type UI struct {
 	userQuit atomic.Bool
 	tasks    []func() // onWindow's queue, under mu
 
-	gate      loginGate
-	trust     atomic.Int32 // a trustState
+	gate  loginGate
+	trust atomic.Int32 // a trustState
+	// masked: the last config came with the preset paths masked although
+	// the session was not refused (readConfig could not log in again).
+	masked    atomic.Bool
 	grace     gui.GraceWatch
 	heartbeat gui.HeartbeatSender
 	mediaBusy atomic.Bool // a media change check is in flight
+	hbBusy    atomic.Bool // a full heartbeat is in flight
 	hwnd      atomic.Uintptr
 
 	// Window goroutine only.

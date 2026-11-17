@@ -338,6 +338,12 @@ func (s *Server) serveCommand(w http.ResponseWriter, r *http.Request) {
 type configView struct {
 	config.Config
 	Telegram telegramConfigView `json:"telegram"`
+	// PresetsMasked says the presets come without what they run
+	// (maskPresets): the caller has no local trusted session. The desktop
+	// app takes it as its session having lapsed — a service restart it
+	// did not notice — logs in again and reads once more, rather than
+	// showing every preset with an empty path.
+	PresetsMasked bool `json:"presets_masked,omitempty"`
 }
 
 type telegramConfigView struct {
@@ -377,6 +383,7 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 		view := maskedConfig(liveCfg)
 		if !local {
 			view.Presets = maskPresets(view.Presets)
+			view.PresetsMasked = true
 		}
 		httpx.WriteJSON(w, http.StatusOK, view)
 		return

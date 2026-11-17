@@ -44,6 +44,10 @@ type Config struct {
 	// omitempty: a POST without the key keeps the stored value, so "off"
 	// has to be sent.
 	Debug bool `json:"debug"`
+	// PresetsMasked is the service saying Presets come without their
+	// paths and arguments: this client has no local trusted session. Read
+	// only; never sent back (wireConfig).
+	PresetsMasked bool `json:"presets_masked,omitempty"`
 }
 
 // NotifyPCConfig mirrors service.NotifyPCConfig.

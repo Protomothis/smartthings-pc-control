@@ -81,6 +81,7 @@
   "home.tg.notify": "알림 켜짐",
   "lang.name": "한국어",
   "lang.title": "언어",
+  "localonly.relogin": "서비스와의 로컬 연결이 끊겨 프리셋·감시 목록을 불러오지 못했어요. 잠시 뒤 다시 시도해요",
   "localonly.note": "프리셋·감시 목록 편집은 이 PC의 관리자 계정에서만 할 수 있어요",
   "login.cancel": "취소",
   "login.empty": "시크릿을 입력하세요",
