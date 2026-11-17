@@ -14,14 +14,19 @@ package ui
 
 import (
 	"fmt"
+	"image"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/widget"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
@@ -35,6 +40,10 @@ type presetsPage struct {
 	warnings []gui.PresetWarning
 	// focus is a new row whose name field takes the focus next frame.
 	focus *presetEdit
+	// arrive is the row the home card opened (OpenSlot): the page scrolls
+	// it to the top once the rows above it have been measured, and it
+	// glows briefly so the eye lands on it.
+	arrive *presetEdit
 }
 
 // presetEdit is one row of the editor.
@@ -56,6 +65,11 @@ type presetEdit struct {
 
 	// link caches PresetLinkNote for linkFor (it reads the registry).
 	linkFor, linkKey, linkApp string
+
+	// h is the height of the row in the last frame (for the scroll of
+	// OpenSlot); glowUntil ends the arrival highlight.
+	h         int
+	glowUntil time.Time
 }
 
 func newPresetsPage() screen { return &presetsPage{} }
@@ -151,6 +165,24 @@ func (p *presetsPage) StartNew(u *UI) {
 	u.open(pagePresets)
 	p.addRow(u)
 }
+
+// OpenSlot opens the page on the preset in slot, opened, scrolled to and
+// briefly highlighted: a tap on that preset in the home card. A slot that
+// is not there (the config changed meanwhile) just opens the page.
+func (p *presetsPage) OpenSlot(u *UI, slot int) {
+	u.open(pagePresets)
+	for _, e := range p.rows {
+		if e.slot == slot {
+			p.openRow(e)
+			p.arrive = e
+			e.glowUntil = time.Now().Add(arrivalGlow)
+			return
+		}
+	}
+}
+
+// arrivalGlow is how long an arrived-at row stays highlighted.
+const arrivalGlow = 1600 * time.Millisecond
 
 // openRow opens e and closes the others.
 func (p *presetsPage) openRow(e *presetEdit) {
@@ -312,10 +344,16 @@ func (p *presetsPage) body(gtx C, u *UI, _ snapshot) D {
 	full := len(p.rows) >= gui.PresetMaxSlots
 
 	blocks := []layout.Widget{}
+	bannerH := 0
 	if locked {
-		blocks = append(blocks, func(gtx C) D { return banner(gtx, th, noticeWarn, u.lockedNote()) })
+		blocks = append(blocks, func(gtx C) D {
+			d := banner(gtx, th, noticeWarn, u.lockedNote())
+			bannerH = d.Size.Y
+			return d
+		})
 	}
 	header := fmt.Sprintf(u.t("ui.presets.count"), len(p.rows), gui.PresetMaxSlots)
+	defer p.scrollToArrival(gtx, u, header, &bannerH)
 	blocks = append(blocks,
 		func(gtx C) D {
 			return column(gtx,
@@ -326,7 +364,11 @@ func (p *presetsPage) body(gtx C, u *UI, _ snapshot) D {
 					} else {
 						ws := make([]layout.Widget, len(p.rows))
 						for i, e := range p.rows {
-							ws[i] = func(gtx C) D { return p.layoutRow(gtx, u, e, p.problem(u, i, dup), locked) }
+							ws[i] = func(gtx C) D {
+								d := p.layoutRow(gtx, u, e, p.problem(u, i, dup), locked)
+								e.h = d.Size.Y
+								return d
+							}
 						}
 						children = append(children, layout.Rigid(func(gtx C) D { return rows(gtx, ws...) }))
 					}
@@ -349,6 +391,39 @@ func (p *presetsPage) body(gtx C, u *UI, _ snapshot) D {
 	return sections(gtx, blocks...)
 }
 
+// scrollToArrival scrolls the page so the arrived-at row (OpenSlot) is at
+// the top, once every row above it has a height. The page is one block in
+// the scrolling column, so the offset is added up from the pieces body
+// lays out: the inset, the banner, the section header, the card inset and
+// the rows above with their dividers.
+func (p *presetsPage) scrollToArrival(gtx C, u *UI, header string, bannerH *int) {
+	e := p.arrive
+	if e == nil {
+		return
+	}
+	y := gtx.Dp(pageInset.Top)
+	if *bannerH > 0 {
+		y += *bannerH + gtx.Dp(gapL)
+	}
+	m := op.Record(gtx.Ops) // measured, not drawn
+	hd := label(u.th, textM, header, colSub, font.SemiBold).Layout(gtx)
+	m.Stop()
+	y += hd.Size.Y + gtx.Dp(8) + gtx.Dp(gapL)
+	for _, x := range p.rows {
+		if x == e {
+			u.pageList.Position = layout.Position{Offset: max(y-gtx.Dp(gapS), 0)}
+			p.arrive = nil
+			return
+		}
+		if x.h == 0 {
+			gtx.Execute(op.InvalidateCmd{}) // measured next frame
+			return
+		}
+		y += x.h + 2*gtx.Dp(gapS) + max(gtx.Dp(1), 1)
+	}
+	p.arrive = nil // the row went away
+}
+
 // layoutRow draws one preset: its summary, and the editor under it while
 // open.
 func (p *presetsPage) layoutRow(gtx C, u *UI, e *presetEdit, problem string, locked bool) D {
@@ -359,26 +434,28 @@ func (p *presetsPage) layoutRow(gtx C, u *UI, e *presetEdit, problem string, loc
 			return e.head.Layout(gtx, func(gtx C) D {
 				pointer.CursorPointer.Add(gtx.Ops)
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				return layout.Inset{Top: 2, Bottom: 2}.Layout(gtx, func(gtx C) D {
-					return row(gtx,
-						layout.Rigid(func(gtx C) D { return slotBadge(gtx, th, e.slot) }),
-						hspace(gapS),
-						layout.Flexed(1, func(gtx C) D { return p.summary(gtx, u, e) }),
-						layout.Rigid(func(gtx C) D {
-							if problem == "" && warned == "" {
-								return D{}
-							}
-							return layout.Inset{Left: 8}.Layout(gtx, statusPill(th, u.t("ui.presets.check"), toneWarn))
-						}),
-						hspace(4),
-						layout.Rigid(func(gtx C) D {
-							name := "expand"
-							if e.open {
-								name = "collapse"
-							}
-							return drawIcon(gtx, name, 20, colFaint)
-						}),
-					)
+				return arrivalGlowBehind(gtx, e.glowUntil, func(gtx C) D {
+					return layout.Inset{Top: 2, Bottom: 2}.Layout(gtx, func(gtx C) D {
+						return row(gtx,
+							layout.Rigid(func(gtx C) D { return slotBadge(gtx, th, e.slot) }),
+							hspace(gapS),
+							layout.Flexed(1, func(gtx C) D { return p.summary(gtx, u, e) }),
+							layout.Rigid(func(gtx C) D {
+								if problem == "" && warned == "" {
+									return D{}
+								}
+								return layout.Inset{Left: 8}.Layout(gtx, statusPill(th, u.t("ui.presets.check"), toneWarn))
+							}),
+							hspace(4),
+							layout.Rigid(func(gtx C) D {
+								name := "expand"
+								if e.open {
+									name = "collapse"
+								}
+								return drawIcon(gtx, name, 20, colFaint)
+							}),
+						)
+					})
 				})
 			})
 		}),
@@ -498,4 +575,24 @@ func (p *presetsPage) layoutEditor(gtx C, u *UI, e *presetEdit, problem, warned 
 		}))
 	}
 	return column(gtx, children...)
+}
+
+// arrivalGlowBehind draws w over an accent tint that fades out by until:
+// where a jump landed (OpenSlot), so the eye finds it.
+func arrivalGlowBehind(gtx C, until time.Time, w layout.Widget) D {
+	left := until.Sub(gtx.Now)
+	if left <= 0 {
+		return w(gtx)
+	}
+	c := colAccentDim
+	c.A = uint8(float32(c.A) * min(float32(left)/float32(arrivalGlow/2), 1))
+	gtx.Execute(op.InvalidateCmd{})
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx C) D {
+			r := image.Rectangle{Max: gtx.Constraints.Min}
+			paint.FillShape(gtx.Ops, c, clip.UniformRRect(r, gtx.Dp(radiusM)).Op(gtx.Ops))
+			return D{Size: gtx.Constraints.Min}
+		}),
+		layout.Stacked(w),
+	)
 }

@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
 )
 
 // TestShotsPresets draws the preset editor: the list, an open row with a
 // test result and a service warning, a new empty row, an app link, a save
-// error, the empty page and the locked page — light and dark, at 480 and
+// error, the empty page, the locked page and the arrival from the home
+// card — light and dark, at 480 and
 // 1200dp (English at 480).
 //
 //	STPC_SHOTS_DIR=C:\tmp\shots go test -run TestShotsPresets ./ui/
@@ -37,6 +39,16 @@ func TestShotsPresets(t *testing.T) {
 				u.open(pagePresets)
 				p := u.pages[pagePresets].(*presetsPage)
 				shotW(t, dir, name("list"), w, 720, u.layout)
+
+				// a tap on preset 3 in the home card, in a short window:
+				// scrolled to it, opened, still glowing
+				u.nav.stack = nil
+				p.OpenSlot(u, 3)
+				shotW(t, dir, name("arrive"), w, 420, u.layout)
+				p.rows[2].glowUntil = time.Time{}
+				u.nav.stack = nil
+				u.open(pagePresets)
+				p.rows[2].open = false
 
 				// an open script row: a test result and a save warning
 				p.openRow(p.rows[0])

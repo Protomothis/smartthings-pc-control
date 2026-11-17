@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gioui.org/font"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
@@ -85,7 +86,10 @@ type homeState struct {
 	schedCancel   widget.Clickable
 
 	presetRun []widget.Clickable
-	presetAdd widget.Clickable
+	// presetOpen: a tap on a preset (not its [실행]) opens it in the
+	// presets page.
+	presetOpen []widget.Clickable
+	presetAdd  widget.Clickable
 
 	stRow, tgRow, shareRow widget.Clickable
 
@@ -734,11 +738,19 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 	presets := s.cfg.Presets
 	if len(h.presetRun) < len(presets) {
 		h.presetRun = make([]widget.Clickable, len(presets))
+		h.presetOpen = make([]widget.Clickable, len(presets))
 	}
 	for i, p := range presets {
 		if h.presetRun[i].Clicked(gtx) {
 			slot, name := p.Slot, p.Name
 			u.act(func() error { return u.api.RunPreset(slot) }, fmt.Sprintf(u.t("cmd.presets.started"), name), nil)
+		}
+	}
+	for i, p := range presets {
+		if h.presetOpen[i].Clicked(gtx) {
+			if pg, ok := u.pages[pagePresets].(*presetsPage); ok {
+				pg.OpenSlot(u, p.Slot)
+			}
 		}
 	}
 	if h.presetAdd.Clicked(gtx) {
@@ -765,14 +777,22 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 			children = append(children, layout.Rigid(func(gtx C) D {
 				return layout.Inset{Top: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
 					return row(gtx,
-						layout.Rigid(func(gtx C) D { return slotBadge(gtx, u.th, p.Slot) }),
-						hspace(gapS),
 						layout.Flexed(1, func(gtx C) D {
-							return column(gtx,
-								layout.Rigid(line(u.th, textL, p.Name, colText, font.Medium).Layout),
-								vspace(2),
-								layout.Rigid(line(u.th, textS, u.presetLine(p), colSub, font.Normal).Layout),
-							)
+							return h.presetOpen[i].Layout(gtx, func(gtx C) D {
+								pointer.CursorPointer.Add(gtx.Ops)
+								gtx.Constraints.Min.X = gtx.Constraints.Max.X
+								return row(gtx,
+									layout.Rigid(func(gtx C) D { return slotBadge(gtx, u.th, p.Slot) }),
+									hspace(gapS),
+									layout.Flexed(1, func(gtx C) D {
+										return column(gtx,
+											layout.Rigid(line(u.th, textL, p.Name, colText, font.Medium).Layout),
+											vspace(2),
+											layout.Rigid(line(u.th, textS, u.presetLine(p), colSub, font.Normal).Layout),
+										)
+									}),
+								)
+							})
 						}),
 						hspace(gapS),
 						layout.Rigid(func(gtx C) D {
@@ -791,8 +811,11 @@ func (u *UI) presetsCard(gtx C, s snapshot) D {
 // presetLine is a preset's grey line: its kind and target.
 func (u *UI) presetLine(p gui.Preset) string {
 	target := p.Path
-	if p.Type != "url" {
+	if p.Type != "url" && target != "" {
 		target = filepath.Base(p.Path)
+	}
+	if target == "" {
+		return u.t("presets.type." + p.Type)
 	}
 	return u.t("presets.type."+p.Type) + " · " + target
 }
