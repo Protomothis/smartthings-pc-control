@@ -22,6 +22,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/text"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -53,9 +54,6 @@ var (
 	}
 )
 
-// scheduleQuick is how many delays show before 더 보기 opens all of them.
-const scheduleQuick = 6
-
 // homeState is the home screen's widgets. Window goroutine only.
 type homeState struct {
 	secret  secretField
@@ -76,14 +74,15 @@ type homeState struct {
 	vol                    widget.Float
 	volPending             bool
 
-	schedCmds     chipGroup
-	schedCmdSel   int
-	schedDelays   chipGroup
-	schedDelaySel int
-	schedAll      bool
-	schedMore     widget.Clickable
-	schedStart    widget.Clickable
-	schedCancel   widget.Clickable
+	schedCmds   chipGroup
+	schedCmdSel int
+	// schedPick is when a new schedule runs: a length of time or a clock
+	// time, picked with steppers (gui.SchedulePick).
+	schedPick                                  gui.SchedulePick
+	schedModes, schedDays                      chipGroup
+	schedADown, schedAUp, schedBDown, schedBUp widget.Clickable
+	schedStart                                 widget.Clickable
+	schedCancel                                widget.Clickable
 
 	presetRun []widget.Clickable
 	// presetOpen: a tap on a preset (not its [실행]) opens it in the
@@ -106,7 +105,7 @@ type homeState struct {
 func (h *homeState) init() {
 	h.awakeSel = -1
 	h.schedCmdSel = 0
-	h.schedDelaySel = indexOf(gui.SchedulePresets(), gui.DefaultSchedulePreset)
+	h.schedPick = gui.DefaultSchedulePick(time.Now())
 	h.autostart.Value = gui.AutostartEnabled()
 }
 
@@ -645,58 +644,132 @@ func (u *UI) scheduleCard(gtx C, s snapshot) D {
 	}
 	h := &u.home
 	l := u.language()
+	pk := &h.schedPick
 	cmds := gui.ScheduleCommands()
-	delays := gui.SchedulePresets()
 	if i := h.schedCmds.Clicked(gtx, len(cmds)); i >= 0 {
 		h.schedCmdSel = i
 	}
-	shown := delays
-	if !h.schedAll {
-		shown = delays[:scheduleQuick]
+	if i := h.schedModes.Clicked(gtx, 2); i >= 0 {
+		pk.At = i == 1
 	}
-	if i := h.schedDelays.Clicked(gtx, len(shown)); i >= 0 {
-		h.schedDelaySel = i
+	if i := h.schedDays.Clicked(gtx, gui.ScheduleDays); i >= 0 {
+		pk.Day = i
 	}
-	if h.schedMore.Clicked(gtx) {
-		h.schedAll = !h.schedAll
+	for _, st := range []struct {
+		clk  *widget.Clickable
+		step func(int)
+		d    int
+	}{
+		{&h.schedADown, u.schedStepA, -1}, {&h.schedAUp, u.schedStepA, 1},
+		{&h.schedBDown, u.schedStepB, -1}, {&h.schedBUp, u.schedStepB, 1},
+	} {
+		if st.clk.Clicked(gtx) {
+			st.step(st.d)
+		}
 	}
-	if h.schedStart.Clicked(gtx) && h.schedDelaySel >= 0 {
-		cmd, minutes := cmds[h.schedCmdSel].Name, delays[h.schedDelaySel]
-		u.act(func() error { return u.api.SetSchedule(cmd, minutes) }, "", u.loadSchedule)
+	now := gtx.Now
+	if now.IsZero() {
+		now = time.Now()
 	}
+	summary, ok := gui.ScheduleSummary(l, *pk, now)
+	if h.schedStart.Clicked(gtx) && ok {
+		if minutes, problem := pk.Minutes(time.Now()); problem == "" {
+			cmd := cmds[h.schedCmdSel].Name
+			u.act(func() error { return u.api.SetSchedule(cmd, minutes) }, "", u.loadSchedule)
+		}
+	}
+	// The summary names a clock time: redraw when the minute turns.
+	gtx.Execute(op.InvalidateCmd{At: now.Truncate(time.Minute).Add(time.Minute)})
+
 	cmdLabels := make([]string, len(cmds))
 	for i, c := range cmds {
 		cmdLabels[i] = u.t(c.LabelKey)
 	}
-	delayLabels := make([]string, len(shown))
-	for i, m := range shown {
-		delayLabels[i] = gui.FormatMinutes(l, m)
+	modeSel := 0
+	if pk.At {
+		modeSel = 1
 	}
-	sel := h.schedDelaySel
-	if sel >= len(shown) {
-		sel = -1 // picked from the full list, now folded away
+	var aText, bText string
+	if pk.At {
+		aText, bText = fmt.Sprintf(u.t("schedule.unit.hour"), pk.Hour), fmt.Sprintf(u.t("schedule.unit.minute"), pk.Minute)
+	} else {
+		aText, bText = fmt.Sprintf(u.t("schedule.unit.hours"), pk.Hours), fmt.Sprintf(u.t("schedule.unit.mins"), pk.Mins)
 	}
-	moreTxt := u.t("home.more")
-	if h.schedAll {
-		moreTxt = u.t("home.less")
+	sumCol := colSub
+	if !ok {
+		sumCol = colDanger
 	}
-	return card(gtx, func(gtx C) D {
-		return column(gtx,
-			layout.Rigid(func(gtx C) D {
-				return cardTitle(gtx, u.th, u.t("tab.schedule"), label(u.th, textM, u.t("schedule.none"), colSub, font.Normal).Layout)
-			}),
-			vspace(gapM),
-			fieldLabel(u.th, u.t("schedule.command")),
-			layout.Rigid(func(gtx C) D { return h.schedCmds.Layout(gtx, u.th, cmdLabels, h.schedCmdSel) }),
-			vspace(gapM),
-			fieldLabel(u.th, u.t("schedule.delay")),
-			layout.Rigid(func(gtx C) D { return h.schedDelays.Layout(gtx, u.th, delayLabels, sel) }),
-			vspace(gapXS),
-			layout.Rigid(smallButton(u.th, &h.schedMore, moreTxt, colAccent).Layout),
-			vspace(gapM),
-			layout.Rigid(fill(primaryButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)),
-		)
-	})
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx C) D {
+			return cardTitle(gtx, u.th, u.t("tab.schedule"), label(u.th, textM, u.t("schedule.none"), colSub, font.Normal).Layout)
+		}),
+		vspace(gapM),
+		fieldLabel(u.th, u.t("schedule.command")),
+		layout.Rigid(func(gtx C) D { return h.schedCmds.Layout(gtx, u.th, cmdLabels, h.schedCmdSel) }),
+		vspace(gapM),
+		fieldLabel(u.th, u.t("schedule.when")),
+		layout.Rigid(func(gtx C) D {
+			return h.schedModes.Layout(gtx, u.th, []string{u.t("schedule.mode.after"), u.t("schedule.mode.at")}, modeSel)
+		}),
+	}
+	if pk.At {
+		days := make([]string, gui.ScheduleDays)
+		for i := range days {
+			days[i] = u.t(fmt.Sprintf("schedule.day.%d", i))
+		}
+		children = append(children, vspace(gapS), layout.Rigid(func(gtx C) D { return h.schedDays.Layout(gtx, u.th, days, pk.Day) }))
+	}
+	children = append(children,
+		vspace(gapS),
+		layout.Rigid(func(gtx C) D {
+			return surface(gtx, colGhost, radiusM, func(gtx C) D {
+				return layout.UniformInset(gapS).Layout(gtx, func(gtx C) D {
+					return column(gtx,
+						layout.Rigid(func(gtx C) D {
+							return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx,
+								layout.Rigid(timeStepper(u.th, &h.schedADown, &h.schedAUp, aText)),
+								layout.Rigid(timeStepper(u.th, &h.schedBDown, &h.schedBUp, bText)),
+							)
+						}),
+						vspace(gapXS),
+						layout.Rigid(func(gtx C) D {
+							l := label(u.th, textM, summary, sumCol, font.Medium)
+							l.Alignment = text.Middle
+							return l.Layout(gtx)
+						}),
+						vspace(4),
+					)
+				})
+			})
+		}),
+		vspace(gapM),
+		layout.Rigid(func(gtx C) D {
+			if !ok { // nothing to start until the pick is fixed
+				return fill(greyButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)(gtx)
+			}
+			return fill(primaryButton(u.th, &h.schedStart, u.t("schedule.start")).Layout)(gtx)
+		}),
+	)
+	return card(gtx, func(gtx C) D { return column(gtx, children...) })
+}
+
+// schedStepA moves the first stepper: the hours of a length, or the hour
+// of a clock time.
+func (u *UI) schedStepA(d int) {
+	if pk := &u.home.schedPick; pk.At {
+		pk.StepHour(d)
+	} else {
+		pk.StepHours(d)
+	}
+}
+
+// schedStepB moves the second stepper: the minutes, five at a time.
+func (u *UI) schedStepB(d int) {
+	if pk := &u.home.schedPick; pk.At {
+		pk.StepMinute(d)
+	} else {
+		pk.StepMins(d)
+	}
 }
 
 func (u *UI) scheduleActive(gtx C, s snapshot) D {
