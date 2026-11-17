@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/internal/config"
+	"github.com/Protomothis/smartthings-pc-control/internal/health"
 	"github.com/Protomothis/smartthings-pc-control/service/wolscan"
 
 	"golang.org/x/sys/windows"
@@ -295,7 +296,14 @@ func startupHooks(stop <-chan struct{}) {
 	// script ends every tray on an update) is started once, after a grace
 	// period for the login autostart (#167).
 	go launchMissingTrays(stop)
+	// What the service holds, in service.log every 6 hours and whenever it
+	// looks like a pile-up: a leak shows long before the PC slows down.
+	go health.Watch(stop, serviceHealthLimits, logMsg)
 }
+
+// serviceHealthLimits are well above what the service holds normally
+// (around 20 threads and 500 handles).
+var serviceHealthLimits = health.Limits{Goroutines: 500, Threads: 100, Handles: 3000}
 
 // emitStarted emits power.started with the boot time and the public IP
 // ("-" when the lookup fails). It blocks on the lookup (3s timeout) and is

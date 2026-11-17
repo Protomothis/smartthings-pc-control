@@ -6,6 +6,7 @@ import (
 	"fyne.io/systray"
 
 	"github.com/Protomothis/smartthings-pc-control/gui"
+	"github.com/Protomothis/smartthings-pc-control/internal/health"
 	"github.com/Protomothis/smartthings-pc-control/trayexec"
 )
 
@@ -157,12 +158,21 @@ func (l *shellLoops) loop() {
 	upd := time.NewTicker(updateEvery)
 	defer upd.Stop()
 	go u.checkUpdates(l.startup)
+	go health.Watch(l.done, trayHealthLimits, func(f string, a ...any) { gui.Logf("tray", f, a...) })
 	for {
 		select {
 		case <-l.done:
 			return
 		case <-hb.C:
-			go u.heartbeat.SendFull(heartbeatClient{u})
+			// One at a time, like the media check: a reading stuck in a
+			// system call must not leave a goroutine (and the OS thread
+			// the COM work locks) behind every 30 seconds.
+			if u.hbBusy.CompareAndSwap(false, true) {
+				go func() {
+					defer u.hbBusy.Store(false)
+					u.heartbeat.SendFull(heartbeatClient{u})
+				}()
+			}
 		case <-media.C:
 			// Like the heartbeat, not gated on the connection: the change
 			// check keeps the service current while the window is closed.
@@ -177,6 +187,10 @@ func (l *shellLoops) loop() {
 		}
 	}
 }
+
+// trayHealthLimits are well above what the tray app holds normally
+// (around 20 threads and 600 handles).
+var trayHealthLimits = health.Limits{Goroutines: 300, Threads: 80, Handles: 3000}
 
 // heartbeatClient is the UI's gui.HeartbeatClient.
 type heartbeatClient struct{ u *UI }
