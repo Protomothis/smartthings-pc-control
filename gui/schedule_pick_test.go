@@ -17,14 +17,14 @@ func TestSchedulePickLength(t *testing.T) {
 		want string
 	}{
 		{SchedulePick{}, "schedule.pick.zero"},
-		{SchedulePick{Hours: 72, Mins: 5}, "schedule.pick.toolong"},
+		{SchedulePick{Hours: ScheduleMaxHours, Mins: 5}, "schedule.pick.toolong"},
 	} {
 		if _, bad := tc.p.Minutes(pickNow); bad != tc.want {
 			t.Errorf("%+v: %q, want %q", tc.p, bad, tc.want)
 		}
 	}
-	if m, bad := (SchedulePick{Hours: 72}).Minutes(pickNow); m != ScheduleMaxMinutes || bad != "" {
-		t.Errorf("72h = %d %q", m, bad)
+	if m, bad := (SchedulePick{Hours: 168}).Minutes(pickNow); m != ScheduleMaxMinutes || bad != "" {
+		t.Errorf("168h = %d %q", m, bad)
 	}
 }
 
@@ -43,48 +43,10 @@ func TestSchedulePickClockTime(t *testing.T) {
 	if m, _ := p.Minutes(pickNow); m != 8*60+13 {
 		t.Errorf("07:00 tomorrow = %d", m)
 	}
-	// The day after at 23:00 is past three days from 22:47? No: 48h13m.
+	// The day after at 23:00: 48h13m.
 	p = SchedulePick{At: true, Day: 2, Hour: 23}
 	if m, bad := p.Minutes(pickNow); m != 48*60+13 || bad != "" {
 		t.Errorf("day after 23:00 = %d %q", m, bad)
-	}
-}
-
-func TestSchedulePickSteps(t *testing.T) {
-	var p SchedulePick
-	p.StepHours(-1)
-	if p.Hours != 0 {
-		t.Errorf("hours below 0: %d", p.Hours)
-	}
-	p.Hours = 72
-	p.StepHours(1)
-	if p.Hours != 72 {
-		t.Errorf("hours above 72: %d", p.Hours)
-	}
-	p.Mins = 55
-	p.StepMins(1)
-	if p.Mins != 0 {
-		t.Errorf("55+5 = %d, want 0", p.Mins)
-	}
-	p.StepMins(-1)
-	if p.Mins != 55 {
-		t.Errorf("0-5 = %d, want 55", p.Mins)
-	}
-	p.Hour = 23
-	p.StepHour(1)
-	if p.Hour != 0 {
-		t.Errorf("23+1 = %d", p.Hour)
-	}
-	// Off-step minutes snap: 47 → 50 up, 45 down.
-	p.Minute = 47
-	p.StepMinute(1)
-	if p.Minute != 50 {
-		t.Errorf("47 up = %d", p.Minute)
-	}
-	p.Minute = 47
-	p.StepMinute(-1)
-	if p.Minute != 45 {
-		t.Errorf("47 down = %d", p.Minute)
 	}
 }
 
@@ -113,5 +75,40 @@ func TestScheduleSummary(t *testing.T) {
 	}
 	if got, ok := ScheduleSummary(LangKo, SchedulePick{At: true, Hour: 7}, pickNow); ok || got != "이미 지난 시각이에요" {
 		t.Errorf("past = %q %v", got, ok)
+	}
+}
+
+// The last day of the strip at its last minute is still inside the week.
+func TestSchedulePickWeek(t *testing.T) {
+	p := SchedulePick{At: true, Day: ScheduleDays - 1, Hour: 23, Minute: 55}
+	m, bad := p.Minutes(pickNow)
+	if bad != "" || m != 6*24*60+68 { // 11-23 23:55 from 11-17 22:47:20
+		t.Errorf("day 6 23:55 = %d %q", m, bad)
+	}
+	got, _ := ScheduleSummary(LangKo, p, pickNow)
+	if got != "11/23(월) 23:55 · 6일 1시간 뒤" {
+		t.Errorf("summary %q", got)
+	}
+	if got, _ := ScheduleSummary(LangEn, SchedulePick{At: true, Day: 3, Hour: 8}, pickNow); got != "11/20 (Fri) 08:00 · in 2 d 9 h" {
+		t.Errorf("en summary %q", got)
+	}
+}
+
+func TestScheduleDayCell(t *testing.T) {
+	for _, c := range []struct {
+		l         Lang
+		day       int
+		top, date string
+	}{
+		{LangKo, 0, "오늘", "17"}, {LangKo, 1, "내일", "18"}, {LangKo, 2, "목", "19"},
+		{LangEn, 6, "Mon", "23"}, {LangEn, 1, "Tomorrow", "18"},
+	} {
+		if top, date := ScheduleDayCell(c.l, pickNow, c.day); top != c.top || date != c.date {
+			t.Errorf("%s day %d = %q %q, want %q %q", c.l, c.day, top, date, c.top, c.date)
+		}
+	}
+	// The month turns: the first shows it.
+	if _, date := ScheduleDayCell(LangKo, time.Date(2026, 11, 28, 9, 0, 0, 0, time.Local), 3); date != "12/1" {
+		t.Errorf("12/1 cell = %q", date)
 	}
 }

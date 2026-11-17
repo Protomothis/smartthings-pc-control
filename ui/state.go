@@ -24,6 +24,7 @@ type API interface {
 	TestCommand(name string) (string, error)
 	GetSchedule() (gui.Schedule, error)
 	SetSchedule(command string, minutes int) error
+	SetScheduleAt(command string, minutes int, at time.Time) error
 	CancelSchedule(by string) error
 	GetAwake() (gui.Awake, error)
 	SetAwake(minutes int) (gui.Awake, error)
