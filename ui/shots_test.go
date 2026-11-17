@@ -120,7 +120,7 @@ func sampleUI(lang gui.Lang, dark bool) *UI {
 	if dark {
 		p.Set(prefTheme, "dark")
 	}
-	u := New(fakeAPI{}, "v1.2.4", p, func() {})
+	u := New(fakeAPI{}, "v1.2.5", p, func() {})
 	u.th = newTheme()
 	u.setDark(dark)
 	vol, muted, dev := 42, false, "스피커 (Realtek(R) Audio)"
