@@ -47,10 +47,11 @@ const (
 	pagePresets     pageID = "presets"     // 프리셋 편집
 	pageLogs        pageID = "logs"        // 로그
 	pageUpdate      pageID = "update"      // 업데이트
+	pageReport      pageID = "report"      // 문제 보내기
 )
 
 // pageOrder is every page, in the order forms are visited.
-var pageOrder = []pageID{pageService, pageServiceCtl, pageSmartThings, pageTelegram, pageSharing, pagePresets, pageLogs, pageUpdate}
+var pageOrder = []pageID{pageService, pageServiceCtl, pageSmartThings, pageTelegram, pageSharing, pagePresets, pageLogs, pageUpdate, pageReport}
 
 // pageRegistry builds each page. The one place pages are registered.
 var pageRegistry = map[pageID]func() screen{
@@ -62,6 +63,7 @@ var pageRegistry = map[pageID]func() screen{
 	pagePresets:     newPresetsPage,
 	pageLogs:        newLogsPage,
 	pageUpdate:      newUpdatePage,
+	pageReport:      newReportPage,
 }
 
 func buildPages() map[pageID]screen {

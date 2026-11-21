@@ -106,6 +106,7 @@ type homeState struct {
 	unreachOpen   widget.Clickable
 	updateRow     widget.Clickable
 	logsRow       widget.Clickable
+	reportRow     widget.Clickable
 }
 
 func (h *homeState) init() {
@@ -1051,6 +1052,9 @@ func (u *UI) settingsCard(gtx C, s snapshot, withLogs bool) D {
 	if h.updateRow.Clicked(gtx) {
 		u.open(pageUpdate)
 	}
+	if h.reportRow.Clicked(gtx) {
+		u.open(pageReport)
+	}
 	updateValue := u.version
 	if s.updateTag != "" {
 		updateValue = ""
@@ -1105,6 +1109,10 @@ func (u *UI) settingsCard(gtx C, s snapshot, withLogs bool) D {
 				}
 				return listRowBadge(gtx, u.th, &h.updateRow, u.t("update.manual"), u.version,
 					statusPill(u.th, fmt.Sprintf(u.t("ui.home.update.new"), s.updateTag), toneAccent))
+			}),
+			vspace(4),
+			layout.Rigid(func(gtx C) D {
+				return listRow(gtx, u.th, &h.reportRow, u.t("ui.report.title"), u.t("ui.report.home.sub"), "")
 			}),
 			layout.Rigid(func(gtx C) D {
 				if !withLogs {
