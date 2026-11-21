@@ -138,7 +138,7 @@ Check the adapter chosen under **WoL adapter** on the **SmartThings** page and i
 <details>
 <summary><b>Screen on doesn't work on my laptop</b></summary>
 
-It is a modern standby (S0) laptop: `powercfg /a` lists `Standby (S0 Low Power Idle)`. On these, Sleep and Screen off both enter Windows standby, which then wakes only on real keyboard or mouse input or the power button.
+It is a modern standby (S0) laptop: `powercfg /a` lists `Standby (S0 Low Power Idle)`. On these, turning the screen off soon enters Windows standby, which wakes only on real keyboard or mouse input or the power button. Since v1.2.6 a remote Screen off holds the laptop out of standby, so Screen on should work while it is plugged in (still being confirmed on a real laptop); on battery it holds for the sleep timeout plus about 5 minutes, then sleeps as before.
 </details>
 
 <details>
@@ -153,6 +153,7 @@ If you quit the tray from its menu, it is not started again until you next sign 
 - Service: `service.log` in the install folder (**Logs** at the bottom of the home screen)
 - Tray: `%LOCALAPPDATA%\SmartThings PC Control\gui.log`
 - If something quits unexpectedly, turn on **Settings → Service Settings → Advanced → Debug mode**; the next crash leaves a record in a `crash\` folder.
+- To report a problem, use **Settings → Report a problem** on the home screen. It gathers PC info and logs with personal details masked and opens a GitHub issue, or saves a zip you can attach elsewhere.
 </details>
 
 <br>
