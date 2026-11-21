@@ -52,6 +52,10 @@ func resetPowerCommandHint() { powerHint.Reset() }
 // timed out on a modern standby PC (#161).
 var errScreenOnStandby = errors.New("modern standby: the PC is in standby after screen off; Windows only leaves it on real input or the power button")
 
+// screenHold keeps a modern standby PC awake while a remote screen off has
+// the display off (#161, setScreen); tests replace it.
+var screenHold = power.NewScreenHold(power.ScreenHoldHooks{Logf: logMsg})
+
 // consoleUserAction is runUserActionIn pinned to the console session
 // (userRun.screen).
 func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, error) {
@@ -87,12 +91,31 @@ func consoleUserAction(ctx context.Context, args ...string) (UserActionResult, e
 // PC being in standby, raised as system.exec_failed (Telegram) and the
 // display state stays as it was. The Telegram reply carries the same note
 // (tgcontrol, Deps.ModernStandby).
+//
+// So `screen off` there first takes the screen-off hold (screenHold,
+// service/power/screenhold.go): a system-required power request that keeps
+// Windows from going on from "display off" into standby — indefinitely on
+// AC, about five minutes past the sleep timeout on battery — until the
+// display is on again. The tray app keeps running and `screen on` works as
+// on a desktop. The suspend command, the power button and the lid still
+// put the PC to sleep (suspendToStandby releases the hold; Windows drops
+// requests on a user-initiated sleep). If the hold cannot be taken, screen
+// off behaves as before the hold existed.
 func setScreen(state string) {
 	standby := modernStandby()
+	held := false
 	if standby && state == "off" {
-		logMsg("screen off: modern standby - on this PC the display off puts it into standby; screen on may not wake it (only real input or the power button does)")
+		if err := screenHold.Hold(); err != nil {
+			logMsg("screen off: modern standby - on this PC the display off puts it into standby; screen on may not wake it (only real input or the power button does); keeping it awake failed: %v", err)
+		} else {
+			held = true
+			logMsg("screen off: modern standby - holding a system-required power request so the PC stays awake with the display off and screen on still works (until the display is on again; on battery Windows still sleeps about 5 minutes after its sleep timeout)")
+		}
 	}
 	_, err := userRun.screen(context.Background(), useraction.ActionScreen, state)
+	if held && err != nil && !errors.Is(err, errUserActionTimeout) {
+		screenHold.Release("screen off failed")
+	}
 	switch {
 	case err == nil:
 	case standby && state == "on" && errors.Is(err, errUserActionTimeout):

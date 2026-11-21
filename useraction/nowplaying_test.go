@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // No test may reach the real media session: it would read (or, worse,
@@ -177,6 +178,34 @@ func TestReadNowPlaying(t *testing.T) {
 	withFakeSession(t, nil, errNoMediaSessionAPI)
 	if _, err := ReadNowPlaying(); !errors.As(err, &ue) || ue.Code != CodeUnsupported {
 		t.Errorf("no API: %v", err)
+	}
+}
+
+// The steps say which call took the time and keep the track failure that
+// the read itself swallows (#176).
+func TestReadNowPlayingSteps(t *testing.T) {
+	s := &fakeSession{aumid: "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App", status: MediaPlaying, propsErr: errors.New("no result within 1s")}
+	withFakeSession(t, s, nil)
+	saved := stepClock
+	t.Cleanup(func() { stepClock = saved })
+	// Every reading of the clock moves it on by 10ms, so each step takes 10ms.
+	now := time.Unix(0, 0)
+	stepClock = func() time.Time { now = now.Add(10 * time.Millisecond); return now }
+
+	np, steps, err := ReadNowPlayingSteps()
+	if err != nil || np != (NowPlaying{Status: MediaPlaying, App: "Apple Music"}) {
+		t.Fatalf("read: %+v, %v", np, err)
+	}
+	want := 10 * time.Millisecond
+	if steps.Open != want || steps.Status != want || steps.Properties != want ||
+		steps.AppID != s.aumid || steps.PropertiesErr == nil {
+		t.Errorf("steps = %+v", steps)
+	}
+
+	// A failed read still names the app.
+	s.statusErr = errors.New("RPC_E_DISCONNECTED")
+	if _, steps, err := ReadNowPlayingSteps(); err == nil || steps.AppID != s.aumid || steps.Properties != 0 {
+		t.Errorf("status error: %+v, %v", steps, err)
 	}
 }
 

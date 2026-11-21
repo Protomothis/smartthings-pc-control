@@ -171,6 +171,12 @@ func (c *Client) baseURL() string {
 }
 
 func (c *Client) do(method, path string, body any) (*http.Response, error) {
+	return c.doCtx(context.Background(), method, path, body)
+}
+
+// doCtx is do with a context, for a call that must give up sooner than
+// the client's timeout.
+func (c *Client) doCtx(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
@@ -178,7 +184,7 @@ func (c *Client) do(method, path string, body any) (*http.Response, error) {
 		}
 	}
 	base := c.baseURL()
-	req, err := http.NewRequestWithContext(context.Background(), method, base+path, &buf)
+	req, err := http.NewRequestWithContext(ctx, method, base+path, &buf)
 	if err != nil {
 		return nil, err
 	}

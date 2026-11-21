@@ -126,9 +126,15 @@ type peerProcess struct {
 	// from a console or remote desktop logon, not a service, batch or
 	// network one.
 	Interactive bool
-	// Admin: the token lists BUILTIN\Administrators, enabled (elevated) or
-	// deny-only (the UAC-filtered token of an administrator).
+	// Admin: the user is a member of BUILTIN\Administrators, however it
+	// shows (peeradmin.go): enabled in the token (elevated), deny-only (the
+	// UAC-filtered token), enabled in the linked token, or the user's SID —
+	// or a group of the token — in the local group (#168).
 	Admin bool
+	// AdminVia is the check that found it, AdminDetail what the checks saw
+	// along the way; both for the log.
+	AdminVia    string
+	AdminDetail string
 	// Image is the full path of the process's exe.
 	Image string
 }
@@ -169,14 +175,12 @@ func (s *Server) inspectProcess(pid uint32) (peerProcess, error) {
 		return p, fmt.Errorf("token groups (%d): %w", pid, err)
 	}
 	for _, g := range groups.AllGroups() {
-		switch {
-		case g.Sid.IsWellKnown(windows.WinInteractiveSid) && g.Attributes&windows.SE_GROUP_ENABLED != 0:
+		if g.Sid.IsWellKnown(windows.WinInteractiveSid) && g.Attributes&windows.SE_GROUP_ENABLED != 0 {
 			p.Interactive = true
-		case g.Sid.IsWellKnown(windows.WinBuiltinAdministratorsSid) &&
-			g.Attributes&(windows.SE_GROUP_ENABLED|windows.SE_GROUP_USE_FOR_DENY_ONLY) != 0:
-			p.Admin = true
 		}
 	}
+	v := checkAdmin(winToken{tok}, p.UserSID, s.peerAdmins)
+	p.Admin, p.AdminVia, p.AdminDetail = v.Admin, v.Via, v.Detail
 
 	p.SessionUserSID = s.sessionUserSID(p.SessionID)
 	return p, nil
@@ -198,4 +202,97 @@ func (s *Server) sessionUserSID(session uint32) string {
 		return ""
 	}
 	return u.User.Sid.String()
+}
+
+// winToken is the tokenReader of a real process token.
+type winToken struct{ t windows.Token }
+
+func (w winToken) groups() ([]tokenGroup, error) {
+	g, err := w.t.GetTokenGroups()
+	if err != nil {
+		return nil, err
+	}
+	return copyGroups(g), nil
+}
+
+func (w winToken) elevationType() (uint32, error) {
+	var t, n uint32
+	err := windows.GetTokenInformation(w.t, windows.TokenElevationType, (*byte)(unsafe.Pointer(&t)), uint32(unsafe.Sizeof(t)), &n)
+	return t, err
+}
+
+func (w winToken) linkedGroups() ([]tokenGroup, error) {
+	lt, err := w.t.GetLinkedToken()
+	if err != nil {
+		return nil, err
+	}
+	defer lt.Close()
+	g, err := lt.GetTokenGroups()
+	if err != nil {
+		return nil, err
+	}
+	return copyGroups(g), nil
+}
+
+// copyGroups turns TokenGroups into strings while its buffer is alive.
+func copyGroups(g *windows.Tokengroups) []tokenGroup {
+	all := g.AllGroups()
+	out := make([]tokenGroup, 0, len(all))
+	for _, sa := range all {
+		out = append(out, tokenGroup{SID: sa.Sid.String(), Attr: sa.Attributes})
+	}
+	return out
+}
+
+var (
+	modNetapi32                 = windows.NewLazySystemDLL("netapi32.dll")
+	procNetLocalGroupGetMembers = modNetapi32.NewProc("NetLocalGroupGetMembers")
+)
+
+// maxPreferredLength is MAX_PREFERRED_LENGTH: NetLocalGroupGetMembers
+// sizes the buffer itself.
+const maxPreferredLength = 0xFFFFFFFF
+
+// localAdministrators lists the SIDs that are direct members of the local
+// BUILTIN\Administrators group. The group is named by looking its SID up,
+// so a localized name ("Administratoren") works too.
+func localAdministrators() ([]string, error) {
+	sid, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return nil, err
+	}
+	name, _, _, err := sid.LookupAccount("")
+	if err != nil {
+		return nil, fmt.Errorf("group name: %w", err)
+	}
+	group, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		buf         *byte
+		read, total uint32
+		resume      uintptr
+	)
+	r, _, _ := procNetLocalGroupGetMembers.Call(0, uintptr(unsafe.Pointer(group)), 0,
+		uintptr(unsafe.Pointer(&buf)), maxPreferredLength,
+		uintptr(unsafe.Pointer(&read)), uintptr(unsafe.Pointer(&total)), uintptr(unsafe.Pointer(&resume)))
+	if buf != nil {
+		defer func() { _ = windows.NetApiBufferFree(buf) }()
+	}
+	if r != 0 {
+		return nil, fmt.Errorf("NetLocalGroupGetMembers: %w", windows.Errno(r))
+	}
+	if read == 0 {
+		return nil, nil
+	}
+	// LOCALGROUP_MEMBERS_INFO_0 is one PSID per member.
+	sids := unsafe.Slice((**windows.SID)(unsafe.Pointer(buf)), read)
+	out := make([]string, 0, read)
+	for _, s := range sids {
+		if s != nil {
+			out = append(out, s.String())
+		}
+	}
+	return out, nil
 }

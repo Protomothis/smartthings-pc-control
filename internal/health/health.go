@@ -57,8 +57,13 @@ const (
 	baselineEvery = 6 * time.Hour
 )
 
+// The cpu= figure of each line is the CPU used since the previous check
+// (since the start on the first line), so a baseline line says how busy
+// the process was in the last 10 minutes rather than on average since it
+// started days ago.
 func watch(stop <-chan struct{}, l Limits, logf func(string, ...any), check, baseline time.Duration) {
-	logf("health: %v", Read())
+	cpu := newCPUMeter()
+	logf("health: %v %s", Read(), formatCPU(cpu.next()))
 	t := time.NewTicker(check)
 	defer t.Stop()
 	last := time.Now()
@@ -67,13 +72,13 @@ func watch(stop <-chan struct{}, l Limits, logf func(string, ...any), check, bas
 		case <-stop:
 			return
 		case now := <-t.C:
-			s := Read()
+			s, c := Read(), formatCPU(cpu.next())
 			switch {
 			case s.Over(l):
-				logf("health: %v — above the usual (goroutines %d, threads %d, handles %d)", s, l.Goroutines, l.Threads, l.Handles)
+				logf("health: %v %s — above the usual (goroutines %d, threads %d, handles %d)", s, c, l.Goroutines, l.Threads, l.Handles)
 				last = now
 			case now.Sub(last) >= baseline:
-				logf("health: %v", s)
+				logf("health: %v %s", s, c)
 				last = now
 			}
 		}

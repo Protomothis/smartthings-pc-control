@@ -158,7 +158,10 @@ func (l *shellLoops) loop() {
 	upd := time.NewTicker(updateEvery)
 	defer upd.Stop()
 	go u.checkUpdates(l.startup)
-	go health.Watch(l.done, trayHealthLimits, func(f string, a ...any) { gui.Logf("tray", f, a...) })
+	trayLog := func(f string, a ...any) { gui.Logf("tray", f, a...) }
+	go health.Watch(l.done, trayHealthLimits, trayLog)
+	// CPU that stays high leaves a profile and a goroutine dump (#176).
+	go health.WatchCPU(l.done, gui.TrayDiagDir(), trayLog)
 	for {
 		select {
 		case <-l.done:

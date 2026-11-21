@@ -155,6 +155,8 @@ end
 local MUTE = features.CAP_MUTE .. ".mute"
 local VOLUME = features.CAP_VOLUME .. ".volume"
 local LAST_SEEN = caps.STATUS .. ".lastSeen"
+local POWER = caps.POWER_STATE .. ".powerState"
+local SWITCH = state.CAP_SWITCH .. ".switch"
 -- #123: the watch card's summary (was `pcApps.summary` on main).
 local APPS_SUMMARY = features.WATCH_COMPONENT .. "/" .. caps.WATCH .. ".summary"
 
@@ -514,7 +516,10 @@ function T.test_the_rotation_re_sends_every_row_within_ten_minutes()
         "poll " .. i .. ": the time and " .. size .. " rows")
     end
     for _, key in ipairs(row_keys) do
-      if key ~= LAST_SEEN then
+      if emit.DURATION_ROWS[key] then
+        -- #174: a "for 10 minutes" routine condition watches these.
+        h.assert_nil(forced[key], key .. " is never rotated")
+      elseif key ~= LAST_SEEN then
         h.assert_true(forced[key] ~= nil, key .. " was not re-sent within " .. emit.ROTATE_SECONDS .. " s")
       end
     end
@@ -571,12 +576,104 @@ function T.test_the_rotation_also_runs_while_the_pc_is_off()
     end
     -- With the values last sent: the volume the PC had before it went away.
     h.assert_equal(forced[VOLUME], 30)
-    h.assert_equal(forced[caps.POWER_STATE .. ".powerState"], emit.sent_value(device, caps.POWER_STATE .. ".powerState"))
+    -- #174: the power rows go out as the change to off, never re-sent.
+    h.assert_nil(forced[caps.POWER_STATE .. ".powerState"])
+    h.assert_nil(forced[state.CAP_SWITCH .. ".switch"])
     -- Every row went out again: forced by the rotation, or as a change (the
-    -- summary counts the minutes since the PC last answered).
+    -- summary counts the minutes since the PC last answered; switch and
+    -- powerState changed to off).
     for _, key in ipairs(row_keys) do
       h.assert_true(seen[key] ~= nil, key .. " re-sent while the PC is off")
     end
+  end)
+end
+
+-- #174: a hub routine "IF 컴퓨터 꺼짐 for 10 minutes THEN …" (or 전원 상태
+-- off for 10 minutes) never fired. The rotation re-sent switch and powerState
+-- forced, unchanged, once per cycle (under 10 minutes), and each forced event
+-- restarts the condition's timer. Once the PC is off, nothing may touch those
+-- two rows until it really changes - at any poll interval.
+function T.test_an_off_pc_sends_no_switch_or_power_state_for_longer_than_a_routine_waits()
+  for _, interval in ipairs({ 10, 30, 60, 300 }) do
+    with_pc(function(pc)
+      local device = new_device()
+      device.preferences.pollInterval = interval
+      local d = Driver("budget", {})
+      poll.once(d, device)
+      client.get_status = function() return false, nil, "unreachable" end
+      -- Two failed polls take the PC to off: that change goes out.
+      local mark = #device.emitted
+      for _ = 1, state.UNREACHABLE_LIMIT do
+        pc.now = pc.now + interval
+        poll.once(d, device)
+      end
+      local went = since(device, mark)
+      h.assert_equal(h.last_value(went, nil, state.CAP_SWITCH, "switch"), "off", interval .. " s: switch off")
+      h.assert_equal(h.last_value(went, nil, caps.POWER_STATE, "powerState"), state.OFF,
+        interval .. " s: powerState off")
+      -- Then well past a 10-minute (and a 30-minute) condition: not one event
+      -- on either row, forced or not, while the rotation keeps going.
+      mark = #device.emitted
+      local polls = math.ceil(3 * emit.ROTATE_SECONDS / interval) + 1
+      for _ = 1, polls do
+        pc.now = pc.now + interval
+        poll.once(d, device)
+      end
+      local rotated = 0
+      for _, e in ipairs(since(device, mark)) do
+        local key = emit.row_key(e)
+        h.assert_true(key ~= SWITCH and key ~= POWER, interval .. " s: " .. key .. " re-sent while off")
+        if (e.options or {}).state_change == true then
+          rotated = rotated + 1
+        end
+      end
+      h.assert_true(rotated > 0, interval .. " s: the other rows still rotate")
+      -- The PC comes back: the change goes out at once.
+      client.get_status = function() return true, copy(pc.status), nil end
+      pc.now = pc.now + interval
+      mark = #device.emitted
+      poll.once(d, device)
+      local back = since(device, mark)
+      h.assert_equal(h.last_value(back, nil, state.CAP_SWITCH, "switch"), "on", interval .. " s: switch on")
+      h.assert_equal(h.last_value(back, nil, caps.POWER_STATE, "powerState"), state.ON,
+        interval .. " s: powerState on")
+    end)
+  end
+end
+
+function T.test_a_pc_left_on_sends_no_unchanged_switch_either()
+  -- The same for "켜짐 for N minutes": an answering PC's switch and powerState
+  -- stay quiet after the run's first emit.
+  with_pc(function(pc)
+    local device = new_device()
+    local d = Driver("budget", {})
+    poll.once(d, device)
+    local mark = #device.emitted
+    for i = 1, 2 * emit.ROTATE_SECONDS // poll.DEFAULT_INTERVAL do
+      pc.now = pc.now + poll.DEFAULT_INTERVAL
+      pc.seen = "t" .. i
+      poll.once(d, device)
+    end
+    for _, e in ipairs(since(device, mark)) do
+      local key = emit.row_key(e)
+      h.assert_true(key ~= SWITCH and key ~= POWER, key .. " re-sent while on")
+    end
+  end)
+end
+
+function T.test_the_burst_resync_still_re_sends_the_power_rows()
+  -- The trade-off's other half: after a burst of commands (when an event is
+  -- most likely lost) switch and powerState are still re-sent once, forced.
+  h.assert_contains(table.concat(emit.RESYNC_ROWS, " "), SWITCH)
+  h.assert_contains(table.concat(emit.RESYNC_ROWS, " "), POWER)
+  with_pc(function()
+    local device = new_device()
+    poll.once(Driver("budget", {}), device)
+    local mark = #device.emitted
+    emit.resync(device)
+    local out = since(device, mark)
+    h.assert_true(h.event_forced(out, state.CAP_SWITCH, "switch"), "switch resynced")
+    h.assert_true(h.event_forced(out, caps.POWER_STATE, "powerState"), "powerState resynced")
   end)
 end
 
@@ -1101,8 +1198,6 @@ end
 
 local TRACK = features.CAP_TRACK_DATA .. ".audioTrackData"
 local SESSION_SUMMARY = caps.SESSION .. ".summary"
-local POWER = caps.POWER_STATE .. ".powerState"
-local SWITCH = state.CAP_SWITCH .. ".switch"
 -- The rows a routine reads or a list rests on: an offline PC never moves them
 -- (switch and powerState aside, which say the power).
 local ROUTINE_ROWS = {

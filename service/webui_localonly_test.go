@@ -61,6 +61,11 @@ var localOnlyRequests = []struct {
 		r.Header.Set("X-Requested-With", "XMLHttpRequest")
 		return r
 	}},
+	{"GET /api/diag/process", func() *http.Request {
+		r := httptest.NewRequest("GET", "/api/diag/process", nil)
+		r.Header.Set("X-Requested-With", "XMLHttpRequest")
+		return r
+	}},
 	{"POST /api/config changing presets", func() *http.Request {
 		return postJSON("/api/config", `{"port":5001,"presets":[{"slot":2,"name":"new","type":"url","path":"https://example.com/new"}]}`)
 	}},

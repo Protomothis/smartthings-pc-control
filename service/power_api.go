@@ -111,6 +111,9 @@ func suspendPC() {
 // before Execute (dispatchCommand), whichever path this then takes.
 func suspendToStandby() {
 	logMsg("suspend: modern standby - turning the display off to enter standby instead of SetSuspendState, which would hibernate")
+	// A remote screen off may be keeping the PC awake (#161); sleep is
+	// what is asked for now.
+	screenHold.Release("suspend")
 	_, err := userRun.screen(context.Background(), useraction.ActionScreen, "off")
 	switch {
 	case err == nil:

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -114,9 +115,43 @@ var openSession = openCurrentSession
 // error: the status is then MediaNone. The error is a *Error: unsupported
 // when this Windows has no session API, failed otherwise.
 func ReadNowPlaying() (NowPlaying, error) {
-	var np NowPlaying
+	np, _, err := ReadNowPlayingSteps()
+	return np, err
+}
+
+// MediaReadSteps is how long each step of one media session read took,
+// for the tray's diagnostics (#176): a player that stalls the session
+// manager looks different from one that stalls only its track
+// properties. A step that did not run is zero.
+type MediaReadSteps struct {
+	// Open covers activating the session manager, RequestAsync and
+	// GetCurrentSession.
+	Open       time.Duration
+	Status     time.Duration
+	Properties time.Duration
+	// AppID is the session's SourceAppUserModelId, "" when unknown or
+	// when there is no session. It names the app even when the read
+	// fails, which NowPlaying.App cannot.
+	AppID string
+	// PropertiesErr is why the track could not be read. The read still
+	// succeeds then (the status is worth reporting on its own), so this
+	// is the only place the failure shows.
+	PropertiesErr error
+}
+
+// stepClock times the steps; a var for the tests.
+var stepClock = time.Now
+
+// ReadNowPlayingSteps is ReadNowPlaying plus the time each step took.
+func ReadNowPlayingSteps() (NowPlaying, MediaReadSteps, error) {
+	var (
+		np    NowPlaying
+		steps MediaReadSteps
+	)
 	err := runCOM(func() error {
+		start := stepClock()
 		s, err := openSession()
+		steps.Open = stepClock().Sub(start)
 		if err != nil {
 			return err
 		}
@@ -125,23 +160,27 @@ func ReadNowPlaying() (NowPlaying, error) {
 			return nil
 		}
 		defer s.Close()
-		np, err = readSession(s)
+		np, err = readSession(s, &steps)
 		return err
 	})
 	if err != nil {
 		if errors.Is(err, errNoMediaSessionAPI) {
-			return NowPlaying{}, Unsupported("%v", err)
+			return NowPlaying{}, steps, Unsupported("%v", err)
 		}
-		return NowPlaying{}, Failed("media session: %v", err)
+		return NowPlaying{}, steps, Failed("media session: %v", err)
 	}
-	return np, nil
+	return np, steps, nil
 }
 
-// readSession reads status, track and app. The track is best effort: some
-// apps publish a status but refuse TryGetMediaPropertiesAsync, and a
-// status without a title is still worth reporting.
-func readSession(s mediaSession) (NowPlaying, error) {
+// readSession reads status, track and app, timing each step into steps.
+// The track is best effort: some apps publish a status but refuse
+// TryGetMediaPropertiesAsync, and a status without a title is still worth
+// reporting.
+func readSession(s mediaSession, steps *MediaReadSteps) (NowPlaying, error) {
+	steps.AppID = s.AppID()
+	start := stepClock()
 	status, err := s.Status()
+	steps.Status = stepClock().Sub(start)
 	if err != nil {
 		return NowPlaying{}, err
 	}
@@ -149,12 +188,17 @@ func readSession(s mediaSession) (NowPlaying, error) {
 	if status == MediaNone {
 		return np, nil
 	}
-	np.App = AppDisplayName(s.AppID())
-	if title, artist, album, err := s.Properties(); err == nil {
-		np.Title = sanitizeMediaText(title, MaxMediaTextRunes)
-		np.Artist = sanitizeMediaText(artist, MaxMediaTextRunes)
-		np.Album = sanitizeMediaText(album, MaxMediaTextRunes)
+	np.App = AppDisplayName(steps.AppID)
+	start = stepClock()
+	title, artist, album, err := s.Properties()
+	steps.Properties = stepClock().Sub(start)
+	if err != nil {
+		steps.PropertiesErr = err
+		return np, nil
 	}
+	np.Title = sanitizeMediaText(title, MaxMediaTextRunes)
+	np.Artist = sanitizeMediaText(artist, MaxMediaTextRunes)
+	np.Album = sanitizeMediaText(album, MaxMediaTextRunes)
 	return np, nil
 }
 

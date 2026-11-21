@@ -84,6 +84,7 @@
   "lang.title": "언어",
   "localonly.relogin": "서비스와의 로컬 연결이 끊겨 프리셋·감시 목록을 불러오지 못했어요. 잠시 뒤 다시 시도해요",
   "localonly.note": "프리셋·감시 목록 편집은 이 PC의 관리자 계정에서만 할 수 있어요",
+  "localonly.untrusted": "서비스가 이 앱을 확인하지 못해 프리셋·감시 목록 편집이 잠겼어요 (사유: %s). service.log 와 함께 알려 주세요",
   "login.cancel": "취소",
   "login.empty": "시크릿을 입력하세요",
   "login.invalid": "시크릿이 올바르지 않아요.",

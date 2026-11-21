@@ -73,6 +73,10 @@ const LocalLoginRetryAfter = localLoginRetryAfter
 // process (a standard user): the presets and watch editors are locked.
 func IsLocalLoginRefused(err error) bool { return errors.Is(err, errLocalLoginRefused) }
 
+// LocalLoginRefusalCode is the service's reason for a refusal ("not_admin",
+// "other_exe", "rate_limited", "http_404", …), "" for any other error.
+func LocalLoginRefusalCode(err error) string { return localLoginRefusalCode(err) }
+
 // IsLocalOnly reports the service's 403 local_only: the call needs the
 // local trusted session (C5).
 func IsLocalOnly(err error) bool { return errors.Is(err, errLocalOnly) }

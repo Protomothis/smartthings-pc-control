@@ -303,6 +303,12 @@ func startupHooks(stop <-chan struct{}) {
 	// What the service holds, in service.log every 6 hours and whenever it
 	// looks like a pile-up: a leak shows long before the PC slows down.
 	go health.Watch(stop, serviceHealthLimits, logMsg)
+	// CPU that stays high is captured (a profile and a goroutine dump) in
+	// diag\ of the install folder, which the tray app may read and pack
+	// into a report (#176).
+	if dir := installDir(); dir != "" {
+		go health.WatchCPU(stop, health.DiagDir(dir), logMsg)
+	}
 }
 
 // serviceHealthLimits are well above what the service holds normally
