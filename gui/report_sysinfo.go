@@ -1,13 +1,14 @@
 package gui
 
 // The PC facts a problem report carries (#175): Windows edition and build,
-// the CPU, memory and uptime. Read from the registry and kernel32 through
+// the CPU, the graphics cards, memory and uptime. Read from the registry and kernel32 through
 // sysSource so the tests can hand in their own values.
 
 import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ type SystemInfo struct {
 	// MemTotal and MemFree are bytes of physical memory.
 	MemTotal, MemFree uint64
 	Uptime            time.Duration
+	// GPUs is the display adapters' names, without the basic and remote
+	// display drivers Windows adds.
+	GPUs []string
 	// PCName and UserName are %COMPUTERNAME% and %USERNAME%: never shown,
 	// only masked out of the logs.
 	PCName, UserName string
@@ -40,6 +44,7 @@ type sysSource struct {
 	uptime    func() time.Duration
 	cores     func() int
 	env       func(string) string
+	gpus      func() []string
 }
 
 const (
@@ -63,6 +68,7 @@ func readSystemInfo(src sysSource) SystemInfo {
 		info.MemTotal, info.MemFree = total, free
 	}
 	info.Uptime = src.uptime()
+	info.GPUs = src.gpus()
 	info.PCName, info.UserName = src.env("COMPUTERNAME"), src.env("USERNAME")
 	return info
 }
@@ -115,7 +121,55 @@ func realSysSource() sysSource {
 		uptime: windows.DurationSinceBoot,
 		cores:  runtime.NumCPU,
 		env:    os.Getenv,
+		gpus:   displayAdapters,
 	}
+}
+
+// regDisplayClass is the display adapters' device class: one numbered
+// subkey (0000, 0001 …) per adapter driver.
+const regDisplayClass = `SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}`
+
+// displayAdapters is the names of the PC's display adapters.
+func displayAdapters() []string {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, regDisplayClass, registry.ENUMERATE_SUB_KEYS|registry.WOW64_64KEY)
+	if err != nil {
+		return nil
+	}
+	defer k.Close()
+	subs, _ := k.ReadSubKeyNames(-1)
+	var names []string
+	for _, s := range subs {
+		if len(s) != 4 { // "Properties" and the like are not adapters
+			continue
+		}
+		sk, err := registry.OpenKey(k, s, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		desc, _, err := sk.GetStringValue("DriverDesc")
+		sk.Close()
+		if err == nil {
+			names = append(names, desc)
+		}
+	}
+	return realGPUs(names)
+}
+
+// realGPUs drops the adapters that are not a graphics card (Microsoft
+// Basic Display Adapter, the remote desktop ones) and duplicates, in
+// order.
+func realGPUs(names []string) []string {
+	var out []string
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		l := strings.ToLower(n)
+		if n == "" || strings.Contains(l, "basic display") || strings.Contains(l, "basic render") ||
+			strings.Contains(l, "remote display") || strings.Contains(l, "remote desktop") || slices.Contains(out, n) {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // memoryStatusEx is MEMORYSTATUSEX.

@@ -1,7 +1,8 @@
 package ui
 
 // 문제 보내기 (#175): the user writes what went wrong, picks what goes
-// along (PC info, the two logs, diagnostic files) and either opens a
+// along (PC info, the busiest programs, the two logs, diagnostic files)
+// and either opens a
 // prefilled GitHub issue or only saves the zip (for someone without a
 // GitHub account, to attach to a forum post).
 //
@@ -11,8 +12,10 @@ package ui
 // issue itself carries the description, the PC facts and the latest
 // warning and error lines in its URL (gui.Report.IssueURL).
 //
-// Reading the logs and zipping run off the window goroutine, the buttons
-// busy meanwhile. Everything that reaches outside — the registry, files,
+// The state at send time (CPU, our processes, the busiest programs) is
+// measured for a second when the page opens, for the preview, and again
+// when a button is pressed. That, reading the logs and zipping run off
+// the window goroutine, the buttons busy meanwhile. Everything that reaches outside — the registry, files,
 // the browser, Explorer — goes through p.ops, so the tests launch nothing.
 
 import (
@@ -35,10 +38,13 @@ type reportOps struct {
 	openURL  func(string) error
 	reveal   func(string) error
 	now      func() time.Time
+	// snapshot measures the state at send time (about a second).
+	snapshot func() gui.StateSnapshot
 }
 
 func realReportOps() reportOps {
 	return reportOps{
+		snapshot: gui.TakeStateSnapshot,
 		system:   gui.ReadSystemInfo,
 		sources:  gui.DefaultReportSources,
 		saveDirs: gui.ReportSaveDirs,
@@ -51,6 +57,7 @@ func realReportOps() reportOps {
 // What can be included, in the order of the switches.
 const (
 	incPC = iota
+	incProcs
 	incService
 	incGUI
 	incDiag
@@ -69,15 +76,20 @@ type reportPage struct {
 	send, save widget.Clickable
 
 	// Window goroutine only.
-	started  bool // the switches have their defaults
-	sys      gui.SystemInfo
-	masker   *gui.Masker
-	warn     gui.ReportWarnings
-	loaded   bool // sys, masker and warn are read
-	loading  bool
-	busy     bool // a zip is being written
-	busySend bool // … for the GitHub button (its label says so)
-	result   notice
+	started bool // the switches have their defaults
+	sys     gui.SystemInfo
+	masker  *gui.Masker
+	warn    gui.ReportWarnings
+	loaded  bool // sys, masker and warn are read
+	loading bool
+	// snap is the state measured when the page opened, for the preview
+	// (the report measures again when it is sent); measuring while that
+	// runs.
+	snap      *gui.StateSnapshot
+	measuring bool
+	busy      bool // a zip is being written
+	busySend  bool // … for the GitHub button (its label says so)
+	result    notice
 }
 
 func newReportPage() screen { return &reportPage{ops: realReportOps()} }
@@ -95,6 +107,21 @@ func (p *reportPage) shown(u *UI, s snapshot) {
 	}
 	p.result = notice{}
 	p.load(u, s)
+	p.measure(u)
+}
+
+// measure takes the state snapshot for the preview off the window
+// goroutine; it takes a second, so it runs apart from load.
+func (p *reportPage) measure(u *UI) {
+	if p.measuring {
+		return
+	}
+	p.measuring = true
+	take := p.ops.snapshot
+	go func() {
+		snap := take()
+		u.onWindow(func() { p.snap, p.measuring = &snap, false })
+	}()
 }
 
 // load reads the PC facts and the logs' warning lines off the window
@@ -119,6 +146,7 @@ func (p *reportPage) load(u *UI, s snapshot) {
 func (p *reportPage) include() gui.ReportInclude {
 	return gui.ReportInclude{
 		PCInfo:     p.inc[incPC].Value,
+		Processes:  p.inc[incProcs].Value,
 		ServiceLog: p.inc[incService].Value,
 		GUILog:     p.inc[incGUI].Value,
 		Diag:       p.inc[incDiag].Value,
@@ -162,6 +190,12 @@ func (p *reportPage) run(u *UI, s snapshot, toGitHub bool) {
 		if !haveSys {
 			st.System = ops.system()
 		}
+		// Measured again now, not when the page opened: the moment the
+		// user presses the button is the one they are reporting.
+		if inc.PCInfo || inc.Processes {
+			snap := ops.snapshot()
+			st.Snapshot = &snap
+		}
 		m := gui.NewMasker(gui.ReportMaskInput(st.Config, st.System))
 		now := ops.now()
 		r := gui.NewReport(st, desc, inc, now, m)
@@ -204,11 +238,12 @@ func (p *reportPage) body(gtx C, u *UI, s snapshot) D {
 	)
 }
 
-// includeCard is the four switches and the line on what is masked.
+// includeCard is the switches and the line on what is masked.
 func (p *reportPage) includeCard(u *UI) layout.Widget {
 	th := u.th
 	items := [incCount][2]string{
 		{u.t("ui.report.inc.pc"), u.t("ui.report.inc.pc.sub")},
+		{u.t("ui.report.inc.procs"), u.t("ui.report.inc.procs.sub")},
 		{u.t("ui.report.inc.svc"), u.t("ui.report.inc.svc.sub")},
 		{u.t("ui.report.inc.gui"), u.t("ui.report.inc.gui.sub")},
 		{u.t("ui.report.inc.diag"), u.t("ui.report.inc.diag.sub")},
@@ -237,7 +272,9 @@ func (p *reportPage) previewCard(u *UI, s snapshot) layout.Widget {
 		return p.preview.Layout(gtx, th, u.t("ui.report.preview"), func(gtx C) D {
 			txt := u.t("ui.report.preview.loading")
 			if p.loaded {
-				r := gui.NewReport(u.reportState(s, p.sys), p.desc.Text(), p.include(), p.ops.now(), p.masker)
+				st := u.reportState(s, p.sys)
+				st.Snapshot, st.Measuring = p.snap, p.measuring
+				r := gui.NewReport(st, p.desc.Text(), p.include(), p.ops.now(), p.masker)
 				txt = r.IssueTitle() + "\n\n" + r.IssueBody(p.warn.Lines(r.Include), gui.ReportZipName(r.Created))
 			}
 			return surface(gtx, colBg, radiusM, func(gtx C) D {

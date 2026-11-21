@@ -2,6 +2,7 @@ package gui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,6 +27,7 @@ func fakeSys(strs map[string]string, ints map[string]uint64) sysSource {
 		uptime: func() time.Duration { return 3 * time.Hour },
 		cores:  func() int { return 8 },
 		env:    func(k string) string { return map[string]string{"COMPUTERNAME": "DESK-1", "USERNAME": "jdoe"}[k] },
+		gpus:   func() []string { return []string{"NVIDIA GeForce RTX 3070"} },
 	}
 }
 
@@ -49,6 +51,17 @@ func TestReadSystemInfo(t *testing.T) {
 	}
 	if info.PCName != "DESK-1" || info.UserName != "jdoe" {
 		t.Errorf("names %q %q", info.PCName, info.UserName)
+	}
+	if len(info.GPUs) != 1 || info.GPUs[0] != "NVIDIA GeForce RTX 3070" {
+		t.Errorf("gpus %q", info.GPUs)
+	}
+}
+
+func TestRealGPUs(t *testing.T) {
+	got := realGPUs([]string{"NVIDIA GeForce RTX 3070", "Microsoft Basic Display Adapter", " ", "Intel(R) UHD Graphics 630",
+		"Microsoft Remote Display Adapter", "NVIDIA GeForce RTX 3070", "Microsoft Basic Render Driver"})
+	if strings.Join(got, "|") != "NVIDIA GeForce RTX 3070|Intel(R) UHD Graphics 630" {
+		t.Errorf("gpus %q", got)
 	}
 }
 

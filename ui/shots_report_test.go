@@ -38,8 +38,8 @@ func TestShotsReport(t *testing.T) {
 				p := u.pages[pageReport].(*reportPage)
 				p.ops = f.ops()
 				u.open(pageReport)
-				waitFor(t, u, func() bool { return p.loaded })
-				shotW(t, dir, name("empty"), w, 1050, u.layout)
+				waitFor(t, u, func() bool { return p.loaded && p.snap != nil })
+				shotW(t, dir, name("empty"), w, 1150, u.layout)
 
 				desc := "허브가 PC를 못 찾아요. 어제 업데이트한 뒤부터 SmartThings 앱에서 끄기를 눌러도 반응이 없어요."
 				if lang == gui.LangEn {
@@ -48,17 +48,17 @@ func TestShotsReport(t *testing.T) {
 				p.desc.SetText(desc)
 				p.inc[incDiag].Value = false
 				p.preview.open = true
-				shotW(t, dir, name("preview"), w, 1900, u.layout)
+				shotW(t, dir, name("preview"), w, 2500, u.layout)
 				p.preview.open = false
 
 				p.busy, p.busySend = true, true
-				shotW(t, dir, name("busy"), w, 1050, u.layout)
+				shotW(t, dir, name("busy"), w, 1150, u.layout)
 				p.busy = false
 
 				p.result = notice{noticeOK, fmt.Sprintf(u.t("ui.report.done.send"), `C:\Users\<user>\Desktop\stpc-report-20261121-1530.zip`)}
-				shotW(t, dir, name("sent"), w, 1150, u.layout)
+				shotW(t, dir, name("sent"), w, 1250, u.layout)
 				p.result = notice{noticeError, fmt.Sprintf(u.t("ui.report.fail"), "access is denied")}
-				shotW(t, dir, name("error"), w, 1150, u.layout)
+				shotW(t, dir, name("error"), w, 1250, u.layout)
 
 				if w == 480 {
 					u.nav.stack = nil
