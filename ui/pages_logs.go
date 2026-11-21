@@ -350,17 +350,25 @@ func (p *logsPage) controls(gtx C, u *UI) D {
 }
 
 // reportLine is the way to 문제 보내기 under the log (#175): whoever reads
-// the log is likely looking at a problem.
+// the log is likely looking at a problem. It is a card like the filter card
+// above, so the button stands out from the page instead of reading as a
+// link; the button has the light accent of the home card's [실행].
 func (p *logsPage) reportLine(gtx C, u *UI) D {
 	th := u.th
-	return layout.Inset{Left: 4}.Layout(gtx, func(gtx C) D {
-		return row(gtx,
-			layout.Rigid(func(gtx C) D { return drawIcon(gtx, "bug", 18, colSub) }),
-			hspace(8),
-			layout.Flexed(1, label(th, textS, u.t("ui.report.fromlogs"), colSub, font.Normal).Layout),
-			hspace(gapXS),
-			layout.Rigid(smallButton(th, &p.report, u.t("ui.report.title"), colAccent).Layout),
-		)
+	return surface(gtx, colCard, radiusL, func(gtx C) D {
+		return layout.Inset{Top: gapS, Bottom: gapS, Left: gapM, Right: gapS}.Layout(gtx, func(gtx C) D {
+			return row(gtx,
+				layout.Rigid(func(gtx C) D { return drawIcon(gtx, "bug", 18, colSub) }),
+				hspace(8),
+				layout.Flexed(1, label(th, textS, u.t("ui.report.fromlogs"), colSub, font.Normal).Layout),
+				hspace(gapXS),
+				layout.Rigid(func(gtx C) D {
+					b := smallButton(th, &p.report, u.t("ui.report.title"), colAccent)
+					b.Background = colAccentDim
+					return b.Layout(gtx)
+				}),
+			)
+		})
 	})
 }
 
