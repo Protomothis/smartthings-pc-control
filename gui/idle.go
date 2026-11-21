@@ -77,8 +77,9 @@ var (
 	// in-process: this app already is in the user's session.
 	heartbeatAudio = useraction.ReadAudio
 	// heartbeatNowPlaying reads the system media session in-process
-	// (#117), and heartbeatShareNowPlaying is the media.now_playing opt-in.
-	heartbeatNowPlaying      = useraction.ReadNowPlaying
+	// (#117), with the time each step took for the diagnostics (#176),
+	// and heartbeatShareNowPlaying is the media.now_playing opt-in.
+	heartbeatNowPlaying      = useraction.ReadNowPlayingSteps
 	heartbeatShareNowPlaying = localNowPlaying
 	heartbeatNow             = time.Now
 )
@@ -106,18 +107,19 @@ func buildHeartbeat() (Heartbeat, bool) {
 // sampleMediaBlocks reads the audio and media blocks media.enabled allows.
 // A PC without a playback device (or a Core Audio hiccup) simply sends no
 // audio block, and one without the media session API no media block; the
-// service keeps its last value.
+// service keeps its last value. Both reads go through mediaReads, which
+// logs the slow and failed ones (#176).
 func sampleMediaBlocks() (*HeartbeatAudio, *HeartbeatMedia) {
 	if !heartbeatMediaEnabled() {
 		return nil, nil
 	}
 	at := heartbeatNow().Format(time.RFC3339Nano)
 	var audio *HeartbeatAudio
-	if a, err := heartbeatAudio(); err == nil {
+	if a, err := mediaReads.timeAudio(heartbeatAudio); err == nil {
 		audio = &HeartbeatAudio{Volume: a.Volume, Muted: a.Muted, Device: a.Device, SampledAt: at}
 	}
 	var media *HeartbeatMedia
-	if np, err := heartbeatNowPlaying(); err == nil {
+	if np, err := mediaReads.timeMedia(heartbeatNowPlaying); err == nil {
 		media = heartbeatMediaBlock(np, heartbeatShareNowPlaying(), at)
 	}
 	return audio, media
@@ -244,6 +246,7 @@ func (h *HeartbeatSender) Post(c HeartbeatClient, hb Heartbeat) {
 			ignored, err = c.SessionHeartbeat(hb)
 		}
 	}
+	mediaReads.notePost(err)
 	if err == nil {
 		// An ignored post counts as delivered too: the 3s check then posts
 		// only on a change rather than every 3s, and the 30s heartbeat
