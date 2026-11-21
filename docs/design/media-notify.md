@@ -118,10 +118,18 @@
     최대 절전으로 대신하지 않고 `system.exec_failed`. `power.stopping` 힌트는 남기지 않는다 — 절전 브로드캐스트가 오면
     힌트 없이도 `suspend`이고, 남기면 2분 안의 다른 서비스 중지(깨운 뒤 재시작 등)가 절전으로 보인다. 유예는 `Execute` 전
     `dispatchCommand`에서 그대로 적용된다.
-  - `screen off`는 이 PC에서 절전이 된다고 로그에 남긴다. 그 뒤 Windows는 실제 입력이나 전원 버튼으로만 깨어나고, 주입한
-    입력·`SC_MONITORPOWER -1`은 문서화된 해제 방법이 아니다. 그래서 `screen on`이 시간 초과되면 "적용된 것으로 간주"하지
-    않고 절전 중이라 깨울 수 없다고 로그에 남기고 `system.exec_failed`(`turnscreenon`)를 보내며 `display`는 그대로 둔다.
-    응답이 오면(아직 절전 전) 평소처럼 `on`.
+  - 화면이 꺼지면 Windows는 전원 요청을 기다리는 NoCS 단계 → … → DAM 단계(데스크톱 앱 일시 중지, 트레이 포함) → 저전력
+    단계로 내려가고, 그 뒤에는 실제 입력·전원 버튼·덮개로만 깨어난다(주입한 입력·`SC_MONITORPOWER -1`은 문서화된 해제
+    방법이 아니고, 트레이가 멈춰 있어 실행조차 못 한다 — 3초 시간 초과의 원인). 그래서 `screen off`는 먼저 **화면 끔 유지**
+    (`service/power/screenhold.go`)를 건다: 서비스가 `PowerCreateRequest`/`PowerSetRequest(PowerRequestSystemRequired)`로
+    전원 요청을 잡아 NoCS 단계에 머물게 한다 — Microsoft 문서상 AC에서는 무기한, 배터리에서는 절전 시간 뒤 최대 5분, 사용자가
+    시작한 절전(전원 버튼 · 덮개 · 시작 메뉴 절전)에는 요청이 버려진다. `PowerSettingRegisterNotification`(콜백,
+    `GUID_CONSOLE_DISPLAY_STATE`)으로 화면 상태를 지켜보다 꺼짐을 본 뒤 다시 켜지면(우리 `screen on`, 실제 입력, 덮개 열기
+    무엇이든) 요청을 놓는다. 1분 안에 꺼짐이 안 오면(모니터가 무시) 놓고, 화면 상태를 못 지켜보면 아예 잡지 않는다(안 그러면
+    AC의 노트북이 유휴 절전을 영영 안 한다). `screen off` 실행이 실패하면(시간 초과 제외) 놓고, `suspend`는 화면을 끄기 전에
+    놓으며, 서비스 중지 때도 놓는다. S3 PC는 잡지 않는다. `powercfg /requests`의 SYSTEM 항목에 이유 문자열이 보인다.
+  - 그래도 절전에 들어간 뒤(배터리 · 덮개 · 전원 버튼) `screen on`이 시간 초과되면 "적용된 것으로 간주"하지 않고 절전 중이라
+    깨울 수 없다고 로그에 남기고 `system.exec_failed`(`turnscreenon`)를 보내며 `display`는 그대로 둔다. 응답이 오면 평소처럼 `on`.
   - 텔레그램의 `/sleep`(확인 후) · `/screenoff` · `/screenon` · 메뉴 화면 끄기 답장에 같은 안내 한 줄이 붙는다(`Deps.ModernStandby`).
 - 사용자 세션의 자식은 서비스(SYSTEM)의 환경 변수를 물려받는다. 프리셋이 띄우는 프로그램에는
   `CreateEnvironmentBlock`으로 만든 사용자 자신의 환경을 준다(#109).

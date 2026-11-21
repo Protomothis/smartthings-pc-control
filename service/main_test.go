@@ -25,6 +25,13 @@ func TestMain(m *testing.M) {
 	// laptop the suspend and screen commands take another path (#162),
 	// which the tests that want it fake on their own (fakePowerCaps).
 	sys.powerCaps = func() (power.Capabilities, error) { return power.Capabilities{S3: true}, nil }
+	// Never a real power request or display watch (#161): the tests that
+	// look at the screen-off hold fake their own (fakeScreenHold).
+	screenHold = power.NewScreenHold(power.ScreenHoldHooks{
+		Set:   func() error { return nil },
+		Clear: func() error { return nil },
+		Watch: func(func(bool)) (func(), error) { return func() {}, nil },
+	})
 	// Never start a real process from a test (#167): os.Executable is the
 	// test binary. The tests that want launches fake one (fakeLauncher).
 	trayLauncher.Start = nil

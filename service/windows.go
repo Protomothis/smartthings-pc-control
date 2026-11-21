@@ -84,6 +84,7 @@ func (s *shutdownService) Execute(args []string, r <-chan svc.ChangeRequest, cha
 			// than left to the goroutine watching s.stop: the process may
 			// be gone before that goroutine runs.
 			currentAwake().Shutdown()
+			screenHold.Release("service stopping") // #161
 			tgCtl.Stop()
 			stSrv.StopSSDP()
 			stopNotifier() // delivers what is queued (power.stopping, #60) before the logger goes
