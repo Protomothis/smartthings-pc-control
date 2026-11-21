@@ -74,18 +74,23 @@ type ReportState struct {
 	Hub        STHub
 	HubSet     bool
 	System     SystemInfo
+	// Snapshot is the state at send time (TakeStateSnapshot), nil until
+	// measured; Measuring says a measurement is under way (the preview).
+	Snapshot  *StateSnapshot
+	Measuring bool
 }
 
 // ReportInclude is what the user chose to send.
 type ReportInclude struct {
-	PCInfo     bool // the PC facts and the settings summary
+	PCInfo     bool // the PC facts, the settings summary, CPU and our processes now
+	Processes  bool // the programs using the most CPU now (names only)
 	ServiceLog bool // service.log and its rotations
 	GUILog     bool // gui.log
 	Diag       bool // the diag folders' profiles and dumps
 }
 
 // ReportIncludeAll is every part switched on, the page's default.
-var ReportIncludeAll = ReportInclude{PCInfo: true, ServiceLog: true, GUILog: true, Diag: true}
+var ReportIncludeAll = ReportInclude{PCInfo: true, Processes: true, ServiceLog: true, GUILog: true, Diag: true}
 
 // Report is one problem report. Build it with NewReport, which masks the
 // description.
@@ -96,8 +101,13 @@ type Report struct {
 	Created     time.Time
 }
 
-// NewReport is a report of desc (masked by m: people paste log lines).
+// NewReport is a report of desc (masked by m: people paste log lines). The
+// snapshot's process names are masked too.
 func NewReport(st ReportState, desc string, inc ReportInclude, created time.Time, m *Masker) Report {
+	if st.Snapshot != nil {
+		s := st.Snapshot.Masked(m)
+		st.Snapshot = &s
+	}
 	return Report{State: st, Description: strings.TrimSpace(m.Text(desc)), Include: inc, Created: created}
 }
 
@@ -139,6 +149,9 @@ func (r Report) PCRows() []ReportRow {
 			v = strings.TrimPrefix(v+" · "+cores, " · ")
 		}
 		rows = append(rows, ReportRow{"CPU", v})
+	}
+	if len(sys.GPUs) > 0 {
+		rows = append(rows, ReportRow{"GPU", strings.Join(sys.GPUs, " / ")})
 	}
 	if sys.MemTotal > 0 {
 		rows = append(rows, ReportRow{T(l, "ui.report.row.memory"),
@@ -266,18 +279,103 @@ func cutRunes(s string, n int) string {
 	return string([]rune(s)[:n-1]) + "…"
 }
 
+// --- the state at send time ---
+
+// StateSection is the "보내는 순간의 상태" part (without its heading): the
+// whole-PC CPU and our two processes with the PC info, then up to top of
+// the busiest programs with the process list. "" when neither is included
+// or there is nothing to show yet.
+func (r Report) StateSection(top int) string {
+	l, inc, snap := r.State.Lang, r.Include, r.State.Snapshot
+	if !inc.PCInfo && !inc.Processes {
+		return ""
+	}
+	if snap == nil {
+		if r.State.Measuring {
+			return "_" + T(l, "ui.report.measuring") + "_\n"
+		}
+		return ""
+	}
+	var b strings.Builder
+	if inc.PCInfo {
+		cpu := T(l, "ui.report.unknown")
+		if snap.CPUOK {
+			cpu = percent(snap.CPU)
+		}
+		b.WriteString(table(l, []ReportRow{
+			{T(l, "ui.report.state.cpu"), cpu},
+			{T(l, "ui.report.state.app"), procText(l, snap.App)},
+			{T(l, "ui.report.state.service"), procText(l, snap.Service)},
+		}))
+	}
+	if inc.Processes && top > 0 && len(snap.Top) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%s\n\n| %s | CPU | %s |\n|---|---|---|\n", T(l, "ui.report.state.top"),
+			T(l, "ui.report.state.program"), T(l, "ui.report.row.memory"))
+		for i, p := range snap.Top {
+			if i == top {
+				break
+			}
+			name := p.Name
+			if p.Count > 1 {
+				name = fmt.Sprintf("%s ×%d", name, p.Count)
+			}
+			cpu := "—"
+			if p.CPUOK {
+				cpu = percent(p.CPU)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", cell(name), cpu, megabytes(p.WorkingSet))
+		}
+		if snap.Skipped > 0 {
+			fmt.Fprintf(&b, "\n_%s_\n", fmt.Sprintf(T(l, "ui.report.state.skipped"), snap.Skipped))
+		}
+	}
+	return b.String()
+}
+
+// procText is one of our processes in a line: CPU, memory, threads,
+// handles, or why it could not be read.
+func procText(l Lang, p ProcStat) string {
+	if p.Err != "" {
+		s := fmt.Sprintf(T(l, "ui.report.state.noread"), p.Err)
+		if p.Threads > 0 {
+			s += " · " + fmt.Sprintf(T(l, "ui.report.state.threads"), p.Threads)
+		}
+		return s
+	}
+	cpu := "—"
+	if p.CPUOK {
+		cpu = percent(p.CPU)
+	}
+	return fmt.Sprintf(T(l, "ui.report.state.proc"), cpu, megabytes(p.WorkingSet), megabytes(p.Private), p.Threads, p.Handles)
+}
+
+// percent is a share in percent with one decimal.
+func percent(v float64) string { return fmt.Sprintf("%.1f%%", v) }
+
+// megabytes is bytes as "45.2 MB", or "1.3 GB" from a gigabyte up.
+func megabytes(b uint64) string {
+	if b >= 1<<30 {
+		return gib(b) + " GB"
+	}
+	return fmt.Sprintf("%.1f MB", float64(b)/(1<<20))
+}
+
 // issueParts is what the issue body is made of; IssueURL drops parts of
 // it until the URL fits.
 type issueParts struct {
 	desc     string
 	settings bool
 	warn     []string
+	top      int // rows of the busiest programs
 }
 
 // IssueBody is the issue text: warn is the masked warning/error lines
 // (newest last), zipName the zip to drag onto the issue.
 func (r Report) IssueBody(warn []string, zipName string) string {
-	return r.issueBody(issueParts{desc: r.description(), settings: true, warn: warn}, zipName)
+	return r.issueBody(issueParts{desc: r.description(), settings: true, warn: warn, top: snapshotTop}, zipName)
 }
 
 func (r Report) issueBody(p issueParts, zipName string) string {
@@ -290,6 +388,9 @@ func (r Report) issueBody(p issueParts, zipName string) string {
 			fmt.Fprintf(&b, "<details><summary>%s</summary>\n\n%s\n</details>\n\n", T(l, "ui.report.h.settings"), table(l, r.SettingRows()))
 		}
 	}
+	if s := r.StateSection(p.top); s != "" {
+		fmt.Fprintf(&b, "### %s\n\n%s\n", T(l, "ui.report.h.state"), s)
+	}
 	if len(p.warn) > 0 {
 		fmt.Fprintf(&b, "### %s\n\n```text\n%s\n```\n\n", T(l, "ui.report.h.warn"), strings.Join(p.warn, "\n"))
 	}
@@ -298,15 +399,20 @@ func (r Report) issueBody(p issueParts, zipName string) string {
 }
 
 // IssueURL is the new-issue page with the title and body filled in, kept
-// under reportURLMax: the oldest warning lines go first, then the settings
-// summary, then the description is cut.
+// under reportURLMax: the oldest warning lines go first, then the busiest
+// programs from the bottom of the list, then the settings summary, then
+// the description is cut.
 func (r Report) IssueURL(warn []string, zipName string) string {
 	title := r.IssueTitle()
-	p := issueParts{desc: r.description(), settings: true, warn: warn}
+	p := issueParts{desc: r.description(), settings: true, warn: warn, top: snapshotTop}
 	build := func() string { return issueURL(title, r.issueBody(p, zipName)) }
 	u := build()
 	for len(u) > reportURLMax && len(p.warn) > 0 {
 		p.warn = p.warn[1:]
+		u = build()
+	}
+	for len(u) > reportURLMax && p.top > 0 {
+		p.top--
 		u = build()
 	}
 	if len(u) > reportURLMax {
@@ -342,6 +448,9 @@ func (r Report) Markdown(files []string) string {
 	if r.Include.PCInfo {
 		fmt.Fprintf(&b, "## %s\n\n%s\n", T(l, "ui.report.h.pc"), table(l, r.PCRows()))
 		fmt.Fprintf(&b, "## %s\n\n%s\n", T(l, "ui.report.h.settings"), table(l, r.SettingRows()))
+	}
+	if s := r.StateSection(snapshotTop); s != "" {
+		fmt.Fprintf(&b, "## %s\n\n%s\n", T(l, "ui.report.h.state"), s)
 	}
 	fmt.Fprintf(&b, "## %s\n\n", T(l, "ui.report.h.files"))
 	for _, f := range files {

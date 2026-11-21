@@ -22,6 +22,29 @@ type fakeReport struct {
 	urls     []string
 	revealed []string
 	urlErr   error
+	snaps    int           // measurements taken
+	snapWait chan struct{} // when set, a measurement waits for it
+}
+
+// fakeStateSnapshot is a measurement with a program named after the user.
+func fakeStateSnapshot() gui.StateSnapshot {
+	return gui.StateSnapshot{
+		CPU: 37.5, CPUOK: true,
+		App:     gui.ProcStat{Name: "smartthings-pc-control.exe", CPU: 0.3, CPUOK: true, WorkingSet: 45 << 20, Private: 30 << 20, Threads: 18, Handles: 412},
+		Service: gui.ProcStat{Name: "smartthings-pc-control.exe", Threads: 23, Err: "Access is denied."},
+		Top: []gui.ProcStat{
+			{Name: "game.exe", Count: 1, CPU: 25, CPUOK: true, WorkingSet: 3 << 30},
+			{Name: "chrome.exe", Count: 12, CPU: 8.4, CPUOK: true, WorkingSet: 1300 << 20},
+			{Name: "jdoe-sync.exe", Count: 1, CPU: 1.2, CPUOK: true, WorkingSet: 80 << 20},
+		},
+		Skipped: 4,
+	}
+}
+
+func (f *fakeReport) snapCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snaps
 }
 
 var fakeReportLogs = map[string]string{
@@ -33,7 +56,8 @@ func (f *fakeReport) ops() reportOps {
 	return reportOps{
 		system: func() gui.SystemInfo {
 			return gui.SystemInfo{Windows: "Windows 11 Pro 23H2 (build 22631.4460)", CPU: "AMD Ryzen 7 5800X", Cores: 16,
-				MemTotal: 32 << 30, MemFree: 20 << 30, Uptime: 50 * time.Hour, PCName: "DESK-1", UserName: "jdoe"}
+				MemTotal: 32 << 30, MemFree: 20 << 30, Uptime: 50 * time.Hour, PCName: "DESK-1", UserName: "jdoe",
+				GPUs: []string{"NVIDIA GeForce RTX 3070"}}
 		},
 		sources: func() gui.ReportSources {
 			return gui.ReportSources{
@@ -62,6 +86,15 @@ func (f *fakeReport) ops() reportOps {
 			return nil
 		},
 		now: func() time.Time { return time.Date(2026, 11, 21, 15, 30, 0, 0, time.Local) },
+		snapshot: func() gui.StateSnapshot {
+			if f.snapWait != nil {
+				<-f.snapWait
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.snaps++
+			return fakeStateSnapshot()
+		},
 	}
 }
 
@@ -81,7 +114,7 @@ func newReportTest(t *testing.T, f *fakeReport) (*UI, *reportPage) {
 
 func TestReportRealOpsWired(t *testing.T) {
 	o := realReportOps()
-	if o.system == nil || o.sources == nil || o.saveDirs == nil || o.openURL == nil || o.reveal == nil || o.now == nil {
+	if o.system == nil || o.sources == nil || o.saveDirs == nil || o.openURL == nil || o.reveal == nil || o.now == nil || o.snapshot == nil {
 		t.Fatal("an op is missing")
 	}
 }
@@ -108,6 +141,65 @@ func TestReportShownLoadsPreview(t *testing.T) {
 	}
 	p.preview.open = true
 	frame(u) // the preview lays out without a GPU
+}
+
+// The preview says 측정 중… until the measurement is in, then shows it,
+// the program names masked.
+func TestReportPreviewMeasures(t *testing.T) {
+	f := &fakeReport{dir: t.TempDir(), snapWait: make(chan struct{})}
+	u, p := newReportTest(t, f)
+	u.open(pageReport)
+	waitFor(t, u, func() bool { return p.loaded })
+	preview := func() string {
+		st := u.reportState(u.current(), p.sys)
+		st.Snapshot, st.Measuring = p.snap, p.measuring
+		r := gui.NewReport(st, "", p.include(), time.Now(), p.masker)
+		return r.IssueBody(nil, "z.zip")
+	}
+	if !p.measuring || !strings.Contains(preview(), "측정 중…") {
+		t.Fatalf("while measuring:\n%s", preview())
+	}
+	close(f.snapWait)
+	waitFor(t, u, func() bool { return p.snap != nil })
+	body := preview()
+	for _, want := range []string{"보내는 순간의 상태", "| PC 전체 CPU | 37.5% |", "| chrome.exe ×12 | 8.4% | 1.3 GB |", "<name>-sync.exe", "읽을 수 없음 (Access is denied.)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("preview lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "jdoe") {
+		t.Errorf("a program name kept the user name:\n%s", body)
+	}
+	// Without the process switch, the list goes; the CPU rows stay with
+	// PC 정보.
+	p.inc[incProcs].Value = false
+	if body := preview(); strings.Contains(body, "game.exe") || !strings.Contains(body, "PC 전체 CPU") {
+		t.Errorf("processes off:\n%s", body)
+	}
+	p.preview.open = true
+	frame(u)
+}
+
+// Sending measures again; with both PC 정보 and the processes off it does
+// not measure at all.
+func TestReportSendMeasures(t *testing.T) {
+	f := &fakeReport{dir: t.TempDir()}
+	u, p := newReportTest(t, f)
+	u.open(pageReport)
+	waitFor(t, u, func() bool { return p.loaded && p.snap != nil })
+	p.save.Click()
+	frame(u)
+	waitFor(t, u, func() bool { return !p.busy })
+	if n := f.snapCount(); n != 2 {
+		t.Fatalf("%d measurements, want the page's and the send's", n)
+	}
+	p.inc[incPC].Value, p.inc[incProcs].Value = false, false
+	p.save.Click()
+	frame(u)
+	waitFor(t, u, func() bool { return !p.busy })
+	if n := f.snapCount(); n != 2 {
+		t.Fatalf("measured with both switches off (%d)", n)
+	}
 }
 
 func TestReportSendOpensIssueAndExplorer(t *testing.T) {
@@ -138,7 +230,7 @@ func TestReportSendOpensIssueAndExplorer(t *testing.T) {
 		t.Errorf("title %q", q.Query().Get("title"))
 	}
 	body := q.Query().Get("body")
-	for _, want := range []string{"<name> 에서 생겨요", "WARNING: hub <public-ip> failed", "stpc-report-20261121-1530.zip", "v1.2.5"} {
+	for _, want := range []string{"<name> 에서 생겨요", "WARNING: hub <public-ip> failed", "stpc-report-20261121-1530.zip", "v1.2.5", "| game.exe | 25.0% | 3.0 GB |"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body lacks %q:\n%s", want, body)
 		}
