@@ -134,6 +134,7 @@ type logsPage struct {
 	refresh  widget.Clickable
 	openFile widget.Clickable
 	openDir  widget.Clickable
+	report   widget.Clickable // 문제 보내기 (#175)
 	toEnd    widget.Clickable
 	list     widget.List
 
@@ -270,6 +271,9 @@ func (p *logsPage) body(gtx C, u *UI, s snapshot) D {
 	if p.openFile.Clicked(gtx) {
 		u.openServiceLog(false)
 	}
+	if p.report.Clicked(gtx) {
+		u.open(pageReport)
+	}
 	if p.openDir.Clicked(gtx) {
 		u.openServiceLog(true)
 	}
@@ -309,6 +313,8 @@ func (p *logsPage) body(gtx C, u *UI, s snapshot) D {
 		layout.Rigid(func(gtx C) D { return p.controls(gtx, u) }),
 		vspace(gapS),
 		layout.Flexed(1, func(gtx C) D { return p.logCard(gtx, u, loaded) }),
+		vspace(gapS),
+		layout.Rigid(func(gtx C) D { return p.reportLine(gtx, u) }),
 	)
 	layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	return D{Size: image.Pt(gtx.Constraints.Max.X, h)}
@@ -340,6 +346,21 @@ func (p *logsPage) controls(gtx C, u *UI) D {
 				}),
 			)
 		})
+	})
+}
+
+// reportLine is the way to 문제 보내기 under the log (#175): whoever reads
+// the log is likely looking at a problem.
+func (p *logsPage) reportLine(gtx C, u *UI) D {
+	th := u.th
+	return layout.Inset{Left: 4}.Layout(gtx, func(gtx C) D {
+		return row(gtx,
+			layout.Rigid(func(gtx C) D { return drawIcon(gtx, "bug", 18, colSub) }),
+			hspace(8),
+			layout.Flexed(1, label(th, textS, u.t("ui.report.fromlogs"), colSub, font.Normal).Layout),
+			hspace(gapXS),
+			layout.Rigid(smallButton(th, &p.report, u.t("ui.report.title"), colAccent).Layout),
+		)
 	})
 }
 
