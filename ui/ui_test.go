@@ -17,6 +17,7 @@ type fakeAPI struct{ API }
 
 var errFake = errors.New("fake")
 
+func (fakeAPI) DiagProcess() (gui.ServiceProcess, error)           { return gui.ServiceProcess{}, errFake }
 func (fakeAPI) GetSTHub() (gui.STHub, error)                       { return gui.STHub{}, errFake }
 func (fakeAPI) TelegramState() (gui.TelegramState, error)          { return gui.TelegramState{}, errFake }
 func (fakeAPI) Logs() ([]string, error)                            { return nil, errFake }

@@ -17,6 +17,8 @@
   "ui.report.state.proc": "CPU %s · memory %s (private %s) · %d threads · %d handles",
   "ui.report.state.noread": "Cannot be read (%s)",
   "ui.report.state.threads": "%d threads",
+  "ui.report.state.goroutines": "%d goroutines",
+  "ui.report.state.uptime": "up %s",
   "ui.report.state.top": "Programs using the most CPU (over 1 second, same names merged)",
   "ui.report.state.program": "Program",
   "ui.report.state.skipped": "%d processes that could not be opened (no permission) are left out.",

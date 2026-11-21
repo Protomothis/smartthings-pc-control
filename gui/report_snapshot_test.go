@@ -121,7 +121,7 @@ func TestTakeStateSnapshotReal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("takes a second")
 	}
-	s := TakeStateSnapshot()
+	s := TakeStateSnapshot(nil)
 	t.Logf("cpu %.1f%% service %+v skipped %d top %d", s.CPU, s.Service, s.Skipped, len(s.Top))
 	if !s.CPUOK || s.App.Err != "" || s.App.WorkingSet == 0 || s.App.Threads == 0 || len(s.Top) == 0 {
 		t.Errorf("%+v", s)

@@ -24,6 +24,46 @@ type fakeReport struct {
 	urlErr   error
 	snaps    int           // measurements taken
 	snapWait chan struct{} // when set, a measurement waits for it
+	svcAsked []bool        // per measurement: was the service asked
+}
+
+// diagAPI answers DiagProcess with the service's own figures.
+type diagAPI struct{ fakeAPI }
+
+func (diagAPI) DiagProcess() (gui.ServiceProcess, error) {
+	return gui.ServiceProcess{PID: 4321, Threads: 21, Goroutines: 57, WorkingSet: 30 << 20}, nil
+}
+
+// The snapshot asks the service through the API while connected, and
+// not at all otherwise; a failing call leaves the process-list row.
+func TestReportSnapshotAsksService(t *testing.T) {
+	f := &fakeReport{dir: t.TempDir()}
+	u, p := newReportTest(t, f)
+	u.api = diagAPI{}
+	u.open(pageReport)
+	waitFor(t, u, func() bool { return p.snap != nil })
+	if p.snap.Service.Goroutines != 57 || p.snap.Service.Err != "" {
+		t.Errorf("service row %+v", p.snap.Service)
+	}
+
+	u.api = fakeAPI{} // DiagProcess fails (an older service answers 404)
+	p.snap = nil
+	p.measure(u, u.current())
+	waitFor(t, u, func() bool { return p.snap != nil })
+	if p.snap.Service.Err != "Access is denied." {
+		t.Errorf("fallback row %+v", p.snap.Service)
+	}
+
+	u.update(func(s *snapshot) { s.conn = connLost })
+	p.snap = nil
+	p.measure(u, u.current())
+	waitFor(t, u, func() bool { return p.snap != nil })
+	f.mu.Lock()
+	asked := append([]bool(nil), f.svcAsked...)
+	f.mu.Unlock()
+	if len(asked) != 3 || !asked[0] || !asked[1] || asked[2] {
+		t.Errorf("asked %v, want the service asked only while connected", asked)
+	}
 }
 
 // fakeStateSnapshot is a measurement with a program named after the user.
@@ -86,14 +126,21 @@ func (f *fakeReport) ops() reportOps {
 			return nil
 		},
 		now: func() time.Time { return time.Date(2026, 11, 21, 15, 30, 0, 0, time.Local) },
-		snapshot: func() gui.StateSnapshot {
+		snapshot: func(svc func() (gui.ServiceProcess, error)) gui.StateSnapshot {
 			if f.snapWait != nil {
 				<-f.snapWait
+			}
+			snap := fakeStateSnapshot()
+			if svc != nil {
+				if sp, err := svc(); err == nil {
+					snap.Service = gui.ProcStat{Threads: uint32(sp.Threads), Goroutines: sp.Goroutines, WorkingSet: sp.WorkingSet}
+				}
 			}
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.snaps++
-			return fakeStateSnapshot()
+			f.svcAsked = append(f.svcAsked, svc != nil)
+			return snap
 		},
 	}
 }

@@ -39,7 +39,7 @@ type reportOps struct {
 	reveal   func(string) error
 	now      func() time.Time
 	// snapshot measures the state at send time (about a second).
-	snapshot func() gui.StateSnapshot
+	snapshot func(service func() (gui.ServiceProcess, error)) gui.StateSnapshot
 }
 
 func realReportOps() reportOps {
@@ -107,19 +107,28 @@ func (p *reportPage) shown(u *UI, s snapshot) {
 	}
 	p.result = notice{}
 	p.load(u, s)
-	p.measure(u)
+	p.measure(u, s)
+}
+
+// serviceDiag is how the snapshot asks the service for its own figures:
+// through the API while connected, nil (the process list only) otherwise.
+func (u *UI) serviceDiag(s snapshot) func() (gui.ServiceProcess, error) {
+	if s.conn != connOK {
+		return nil
+	}
+	return u.api.DiagProcess
 }
 
 // measure takes the state snapshot for the preview off the window
 // goroutine; it takes a second, so it runs apart from load.
-func (p *reportPage) measure(u *UI) {
+func (p *reportPage) measure(u *UI, s snapshot) {
 	if p.measuring {
 		return
 	}
 	p.measuring = true
-	take := p.ops.snapshot
+	take, svc := p.ops.snapshot, u.serviceDiag(s)
 	go func() {
-		snap := take()
+		snap := take(svc)
 		u.onWindow(func() { p.snap, p.measuring = &snap, false })
 	}()
 }
@@ -183,7 +192,7 @@ func (p *reportPage) run(u *UI, s snapshot, toGitHub bool) {
 	}
 	p.busy, p.busySend, p.result = true, toGitHub, notice{}
 	ops, desc, inc := p.ops, p.desc.Text(), p.include()
-	sys, haveSys := p.sys, p.loaded
+	sys, haveSys, svc := p.sys, p.loaded, u.serviceDiag(s)
 	st := u.reportState(s, sys)
 	l := u.language()
 	go func() {
@@ -193,7 +202,7 @@ func (p *reportPage) run(u *UI, s snapshot, toGitHub bool) {
 		// Measured again now, not when the page opened: the moment the
 		// user presses the button is the one they are reporting.
 		if inc.PCInfo || inc.Processes {
-			snap := ops.snapshot()
+			snap := ops.snapshot(svc)
 			st.Snapshot = &snap
 		}
 		m := gui.NewMasker(gui.ReportMaskInput(st.Config, st.System))

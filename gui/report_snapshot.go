@@ -8,8 +8,11 @@ package gui
 //
 // Only image names leave the PC (chrome.exe): no paths, command lines or
 // window titles. A process this user may not open (another user's, a
-// protected one) is left out and counted. Everything Windows-side goes
-// through snapSource so the tests hand in their own process lists.
+// protected one) is left out and counted. The service, which runs as
+// SYSTEM, is one of those, so while connected it is asked for its own
+// figures (report_service.go) at both ends of the window instead.
+// Everything Windows-side goes through snapSource so the tests hand in
+// their own process lists.
 
 import (
 	"cmp"
@@ -42,6 +45,9 @@ type ProcStat struct {
 	// WorkingSet and Private are bytes; Threads and Handles counts.
 	WorkingSet, Private uint64
 	Threads, Handles    uint32
+	// Goroutines and Uptime only come with the service's own figures.
+	Goroutines int
+	Uptime     time.Duration
 	// Err says why the process could not be read ("" when it was).
 	Err string
 }
@@ -94,19 +100,35 @@ type snapSource struct {
 	servicePID  func() (uint32, error)
 	selfPID     func() uint32
 	sleep       func(time.Duration)
+	// service asks the service for its own figures (Client.DiagProcess);
+	// nil while the app is not connected.
+	service func() (ServiceProcess, error)
 }
 
-// TakeStateSnapshot measures the PC for about a second. Call it off the
-// window goroutine.
-func TakeStateSnapshot() StateSnapshot { return takeSnapshot(realSnapSource()) }
+// TakeStateSnapshot measures the PC for about a second. service, when not
+// nil, is asked at both ends of the window for the service's own figures
+// (the tray may not open its process). Call it off the window goroutine.
+func TakeStateSnapshot(service func() (ServiceProcess, error)) StateSnapshot {
+	src := realSnapSource()
+	src.service = service
+	return takeSnapshot(src)
+}
 
 func takeSnapshot(src snapSource) StateSnapshot {
 	var snap StateSnapshot
+	ask := func() (ServiceProcess, error) {
+		if src.service == nil {
+			return ServiceProcess{}, errNoDiag
+		}
+		return src.service()
+	}
+	svc1, svcErr1 := ask()
 	idle1, kern1, user1, sysErr := src.systemTimes()
 	before, _ := src.processes()
 	src.sleep(snapshotWindow)
 	idle2, kern2, user2, sysErr2 := src.systemTimes()
 	after, err := src.processes()
+	svc2, svcErr2 := ask()
 
 	total := (kern2 - kern1) + (user2 - user1)
 	if sysErr == nil && sysErr2 == nil && total > 0 {
@@ -167,6 +189,21 @@ func takeSnapshot(src snapSource) StateSnapshot {
 	if err != nil && len(after) == 0 {
 		// No process list at all: say why on both of our rows.
 		snap.App.Err, snap.Service.Err = err.Error(), err.Error()
+	}
+	if svcErr2 == nil {
+		// The service's own figures replace the row the process list could
+		// not fill. Its CPU is the time it used between our two asks, on
+		// the same whole-PC scale as every other row.
+		st := ProcStat{
+			Name: snap.Service.Name, Count: 1,
+			WorkingSet: svc2.WorkingSet, Private: svc2.Private,
+			Threads: uint32(max(svc2.Threads, 0)), Handles: uint32(max(svc2.Handles, 0)),
+			Goroutines: svc2.Goroutines, Uptime: time.Duration(svc2.UptimeSecs) * time.Second,
+		}
+		if svcErr1 == nil && svc1.PID == svc2.PID && total > 0 && svc2.CPU() >= svc1.CPU() {
+			st.CPU, st.CPUOK = pct(svc2.CPU()-svc1.CPU(), total), true
+		}
+		snap.Service = st
 	}
 	for _, m := range byName {
 		snap.Top = append(snap.Top, *m)
