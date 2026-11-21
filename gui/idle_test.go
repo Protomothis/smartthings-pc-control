@@ -41,23 +41,29 @@ func TestIdleSecondsFrom(t *testing.T) {
 func fakeHeartbeat(t *testing.T, expose, media bool, audio useraction.Audio, audioErr error) {
 	t.Helper()
 	savedExpose, savedMedia, savedIdle, savedAudio, savedNow := heartbeatExposeSession, heartbeatMediaEnabled, heartbeatIdle, heartbeatAudio, heartbeatNow
-	savedNP, savedShare := heartbeatNowPlaying, heartbeatShareNowPlaying
+	savedNP, savedShare, savedReads := heartbeatNowPlaying, heartbeatShareNowPlaying, mediaReads
+	// The fake reads fail; their lines must not reach the real gui.log.
+	mediaReads = newReadDiag(time.Now, func(string, ...any) {})
 	heartbeatExposeSession = func() bool { return expose }
 	heartbeatMediaEnabled = func() bool { return media }
 	heartbeatIdle = func() (int64, bool) { return 42, true }
 	heartbeatAudio = func() (useraction.Audio, error) { return audio, audioErr }
-	heartbeatNowPlaying = func() (useraction.NowPlaying, error) { return useraction.NowPlaying{}, errors.New("unsupported") }
+	heartbeatNowPlaying = func() (useraction.NowPlaying, useraction.MediaReadSteps, error) {
+		return useraction.NowPlaying{}, useraction.MediaReadSteps{}, errors.New("unsupported")
+	}
 	heartbeatShareNowPlaying = func() bool { return false }
 	heartbeatNow = func() time.Time { return time.Date(2026, 9, 30, 21, 0, 7, 250e6, time.FixedZone("KST", 9*3600)) }
 	t.Cleanup(func() {
 		heartbeatExposeSession, heartbeatMediaEnabled, heartbeatIdle, heartbeatAudio, heartbeatNow = savedExpose, savedMedia, savedIdle, savedAudio, savedNow
-		heartbeatNowPlaying, heartbeatShareNowPlaying = savedNP, savedShare
+		heartbeatNowPlaying, heartbeatShareNowPlaying, mediaReads = savedNP, savedShare, savedReads
 	})
 }
 
 // fakeNowPlaying makes np the media session and share the opt-in.
 func fakeNowPlaying(np useraction.NowPlaying, share bool) {
-	heartbeatNowPlaying = func() (useraction.NowPlaying, error) { return np, nil }
+	heartbeatNowPlaying = func() (useraction.NowPlaying, useraction.MediaReadSteps, error) {
+		return np, useraction.MediaReadSteps{}, nil
+	}
 	heartbeatShareNowPlaying = func() bool { return share }
 }
 
