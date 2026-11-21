@@ -14,8 +14,8 @@
 --                      an unchanged value is otherwise dropped
 --   paint      yes     a new profile's cloud record is empty (sent in batches)
 --   rotate     yes     re-sends what the cloud may have lost (every row once
---   resync             per `ROTATE_SECONDS`; the rows the user notices after a
---                      burst of commands)
+--   resync             per `ROTATE_SECONDS`, except `DURATION_ROWS`; the rows
+--                      the user notices after a burst of commands)
 --   poll       first   an ordinary update: the first emit of each row in a run
 --                      is forced (after a profile move the hub may hold a value
 --                      the cloud never stored); after that an unchanged value
@@ -559,13 +559,26 @@ function emit.resync(device)
   return #records
 end
 
--- The rotation: every row this run has sent goes out forced again at least
--- once per `ROTATE_SECONDS`, in a stable order (sorted row keys) - a lost
+-- The rotation: every row this run has sent (but `DURATION_ROWS`) goes out
+-- forced again at least once per `ROTATE_SECONDS`, in a stable order (sorted row keys) - a lost
 -- event then stays lost for one cycle at most, whatever the hub's cache says.
 -- A step sends `rotate_size` rows, never more than `ROTATE_MAX`, and passes
 -- over a row this very poll has just sent.
 emit.ROTATE_SECONDS = 600
 emit.ROTATE_MAX = 5
+
+-- #174: the rows a routine's "for N minutes" condition ("10분 이상 꺼짐")
+-- watches most. The rotation never re-sends them: a forced event with the
+-- same value would restart that condition's timer every cycle, and with a
+-- cycle under 10 minutes a 10-minute condition never completed. They still go
+-- out on every change, forced on a run's first emit, in a repaint and in the
+-- burst `resync` (a user's commands, not a timer). The price: a change the
+-- cloud lost after the hub's cache took it stays wrong until the next change
+-- or driver restart instead of one cycle.
+emit.DURATION_ROWS = {
+  [state.CAP_SWITCH .. ".switch"] = true,
+  [caps.POWER_STATE .. ".powerState"] = true,
+}
 
 --- How many rows a step re-sends so that `rows` rows go round in
 --- `ROTATE_SECONDS` at one step per `interval` seconds: 1 to `ROTATE_MAX`.
@@ -584,7 +597,9 @@ function emit.rotate(device, interval)
   local sent = sent_cache(device)
   local keys = {}
   for key in pairs(sent) do
-    keys[#keys + 1] = key
+    if not emit.DURATION_ROWS[key] then
+      keys[#keys + 1] = key
+    end
   end
   if #keys == 0 then
     return 0
