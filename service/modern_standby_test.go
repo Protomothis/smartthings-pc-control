@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Protomothis/smartthings-pc-control/service/power"
 )
@@ -209,10 +210,135 @@ func TestSuspendWithoutModernStandbyCallsSetSuspendState(t *testing.T) {
 	}
 }
 
-// #161: screen off says that it puts this PC into standby; a screen on
-// that times out is not taken for done.
+// screenHoldFake records the screen-off hold's power request and lets the
+// test drive the display state.
+type screenHoldFake struct {
+	calls   []string
+	display func(on bool)
+	setErr  error
+}
+
+// fakeScreenHold installs a screen-off hold on fakes (#161).
+func fakeScreenHold(t *testing.T) *screenHoldFake {
+	t.Helper()
+	f := &screenHoldFake{}
+	saved := screenHold
+	screenHold = power.NewScreenHold(power.ScreenHoldHooks{
+		Set:   func() error { f.calls = append(f.calls, "set"); return f.setErr },
+		Clear: func() error { f.calls = append(f.calls, "clear"); return nil },
+		Watch: func(onChange func(bool)) (func(), error) {
+			f.display = onChange
+			return func() {}, nil
+		},
+		AfterFunc: func(time.Duration, func()) func() bool { return func() bool { return true } },
+		Logf:      logMsg,
+	})
+	t.Cleanup(func() { screenHold = saved })
+	return f
+}
+
+// #161: screen off holds a system-required power request on a modern
+// standby PC, so it stays awake with the display off and screen on still
+// reaches the tray; the hold ends when the display is on again.
+func TestScreenOffOnModernStandbyHoldsTheSystemAwake(t *testing.T) {
+	fakePowerCaps(t, modernStandbyLaptop, nil)
+	hold := fakeScreenHold(t)
+	runs, _ := stubScreenRun(t)
+	events := captureNotifications(t)
+	buf := captureLog(t)
+
+	Commands["turnscreenoff"].Execute()
+	if !reflect.DeepEqual(hold.calls, []string{"set"}) || !screenHold.Held() {
+		t.Fatalf("power request calls %q, held %v", hold.calls, screenHold.Held())
+	}
+	if want := "screen off: modern standby - holding a system-required power request so the PC stays awake with the display off and screen on still works"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log %q lacks %q", buf.String(), want)
+	}
+	if getDisplayState() != "off" {
+		t.Errorf("display state = %q, want off", getDisplayState())
+	}
+	hold.display(false)
+
+	Commands["turnscreenon"].Execute()
+	if want := [][]string{{"screen", "off"}, {"screen", "on"}}; !reflect.DeepEqual(*runs, want) {
+		t.Errorf("user-action runs %q, want %q", *runs, want)
+	}
+	if getDisplayState() != "on" {
+		t.Errorf("display state = %q, want on", getDisplayState())
+	}
+	hold.display(true)
+	if screenHold.Held() || !reflect.DeepEqual(hold.calls, []string{"set", "clear"}) {
+		t.Errorf("after the display came on: calls %q, held %v", hold.calls, screenHold.Held())
+	}
+	if !strings.Contains(buf.String(), "Screen-off hold: released (the display is on again)") {
+		t.Errorf("log %q", buf.String())
+	}
+	expectNoNotification(t, events)
+}
+
+// A screen off that did not run (no tray, nobody at the console) does not
+// leave the hold behind; one that timed out keeps it (the display is going
+// off). A hold that cannot be taken leaves screen off as it was.
+func TestScreenOffHoldOnFailures(t *testing.T) {
+	fakePowerCaps(t, modernStandbyLaptop, nil)
+	hold := fakeScreenHold(t)
+	_, runErr := stubScreenRun(t)
+	buf := captureLog(t)
+
+	*runErr = errTrayUnavailable
+	Commands["turnscreenoff"].Execute()
+	if screenHold.Held() || !reflect.DeepEqual(hold.calls, []string{"set", "clear"}) {
+		t.Errorf("failed screen off: calls %q, held %v", hold.calls, screenHold.Held())
+	}
+	if !strings.Contains(buf.String(), "Screen-off hold: released (screen off failed)") {
+		t.Errorf("log %q", buf.String())
+	}
+
+	hold.calls = nil
+	*runErr = fmt.Errorf("%w after 3s (user-action screen)", errUserActionTimeout)
+	Commands["turnscreenoff"].Execute()
+	if !screenHold.Held() {
+		t.Error("a timed-out screen off dropped the hold")
+	}
+	screenHold.Release("test")
+
+	hold.calls = nil
+	hold.setErr = errors.New("PowerSetRequest(SystemRequired): denied")
+	*runErr = nil
+	Commands["turnscreenoff"].Execute()
+	if screenHold.Held() || getDisplayState() != "off" {
+		t.Errorf("held %v, display %q", screenHold.Held(), getDisplayState())
+	}
+	if want := "screen off: modern standby - on this PC the display off puts it into standby; screen on may not wake it (only real input or the power button does); keeping it awake failed: PowerSetRequest(SystemRequired): denied"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log %q lacks %q", buf.String(), want)
+	}
+}
+
+// Suspend on a modern standby PC is meant to sleep: it drops a screen-off
+// hold before turning the display off.
+func TestSuspendReleasesTheScreenOffHold(t *testing.T) {
+	fakePowerCaps(t, modernStandbyLaptop, nil)
+	noSetSuspendState(t)
+	hold := fakeScreenHold(t)
+	stubScreenRun(t)
+	buf := captureLog(t)
+
+	Commands["turnscreenoff"].Execute()
+	hold.display(false)
+	Commands["suspend"].Execute()
+	if screenHold.Held() || !reflect.DeepEqual(hold.calls, []string{"set", "clear"}) {
+		t.Errorf("calls %q, held %v", hold.calls, screenHold.Held())
+	}
+	if !strings.Contains(buf.String(), "Screen-off hold: released (suspend)") {
+		t.Errorf("log %q", buf.String())
+	}
+}
+
+// #161: a screen on that times out (the hold did not keep the PC out of
+// standby: battery, lid, power button) is not taken for done.
 func TestScreenCommandsOnModernStandby(t *testing.T) {
 	fakePowerCaps(t, modernStandbyLaptop, nil)
+	fakeScreenHold(t)
 	_, runErr := stubScreenRun(t)
 	events := captureNotifications(t)
 	buf := captureLog(t)
@@ -220,9 +346,6 @@ func TestScreenCommandsOnModernStandby(t *testing.T) {
 	Commands["turnscreenoff"].Execute()
 	if getDisplayState() != "off" {
 		t.Errorf("display state = %q, want off", getDisplayState())
-	}
-	if want := "screen off: modern standby - on this PC the display off puts it into standby; screen on may not wake it (only real input or the power button does)"; !strings.Contains(buf.String(), want) {
-		t.Errorf("log %q lacks %q", buf.String(), want)
 	}
 	expectNoNotification(t, events)
 
@@ -253,12 +376,18 @@ func TestScreenCommandsOnModernStandby(t *testing.T) {
 }
 
 // On a PC with S3 a timed-out screen on is still assumed to have worked
-// and nothing is said about standby.
+// and nothing is said about standby. No power request is taken (#161).
 func TestScreenCommandsWithoutModernStandby(t *testing.T) {
 	fakePowerCaps(t, s3Desktop, nil)
+	hold := fakeScreenHold(t)
 	_, runErr := stubScreenRun(t)
 	events := captureNotifications(t)
 	buf := captureLog(t)
+	t.Cleanup(func() {
+		if len(hold.calls) != 0 || screenHold.Held() {
+			t.Errorf("S3 PC: power request calls %q, held %v", hold.calls, screenHold.Held())
+		}
+	})
 
 	Commands["turnscreenoff"].Execute()
 	*runErr = fmt.Errorf("%w after 3s", errUserActionTimeout)
@@ -289,7 +418,7 @@ func TestTelegramRepliesNoteModernStandby(t *testing.T) {
 	fakePowerCaps(t, modernStandbyLaptop, nil)
 	html, _, _ := h.HandleCommand(ctx, "42", "screenoff", nil)
 	expectExecuted(t, off, "turnscreenoff")
-	if !strings.Contains(html, "화면을 끄면 절전에 들어가고, 원격 화면 켜기로는 깨어나지 않을 수 있습니다") {
+	if !strings.Contains(html, "화면이 꺼져 있는 동안 절전에 들어가지 않게 붙잡아 둡니다") {
 		t.Errorf("/screenoff reply = %q", html)
 	}
 	html, _, _ = h.HandleCommand(ctx, "42", "screenon", nil)

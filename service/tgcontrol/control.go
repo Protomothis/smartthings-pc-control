@@ -223,8 +223,8 @@ var texts = map[string][2]string{
 	// modern standby notes under a sleep / screen reply (#161, #162),
 	// "standby_" + the command (standbyNote)
 	"standby_suspend":       {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면을 꺼서 Windows 절전에 들어갑니다. 깨울 때는 키보드 · 마우스 · 전원 버튼을 쓰세요.", "ℹ️ This PC uses modern standby (S0): it goes to sleep by turning the display off. Wake it with the keyboard, mouse or power button."},
-	"standby_turnscreenoff": {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면을 끄면 절전에 들어가고, 원격 화면 켜기로는 깨어나지 않을 수 있습니다.", "ℹ️ This PC uses modern standby (S0): turning the screen off puts it to sleep, and a remote screen on may not wake it."},
-	"standby_turnscreenon":  {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면 끄기로 절전에 들어간 뒤에는 Windows가 실제 키보드 · 마우스 입력이나 전원 버튼으로만 깨어납니다.", "ℹ️ This PC uses modern standby (S0): once screen off has put it to sleep, Windows wakes only on real keyboard or mouse input or the power button."},
+	"standby_turnscreenoff": {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 화면이 꺼져 있는 동안 절전에 들어가지 않게 붙잡아 둡니다. 배터리로 쓸 때는 Windows 절전 시간이 지나고 약 5분 뒤 절전에 들어가고, 그 뒤에는 원격 화면 켜기로 깨어나지 않습니다.", "ℹ️ This PC uses modern standby (S0): it is kept out of sleep while the screen is off. On battery Windows still sleeps about 5 minutes after its sleep timeout, and a remote screen on cannot wake it after that."},
+	"standby_turnscreenon":  {"ℹ️ 이 PC는 모던 스탠바이(S0) 노트북이라 절전에 들어간 뒤에는(배터리 · 덮개 · 전원 버튼) Windows가 실제 키보드 · 마우스 입력이나 전원 버튼으로만 깨어납니다.", "ℹ️ This PC uses modern standby (S0): once it is asleep (battery, lid, power button), Windows wakes only on real keyboard or mouse input or the power button."},
 }
 
 // text returns the ko/en string for key (telegram.lang), formatted with
