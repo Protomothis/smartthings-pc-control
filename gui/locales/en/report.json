@@ -35,7 +35,7 @@
   "ui.report.save": "Save to a file",
   "ui.report.busy": "Collecting…",
   "ui.report.buttons.hint": "No GitHub account? Save to a file and attach it to a forum post.",
-  "ui.report.done.send": "Saved to %s. Drag this file into the box on the GitHub issue page that just opened, then press [Create].",
+  "ui.report.done.send": "Saved to %s. On the GitHub issue page that just opened, click the line under \"Attachment\" at the top, drag this file there, then press [Create].",
   "ui.report.done.save": "Saved to %s. Attach this file to a forum post or an e-mail.",
   "ui.report.fail": "Could not save the report: %s",
   "ui.report.browser.fail": "Could not open the browser: %s",
@@ -49,6 +49,7 @@
   "ui.report.memory": "%s GB, %s GB free",
   "ui.report.uptime.days": "%dd %dh",
   "ui.report.uptime.hours": "%dh %dm",
+  "ui.report.uptime.mins": "%d min",
   "ui.report.svc.ok": "Connected · port %d",
   "ui.report.svc.login": "Needs the secret",
   "ui.report.svc.lost": "Not connected",
@@ -80,6 +81,6 @@
   "ui.report.h.warn": "Recent warnings and errors (personal data masked)",
   "ui.report.h.attach": "Attachment",
   "ui.report.h.files": "Files",
-  "ui.report.attach": "Drag the `%s` file saved with this report into this box. It holds the full logs.",
+  "ui.report.attach": "↓ Click the line right below and drag the `%s` file saved with this report there. It holds the full logs.",
   "ui.report.created": "Created"
 }

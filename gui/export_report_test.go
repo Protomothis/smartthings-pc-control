@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/url"
@@ -124,7 +125,7 @@ func TestReportIssueBody(t *testing.T) {
 	r, _ := sampleReport(t, "C:\\Users\\jdoe 에서 kim@example.com 으로")
 	body := r.IssueBody([]string{"2026/11/21 15:00:00 WARNING: x"}, "stpc-report-20261121-1530.zip")
 	for _, want := range []string{
-		"### 어떤 문제가 있었나요?", `C:\Users\<name> 에서 <email> 으로`,
+		"### 어떤 문제가 있었나요?", `C:\Users\<user> 에서 <email> 으로`,
 		"### PC 정보", "| 앱 버전 | v1.2.6 |", "<details><summary>설정 요약</summary>",
 		"```text\n2026/11/21 15:00:00 WARNING: x\n```", "`stpc-report-20261121-1530.zip`",
 	} {
@@ -209,16 +210,34 @@ func TestReportWarningsLines(t *testing.T) {
 	// The cap: the app's ten, the rest from the service, newest kept.
 	var b strings.Builder
 	for i := range 50 {
-		b.WriteString("2026/11/21 10:00:00 WARNING: s" + string(rune('a'+i%26)) + "\n")
+		fmt.Fprintf(&b, "2026/11/21 10:00:00 WARNING: s%02d\n", i)
 	}
 	b.WriteString("2026/11/21 10:00:00 WARNING: last\n")
 	var g strings.Builder
-	for range 15 {
-		g.WriteString("x [t] error y\n")
+	for i := range 15 {
+		fmt.Fprintf(&g, "x [t] error y%02d\n", i)
 	}
 	got = warnings(b.String(), g.String(), m).Lines(ReportIncludeAll)
 	if len(got) != ReportWarnMax || got[ReportWarnMax-reportGUIWarnMax-1] != "2026/11/21 10:00:00 WARNING: last" {
 		t.Errorf("cap: %d lines, %q", len(got), got)
+	}
+}
+
+// The same message logged again is one line, its last time, with a count:
+// the no-secret warning at every start filled the whole list (#177).
+func TestReportWarningsCollapseRepeats(t *testing.T) {
+	m := NewMasker(MaskInput{})
+	svc := "2026/11/19 14:48:52 WARNING: No secret configured.\n" +
+		"2026/11/20 09:00:00 hub failed: timeout\n" +
+		"2026/11/20 09:57:44 WARNING: No secret configured.\n" +
+		"2026/11/21 18:18:26 WARNING: No secret configured.\n"
+	got := warnings(svc, "", m).Lines(ReportIncludeAll)
+	want := []string{
+		"2026/11/20 09:00:00 hub failed: timeout",
+		"2026/11/21 18:18:26 WARNING: No secret configured. (x3)",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("lines\n got %q\nwant %q", got, want)
 	}
 }
 

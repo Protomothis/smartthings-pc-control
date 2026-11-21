@@ -35,7 +35,7 @@
   "ui.report.save": "파일로 저장",
   "ui.report.busy": "모으는 중…",
   "ui.report.buttons.hint": "GitHub 계정이 없으면 [파일로 저장]한 뒤 갤러리 글에 첨부해 주세요.",
-  "ui.report.done.send": "%s 에 저장했어요. 방금 열린 GitHub 이슈 페이지의 입력란에 이 파일을 끌어다 놓은 뒤 [Create]를 눌러 주세요.",
+  "ui.report.done.send": "%s 에 저장했어요. 방금 열린 GitHub 이슈 페이지 본문 맨 위의 \"첨부\" 줄 아래를 한 번 누르고 이 파일을 끌어다 놓은 뒤 [Create]를 눌러 주세요.",
   "ui.report.done.save": "%s 에 저장했어요. 이 파일을 갤러리 글이나 메일에 첨부해 주세요.",
   "ui.report.fail": "보고서를 저장하지 못했어요: %s",
   "ui.report.browser.fail": "브라우저를 열지 못했어요: %s",
@@ -49,6 +49,7 @@
   "ui.report.memory": "%s GB 중 %s GB 남음",
   "ui.report.uptime.days": "%d일 %d시간",
   "ui.report.uptime.hours": "%d시간 %d분",
+  "ui.report.uptime.mins": "%d분",
   "ui.report.svc.ok": "연결됨 · 포트 %d",
   "ui.report.svc.login": "시크릿 입력 필요",
   "ui.report.svc.lost": "연결 안 됨",
@@ -80,6 +81,6 @@
   "ui.report.h.warn": "최근 경고 · 오류 (개인 정보는 가림)",
   "ui.report.h.attach": "첨부",
   "ui.report.h.files": "들어 있는 파일",
-  "ui.report.attach": "같이 저장된 `%s` 파일을 이 입력란에 끌어다 놓아 주세요. 전체 로그가 들어 있어요.",
+  "ui.report.attach": "↓ 이 줄 바로 아래를 한 번 누르고 같이 저장된 `%s` 파일을 끌어다 놓아 주세요. 전체 로그가 들어 있어요.",
   "ui.report.created": "만든 시각"
 }

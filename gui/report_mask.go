@@ -83,8 +83,11 @@ var (
 	maskBotTokenRe = regexp.MustCompile(`\b\d{6,}:[A-Za-z0-9_-]{30,}`)
 	maskEmailRe    = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)
 	// maskUserDirRe is the folder under C:\Users in a path, with either
-	// slash and doubled backslashes (JSON, %q) alike.
-	maskUserDirRe = regexp.MustCompile(`(?i)(\b[a-z]:(?:\\\\|\\|/)+users(?:\\\\|\\|/)+)([^\\/:*?"<>|\r\n]+)`)
+	// slash and doubled backslashes (JSON, %q) alike. A name with spaces
+	// ("John Doe") counts only when the path goes on after it; otherwise the
+	// name ends at the first space, so the words after a bare
+	// "C:\Users\jdoe" in a sentence are not swallowed (#177).
+	maskUserDirRe = regexp.MustCompile(`(?i)(\b[a-z]:(?:\\\\|\\|/)+users(?:\\\\|\\|/)+)(?:[^\\/:*?"<>|\r\n]+(\\|/)|[^\\/:*?"<>|\r\n\s]+)`)
 	// maskMACRe is six hex bytes split by colons or dashes.
 	maskMACRe = regexp.MustCompile(`(?i)\b([0-9a-f]{2}[:-][0-9a-f]{2}[:-][0-9a-f]{2})([:-])[0-9a-f]{2}[:-][0-9a-f]{2}[:-][0-9a-f]{2}\b`)
 	// maskIPv6Re is an IPv6 address with "::" or at least five groups —
@@ -190,10 +193,12 @@ func (m *Masker) Line(s string) string {
 	}
 	s = maskBotTokenRe.ReplaceAllString(s, maskBotToken)
 	s = maskEmailRe.ReplaceAllString(s, maskEmail)
+	// The user folder before the names, so a path always reads
+	// C:\Users\<user> even when the folder is the user name.
+	s = maskUserDirRe.ReplaceAllString(s, "${1}"+maskUser+"${2}")
 	for _, re := range m.names {
 		s = replaceWord(s, re, maskName)
 	}
-	s = maskUserDirRe.ReplaceAllString(s, "${1}"+maskUser)
 	s = maskMACRe.ReplaceAllString(s, "${1}${2}XX${2}XX${2}XX")
 	s = maskIPv6Re.ReplaceAllStringFunc(s, maskIPv6Addr)
 	s = maskIPv4Re.ReplaceAllStringFunc(s, maskIPv4Addr)

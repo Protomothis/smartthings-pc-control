@@ -187,6 +187,9 @@ func reportUptime(l Lang, d time.Duration) string {
 	if days > 0 {
 		return fmt.Sprintf(T(l, "ui.report.uptime.days"), days, hours)
 	}
+	if hours == 0 {
+		return fmt.Sprintf(T(l, "ui.report.uptime.mins"), mins)
+	}
 	return fmt.Sprintf(T(l, "ui.report.uptime.hours"), hours, mins)
 }
 
@@ -389,6 +392,10 @@ func (r Report) IssueBody(warn []string, zipName string) string {
 func (r Report) issueBody(p issueParts, zipName string) string {
 	l := r.State.Lang
 	var b strings.Builder
+	// The attachment line comes first: GitHub puts a dropped file where the
+	// caret is, and one left further down landed the zip's link inside the
+	// PC table and broke it (#177). The blank lines are room for the link.
+	fmt.Fprintf(&b, "### %s\n\n%s\n\n\n\n", T(l, "ui.report.h.attach"), fmt.Sprintf(T(l, "ui.report.attach"), zipName))
 	fmt.Fprintf(&b, "### %s\n\n%s\n\n", T(l, "ui.report.h.desc"), p.desc)
 	if r.Include.PCInfo {
 		fmt.Fprintf(&b, "### %s\n\n%s\n", T(l, "ui.report.h.pc"), table(l, r.PCRows()))
@@ -402,7 +409,6 @@ func (r Report) issueBody(p issueParts, zipName string) string {
 	if len(p.warn) > 0 {
 		fmt.Fprintf(&b, "### %s\n\n```text\n%s\n```\n\n", T(l, "ui.report.h.warn"), strings.Join(p.warn, "\n"))
 	}
-	fmt.Fprintf(&b, "### %s\n\n%s\n", T(l, "ui.report.h.attach"), fmt.Sprintf(T(l, "ui.report.attach"), zipName))
 	return b.String()
 }
 
@@ -569,12 +575,41 @@ func (w ReportWarnings) Lines(inc ReportInclude) []string {
 // lastWarn is the last n lines of text that are warnings or errors, as the
 // logs page tells them.
 func lastWarn(text string, n int) []string {
-	var out []string
+	// The same message again (the no-secret warning at every start, say) is
+	// one line: the last time it was logged, with how often. Otherwise it
+	// fills the issue's few lines on its own (#177).
+	type seen struct {
+		line  string
+		count int
+	}
+	var order []string
+	byMsg := map[string]*seen{}
 	for _, ln := range splitLines(text) {
 		_, msg := LogCells(ln)
-		if LogLineLevel(msg)&(LogLevelError|LogLevelWarn) != 0 || strings.Contains(ln, "WARNING") {
-			out = append(out, strings.TrimSpace(ln))
+		if LogLineLevel(msg)&(LogLevelError|LogLevelWarn) == 0 && !strings.Contains(ln, "WARNING") {
+			continue
 		}
+		var kb strings.Builder
+		for _, p := range msg {
+			kb.WriteString(p.Text)
+		}
+		key := strings.TrimSpace(kb.String())
+		if s, ok := byMsg[key]; ok {
+			s.line, s.count = strings.TrimSpace(ln), s.count+1
+			order = slices.DeleteFunc(order, func(k string) bool { return k == key })
+		} else {
+			byMsg[key] = &seen{line: strings.TrimSpace(ln), count: 1}
+		}
+		order = append(order, key)
+	}
+	out := make([]string, 0, len(order))
+	for _, k := range order {
+		s := byMsg[k]
+		if s.count > 1 {
+			out = append(out, fmt.Sprintf("%s (x%d)", s.line, s.count))
+			continue
+		}
+		out = append(out, s.line)
 	}
 	if len(out) > n {
 		out = out[len(out)-n:]
