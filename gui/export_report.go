@@ -349,7 +349,15 @@ func procText(l Lang, p ProcStat) string {
 	if p.CPUOK {
 		cpu = percent(p.CPU)
 	}
-	return fmt.Sprintf(T(l, "ui.report.state.proc"), cpu, megabytes(p.WorkingSet), megabytes(p.Private), p.Threads, p.Handles)
+	s := fmt.Sprintf(T(l, "ui.report.state.proc"), cpu, megabytes(p.WorkingSet), megabytes(p.Private), p.Threads, p.Handles)
+	// The service's own figures (/api/diag/process) add these two.
+	if p.Goroutines > 0 {
+		s += " · " + fmt.Sprintf(T(l, "ui.report.state.goroutines"), p.Goroutines)
+	}
+	if p.Uptime > 0 {
+		s += " · " + fmt.Sprintf(T(l, "ui.report.state.uptime"), reportUptime(l, p.Uptime))
+	}
+	return s
 }
 
 // percent is a share in percent with one decimal.

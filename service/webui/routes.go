@@ -109,6 +109,10 @@ func (s *Server) Routes(pagesEnabled bool) *http.ServeMux {
 	// the desktop app's local trusted session only.
 	mux.HandleFunc("/api/processes", s.apiAuth(s.localOnly(s.serveProcesses), http.MethodGet))
 
+	// API: the service's own process figures for the app's problem report
+	// (#175, diag.go); the local trusted session only.
+	mux.HandleFunc("/api/diag/process", s.apiAuth(s.localOnly(s.serveDiagProcess), http.MethodGet))
+
 	// API: the app's [테스트 알림] (#106) and the preset [실행]/[테스트]
 	// buttons (#109). [테스트] runs a row as typed — any program, as the
 	// user — so it is local-only; [실행] runs a saved preset.

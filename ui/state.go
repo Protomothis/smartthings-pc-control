@@ -38,6 +38,7 @@ type API interface {
 	TestPreset(p gui.Preset) ([]gui.PresetWarning, error)
 	GetWoLStatus() (gui.WoLStatus, error)
 	RunningProcesses() ([]string, error)
+	DiagProcess() (gui.ServiceProcess, error)
 	TestTelegram(token, chatID string) error
 	TelegramMe() (username, name string, err error)
 	TelegramChats(token string) ([]gui.TelegramChat, error)
