@@ -66,6 +66,10 @@ type UI struct {
 
 	gate  loginGate
 	trust atomic.Int32 // a trustState
+	// refusal is the service's reason for the last refusal (a string:
+	// "not_admin", "other_exe", …; gui.LocalLoginRefusalCode), for the
+	// locked editors' note (#168).
+	refusal atomic.Value
 	// masked: the last config came with the preset paths masked although
 	// the session was not refused (readConfig could not log in again).
 	masked    atomic.Bool

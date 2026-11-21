@@ -36,11 +36,48 @@ func (c *Client) LocalLogin() error {
 		return err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10)) // drain for keep-alive
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
-	return fmt.Errorf("%w (HTTP %d)", errLocalLoginRefused, resp.StatusCode)
+	return &localLoginRefusal{status: resp.StatusCode, code: refusalCode(resp.StatusCode, body)}
+}
+
+// localLoginRefusal is errLocalLoginRefused with the service's reason:
+// its "code" (not_admin, other_exe, session_0, rate_limited, …; see
+// service/webui/locallogin.go), or "http_<status>" when the reply had none
+// (an older service without the route answers 404).
+type localLoginRefusal struct {
+	status int
+	code   string
+}
+
+func (e *localLoginRefusal) Error() string {
+	return fmt.Sprintf("%v (HTTP %d, %s)", errLocalLoginRefused, e.status, e.code)
+}
+
+func (e *localLoginRefusal) Is(target error) bool { return target == errLocalLoginRefused }
+
+// refusalCode reads {"code":…} from a refusal's body.
+func refusalCode(status int, body []byte) string {
+	var r struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(body, &r) == nil && r.Code != "" {
+		return r.Code
+	}
+	return fmt.Sprintf("http_%d", status)
+}
+
+// localLoginRefusalCode is the reason a LocalLogin error carries, "" for
+// any other error.
+func localLoginRefusalCode(err error) string {
+	var r *localLoginRefusal
+	if errors.As(err, &r) {
+		return r.code
+	}
+	return ""
 }
 
 // localLoginRetryAfter is how long a refusal keeps the automatic paths

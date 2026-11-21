@@ -11,8 +11,10 @@ package webui
 //     logon token — not a service, scheduled batch or network logon;
 //   - is that session's own logged-on user (not a runas of somebody else
 //     inside it);
-//   - belongs to an administrator (BUILTIN\Administrators in the token,
-//     elevated or UAC-filtered) — the same people who may read config.json
+//   - belongs to an administrator (a member of BUILTIN\Administrators:
+//     in the token elevated or UAC-filtered, in the linked token, or in the
+//     local group itself under Administrator protection; peeradmin.go,
+//     #168) — the same people who may read config.json
 //     and its secret anyway, so this grants nobody more than the file ACL
 //     does. A standard user's tray falls back to the login dialog;
 //   - was started from this service's own exe (in the admin-only install
@@ -93,7 +95,7 @@ func trustLocalPeer(p peerProcess, sameExe func(image string) bool) error {
 		return err
 	}
 	if !p.Admin {
-		return refuse("not_admin", "pid %d (%s) is not an administrator", p.PID, p.UserSID)
+		return refuse("not_admin", "pid %d (%s) is not an administrator (%s)", p.PID, p.UserSID, p.AdminDetail)
 	}
 	return nil
 }
@@ -244,7 +246,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, s.localSession())
-	logx.Printf("Local login for the tray app (pid %d, session %d)", p.PID, p.SessionID)
+	logx.Printf("Local login for the tray app (pid %d, session %d, administrator: %s)", p.PID, p.SessionID, p.AdminVia)
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

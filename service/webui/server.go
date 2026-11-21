@@ -46,7 +46,10 @@ type Server struct {
 	peerTable   func() ([]tcpRow, error)
 	peerInspect func(pid uint32) (peerProcess, error)
 	peerSameExe func(image string) bool
-	loginNow    func() time.Time
+	// peerAdmins lists the SIDs in the local Administrators group
+	// (peeradmin.go, #168).
+	peerAdmins func() ([]string, error)
+	loginNow   func() time.Time
 
 	// presetUserSID is the SID of the user presets run as, which may write
 	// to its own scripts without a writable_by_others warning
@@ -71,6 +74,7 @@ func New(d Deps) *Server {
 	s.peerTable = readTCPTable
 	s.peerInspect = s.inspectProcess
 	s.peerSameExe = isServiceExe
+	s.peerAdmins = localAdministrators
 	s.presetUserSID = s.targetUserSID
 	s.local.limiter = ratelimit.New(localLoginMax, localLoginWindow, func() time.Time { return s.loginNow() })
 	return s
