@@ -2,6 +2,12 @@ package ui
 
 import (
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -87,6 +93,54 @@ func TestReadConfigLocksWhenStillMasked(t *testing.T) {
 	if w := gui.WireConfig(u.current().cfg, u.editorsLocked()); w.Presets != nil || w.PresetsMasked {
 		t.Errorf("a save would send presets %+v masked=%v", w.Presets, w.PresetsMasked)
 	}
+}
+
+// A refusal for another reason than not_admin says which (#168), so the
+// administrator note no longer stands for every failed check.
+func TestRefusalNoteNamesTheReason(t *testing.T) {
+	for _, tc := range []struct {
+		code string
+		want func(u *UI) string
+	}{
+		{"not_admin", func(u *UI) string { return u.t("localonly.note") }},
+		{"other_exe", func(u *UI) string { return fmt.Sprintf(u.t("localonly.untrusted"), "other_exe") }},
+		{"http_404", func(u *UI) string { return fmt.Sprintf(u.t("localonly.untrusted"), "http_404") }},
+	} {
+		u, _ := maskedSetup(t, nil)
+		u.trust.Store(int32(trustUnknown))
+		u.api = &maskingAPI{configAPI: configAPI{cfg: baseConfig()}, loginErr: realRefusal(t, tc.code)}
+		u.relogin()
+		if !u.editorsLocked() {
+			t.Fatalf("%s: editors not locked", tc.code)
+		}
+		if got, want := u.lockedNote(), tc.want(u); got != want {
+			t.Errorf("%s: note %q, want %q", tc.code, got, want)
+		}
+		if strings.Contains(u.lockedNote(), "%!") {
+			t.Errorf("%s: note %q has a format error", tc.code, u.lockedNote())
+		}
+	}
+}
+
+// realRefusal is the error the real client returns for a refusal with
+// code ("http_404": a reply without one), from a service stand-in.
+func realRefusal(t *testing.T, code string) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, ok := strings.CutPrefix(code, "http_"); ok {
+			n, _ := strconv.Atoi(c)
+			w.WriteHeader(n)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"status":"error","code":%q}`, code)
+	}))
+	defer srv.Close()
+	err := gui.NewClient(srv.Listener.Addr().(*net.TCPAddr).Port).LocalLogin()
+	if !gui.IsLocalLoginRefused(err) {
+		t.Fatalf("%s: %v is not a refusal", code, err)
+	}
+	return err
 }
 
 // A standard user (refused) keeps the usual note and is not asked again.

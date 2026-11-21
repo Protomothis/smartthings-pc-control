@@ -244,7 +244,7 @@ func (u *UI) finishSave(f form, sent gui.Config, out saveOutcome) {
 	if out.err != nil {
 		msg := out.err.Error()
 		if gui.IsLocalOnly(out.err) {
-			msg = u.t("localonly.note")
+			msg = u.lockedNote()
 		}
 		u.setNotice(f, noticeError, msg)
 		return

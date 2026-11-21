@@ -53,9 +53,16 @@ func (u *UI) relogin() bool {
 		u.trust.Store(int32(trustLocal))
 		return true
 	case gui.IsLocalLoginRefused(err):
+		u.refusal.Store(gui.LocalLoginRefusalCode(err))
 		u.trust.Store(int32(trustRefused))
 	}
 	return false
+}
+
+// refusalCode is the reason of the last refusal, "" when none is known.
+func (u *UI) refusalCode() string {
+	c, _ := u.refusal.Load().(string)
+	return c
 }
 
 // editorsLocked reports whether the service refused the local session, so
@@ -66,10 +73,16 @@ func (u *UI) relogin() bool {
 // A config that still came masked after readConfig tried to log in again
 // locks them too: its presets have no paths, and saving them as shown
 // would empty every one (the service refuses that anyway).
-// lockedNote says why the editors are locked.
+// lockedNote says why the editors are locked. Only a not_admin refusal
+// (or one without a reason) is the administrator note; any other names its
+// code, so a report says which check failed (#168) — the same code is in
+// service.log, with the details.
 func (u *UI) lockedNote() string {
 	if trustState(u.trust.Load()) != trustRefused && u.masked.Load() {
 		return u.t("localonly.relogin")
+	}
+	if c := u.refusalCode(); c != "" && c != "not_admin" {
+		return fmt.Sprintf(u.t("localonly.untrusted"), c)
 	}
 	return u.t("localonly.note")
 }

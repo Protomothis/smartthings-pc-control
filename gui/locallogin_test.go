@@ -113,6 +113,38 @@ func TestClientLocalLogin(t *testing.T) {
 	}
 }
 
+// A refusal carries the service's reason (#168), or the HTTP status when
+// the reply has none.
+func TestLocalLoginRefusalCode(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+		want   string
+	}{
+		{http.StatusForbidden, `{"status":"error","code":"not_admin","message":"Not trusted for a local login"}`, "not_admin"},
+		{http.StatusForbidden, `{"status":"error","code":"other_exe"}`, "other_exe"},
+		{http.StatusTooManyRequests, `{"status":"error","code":"rate_limited"}`, "rate_limited"},
+		{http.StatusNotFound, "404 page not found\n", "http_404"},
+		{http.StatusForbidden, "Forbidden\n", "http_403"},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+			w.Write([]byte(tc.body))
+		}))
+		err := clientFor(t, srv).LocalLogin()
+		srv.Close()
+		if !errors.Is(err, errLocalLoginRefused) {
+			t.Errorf("%s: %v is not a refusal", tc.want, err)
+		}
+		if got := LocalLoginRefusalCode(err); got != tc.want {
+			t.Errorf("code %q, want %q (%v)", got, tc.want, err)
+		}
+	}
+	if LocalLoginRefusalCode(errors.New("connection refused")) != "" {
+		t.Error("a network error has a refusal code")
+	}
+}
+
 func TestToastActionLogsInLocally(t *testing.T) {
 	svc := &localService{status: http.StatusOK}
 	runToastAction(clientFor(t, svc.server(t)), "stpc://cancel")
